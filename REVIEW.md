@@ -43,6 +43,12 @@ Global review expectations:
   grab this rule prevents. A shell's result once switched to its box wherever
   the person had gone, and parked or released the box they had moved to; the
   TUI learned the same rule as `heldPane` (`cli/internal/tui/REVIEW.md`).
+- The desktop app's mock (`desktop/src/backend.rs`) sends a stream's bytes as
+  the bridge sends them, never reshaped. A service runs on pipes, so its output
+  and transcript end lines with a bare line feed; the mock first turned them
+  into CRLF, and service panes that stair-stepped on every real box passed
+  every test. The pane does the turning (`Screen::newline_mode`), since
+  alacritty_terminal applies LNM to NEL but not to a line feed.
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

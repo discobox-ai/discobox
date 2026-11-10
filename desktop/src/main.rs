@@ -20,6 +20,8 @@ mod mark;
 mod overlay;
 #[cfg(test)]
 mod parity_tests;
+#[cfg(test)]
+mod service_tests;
 mod sheet;
 #[cfg(test)]
 mod sheet_tests;
@@ -38,8 +40,8 @@ use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
     Args, Box as Sandbox, Command, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note, Palette as Found,
-    PaletteQuery, PaletteRow, Result as CommandResult, Row, Sessions, Spec, SpecTarget, Status, Stream, StreamState, Subscribe, Tab, TabEnd,
-    TabKind, Topic,
+    PaletteQuery, PaletteRow, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget, Status, Stream, StreamState,
+    Subscribe, Tab, TabEnd, TabKind, Topic,
 };
 use rune::{App, AppSpec, Drag, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
 use term::Screen;
@@ -64,6 +66,14 @@ pub struct Pane {
 
 impl Pane {
     pub fn side(&self) -> Side { if matches!(self.exec.kind, TabKind::Shell | TabKind::Tool) { Side::Shells } else { Side::Terminals } }
+
+    /// Whether it draws one of the box's declared services: read-only, stopped rather than ended,
+    /// and numbered apart from the other tabs.
+    pub fn service(&self) -> bool { self.exec.kind == TabKind::Service }
+
+    /// Whether what it says over its screen is quiet: a held tab's last word, or a service's
+    /// state over its card, rather than a stream reconnecting.
+    pub fn settled(&self) -> bool { self.exited || (self.service() && !self.exec.live) }
 }
 
 /// One box's sessions as the window holds them. Switching away parks it (the core's
@@ -102,6 +112,29 @@ impl Workspace {
         let mut v = self.column(Side::Terminals);
         v.extend(self.column(Side::Shells));
         v
+    }
+
+    /// Every pane that wears a number, in tab order: all but the services, which are counted
+    /// apart (the core's `Column.Number`), so one starting or stopping never renumbers the tab
+    /// being reached for.
+    pub fn numbered(&self) -> Vec<usize> { self.strip().into_iter().filter(|&i| !self.panes[i].service()).collect() }
+
+    /// The services' tabs, in their column's order: the first wears 1.
+    pub fn services(&self) -> Vec<usize> { self.column(Side::Terminals).into_iter().filter(|&i| self.panes[i].service()).collect() }
+
+    /// Puts a tab that arrived where the core's order puts it: before the first tab of its column
+    /// that `order` lists after it, else at its column's end. The tabs shown stay the same tabs.
+    fn insert(&mut self, pane: Pane, order: &[String]) {
+        let rank = |exec: &str| order.iter().position(|e| e == exec);
+        let mine = rank(&pane.exec.exec);
+        let side = pane.side();
+        let at = self.panes.iter().position(|p| p.side() == side && matches!((mine, rank(&p.exec.exec)), (Some(m), Some(r)) if r > m));
+        let shown = self.active.map(|a| a.map(|i| self.panes[i].stream));
+        match at {
+            Some(i) => self.panes.insert(i, pane),
+            None => self.panes.push(pane),
+        }
+        self.active = shown.map(|s| s.and_then(|s| self.panes.iter().position(|p| p.stream == s)));
     }
 
     /// Whether it is worth keeping when switched away from (the core's `Workspace.Parkable`):
@@ -248,7 +281,16 @@ pub enum MenuKind {
     Bar(DesktopMenu),
     /// The focused pane's menu: the session commands.
     Pane,
+    /// A box's services, by its key, as the services command read them: each entry a service by
+    /// its ID.
+    Services(String, Vec<Service>),
+    /// One of a box's services: its output, then the core's verbs for it, each entry by
+    /// `OUTPUT` or the verb.
+    Service(String, Service),
 }
+
+/// The service menu's entry that shows the service's output: its tab.
+pub const OUTPUT: &str = "output";
 
 /// The list's filter, open: the core's choices, and the one the keys are on.
 pub struct FilterMenu {
@@ -353,8 +395,10 @@ const DRAG_SLOP: f32 = 4.0;
 pub const MIN_SPLIT: f32 = 0.2;
 
 impl State {
-    fn new() -> State {
-        let (backend, spec, inbox, bridged) = BOOT.lock().unwrap().take().unwrap_or_else(boot_mock);
+    fn new() -> State { State::with(BOOT.lock().unwrap().take().unwrap_or_else(boot_mock)) }
+
+    /// The window on what `main` connected, or on a mock a test made.
+    fn with((backend, spec, inbox, bridged): Boot) -> State {
         theme::set_tokens(&spec);
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
@@ -534,7 +578,7 @@ impl State {
         let ids: Vec<String> = match &kind {
             MenuKind::Bar(menu) => self.in_menu(*menu),
             MenuKind::Pane => self.in_menu(DesktopMenu::Session),
-            MenuKind::Actions(_) => return,
+            MenuKind::Actions(_) | MenuKind::Services(..) | MenuKind::Service(..) => return,
         };
         let entries = ids.iter().filter_map(|id| self.spec.command(id)).map(|c| {
             let why = lacking(&self.spec, &c.id).unwrap_or_default();
@@ -889,7 +933,7 @@ impl State {
         self.next_stream += 1;
         let (cols, rows) = DEFAULT_SIZE;
         let context = self.context();
-        self.command(cmd, targets, context, Args { stream, cols: cols.into(), rows: rows.into(), exec: String::new() }, Pending::Session(stream, sandbox, self.live.clone()));
+        self.command(cmd, targets, context, Args { stream, cols: cols.into(), rows: rows.into(), ..Default::default() }, Pending::Session(stream, sandbox, self.live.clone()));
     }
 
     fn end_focused(&mut self) {
@@ -897,6 +941,11 @@ impl State {
         let ws = &self.workspaces[&id];
         let Some(i) = ws.focused() else { return };
         let pane = &ws.panes[i];
+        // A service is the box's own furniture: stopped from its menu, never ended.
+        if pane.service() {
+            self.message = Some(format!("a service is stopped rather than ended — stop it from {}", self.spec.command("services").map_or("services", |c| c.label.as_str())));
+            return;
+        }
         // A tab held after its program finished has no session left to end: it is dismissed.
         if pane.exited {
             let stream = pane.stream;
@@ -1007,9 +1056,20 @@ impl State {
         self.focus = Focus::Panes;
     }
 
+    /// The `n`th tab that wears a number, from 0 (the pane gesture).
     fn goto_pane(&mut self, n: usize) {
         if let Some(ws) = self.live_ws_mut()
-            && let Some(&i) = ws.strip().get(n)
+            && let Some(&i) = ws.numbered().get(n)
+        {
+            ws.show(i);
+            self.focus = Focus::Panes;
+        }
+    }
+
+    /// The `n`th service's tab, from 0 (the service gesture).
+    fn goto_service(&mut self, n: usize) {
+        if let Some(ws) = self.live_ws_mut()
+            && let Some(&i) = ws.services().get(n)
         {
             ws.show(i);
             self.focus = Focus::Panes;
@@ -1036,7 +1096,8 @@ impl State {
         let Some(ws) = self.live_ws_mut() else { return };
         let Some(i) = ws.focused() else { return };
         let pane = &mut ws.panes[i];
-        if pane.exited {
+        // A service runs on pipes, and its card is text: nothing is typed into either.
+        if pane.exited || pane.service() {
             return;
         }
         pane.screen.to_bottom();
@@ -1076,6 +1137,66 @@ impl State {
         self.command("actions", targets, context, Args::default(), Pending::Actions(at));
     }
 
+    /// Where the services menu and a service's menu open: over the workspace's terminals.
+    fn services_at(&self) -> (f32, f32) { (if self.sidebar { 340.0 } else { 40.0 }, 96.0) }
+
+    /// A box's services, as the services command read them: each by its name, with what it is
+    /// doing and what it is for, or why it cannot run.
+    pub fn open_services_menu(&mut self, sandbox: String, services: Vec<Service>) {
+        self.close_overlays();
+        let entries = services.iter().map(|v| Entry {
+            command: v.id.clone(), label: v.name.clone(), detail: v.detail.clone(), enabled: true, why: String::new(), uses: 0,
+        }).collect();
+        let at = self.services_at();
+        self.menu = Some(Menu { kind: MenuKind::Services(sandbox, services), at, entries, picked: 0, sub: 0 });
+    }
+
+    /// What to do with one service: show its output — its tab, while the workspace holds one —
+    /// then the verbs the core offers for it, each as it stands.
+    pub fn open_service_menu(&mut self, sandbox: String, service: Service) {
+        self.close_overlays();
+        let shown = self.workspaces.get(&sandbox).is_some_and(|w| w.panes.iter().any(|p| p.exec.service == service.id));
+        let mut entries = vec![Entry {
+            command: OUTPUT.into(), label: "view output".into(), detail: "show the service log".into(), enabled: shown,
+            why: if shown { String::new() } else { "no output pane is available".into() }, uses: 0,
+        }];
+        entries.extend(service.actions.iter().map(|a| Entry {
+            command: a.verb.as_str().into(), label: a.label.clone(), detail: a.detail.clone(), enabled: a.enabled, why: a.why.clone(), uses: 0,
+        }));
+        let picked = entries.iter().position(|e| e.enabled).unwrap_or(0);
+        let at = self.services_at();
+        self.menu = Some(Menu { kind: MenuKind::Service(sandbox, service), at, entries, picked, sub: 0 });
+    }
+
+    /// Shows a service's tab in its box's workspace: its output.
+    pub fn show_service(&mut self, sandbox: &str, service: &str) {
+        if self.live.as_deref() != Some(sandbox) {
+            self.show_workspace(sandbox);
+        }
+        if let Some(ws) = self.live_ws_mut()
+            && let Some(i) = ws.panes.iter().position(|p| p.exec.service == service)
+        {
+            ws.show(i);
+            self.focus = Focus::Panes;
+        } else {
+            self.message = Some("service output is no longer available".into());
+        }
+    }
+
+    /// Runs one of a service's verbs: the services command, naming the service and the verb. What
+    /// the service does next, the box's sessions say.
+    pub fn service_verb(&mut self, sandbox: String, service: &Service, verb: ServiceVerb) {
+        let doing = match verb {
+            ServiceVerb::Start => "starting",
+            ServiceVerb::Stop => "stopping",
+            ServiceVerb::Restart => "restarting",
+        };
+        self.message = Some(format!("{doing} {}…", service.name));
+        let context = self.context();
+        let args = Args { service: service.id.clone(), verb: Some(verb), ..Default::default() };
+        self.command("services", vec![sandbox], context, args, Pending::Enter("services".into()));
+    }
+
     fn pane_mut(&mut self, stream: u32) -> Option<&mut Pane> {
         self.workspaces.values_mut().flat_map(|w| w.panes.iter_mut()).find(|p| p.stream == stream)
     }
@@ -1090,12 +1211,14 @@ impl State {
     }
 
     /// A sessions snapshot: a tab for every session the core opens that the workspace does not
-    /// hold yet. Nothing is closed here; a stream says when it ends.
+    /// hold yet, placed in the core's order. A session's tab is never closed here (its stream says
+    /// when it ends); a service's is, when the snapshot no longer lists it on the run it draws.
     fn take_sessions(&mut self, sub: u32, r: Result<Sessions, String>) {
         let Some(sbx) = self.subs.get(&sub).cloned() else { return };
         self.seen.insert(sub, r.clone());
         // A session still being made in this box is in no pane yet, and may already be listed:
-        // while one is, only the primary opens, and the rest once it is made (retake_sessions).
+        // while one is, only the primary and the services open, and the rest once it is made
+        // (retake_sessions).
         let making = self.pending.values().any(|p| matches!(p, Pending::Session(_, b, _) if *b == sbx));
         let Some(ws) = self.workspaces.get_mut(&sbx) else { return };
         ws.opening = false;
@@ -1109,14 +1232,35 @@ impl State {
                 return;
             }
         };
+        let gone: Vec<u32> = ws.panes.iter()
+            .filter(|p| p.service() && !sessions.iter().any(|e| e.exec == p.exec.exec && e.run == p.exec.run))
+            .map(|p| p.stream)
+            .collect();
+        for stream in gone {
+            if self.pane_mut(stream).is_some_and(|p| !p.exited) {
+                self.backend.send(Out::Close(stream));
+            }
+            self.drop_pane(stream);
+        }
+        let ws = &self.workspaces[&sbx];
+        let order: Vec<String> = sessions.iter().map(|e| e.exec.clone()).collect();
         let fresh: Vec<Tab> = sessions.into_iter()
-            .filter(|e| !ws.panes.iter().any(|p| p.exec.exec == e.exec) && (!making || e.kind == TabKind::Primary))
+            .filter(|e| !ws.panes.iter().any(|p| p.exec.exec == e.exec) && (!making || matches!(e.kind, TabKind::Primary | TabKind::Service)))
             .collect();
         let mut opens = vec![];
         for e in fresh {
-            let pane = self.new_pane(e);
+            let mut pane = self.new_pane(e);
+            if pane.service() {
+                // A service runs on pipes: its output, and its transcript, end lines with a bare
+                // line feed.
+                pane.screen.newline_mode();
+                // One not running says its state over its card.
+                if !pane.exec.status.is_empty() {
+                    pane.status = Some(pane.exec.status.clone());
+                }
+            }
             opens.push((pane.exec.exec.clone(), pane.stream));
-            self.workspaces.get_mut(&sbx).unwrap().panes.push(pane);
+            self.workspaces.get_mut(&sbx).unwrap().insert(pane, &order);
         }
         self.workspaces.get_mut(&sbx).unwrap().fix_active();
         for (exec, stream) in opens {
@@ -1288,7 +1432,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived",
+    "refresh", "servers", "archived", "services",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -1404,6 +1548,15 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
             s.focus = Focus::List;
         }
         "palette" => s.open_palette(),
+        // The box's services, on its workspace: a box that declares none says so instead.
+        "services" => {
+            s.show_workspace(&r.r#box);
+            if r.services.is_empty() {
+                s.message = (!r.note.is_empty()).then(|| r.note.clone());
+            } else {
+                s.open_services_menu(r.r#box.clone(), r.services.clone());
+            }
+        }
         "help" => {
             s.close_overlays();
             s.help = true;
@@ -1590,6 +1743,19 @@ fn main() {
                 poll(s, 0.0, &mut Tx::default());
                 let at = s.bar_at.get(&DesktopMenu::Box).copied().unwrap_or((60.0, 30.0));
                 s.open_commands_menu(MenuKind::Bar(DesktopMenu::Box), at);
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // The first box's services as tabs beside its primary, a migration's last output on
+            // its card, and the services menu over them.
+            ("services", |s| {
+                s.open_row(0);
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(ws) = s.live_ws_mut()
+                    && let Some(i) = ws.panes.iter().position(|p| p.exec.service == "migrate")
+                {
+                    ws.show(i);
+                }
+                run_command(s, "services", &mut Tx::default());
                 poll(s, 0.0, &mut Tx::default());
             }),
             ("pane-menu", |s| {

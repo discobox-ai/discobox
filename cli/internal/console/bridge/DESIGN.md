@@ -66,7 +66,10 @@ run after the registry is let go, whose `Result` ends the command:
   as the core's forms, a shell or terminal made and attached to the command's
   stream, a session ended, the source a box is owed delivered before attach.
 - **The app's flows are handed back** as `StatusEnter`: focus, pages, menus,
-  the workspace to open. A box flow with preconditions the registry leaves to
+  the workspace to open. `services` comes with the box's services as read
+  for its menu, each with its verbs as the core offers them
+  (`console.Service.Actions`); with a service and a verb in its args it runs
+  that verb instead, refused as the core's actions refuse it. A box flow with preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
@@ -88,7 +91,10 @@ read changed: the listing, the machine's resources and the requests every
 `console.ListPollEvery`, as the TUI reads them (the listing at once after a
 command changes a box: `relist`); a box's sessions (`console.Sessions`, the
 primary first, and only the primary for a box not running, since attaching it
-is what waits for the box) every `console.WorkspacePollEvery`; provisioning
+is what waits for the box) every `console.WorkspacePollEvery`, in tab
+order with its services' tabs (`console.ListedServiceTabs`) ahead of the primary,
+each on its run: a service's tab is the one a snapshot closes, when it no
+longer lists it on that run; provisioning
 and the audit timeline as they report; and a workspace's header (`console.Header`)
 with its ports at the local ports of a forward that lasts as long as the
 subscription — the workspace's, which the app ends when it parks one — read
@@ -139,7 +145,10 @@ workspace, the tab, or the tab held with its last screen and what it says), by
 the tab the core made the session: one made here (shell, terminal) is attached
 with the tab it was made as, and one the app opens is looked up in what its
 box's sessions topic listed (`Server.tab`, the primary by its ID; kept while
-anything follows the box's sessions). It is sent before the Exit frame. `close` detaches a stream and ends
+anything follows the box's sessions); a service's tab is opened on what the
+core opens for its service as that listing last said it
+(`console.OpenService`): its process after its history, or its card. It is
+sent before the Exit frame. `close` detaches a stream and ends
 nothing in the box; the `end` command ends the session in the box first, and
 closes its stream only once it has. What is kept early is bounded per stream
 (`earlyLimit`), and a CloseInput frame is dropped (289 §1).

@@ -59,6 +59,18 @@ fn choose_entry(s: &mut State, i: usize, tx: &mut Tx) {
     match kind {
         MenuKind::Actions(sandbox) => act_on(s, &sandbox, &id, tx),
         MenuKind::Bar(_) | MenuKind::Pane => run_command(s, &id, tx),
+        MenuKind::Services(sandbox, services) => {
+            if let Some(v) = services.into_iter().find(|v| v.id == id) {
+                s.open_service_menu(sandbox, v);
+            }
+        }
+        MenuKind::Service(sandbox, service) => {
+            s.close_overlays();
+            match service.actions.iter().find(|a| a.verb.as_str() == id) {
+                Some(a) => s.service_verb(sandbox, &service, a.verb),
+                None => s.show_service(&sandbox, &service.id),
+            }
+        }
     }
 }
 
@@ -101,7 +113,7 @@ pub fn menu_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
 
 pub fn menu_view(s: &State) -> Option<El> {
     let m = s.menu.as_ref()?;
-    let compact = !matches!(m.kind, MenuKind::Actions(_));
+    let compact = matches!(m.kind, MenuKind::Bar(_) | MenuKind::Pane);
     let mut list = col().key("menu").w(340.0).padding(6.0).gap(2.0).radius(theme::r_card())
         .fill(theme::raised()).border(theme::stroke_quiet(), theme::line_bright()).shadow(12.0, 36.0, Color::BLACK.alpha(0.5));
     for (i, a) in m.entries.iter().enumerate() {
@@ -109,11 +121,12 @@ pub fn menu_view(s: &State) -> Option<El> {
         let ink = if a.enabled { theme::text() } else { theme::dim() };
         let sub = if a.enabled { a.detail.clone() } else { a.why.clone() };
         let mut head = row().w_full().center_y().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer());
-        if let Some(k) = keys::shortcut_of(s, &a.command) {
+        // A service's entries are services and verbs, not commands: they have no shortcut.
+        if let Some(k) = keys::shortcut_of(s, &a.command).filter(|_| !matches!(m.kind, MenuKind::Services(..) | MenuKind::Service(..))) {
             head = head.child(view::keycap(k));
         }
-        // A box's actions say what each does, or why it cannot, under it; the menu bar's and a
-        // pane's menus are longer, one line each, saying it on the pointer.
+        // A box's actions and its services say what each does, or why it cannot, under it; the
+        // menu bar's and a pane's menus are longer, one line each, saying it on the pointer.
         let entry = col().key(format!("menu-{}", a.command)).w_full().px(10.0).py(if compact { 3.0 } else { 5.0 }).gap(2.0).radius(theme::r_row())
             .fill(if on && a.enabled { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
             .child(head);

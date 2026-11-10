@@ -50,6 +50,8 @@ pub struct Screen {
     /// Bumped on every change, so rows that did not change can be reused.
     pub version: u64,
     pub title: Option<String>,
+    /// Whether a line feed is a new line (`newline_mode`).
+    newlines: bool,
 }
 
 impl Screen {
@@ -57,12 +59,17 @@ impl Screen {
         let replies = Replies::default();
         let config = Config { scrolling_history: 5000, ..Config::default() };
         let term = Term::new(config, &Size { cols, rows }, replies.clone());
-        Screen { term, parser: Processor::new(), replies, cols, rows, version: 0, title: None }
+        Screen { term, parser: Processor::new(), replies, cols, rows, version: 0, title: None, newlines: false }
     }
 
     /// Feeds program output; returns what the emulator answers back, for the stream's input.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
-        self.parser.advance(&mut self.term, bytes);
+        if self.newlines {
+            let crlf: Vec<u8> = bytes.iter().flat_map(|&b| if b == b'\n' { vec![b'\r', b'\n'] } else { vec![b] }).collect();
+            self.parser.advance(&mut self.term, &crlf);
+        } else {
+            self.parser.advance(&mut self.term, bytes);
+        }
         self.version += 1;
         let mut r = self.replies.0.lock().unwrap();
         if let Some(t) = r.1.take() {
@@ -96,6 +103,23 @@ impl Screen {
     pub fn scroll(&mut self, lines: i32) {
         self.term.scroll_display(alacritty_terminal::grid::Scroll::Delta(lines));
         self.version += 1;
+    }
+
+    /// Takes a line feed as a new line, carriage return included: what a program on pipes writes,
+    /// which no terminal turned its newlines into CRLF for — a service, and its transcript. It is
+    /// done here rather than with LNM, which alacritty_terminal applies to NEL but not to a line
+    /// feed.
+    pub fn newline_mode(&mut self) { self.newlines = true; }
+
+    /// What the screen shows, a line at a time: what a test reads off a pane.
+    #[cfg(test)]
+    pub fn text(&self) -> String {
+        let grid = self.term.grid();
+        let offset = grid.display_offset() as i32;
+        (0..self.rows).map(|y| {
+            let row = &grid[Line(y as i32 - offset)];
+            (0..self.cols).map(|x| row[Column(x)].c).collect::<String>().trim_end().to_string()
+        }).collect::<Vec<_>>().join("\n")
     }
 
     /// The screen as elements: one keyed, memoised row per line, then the cursor.

@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 5,
+  "x-protocol": 6,
   "x-specVersion": 5,
   "x-frameKinds": {
     "json": {
@@ -589,7 +589,7 @@
           "const": "header"
         },
         {
-          "description": "TopicSessions is what a box's workspace opens: its sessions and services, as the core orders and names them (Box).",
+          "description": "TopicSessions is what a box's workspace opens: its sessions and its services' tabs, as the core orders and names them (Box).",
           "const": "sessions"
         },
         {
@@ -1464,7 +1464,7 @@
       ]
     },
     "Sessions": {
-      "description": "Sessions is what a box's workspace opens, by the core's rules: its sessions in tab order, the primary first, and its declared services. Running is false for a box that is not running: only its primary opens, and attaching it is what waits for the box.",
+      "description": "Sessions is what a box's workspace opens, by the core's rules, in tab order (console.Exec.Before): the tabs of its services worth one (console.ListedServiceTabs), the primary, and every session the exec listing opens as a tab. Running is false for a box that is not running: only its primary opens, and attaching it is what waits for the box.\n\nA session's tab is never closed by a snapshot: its stream says when it ends. A service's tab is, since the service listing is the whole truth about a declaration (console.Workspace.ReconcileServices): a service tab the app holds that is not listed, or is listed on another Run, has nothing left to draw, and goes.",
       "type": "object",
       "properties": {
         "running": {
@@ -1475,18 +1475,11 @@
           "items": {
             "$ref": "#/$defs/Tab"
           }
-        },
-        "services": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Service"
-          }
         }
       },
       "required": [
         "running",
-        "sessions",
-        "services"
+        "sessions"
       ]
     },
     "Tab": {
@@ -1510,6 +1503,16 @@
           "items": {
             "type": "string"
           }
+        },
+        "service": {
+          "description": "Service is the declared service a service's tab draws; its Exec is the service's (console.ServiceTabID), not any one run's. Run is the run it draws (console.Service.RunKey): one that moves — a restart, a stop, a fix — is a tab to open again. Status is what it says over its screen while its service is not running: its state, its card under it.",
+          "type": "string"
+        },
+        "run": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
         }
       },
       "required": [
@@ -1544,33 +1547,6 @@
           "description": "TabService is a declared service's session.",
           "const": "service"
         }
-      ]
-    },
-    "Service": {
-      "description": "Service is one declared service.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "exec": {
-          "description": "Exec is the session it runs in, when it has one.",
-          "type": "string"
-        },
-        "detail": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "status"
       ]
     },
     "Commands": {
@@ -1718,7 +1694,7 @@
       ]
     },
     "Args": {
-      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), and the session it acts on (end, repaint).",
+      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for services one of the box's services and the verb to run on it — without them, services lists them for its menu.",
       "type": "object",
       "properties": {
         "stream": {
@@ -1735,8 +1711,29 @@
         },
         "exec": {
           "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "verb": {
+          "$ref": "#/$defs/ServiceVerb"
         }
       }
+    },
+    "ServiceVerb": {
+      "description": "ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a HarnessVerb it runs against the API and returns, leaving the window up: a service is not something you sit in front of, so acting on one never takes the screen.",
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "start"
+        },
+        {
+          "const": "stop"
+        },
+        {
+          "const": "restart"
+        }
+      ]
     },
     "Result": {
       "description": "Result ends a command (or an upload, by its ID).",
@@ -1770,6 +1767,13 @@
             "$ref": "#/$defs/Entry"
           }
         },
+        "services": {
+          "description": "Services are the box's declared services, in declaration order, read as the services menu opens: what it lists.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Service"
+          }
+        },
         "path": {
           "description": "Path is where an upload landed in the box.",
           "type": "string"
@@ -1800,6 +1804,63 @@
           "description": "StatusEnter is one whose flow is the app's: the core has ruled it can run, and the app enters it — moving focus, opening a page or a menu, opening the box's workspace (Box).",
           "const": "enter"
         }
+      ]
+    },
+    "Service": {
+      "description": "Service is one declared service, as the services menu lists it: its name, what it is doing and what it is for or why it cannot run (Detail), and its verbs as they stand for it (console.Service.Actions).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServiceAction"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status",
+        "actions"
+      ]
+    },
+    "ServiceAction": {
+      "description": "ServiceAction is one verb a service's menu offers, and why it cannot act when it cannot.",
+      "type": "object",
+      "properties": {
+        "verb": {
+          "$ref": "#/$defs/ServiceVerb"
+        },
+        "label": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "verb",
+        "label",
+        "detail",
+        "enabled"
       ]
     },
     "Form": {

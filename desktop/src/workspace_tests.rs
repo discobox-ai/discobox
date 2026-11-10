@@ -237,7 +237,7 @@ fn a_cancelled_chip_drag_puts_the_chip_back() {
     assert_eq!(rt.state.dragging, None);
 }
 
-fn shell_tab(exec: &str) -> Tab { Tab { exec: exec.into(), kind: TabKind::Shell, title: "bash".into(), live: true, argv: vec![] } }
+fn shell_tab(exec: &str) -> Tab { Tab { exec: exec.into(), kind: TabKind::Shell, title: "bash".into(), live: true, argv: vec![], ..Default::default() } }
 
 // A shell's stream is attached before its result says what it is, so its ending can come
 // first: it is kept with the stream's frames and applied once the pane is made.

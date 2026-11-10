@@ -169,6 +169,13 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         s.goto_pane(n.saturating_sub(1) as usize);
         return true;
     }
+    // A service's tab by its number (the service gesture): the services are counted apart.
+    if let Some(("service", binding)) = gesture_for(s, ev)
+        && let Some(n) = binding.chars().last().and_then(|c| c.to_digit(10))
+    {
+        s.goto_service(n.saturating_sub(1) as usize);
+        return true;
+    }
     if let Some(id) = command_for(s, ev) {
         // A shortcut with no modifier (Enter attaches, F2 renames) is the list's; in a pane the
         // key is the program's.

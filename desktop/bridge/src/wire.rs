@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 5;
+pub const PROTOCOL: i64 = 6;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 5;
@@ -491,8 +491,8 @@ pub enum Topic {
     #[serde(rename = "header")]
     Header,
 
-    /// TopicSessions is what a box's workspace opens: its sessions and services, as the core orders
-    /// and names them (Box).
+    /// TopicSessions is what a box's workspace opens: its sessions and its services' tabs, as the
+    /// core orders and names them (Box).
     #[serde(rename = "sessions")]
     Sessions,
 
@@ -1180,16 +1180,20 @@ pub struct PortGroup {
     pub ports: Vec<Link>,
 }
 
-/// Sessions is what a box's workspace opens, by the core's rules: its sessions in tab order, the
-/// primary first, and its declared services. Running is false for a box that is not running: only
-/// its primary opens, and attaching it is what waits for the box.
+/// Sessions is what a box's workspace opens, by the core's rules, in tab order
+/// (console.Exec.Before): the tabs of its services worth one (console.ListedServiceTabs), the
+/// primary, and every session the exec listing opens as a tab. Running is false for a box that is
+/// not running: only its primary opens, and attaching it is what waits for the box.
+///
+/// A session's tab is never closed by a snapshot: its stream says when it ends. A service's tab is,
+/// since the service listing is the whole truth about a declaration
+/// (console.Workspace.ReconcileServices): a service tab the app holds that is not listed, or is
+/// listed on another Run, has nothing left to draw, and goes.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Sessions {
     pub running: bool,
 
     pub sessions: Vec<Tab>,
-
-    pub services: Vec<Service>,
 }
 
 /// Tab is one session as the app draws its tab. Kind is the column and what it is.
@@ -1204,6 +1208,19 @@ pub struct Tab {
     pub live: bool,
 
     pub argv: Vec<String>,
+
+    /// Service is the declared service a service's tab draws; its Exec is the service's
+    /// (console.ServiceTabID), not any one run's. Run is the run it draws (console.Service.RunKey):
+    /// one that moves — a restart, a stop, a fix — is a tab to open again. Status is what it
+    /// says over its screen while its service is not running: its state, its card under it.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub service: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub run: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub status: String,
 }
 
 /// TabKind is what a session is, which says the column its tab is in.
@@ -1242,23 +1259,6 @@ impl TabKind {
             TabKind::Service => "service",
         }
     }
-}
-
-/// Service is one declared service.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Service {
-    pub id: String,
-
-    pub name: String,
-
-    pub status: String,
-
-    /// Exec is the session it runs in, when it has one.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub exec: String,
-
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub detail: String,
 }
 
 /// Commands is every registry command as it stands, in the registry's order.
@@ -1347,7 +1347,9 @@ pub struct Command {
 }
 
 /// Args are what a command takes beyond its targets: the stream a session it makes is attached to
-/// and the size of its pane (shell, terminal), and the session it acts on (end, repaint).
+/// and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for
+/// services one of the box's services and the verb to run on it — without them, services lists
+/// them for its menu.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Args {
     #[serde(default, skip_serializing_if = "is_default")]
@@ -1361,6 +1363,39 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub exec: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub service: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verb: Option<ServiceVerb>,
+}
+
+/// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
+/// HarnessVerb it runs against the API and returns, leaving the window up: a service is not
+/// something you sit in front of, so acting on one never takes the screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ServiceVerb {
+    #[default]
+    #[serde(rename = "start")]
+    Start,
+
+    #[serde(rename = "stop")]
+    Stop,
+
+    #[serde(rename = "restart")]
+    Restart,
+}
+
+impl ServiceVerb {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ServiceVerb::Start => "start",
+            ServiceVerb::Stop => "stop",
+            ServiceVerb::Restart => "restart",
+        }
+    }
 }
 
 /// Result ends a command (or an upload, by its ID).
@@ -1388,6 +1423,11 @@ pub struct Result {
     /// context and targets.
     #[serde(default, skip_serializing_if = "is_default")]
     pub entries: Vec<Entry>,
+
+    /// Services are the box's declared services, in declaration order, read as the services menu
+    /// opens: what it lists.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub services: Vec<Service>,
 
     /// Path is where an upload landed in the box.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -1426,6 +1466,38 @@ impl Status {
             Status::Enter => "enter",
         }
     }
+}
+
+/// Service is one declared service, as the services menu lists it: its name, what it is doing and
+/// what it is for or why it cannot run (Detail), and its verbs as they stand for it
+/// (console.Service.Actions).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Service {
+    pub id: String,
+
+    pub name: String,
+
+    pub status: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub detail: String,
+
+    pub actions: Vec<ServiceAction>,
+}
+
+/// ServiceAction is one verb a service's menu offers, and why it cannot act when it cannot.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceAction {
+    pub verb: ServiceVerb,
+
+    pub label: String,
+
+    pub detail: String,
+
+    pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
 }
 
 /// Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again,

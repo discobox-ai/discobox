@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, Close, Command, Context, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, State, Status,
+    Answer, Args, Close, Command, Context, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
@@ -221,7 +221,8 @@ fn subscriptions_send_snapshots_until_unsubscribed() {
     let sessions = cli.expect(Type::Snapshot).snapshot.unwrap();
     assert_eq!(sessions.sub, 2);
     let tabs: Vec<_> = sessions.sessions.unwrap().sessions.into_iter().map(|t| (t.kind, t.exec)).collect();
-    assert_eq!(tabs, [(TabKind::Primary, "primary".to_string()), (TabKind::Shell, "sh".to_string())]);
+    let services = ["service:web", "service:migrate", "service:broken"].map(|e| (TabKind::Service, e.to_string()));
+    assert_eq!(tabs, [&services[..], &[(TabKind::Primary, "primary".to_string()), (TabKind::Shell, "sh".to_string())]].concat());
 
     cli.subscribe(3, Topic::Resources, "");
     let resources = cli.expect(Type::Snapshot).snapshot.unwrap().resources.expect("resources");
@@ -428,6 +429,49 @@ fn streams_fail_and_close() {
     cli.settle(Duration::from_millis(300));
     let after = cli.backlog.iter().filter(|i| matches!(i, Incoming::Output(2, _) | Incoming::Exited(2, _))).count();
     assert_eq!(after, 0, "stream 2 went on after it was closed: {:?}", cli.backlog);
+}
+
+// A box's services reach the app as the core says them: their tabs among its sessions, each on
+// its run and saying its state when it is not running; a tab's stream with the service's card and
+// last output; the services command's menu with each service's verbs; and a verb run, or refused
+// in the core's words.
+#[test]
+fn services_reach_the_app() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Sessions, "b1");
+    let tabs = cli.expect(Type::Snapshot).snapshot.unwrap().sessions.unwrap().sessions;
+    let migrate = tabs.iter().find(|t| t.exec == "service:migrate").expect("migrate's tab");
+    assert_eq!((migrate.kind, migrate.service.as_str(), migrate.live, migrate.status.as_str()), (TabKind::Service, "migrate", false, "exited"));
+    assert!(!migrate.run.is_empty(), "a service's tab carries its run");
+
+    let open = Open { stream: 4, r#box: "b1".into(), exec: "service:migrate".into(), cols: 80, rows: 24 };
+    cli.send(Message { r#type: Type::Open, open: Some(open), ..Default::default() });
+    let s = cli.expect(Type::Stream).stream.unwrap();
+    assert_eq!((s.stream, s.state), (4, StreamState::Attached));
+    let mut card = Vec::new();
+    while !String::from_utf8_lossy(&card).contains("migrated 3 tables\n") {
+        card.extend(cli.take("migrate's card", |i| match i {
+            Incoming::Output(4, b) => Some(b.clone()),
+            _ => None,
+        }));
+    }
+
+    let id = cli.command("services", &["b1"], pane("b1"), Args::default());
+    let r = cli.result(id);
+    assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "b1"));
+    assert_eq!(r.services.iter().map(|v| v.id.as_str()).collect::<Vec<_>>(), ["web", "migrate", "broken"]);
+    let broken = &r.services[2];
+    assert_eq!(broken.actions.iter().map(|a| a.verb).collect::<Vec<_>>(), [ServiceVerb::Start, ServiceVerb::Stop, ServiceVerb::Restart]);
+    assert!(broken.actions.iter().all(|a| !a.enabled && a.why == "it is not executable"), "{:?}", broken.actions);
+
+    let restart = Args { service: "web".into(), verb: Some(ServiceVerb::Restart), ..Default::default() };
+    let id = cli.command("services", &["b1"], pane("b1"), restart);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "restarted web"));
+    let start = Args { service: "broken".into(), verb: Some(ServiceVerb::Start), ..Default::default() };
+    let id = cli.command("services", &["b1"], pane("b1"), start);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.why.as_str()), (Status::Failed, "cannot start broken: it is not executable"));
 }
 
 // A CLI that exits while a command is in flight closes the client: no result comes, the app is

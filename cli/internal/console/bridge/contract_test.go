@@ -25,7 +25,9 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 // with a command:
 //
 //   - b1 is running, with a shell; a credential request waits on it, and
-//     its settings are its name.
+//     its settings are its name. It declares three services: web, running;
+//     migrate, which ran and exited with what it wrote; and broken, which
+//     cannot run.
 //   - b2 is archived: purging it asks first, and a purge lets slow's stop
 //     finish.
 //   - b3 is stopped: starting it reports a step and asks a question with
@@ -57,6 +59,12 @@ func TestContractCore(t *testing.T) {
 	core.settings = console.BoxSettings{Name: "b1"}
 	core.execs = []console.Exec{{ID: "sh", Command: []string{"/bin/bash"}, Live: true, Tty: true, CreatedAt: time.Unix(2, 0)}}
 	core.requests = []console.CredentialRequest{{ID: "r1", SandboxID: "b1", Name: "github"}}
+	core.services = []console.Service{
+		{ID: "web", Status: "running", ExecID: "web"},
+		{ID: "migrate", Status: "exited"},
+		{ID: "broken", Status: "stopped", Problem: "it is not executable"},
+	}
+	core.serviceLogs = map[string]string{"migrate": "migrated 3 tables\n"}
 	switch scenario {
 	case "early":
 		core.gate = make(chan struct{})

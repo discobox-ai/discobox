@@ -378,6 +378,39 @@ func (f *frontend) Actions() outcome {
 	return func() Result { return r }
 }
 
+// Services is the box's services: read as the menu opens, for the app's
+// services menu on the box's workspace — counted as the command's use, which
+// its flow is — or, with a service and a verb in the command's args, that
+// verb run on that service by the core (console.RunServiceVerb). What the
+// service does next is the sessions topic's to say.
+func (f *frontend) Services(box console.Sandbox) outcome {
+	if f.c.Args.Service == "" {
+		f.s.reg.Use("services")
+	}
+	return func() Result {
+		src := f.s.ds.ForServer(box.Server)
+		if f.c.Args.Service != "" {
+			note, err := console.RunServiceVerb(f.ctx, src, box.ID, f.c.Args.Service, f.c.Args.Verb)
+			if err != nil {
+				return failed(err.Error())
+			}
+			return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Note: note}
+		}
+		services, err := src.Services(f.ctx, box.ID)
+		if err != nil {
+			return failed("services: " + err.Error())
+		}
+		r := Result{Status: StatusEnter, Box: Key(box.Server, box.ID), Services: make([]Service, 0, len(services))}
+		for _, svc := range services {
+			r.Services = append(r.Services, wireService(svc))
+		}
+		if len(services) == 0 {
+			r.Note = console.NoServices
+		}
+		return r
+	}
+}
+
 // actionTargets are the boxes the app named for a window's command that
 // lists commands for them: the registry ignores a window command's targets,
 // and the action menu is about the ones the app has picked.
@@ -403,7 +436,6 @@ func (f *frontend) Issue(box console.Sandbox) outcome               { return f.e
 func (f *frontend) PullRequest(box console.Sandbox) outcome         { return f.enterIfAble(box) }
 func (f *frontend) FilesChanged(box console.Sandbox) outcome        { return f.enterIfAble(box) }
 func (f *frontend) Audit(box console.Sandbox) outcome               { return f.enterBox(box) }
-func (f *frontend) Services(box console.Sandbox) outcome            { return f.enterBox(box) }
 func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
 func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
 

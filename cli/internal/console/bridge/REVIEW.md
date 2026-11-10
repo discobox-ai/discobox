@@ -10,6 +10,12 @@
   the core's (`Confirmation`, `UpgradeOffer`, `RenameForm`, `Sandbox.Title`,
   an entry's `Why`). A rule the bridge needs and the core lacks is moved into
   the core, as the TUI would need it too.
+- **A service verb goes through `console.RunServiceVerb`**, which both
+  consoles call: it reads the service again, refuses what its menu would
+  (`Service.Actions`) and words the refusal. The bridge's first version looked
+  the service and verb up and wrote its own refusals beside the TUI's bare
+  `DoService` — the third rule after `Session.Saves` and `RequestsFor` copied
+  into the bridge by hand.
 - **Nothing on the wire is null.** A list field is made with `nonNil` or
   `make(..., 0, n)`; the prototype's app stopped at its handshake on a nil
   slice encoded as `null`. The schema has no null, and the tests hold every

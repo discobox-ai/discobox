@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 5. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 6. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -59,6 +59,16 @@ the epic, and does not yet follow the ADRs everywhere:
     stream or a tool takes its tab and says why, and a program that finished
     is held with its last screen, a faint dot on its chip and what it says
     over its screen; a gold dot and a gold note while its stream reconnects;
+  - the box's services are tabs at the head of the terminals column while the
+    core says they are worth one (the sessions topic): a running one's output
+    after its history, one not running its card and last output, with its
+    state said quietly over it. They are read-only, stopped rather than ended
+    (no close on their chips), and numbered apart (`primary+alt+1`–`9`), so
+    one starting never renumbers a tab; a tab whose service's run moved opens
+    again, and one the listing drops goes. The services menu (`services`,
+    `primary+alt+s`) lists every declared service; each opens its own menu:
+    its output (its tab, while there is one), then start, stop and restart as
+    the core offers them;
   - the header is the core's (`console.Header`, over the header topic, whose
     subscription is the workspace's port forward): the box's id, the issue and
     pull request it is tagged with, its git position and word in their tone,
@@ -167,6 +177,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/icons.rs`, `src/mark.rs` | The window's vector icons, and the mark from `assets/brand/logo-purple.svg` |
 | `fonts/` | JetBrains Mono 2.304 at the weights the chrome sets and the italic, and its licence |
 | `src/parity_tests.rs` | Runs `cli/internal/console/testdata/parity` with the desktop's keys |
+| `src/service_tests.rs` | Services as tabs in the core's order, numbered apart, closed and reopened by the listing, stopped not ended; the services menu and its verbs |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |

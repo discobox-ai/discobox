@@ -93,7 +93,7 @@ func consoleFilter(f Filter) console.Filter {
 }
 
 // wireTab is a session as the app draws its tab: what the core says it is
-// (console.SessionTab), and its column and kind.
+// (console.SessionTab, console.ServiceTab), and its column and kind.
 func wireTab(t console.Tab, e console.Exec) Tab {
 	kind := TabShell
 	switch {
@@ -106,7 +106,7 @@ func wireTab(t console.Tab, e console.Exec) Tab {
 	case t.Side() == console.SideTerminals:
 		kind = TabTerminal
 	}
-	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command)}
+	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command), Service: t.Service, Run: t.ServiceRun, Status: t.Status}
 }
 
 // wireEnd is what an ending does, as the wire says it.
@@ -155,8 +155,14 @@ func wireHeader(h console.Header) Header {
 	return out
 }
 
+// wireService is a declared service as the services menu lists it, with its
+// verbs as the core offers them.
 func wireService(s console.Service) Service {
-	return Service{ID: s.ID, Name: s.DisplayName(), Status: s.Status, Exec: s.ExecID, Detail: s.Detail()}
+	out := Service{ID: s.ID, Name: s.DisplayName(), Status: s.Status, Detail: s.Detail(), Actions: []ServiceAction{}}
+	for _, a := range s.Actions() {
+		out.Actions = append(out.Actions, ServiceAction{Verb: a.Verb, Label: a.Label, Detail: a.Detail, Enabled: a.Enabled, Why: a.Why})
+	}
+	return out
 }
 
 // wireRequest is one item waiting on a person, by what it asks; box is the

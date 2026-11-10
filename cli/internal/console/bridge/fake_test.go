@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -55,6 +56,10 @@ type fakeCore struct {
 	forwardErr error
 	// primaryGone fails an open of the primary.
 	primaryGone bool
+	// services is what every box declares, and serviceLogs each one's last
+	// output, by service ID.
+	services    []console.Service
+	serviceLogs map[string]string
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -149,7 +154,25 @@ func (f *fakeCore) Execs(context.Context, string) ([]console.Exec, error) {
 	return f.execs, nil
 }
 
-func (f *fakeCore) Services(context.Context, string) ([]console.Service, error) { return nil, nil }
+func (f *fakeCore) Services(context.Context, string) ([]console.Service, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopped {
+		return nil, console.ErrNotRunning
+	}
+	return slices.Clone(f.services), nil
+}
+
+func (f *fakeCore) ServiceLogs(_ context.Context, _, service string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return []byte(f.serviceLogs[service]), nil
+}
+
+func (f *fakeCore) DoService(_ context.Context, verb console.ServiceVerb, box, service string) error {
+	f.call("%s %s %s", verb, box, service)
+	return nil
+}
 
 func (f *fakeCore) term(id string) *fakeTerm {
 	t := newFakeTerm()

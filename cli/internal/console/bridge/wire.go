@@ -18,8 +18,10 @@ import (
 // override: the app says which side is older and exits. 3 made the listing
 // the core's list (rows, notes, the filter and its choices); 4 added the
 // commands and palette topics; 5, a workspace's header (the header topic, in
-// place of the bare forwards) and what a session's ending does (StreamEnded).
-const Protocol = 5
+// place of the bare forwards) and what a session's ending does (StreamEnded);
+// 6, a box's services as tabs among its sessions, and the services command's
+// menu and verbs.
+const Protocol = 6
 
 // Type names a message.
 type Type string
@@ -140,8 +142,8 @@ const (
 	// as long as the subscription lasts: the workspace's forward, which goes
 	// with the screen showing it (Box).
 	TopicHeader Topic = "header"
-	// TopicSessions is what a box's workspace opens: its sessions and
-	// services, as the core orders and names them (Box).
+	// TopicSessions is what a box's workspace opens: its sessions and its
+	// services' tabs, as the core orders and names them (Box).
 	TopicSessions Topic = "sessions"
 	// TopicCommands is every registry command as it stands where the app
 	// asks from, for the boxes it names (Context, Targets): what its menus
@@ -531,14 +533,20 @@ type PortGroup struct {
 	Ports    []Link `json:"ports"`
 }
 
-// Sessions is what a box's workspace opens, by the core's rules: its
-// sessions in tab order, the primary first, and its declared services.
-// Running is false for a box that is not running: only its primary opens,
-// and attaching it is what waits for the box.
+// Sessions is what a box's workspace opens, by the core's rules, in tab order
+// (console.Exec.Before): the tabs of its services worth one
+// (console.ListedServiceTabs), the primary, and every session the exec listing
+// opens as a tab. Running is false for a box that is not running: only its
+// primary opens, and attaching it is what waits for the box.
+//
+// A session's tab is never closed by a snapshot: its stream says when it
+// ends. A service's tab is, since the service listing is the whole truth
+// about a declaration (console.Workspace.ReconcileServices): a service tab
+// the app holds that is not listed, or is listed on another Run, has nothing
+// left to draw, and goes.
 type Sessions struct {
-	Running  bool      `json:"running"`
-	Sessions []Tab     `json:"sessions"`
-	Services []Service `json:"services"`
+	Running  bool  `json:"running"`
+	Sessions []Tab `json:"sessions"`
 }
 
 // Tab is one session as the app draws its tab. Kind is the column and what it
@@ -549,6 +557,14 @@ type Tab struct {
 	Title string   `json:"title"`
 	Live  bool     `json:"live"`
 	Argv  []string `json:"argv"`
+	// Service is the declared service a service's tab draws; its Exec is
+	// the service's (console.ServiceTabID), not any one run's. Run is the run
+	// it draws (console.Service.RunKey): one that moves — a restart, a stop, a
+	// fix — is a tab to open again. Status is what it says over its screen
+	// while its service is not running: its state, its card under it.
+	Service string `json:"service,omitempty"`
+	Run     string `json:"run,omitempty"`
+	Status  string `json:"status,omitempty"`
 }
 
 // TabKind is what a session is, which says the column its tab is in.
@@ -568,14 +584,25 @@ const (
 	TabService TabKind = "service"
 )
 
-// Service is one declared service.
+// Service is one declared service, as the services menu lists it: its name,
+// what it is doing and what it is for or why it cannot run (Detail), and its
+// verbs as they stand for it (console.Service.Actions).
 type Service struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	// Exec is the session it runs in, when it has one.
-	Exec   string `json:"exec,omitempty"`
-	Detail string `json:"detail,omitempty"`
+	ID      string          `json:"id"`
+	Name    string          `json:"name"`
+	Status  string          `json:"status"`
+	Detail  string          `json:"detail,omitempty"`
+	Actions []ServiceAction `json:"actions"`
+}
+
+// ServiceAction is one verb a service's menu offers, and why it cannot act
+// when it cannot.
+type ServiceAction struct {
+	Verb    console.ServiceVerb `json:"verb"`
+	Label   string              `json:"label"`
+	Detail  string              `json:"detail"`
+	Enabled bool                `json:"enabled"`
+	Why     string              `json:"why,omitempty"`
 }
 
 // Command runs a registry command. ID is the app's, unique for the bridge's
@@ -606,13 +633,17 @@ type Context struct {
 }
 
 // Args are what a command takes beyond its targets: the stream a session it
-// makes is attached to and the size of its pane (shell, terminal), and the
-// session it acts on (end, repaint).
+// makes is attached to and the size of its pane (shell, terminal), the
+// session it acts on (end, repaint), and for services one of the box's
+// services and the verb to run on it — without them, services lists them for
+// its menu.
 type Args struct {
-	Stream uint32 `json:"stream,omitempty"`
-	Cols   int    `json:"cols,omitempty"`
-	Rows   int    `json:"rows,omitempty"`
-	Exec   string `json:"exec,omitempty"`
+	Stream  uint32              `json:"stream,omitempty"`
+	Cols    int                 `json:"cols,omitempty"`
+	Rows    int                 `json:"rows,omitempty"`
+	Exec    string              `json:"exec,omitempty"`
+	Service string              `json:"service,omitempty"`
+	Verb    console.ServiceVerb `json:"verb,omitempty"`
 }
 
 // Status is how a command ended.
@@ -647,6 +678,9 @@ type Result struct {
 	// Entries are what the palette and the action menu list, as they stand
 	// for the command's context and targets.
 	Entries []Entry `json:"entries,omitempty"`
+	// Services are the box's declared services, in declaration order, read
+	// as the services menu opens: what it lists.
+	Services []Service `json:"services,omitempty"`
 	// Path is where an upload landed in the box.
 	Path string `json:"path,omitempty"`
 }

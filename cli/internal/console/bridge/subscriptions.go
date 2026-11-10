@@ -241,9 +241,10 @@ func (f *follower) requests(ctx context.Context) (Snapshot, error) {
 	return Snapshot{Requests: &out}, nil
 }
 
-// sessions is what the box's workspace opens, by the core's rules: the
-// primary, then every session the exec listing opens as a tab, in tab order;
-// and its services. A box that is not running opens its primary alone.
+// sessions is what the box's workspace opens, by the core's rules, in tab
+// order (console.Exec.Before): its services' tabs (console.ListedServiceTabs), the
+// primary, and every session the exec listing opens as a tab. A box that is
+// not running opens its primary alone.
 func (f *follower) sessions(ctx context.Context) (Snapshot, error) {
 	box, src := f.box, f.src
 	// The primary opens whatever the listing says (console.Workspace's first
@@ -251,7 +252,7 @@ func (f *follower) sessions(ctx context.Context) (Snapshot, error) {
 	primary := console.Exec{ID: console.ExecPrimary, Primary: true, Live: true}
 	execs, err := src.Execs(ctx, box.ID)
 	if errors.Is(err, console.ErrNotRunning) {
-		return Snapshot{Sessions: &Sessions{Sessions: []Tab{wireTab(console.SessionTab(primary, ""), primary)}, Services: []Service{}}}, nil
+		return Snapshot{Sessions: &Sessions{Sessions: []Tab{wireTab(console.SessionTab(primary, ""), primary)}}}, nil
 	}
 	if err != nil {
 		return Snapshot{}, err
@@ -263,17 +264,37 @@ func (f *follower) sessions(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	out := Sessions{Running: true, Sessions: []Tab{wireTab(console.SessionTab(primary, ""), primary)}, Services: make([]Service, 0, len(services))}
-	tabs := []console.Tab{console.SessionTab(primary, "")}
+	type listed struct {
+		tab  console.Tab
+		exec console.Exec
+	}
+	all := []listed{{console.SessionTab(primary, ""), primary}}
 	for _, e := range console.Sessions(execs) {
-		tab := console.SessionTab(e, "")
-		tabs = append(tabs, tab)
-		out.Sessions = append(out.Sessions, wireTab(tab, e))
+		all = append(all, listed{console.SessionTab(e, ""), e})
 	}
-	f.s.noteTabs(f.sub.Box, tabs)
+	byID := make(map[string]console.Service, len(services))
 	for _, svc := range services {
-		out.Services = append(out.Services, wireService(svc))
+		byID[svc.ID] = svc
 	}
+	for _, t := range console.ListedServiceTabs(services) {
+		all = append(all, listed{t, console.Exec{ID: t.ExecID, Live: byID[t.Service].Live()}})
+	}
+	slices.SortStableFunc(all, func(a, b listed) int {
+		switch {
+		case a.tab.Session().Before(b.tab.Session()):
+			return -1
+		case b.tab.Session().Before(a.tab.Session()):
+			return 1
+		}
+		return 0
+	})
+	out := Sessions{Running: true, Sessions: make([]Tab, 0, len(all))}
+	tabs := make([]console.Tab, 0, len(all))
+	for _, l := range all {
+		tabs = append(tabs, l.tab)
+		out.Sessions = append(out.Sessions, wireTab(l.tab, l.exec))
+	}
+	f.s.noteTabs(f.sub.Box, tabs, services)
 	return Snapshot{Sessions: &out}, nil
 }
 

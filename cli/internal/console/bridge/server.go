@@ -64,8 +64,11 @@ type Server struct {
 	// tabs is each box's sessions as the core made them tabs, by box key and
 	// exec ID, as listed: what a stream opened on one of them
 	// ends as (console.Tab.End). following counts each box's sessions
-	// subscriptions; a box's tabs go when the last of them ends.
+	// subscriptions; a box's tabs go when the last of them ends. services is
+	// each box's services as listed with them, by box key and service ID:
+	// what a service's tab is opened on (console.OpenService).
 	tabs      map[string]map[string]console.Tab
+	services  map[string]map[string]console.Service
 	following map[string]int
 }
 
@@ -82,6 +85,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		forms:     map[uint64]*mailbox{},
 		questions: map[uint64]chan Answer{},
 		tabs:      map[string]map[string]console.Tab{},
+		services:  map[string]map[string]console.Service{},
 		following: map[string]int{},
 	}
 	s.streams = newStreams(s.w, s.send)
@@ -225,7 +229,9 @@ func (s *Server) handle(ctx context.Context, m Message) {
 	// harness and tool files are edited by the waves that bring their pages.
 }
 
-// open attaches a stream to one of a box's sessions.
+// open attaches a stream to one of a box's sessions: a service's tab to what
+// the core opens for its service as last listed (console.OpenService), any
+// other to its session.
 func (s *Server) open(ctx context.Context, o Open) {
 	tab := s.tab(o.Box, o.Exec)
 	box, src, err := s.source(ctx, o.Box)
@@ -234,7 +240,20 @@ func (s *Server) open(ctx context.Context, o Open) {
 		return
 	}
 	cols, rows := size(o.Cols, o.Rows)
-	term, err := src.OpenExec(ctx, box.ID, o.Exec, cols, rows)
+	var term console.Terminal
+	if id, ok := console.ServiceOfTab(o.Exec); ok {
+		// A service's tab is opened on the service as last listed; one the
+		// bridge no longer has (its listing dropped it, or nothing follows the
+		// box's sessions now) has nothing to open, and its key is no session.
+		svc, listed := s.service(o.Box, id)
+		if !listed {
+			s.streams.fail(o.Stream, errors.New("the service is no longer listed"), console.ServiceTab(console.Service{ID: id}, 0))
+			return
+		}
+		term, err = console.OpenService(ctx, src, box.ID, svc, cols, rows)
+	} else {
+		term, err = src.OpenExec(ctx, box.ID, o.Exec, cols, rows)
+	}
 	if err != nil {
 		s.streams.fail(o.Stream, err, tab)
 		return
@@ -257,12 +276,21 @@ func (s *Server) tab(box, exec string) console.Tab {
 	return console.SessionTab(console.Exec{ID: exec, Primary: exec == console.ExecPrimary}, "")
 }
 
-// noteTabs keeps a box's sessions as tabs, as listed. It only adds: a
-// listing read while a session was being made does not hold it yet, and an
-// open of it must not miss it. What it keeps for a box goes when the box's
-// sessions stop being followed (followTabs); a stream already open keeps its
-// own.
-func (s *Server) noteTabs(box string, tabs []console.Tab) {
+// service is one of a box's services, as last listed.
+func (s *Server) service(box, id string) (console.Service, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	svc, ok := s.services[box][id]
+	return svc, ok
+}
+
+// noteTabs keeps a box's sessions as tabs, as listed, and its services. It
+// only adds sessions: a listing read while a session was being made does not
+// hold it yet, and an open of it must not miss it. The services are the
+// listing's, whole: a service's tab is opened on what it last said. What it
+// keeps for a box goes when the box's sessions stop being followed
+// (followTabs); a stream already open keeps its own.
+func (s *Server) noteTabs(box string, tabs []console.Tab, services []console.Service) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tabs[box] == nil {
@@ -270,6 +298,10 @@ func (s *Server) noteTabs(box string, tabs []console.Tab) {
 	}
 	for _, t := range tabs {
 		s.tabs[box][t.ExecID] = t
+	}
+	s.services[box] = make(map[string]console.Service, len(services))
+	for _, svc := range services {
+		s.services[box][svc.ID] = svc
 	}
 }
 
@@ -288,6 +320,7 @@ func (s *Server) followTabs(box string) func() {
 		if s.following[box]--; s.following[box] <= 0 {
 			delete(s.following, box)
 			delete(s.tabs, box)
+			delete(s.services, box)
 		}
 	}
 }

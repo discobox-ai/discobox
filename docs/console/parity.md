@@ -42,7 +42,6 @@ palette. On macOS the native menu bar is still a hand list of some commands
 | `issue` | Needs the issue tab. | #817 |
 | `pr` | Needs the pull request tab. | #817 |
 | `files` | Needs the pull request's files-changed review. | #817 |
-| `services` | Needs service panes and the services menu. | #809 |
 | `credentials` | Needs the secrets page. | #813 |
 | `harnesses` | Needs the harnesses page. | #812 |
 | `requests` | Needs the credential requests page. | #814 |

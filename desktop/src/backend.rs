@@ -25,8 +25,8 @@ use rune::Waker;
 use crate::wire::{
     Answer, Box as Sandbox, ChoiceGroup, Close, Command, Commands, Choice, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice,
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
-    Remark, Result as CommandResult, Row, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabEnd,
-    TabKind, Topic, Type, Unsubscribe,
+    Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
+    Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -205,6 +205,67 @@ pub struct Mock {
     /// that waits on it.
     asks: HashMap<u64, (Command, Ask)>,
     next_ask: u64,
+    /// Each box's declared services, by its key, and the sessions subscriptions following each box:
+    /// a service verb sends them its sessions again.
+    services: HashMap<String, Vec<MockService>>,
+    following: HashMap<u32, String>,
+}
+
+/// A mock box's declared service: what it is doing, what its runs have written, and how many
+/// times it has started — its run, which moves on a start.
+#[derive(Clone, Debug)]
+pub struct MockService {
+    pub id: String,
+    pub status: String,
+    pub logs: String,
+    runs: u32,
+}
+
+impl MockService {
+    pub fn new(id: &str, status: &str, logs: &str) -> MockService {
+        MockService { id: id.into(), status: status.into(), logs: logs.into(), runs: 1 }
+    }
+
+    fn live(&self) -> bool { matches!(self.status.as_str(), "running" | "starting") }
+
+    /// Whether it has a tab, as the core's `Service.PaneWorthy` says: running, or ended on its own.
+    fn tabbed(&self) -> bool { self.live() || matches!(self.status.as_str(), "exited" | "failed") }
+
+    /// Its tab, as the core's `ServiceTab` makes it.
+    fn tab(&self) -> Tab {
+        let mark = match self.status.as_str() {
+            "failed" => " ✗",
+            "exited" => " ·",
+            _ => "",
+        };
+        Tab {
+            exec: format!("service:{}", self.id), kind: TabKind::Service, title: format!("{}{mark}", self.id), live: self.live(), argv: vec![],
+            service: self.id.clone(), run: format!("{}|{}", self.runs, self.status), status: if self.live() { String::new() } else { self.status.clone() },
+        }
+    }
+
+    /// As the services menu lists it, its verbs as the core offers them.
+    fn wire(&self) -> Service {
+        let action = |verb, label: &str, detail: &str| ServiceAction { verb, label: label.into(), detail: detail.into(), enabled: true, why: String::new() };
+        Service {
+            id: self.id.clone(), name: self.id.clone(), status: self.status.clone(), detail: self.status.clone(),
+            actions: vec![
+                action(ServiceVerb::Start, "start", "run it, or leave it running"),
+                action(ServiceVerb::Stop, "stop", "end its run and keep what it printed"),
+                action(ServiceVerb::Restart, "restart", "stop it if it is running, then start it"),
+            ],
+        }
+    }
+
+    /// What its tab draws: what it has written, and for one not running the card over it, as the
+    /// core's `OpenService` does. What it wrote is sent as it wrote it, bare line feeds and all, as
+    /// the bridge sends a service's output: the pane is what draws them as new lines.
+    fn screen(&self) -> String {
+        if self.live() {
+            return self.logs.clone();
+        }
+        format!("{}\r\n{}\r\n\r\n{}\r\n\r\n── last output ──\r\n\r\n{}", self.id, "─".repeat(self.id.chars().count()), self.status, self.logs)
+    }
 }
 
 /// What a mock form or question is for.
@@ -216,7 +277,7 @@ enum Ask {
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
-    Tab { exec: exec.into(), kind, title: title.into(), live: true, argv: vec![] }
+    Tab { exec: exec.into(), kind, title: title.into(), live: true, argv: vec![], ..Default::default() }
 }
 
 /// A made-up box, as the CLI would list it: one server, so its key is its ID.
@@ -239,7 +300,18 @@ fn mock_remark(b: &Sandbox) -> Option<Remark> {
 }
 
 impl Mock {
+    /// The mock, its first box declaring a dev server that is running, a worker stopped and a
+    /// migration that ran.
     pub fn new(inbox: Inbox) -> Mock {
+        Mock::with_services(inbox, vec![
+            MockService::new("web", "running", "  VITE v6.0.3  ready in 412 ms\n\n  ➜  Local:   http://localhost:5173/\n"),
+            MockService::new("worker", "stopped", ""),
+            MockService::new("migrate", "exited", "applying 0007_sessions.sql\nmigrated 3 tables\n"),
+        ])
+    }
+
+    /// The mock, its first box declaring `services`.
+    pub fn with_services(inbox: Inbox, services: Vec<MockService>) -> Mock {
         let boxes = vec![
             Sandbox {
                 tags: vec!["wip".into(), "tui".into()], branch: "rune-console".into(), commit: "00541f9".into(),
@@ -264,7 +336,55 @@ impl Mock {
         ];
         let parents = HashMap::from([("sbx_r5t1y7u3i9o0pzx2".to_string(), "sbx_p8c3n0vd6rgs2hkq".to_string())]);
         let filter = Filter { tags: vec![], ..Default::default() };
-        Mock { inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1 }
+        let services = HashMap::from([(boxes[0].key.clone(), services)]);
+        Mock {
+            inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
+            services, following: HashMap::new(),
+        }
+    }
+
+    /// A box's sessions as the core lists them: its services' tabs, the primary, and the sessions
+    /// made in it; only the primary for a box not running.
+    fn sessions(&self, sandbox: &str) -> Sessions {
+        let running = self.sandbox(sandbox).is_some_and(Sandbox::running);
+        let mut sessions = vec![];
+        if running {
+            sessions.extend(self.services.get(sandbox).into_iter().flatten().filter(|v| v.tabbed()).map(MockService::tab));
+        }
+        sessions.push(mock_exec("primary", TabKind::Primary, ""));
+        sessions.extend(self.extra.get(sandbox).into_iter().flatten().cloned());
+        Sessions { running, sessions }
+    }
+
+    /// The services command: the box's services for its menu, or a verb run on one of them, after
+    /// which the box's sessions say what it is doing.
+    fn services(&mut self, c: &Command, sandbox: String) -> CommandResult {
+        let Some(verb) = c.args.verb.filter(|_| !c.args.service.is_empty()) else {
+            let services: Vec<Service> = self.services.get(&sandbox).into_iter().flatten().map(MockService::wire).collect();
+            let note = if services.is_empty() { "this discobox declares no services — add one under .discobox/services".into() } else { String::new() };
+            return CommandResult { status: Status::Enter, r#box: sandbox, services, note, ..Default::default() };
+        };
+        let Some(v) = self.services.get_mut(&sandbox).and_then(|v| v.iter_mut().find(|v| v.id == c.args.service)) else {
+            return CommandResult { status: Status::Failed, why: format!("this discobox declares no service {:?}", c.args.service), ..Default::default() };
+        };
+        let done = match verb {
+            ServiceVerb::Start if v.live() => "started",
+            ServiceVerb::Start | ServiceVerb::Restart => {
+                v.runs += 1;
+                v.status = "running".into();
+                if verb == ServiceVerb::Start { "started" } else { "restarted" }
+            }
+            ServiceVerb::Stop => {
+                v.status = "stopped".into();
+                "stopped"
+            }
+        };
+        let note = format!("{done} {}", v.id);
+        let snapshot = self.sessions(&sandbox);
+        for (&sub, _) in self.following.iter().filter(|(_, b)| **b == sandbox) {
+            self.inbox.push(Event::Sessions(sub, Ok(snapshot.clone())));
+        }
+        CommandResult { status: Status::Done, r#box: sandbox, note, ..Default::default() }
     }
 
     /// The rows the core would draw for a filter, roughly: archived boxes only when asked for,
@@ -456,6 +576,8 @@ impl Mock {
                 CommandResult { status: Status::Done, ..Default::default() }
             }
             "actions" => CommandResult { status: Status::Enter, r#box: target.clone(), entries: self.actions(&target), ..Default::default() },
+            "services" if !running => fail("the box has no container; repair rebuilds it"),
+            "services" => self.services(&c, target),
             _ => enter(""),
         }
     }
@@ -664,10 +786,8 @@ impl Backend for Mock {
                 self.relist();
             }
             Out::Subscribe(Subscribe { sub, topic: Topic::Sessions, r#box: sandbox, .. }) => {
-                let running = self.sandbox(&sandbox).is_some_and(Sandbox::running);
-                let mut sessions = vec![mock_exec("primary", TabKind::Primary, "")];
-                sessions.extend(self.extra.get(&sandbox).into_iter().flatten().cloned());
-                self.inbox.push(Event::Sessions(sub, Ok(Sessions { running, sessions, services: vec![] })));
+                self.inbox.push(Event::Sessions(sub, Ok(self.sessions(&sandbox))));
+                self.following.insert(sub, sandbox);
             }
             Out::Subscribe(Subscribe { sub, topic: Topic::Commands, targets, .. }) => {
                 let entries = self.entries(targets.first().map(String::as_str));
@@ -681,7 +801,10 @@ impl Backend for Mock {
                 let h = self.header(&r#box);
                 self.inbox.push(Event::Header(sub, Ok(h)));
             }
-            Out::Subscribe(_) | Out::Unsubscribe(_) => {}
+            Out::Unsubscribe(sub) => {
+                self.following.remove(&sub);
+            }
+            Out::Subscribe(_) => {}
             Out::Command(c) if self.ask(&c) => {}
             // A stream let go is a session left running in the box: the mock's is a local shell,
             // which nothing would show again, so it goes.
@@ -694,6 +817,18 @@ impl Backend for Mock {
                 let mut r = self.command(c.clone());
                 r.id = c.id;
                 self.inbox.push(Event::Result(r));
+            }
+            // A service's tab draws what it has written, and its card when it is not running; it
+            // reads nothing, so it needs no shell.
+            Out::Open { stream, sandbox, exec, .. } if exec.starts_with("service:") => {
+                let screen = self.services.get(&sandbox).into_iter().flatten().find(|v| v.tab().exec == exec).map(MockService::screen);
+                let Some(screen) = screen else {
+                    let why = "the service is no longer declared".into();
+                    self.inbox.push(Event::Stream(Stream { stream, state: StreamState::Failed, why, end: Some(TabEnd::Tab), ..Default::default() }));
+                    return;
+                };
+                self.inbox.push(Event::Stream(Stream { stream, state: StreamState::Attached, ..Default::default() }));
+                self.inbox.push(Event::Data(stream, screen.into_bytes()));
             }
             Out::Open { stream, sandbox, exec, cols, rows } => {
                 let kind = if exec == "primary" { TabKind::Primary } else { TabKind::Shell };
@@ -816,7 +951,7 @@ mod tests {
         // A listing that could not be read says why, rather than staying at "listing…".
         let Some(Event::Listing(1, Err(e))) = read(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"listing","error":"connection refused"}}"#) else { panic!("a listing's error") };
         assert_eq!(e, "connection refused");
-        let Some(Event::Sessions(2, Ok(s))) = read(r#"{"type":"snapshot","snapshot":{"sub":2,"topic":"sessions","sessions":{"running":true,"sessions":[{"exec":"primary","kind":"primary","title":"","live":true,"argv":[]}],"services":[]}}}"#) else { panic!("sessions") };
+        let Some(Event::Sessions(2, Ok(s))) = read(r#"{"type":"snapshot","snapshot":{"sub":2,"topic":"sessions","sessions":{"running":true,"sessions":[{"exec":"primary","kind":"primary","title":"","live":true,"argv":[]}]}}}"#) else { panic!("sessions") };
         assert_eq!(s.sessions[0].kind, TabKind::Primary);
         let Some(Event::Sessions(3, Err(e))) = read(r#"{"type":"snapshot","snapshot":{"sub":3,"topic":"sessions","error":"no discobox x is listed"}}"#) else { panic!("an error") };
         assert!(e.contains("x"));

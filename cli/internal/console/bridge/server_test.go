@@ -989,3 +989,96 @@ func TestHeaderIsTheCores(t *testing.T) {
 		t.Fatalf("an unforwarded header %+v", h)
 	}
 }
+
+// A box's services are the core's: the tabs of the ones worth one among its
+// sessions, in the core's order, each on its run; a service's tab opens on
+// its card and last output when it is not running, and on its process after
+// its history when it is; the services command lists them for its menu, and
+// with a service and a verb runs that verb as the core offers it.
+func TestServicesAreTheCores(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	code := 2
+	core.services = []console.Service{
+		{ID: "web", Name: "Web", Status: "running", ExecID: "exec_web"},
+		{ID: "worker", Status: "stopped"},
+		{ID: "migrate", Status: "exited", ExitCode: &code},
+		{ID: "broken", Status: "stopped", Problem: "it is not executable"},
+	}
+	core.serviceLogs = map[string]string{"web": "listening on :3000\n", "migrate": "migrated 3 tables\n"}
+	core.execs = []console.Exec{{ID: "sh", Command: []string{"bash"}, Live: true, Tty: true, CreatedAt: time.Unix(2, 0)}}
+	a := dial(t, core)
+	a.hello()
+
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicSessions, Box: "b1"}})
+	sessions := a.expect(TypeSnapshot).Snapshot.Sessions
+	var got []string
+	for _, s := range sessions.Sessions {
+		got = append(got, fmt.Sprintf("%s:%s:%s:%v:%s", s.Kind, s.Exec, s.Title, s.Live, s.Status))
+	}
+	want := []string{
+		"service:service:web:Web:true:", "service:service:migrate:migrate ·:false:exited", "service:service:broken:broken ✗:false:cannot run",
+		"primary:primary::true:", "shell:sh:bash:true:",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sessions %q, want %q", got, want)
+	}
+	if s := sessions.Sessions[0]; s.Service != "web" || s.Run != core.services[0].RunKey() {
+		t.Fatalf("a service's tab %+v, want its service and run", s)
+	}
+
+	// Each stream's output, by stream, as it arrives.
+	output := func(stream uint32, want string) {
+		t.Helper()
+		var got []byte
+		for !strings.Contains(string(got), want) {
+			if f := a.next(); f.Kind == frame.Stdout && f.Stream == stream {
+				got = append(got, f.Payload...)
+			}
+		}
+	}
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 1, Box: "b1", Exec: console.ServiceTabID("migrate")}})
+	output(1, "migrated 3 tables")
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 2, Box: "b1", Exec: console.ServiceTabID("web")}})
+	output(2, "listening on :3000")
+	if !slices.Contains(core.called(), "open b1 exec_web 80x24") || slices.ContainsFunc(core.called(), func(c string) bool { return strings.Contains(c, "service:") }) {
+		t.Fatalf("calls %q: want the running service's exec opened, and nothing opened by a tab's key", core.called())
+	}
+	// A service's tab the bridge has no service for is no session to open: it
+	// fails, and the tab goes saying why.
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 9, Box: "b1", Exec: console.ServiceTabID("gone")}})
+	if st := a.expect(TypeStream).Stream; st.Stream != 9 || st.State != StreamFailed || st.End != EndTab || st.Why != "the service is no longer listed" {
+		t.Fatalf("a service no longer listed: %+v", st)
+	}
+
+	ctx := Context{Workspace: "b1", HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true}
+	r := a.result(a.command(Command{Command: "services", Targets: []string{"b1"}, Context: ctx}))
+	if r.Status != StatusEnter || r.Box != "b1" || len(r.Services) != 4 {
+		t.Fatalf("services %+v", r)
+	}
+	if s := r.Services[3]; s.ID != "broken" || s.Detail != "cannot run: it is not executable" || len(s.Actions) != 3 || s.Actions[0].Enabled || s.Actions[0].Why != "it is not executable" {
+		t.Fatalf("a service that cannot run %+v", s)
+	}
+	if s := r.Services[1]; s.Actions[0].Verb != console.ServiceStart || !s.Actions[0].Enabled {
+		t.Fatalf("a stopped service %+v", s)
+	}
+
+	r = a.result(a.command(Command{Command: "services", Targets: []string{"b1"}, Context: ctx, Args: Args{Service: "worker", Verb: console.ServiceStart}}))
+	if r.Status != StatusDone || r.Note != "started worker" || !slices.Contains(core.called(), "start b1 worker") {
+		t.Fatalf("start %+v, calls %q", r, core.called())
+	}
+	for _, args := range []Args{{Service: "broken", Verb: console.ServiceStart}, {Service: "gone", Verb: console.ServiceStop}} {
+		if r := a.result(a.command(Command{Command: "services", Targets: []string{"b1"}, Context: ctx, Args: args})); r.Status != StatusFailed || !strings.Contains(r.Why, args.Service) {
+			t.Errorf("%+v: %+v", args, r)
+		}
+	}
+	if slices.Contains(core.called(), "start b1 broken") {
+		t.Fatal("a service that cannot run was started")
+	}
+
+	core.mu.Lock()
+	core.services = nil
+	core.mu.Unlock()
+	if r := a.result(a.command(Command{Command: "services", Targets: []string{"b1"}, Context: ctx})); r.Status != StatusEnter || len(r.Services) != 0 || r.Note != console.NoServices {
+		t.Fatalf("a box with no services: %+v", r)
+	}
+}

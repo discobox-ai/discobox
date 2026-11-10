@@ -375,20 +375,28 @@ fn sidebar(s: &State) -> El {
 // ---------------------------------------------------------------------------------------------
 // The workspace
 
+/// A tab's label: its number and its name. A service's name is what the core calls it, and its
+/// number is its own counting's, the service gesture's (`S1` for the first): the services are
+/// counted apart from the other tabs (the core's `Column.Number`).
 fn pane_label(ws: &Workspace, i: usize, sbx: &Sandbox) -> String {
     let p = &ws.panes[i];
-    let n = ws.strip().iter().position(|&j| j == i).unwrap_or(0) + 1;
+    if p.service() {
+        let n = ws.services().iter().position(|&j| j == i).unwrap_or(0) + 1;
+        return format!("S{n} {}", p.exec.title);
+    }
     let name = match p.exec.kind {
         TabKind::Primary => sbx.name.clone(),
         _ => p.screen.title.clone().filter(|t| !t.is_empty() && t.len() < 24).unwrap_or_else(|| p.exec.title.clone()),
     };
+    let n = ws.numbered().iter().position(|&j| j == i).unwrap_or(0) + 1;
     format!("{n} {name}")
 }
 
 /// What a tab's chip says of its stream beside its label: a gold dot while it reconnects, a
-/// faint one once its program has finished and its last screen is held.
+/// faint one once its program has finished and its last screen is held, or while its service is
+/// not running.
 fn chip_state(p: &Pane) -> Option<El> {
-    let c = if p.exited {
+    let c = if p.settled() {
         theme::dim()
     } else if p.status.is_some() {
         theme::gold()
@@ -408,7 +416,8 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
         let p = &ws.panes[i];
         let stream = p.stream;
         // A held tab's close dismisses its last screen (end_focused); any other's ends its session.
-        let close = (p.exec.kind != TabKind::Primary).then(|| {
+        // The primary ends with its box, and a service is stopped from its menu: neither closes.
+        let close = (!matches!(p.exec.kind, TabKind::Primary | TabKind::Service)).then(|| {
             chip_close(format!("tab-close-{stream}"), tip(s, "end")).on_press_tx(move |s: &mut State, tx: &mut Tx| {
                 if let Some(i) = s.live_ws().and_then(|w| w.panes.iter().position(|p| p.stream == stream)) {
                     s.select_pane(i);
@@ -473,7 +482,7 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
     // What the tab says over its program: reconnecting in gold, what a held tab's ending left it
     // saying quietly.
     if let Some(st) = &pane.status {
-        let (fill, ink) = if pane.exited { (theme::line_bright(), theme::grey()) } else { (theme::gold(), theme::on_gold()) };
+        let (fill, ink) = if pane.settled() { (theme::line_bright(), theme::grey()) } else { (theme::gold(), theme::on_gold()) };
         screen = screen.child(el().key(format!("status-{id}")).px(8.0).py(2.0).radius(theme::r_key()).fill(fill).pin(None, None, Some(6.0), Some(6.0))
             .child(text(st.clone()).font(theme::UI_SMALL).color(ink)));
     }
