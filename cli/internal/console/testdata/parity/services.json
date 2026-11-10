@@ -1,0 +1,16 @@
+{
+  "name": "a box's services are tabs while worth one: a stopped one's last output is shown, one started gets its tab, and one stopped on purpose loses it",
+  "about": "Run by both consoles, each pressing its own binding for each step: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. The first box declares services, each with what it is doing and what its runs have written (logs). A service step opens the services menu with the services command's binding from the workspace's focused pane, chooses the service and then the verb: output, or one of the core's service verbs; expect is what the workspace looks like after it: how many service tabs it holds (services), how many tabs its terminals column holds, which column has the keys, and text the pane with the keys shows (output).",
+  "attach": true,
+  "services": [
+    {"id": "web", "status": "running", "logs": "listening on :3000\n"},
+    {"id": "worker", "status": "stopped", "logs": ""},
+    {"id": "migrate", "status": "exited", "logs": "migrated 3 tables\n"}
+  ],
+  "steps": [
+    {"service": "migrate", "verb": "output", "expect": {"services": 2, "terminals": 3, "focus": "terminals", "output": "migrated 3 tables"}},
+    {"service": "worker", "verb": "start", "expect": {"services": 3, "terminals": 4}},
+    {"service": "web", "verb": "stop", "expect": {"services": 2, "terminals": 3}},
+    {"service": "web", "verb": "start", "expect": {"services": 3, "terminals": 4}}
+  ]
+}

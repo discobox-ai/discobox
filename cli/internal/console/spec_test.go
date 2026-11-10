@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,13 +74,15 @@ func TestSpecCarriesNoNulls(t *testing.T) {
 
 // A parity scenario is written in registry commands, which each console runs
 // by its own binding: a step naming anything else is a scenario neither can
-// run.
+// run. A service step is the services command's menu, reached from a pane,
+// and a verb the core offers there or a service's output.
 func TestParityScenariosNameRegistryCommands(t *testing.T) {
 	files, err := filepath.Glob("testdata/parity/*.json")
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no parity scenarios: %v", err)
 	}
 	menu, _ := LookupGesture("context menu")
+	services, _ := Lookup("services")
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
@@ -90,6 +93,8 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 			Steps  []struct {
 				Command string `json:"command"`
 				Gesture string `json:"gesture"`
+				Service string `json:"service"`
+				Verb    string `json:"verb"`
 			} `json:"steps"`
 		}
 		if err := json.Unmarshal(data, &sc); err != nil {
@@ -99,6 +104,23 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 			t.Errorf("%s has no steps", file)
 		}
 		for i, step := range sc.Steps {
+			if step.Service != "" {
+				verbs := []string{"output"}
+				for _, a := range (Service{ID: step.Service}).Actions() {
+					verbs = append(verbs, string(a.Verb))
+				}
+				switch {
+				case step.Command != "" || step.Gesture != "":
+					t.Errorf("%s step %d names a service and %q%q; want one", file, i, step.Command, step.Gesture)
+				case !sc.Attach:
+					t.Errorf("%s step %d: the services menu is reached from a pane, and the scenario is in the list", file, i)
+				case !slices.Contains(verbs, step.Verb):
+					t.Errorf("%s step %d: %q is not one of a service's %q", file, i, step.Verb, verbs)
+				case len(services.Bindings.TUI.Leader) == 0 || len(services.Bindings.Desktop.Keys) == 0:
+					t.Errorf("%s step %d: services is not bound from a pane in both consoles", file, i)
+				}
+				continue
+			}
 			if (step.Command == "") == (step.Gesture == "") {
 				t.Errorf("%s step %d names %q and %q; want a command or a gesture", file, i, step.Command, step.Gesture)
 				continue

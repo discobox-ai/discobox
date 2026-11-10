@@ -6,13 +6,25 @@
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use serde::Deserialize;
 
-use crate::{Side, State, on_key, poll, theme, view};
+use crate::backend::{Inbox, Mock, MockService, bundled_spec};
+use crate::{MenuKind, Side, State, on_key, poll, theme, view};
 
 #[derive(Deserialize)]
 struct Scenario {
     #[serde(default)]
     attach: bool,
+    /// What the first box declares, each with what it is doing and what its runs have written.
+    #[serde(default)]
+    services: Vec<ServiceDecl>,
     steps: Vec<Step>,
+}
+
+#[derive(Deserialize)]
+struct ServiceDecl {
+    id: String,
+    status: String,
+    #[serde(default)]
+    logs: String,
 }
 
 #[derive(Deserialize)]
@@ -21,6 +33,11 @@ struct Step {
     command: String,
     #[serde(default)]
     gesture: String,
+    /// A service step: the service, and its verb or its output, from the services menu.
+    #[serde(default)]
+    service: String,
+    #[serde(default)]
+    verb: String,
     expect: Expect,
 }
 
@@ -35,6 +52,8 @@ struct Expect {
     targets: Option<usize>,
     selected: Option<usize>,
     archived: Option<bool>,
+    services: Option<usize>,
+    output: Option<String>,
 }
 
 /// A spec shortcut as the key event this platform delivers for it.
@@ -89,7 +108,43 @@ fn snapshot(s: &State, want: &Expect) -> Expect {
         targets: want.targets.map(|_| s.list_targets().len()),
         selected: want.selected.map(|_| (0..s.rows().len()).filter(|&i| s.rows().get(i).is_some_and(|r| s.selected.contains(&r.r#box))).count()),
         archived: want.archived.map(|_| s.listing.filter.archived),
+        services: want.services.and(ws.map(|w| w.services().len())),
+        // What the pane with the keys shows, read as the step expects it: there, or not.
+        output: want.output.as_ref().and_then(|o| {
+            let shown = ws.and_then(|w| w.focused()).map(|i| ws.unwrap().panes[i].screen.text()).unwrap_or_default();
+            Some(if shown.contains(o.as_str()) { o.clone() } else { shown })
+        }),
     }
+}
+
+/// Moves an open menu's pick to the entry for `id` with its keys, and chooses it.
+fn choose_in_menu(rt: &mut Runtime<State>, id: &str, path: &std::path::Path, i: usize) {
+    let entries = rt.state.menu.as_ref().map(|m| m.entries.clone()).unwrap_or_else(|| panic!("{}: step {i}: no menu opened", path.display()));
+    let at = entries.iter().position(|a| a.command == id).unwrap_or_else(|| panic!("{}: step {i}: {id} is not on the menu", path.display()));
+    for _ in 0..entries.len() {
+        if rt.state.menu.as_ref().is_none_or(|m| m.picked == at) {
+            break;
+        }
+        rt.key(KeyEvent { key: Key::Down, mods: Mods::default() });
+        rt.frame(1.0 / 60.0);
+    }
+    assert_eq!(rt.state.menu.as_ref().map(|m| m.picked), Some(at), "{}: step {i}: the menu's keys did not reach {id}", path.display());
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(rt);
+}
+
+/// Runs a service step the desktop's way: the services command's shortcut, then the service in
+/// its menu, then the verb (or its output) in the service's.
+fn run_service_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path, i: usize) -> String {
+    let binding = rt.state.spec.command("services").and_then(|c| c.bindings.desktop.keys.first().cloned())
+        .expect("services has a desktop shortcut");
+    rt.key(press(&binding));
+    settle(rt);
+    assert!(matches!(rt.state.menu.as_ref().map(|m| &m.kind), Some(MenuKind::Services(..))), "{}: step {i}: the services menu did not open", path.display());
+    choose_in_menu(rt, &step.service, path, i);
+    assert!(matches!(rt.state.menu.as_ref().map(|m| &m.kind), Some(MenuKind::Service(..))), "{}: step {i}: {}'s menu did not open", path.display(), step.service);
+    choose_in_menu(rt, &step.verb, path, i);
+    format!("{binding} and the menus")
 }
 
 /// Runs one step the desktop's way: a command's or a gesture's shortcut from the spec; a box's
@@ -132,7 +187,10 @@ fn parity_scenarios() {
     for entry in std::fs::read_dir(dir).expect("the parity scenarios") {
         let path = entry.unwrap().path();
         let sc: Scenario = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let mut rt = Runtime::with_text(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
+        let inbox = Inbox::default();
+        let services = sc.services.iter().map(|v| MockService::new(&v.id, &v.status, &v.logs)).collect();
+        let state = State::with((Box::new(Mock::with_services(inbox.clone(), services)), bundled_spec(), inbox, false));
+        let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
         rt.poll = Some(poll);
         rt.on_key = Some(on_key);
         settle(&mut rt);
@@ -141,8 +199,8 @@ fn parity_scenarios() {
             settle(&mut rt);
         }
         for (i, step) in sc.steps.iter().enumerate() {
-            let how = run_step(&mut rt, step, &path, i);
-            let id = if step.gesture.is_empty() { &step.command } else { &step.gesture };
+            let how = if step.service.is_empty() { run_step(&mut rt, step, &path, i) } else { run_service_step(&mut rt, step, &path, i) };
+            let id = if !step.service.is_empty() { &format!("{} {}", step.verb, step.service) } else if step.gesture.is_empty() { &step.command } else { &step.gesture };
             assert_eq!(snapshot(&rt.state, &step.expect), step.expect, "{}: step {i} ({id} as {how})", path.display());
         }
         ran += 1;

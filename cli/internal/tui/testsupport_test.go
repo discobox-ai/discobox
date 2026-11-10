@@ -1212,6 +1212,20 @@ func (f *fakeSource) DoService(_ context.Context, verb console.ServiceVerb, sand
 		return f.serviceErr
 	}
 	f.serviceActs = append(f.serviceActs, fmt.Sprintf("%s %s %s", verb, sandboxID, serviceID))
+	// What the verb does to the service, as the next listing reads it: a
+	// start or restart is another run, a stop leaves it stopped on purpose.
+	for i, s := range f.services {
+		if s.ID != serviceID {
+			continue
+		}
+		switch {
+		case verb == console.ServiceStop:
+			f.services[i].Status, f.services[i].ExecID = "stopped", ""
+		case verb == console.ServiceRestart || !s.Live():
+			f.services[i].Status, f.services[i].ExecID = "running", "exec_"+serviceID
+			f.services[i].StartedAt = s.StartedAt.Add(time.Second)
+		}
+	}
 	return nil
 }
 
