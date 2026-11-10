@@ -535,39 +535,48 @@ func noDefaultSource(t *testing.T) *fakeSource {
 // create a moment later.
 func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, typeString("do the thing")...)
-	send(t, m, keyPress("enter"), keyPress("enter"))
+	synctest.Test(t, func(t *testing.T) {
+		ds := noDefaultSource(t)
+		d, m := drivenTestModel(t, ds)
+		send(t, m, typeString("do the thing")...)
+		d.key("enter")
+		d.key("enter")
 
-	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatal("a prompt with no harness and no default should ask for one")
-	}
-	if len(ds.runs) != 0 {
-		t.Fatalf("runs = %v, want the run held until the project has a harness", ds.runs)
-	}
-	// `shell` runs like any other harness but is not a coding harness, so it is
-	// not offered as the thing a project runs by default.
-	for _, item := range m.dialog.items {
-		if strings.EqualFold(item.label, "Shell") {
-			t.Fatalf("shell should not be offered as a project default: %v", m.dialog.items)
+		if m.dialog == nil || m.dialog.kind != dlgActions {
+			t.Fatal("a prompt with no harness and no default should ask for one")
 		}
-	}
+		if runs := ds.runRequests(); len(runs) != 0 {
+			t.Fatalf("runs = %v, want the run held until the project has a harness", runs)
+		}
+		// `shell` runs like any other harness but is not a coding harness, so it is
+		// not offered as the thing a project runs by default.
+		for _, item := range m.dialog.items {
+			if strings.EqualFold(item.label, "Shell") {
+				t.Fatalf("shell should not be offered as a project default: %v", m.dialog.items)
+			}
+		}
+		d.key("esc")
+	})
 }
 
 // Choosing a harness makes it the default outright.
 func TestChoosingAHarnessMakesItTheDefault(t *testing.T) {
 	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"), keyPress("enter"))
+	synctest.Test(t, func(t *testing.T) {
+		ds := noDefaultSource(t)
+		d, m := drivenTestModel(t, ds)
+		d.key("enter")
+		d.key("enter")
+		d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
-	// Claude is the first candidate.
-	send(t, m, keyPress("1"))
+		// Claude is the first candidate.
+		d.key("1")
 
-	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_claude" {
-		t.Fatalf("did = %v, want the chosen harness made default", ds.didHarness)
-	}
+		d.wait("the run", func() bool { return len(ds.runRequests()) == 1 })
+		if did := ds.harnessCalls(); len(did) != 1 || did[0] != "set default hc_claude" {
+			t.Fatalf("did = %v, want the chosen harness made default", did)
+		}
+	})
 }
 
 // A project with nothing but `shell` has nothing to offer, and says so rather
@@ -629,17 +638,20 @@ func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
 // the default and then submits the prompt that asked.
 func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("enter"), keyPress("1"))
+	synctest.Test(t, func(t *testing.T) {
+		ds := noDefaultSource(t)
+		d, m := drivenTestModel(t, ds)
+		send(t, m, typeString("fix the reaper")...)
+		d.key("enter")
+		d.key("enter")
+		d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+		d.key("1")
 
-	if len(ds.runs) != 1 {
-		t.Fatalf("runs = %v, want the interrupted run submitted once its harness was chosen", ds.runs)
-	}
-	if got := promptText(ds.runs[0]); got != "fix the reaper" {
-		t.Fatalf("prompt = %q, want the one that was waiting", got)
-	}
+		d.wait("the run", func() bool { return len(ds.runRequests()) == 1 })
+		if got := promptText(ds.runRequests()[0]); got != "fix the reaper" {
+			t.Fatalf("prompt = %q, want the one that was waiting", got)
+		}
+	})
 }
 
 // The header offers F3 and F4 from everywhere, so each key has to work from

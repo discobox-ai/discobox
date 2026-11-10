@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 13,
+  "x-protocol": 14,
   "x-specVersion": 6,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -2848,7 +2848,7 @@
       ]
     },
     "Question": {
-      "description": "Question is what a running command asks (console.Question). With Choices it is a pick of one; with none, a yes or no answered \"yes\" or \"no\".\n\nSubject is what it is about, on a line of its own above the body.",
+      "description": "Question is what a running command asks (console.Question). With Choices it is a pick of one; with none, a yes or no answered \"yes\" or \"no\".\n\nSubject is what it is about, on a line of its own above the body. Count is what the count of a directory the answer turns on says so far (console.Question.Measure, console.DirectoryTotal.Said), drawn under the body: the question is sent again, with the same ID, each time it changes, and the app updates the question it is showing rather than asking another.",
       "type": "object",
       "properties": {
         "id": {
@@ -2876,6 +2876,9 @@
         },
         "defaultNo": {
           "type": "boolean"
+        },
+        "count": {
+          "type": "string"
         }
       },
       "required": [

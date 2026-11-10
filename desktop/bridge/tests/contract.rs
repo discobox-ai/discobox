@@ -721,6 +721,25 @@ fn a_dropped_folder_is_the_next_source() {
     assert!(!composer.chips.is_empty());
 }
 
+// The copy question's count comes as the same question sent again, by its ID, each time it
+// climbs, until it is final; the question is answered once, by that ID.
+#[test]
+fn a_question_sent_again_carries_its_count() {
+    let mut cli = Cli::start("copy");
+    let id = cli.command("new", &[], Context::default(), Args::default());
+    let form = cli.expect(Type::Form).form.unwrap();
+    cli.submit(form.id, &[], false, false);
+    let q = cli.expect(Type::Question).question.unwrap();
+    assert_eq!((q.command, q.subject.as_str(), q.count.as_str()), (id, "/work/notes", "calculating…"));
+    for count in ["5.0 MiB in 3 files, still counting…", "7.0 MiB in 4 files"] {
+        let again = cli.expect(Type::Question).question.unwrap();
+        assert_eq!((again.id, again.count.as_str()), (q.id, count));
+    }
+    cli.answer(q.id, "false", false);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "made"));
+}
+
 #[test]
 fn a_cli_exiting_mid_command_closes_the_client() {
     let mut cli = Cli::start("default");

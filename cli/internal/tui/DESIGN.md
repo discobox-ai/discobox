@@ -1784,32 +1784,33 @@ streaming a terminal of its own.
   rather than waiting for the listing — which is still read, since the header
   and the workspace's keys take the discobox back off it (`currentBox`).
 - A run is *not* started from `Init`. It waits for the harness listing
-  (`harnessesLoaded` → `startPendingRun`), because the questions the window asks
-  ahead of a create — a project with no default harness, a harness that has
-  never been set up — are asked off that listing; started before it arrived, the
-  run would meet the server's refusal instead of the question. From there it is
-  `runRequest`, the same path Enter in the prompt takes, so the question about
+  (`harnessesLoaded` → `startPendingRun`), because the question a create asks
+  of a project with no default harness is asked off that listing; started
+  before it arrived, the run would meet the server's refusal instead of the
+  question. From there it is
+  `create`, the same path Enter in the prompt takes, so the question about
   uncommitted work and the wait are the window's own, whoever asked for the run.
 - Such a window never shows the list. The wait has the screen from the first
   frame (`Model.waitDialog`, `creatingTitle`) and stays up through the create,
   becoming the wait on the discobox itself once there is one to name.
 - A run that ends short of a workspace ends the window (`Model.runFailed`): a
   create that fails, or one the server took and the window could not finish;
-  a working tree that cannot be read; a harness that cannot run, or whose
-  setup or default fails on the run's way through it. The failure is the
+  a working tree that cannot be read; a default harness that cannot be set on
+  the run's way through it. The failure is the
   command's error, reported on the terminal once the window has gone; a
   discobox the server took is still handed back (`Model.made`), since
-  `DataSource.Run` returns it beside a later failure. Turning down one of the
-  run's harness questions, or leaving the setup it stopped for unfinished,
-  ends it as turning down its create card does, with `errNothingCreated`
-  (`leavesTheRun`). A question asked over the wait — the Git credentials one —
+  `DataSource.Run` returns it beside a later failure. Turning down a question
+  the create asked that turns it down (the harness, the copy) ends it as
+  turning down its create card does, with `errNothingCreated` (`created`). A
+  question asked over the wait — the create's own, the Git credentials one —
   goes back to it when answered (`dialog.back`), by key or click alike. The console's own runs
   keep the list they were started from and report on the status line there.
 - Leaving that wait leaves the window (`onCancel` → `Model.exit`), because
-  there is no list behind it to stop watching *from*. The discobox is not
-  touched: it was created before the wait went up, or is being created by a
-  request the server already has, and it carries on coming up with nothing
-  attached to it. The console has no wait: its create is watched in the
+  there is no list behind it to stop watching *from*. Before the create is
+  sent (`createWatch.sending`) it is still reading the tree and asking, so
+  leaving ends the run with nothing created (`errNothingCreated`), and the
+  wait says so. Once it is sent the discobox is not touched: the request is
+  the server's, and it carries on coming up with nothing attached to it. The console has no wait: its create is watched in the
   discobox's opening workspace (`watchCreate`), and walking off that is the
   "stop watching" — the attach that was opening goes with it, so the
   discobox coming up does not take the screen back.
@@ -3233,14 +3234,33 @@ the choices: running without a coding harness is the `shell` harness (ADR 0043),
 one of the project's like any other, so a second way to say it would be a second
 thing to keep true.
 
-Submitting a prompt in a project with no default and nothing chosen stops the
-run and asks which harness the project should run (`askForADefaultHarness`).
-The server refuses that create outright (ADR 0048), so the alternative is the
-same refusal a moment later with the answer left to the user to find — and this
-is the only point that knows what the project has to offer. A harness that
-already works becomes the default outright; one that does not is set up first
-and made the default when that succeeds, because a setup that left the project
-still without one would ask the same question on the next prompt.
+**The questions a create asks before it is sent are the core's**
+(`console.Create`, [console](../console/DESIGN.md#creating-a-box)): which
+harness a project with no default runs, then what of the working tree it
+carries, in that order, each followed by what its answer means. `Model.create`
+runs it on the create's narration, and its questions arrive as any running
+command's do (`ask`, `questionDialog`), so the window asks them in the order
+the desktop app does and decides none of what follows them. What is the
+window's is the drawing: a pick of one between a yes and a no (each choice's
+`Means`, the working tree's questions) is two descriptive rows pressed `y` and
+`n`; any other pick's first nine choices are pressed by their place, 1 to 9; a question naming a directory to count (`Question.Measure`) has the
+count written into it as it climbs (`measureFor`, `directorySized`). Leaving a
+question the create treats as turning it down ends it with
+`console.ErrTurnedDown` and nothing made: the launcher goes back to its list,
+and a window that is one run's own exits with `errNothingCreated` (`created`).
+A create's questions are its own whatever has taken the busy line since
+(`narration.create`), until it is sent: what delivering the source asks after
+that (Git's credential consent) is declined on a stale feed like any other's.
+In a window that is one run's own, leaving the wait
+before the create is sent (`Narration.Sending`, `createWatch.sending`) ends the
+run with nothing created, while after it the create carries on without the
+window.
+
+A project with no default and nothing chosen is asked which harness it should
+run. The server refuses that create outright (ADR 0048), so the alternative is
+the same refusal a moment later with the answer left to the user to find. The
+harness chosen becomes the default, said as a step of the create, and the
+harness rows are read again when the create is done (`Created.Defaulted`).
 
 `shell` is not among those choices. It runs like any other harness and is chosen
 like any other, but a project whose default is a login shell has no coding
@@ -3249,38 +3269,27 @@ apart by `harness.ShellSlug`, the reserved name, rather than by a literal of the
 console's own. A project holding nothing else says so instead of opening a menu
 with no choices on it.
 
-Both questions interrupt a run, so answering one runs it. The request travels
-with the choice and comes back as `resumeRunMsg` once everything it was waiting
-for has happened — the setup, then the default. It resumes at `startRun`, past
-the questions rather than at the top of `run`: they have been answered, and the
-listing has not necessarily caught up, so re-asking would ask the same one
-twice. A setup that fails resumes nothing; the harness still cannot carry the
-run, and the reason has just been reported.
-
 None of this fires before the listing has landed: an empty listing and one still
 in flight look the same and mean opposite things, so a prompt is never refused
 on the strength of what has not arrived.
 
-**What a create carries in is asked before it is made** (`DataSource.Workspace`,
-`workspaceChecked`). Enter first reads what the source directory would carry. A
-repository with uncommitted changes asks whether to include them as a snapshot,
-naming a few of the paths; a directory that is not a repository asks whether to
-copy it in at all (`askToCopyDirectory`), with the size counted while the
-question is up (`DataSource.MeasureDirectory`) rather than before it, because
-walking a home directory takes long enough that waiting for the number would be
-the thing the question exists to avoid. Both are `includeDirtyDialog`. Esc on
-the copy question cancels creation: the console returns to its prompt and a
-one-command run window exits with nothing created (`leavesTheRun`). Answering
-`n` still creates an empty discobox. Esc on the dirty-work question means no,
-keeping the committed history. They answer different fields and lead differently.
-The dirty question's answer is `IncludeDirty`,
-with excluding first, so Enter keeps the committed history. The copy
-question's is `CopyDirectory`, with copying first: there is no commit to start
-from instead, and the size is the reason to ask. A run `discobox run` opened
-has already answered `IncludeDirty`, so only the copy question is still asked
-(`startRun`). A repository with no commits yet is asked neither — its files go
-in whatever is answered — and `Workspace` reports it as carrying nothing to ask
-about.
+**What a create carries in is asked before it is made** (`console.Create`
+reads `DataSource.Workspace`). A repository with uncommitted changes asks
+whether to include them as a snapshot, naming a few of the paths; a directory
+that is not a repository asks whether to copy it in at all, with the size
+counted while the question is up (`DataSource.MeasureDirectory`) rather than
+before it, because walking a home directory takes long enough that waiting for
+the number would be the thing the question exists to avoid. Esc on the copy
+question cancels creation: the console returns to its prompt and a
+one-command run window exits with nothing created. Answering `n` still creates
+an empty discobox. Esc on the dirty-work question, and `q` with it (a
+waited-on card's), means no, keeping the committed history. The dirty question's answer is `IncludeDirty`, with
+excluding first, so Enter keeps the committed history. The copy question's is
+`CopyDirectory`, with copying first: there is no commit to start from instead,
+and the size is the reason to ask. A run `discobox run` opened has already
+answered `IncludeDirty`, so only the copy question is still asked. A
+repository with no commits yet is asked neither, and `Workspace` reports it as
+carrying nothing to ask about.
 
 **Focus is a ladder, and its ends stop.** Prompt, discoboxes, filter, bottom
 to top, and the arrows climb it one rung at a time: Up off the top of the list

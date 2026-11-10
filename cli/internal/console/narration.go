@@ -35,6 +35,12 @@ type Question struct {
 	// the body: the directory a create would carry.
 	Subject string
 	Body    string
+	// Measure is a directory whose size the answer turns on: the console
+	// counts it while the question is up (DataSource.MeasureDirectory) and
+	// says the count as it climbs, since waiting for the number before asking
+	// would be the wait the question exists to avoid. Only the copy question
+	// has one.
+	Measure string
 	// Choices are the answers to pick from, by Key.
 	Choices []Choice
 	// DefaultNo is a yes or no whose quick answer is no: a destruction
@@ -58,6 +64,10 @@ type Event struct {
 	// Progress is a step or a warning. A frontend that falls behind loses
 	// steps, never the other events.
 	Progress *Progress
+	// Sending is a create past its questions (Create), on its way to the
+	// server: nothing the create asks from here is the create's own, and a
+	// frontend that leaves it now leaves it to go on.
+	Sending bool
 	// Accepted is the box a create made, the moment the server took it:
 	// from then on it exists whatever the rest of the run does.
 	Accepted *Sandbox
@@ -182,6 +192,19 @@ func (n *Narration) progress(p Progress) {
 	select {
 	case n.events <- Event{Progress: &p}:
 	default:
+	}
+}
+
+// Sending says a create has asked all it asks (Create) and is being sent. It
+// waits for room, as Accept does: what follows from it — the frontend's wait
+// leaving the create to go on — is not a status line.
+func (n *Narration) Sending(ctx context.Context) {
+	if n == nil {
+		return
+	}
+	select {
+	case n.events <- Event{Sending: true}:
+	case <-ctx.Done():
 	}
 }
 

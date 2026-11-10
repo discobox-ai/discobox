@@ -96,6 +96,9 @@ pub struct Sheets {
     pub queue: Vec<Sheet>,
     /// What a field reads from in a frame drawn after its sheet went.
     spare: TextEdit,
+    /// The questions last answered or dismissed: one sent again as its count climbs
+    /// (`Question::count`) can cross its answer on the pipe, and is moot.
+    answered: Vec<u64>,
 }
 
 impl Sheets {
@@ -163,7 +166,22 @@ impl Sheets {
     pub fn went_on(&mut self, command: u64) {
         self.queue.retain(|s| !matches!(s, Sheet::Form(f) if f.command == command && f.sent));
     }
+
+    /// Takes the sheet on top away, keeping a question's ID among those answered.
+    fn take_top(&mut self) -> Sheet {
+        let top = self.queue.remove(0);
+        if let Sheet::Question(q) = &top {
+            if self.answered.len() == ANSWERED_KEPT {
+                self.answered.remove(0);
+            }
+            self.answered.push(q.question.id);
+        }
+        top
+    }
 }
+
+/// How many answered questions are remembered: a resend crosses only the answer just sent.
+const ANSWERED_KEPT: usize = 16;
 
 /// The key of a field's row in the sheet, which scrolling reveals.
 fn row_key(field: &str) -> String { format!("sheet-row-{field}") }
@@ -305,8 +323,20 @@ pub fn take_errors(s: &mut State, refused: FieldErrors) {
 }
 
 /// A question from the core, on the yes when it has one — or on the no, for a destruction that
-/// has to be chosen.
+/// has to be chosen. One sent again is the question asked, with its directory counted further
+/// (`count`): it is updated where it is, the pick kept; one already answered is moot.
 pub fn take_question(s: &mut State, question: Question) {
+    if s.sheets.answered.contains(&question.id) {
+        return;
+    }
+    let asked = s.sheets.queue.iter_mut().find_map(|sh| match sh {
+        Sheet::Question(q) if q.question.id == question.id => Some(q),
+        _ => None,
+    });
+    if let Some(q) = asked {
+        q.question = question;
+        return;
+    }
     s.close_overlays();
     s.sheets.went_on(question.command);
     let picked = usize::from(question.choices.is_empty() && question.default_no);
@@ -412,7 +442,7 @@ pub fn dismiss(s: &mut State) {
     if s.sheets.queue.is_empty() {
         return;
     }
-    let out = dismissal(&s.sheets.queue.remove(0));
+    let out = dismissal(&s.sheets.take_top());
     s.backend.send(out);
 }
 
@@ -430,7 +460,7 @@ pub fn dismissal(sheet: &Sheet) -> Out {
 fn answer(s: &mut State, key: String) {
     let Some(Sheet::Question(q)) = s.sheets.queue.first() else { return };
     let question = q.question.id;
-    s.sheets.queue.remove(0);
+    s.sheets.take_top();
     s.backend.send(Out::Answer(Answer { question, key, ..Default::default() }));
 }
 
@@ -681,6 +711,11 @@ fn question_view(q: &QuestionSheet) -> El {
     }
     if !x.body.is_empty() {
         body = body.child(text(x.body.clone()).font(theme::UI).color(theme::grey()).wrap().w_full());
+    }
+    // What the answer turns on, as counted so far, in the core's words: the directory a copy
+    // would carry.
+    if !x.count.is_empty() {
+        body = body.child(text(x.count.clone()).key("sheet-count").font(theme::UI_BOLD).color(theme::text()).wrap().w_full());
     }
     if x.choices.is_empty() {
         // A yes or no, worded as the core asks it; a destruction (`defaultNo`) is never the

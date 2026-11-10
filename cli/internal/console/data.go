@@ -3,6 +3,7 @@ package console
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -1365,6 +1366,52 @@ type DirectoryTotal struct {
 	Bytes int64
 	Files int64
 	Done  bool
+}
+
+// MeasureEvery is how often a console reads a directory's count again while
+// the question it is for is up: often enough that the number is seen
+// climbing, and no more than that.
+const MeasureEvery = 200 * time.Millisecond
+
+// Said is how a question says the count as it stands: nothing counted yet
+// says so rather than reporting a zero that is about to be wrong, a count
+// still climbing says that too, and only the final one is stated as fact.
+func (t DirectoryTotal) Said() string {
+	if t.Files == 0 && !t.Done {
+		return "calculating…"
+	}
+	said := fmt.Sprintf("%s in %s", Bytes(t.Bytes), count(int(t.Files), "file", "files"))
+	if !t.Done {
+		said += ", still counting…"
+	}
+	return said
+}
+
+// ScaleBytes reduces a byte count to a value and the binary unit it is written
+// in (0 bytes, 1 KiB, … 4 TiB), so every spelling of a size — Bytes, and a
+// renderer's shorter ones — is the same number in the same unit.
+func ScaleBytes(n int64) (float64, int) {
+	const unit = 1024
+	value, exp := float64(n), 0
+	for value >= unit && exp < 4 {
+		value /= unit
+		exp++
+	}
+	return value, exp
+}
+
+// Bytes writes a byte count the way df -h does, in binary units, with one
+// decimal place below 10 so "1.2 GiB" and "15 GiB" both fit the same column.
+func Bytes(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	value, exp := ScaleBytes(n)
+	suffix := [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exp]
+	if value < 10 {
+		return fmt.Sprintf("%.1f %s", value, suffix)
+	}
+	return fmt.Sprintf("%.0f %s", value, suffix)
 }
 
 // Verb is a lifecycle action that runs against the API and returns: no terminal

@@ -279,3 +279,43 @@ func TestQOnACardNobodyWaitsOnDoesNotAnswerIt(t *testing.T) {
 		t.Fatal("q answered a card nobody waits on")
 	}
 }
+
+// A create's question is asked even once another operation has taken the busy
+// line: the window has not moved on from a create that waits, and declining
+// its question would answer it (leaving the uncommitted changes out) without
+// anybody having seen it.
+func TestACreatesQuestionIsAskedWhateverHasTheBusyLine(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	feed, _ := m.narrate()
+	feed.create = &createWatch{}
+	msg, keys, errs := asked(t, feed, gitQuestion)
+	m.endNarration()
+	m.narrated(msg)
+	if m.dialog == nil || m.dialog.title != "Git credentials" {
+		t.Fatalf("dialog = %s, want the create's question asked", describe(m.dialog))
+	}
+	m.dialog.action("push")
+	if key, err := <-keys, <-errs; key != "push" || err != nil {
+		t.Fatalf("answered %q, %v; want push", key, err)
+	}
+}
+
+// Once a create is being sent, what its feed asks — Git's credential consent,
+// delivering the source — is consent, not the create's question: from a feed
+// the window has moved on from it is declined, never put up over whatever the
+// person is typing into now.
+func TestACreatesConsentOnceSentIsDeclinedWhenStale(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	feed, _ := m.narrate()
+	feed.create = &createWatch{}
+	m.createSent(feed.create)
+	msg, keys, errs := asked(t, feed, gitQuestion)
+	m.endNarration()
+	m.narrated(msg)
+	if m.dialog != nil && m.dialog.title == "Git credentials" {
+		t.Fatal("a sent create's consent was asked from a stale feed")
+	}
+	if key, err := <-keys, <-errs; key != "" || !errors.Is(err, context.Canceled) {
+		t.Fatalf("answered %q, %v; want it declined", key, err)
+	}
+}

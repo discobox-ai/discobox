@@ -85,8 +85,9 @@
   the bridge holds, which another command can rebuild while the sheet is up
   (another server's harnesses): a place then names another harness.
   `RunAnswer.Chosen` is values, found again as the rows are taken.
-- **A create's question order is still written twice** (the TUI's `Model`
-  and the bridge's `NewBox`) until #917 moves it into one core flow both answer
-  through `Narration`. Until then a change to it changes both, and its rules
-  (`DefaultHarnessQuestion`, `AskAboutWorkspace`, `WorkspaceChecked`) are
-  called by both, never restated.
+- **What a create asks, and in what order, is `Create`'s alone.** The order
+  was once written twice (the TUI's `Model` and the bridge's `NewBox`), and
+  the desktop's copy question had no size. A console calls `Create` and
+  answers its questions through the narration; it never asks one of them
+  itself, decides what an answer leads to, or reads a question's keys for
+  meaning (`Choice.Means` says which choice is a yes or a no).

@@ -32,6 +32,10 @@ type narration struct {
 	// accepted is what a create's acceptance becomes in this window
 	// (promptSpentMsg); nil on every other feed.
 	accepted func(console.Sandbox) tea.Msg
+	// create is the create this feed narrates (Model.create), nil on every
+	// other feed. Until it is sending, its questions are the create's own,
+	// asked whatever owns the busy line since (ask).
+	create *createWatch
 }
 
 // narrationMsg is one event from a narrated operation.
@@ -85,6 +89,13 @@ func (m *Model) narrated(msg narrationMsg) tea.Cmd {
 			return next
 		}
 		return tea.Batch(m.editInTerminal(event.Editing), next)
+	case event.Sending:
+		// Marked here, as the event is read, so whatever the feed says next —
+		// a question delivering the source asks — is read after it.
+		if msg.source.create != nil {
+			m.createSent(msg.source.create)
+		}
+		return next
 	case event.Accepted != nil:
 		// Whoever owns the busy line now, the create was taken: what follows
 		// from that is not a status line.

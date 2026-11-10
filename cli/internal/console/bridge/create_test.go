@@ -170,6 +170,49 @@ func TestNewAsksAboutTheWorkingTree(t *testing.T) {
 	}
 }
 
+// The copy question says how big the directory is as it is counted: asked at
+// once with nothing counted, then sent again, the same question, as the count
+// climbs and once it is final. The walk stops with the answer.
+func TestNewSaysTheCopysSizeAsItIsCounted(t *testing.T) {
+	core := withHarnesses(newFakeCore("home"))
+	core.workspace = console.SourceWorkspace{Directory: "/tmp/x", Carries: true}
+	a := dial(t, core)
+	a.hello()
+	id := a.command(Command{Command: "new"})
+	form := a.expect(TypeForm).Form
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{}}})
+	q := a.expect(TypeQuestion).Question
+	if q.Count != "calculating…" || q.Subject != "/tmp/x" {
+		t.Fatalf("the copy question asked %+v, want nothing counted yet", q)
+	}
+
+	core.mu.Lock()
+	core.total = console.DirectoryTotal{Bytes: 5 << 20, Files: 3}
+	core.mu.Unlock()
+	again := a.expect(TypeQuestion).Question
+	if again.ID != q.ID || again.Count != "5.0 MiB in 3 files, still counting…" {
+		t.Fatalf("sent again %+v, want the same question with the running count", again)
+	}
+	core.mu.Lock()
+	core.total = console.DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true}
+	core.mu.Unlock()
+	final := a.expect(TypeQuestion).Question
+	if final.ID != q.ID || final.Count != "7.0 MiB in 4 files" {
+		t.Fatalf("sent again %+v, want the final count", final)
+	}
+	a.quiet(3 * console.MeasureEvery)
+
+	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: "true"}})
+	if r := a.result(id); r.Status != StatusEnter || core.ranWith().CopyDirectory != "true" {
+		t.Fatalf("result %+v, ran %+v", r, core.ranWith())
+	}
+	core.mu.Lock()
+	defer core.mu.Unlock()
+	if len(core.measured) != 1 || core.measured[0] != "/tmp/x" || core.walksStopped != 1 {
+		t.Fatalf("measured %v, stopped %d: want the directory counted once and the walk stopped", core.measured, core.walksStopped)
+	}
+}
+
 // A project with no default harness is asked which to make it, and the
 // create goes on with it.
 func TestNewAsksForADefaultHarness(t *testing.T) {

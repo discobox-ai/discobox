@@ -1,7 +1,9 @@
 package console
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -174,20 +176,20 @@ func TestApplyingAnAnswerSetsItsRows(t *testing.T) {
 func TestTheDefaultHarnessQuestion(t *testing.T) {
 	t.Parallel()
 	harnesses := []Harness{{ID: "s", Name: "shell", Slug: "shell", Shell: true}, {ID: "c", Name: "codex", Slug: "codex"}}
-	q, ask, err := DefaultHarnessQuestion(RunRequest{}, harnesses, true)
+	q, ask, err := defaultHarnessQuestion(RunRequest{}, harnesses, true)
 	if err != nil || !ask || len(q.Choices) != 1 {
 		t.Fatalf("question = %+v, ask %v, err %v", q, ask, err)
 	}
-	if h, ok := ChosenHarness(harnesses, q.Choices[0].Key); !ok || h.ID != "c" {
+	if h, ok := chosenHarness(harnesses, q.Choices[0].Key); !ok || h.ID != "c" {
 		t.Fatalf("chosen = %+v", h)
 	}
-	if _, ask, _ := DefaultHarnessQuestion(RunRequest{Harness: "codex"}, harnesses, true); ask {
+	if _, ask, _ := defaultHarnessQuestion(RunRequest{Harness: "codex"}, harnesses, true); ask {
 		t.Fatal("a create that names a harness was asked for one")
 	}
-	if _, ask, _ := DefaultHarnessQuestion(RunRequest{}, harnesses, false); ask {
+	if _, ask, _ := defaultHarnessQuestion(RunRequest{}, harnesses, false); ask {
 		t.Fatal("asked before the harnesses were listed")
 	}
-	if _, _, err := DefaultHarnessQuestion(RunRequest{}, harnesses[:1], true); !errors.Is(err, ErrNoHarness) {
+	if _, _, err := defaultHarnessQuestion(RunRequest{}, harnesses[:1], true); !errors.Is(err, ErrNoHarness) {
 		t.Fatalf("err = %v, want ErrNoHarness", err)
 	}
 }
@@ -197,17 +199,17 @@ func TestTheDefaultHarnessQuestion(t *testing.T) {
 func TestTheWorkspaceQuestion(t *testing.T) {
 	t.Parallel()
 	ws := SourceWorkspace{Directory: "/src/app", Repository: true, Carries: true, Changes: []string{"a", "b", "c", "d"}}
-	q, ask := AskAboutWorkspace(RunRequest{}, ws)
+	q, ask := askAboutWorkspace(RunRequest{}, ws)
 	if !ask || !q.Repository || q.Subject != "/src/app" || !strings.Contains(q.Body, "4 uncommitted changes (a, b, c and 1 more)") {
 		t.Fatalf("question = %+v", q)
 	}
 	if key, ok := q.Dismissed(); !ok || q.Answer(RunRequest{}, key).IncludeDirty != "false" {
 		t.Fatalf("dismissed = %q %v", key, ok)
 	}
-	if _, ask := AskAboutWorkspace(RunRequest{IncludeDirty: "true"}, ws); ask {
+	if _, ask := askAboutWorkspace(RunRequest{IncludeDirty: "true"}, ws); ask {
 		t.Fatal("asked again what the request answered")
 	}
-	copyQ, ask := AskAboutWorkspace(RunRequest{}, SourceWorkspace{Directory: "/tmp/x", Carries: true})
+	copyQ, ask := askAboutWorkspace(RunRequest{}, SourceWorkspace{Directory: "/tmp/x", Carries: true})
 	if !ask || copyQ.Repository || copyQ.Choices[0].Key != "true" {
 		t.Fatalf("copy question = %+v", copyQ)
 	}
@@ -217,7 +219,7 @@ func TestTheWorkspaceQuestion(t *testing.T) {
 	if copyQ.Answer(RunRequest{}, "false").CopyDirectory != "false" {
 		t.Fatal("the copy question's answer is not CopyDirectory")
 	}
-	if _, ask := AskAboutWorkspace(RunRequest{}, SourceWorkspace{Repository: true}); ask {
+	if _, ask := askAboutWorkspace(RunRequest{}, SourceWorkspace{Repository: true}); ask {
 		t.Fatal("a clean tree asks")
 	}
 }
@@ -242,5 +244,141 @@ func TestAnAnswerSurvivesTheRowsBeingRebuilt(t *testing.T) {
 	req := o.Request("", o.Opts[OptSource].Selected())
 	if req.Harness != "codex" || !req.NoSource {
 		t.Fatalf("request = %+v, want codex with no source", req)
+	}
+}
+
+// creating is a DataSource for Create: the harnesses listed, the working
+// tree read, and what was asked of it, in order.
+type creating struct {
+	DataSource
+	harnesses []Harness
+	workspace SourceWorkspace
+	calls     []string
+}
+
+func (c *creating) Harnesses(context.Context, string) ([]Harness, error) { return c.harnesses, nil }
+
+func (c *creating) DoHarness(_ context.Context, server string, verb HarnessVerb, id string) error {
+	c.calls = append(c.calls, fmt.Sprintf("%s %s on %q", verb, id, server))
+	for i := range c.harnesses {
+		c.harnesses[i].Default = c.harnesses[i].ID == id
+	}
+	return nil
+}
+
+func (c *creating) Workspace(context.Context, string) (SourceWorkspace, error) {
+	c.calls = append(c.calls, "workspace")
+	return c.workspace, nil
+}
+
+func (c *creating) Run(_ context.Context, req RunRequest, _ *Narration) (Sandbox, error) {
+	c.calls = append(c.calls, fmt.Sprintf("run harness=%q dirty=%q copy=%q", req.Harness, req.IncludeDirty, req.CopyDirectory))
+	return Sandbox{ID: "sbx_1"}, nil
+}
+
+// answering reads a create's narration, answering each question with the
+// next of keys ("" declines it, as leaving it does), and returns the titles
+// asked and the steps said.
+func answering(n *Narration, keys ...string) (asked, steps *[]string, done chan struct{}) {
+	asked, steps, done = &[]string{}, &[]string{}, make(chan struct{})
+	go func() {
+		defer close(done)
+		for e := range n.Events() {
+			switch {
+			case e.Asking != nil:
+				*asked = append(*asked, e.Asking.Title)
+				if len(keys) == 0 || keys[0] == "" {
+					e.Asking.Decline(context.Canceled)
+				} else {
+					e.Asking.Answer(keys[0])
+				}
+				if len(keys) > 0 {
+					keys = keys[1:]
+				}
+			case e.Progress != nil:
+				*steps = append(*steps, e.Progress.Text)
+			}
+		}
+	}()
+	return asked, steps, done
+}
+
+// A create asks which harness first, makes it the default on the server the
+// create goes to, then reads the working tree and asks about it, and creates
+// with both answers; leaving the repository's question starts from the last
+// commit, leaving the harness or the copy question creates nothing.
+func TestCreateAsksItsQuestionsInOrder(t *testing.T) {
+	t.Parallel()
+	listed := func() []Harness {
+		return []Harness{{ID: "s", Name: "shell", Slug: "shell", Shell: true}, {ID: "c", Name: "codex", Slug: "codex"}}
+	}
+	dirty := SourceWorkspace{Directory: "/src/app", Repository: true, Carries: true, Changes: []string{"a.go"}}
+	copying := SourceWorkspace{Directory: "/tmp/x", Carries: true}
+	for _, tc := range []struct {
+		name      string
+		workspace SourceWorkspace
+		keys      []string
+		asked     []string
+		calls     []string
+		defaulted bool
+		err       error
+	}{
+		{"both answered", dirty, []string{"1", "true"},
+			[]string{"Which harness should this project run?", "Uncommitted changes"},
+			[]string{`set default c on "west"`, "workspace", `run harness="" dirty="true" copy=""`}, true, nil},
+		{"the repository's left", dirty, []string{"1", ""},
+			[]string{"Which harness should this project run?", "Uncommitted changes"},
+			[]string{`set default c on "west"`, "workspace", `run harness="" dirty="false" copy=""`}, true, nil},
+		{"the harness left", dirty, []string{""},
+			[]string{"Which harness should this project run?"}, nil, false, ErrTurnedDown},
+		{"the copy left", copying, []string{"1", ""},
+			[]string{"Which harness should this project run?", "Copy this directory?"},
+			[]string{`set default c on "west"`, "workspace"}, true, ErrTurnedDown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := &creating{harnesses: listed(), workspace: tc.workspace}
+			n := NewNarration()
+			asked, steps, done := answering(n, tc.keys...)
+			made, err := Create(t.Context(), ds, CreateRun{Server: "west", Harnesses: listed(), Listed: true}, n)
+			n.Close()
+			<-done
+			if !errors.Is(err, tc.err) || made.Defaulted != tc.defaulted {
+				t.Fatalf("made %+v, err %v; want defaulted %v, err %v", made, err, tc.defaulted, tc.err)
+			}
+			if !slices.Equal(*asked, tc.asked) {
+				t.Fatalf("asked %q, want %q", *asked, tc.asked)
+			}
+			if !slices.Equal(ds.calls, tc.calls) {
+				t.Fatalf("calls %q, want %q", ds.calls, tc.calls)
+			}
+			if tc.err == nil && (made.Box.ID != "sbx_1" || !slices.Contains(*steps, "creating the discobox")) {
+				t.Fatalf("made %+v, steps %q", made, *steps)
+			}
+		})
+	}
+}
+
+// A create that names its harness, or whose working tree carries nothing,
+// asks nothing; the copy question names the directory to count, and its
+// choices, like the repository's, are its yes and its no.
+func TestCreateAsksOnlyWhatIsOpen(t *testing.T) {
+	t.Parallel()
+	ds := &creating{workspace: SourceWorkspace{Directory: "/src/app", Repository: true}}
+	n := NewNarration()
+	asked, _, done := answering(n)
+	_, err := Create(t.Context(), ds, CreateRun{Request: RunRequest{Harness: "codex"}, Listed: true}, n)
+	n.Close()
+	<-done
+	if err != nil || len(*asked) != 0 {
+		t.Fatalf("err %v, asked %q: want nothing asked", err, *asked)
+	}
+
+	copyQ, _ := askAboutWorkspace(RunRequest{}, SourceWorkspace{Directory: "/tmp/x", Carries: true})
+	if copyQ.Measure != "/tmp/x" || copyQ.Choices[0].Means != AnswerYes || copyQ.Choices[1].Means != AnswerNo {
+		t.Fatalf("copy question = %+v", copyQ)
+	}
+	dirtyQ, _ := askAboutWorkspace(RunRequest{}, SourceWorkspace{Directory: "/src/app", Repository: true, Carries: true})
+	if dirtyQ.Measure != "" || dirtyQ.Choices[0].Means != AnswerNo || dirtyQ.Choices[1].Means != AnswerYes {
+		t.Fatalf("dirty question = %+v", dirtyQ)
 	}
 }

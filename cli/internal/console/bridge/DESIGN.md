@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 13; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 14; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -112,8 +112,8 @@ listing's sources, the folder and server the app's list is on, that server's
 harnesses and pools, as `new` and `options` start. `options` fills
 `OptionsForm` and keeps the answer. `new` fills `CreateForm` for the prompt in
 `Args`, cuts from the source answered (where the next opens,
-`SaveLastSource`), asks the core's questions (`DefaultHarnessQuestion`,
-`AskAboutWorkspace`), then runs the create narrated: its steps as progress,
+`SaveLastSource`), then runs the core's create (`console.Create`) narrated: the
+questions it asks as questions, its steps as progress,
 the box as `accepted` the moment the server takes it, and `enter` with the box
 — or `done` for one left detached. The composer topic is the options'
 `Summary`, read as it is subscribed, and sent again as they change. They are
@@ -153,7 +153,10 @@ the answers the person changed, merged onto the form's opening; a refusal is
 recomputed). A form submitted is done once its command sends anything else —
 a question, another form, a step — and the app takes the form down then, so a
 command never reports while its form is still up: it reports once `fill` has
-returned. Each question and form has its own ID, so one command waits on
+returned. A question naming a directory to count (`console.Question.Measure`)
+is counted while it is up and sent again with its ID and its `count`
+(`console.DirectoryTotal.Said`) as it climbs, until it is final or answered; the app updates the question it
+shows, and drops one already answered. Each question and form has its own ID, so one command waits on
 its answer while others run. What is submitted to a form is kept in order
 (`mailbox`): the pipe's reader never waits on a command, and drops nothing.
 

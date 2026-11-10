@@ -472,7 +472,6 @@ type Model struct {
 	copySize   func() console.DirectoryTotal
 	copyStop   func()
 	copyDialog *dialog
-	copyDir    string
 }
 
 // Option configures the window at construction.
@@ -839,14 +838,6 @@ type statusMsg struct {
 	err  bool
 }
 
-// workspaceCheckedMsg answers what the source directory
-// would carry into the discobox, and so what there is to ask about.
-type workspaceCheckedMsg struct {
-	req       console.RunRequest
-	workspace console.SourceWorkspace
-	err       error
-}
-
 // directorySizeMsg is the copy question's measurement coming due for another
 // read.
 type directorySizeMsg struct{}
@@ -859,7 +850,10 @@ type createdMsg struct {
 	// accepted is whether the server took the create before err: a run that
 	// fails after that has still made a discobox.
 	accepted bool
-	err      error
+	// defaulted is whether the create made a harness the project default on
+	// the way, which the harness rows then follow.
+	defaulted bool
+	err       error
 }
 
 // verbDoneMsg reports a lifecycle verb that ran against the API and returned.
@@ -1242,14 +1236,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 
-	case workspaceCheckedMsg:
-		return m.workspaceChecked(msg)
-
 	case directorySizeMsg:
 		return m.directorySized()
-
-	case createMsg:
-		return m.create(msg.req)
 
 	case createdMsg:
 		return m.created(msg)
@@ -1480,14 +1468,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.poolsLoaded(msg)
 		return nil
 
-	case harnessDefaultMsg:
-		return m.chooseDefaultHarness(msg)
-
-	case resumeRunMsg:
-		return m.startRun(msg.req)
-
 	case harnessVerbMsg:
-		return m.runHarnessVerb(msg.verb, msg.harness, nil)
+		return m.runHarnessVerb(msg.verb, msg.harness)
 
 	case harnessFileMsg:
 		return m.editHarnessFile(msg.harness, msg.path)
@@ -2731,7 +2713,7 @@ func (m *Model) run() tea.Cmd {
 	if m.askHowToCreate() {
 		return m.refreshGitCredentialPreview()
 	}
-	return m.runRequest(m.opts.Request(m.prompt.Value(), m.opts.Opts[console.OptSource].Selected()))
+	return m.create(m.opts.Request(m.prompt.Value(), m.opts.Opts[console.OptSource].Selected()))
 }
 
 // askHowToCreate stops a create and puts the create card up: where this
@@ -2880,18 +2862,7 @@ func (m *Model) cutFrom(card *createCard, source string) tea.Cmd {
 		}
 		return nil
 	}
-	return tea.Batch(save, m.runRequest(card.requestFrom(source)))
-}
-
-// runRequest is a run past the questions about the harness it lands on, from
-// wherever the request came: the composer, or the command the window was opened
-// by (WithRun). Both take the same path, which is the point of handing the
-// command's request to the window rather than having it create for itself.
-func (m *Model) runRequest(req console.RunRequest) tea.Cmd {
-	if cmd, stop := m.askForADefaultHarness(req); stop {
-		return cmd
-	}
-	return m.startRun(req)
+	return tea.Batch(save, m.create(card.requestFrom(source)))
 }
 
 // startPendingRun starts the run the window was opened on, once there is a
@@ -2916,156 +2887,13 @@ func (m *Model) startPendingRun() tea.Cmd {
 		return m.refreshGitCredentialPreview()
 	}
 	m.pendingRun = nil
-	return m.runRequest(req)
+	return m.create(req)
 }
 
 // errNothingCreated is how `discobox run` ends when its create card is turned
 // down: an error, because a command that made nothing should not say it
 // succeeded.
 var errNothingCreated = errors.New("no discobox was created")
-
-// startRun is the run itself, past the questions about which harness it lands
-// on. A run those questions interrupted resumes here rather than at run(): they
-// have already been answered, and asking again against a listing that has not
-// caught up yet would ask the same one twice.
-func (m *Model) startRun(req console.RunRequest) tea.Cmd {
-	// A discobox with no source has no working tree to carry anything out of,
-	// so there is nothing either question could be about; and both answered
-	// leaves nothing to ask.
-	if !console.WorkspaceChecked(req) {
-		return m.create(req)
-	}
-	// There is only something to ask about when the working tree has something
-	// in it, and which question depends on whether it is a repository's.
-	m.setSubmitting(true)
-	m.waiting("checking the working tree")
-	return func() tea.Msg {
-		workspace, err := m.ds.Workspace(m.ctx, req.Source)
-		return workspaceCheckedMsg{req: req, workspace: workspace, err: err}
-	}
-}
-
-// askForADefaultHarness stops a run that has named no harness in a project with
-// no default, and asks which harness should be the default. It reports whether
-// the run was stopped.
-//
-// The server refuses this create outright (ADR 0048), so the alternative to
-// asking is the same refusal a moment later with the answer left to the user to
-// find. Asking here is also the only point that knows what the project has to
-// offer.
-//
-// `shell` is not among the choices. It runs like any other harness and is
-// chosen like any other, but a project whose default is a login shell has no
-// coding harness by default, which is the state this is trying to leave.
-func (m *Model) askForADefaultHarness(req console.RunRequest) (tea.Cmd, bool) {
-	q, ask, err := console.DefaultHarnessQuestion(req, m.harnesses.all, m.harnesses.loaded)
-	if err != nil {
-		return m.runFailed(err), true
-	}
-	if !ask {
-		return nil, false
-	}
-	harnesses := m.harnesses.all
-	menu := actionsDialog(q.Title, q.Body, questionActions(q), func(key string) tea.Cmd {
-		harness, ok := console.ChosenHarness(harnesses, key)
-		if !ok {
-			return nil
-		}
-		return func() tea.Msg { return harnessDefaultMsg{harness: harness, resume: &req} }
-	})
-	menu.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc cancels", "esc")}
-	m.leavesTheRun(menu)
-	m.dialog = menu
-	return nil, true
-}
-
-// questionActions are a pick of one's choices as a menu's rows, each pressed
-// by its own key.
-func questionActions(q console.Question) []action {
-	items := make([]action, 0, len(q.Choices))
-	for _, c := range q.Choices {
-		items = append(items, action{key: c.Key, press: c.Key, label: c.Label, detail: c.Hint, enabled: true})
-	}
-	return items
-}
-
-// chooseDefaultHarness acts on that choice: the harness becomes the default,
-// and the run that asked the question runs when it is answered.
-func (m *Model) chooseDefaultHarness(msg harnessDefaultMsg) tea.Cmd {
-	return m.runHarnessVerb(console.HarnessSetDefault, msg.harness, msg.resume)
-}
-
-// leavesTheRun makes turning down a question a run stopped to ask end the
-// run's own window, as turning down its create card does (createDialog):
-// nothing was made, and there is no list behind the question to land on. The
-// launcher's question just closes, back to the list it was asked from.
-func (m *Model) leavesTheRun(d *dialog) {
-	if m.oneShot() {
-		d.onCancel = func() tea.Cmd { return m.exit(errNothingCreated) }
-	}
-}
-
-func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
-	m.busy = ""
-	// Not sent yet: a question may come first, and a question is modal. The
-	// create sets it again when it goes.
-	m.setSubmitting(false)
-	if msg.err != nil {
-		return m.runFailed(fmt.Errorf("cannot read the working tree: %w", msg.err))
-	}
-	q, ask := console.AskAboutWorkspace(msg.req, msg.workspace)
-	if !ask {
-		return m.create(msg.req)
-	}
-	if !q.Repository {
-		return m.askToCopyDirectory(msg.req, q)
-	}
-	m.dialog = m.workspaceDialog(q, msg.req)
-	return nil
-}
-
-// askToCopyDirectory is the same question for a source directory that is in no
-// Git repository: there is no commit to fall back to, so what it decides is
-// whether the directory itself is copied in. Answering no still creates the
-// discobox — with nothing checked out in it, the way --no-source does
-// (ADR 0077 §1).
-//
-// The size is counted while the question is up rather than before it: a home
-// directory takes long enough to walk that waiting for the number would be the
-// thing the question exists to avoid.
-func (m *Model) askToCopyDirectory(req console.RunRequest, q console.WorkspaceQuestion) tea.Cmd {
-	total, stop := m.ds.MeasureDirectory(m.ctx, q.Subject)
-	m.copySize, m.copyStop, m.copyDir = total, stop, q.Subject
-	m.dialog = m.workspaceDialog(q, req)
-	m.dialog.emphasis = directoryCopySize(total())
-	m.copyDialog = m.dialog
-	return m.pollDirectorySize()
-}
-
-// workspaceDialog is the core's question about what local content reaches the
-// discobox (console.WorkspaceQuestion), as a menu with its two descriptive rows,
-// y and n pressing the yes and the no. Both answers are answers — the discobox
-// is created either way — and leaving it answers what the core says leaving it
-// answers: the repository's keeps excluding, the copy stops the run. The
-// directory is the dialog's subject, on a row of its own above the body.
-func (m *Model) workspaceDialog(q console.WorkspaceQuestion, req console.RunRequest) *dialog {
-	answer := func(key string) tea.Cmd {
-		req := q.Answer(req, key)
-		return func() tea.Msg { return createMsg{req: req} }
-	}
-	items := questionActions(q.Question)
-	for i := range items {
-		items[i].press = map[string]string{"true": "y", "false": "n"}[items[i].key]
-	}
-	d := actionsDialog(q.Title, q.Body, items, answer)
-	d.subject = q.Subject
-	if key, ok := q.Dismissed(); ok {
-		d.onCancel = func() tea.Cmd { return answer(key) }
-	} else {
-		m.leavesTheRun(d)
-	}
-	return d
-}
 
 // directorySized writes the walk's latest total into the question it belongs
 // to. A dialog that is no longer up has been answered, and the walk behind it
@@ -3076,7 +2904,7 @@ func (m *Model) directorySized() tea.Cmd {
 		return nil
 	}
 	total := m.copySize()
-	m.copyDialog.emphasis = directoryCopySize(total)
+	m.copyDialog.emphasis = total.Said()
 	if total.Done {
 		m.endDirectorySize()
 		return nil
@@ -3085,7 +2913,7 @@ func (m *Model) directorySized() tea.Cmd {
 }
 
 func (m *Model) pollDirectorySize() tea.Cmd {
-	return tick(directorySizeInterval, func(time.Time) tea.Msg { return directorySizeMsg{} })
+	return tick(console.MeasureEvery, func(time.Time) tea.Msg { return directorySizeMsg{} })
 }
 
 // endDirectorySize stops the walk and forgets it. It is safe on a question that
@@ -3094,29 +2922,8 @@ func (m *Model) endDirectorySize() {
 	if m.copyStop != nil {
 		m.copyStop()
 	}
-	m.copySize, m.copyStop, m.copyDialog, m.copyDir = nil, nil, nil, ""
+	m.copySize, m.copyStop, m.copyDialog = nil, nil, nil
 }
-
-// directorySizeInterval is how often the copy question re-reads its walk: often
-// enough that the number is visibly climbing, and no more than that.
-const directorySizeInterval = 200 * time.Millisecond
-
-// directoryCopySize is that line, with as much of the count as the walk behind
-// the question has reached. Nothing counted yet says so rather than reporting a
-// zero that is about to be wrong.
-func directoryCopySize(total console.DirectoryTotal) string {
-	if total.Files == 0 && !total.Done {
-		return "calculating…"
-	}
-	counted := fmt.Sprintf("%s in %s", humanBytes(total.Bytes), plural(int(total.Files), "file", "files"))
-	if !total.Done {
-		counted += ", still counting…"
-	}
-	return counted
-}
-
-// createMsg carries a settled request back to the live model.
-type createMsg struct{ req console.RunRequest }
 
 // creatingTitle is the wait's title before there is a discobox to name. It
 // becomes "Starting <name>" the moment the create comes back with one.
@@ -3131,10 +2938,12 @@ func (m *Model) windowWaiting() bool {
 // it is waiting for, with the newest report under it. The console has none;
 // it watches a create in the discobox's opening workspace (watchCreate).
 //
-// Such a window has no list behind it, so leaving the wait leaves the window —
-// and leaves the discobox alone: it was created before this screen went up, or
-// is being created by a request the server has already taken, and it carries
-// on coming up either way. Nothing is stopped and nothing is attached to.
+// Such a window has no list behind it, so leaving the wait leaves the window.
+// Once the create is being sent it leaves the discobox alone: the request is
+// the server's, and it carries on coming up either way; nothing is stopped and
+// nothing is attached to. Before that (Model.create, createWatch.sending),
+// the create is still reading the tree and asking, and leaving it ends the run
+// with nothing created.
 func (m *Model) waitDialog(title, body string) *dialog {
 	d := statusDialog(title, body)
 	d.windowWait = true
@@ -3172,14 +2981,44 @@ func (m *Model) create(req console.RunRequest) tea.Cmd {
 	feed.accepted = func(box console.Sandbox) tea.Msg {
 		return promptSpentMsg{req: req, sandbox: box, create: watch}
 	}
+	feed.create = watch
+	if m.oneShot() {
+		// Left while the create may still ask something — the working tree
+		// being read, a question just left — the run is left with nothing
+		// sent, and the wait says so until the create is past its questions
+		// (createSent); from then on it carries on without the window.
+		watch.wait = m.dialog
+		watch.wait.keys = []hint{pressing("Esc closes this window", "esc"), says("nothing is created")}
+		watch.wait.onCancel = func() tea.Cmd {
+			if !watch.sending {
+				return m.exit(errNothingCreated)
+			}
+			return m.exit(nil)
+		}
+	}
+	// The questions a create asks before it is sent, and their order, are the
+	// core's (console.Create): they arrive on the feed like any running
+	// command's, and are answered with this window's dialogs (ask).
+	run := console.CreateRun{Request: req, Server: m.configServer(), Harnesses: m.harnesses.all, Listed: m.harnesses.loaded}
+	ds, ctx := m.ds, m.ctx
 	create := func() tea.Msg {
 		defer feed.Close()
-		sandbox, err := m.ds.Run(m.ctx, req, feed.Narration)
+		made, err := console.Create(ctx, ds, run, feed.Narration)
 		// A create the server took comes back with the discobox it made,
 		// failed or not; one it refused, with none (DataSource.Run).
-		return createdMsg{sandbox: sandbox, req: req, create: watch, accepted: sandbox.ID != "", err: err}
+		return createdMsg{sandbox: made.Box, req: req, create: watch, accepted: made.Box.ID != "", defaulted: made.Defaulted, err: err}
 	}
 	return tea.Batch(create, m.nextNarration(feed))
+}
+
+// createSent marks a create past its questions and on its way to the server
+// (console.Narration.Sending): its wait, in a window that is one run's own,
+// now leaves it to carry on, and says so.
+func (m *Model) createSent(watch *createWatch) {
+	watch.sending = true
+	if watch.wait != nil {
+		watch.wait.keys = []hint{pressing("Esc closes this window", "esc"), says("the discobox carries on")}
+	}
 }
 
 // promptSpentMsg says the server has taken a create, so the prompt it carried
@@ -3196,6 +3035,12 @@ type promptSpentMsg struct {
 // first; it is read and written only in Update. One to a create, since a
 // second can be started while the first is still delivering its source.
 type createWatch struct {
+	// sending is whether the create is past its questions and on its way
+	// to the server (createSent).
+	sending bool
+	// wait is the window's wait on this create, in a window that is one
+	// run's own; nil in the launcher.
+	wait *dialog
 	// shown is whether the window went to the discobox when the server took
 	// it (watchCreate).
 	shown bool
@@ -3257,9 +3102,14 @@ func (m *Model) promptSpent(req console.RunRequest) {
 	m.layout()
 }
 
-func (m *Model) created(msg createdMsg) tea.Cmd {
+func (m *Model) created(msg createdMsg) (cmd tea.Cmd) {
 	m.endNarration()
 	m.busy = ""
+	if msg.defaulted {
+		// The harness the create made the default on the way is what the
+		// harness rows, and the composer's line, name from now on.
+		defer func() { cmd = tea.Batch(m.loadHarnesses(), cmd) }()
+	}
 	// Whether the window went to this discobox when the server took it
 	// (watchCreate), and is still there.
 	msg.create.answered = true
@@ -3283,6 +3133,17 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 		// window's own wait is taken down; a dialog the user opened is theirs.
 		if m.windowWaiting() {
 			m.dialog = nil
+		}
+		if errors.Is(msg.err, console.ErrTurnedDown) {
+			// A question the create stopped to ask was left, which is
+			// turning the create down: nothing was made. A window that is
+			// this run ends with it, as turning down its card does; the
+			// launcher's question just closes, back to the list it was
+			// asked from.
+			if m.oneShot() {
+				return m.exit(errNothingCreated)
+			}
+			return nil
 		}
 		if msg.accepted {
 			// The server has the discobox, and the prompt is already gone from

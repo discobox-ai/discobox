@@ -208,9 +208,14 @@ func TestTheNewCardDoesNotRefocusAComposerBeingSent(t *testing.T) {
 // read — hands the composer back.
 func TestAFailedWorkingTreeCheckHandsThePromptBack(t *testing.T) {
 	t.Parallel()
-	m := promptWith(t, "fix the reaper")
-	m.setSubmitting(true)
-	send(t, m, workspaceCheckedMsg{err: errors.New("not a git repository")})
+	ds := newFakeSource(testSandboxes()...)
+	ds.workspaceErr = errors.New("not a git repository")
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"), keyPress("enter"))
+	if len(ds.runs) != 0 || !strings.Contains(m.status, "cannot read the working tree") {
+		t.Fatalf("runs = %+v, status = %q; want nothing created and the check's failure said", ds.runs, m.status)
+	}
 	send(t, m, typeString("!")...)
 	if got := m.prompt.Value(); got != "fix the reaper!" {
 		t.Fatalf("prompt = %q, want the composer editable after the check failed", got)
@@ -297,25 +302,29 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		// Enter is no: the working tree is carried in only when asked for.
 		{"enter", "false"},
 	} {
-		ds := newFakeSource()
-		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
-		m := newTestModel(t, ds)
-		send(t, m, keyPress("enter"), keyPress("enter"))
-		if m.dialog == nil {
-			t.Fatalf("%s: a dirty working tree should be asked about", tc.answer)
-		}
-		// The repository asked about is the one the run is cut from, which the
-		// source option can point somewhere other than this window's directory.
-		if m.dialog.subject != "/home/ada/src/web" {
-			t.Fatalf("%s: dialog subject = %q, want the repository named", tc.answer, m.dialog.subject)
-		}
-		send(t, m, keyPress(tc.answer))
-		if len(ds.runs) != 1 {
-			t.Fatalf("%s: runs = %d, want 1", tc.answer, len(ds.runs))
-		}
-		if ds.runs[0].IncludeDirty != tc.want {
-			t.Fatalf("%s: includeDirty = %q, want %q", tc.answer, ds.runs[0].IncludeDirty, tc.want)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			ds := newFakeSource()
+			ds.workspace = console.SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
+			d, m := drivenTestModel(t, ds)
+			d.key("enter")
+			d.key("enter")
+			if m.dialog == nil || m.dialog.kind != dlgActions {
+				t.Fatalf("%s: a dirty working tree should be asked about", tc.answer)
+			}
+			// The repository asked about is the one the run is cut from, which the
+			// source option can point somewhere other than this window's directory.
+			if m.dialog.subject != "/home/ada/src/web" {
+				t.Fatalf("%s: dialog subject = %q, want the repository named", tc.answer, m.dialog.subject)
+			}
+			d.key(tc.answer)
+			runs := ds.runRequests()
+			if len(runs) != 1 {
+				t.Fatalf("%s: runs = %d, want 1", tc.answer, len(runs))
+			}
+			if runs[0].IncludeDirty != tc.want {
+				t.Fatalf("%s: includeDirty = %q, want %q", tc.answer, runs[0].IncludeDirty, tc.want)
+			}
+		})
 	}
 }
 
@@ -333,93 +342,97 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		{"n", "false"},
 		{"enter", "true"},
 	} {
-		ds := newFakeSource()
-		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
-		m := newTestModel(t, ds)
-		send(t, m, keyPress("enter"), keyPress("enter"))
-		if m.dialog == nil {
-			t.Fatalf("%s: a directory with no repository should be asked about", tc.answer)
-		}
-		if m.dialog.subject != "/home/ada/notes" || !strings.Contains(m.dialog.body, "not a Git repository") {
-			t.Fatalf("%s: dialog subject = %q, body = %q, want the directory named", tc.answer, m.dialog.subject, m.dialog.body)
-		}
-		if m.dialog.emphasis == "" {
-			t.Fatalf("%s: the question should lead with what copying would cost", tc.answer)
-		}
-		if got := ds.measuredDirs(); len(got) != 1 || got[0] != "/home/ada/notes" {
-			t.Fatalf("%s: measured %v, want the directory being asked about", tc.answer, got)
-		}
-		send(t, m, keyPress(tc.answer))
-		if len(ds.runs) != 1 {
-			t.Fatalf("%s: runs = %d, want 1", tc.answer, len(ds.runs))
-		}
-		if ds.runs[0].CopyDirectory != tc.want || ds.runs[0].IncludeDirty != "" {
-			t.Fatalf("%s: copyDirectory = %q, includeDirty = %q, want %q and the other left alone", tc.answer, ds.runs[0].CopyDirectory, ds.runs[0].IncludeDirty, tc.want)
-		}
-		// The answer is in; nothing should still be reading the disk for it.
-		send(t, m, directorySizeMsg{})
-		if ds.stoppedCount() != 1 {
-			t.Fatalf("%s: the walk was stopped %d times, want once", tc.answer, ds.stoppedCount())
-		}
+		synctest.Test(t, func(t *testing.T) {
+			ds := newFakeSource()
+			ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+			d, m := drivenTestModel(t, ds)
+			d.key("enter")
+			d.key("enter")
+			if m.dialog == nil || m.dialog.kind != dlgActions {
+				t.Fatalf("%s: a directory with no repository should be asked about", tc.answer)
+			}
+			if m.dialog.subject != "/home/ada/notes" || !strings.Contains(m.dialog.body, "not a Git repository") {
+				t.Fatalf("%s: dialog subject = %q, body = %q, want the directory named", tc.answer, m.dialog.subject, m.dialog.body)
+			}
+			if m.dialog.emphasis == "" {
+				t.Fatalf("%s: the question should lead with what copying would cost", tc.answer)
+			}
+			if got := ds.measuredDirs(); len(got) != 1 || got[0] != "/home/ada/notes" {
+				t.Fatalf("%s: measured %v, want the directory being asked about", tc.answer, got)
+			}
+			d.key(tc.answer)
+			runs := ds.runRequests()
+			if len(runs) != 1 {
+				t.Fatalf("%s: runs = %d, want 1", tc.answer, len(runs))
+			}
+			if runs[0].CopyDirectory != tc.want || runs[0].IncludeDirty != "" {
+				t.Fatalf("%s: copyDirectory = %q, includeDirty = %q, want %q and the other left alone", tc.answer, runs[0].CopyDirectory, runs[0].IncludeDirty, tc.want)
+			}
+			// The answer is in; nothing should still be reading the disk for it.
+			d.wait("the walk to stop", func() bool { return ds.stoppedCount() == 1 })
+		})
 	}
 }
 
 func TestEscOnDirectoryCopyQuestionCancelsCreation(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource()
-	ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"), keyPress("enter"))
-	if m.dialog == nil || m.dialog.title != "Copy this directory?" {
-		t.Fatal("want the directory copy question")
-	}
-	send(t, m, keyPress("esc"), directorySizeMsg{})
-	if len(ds.runs) != 0 || m.dialog != nil || m.quit {
-		t.Fatalf("runs = %+v dialog = %+v quit = %v, want the console with nothing created", ds.runs, m.dialog, m.quit)
-	}
-	if ds.stoppedCount() != 1 {
-		t.Fatalf("directory walk stopped %d times, want once", ds.stoppedCount())
-	}
-	// The prompt is ready for another run after canceling.
-	send(t, m, keyPress("enter"), keyPress("enter"))
-	if m.dialog == nil || m.dialog.title != "Copy this directory?" {
-		t.Fatal("want to be able to start another run")
-	}
-	send(t, m, keyPress("n"), directorySizeMsg{})
-	if len(ds.runs) != 1 || ds.runs[0].CopyDirectory != "false" {
-		t.Fatalf("runs = %+v, want n to create an empty discobox", ds.runs)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource()
+		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		d, m := drivenTestModel(t, ds)
+		d.key("enter")
+		d.key("enter")
+		if m.dialog == nil || m.dialog.title != "Copy this directory?" {
+			t.Fatal("want the directory copy question")
+		}
+		d.key("esc")
+		if runs := ds.runRequests(); len(runs) != 0 || m.dialog != nil || m.quit {
+			t.Fatalf("runs = %+v dialog = %+v quit = %v, want the console with nothing created", runs, m.dialog, m.quit)
+		}
+		if ds.stoppedCount() != 1 {
+			t.Fatalf("directory walk stopped %d times, want once", ds.stoppedCount())
+		}
+		// The prompt is ready for another run after canceling.
+		d.key("enter")
+		d.key("enter")
+		if m.dialog == nil || m.dialog.title != "Copy this directory?" {
+			t.Fatal("want to be able to start another run")
+		}
+		d.key("n")
+		if runs := ds.runRequests(); len(runs) != 1 || runs[0].CopyDirectory != "false" {
+			t.Fatalf("runs = %+v, want n to create an empty discobox", runs)
+		}
+	})
 }
 
 // The size arrives while the question is up: it is asked immediately, with a
 // number that climbs, and only the final one is stated as fact.
 func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource()
-	ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"), keyPress("enter"))
-	if m.dialog.emphasis != "calculating…" {
-		t.Fatalf("emphasis = %q, want the walk to say it has nothing counted yet", m.dialog.emphasis)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource()
+		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		d, m := drivenTestModel(t, ds)
+		d.key("enter")
+		d.key("enter")
+		if m.dialog == nil || m.dialog.emphasis != "calculating…" {
+			t.Fatalf("dialog = %s, want the walk to say it has nothing counted yet", describe(m.dialog))
+		}
 
-	ds.setTotal(console.DirectoryTotal{Bytes: 5 << 20, Files: 3})
-	send(t, m, directorySizeMsg{})
-	if m.dialog.emphasis != "5.0 MiB in 3 files, still counting…" {
-		t.Fatalf("emphasis = %q, want the running total", m.dialog.emphasis)
-	}
-	if ds.stoppedCount() != 0 {
-		t.Fatal("the walk was stopped while the question was still up")
-	}
+		ds.setTotal(console.DirectoryTotal{Bytes: 5 << 20, Files: 3})
+		d.wait("the running total", func() bool { return m.dialog.emphasis == "5.0 MiB in 3 files, still counting…" })
+		if ds.stoppedCount() != 0 {
+			t.Fatal("the walk was stopped while the question was still up")
+		}
 
-	ds.setTotal(console.DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true})
-	send(t, m, directorySizeMsg{})
-	if m.dialog.emphasis != "7.0 MiB in 4 files" {
-		t.Fatalf("emphasis = %q, want the final total stated as one", m.dialog.emphasis)
-	}
-	if ds.stoppedCount() != 1 {
-		t.Fatalf("the walk was stopped %d times once it had finished, want once", ds.stoppedCount())
-	}
+		ds.setTotal(console.DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true})
+		d.wait("the final total", func() bool { return m.dialog.emphasis == "7.0 MiB in 4 files" })
+		d.settle()
+		if ds.stoppedCount() != 1 {
+			t.Fatalf("the walk was stopped %d times once it had finished, want once", ds.stoppedCount())
+		}
+		d.key("esc")
+	})
 }
 
 // An empty directory carries nothing, so both answers make the same discobox

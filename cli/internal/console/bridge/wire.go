@@ -33,8 +33,9 @@ import (
 // image keys (Tab.Images, Tab.ImageKeys), and a folder dropped on the
 // composer (the options command's Args.Source); 13, the secrets page (the
 // credentials command's secrets, their bindings and cards, a secret's binding
-// history, its actions and its words) and what a form is about (Form.About).
-const Protocol = 13
+// history, its actions and its words) and what a form is about (Form.About);
+// 14, a question's count, sent again as it climbs (Question.Count).
+const Protocol = 14
 
 // Type names a message.
 type Type string
@@ -1100,7 +1101,11 @@ type FieldError struct {
 // Question is what a running command asks (console.Question). With Choices it
 // is a pick of one; with none, a yes or no answered "yes" or "no".
 //
-// Subject is what it is about, on a line of its own above the body.
+// Subject is what it is about, on a line of its own above the body. Count is
+// what the count of a directory the answer turns on says so far
+// (console.Question.Measure, console.DirectoryTotal.Said), drawn under the
+// body: the question is sent again, with the same ID, each time it changes,
+// and the app updates the question it is showing rather than asking another.
 type Question struct {
 	ID        uint64   `json:"id"`
 	Command   uint64   `json:"command"`
@@ -1109,6 +1114,7 @@ type Question struct {
 	Body      string   `json:"body"`
 	Choices   []Choice `json:"choices"`
 	DefaultNo bool     `json:"defaultNo,omitempty"`
+	Count     string   `json:"count,omitempty"`
 }
 
 // Answer answers a question, exactly once: Key, or Declined when it cannot be

@@ -94,6 +94,14 @@ type fakeCore struct {
 	addresses console.Addresses
 	hostErr   error
 	toolDir   string
+	// total is what MeasureDirectory has counted so far, or, while counts
+	// holds any, the next of them at each read (the last one staying);
+	// measured is every directory it was asked to count, and walksStopped
+	// how many walks were stopped.
+	total        console.DirectoryTotal
+	counts       []console.DirectoryTotal
+	measured     []string
+	walksStopped int
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -317,6 +325,29 @@ func (f *fakeCore) SaveHarnessChanges(_ context.Context, id, candidate string) (
 func (f *fakeCore) DiscardHarnessChanges(_ context.Context, id, candidate string) (string, error) {
 	f.call("discard changes %s %s", id, candidate)
 	return "discarded", nil
+}
+
+func (f *fakeCore) MeasureDirectory(_ context.Context, dir string) (func() console.DirectoryTotal, func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.measured = append(f.measured, dir)
+	total := func() console.DirectoryTotal {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if len(f.counts) > 0 {
+			f.total = f.counts[0]
+			if len(f.counts) > 1 {
+				f.counts = f.counts[1:]
+			}
+		}
+		return f.total
+	}
+	stop := func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.walksStopped++
+	}
+	return total, stop
 }
 
 func (f *fakeCore) Workspace(context.Context, string) (console.SourceWorkspace, error) {

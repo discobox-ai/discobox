@@ -111,6 +111,8 @@ type fakeSource struct {
 	// workspaceGate holds the check of the working tree open until the test
 	// closes it, for a test about what the window shows meanwhile.
 	workspaceGate chan struct{}
+	// workspaceErr is what reading the working tree fails with.
+	workspaceErr error
 	// deliverGate holds a create open after the server has taken it, which is
 	// where a real one delivers the source and syncs SSH config.
 	deliverGate chan struct{}
@@ -617,7 +619,7 @@ func (f *fakeSource) Workspace(context.Context, string) (console.SourceWorkspace
 	if f.workspaceGate != nil {
 		<-f.workspaceGate
 	}
-	return f.workspace, nil
+	return f.workspace, f.workspaceErr
 }
 
 // ResolveSource answers the way the real one does for a directory that is
@@ -660,6 +662,12 @@ func (f *fakeSource) MeasureDirectory(_ context.Context, dir string) (func() con
 			defer f.mu.Unlock()
 			f.stopped++
 		}
+}
+
+func (f *fakeSource) harnessCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.didHarness...)
 }
 
 func (f *fakeSource) measuredDirs() []string {
@@ -1624,6 +1632,17 @@ func newTestModel(t *testing.T, ds console.DataSource) *Model {
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	drain(t, m, m.Init(), 0)
 	return m
+}
+
+// drivenTestModel is newTestModel run as the runtime runs it (driver_test.go),
+// inside the synctest bubble the test is in: a create that asks a question
+// waits on its answer (console.Create), which only a window reading the
+// create's narration gives.
+func drivenTestModel(t *testing.T, ds console.DataSource) (*driver, *Model) {
+	t.Helper()
+	inBubble(t)
+	m := newTestModel(t, ds)
+	return newDriver(t, m), m
 }
 
 // newOpeningModel builds a window nobody has touched yet and loads it, so a

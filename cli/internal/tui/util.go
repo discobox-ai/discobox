@@ -162,14 +162,14 @@ func usage(st *styles, s console.Sandbox) string {
 	// it holds neither, and there is no sample of it to report.
 	if s.Up() && s.Usage.Known {
 		cpu = fmt.Sprintf("%d%%", s.Usage.CPUPercent)
-		memory = humanBytes(s.Usage.MemoryBytes)
+		memory = console.Bytes(s.Usage.MemoryBytes)
 	}
 	// Disk is what it is holding, which it holds whether it runs or not — a
 	// stopped discobox has given nothing back. Gating this on running was
 	// wrong: it hid exactly the figure a stopped discobox still has, and the
 	// agent walks a stopped one's trees precisely so it can be shown.
 	if s.Usage.DiskKnown {
-		disk = humanBytes(s.Usage.DiskBytes)
+		disk = console.Bytes(s.Usage.DiskBytes)
 	}
 	return padANSI(cell(s.Usage.CPUPercent, cpu, 4)+" "+
 		cell(s.Usage.MemoryPercent, memory, 8)+" "+
@@ -287,21 +287,7 @@ func trimFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-// humanBytes writes a byte count the way df -h does, in binary units, with one
-// decimal place below 10 so "1.2 GiB" and "15 GiB" both fit the same column.
-func humanBytes(n int64) string {
-	if n < 1024 {
-		return fmt.Sprintf("%d B", n)
-	}
-	value, exp := scaleBytes(n)
-	suffix := [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exp]
-	if value < 10 {
-		return fmt.Sprintf("%.1f %s", value, suffix)
-	}
-	return fmt.Sprintf("%.0f %s", value, suffix)
-}
-
-// shortBytes is humanBytes cut to what a banner can afford — "1.2G" for
+// shortBytes is console.Bytes cut to what a banner can afford — "1.2G" for
 // "1.2 GiB" — the same number in the same unit, with the unit as its letter and
 // the space taken out. The readouts it writes are there only while there is
 // room to spare, so every cell one of them keeps is a cell it might not get.
@@ -310,24 +296,12 @@ func humanBytes(n int64) string {
 // else in the window uses, and nothing in a row this size is going to be read
 // as a disk vendor's gigabyte.
 func shortBytes(n int64) string {
-	value, exp := scaleBytes(n)
+	value, exp := console.ScaleBytes(n)
 	letter := [...]string{"B", "K", "M", "G", "T"}[exp]
 	if exp > 0 && value < 10 {
 		return fmt.Sprintf("%.1f%s", value, letter)
 	}
 	return fmt.Sprintf("%.0f%s", value, letter)
-}
-
-// scaleBytes reduces a byte count to a value and the unit it is written in, so
-// the long spelling and the short one are the same number in the same unit.
-func scaleBytes(n int64) (float64, int) {
-	const unit = 1024
-	value, exp := float64(n), 0
-	for value >= unit && exp < 4 {
-		value /= unit
-		exp++
-	}
-	return value, exp
 }
 
 // humanBytesPair writes a used-of-total pair sharing one unit — "9.0/32 GiB"
@@ -664,10 +638,10 @@ func machineText(st *styles, r console.Resources, avail int) string {
 	// the builder rather than the discoboxes — which is the half that can be
 	// reclaimed without deleting anything somebody made.
 	if r.DiskKnown {
-		disk := st.dimText.Render("disk " + humanBytes(r.DiskFreeBytes) + " free")
+		disk := st.dimText.Render("disk " + console.Bytes(r.DiskFreeBytes) + " free")
 		if r.DiskDataBytes > 0 || r.DiskCacheBytes > 0 {
 			disk += st.dimText.Render(fmt.Sprintf(" (%s data, %s cache)",
-				humanBytes(r.DiskDataBytes), humanBytes(r.DiskCacheBytes)))
+				console.Bytes(r.DiskDataBytes), console.Bytes(r.DiskCacheBytes)))
 		}
 		parts = append(parts, disk)
 	}
@@ -676,7 +650,7 @@ func machineText(st *styles, r console.Resources, avail int) string {
 	// goes: a window too narrow for it still has room to say how much is left,
 	// which is the part somebody is reading this for.
 	if text := strings.Join(parts, st.dimText.Render(" · ")); lipgloss.Width(text) > avail && r.DiskKnown {
-		parts[len(parts)-1] = st.dimText.Render("disk " + humanBytes(r.DiskFreeBytes) + " free")
+		parts[len(parts)-1] = st.dimText.Render("disk " + console.Bytes(r.DiskFreeBytes) + " free")
 	}
 	for len(parts) > 0 {
 		text := strings.Join(parts, st.dimText.Render(" · "))

@@ -1,6 +1,7 @@
 package console
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -85,10 +86,14 @@ func (o *RunOptions) CardRequest(prompt, source string, base *RunRequest) RunReq
 	return req
 }
 
+// ErrTurnedDown is a create whose question was left in a way that turns it
+// down (Create): nothing was made, and nothing went wrong.
+var ErrTurnedDown = errors.New("the create was turned down")
+
 // ErrNoHarness is a create in a project with no harness to run at all.
 var ErrNoHarness = errors.New("this project has no harness to run; register one with `discobox admin harness create`")
 
-// DefaultHarnessQuestion is asked of a create that names no harness in a
+// defaultHarnessQuestion is asked of a create that names no harness in a
 // project with no default (ADR 0048): the server refuses that create
 // outright, so the alternative to asking is the same refusal a moment later
 // with the answer left to the user to find. It reports whether there is
@@ -100,8 +105,8 @@ var ErrNoHarness = errors.New("this project has no harness to run; register one 
 // `shell` is not among the choices. It runs like any other harness and is
 // chosen like any other, but a project whose default is a login shell has no
 // coding harness by default, which is the state this is trying to leave.
-// Each choice's key is its place among Candidates; ChosenHarness reads one.
-func DefaultHarnessQuestion(req RunRequest, harnesses []Harness, listed bool) (Question, bool, error) {
+// Each choice's key is its place among Candidates; chosenHarness reads one.
+func defaultHarnessQuestion(req RunRequest, harnesses []Harness, listed bool) (Question, bool, error) {
 	if req.Harness != "" || !listed || slices.ContainsFunc(harnesses, func(h Harness) bool { return h.Default }) {
 		return Question{}, false, nil
 	}
@@ -131,8 +136,8 @@ func HarnessCandidates(harnesses []Harness) []Harness {
 	return out
 }
 
-// ChosenHarness is the harness DefaultHarnessQuestion's answer names.
-func ChosenHarness(harnesses []Harness, key string) (Harness, bool) {
+// chosenHarness is the harness defaultHarnessQuestion's answer names.
+func chosenHarness(harnesses []Harness, key string) (Harness, bool) {
 	candidates := HarnessCandidates(harnesses)
 	i, err := strconv.Atoi(key)
 	if err != nil || i < 1 || i > len(candidates) {
@@ -141,15 +146,15 @@ func ChosenHarness(harnesses []Harness, key string) (Harness, bool) {
 	return candidates[i-1], true
 }
 
-// WorkspaceChecked reports whether a create needs its working tree read
+// workspaceChecked reports whether a create needs its working tree read
 // (DataSource.Workspace) before it is sent: not for a discobox with no source,
 // which has no working tree to carry anything out of, and not once both
 // questions about it are answered.
-func WorkspaceChecked(req RunRequest) bool {
+func workspaceChecked(req RunRequest) bool {
 	return !req.NoSource && (req.IncludeDirty == "" || req.CopyDirectory == "")
 }
 
-// WorkspaceQuestion is what a create asks about what local content reaches
+// workspaceQuestion is what a create asks about what local content reaches
 // the discobox, once its working tree has been read. Both answers are
 // answers — the discobox is created either way.
 //
@@ -161,49 +166,50 @@ func WorkspaceChecked(req RunRequest) bool {
 // from instead, so copying leads; the answer is CopyDirectory, and answering
 // no creates the discobox with nothing checked out in it, the way --no-source
 // does (ADR 0077 §1). Subject is the directory.
-type WorkspaceQuestion struct {
+type workspaceQuestion struct {
 	Question
 	// Repository is whether it is the repository's question.
 	Repository bool
 }
 
-// AskAboutWorkspace is the question a read working tree asks, and whether it
+// askAboutWorkspace is the question a read working tree asks, and whether it
 // asks one: only when the tree has something in it that a request has not
 // already answered for.
-func AskAboutWorkspace(req RunRequest, ws SourceWorkspace) (WorkspaceQuestion, bool) {
+func askAboutWorkspace(req RunRequest, ws SourceWorkspace) (workspaceQuestion, bool) {
 	if !ws.Carries {
-		return WorkspaceQuestion{}, false
+		return workspaceQuestion{}, false
 	}
 	if !ws.Repository {
 		if req.CopyDirectory != "" {
-			return WorkspaceQuestion{}, false
+			return workspaceQuestion{}, false
 		}
-		return WorkspaceQuestion{Question: Question{
+		return workspaceQuestion{Question: Question{
 			Title:   "Copy this directory?",
 			Subject: ws.Directory,
 			Body:    CopyDirectoryBody,
+			Measure: ws.Directory,
 			Choices: []Choice{
-				{Key: "true", Label: "Copy the directory in", Hint: "Everything in it arrives as uncommitted changes"},
-				{Key: "false", Label: "Do not copy the directory", Hint: "Create the discobox with nothing checked out in it"},
+				{Key: "true", Label: "Copy the directory in", Hint: "Everything in it arrives as uncommitted changes", Means: AnswerYes},
+				{Key: "false", Label: "Do not copy the directory", Hint: "Create the discobox with nothing checked out in it", Means: AnswerNo},
 			},
 		}}, true
 	}
 	if req.IncludeDirty != "" {
-		return WorkspaceQuestion{}, false
+		return workspaceQuestion{}, false
 	}
-	return WorkspaceQuestion{Repository: true, Question: Question{
+	return workspaceQuestion{Repository: true, Question: Question{
 		Title:   "Uncommitted changes",
 		Subject: ws.Directory,
 		Body:    dirtyWorkspaceBody(ws),
 		Choices: []Choice{
-			{Key: "false", Label: "Start from the last commit", Hint: "Leave the uncommitted changes here"},
-			{Key: "true", Label: "Include uncommitted changes", Hint: "Start the discobox from a snapshot of the working tree"},
+			{Key: "false", Label: "Start from the last commit", Hint: "Leave the uncommitted changes here", Means: AnswerNo},
+			{Key: "true", Label: "Include uncommitted changes", Hint: "Start the discobox from a snapshot of the working tree", Means: AnswerYes},
 		},
 	}}, true
 }
 
 // Answer is the request with the question answered by key.
-func (q WorkspaceQuestion) Answer(req RunRequest, key string) RunRequest {
+func (q workspaceQuestion) Answer(req RunRequest, key string) RunRequest {
 	if q.Repository {
 		req.IncludeDirty = key
 	} else {
@@ -215,17 +221,115 @@ func (q WorkspaceQuestion) Answer(req RunRequest, key string) RunRequest {
 // Dismissed is what leaving the question answers: the repository's keeps its
 // quick answer, starting from the last commit, and leaving the copy question
 // creates nothing (ok false).
-func (q WorkspaceQuestion) Dismissed() (key string, ok bool) {
+func (q workspaceQuestion) Dismissed() (key string, ok bool) {
 	if q.Repository {
 		return "false", true
 	}
 	return "", false
 }
 
+// CreateRun is one create past its card, as Create runs it: the request, and
+// the harnesses its default-harness question is asked against.
+type CreateRun struct {
+	Request RunRequest
+	// Server names the server the request goes to (Session.ServerName),
+	// whose default a harness chosen becomes.
+	Server string
+	// Harnesses are that server's, as the console last listed them; Listed
+	// is false when they have not been, and nothing is asked about them.
+	Harnesses []Harness
+	Listed    bool
+}
+
+// Created is what Create did: the box it made, zero when the server made
+// none (a box the server took and the rest failed is here beside the error,
+// as DataSource.Run returns it), and Defaulted, whether it made a harness
+// the project's default on the way, which the console's harness rows and
+// composer then follow.
+type Created struct {
+	Box       Sandbox
+	Defaulted bool
+}
+
+// Create is a create from where its card leaves it to the box: every question
+// it asks before it is sent, in order, through n, and then the create itself
+// (DataSource.Run), narrated on n. Both consoles create through it, answering
+// its questions with their own dialogs; the order of the questions and what
+// follows each answer are here alone.
+//
+//  1. Which harness a project with no default runs (defaultHarnessQuestion):
+//     the one chosen becomes the server's default (RunHarnessVerb), and is
+//     said as a step.
+//  2. What of the working tree it carries (askAboutWorkspace), once the tree
+//     is read: a repository's uncommitted work, or copying a directory in no
+//     repository, whose question names the directory to count
+//     (Question.Measure).
+//
+// A question dismissed is ErrTurnedDown, creating nothing — except the
+// repository's, which leaving answers as starting from the last commit. A
+// project with no harness to offer is ErrNoHarness. Once nothing is left to
+// ask it says so (Narration.Sending), and then creates.
+func Create(ctx context.Context, ds DataSource, run CreateRun, n *Narration) (Created, error) {
+	var out Created
+	// left is a question's error as Create returns it: dismissed is the
+	// create turned down, unless what ended was ctx.
+	left := func(err error) error {
+		if errors.Is(err, context.Canceled) && ctx.Err() == nil {
+			return ErrTurnedDown
+		}
+		return err
+	}
+	req := run.Request
+	q, ask, err := defaultHarnessQuestion(req, run.Harnesses, run.Listed)
+	if err != nil {
+		return out, err
+	}
+	if ask {
+		key, err := n.Ask(ctx, q)
+		if err != nil {
+			return out, left(err)
+		}
+		harness, ok := chosenHarness(run.Harnesses, key)
+		if !ok {
+			return out, fmt.Errorf("no harness %q was offered", key)
+		}
+		note, err := RunHarnessVerb(ctx, ds, run.Server, harness.ID, HarnessSetDefault)
+		if err != nil {
+			return out, err
+		}
+		out.Defaulted = true
+		n.Report(note)
+	}
+
+	if workspaceChecked(req) {
+		n.Report("checking the working tree")
+		ws, err := ds.Workspace(ctx, req.Source)
+		if err != nil {
+			return out, fmt.Errorf("cannot read the working tree: %w", err)
+		}
+		if q, ask := askAboutWorkspace(req, ws); ask {
+			key, err := n.Ask(ctx, q.Question)
+			if err != nil {
+				dismissed, ok := q.Dismissed()
+				if !ok || !errors.Is(err, context.Canceled) || ctx.Err() != nil {
+					return out, left(err)
+				}
+				key = dismissed
+			}
+			req = q.Answer(req, key)
+		}
+	}
+
+	n.Sending(ctx)
+	n.Report("creating the discobox")
+	out.Box, err = ds.Run(ctx, req, n)
+	return out, err
+}
+
 // CopyDirectoryBody is the copy question, under the directory it names. What
-// it would cost is not in here: a renderer that counts it as the question is
-// up (DataSource.MeasureDirectory) says it beside, since it is the whole of
-// what the answer turns on and it is still arriving.
+// it would cost is not in here: the question names the directory to count
+// (Question.Measure), and each console says the count beside the body as it
+// arrives, since it is the whole of what the answer turns on.
 const CopyDirectoryBody = "It is not a Git repository, so copying it into the discobox means copying all of it. " +
 	"Answering no creates the discobox anyway, with nothing checked out in it."
 

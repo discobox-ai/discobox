@@ -229,3 +229,30 @@ fn a_canceled_session_lets_its_stream_go() {
     settle(&mut rt);
     assert!(!rt.state.early.contains_key(&9), "the canceled session's early frames were kept");
 }
+
+// The copy question is sent again, the same question, as its directory is counted: the sheet up
+// is updated where it is, its pick kept, and one already answered is not asked again when its
+// last count crosses the answer.
+#[test]
+fn a_question_sent_again_is_updated_in_place() {
+    let mut rt = runtime();
+    let q = |count: &str| Question {
+        id: 5, command: 4, title: "Copy this directory?".into(), subject: "/tmp/x".into(),
+        choices: vec![Choice { key: "true".into(), label: "Copy".into(), hint: String::new() }, Choice { key: "false".into(), label: "Do not copy".into(), hint: String::new() }],
+        count: count.into(), ..Default::default()
+    };
+    rt.state.inbox.push(Event::Question(q("calculating…")));
+    settle(&mut rt);
+    press(&mut rt, Key::Down, bare());
+    rt.state.inbox.push(Event::Question(q("5.0 MiB in 3 files, still counting…")));
+    settle(&mut rt);
+    assert_eq!(rt.state.sheets.queue.len(), 1, "the count was asked as another question");
+    let up = rt.state.sheets.question().unwrap();
+    assert_eq!(up.picked, 1, "the pick moved with the count");
+    assert_eq!(up.question.count, "5.0 MiB in 3 files, still counting…");
+
+    press(&mut rt, Key::Enter, bare());
+    rt.state.inbox.push(Event::Question(q("7.0 MiB in 4 files")));
+    settle(&mut rt);
+    assert!(!rt.state.sheets.is_open(), "a count that crossed the answer asked again");
+}

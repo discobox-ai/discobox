@@ -8,25 +8,6 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// One decimal below ten and none above, so "1.2 GiB" and "15 GiB" both fit the
-// same column.
-func TestHumanBytes(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		n    int64
-		want string
-	}{
-		{0, "0 B"},
-		{512, "512 B"},
-		{2_483_027_968, "2.3 GiB"},
-		{15_264_268_288, "14 GiB"},
-	} {
-		if got := humanBytes(tc.n); got != tc.want {
-			t.Errorf("humanBytes(%d) = %q, want %q", tc.n, got, tc.want)
-		}
-	}
-}
-
 // A background painted across a row that carries its own colors has to be
 // re-asserted after every reset, or it would stop at the first styled span.
 func TestHighlightSurvivesEmbeddedResets(t *testing.T) {

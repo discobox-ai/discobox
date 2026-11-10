@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 13;
+pub const PROTOCOL: i64 = 14;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
@@ -2268,7 +2268,11 @@ pub struct FieldError {
 /// Question is what a running command asks (console.Question). With Choices it is a pick of one;
 /// with none, a yes or no answered "yes" or "no".
 ///
-/// Subject is what it is about, on a line of its own above the body.
+/// Subject is what it is about, on a line of its own above the body. Count is what the count of a
+/// directory the answer turns on says so far (console.Question.Measure,
+/// console.DirectoryTotal.Said), drawn under the body: the question is sent again, with the same
+/// ID, each time it changes, and the app updates the question it is showing rather than asking
+/// another.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Question {
     pub id: u64,
@@ -2286,6 +2290,9 @@ pub struct Question {
 
     #[serde(rename = "defaultNo", default, skip_serializing_if = "is_default")]
     pub default_no: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub count: String,
 }
 
 /// Answer answers a question, exactly once: Key, or Declined when it cannot be asked. A yes or no

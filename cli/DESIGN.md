@@ -146,7 +146,7 @@ transport helpers where OpenAPI does not model the stream.
   services and ports on it, and the workspace screen is where all of that
   already is; a second, poorer view of the same session is the thing to avoid.
 - **`discobox run` hands the window its request and the window makes the
-  discobox** (`App.runWindowRequest` → `tui.WithRun` → `Model.runRequest`). It
+  discobox** (`App.runWindowRequest` → `tui.WithRun` → `Model.create`). It
   takes the path Enter in the prompt takes, so a question still open — where
   to cut from, or whether to copy a directory in no repository — is the
   window's own dialog and the wait is the window's own screen —
@@ -2770,12 +2770,12 @@ changes on that same commit. Whether that happens is `sandboxcreate.IncludeDirty
   request's `includeDirty` left out is off too.
 - **The console still asks.** Its create card's row is `auto` (the default),
   `include` or `exclude`; `auto` is the window's own dialog
-  (the console core's `console.AskAboutWorkspace`, asked by the TUI and the desktop alike), asked only when the workspace is actually dirty,
+  (asked by the console core's create, `console.Create`, which the TUI and the desktop both answer), asked only when the workspace is actually dirty,
   with "start from the last commit" leading. It asks about the primary source,
   the one it can see a working tree for, and the answer stands for every source
   that create cuts from.
-- The shared create never asks: both frontends settle `IncludeDirty` before
-  calling it. `auto` reaching it includes the work, which is what an `-i`
+- The shared create path (`sandboxcreate`) never asks: the console core's
+  `console.Create` settles `IncludeDirty` before calling it. `auto` reaching it includes the work, which is what an `-i`
   source dirty while the console's primary is clean still gets.
 - **A source with no commits is not this flag's to decide.** A directory in no
   repository is the copy question below, and a repository with no commits yet

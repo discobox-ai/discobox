@@ -665,6 +665,26 @@ func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
 	})
 }
 
+// Esc on the wait while the create may still ask something — here, while
+// the working tree is read — leaves the run with nothing sent, and says so:
+// only a create past its questions carries on without the window.
+func TestEscOnARunsWaitBeforeItIsSentEndsTheCommand(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.workspaceGate = make(chan struct{})
+		d, m := openRun(t, ds, console.RunRequest{})
+		d.wait("the create's wait", func() bool { return m.createNarrating && m.windowWaiting() })
+
+		d.key("esc")
+		d.wait("the window to close", func() bool { return m.quit })
+		close(ds.workspaceGate)
+		if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
+			t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
+		}
+	})
+}
+
 func TestEscOnARunsDirectoryCopyQuestionEndsTheCommand(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

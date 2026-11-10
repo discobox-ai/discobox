@@ -156,10 +156,9 @@ func (f *frontend) dropSource(folder string) outcome {
 }
 
 // NewBox is a create from the composer: the create card as the core's form
-// — where it is cut from, and the card's settings — then the questions a
-// create asks before it is sent (which harness a project with no default
-// runs, what of the working tree it carries), then the create itself,
-// narrated: its steps as progress, the box the moment the server takes it.
+// — where it is cut from, and the card's settings — then the core's create
+// (console.Create), narrated: the questions it asks before it is sent as
+// questions, its steps as progress, the box the moment the server takes it.
 // It ends entering the box's workspace, or done for a create that asked to be
 // left detached. The source answered is where this one box is cut from, and
 // where the next create opens; the list's filter is not moved.
@@ -200,55 +199,24 @@ func (f *frontend) NewBox() outcome {
 			harnesses, herr = s.ds.Harnesses(ctx, server)
 			listed = herr == nil
 		}
-		q, ask, err := console.DefaultHarnessQuestion(req, harnesses, listed)
-		if err != nil {
-			return failed(err.Error())
-		}
-		if ask {
-			key, err := s.ask(ctx, id, q)
-			if err != nil {
-				return declined(err)
-			}
-			harness, ok := console.ChosenHarness(harnesses, key)
-			if !ok {
-				return failed("no such harness")
-			}
-			if _, err := console.RunHarnessVerb(ctx, s.ds, server, harness.ID, console.HarnessSetDefault); err != nil {
-				return failed(err.Error())
-			}
+		// The questions the create asks before it is sent, and their order,
+		// are the core's (console.Create): they reach the app as questions
+		// on the command's narration, its steps as progress.
+		n, done := s.narrate(ctx, id)
+		made, err := console.Create(ctx, s.ds, console.CreateRun{Request: req, Server: server, Harnesses: harnesses, Listed: listed}, n)
+		done()
+		if made.Defaulted {
 			// The harness rows, and the composer's line, name the new default.
 			s.readOptions(ctx)
 		}
-
-		if console.WorkspaceChecked(req) {
-			s.send(Message{Type: TypeProgress, Progress: &Progress{Command: id, Text: "checking the working tree"}})
-			ws, err := s.ds.Workspace(ctx, req.Source)
-			if err != nil {
-				return failed("cannot read the working tree: " + err.Error())
-			}
-			if q, ask := console.AskAboutWorkspace(req, ws); ask {
-				key, err := s.ask(ctx, id, q.Question)
-				if err != nil && ctx.Err() != nil {
-					return declined(ctx.Err())
-				}
-				if err != nil {
-					var ok bool
-					if key, ok = q.Dismissed(); !ok || !errors.Is(err, context.Canceled) {
-						return declined(err)
-					}
-				}
-				req = q.Answer(req, key)
-			}
-		}
-
-		s.send(Message{Type: TypeProgress, Progress: &Progress{Command: id, Text: "creating the discobox"}})
-		n, done := s.narrate(ctx, id)
-		box, err := s.ds.Run(ctx, req, n)
-		done()
+		box := made.Box
 		if box.ID != "" {
 			s.relist()
 		}
 		switch {
+		case errors.Is(err, console.ErrTurnedDown):
+			// A question left is the create turned down: nothing was made.
+			return Result{Status: StatusCanceled}
 		case err != nil && box.ID == "":
 			return failed(err.Error())
 		case err != nil:
@@ -260,15 +228,6 @@ func (f *frontend) NewBox() outcome {
 		}
 		return Result{Status: StatusEnter, Box: Key(box.Server, box.ID)}
 	}
-}
-
-// declined is a command whose question was left: canceled when it was
-// dismissed, failed otherwise.
-func declined(err error) Result {
-	if errors.Is(err, context.Canceled) {
-		return Result{Status: StatusCanceled}
-	}
-	return failed(err.Error())
 }
 
 // composer follows the run options' summary: read against the harnesses and

@@ -48,7 +48,10 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //     (bind_1), with one decision in its history. Unbinding asks first.
 //
 // A create (new) is made on claude, the project's default, and makes the box
-// made: it reports the last draft the app sent as a step, and is taken.
+// made: it reports the last draft the app sent as a step, and is taken. In the
+// "copy" scenario it is cut from /work/notes, a directory in no repository, so
+// it asks whether to copy it, counting it as nothing yet, then 5 MiB in 3
+// files, then a final 7 MiB in 4.
 //
 // Archiving and unarchiving a box changes its state in the listing. Every
 // terminal echoes what it is sent (fakeTerm), so an OSC 7501 report typed into
@@ -115,6 +118,9 @@ func TestContractCore(t *testing.T) {
 	case "early":
 		core.gate = make(chan struct{})
 	case "default":
+	case "copy":
+		core.workspace = console.SourceWorkspace{Directory: "/work/notes", Carries: true}
+		core.counts = []console.DirectoryTotal{{}, {Bytes: 5 << 20, Files: 3}, {Bytes: 7 << 20, Files: 4, Done: true}}
 	default:
 		t.Fatalf("%s=%q: no such scenario", contractEnv, scenario)
 	}

@@ -382,11 +382,16 @@ cursor and the drawing.
   a chosen pool across listings by ID, and one named that the listing lacks.
 - **The card is the run options' too**: `CardRows` are the settings it offers,
   `CardChoice` how a choice reads on it (`auto (claude)`).
-- **What a create asks before it is sent is the core's**:
-  `DefaultHarnessQuestion` (a project with no default; never the shell) and
-  `AskAboutWorkspace` (a repository's uncommitted work, excluding first and
-  left as excluded; a directory in no repository, copying first and left as
-  nothing created), each answered through the question it returns.
+- **A create past its card is one core flow** (`Create`), which both consoles
+  call and answer through the create's `Narration`: which harness a project
+  with no default runs (never the shell; the one chosen made the default,
+  `Created.Defaulted`), then, once the working tree is read, what it carries
+  (a repository's uncommitted work, excluding first and left as excluded; a
+  directory in no repository, copying first and left as nothing created,
+  naming the directory to count, `Question.Measure`), then the create. The
+  order and what follows each answer are there alone; a question left that
+  turns the create down is `ErrTurnedDown`, and once nothing is left to ask
+  it says so (`Narration.Sending`) before it creates.
 - **A form renderer gets them as forms**: `CreateForm` (the source — a choice
   or one typed — and `CardRows`) and `OptionsForm` (the source as the card
   asks it, and every other row shown). Keys are
@@ -534,7 +539,13 @@ flowchart LR
   command nobody watches: it reports nowhere and declines every question, and
   `Decline` is that for a frontend that cannot ask yet.
 - **A question has a subject** (`Subject`), said on its own line above its
-  body: the directory a create would carry.
+  body: the directory a create would carry. A question can name a directory
+  to count (`Measure`): the console counts it while the question is up
+  (`DataSource.MeasureDirectory`), every `MeasureEvery`, and says the count
+  as it climbs in the core's words (`DirectoryTotal.Said`, sizes as `Bytes`
+  spells them). A choice that is its question's yes or no in words of its
+  own says so (`Choice.Means`), for a console that answers yes and no by a
+  key of its own.
 - **What a command asks before it runs is the core's too**: `Confirmation`
   says which lifecycle verbs ask first (purging, which nothing undoes; nothing
   else, archiving included) and in what words, and `Dispatch` asks it on the

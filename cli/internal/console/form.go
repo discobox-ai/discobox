@@ -19,6 +19,11 @@ type Choice struct {
 	Label string
 	// Hint is what choosing it means, said under the card while it is chosen.
 	Hint string
+	// Means is AnswerYes or AnswerNo for a question's choice that is its yes
+	// or its no in words of its own (the create's questions about the working
+	// tree): a console that answers a yes or no by a key of its own answers
+	// these by it too. Empty for every other choice.
+	Means string
 }
 
 // Field is one line of a form: a label, and a value either typed or chosen.

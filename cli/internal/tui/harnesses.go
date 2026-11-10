@@ -238,15 +238,6 @@ type harnessesLoadedMsg struct {
 	err       error
 }
 
-// harnessDefaultMsg carries a chosen default back to the live model.
-type harnessDefaultMsg struct {
-	harness console.Harness
-	resume  *console.RunRequest
-}
-
-// resumeRunMsg is the run a harness question interrupted, now answered.
-type resumeRunMsg struct{ req console.RunRequest }
-
 // harnessVerbMsg is a confirmed verb on its way back to the live model.
 type harnessVerbMsg struct {
 	verb    console.HarnessVerb
@@ -265,9 +256,6 @@ type harnessFileMsg struct {
 type harnessDoneMsg struct {
 	text string
 	err  error
-	// resume is the run that was waiting on this, once everything it was
-	// waiting for has happened.
-	resume *console.RunRequest
 }
 
 // harnessCardMsg is the config card, once the secret bindings behind it have
@@ -480,7 +468,7 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 		})
 		return nil
 	case "s":
-		return m.runHarnessVerb(console.HarnessSetDefault, harness, nil)
+		return m.runHarnessVerb(console.HarnessSetDefault, harness)
 	case "v":
 		return m.showHarnessCard(harness)
 	case "f":
@@ -542,14 +530,14 @@ func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
 
 // runHarnessVerb sends one verb to the API. Nothing takes the terminal, so the
 // screen stays up and reports on its own status line.
-func (m *Model) runHarnessVerb(verb console.HarnessVerb, harness console.Harness, resume *console.RunRequest) tea.Cmd {
+func (m *Model) runHarnessVerb(verb console.HarnessVerb, harness console.Harness) tea.Cmd {
 	name := harness.DisplayName()
 	m.busy = string(verb) + " " + name + "…"
 	server := m.configServer()
 	return func() tea.Msg {
 		// The core reads the harness again and refuses what its menu would.
 		note, err := console.RunHarnessVerb(m.ctx, m.ds, server, harness.ID, verb)
-		return harnessDoneMsg{text: note, err: err, resume: resume}
+		return harnessDoneMsg{text: note, err: err}
 	}
 }
 
@@ -595,22 +583,9 @@ func (m *Model) editInTerminal(editing *console.Editing) tea.Cmd {
 func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
-		if msg.resume != nil {
-			// The run this was answering cannot go on, so it ends as a run
-			// does — in a window that is one command's own, the window with it.
-			return tea.Batch(m.loadHarnesses(), m.runFailed(msg.err))
-		}
 		return tea.Batch(m.loadHarnesses(), m.report(true, "%v", msg.err))
 	}
-	done := tea.Batch(m.loadHarnesses(), m.refresh(), m.report(false, "%s", msg.text))
-	if msg.resume == nil {
-		return done
-	}
-	// The run that asked the question, now that it has an answer. It resumes
-	// past the questions rather than at the top: they have been answered, and
-	// the listing this just re-read has not necessarily caught up yet.
-	req := *msg.resume
-	return tea.Batch(done, func() tea.Msg { return resumeRunMsg{req: req} })
+	return tea.Batch(m.loadHarnesses(), m.refresh(), m.report(false, "%s", msg.text))
 }
 
 // harnessFilesDialog is the file picker: the harness's files, the ones saved
@@ -646,7 +621,7 @@ func (m *Model) harnessFilesDialog(harness console.Harness) *dialog {
 // harnessFileDetail is a file as the picker and the card describe it: its
 // size, then what the core says of it.
 func harnessFileDetail(file console.HarnessFile) string {
-	return strings.Join(append([]string{humanBytes(int64(len(file.Content)))}, file.Notes()...), " · ")
+	return strings.Join(append([]string{console.Bytes(int64(len(file.Content)))}, file.Notes()...), " · ")
 }
 
 // showHarnessCard opens the config card. The bindings behind it are a request

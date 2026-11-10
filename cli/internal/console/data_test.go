@@ -229,3 +229,39 @@ func TestAgentHeardIsTheNewerOfTheStreamAndThePoll(t *testing.T) {
 		t.Fatalf("a poll with no report: %q", got)
 	}
 }
+
+// One decimal below ten and none above, so "1.2 GiB" and "15 GiB" both fit the
+// same column.
+func TestBytes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		n    int64
+		want string
+	}{
+		{0, "0 B"},
+		{512, "512 B"},
+		{2_483_027_968, "2.3 GiB"},
+		{15_264_268_288, "14 GiB"},
+	} {
+		if got := Bytes(tc.n); got != tc.want {
+			t.Errorf("Bytes(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
+// A directory's count is said as nothing yet, climbing, and final.
+func TestADirectoryCountIsSaidAsItClimbs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		total DirectoryTotal
+		want  string
+	}{
+		{DirectoryTotal{}, "calculating…"},
+		{DirectoryTotal{Bytes: 5 << 20, Files: 3}, "5.0 MiB in 3 files, still counting…"},
+		{DirectoryTotal{Bytes: 7 << 20, Files: 1, Done: true}, "7.0 MiB in 1 file"},
+	} {
+		if got := tc.total.Said(); got != tc.want {
+			t.Errorf("%+v said %q, want %q", tc.total, got, tc.want)
+		}
+	}
+}

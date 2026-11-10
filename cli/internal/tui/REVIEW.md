@@ -225,10 +225,12 @@
   (`TestALateAcceptLeavesTheNextCreatesComposer`).
 - **Every way a card closes reaches its `onCancel`** when the card stands for
   a question a goroutine waits on (`m.ask` marks it `waitedOn`): Esc and `q`
-  alike. Only there: on other cards `q` just closes, since an Esc can be an
-  answer of its own (the uncommitted changes card's goes on to create). A card
-  that closed without it once left a delivery waiting in `Ask` for the life
-  of the window, holding the credential lock every other source waited on.
+  alike. Only there: on other cards `q` just closes. A create's questions are
+  such cards (`console.Create` asks them), so `q` on the uncommitted changes
+  card is its Esc too, which the core answers as starting from the last
+  commit. A card that closed without it once left a delivery waiting in `Ask`
+  for the life of the window, holding the credential lock every other source
+  waited on.
 - Install an operation's progress status before launching its asynchronous
   work. Batching the start notice with the operation lets a fast completion
   arrive first; a late "merging…" once erased GitHub's merge refusal, and a
@@ -332,6 +334,22 @@
   worker with a decline (`Asking.Decline`, `Handover.Done`).
   Return terminal ownership through `tea.ExecProcess`, and keep Git credential
   stdout captured by the delivery layer, never rendered.
+- **A create's own questions are never declined as stale; what it asks once
+  sending always is** (`narration.create`, `createWatch.sending`). Declining
+  one of `console.Create`'s questions answers it — the uncommitted changes
+  left out, or the create turned down — and any narrated operation started
+  meanwhile (a verb, an attach) makes the feed stale. But the same feed then
+  carries delivery's Git credential consent, and asked over whatever the
+  person moved on to, an Enter meant for a box's terminal lends their
+  credential. `sending` is set as the event is read, never through a message
+  of its own, so it is ordered before what the feed says next. Only
+  `console.ErrTurnedDown` ends a create quietly; any other cancellation is
+  reported.
+- **A one-command run's wait says nothing is created until the create is
+  sent** (`createWatch.sending`, from `Narration.Sending`). The wait is up
+  while the create still reads the tree and asks; Esc there, or a second Esc
+  just after leaving a question, once exited 0 with no request made, under a
+  line saying the discobox carries on.
 - Never pair the listing's name (`Sandbox.Name`) with a program's `msg`: it
   can hold that msg (`sandboxmeta.Title`, ADR 26-10-31-618), so a record or
   line that shows both says it twice, once from a poll that lags the stream.

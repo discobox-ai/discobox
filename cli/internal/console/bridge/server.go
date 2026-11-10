@@ -659,17 +659,47 @@ func (s *Server) ask(ctx context.Context, command uint64, q console.Question) (s
 		delete(s.questions, id)
 		s.mu.Unlock()
 	}()
-	s.send(Message{Type: TypeQuestion, Question: &Question{
+	question := Question{
 		ID: id, Command: command, Title: q.Title, Subject: q.Subject, Body: q.Body, Choices: choices(q.Choices), DefaultNo: q.DefaultNo,
-	}})
-	select {
-	case a := <-ch:
-		if a.Declined {
-			return "", context.Canceled
+	}
+	// A directory the answer turns on is counted while the question is up,
+	// and the question sent again as the count climbs, until it is final or
+	// the question is answered.
+	var total func() console.DirectoryTotal
+	var tick <-chan time.Time
+	if q.Measure != "" {
+		var stop func()
+		total, stop = s.ds.MeasureDirectory(ctx, q.Measure)
+		defer stop()
+		counted := total()
+		question.Count = counted.Said()
+		if !counted.Done {
+			ticker := time.NewTicker(console.MeasureEvery)
+			defer ticker.Stop()
+			tick = ticker.C
 		}
-		return a.Key, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
+	}
+	s.send(Message{Type: TypeQuestion, Question: &question})
+	for {
+		select {
+		case a := <-ch:
+			if a.Declined {
+				return "", context.Canceled
+			}
+			return a.Key, nil
+		case <-tick:
+			counted := total()
+			if counted.Done {
+				tick = nil
+			}
+			if said := counted.Said(); said != question.Count {
+				question.Count = said
+				again := question
+				s.send(Message{Type: TypeQuestion, Question: &again})
+			}
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
 }
 
