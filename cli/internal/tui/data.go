@@ -1085,7 +1085,7 @@ type Exec struct {
 	// workspace through this same listing rather than a poll of its own.
 	Service string
 	// ServiceName is the service's display name, which is what its tab is
-	// called.
+	// called: terminal-safe, and its ID escaped when it declared no name.
 	ServiceName string
 	// ServiceOrder is where the service sits in the repository's declaration
 	// order — the order `.discobox/services` lists in, which the numeric

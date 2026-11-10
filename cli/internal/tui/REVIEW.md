@@ -168,6 +168,20 @@
   not better: `ParseSandboxAddress` percent-decodes the path, so a link that
   is plain printable text turns into an ID carrying a real ESC.
 
+- **A service's text arrives terminal-safe; keep it that way where it is
+  mapped.** Its name, description, status, problem, error and file name, a
+  service exec's name, and a port's service name are escaped by
+  `internal/cli` as it builds this package's types (`tuiService`, `tuiExec`,
+  `sandboxListeningPorts`), never at the places they are drawn, and a
+  service with no name is named by its ID escaped there too. The box wrote
+  every one of them, and this package draws them outside every pane's
+  emulator, where a control sequence acts on the user's terminal. One field
+  reaches many places — a service's name is the tab, a pane's title edge,
+  the services menu and the status line — so escaping where it is drawn
+  misses one: escaping it in the menu missed the tab (#913). A new field of
+  box-written text is escaped in the mapping that builds it; an ID the
+  console sends back stays raw, and is never what it shows.
+
 ## The workspace tree
 
 - **A workspace's state is a field of `workspace`, never loose on `Model`.**

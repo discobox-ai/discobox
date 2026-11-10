@@ -22,6 +22,11 @@ import (
 // minute ago, is exactly what it is being opened to find out about.
 
 // Service is one of a discobox's declared services, as the menu draws it.
+//
+// Every string but the IDs is the box's text and arrives terminal-safe
+// (cli/internal/tui/REVIEW.md): the data source escapes it, and names a service
+// that declared none by its ID, escaped. The IDs are raw, because they are
+// sent back, and are never drawn.
 type Service struct {
 	ID          string
 	Name        string
@@ -64,13 +69,10 @@ func (s Service) detail() string {
 	return s.Status
 }
 
-// displayName is what the service is called on screen.
-func (s Service) displayName() string {
-	if name := strings.TrimSpace(s.Name); name != "" {
-		return name
-	}
-	return s.ID
-}
+// displayName is what the service is called on screen. Name is never blank
+// from the data source, which names a service that declared none by its ID,
+// escaped; the ID held here is the raw one sent back, so it is never shown.
+func (s Service) displayName() string { return strings.TrimSpace(s.Name) }
 
 // servicesMsg is the answer to opening the menu: the discobox's services, or
 // why they could not be read.

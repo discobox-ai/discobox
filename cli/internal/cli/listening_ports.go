@@ -124,11 +124,14 @@ func sandboxListeningPorts(sb apimodel.Sandbox) []tui.Port {
 		// Read from the report rather than from the forward targets: the
 		// header's ports are what the sandbox serves, bound locally or not.
 		out = append(out, tui.Port{
-			Number:      int(port.Port),
-			UDP:         portNetwork(string(port.Protocol)) == portforward.UDP,
-			Protocol:    string(port.Protocol),
-			ServiceID:   port.ServiceId.Or(""),
-			ServiceName: port.ServiceName.Or(""),
+			Number:    int(port.Port),
+			UDP:       portNetwork(string(port.Protocol)) == portforward.UDP,
+			Protocol:  string(port.Protocol),
+			ServiceID: port.ServiceId.Or(""),
+			// The service's name is its declaration's, the box's text, and
+			// the header draws it as the desktop's link label, outside every
+			// pane's emulator.
+			ServiceName: terminalSafe(port.ServiceName.Or("")),
 		})
 	}
 	return out

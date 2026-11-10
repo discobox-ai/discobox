@@ -56,6 +56,9 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 	// A service names itself in exec metadata, which is how the workspace
 	// tells a service's exec from a terminal or a shell in this listing and
 	// pairs it with the services listing it polls beside it (ADR 0070 §2, §7).
+	// Its name is the declaration's, the box's text, and becomes the tab's
+	// title, so it arrives terminal-safe like the services listing's
+	// (tuiService).
 	metadata := map[string]string(exec.Metadata.Value)
 	return tui.Exec{
 		ID:           exec.ID,
@@ -65,11 +68,22 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 		Service:      metadata[sandboxServiceIDMetadata],
 		Tool:         execToolID(metadata[execToolMetadataKey]),
 		FilesChanged: metadata[execFilesChangedMetadataKey] != "",
-		ServiceName:  metadata[sandboxServiceNameMetadata],
+		ServiceName:  serviceName(metadata[sandboxServiceNameMetadata], metadata[sandboxServiceIDMetadata]),
 		Tty:          exec.Tty,
 		Live:         live,
 		CreatedAt:    exec.CreatedAt,
 	}
+}
+
+// serviceName is what a service is called on screen, terminal-safe: its
+// declared name, or its ID when it has none. The console draws the name it is
+// given and never the ID it holds, which is the raw one it sends back, so the
+// fallback to the ID is made here, escaped.
+func serviceName(name, id string) string {
+	if strings.TrimSpace(name) == "" {
+		name = id
+	}
+	return terminalSafe(name)
 }
 
 // The exec metadata keys the sandbox-agent tags a service's exec with. They
@@ -128,24 +142,38 @@ func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.S
 	}
 	out := make([]tui.Service, 0, len(services))
 	for _, service := range services {
-		mapped := tui.Service{
-			ID:          service.ID,
-			Name:        service.Name,
-			Description: service.Description.Or(""),
-			Status:      string(service.Status),
-			Problem:     service.Problem.Or(""),
-			FileName:    service.FileName.Or(""),
-			ExecID:      service.ExecId.Or(""),
-			StartedAt:   service.StartedAt.Or(time.Time{}),
-			Error:       service.Error.Or(""),
-		}
-		if code, ok := service.ExitCode.Get(); ok {
-			exit := int(code)
-			mapped.ExitCode = &exit
-		}
-		out = append(out, mapped)
+		out = append(out, tuiService(service))
 	}
 	return out, nil
+}
+
+// tuiService maps one API service to the console's own type. Everything in it
+// a person reads came from a declaration the box wrote, or from the box's
+// account of the service's run — its name, what it is for, its state, why it
+// cannot run, how its run failed, the file declaring it — so each of those
+// arrives terminal-safe: the console draws them outside every pane's emulator,
+// in the tab strip, a pane's title edge and footer, the services menu and the
+// status line. The IDs stay as they are, because they are what the console
+// sends back; but the sandbox that answers is the box's, so an ID is no safer
+// to show than a name, and a service with no name is named by its ID escaped
+// (serviceName), never by the raw one.
+func tuiService(service apimodel.SandboxService) tui.Service {
+	mapped := tui.Service{
+		ID:          service.ID,
+		Name:        serviceName(service.Name, service.ID),
+		Description: terminalSafe(service.Description.Or("")),
+		Status:      terminalSafe(string(service.Status)),
+		Problem:     terminalSafe(service.Problem.Or("")),
+		FileName:    terminalSafe(service.FileName.Or("")),
+		ExecID:      service.ExecId.Or(""),
+		StartedAt:   service.StartedAt.Or(time.Time{}),
+		Error:       terminalSafe(service.Error.Or("")),
+	}
+	if code, ok := service.ExitCode.Get(); ok {
+		exit := int(code)
+		mapped.ExitCode = &exit
+	}
+	return mapped
 }
 
 // ServiceLogs is a service's transcript as the bytes it wrote, for the pane
