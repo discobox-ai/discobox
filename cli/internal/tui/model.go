@@ -947,6 +947,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.syncWidth() {
 				m.layout()
 			}
+			m.syncFilesDrop()
 			return m, cmd
 		}
 	}
@@ -982,6 +983,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// pane on screen is one being read. Doing it here rather than at each of
 	// the several places focus can move means no new way to move it can forget.
 	m.markSeen()
+	// And for a drop waiting for Enter: it is confirmed only where it was
+	// pasted, so every way the keys leave the panel drops it uncopied.
+	m.syncFilesDrop()
 	// Same reasoning for the band's clock: it runs while the credential band is
 	// up and stops with it, and here is the one place that sees every way it
 	// can come and go. See armBannerPulse.
