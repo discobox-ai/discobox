@@ -191,8 +191,8 @@ fn a_menus_entries_say_why_not() {
     rt.state.open_commands_menu(MenuKind::Bar(DesktopMenu::Box), (0.0, 0.0));
     settle(&mut rt);
     let m = rt.state.menu.as_ref().unwrap();
-    let issue = m.entries.iter().find(|e| e.command == "issue").unwrap();
-    assert!(!issue.enabled && issue.why.contains("not in the desktop app yet"), "{issue:?}");
+    let requests = m.entries.iter().find(|e| e.command == "requests").unwrap();
+    assert!(!requests.enabled && requests.why.contains("not in the desktop app yet"), "{requests:?}");
     let attach = m.entries.iter().find(|e| e.command == "attach").unwrap();
     assert!(attach.enabled, "{attach:?}");
 }
@@ -255,7 +255,7 @@ fn a_menu_takes_each_ruling() {
     settle(&mut rt);
     let sub = rt.state.menu.as_ref().unwrap().sub;
     let ruled = |enabled: bool| crate::wire::Commands {
-        entries: ["start", "issue"].iter().map(|id| crate::wire::Entry {
+        entries: ["start", "requests"].iter().map(|id| crate::wire::Entry {
             command: id.to_string(), label: id.to_string(), enabled, why: if enabled { String::new() } else { "not now".into() }, ..Default::default()
         }).collect(),
     };
@@ -264,5 +264,5 @@ fn a_menu_takes_each_ruling() {
     assert!(!entry(&rt, "start").enabled);
     rt.state.take_commands(sub, Ok(ruled(true)));
     assert!(entry(&rt, "start").enabled, "start stayed greyed");
-    assert!(!entry(&rt, "issue").enabled && entry(&rt, "issue").why.contains("not in the desktop app yet"), "issue took a ruling the app cannot act on");
+    assert!(!entry(&rt, "requests").enabled && entry(&rt, "requests").why.contains("not in the desktop app yet"), "requests took a ruling the app cannot act on");
 }

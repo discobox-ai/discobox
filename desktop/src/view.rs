@@ -10,7 +10,7 @@ use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col,
 use crate::wire::{Box as Sandbox, GitTone, Link, Row, TabKind};
 use crate::theme::{self, CELL_H};
 use crate::paste::{self, DropOver};
-use crate::{Focus, MenuKind, Pane, Side, State, Workspace, audit, harnesses, icons, keys, mark, overlay, run_command, secrets, sheet};
+use crate::{Focus, MenuKind, Pane, Side, State, Workspace, audit, harnesses, icons, issue, keys, mark, overlay, run_command, run_on, secrets, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
@@ -395,8 +395,13 @@ fn pane_label(ws: &Workspace, i: usize, sbx: &Sandbox) -> String {
 
 /// What a tab's chip says of its stream beside its label: a gold dot while it reconnects, a
 /// faint one once its program has finished and its last screen is held, or while its service is
-/// not running.
+/// not running; a green one on a pull request's tab ready to merge.
 fn chip_state(p: &Pane) -> Option<El> {
+    // A pull request ready to merge marks its tab, as the core says it is (`Merge.ready`), so it
+    // is seen from whichever pane has the keys.
+    if p.issue.as_ref().and_then(|t| t.issue.as_ref()?.pull_request.as_ref()).is_some_and(|pr| pr.merge.as_ref().is_some_and(|m| m.ready)) {
+        return Some(el().size(6.0, 6.0).radius(3.0).fill(theme::ok()));
+    }
     let c = if p.settled() {
         theme::dim()
     } else if p.status.is_some() {
@@ -461,6 +466,13 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
     }
     let pane = &ws.panes[active];
     let id = pane.stream;
+    // An issue's tab draws its issue in place of a terminal.
+    if pane.issue.is_some() {
+        let body = el().key(format!("issue-pane-{id}")).w_full().grow(1.0).min_h(0.0).clip_rounded(theme::r_key()).fill(theme::sunken())
+            .child(issue::view(s, pane))
+            .on_press(move |s: &mut State| s.select_pane(active));
+        return frame(format!("col-{side:?}"), focused, Some(tabs), Some(buttons), body).min_w(0.0);
+    }
     // Terminal content never moves on a spring: what a program draws lands as it is drawn, its
     // layout (`instant_changes`) and its colours (`Spring::NONE`; `instant_changes` leaves colours
     // on their springs) alike.
@@ -566,15 +578,24 @@ fn divider() -> El {
         })
 }
 
-/// A link in the header: opened in the browser on a press; one without a URL is text.
-fn link(key: String, l: &Link) -> El {
+/// A link in the header: opened in the browser on a press; one without a URL is text. One that
+/// names a command (the box's issue or pull request) runs it on its box instead — its tab — and
+/// opens the browser on a ⌘-press (Ctrl-press elsewhere), as a link a program made does.
+fn link(key: String, l: &Link, sandbox: &str) -> El {
     if l.url.is_empty() {
         return t(l.label.clone(), theme::grey());
     }
     let url = l.url.clone();
+    let command = l.command.clone();
+    let sandbox = sandbox.to_string();
+    let help = if command.is_empty() { url.clone() } else { format!("open its tab — {} opens {url}", if keys::MAC { "⌘-click" } else { "Ctrl-click" }) };
     text(l.label.clone()).key(key).font(theme::UI).color(theme::mark()).px(2.0).radius(theme::r_key())
-        .hover(theme::mark().alpha(0.12)).press(theme::mark().alpha(0.2)).cursor(rune::Cursor::Pointer).help(url.clone())
+        .hover(theme::mark().alpha(0.12)).press(theme::mark().alpha(0.2)).cursor(rune::Cursor::Pointer).help(help)
         .on_press_tx(move |s: &mut State, tx: &mut Tx| {
+            if !command.is_empty() && !tx.mods().cmd {
+                run_on(s, &command, vec![sandbox.clone()], tx);
+                return;
+            }
             if let Err(e) = tx.open_url(&url) {
                 s.message = Some(format!("could not open {url}: {e}"));
             }
@@ -612,7 +633,7 @@ fn header(s: &State, ws: &Workspace, sbx: &Sandbox) -> El {
         Some(h) => {
             mid = mid.child(t(h.id.clone(), theme::dim()));
             for (i, w) in h.work.iter().enumerate() {
-                mid = mid.child(link(format!("work-{i}"), w));
+                mid = mid.child(link(format!("work-{i}"), w, &sbx.key));
             }
             if !h.blocked.is_empty() {
                 mid = mid.child(t(h.blocked.clone(), theme::err()));
@@ -629,7 +650,7 @@ fn header(s: &State, ws: &Workspace, sbx: &Sandbox) -> El {
                     .child(text(format!("−{}", h.deleted)).font(theme::UI_SMALL).color(theme::salmon())));
             }
             if let Some(d) = &h.desktop {
-                mid = mid.child(link("desktop".into(), d));
+                mid = mid.child(link("desktop".into(), d, &sbx.key));
             }
             if !h.ports.is_empty() {
                 let mut ports = row().gap(4.0).center_y();
@@ -639,7 +660,7 @@ fn header(s: &State, ws: &Workspace, sbx: &Sandbox) -> El {
                 for (g, group) in h.ports.iter().enumerate() {
                     ports = ports.child(t(format!("{}:", group.protocol), theme::dim()));
                     for (i, p) in group.ports.iter().enumerate() {
-                        ports = ports.child(link(format!("port-{g}-{i}"), p));
+                        ports = ports.child(link(format!("port-{g}-{i}"), p, &sbx.key));
                     }
                 }
                 mid = mid.child(ports);

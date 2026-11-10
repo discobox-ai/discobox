@@ -11,7 +11,7 @@
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
 use crate::wire::Spec;
-use crate::{Focus, State, audit, harnesses, overlay, run_command, secrets, sheet};
+use crate::{Focus, State, audit, harnesses, issue, overlay, run_command, secrets, sheet};
 
 pub const MAC: bool = cfg!(target_os = "macos");
 
@@ -211,6 +211,13 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     {
         s.goto_service(n.saturating_sub(1) as usize);
         return true;
+    }
+    // An issue's tab has keys of its own, as a screen does (`issue.rs`); what it leaves are the
+    // window's.
+    if s.pane_has_keys()
+        && let Some(stream) = s.focused_pane().filter(|p| p.issue.is_some()).map(|p| p.stream)
+    {
+        return issue::key(s, stream, ev, tx) || command_or_key(s, ev, tx);
     }
     // A pane's own gestures: the terminal answers them itself, and the program never hears them.
     if s.pane_has_keys() {

@@ -20,6 +20,8 @@ path = "src/main.rs"
 discobox-bridge = { path = "bridge" }
 # Rune is pre-release: pin a rev of `dev` (it is never rewritten).
 rune = { git = "https://github.com/anomalyco/rune", rev = "4ca683561a100e16b1ce32f3576f4ade61bd2924" }
+# Rune's components, for its Markdown: an issue's and its comments' bodies, rendered natively.
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "4ca683561a100e16b1ce32f3576f4ade61bd2924", features = ["markdown"] }
 alacritty_terminal = "0.26"
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }

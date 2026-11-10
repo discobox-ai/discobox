@@ -11,6 +11,7 @@ const CHROME: &[(&str, &str)] = &[
     ("sheet.rs", include_str!("sheet.rs")),
     ("harnesses.rs", include_str!("harnesses.rs")),
     ("audit.rs", include_str!("audit.rs")),
+    ("issue.rs", include_str!("issue.rs")),
     ("icons.rs", include_str!("icons.rs")),
     ("mark.rs", include_str!("mark.rs")),
     ("theme.rs", include_str!("theme.rs")),

@@ -165,7 +165,7 @@ fn a_pick_of_one_answers_by_key() {
     let mut rt = runtime();
     let q = |id| Question {
         id, command: 99, title: "Git credentials".into(), body: "github.com asked for credentials".into(),
-        choices: vec![Choice { key: "token".into(), label: "use a token".into(), hint: String::new() }, Choice { key: "skip".into(), label: "skip".into(), hint: "push nothing".into() }],
+        choices: vec![Choice { key: "token".into(), label: "use a token".into(), hint: String::new(), ..Default::default() }, Choice { key: "skip".into(), label: "skip".into(), hint: "push nothing".into(), ..Default::default() }],
         default_no: false, ..Default::default()
     };
     rt.state.inbox.push(Event::Question(q(1)));
@@ -214,7 +214,7 @@ fn a_dismissed_yes_or_no_is_no() {
         serde_json::to_value(dismissal(&Sheet::Question(QuestionSheet { question, picked: 0 })).message()).unwrap()
     };
     assert_eq!(sent(vec![])["answer"], serde_json::json!({"question": 3, "key": "no"}));
-    let pick = vec![Choice { key: "a".into(), label: "a".into(), hint: String::new() }];
+    let pick = vec![Choice { key: "a".into(), label: "a".into(), hint: String::new(), ..Default::default() }];
     assert_eq!(sent(pick)["answer"], serde_json::json!({"question": 3, "declined": true}));
 }
 
@@ -238,7 +238,7 @@ fn a_question_sent_again_is_updated_in_place() {
     let mut rt = runtime();
     let q = |count: &str| Question {
         id: 5, command: 4, title: "Copy this directory?".into(), subject: "/tmp/x".into(),
-        choices: vec![Choice { key: "true".into(), label: "Copy".into(), hint: String::new() }, Choice { key: "false".into(), label: "Do not copy".into(), hint: String::new() }],
+        choices: vec![Choice { key: "true".into(), label: "Copy".into(), hint: String::new(), ..Default::default() }, Choice { key: "false".into(), label: "Do not copy".into(), hint: String::new(), ..Default::default() }],
         count: count.into(), ..Default::default()
     };
     rt.state.inbox.push(Event::Question(q("calculating…")));

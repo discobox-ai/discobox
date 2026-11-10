@@ -43,6 +43,9 @@ Global review expectations:
   grab this rule prevents. A shell's result once switched to its box wherever
   the person had gone, and parked or released the box they had moved to; the
   TUI learned the same rule as `heldPane` (`cli/internal/tui/REVIEW.md`).
+  A session the sessions topic never lists (a pull request's files changed)
+  has no later to open with: letting its stream go ends it, so the status line
+  says so. The first desktop files changed vanished silently that way.
 - A file the desktop app opens for the person goes to a text editor, never to a
   shell or to the system's file association by its extension alone
   (`sheet::open_in_editor`): a harness file's path is its bundle's choice, and

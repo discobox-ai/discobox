@@ -89,6 +89,50 @@ pub fn warn() -> Color { token("warn") }
 pub fn done() -> Color { token("green") }
 pub fn salmon() -> Color { token("salmon") }
 pub fn err() -> Color { token("err") }
+/// Something that passed or is open: a check, an approval, an open issue.
+pub fn ok() -> Color { token("ok") }
+/// Information that is not a state: a merge, a link, code in a sentence, a diff's hunk.
+pub fn info() -> Color { token("info") }
+
+/// What a word or a mark on an issue's tab is drawn in, by the tone the core gave it
+/// (`console.IssueTone`).
+pub fn tone(t: crate::wire::IssueTone) -> Color {
+    use crate::wire::IssueTone;
+    match t {
+        IssueTone::Open | IssueTone::Good => ok(),
+        IssueTone::Merged => info(),
+        IssueTone::Warn => warn(),
+        IssueTone::Bad => err(),
+        IssueTone::Busy => gold(),
+        IssueTone::Shut | IssueTone::Quiet => dim(),
+    }
+}
+
+/// A GitHub label's own colour, six hex digits as its page draws it: the issue's data, not the
+/// chrome's, drawn only as the label's dot; none for one that is not a colour.
+pub fn label(rgb: &str) -> Option<Color> { (rgb.len() == 6).then(|| parse(rgb)).flatten() }
+
+/// How an issue's markdown is drawn: the window's own text and tokens, in its face, code on the
+/// sunken ground terminals are drawn on, links and inline code in the info colour.
+pub fn markdown() -> rune_kit::markdown::MarkdownStyle {
+    rune_kit::markdown::MarkdownStyle::neutral(dark())
+        .text(text())
+        .muted(grey())
+        .link(info())
+        .link_underline(line_bright())
+        .inline_code_bg(sunken())
+        .code_block(sunken(), line())
+        .quote_rule(line_bright())
+        .rule(line())
+        .selection(selection())
+        .diff(done(), err())
+        .diff_hunk(info())
+        .body_font(UI.lh(20.0))
+        .heading_font(1, TextStyle::new(15.0, 600.0).family(Family::Mono).lh(22.0))
+        .heading_font(2, TextStyle::new(14.0, 600.0).family(Family::Mono).lh(20.0))
+        .heading_font(3, UI_BOLD.lh(20.0))
+        .code_block_font(TERM)
+}
 
 // ---------------------------------------------------------------------------------------------
 // Type: JetBrains Mono throughout (§2), hierarchy from weight, size and colour.

@@ -30,6 +30,8 @@ use crate::wire::{
     HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload, Secret, SecretAction, SecretBinding, SecretStanding,
     Decision, DetailSection, DetailField, SecretWords,
     Audit, AuditPart, AuditRecord, AuditRecording, AuditRun, AuditText,
+    Issue, IssueAct, IssueItem, IssueItemKind, IssueMark, IssueRef, IssueState, IssueTone, Label, PullRequest, Merge, Reviewer, Checks, Check,
+    Thread, ThreadComment,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -99,6 +101,8 @@ pub enum Event {
     Provisioning(u32, Result<Provisioning, String>),
     /// A box's audit timeline, whole, or why its trails could not be read.
     Audit(u32, Result<Audit, String>),
+    /// A box's issue or pull request as its tab draws it, or why it could not be read.
+    Issue(u32, Result<Issue, String>),
     Result(CommandResult),
     Stream(Stream),
     Question(Question),
@@ -171,6 +175,10 @@ fn event(m: Message) -> Option<Event> {
                     _ => Err(s.error),
                 })),
                 Topic::Audit => Some(Event::Audit(s.sub, match s.audit {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Issue => Some(Event::Issue(s.sub, match s.issue {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
                 })),
@@ -271,6 +279,10 @@ pub struct Mock {
     composer_sub: u32,
     /// What the app sent that only the CLI would act on, for tests to read.
     record: Arc<Mutex<MockRecord>>,
+    /// Each box's issue and pull request as read, by its key and whether it is the pull request,
+    /// and the issue subscriptions following each: an act sends them the issue again.
+    issues: HashMap<(String, bool), Issue>,
+    issue_subs: HashMap<u32, (String, bool)>,
 }
 
 /// A mock harness, its actions as the core offers them (`console.Harness.Actions`).
@@ -442,6 +454,10 @@ enum Ask {
     /// The create card, for the prompt the composer held.
     Create(String),
     Options,
+    /// A close or reopen of a box's issue or pull request, by its key and whether it is the pull
+    /// request; and a pull request's merge.
+    IssueState(String, bool),
+    Merge(String),
     /// A secret's new one, edit, binding, delete or unbind, by the secret's ID (and the
     /// binding's, for an unbind).
     Secret(SecretAction, String, String),
@@ -614,6 +630,68 @@ fn mock_audit_command(c: &Command) -> CommandResult {
     CommandResult { status: Status::Done, r#box: sandbox, audit: Some(text), ..Default::default() }
 }
 
+/// The number a mock box's `issue=` or `pr=` tag gives its work, as the core's
+/// `Sandbox.WorkNumber` reads it.
+fn work_number(b: &Sandbox, pull: bool) -> Option<i64> {
+    let prefix = if pull { "pr=" } else { "issue=" };
+    b.tags.iter().find_map(|t| t.strip_prefix(prefix)?.parse().ok())
+}
+
+fn mark(filled: bool, tone: IssueTone) -> IssueMark { IssueMark { filled, tone } }
+
+fn mock_item(kind: IssueItemKind, actor: &str, ago: &str, text: &str, body: &str) -> IssueItem {
+    IssueItem { kind, actor: actor.into(), ago: ago.into(), text: text.into(), body: body.into(), threads: vec![], ..Default::default() }
+}
+
+/// A mock box's issue or pull request, as the bridge would send it: every rule's answer already
+/// the core's.
+pub fn mock_issue(number: i64, pull: bool) -> Issue {
+    let repo = "https://github.com/discobox-ai/discobox";
+    if !pull {
+        return Issue {
+            label: format!("issue #{number}"), url: format!("{repo}/issues/{number}"), repository: "discobox-ai/discobox".into(), number,
+            title: "Reaper races the pool agent on a box it is still starting".into(), state: IssueState::Open, badge: "Open".into(),
+            mark: mark(true, IssueTone::Open), author: "darren".into(), opened: "3d ago".into(), comments: 2,
+            body: "The reaper takes a box the pool agent is **still starting** for one that has died.\n\n```go\nif box.State == Starting {\n\treturn // not ours yet\n}\n```\n\n- reproduce with `task test:race`\n- see the [agent's log](https://example.com/log)".into(),
+            reactions: "+1 2 · eyes 1".into(),
+            labels: vec![Label { name: "type/bug".into(), color: "d73a4a".into() }, Label { name: "area/pool".into(), color: "0e8a16".into() }],
+            assignees: vec!["darren".into()], milestone: "0.9".into(),
+            sub_issues: vec![IssueRef { number: "#818".into(), title: "a test that reaps a starting box".into(), mark: mark(false, IssueTone::Shut) }],
+            sub_total: 2, sub_done: 1,
+            timeline: vec![
+                mock_item(IssueItemKind::Event, "darren", "3d ago", "added the type/bug label", ""),
+                mock_item(IssueItemKind::Comment, "ibuildthecloud-bot", "2d ago", "", "Reproduced: the reaper's tick lands between the create and the agent's first report."),
+                mock_item(IssueItemKind::Event, "ibuildthecloud-bot", "1d ago", "mentioned this in #912 reaper: leave a box that is starting", ""),
+            ],
+            ..Default::default()
+        };
+    }
+    let mut review = mock_item(IssueItemKind::Review, "alice", "5h ago", "approved these changes", "Looks right; one nit.");
+    review.tone = Some(IssueTone::Good);
+    review.threads = vec![Thread {
+        r#where: "pool-agent/reaper.go:42".into(),
+        hunk: vec!["@@ -38,6 +38,9 @@ func (r *Reaper) tick() {".into(), " \tfor _, b := range boxes {".into(), "+\t\tif b.Starting() {".into(), "+\t\t\tcontinue".into()],
+        comments: vec![ThreadComment { author: "alice".into(), ago: "5h ago".into(), body: "Say *why* in a comment here.".into(), reactions: String::new() }],
+    }];
+    let mut commit = mock_item(IssueItemKind::Commit, "darren", "1d ago", "reaper: leave a box that is starting", "");
+    commit.commit = "8be21c0".into();
+    Issue {
+        label: format!("PR #{number}"), url: format!("{repo}/pull/{number}"), repository: "discobox-ai/discobox".into(), number, pull: true,
+        title: "reaper: leave a box that is starting".into(), state: IssueState::Open, badge: "Open".into(), mark: mark(true, IssueTone::Open),
+        author: "darren".into(), opened: "1d ago".into(), comments: 1, body: "Closes #817.\n\nThe reaper skips a box the agent has not reported on yet.".into(),
+        pull_request: Some(PullRequest {
+            head: "fix/reaper-race".into(), base: "main".into(), head_sha: "8be21c0f00d1".into(), base_sha: "41d9e2a00000".into(),
+            commits: 1, additions: 58, deletions: 12, changed_files: 3,
+            merge: Some(Merge { ready: true, said: "Ready to merge into main".into(), mark: mark(true, IssueTone::Good), ..Default::default() }),
+            reviewers: vec![Reviewer { name: "alice".into(), said: "approved".into(), mark: mark(true, IssueTone::Open) }, Reviewer { name: "bob".into(), said: "review requested".into(), mark: mark(false, IssueTone::Quiet) }],
+            checks: Checks { passed: 11, pending: 1, unpassed: vec![Check { name: "e2e (linux)".into(), url: "https://example.com/e2e".into(), mark: mark(true, IssueTone::Busy) }], ..Default::default() },
+            ..Default::default()
+        }),
+        timeline: vec![commit, review, mock_item(IssueItemKind::Comment, "bob", "2h ago", "", "Ran it against the dev pool: no more reaped starts.")],
+        ..Default::default()
+    }
+}
+
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
     // Which take images and the image keys, as the core's `Tab.TakesImages` and `TakesImageKeys` say.
     let (images, image_keys) = (kind != TabKind::Service, matches!(kind, TabKind::Primary | TabKind::Terminal));
@@ -659,7 +737,7 @@ impl Mock {
                 ..mock_box("sbx_k2m9q4tz7wbf1xay", "rune console port", State::Running, "working", "claude", "discobox")
             },
             Sandbox {
-                tags: vec!["ENG-12".into()], branch: "fix/reaper-race".into(), commit: "8be21c0".into(),
+                tags: vec!["ENG-12".into(), "issue=817".into(), "pr=912".into()], branch: "fix/reaper-race".into(), commit: "8be21c0".into(),
                 added: 58, deleted: 12, cpu: 3, memory_bytes: 1_503_238_553,
                 ..mock_box("sbx_p8c3n0vd6rgs2hkq", "reaper race", State::Running, "blocked", "codex", "discobox")
             },
@@ -682,6 +760,7 @@ impl Mock {
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
             services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
+            issues: HashMap::new(), issue_subs: HashMap::new(),
         }
     }
 
@@ -983,7 +1062,7 @@ impl Mock {
                 let overrides = h.files.iter().any(|f| f.notes.iter().any(|n| n == "yours"));
                 let choices = if overrides {
                     body += "\n\nIt has files you added or overrode yourself.";
-                    let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into() };
+                    let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), ..Default::default() };
                     vec![
                         choice("reset", "Reset, keep your files", "the files you added or overrode stay"),
                         choice("reset with your files", "Reset your files too", "nothing but the bundle's files is left"),
@@ -1289,18 +1368,24 @@ impl Mock {
         let ports = if self.boxes.first().is_some_and(|f| f.key == key) {
             vec![
                 PortGroup { protocol: "http".into(), ports: vec![
-                    Link { label: "5173".into(), url: "http://localhost:5173".into() },
-                    Link { label: "18080->8080".into(), url: "http://localhost:18080".into() },
+                    Link { label: "5173".into(), url: "http://localhost:5173".into(), ..Default::default() },
+                    Link { label: "18080->8080".into(), url: "http://localhost:18080".into(), ..Default::default() },
                 ] },
-                PortGroup { protocol: "tcp".into(), ports: vec![Link { label: "5432".into(), url: String::new() }] },
+                PortGroup { protocol: "tcp".into(), ports: vec![Link { label: "5432".into(), ..Default::default() }] },
             ]
         } else {
             vec![]
         };
+        let work = [false, true].into_iter().filter_map(|pull| {
+            let n = work_number(&b, pull)?;
+            let w = mock_issue(n, pull);
+            Some(Link { label: w.label, url: w.url, command: if pull { "pr" } else { "issue" }.into() })
+        }).collect();
+        let tags = b.tags.iter().filter(|t| !t.starts_with("issue=") && !t.starts_with("pr=")).map(|t| format!("#{t}")).collect();
         Header {
-            id: b.id.clone(), work: vec![], blocked: if b.agent == "blocked" { "blocked".into() } else { String::new() }, changes: if b.agent == "blocked" || base.is_empty() { String::new() } else if b.dirty { "dirty".into() } else { "clean".into() },
+            id: b.id.clone(), work, blocked: if b.agent == "blocked" { "blocked".into() } else { String::new() }, changes: if b.agent == "blocked" || base.is_empty() { String::new() } else if b.dirty { "dirty".into() } else { "clean".into() },
             base, tone: if b.dirty { GitTone::Dirty } else { GitTone::Quiet }, diff: b.added + b.deleted > 0, added: b.added, deleted: b.deleted,
-            ports, tags: b.tags.iter().map(|t| format!("#{t}")).collect(),
+            ports, tags,
             // The mock's poll: its local shells report nothing of their own.
             agent: b.agent.clone(), agent_msg: b.agent_msg.clone(), ..Default::default()
         }
@@ -1329,6 +1414,90 @@ impl Mock {
             }
         }
         CommandResult { status: Status::Done, url, ..Default::default() }
+    }
+
+    /// A box's issue or pull request as last read, read on first use.
+    fn issue(&mut self, key: &str, pull: bool) -> Option<&mut Issue> {
+        let n = work_number(self.sandbox(key)?, pull)?;
+        Some(self.issues.entry((key.to_string(), pull)).or_insert_with(|| mock_issue(n, pull)))
+    }
+
+    /// Sends one issue subscription what it follows, or why there is none, as the bridge does.
+    fn send_work(&mut self, sub: u32, key: &str, pull: bool) {
+        let r = match self.issue(key, pull) {
+            Some(i) => Ok(i.clone()),
+            None if pull => Err("no pull request to show — tag this discobox pr=N, on a GitHub repository".into()),
+            None => Err("no issue to show — tag this discobox issue=N, on a GitHub repository".into()),
+        };
+        self.inbox.push(Event::Issue(sub, r));
+    }
+
+    /// Sends every subscription following an issue it again, as the bridge reads it again after
+    /// a command here changed it.
+    fn resend_work(&mut self, key: &str, pull: bool) {
+        let subs: Vec<u32> = self.issue_subs.iter().filter(|(_, w)| w.0 == key && w.1 == pull).map(|(s, _)| *s).collect();
+        for sub in subs {
+            self.send_work(sub, key, pull);
+        }
+    }
+
+    /// The issue and pr commands: the tab, or an act on what it shows. A close or reopen and a
+    /// merge are questions first, as the core asks them, and the result waits on the answer
+    /// (`answered`): none here.
+    fn work(&mut self, c: &Command) -> Option<CommandResult> {
+        let key = c.targets.first().cloned().unwrap_or_default();
+        let pull = c.command == "pr";
+        let fail = |why: String| Some(CommandResult { status: Status::Failed, why, ..Default::default() });
+        let Some(issue) = self.issue(&key, pull).cloned() else { return fail("no matching repository tag".into()) };
+        let n = issue.number;
+        match c.args.act {
+            None => Some(CommandResult { status: Status::Enter, r#box: key, work: Some(Link { label: issue.label, url: issue.url, command: String::new() }), ..Default::default() }),
+            Some(IssueAct::Comment) if c.args.comment.trim().is_empty() => fail("nothing to post — the comment is empty".into()),
+            Some(IssueAct::Comment) => {
+                let i = self.issue(&key, pull).unwrap();
+                i.comments += 1;
+                i.timeline.push(mock_item(IssueItemKind::Comment, "you", "just now", "", &c.args.comment));
+                self.resend_work(&key, pull);
+                Some(CommandResult { status: Status::Done, r#box: key, note: format!("commented on #{n}"), ..Default::default() })
+            }
+            Some(IssueAct::State) if issue.pull_request.as_ref().is_some_and(|p| p.merged) => fail(format!("PR #{n} is merged — there is nothing to close or reopen")),
+            Some(IssueAct::State) => {
+                let id = self.next_ask;
+                self.next_ask += 1;
+                let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), ..Default::default() };
+                let q = match (issue.state.as_str(), pull) {
+                    ("closed", _) => Question { title: format!("Reopen #{n}?"), body: issue.title.clone(), ..Default::default() },
+                    (_, true) => Question { title: format!("Close #{n} without merging it?"), body: issue.title.clone(), ..Default::default() },
+                    _ => Question { title: format!("Close #{n}"), body: issue.title.clone(), choices: vec![
+                        choice("completed", "close as completed", "done, fixed, or answered"),
+                        choice("not_planned", "close as not planned", "won't fix, can't reproduce, duplicate, or stale"),
+                    ], ..Default::default() },
+                };
+                self.asks.insert(id, (c.clone(), Ask::IssueState(key, pull)));
+                self.inbox.push(Event::Question(Question { id, command: c.id, ..q }));
+                None
+            }
+            Some(IssueAct::Merge) => {
+                let Some(p) = issue.pull_request.as_ref().filter(|p| !p.merged && issue.state == IssueState::Open) else {
+                    return fail(format!("PR #{n} cannot be merged here"));
+                };
+                let id = self.next_ask;
+                self.next_ask += 1;
+                let choice = |key: &str, label: &str, hint: &str, why: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), why: why.into() };
+                let q = Question {
+                    id, command: c.id, title: format!("Merge #{n} into {}", p.base), body: format!("{}\n\nat {}", issue.title, c.args.head),
+                    choices: vec![
+                        choice("squash", "squash and merge", "its commits become one commit on the base branch", ""),
+                        choice("merge", "create a merge commit", "every commit is kept, joined by a merge commit", "not allowed in this repository"),
+                        choice("rebase", "rebase and merge", "every commit is replayed onto the base branch", ""),
+                    ],
+                    ..Default::default()
+                };
+                self.asks.insert(id, (c.clone(), Ask::Merge(key)));
+                self.inbox.push(Event::Question(q));
+                None
+            }
+        }
     }
 
     fn spawn(&mut self, sandbox: &str, exec: &Tab, stream: u32, cols: u16, rows: u16) -> Result<(), String> {
@@ -1412,6 +1581,17 @@ impl Mock {
             "actions" => CommandResult { status: Status::Enter, r#box: target.clone(), entries: self.actions(&target), ..Default::default() },
             "services" if !running => fail("the box has no container; repair rebuilds it"),
             "services" => self.services(&c, target),
+            "files" if self.sandbox(&target).and_then(|b| work_number(b, true)).is_none() => fail("no matching repository tag"),
+            "files" => {
+                let number = work_number(self.sandbox(&target).unwrap(), true).unwrap_or_default();
+                self.made += 1;
+                let exec = Tab { files: number, ..mock_exec(&format!("exec_{}", self.made), TabKind::Files, &format!("files changed #{number}")) };
+                let size = |n: i64| u16::try_from(n.max(1)).unwrap_or(u16::MAX);
+                if let Err(e) = self.spawn(&target, &exec, c.args.stream, size(c.args.cols), size(c.args.rows)) {
+                    return fail(&e);
+                }
+                CommandResult { status: Status::Done, r#box: target, session: Some(exec), ..Default::default() }
+            }
             "review config" if !running => fail("cannot review config: takes one running box"),
             "review config" => self.review(&c, target),
             // A folder dropped on the composer: checked, roughly as the creation path checks a
@@ -1441,7 +1621,7 @@ impl Mock {
     fn put(&self, id: u64, c: &Command) -> Option<(Ask, Event)> {
         let target = c.targets.first().cloned().unwrap_or_default();
         let field = |key: &str, label: &str, value: &str| Field { key: key.into(), label: label.into(), value: value.into(), applies: true, ..Default::default() };
-        let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into() };
+        let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), ..Default::default() };
         let (ask, event) = match c.command.as_str() {
             "rename" => {
                 let b = self.sandbox(&target)?;
@@ -1589,6 +1769,63 @@ impl Mock {
                 self.harnesses.push(h.clone());
                 CommandResult { id: command, ..self.harnessed(Status::Done, &h.id, format!("created variant {name:?}")) }
             }
+            Ask::IssueState(key, pull) => {
+                let Some(issue) = self.issues.get_mut(&(key.clone(), pull)) else { return };
+                let n = issue.number;
+                let note = match (issue.state.as_str(), get("key").as_str()) {
+                    ("open", "completed" | "not_planned") if !pull => {
+                        let how = get("key");
+                        issue.state = IssueState::Closed;
+                        issue.badge = if how == "not_planned" { "Closed as not planned".into() } else { "Closed".into() };
+                        issue.mark = mark(false, IssueTone::Shut);
+                        format!("closed #{n}{}", if how == "not_planned" { " as not planned" } else { " as completed" })
+                    }
+                    ("open", "yes") if pull => {
+                        issue.state = IssueState::Closed;
+                        issue.badge = "Closed".into();
+                        issue.mark = mark(false, IssueTone::Shut);
+                        if let Some(p) = issue.pull_request.as_mut() {
+                            p.merge = None;
+                        }
+                        format!("closed #{n}")
+                    }
+                    ("closed", "yes") => {
+                        issue.state = IssueState::Open;
+                        issue.badge = "Open".into();
+                        issue.mark = mark(true, IssueTone::Open);
+                        format!("reopened #{n}")
+                    }
+                    _ => {
+                        self.asks.remove(&id);
+                        self.inbox.push(Event::Result(canceled));
+                        return;
+                    }
+                };
+                self.resend_work(&key, pull);
+                done(note)
+            }
+            Ask::Merge(key) => {
+                let method = get("key");
+                let Some(issue) = self.issues.get_mut(&(key.clone(), true)) else { return };
+                if !matches!(method.as_str(), "squash" | "rebase") {
+                    self.asks.remove(&id);
+                    self.inbox.push(Event::Result(canceled));
+                    return;
+                }
+                let n = issue.number;
+                issue.state = IssueState::Closed;
+                issue.badge = "Merged".into();
+                issue.mark = mark(true, IssueTone::Merged);
+                if let Some(p) = issue.pull_request.as_mut() {
+                    p.merged = true;
+                    p.merged_by = "you".into();
+                    p.merged_ago = "just now".into();
+                    p.merge = None;
+                }
+                issue.timeline.push(mock_item(IssueItemKind::Event, "you", "just now", "merged commit 8be21c0 into main", ""));
+                self.resend_work(&key, true);
+                done(format!("merged #{n} ({method})"))
+            }
             Ask::Edit(..) | Ask::ToolEdit(..) => return,
             Ask::Secret(..) if draft => return,
             Ask::Secret(SecretAction::New, ..) if get("name").is_empty() => {
@@ -1718,6 +1955,11 @@ impl Backend for Mock {
                 let step = self.sandbox(&r#box).map(|b| b.provisioning.clone()).unwrap_or_default();
                 self.inbox.push(Event::Provisioning(sub, Ok(Provisioning { step })));
             }
+            Out::Subscribe(Subscribe { sub, topic: Topic::Issue, r#box, issue, .. }) => {
+                let pull = issue.unwrap_or_default().pull;
+                self.issue_subs.insert(sub, (r#box.clone(), pull));
+                self.send_work(sub, &r#box, pull);
+            }
             Out::Draft(prompt) => self.record.lock().unwrap().drafts.push(prompt),
             Out::Follow(f) => {
                 let r = self.follow(&f);
@@ -1731,6 +1973,7 @@ impl Backend for Mock {
             Out::Unsubscribe(sub) => {
                 self.following.remove(&sub);
                 self.headers.remove(&sub);
+                self.issue_subs.remove(&sub);
             }
             // As the bridge does: what the timeline says before any read, then what the read
             // brought.
@@ -1748,6 +1991,11 @@ impl Backend for Mock {
             Out::Command(c) if c.command == "audit" => {
                 let r = mock_audit_command(&c);
                 self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
+            }
+            Out::Command(c) if matches!(c.command.as_str(), "issue" | "pr") => {
+                if let Some(r) = self.work(&c) {
+                    self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
+                }
             }
             Out::Command(c) if c.command == "tools" => {
                 if let Some(r) = self.tools(&c) {

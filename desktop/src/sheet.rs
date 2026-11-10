@@ -132,7 +132,7 @@ impl Sheets {
         }
     }
 
-    fn question_mut(&mut self) -> Option<&mut QuestionSheet> {
+    pub fn question_mut(&mut self) -> Option<&mut QuestionSheet> {
         match self.queue.first_mut() {
             Some(Sheet::Question(q)) => Some(q),
             _ => None,
@@ -323,7 +323,7 @@ pub fn take_errors(s: &mut State, refused: FieldErrors) {
 }
 
 /// A question from the core, on the yes when it has one — or on the no, for a destruction that
-/// has to be chosen. One sent again is the question asked, with its directory counted further
+/// has to be chosen; a pick of one on its first answer that can be chosen. One sent again is the question asked, with its directory counted further
 /// (`count`): it is updated where it is, the pick kept; one already answered is moot.
 pub fn take_question(s: &mut State, question: Question) {
     if s.sheets.answered.contains(&question.id) {
@@ -339,7 +339,11 @@ pub fn take_question(s: &mut State, question: Question) {
     }
     s.close_overlays();
     s.sheets.went_on(question.command);
-    let picked = usize::from(question.choices.is_empty() && question.default_no);
+    let picked = if question.choices.is_empty() {
+        usize::from(question.default_no)
+    } else {
+        question.choices.iter().position(|c| c.why.is_empty()).unwrap_or(0)
+    };
     s.sheets.queue.push(Sheet::Question(QuestionSheet { question, picked }));
 }
 
@@ -456,9 +460,13 @@ pub fn dismissal(sheet: &Sheet) -> Out {
     }
 }
 
-/// Answers the question on top, by key.
+/// Answers the question on top, by key. An answer it offers with why it cannot be chosen is
+/// never taken.
 fn answer(s: &mut State, key: String) {
     let Some(Sheet::Question(q)) = s.sheets.queue.first() else { return };
+    if q.question.choices.iter().any(|c| c.key == key && !c.why.is_empty()) {
+        return;
+    }
     let question = q.question.id;
     s.sheets.take_top();
     s.backend.send(Out::Answer(Answer { question, key, ..Default::default() }));
@@ -534,9 +542,21 @@ pub fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     }
     if let Some(q) = s.sheets.question_mut() {
         let n = if q.question.choices.is_empty() { 2 } else { q.question.choices.len() };
+        // A step lands on the next answer that can be chosen.
+        let open = |q: &QuestionSheet, i: usize| q.question.choices.get(i).is_none_or(|c| c.why.is_empty());
+        let step = |q: &mut QuestionSheet, by: usize| {
+            let mut at = q.picked;
+            for _ in 0..n {
+                at = (at + by) % n;
+                if open(q, at) {
+                    q.picked = at;
+                    return;
+                }
+            }
+        };
         match ev.key {
-            Key::Up | Key::Left => q.picked = (q.picked + n - 1) % n,
-            Key::Down | Key::Right | Key::Tab => q.picked = (q.picked + 1) % n,
+            Key::Up | Key::Left => step(q, n - 1),
+            Key::Down | Key::Right | Key::Tab => step(q, 1),
             Key::Enter => {
                 let key = picked_key(q);
                 answer(s, key);
@@ -733,15 +753,21 @@ fn question_view(q: &QuestionSheet) -> El {
     for (i, c) in x.choices.iter().enumerate() {
         let on = i == q.picked;
         let key = c.key.clone();
+        // One the core says cannot be chosen is there to be seen not to be, dimmed with why.
+        let open = c.why.is_empty();
         let mut line = col().key(format!("sheet-choice-{}", c.key)).w_full().px(10.0).py(5.0).gap(2.0).radius(theme::r_row())
-            .fill(if on { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY).cursor(rune::Cursor::Pointer)
-            .child(text(c.label.clone()).font(theme::UI).color(theme::text()));
-        if !c.hint.is_empty() {
-            line = line.child(text(c.hint.clone()).font(theme::UI_SMALL).color(theme::grey()).wrap());
+            .fill(if on && open { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
+            .cursor(if open { rune::Cursor::Pointer } else { rune::Cursor::Default })
+            .child(text(c.label.clone()).font(theme::UI).color(if open { theme::text() } else { theme::dim() }));
+        let said = if open { &c.hint } else { &c.why };
+        if !said.is_empty() {
+            line = line.child(text(said.clone()).font(theme::UI_SMALL).color(if open { theme::grey() } else { theme::dim() }).wrap());
         }
-        list = list.child(line
-            .on_hover(move |s: &mut State| if let Some(q) = s.sheets.question_mut() { q.picked = i })
-            .on_press(move |s: &mut State| answer(s, key.clone())));
+        if open {
+            line = line.on_hover(move |s: &mut State| if let Some(q) = s.sheets.question_mut() { q.picked = i })
+                .on_press(move |s: &mut State| answer(s, key.clone()));
+        }
+        list = list.child(line);
     }
     let hints = row().w_full().gap(14.0).center_y()
         .child(hint("up", "")).child(hint("down", "move")).child(hint("enter", "choose")).child(hint("escape", "cancel"));

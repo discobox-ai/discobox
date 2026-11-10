@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 15. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 16. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -73,7 +73,9 @@ the epic, and does not yet follow the ADRs everywhere:
     subscription is the workspace's port forward): the box's id, the issue and
     pull request it is tagged with, its git position and word in their tone,
     its diff, its desktop and the ports it serves — a forwarded web port is a
-    link that opens the browser — and the rest of its tags.
+    link that opens the browser — and the rest of its tags. Its issue and
+    pull request open their tabs on a press, and their pages on ⌘-press
+    (Ctrl-press elsewhere).
 - **A pane is a terminal** (`term.rs`), with termpane's behaviours
   (`docs/console/parity.md`, "Terminal behaviours"): a drag selects (a word on
   a double click, a line on a triple, a block with Alt), copied on release;
@@ -208,6 +210,31 @@ the epic, and does not yet follow the ADRs everywhere:
     upgraded stream); one is read over the record, and Esc goes back a step at a time;
   - what the last read could not reach, or why the trails could not be read, is said under the
     records. The TUI's search through the timeline is not here yet.
+- **A box's issue and pull request** (`issue.rs`) are tabs among its shells,
+  from `issue` and `pr` (the Box menu, the palette, the header), drawn from
+  the core's issue (the issue topic): the badge, the branches, whether it can
+  merge and why not — a ready one has a green dot on its chip and a band with
+  its merge — the reviewers, assignees, labels in their colours, sub-issues,
+  checks with links to the ones that have not passed, the description and
+  the timeline: comments and reviews as Rune's Markdown (`rune-kit`) in the
+  window's tokens, a review's threads under their hunks, and events and
+  commits as rows. A link opens only on the web. The tab follows its issue
+  only while its workspace is on screen, and says when the branch was pushed
+  to since it was shown — parked and back too, from the head it showed —
+  until it is read again.
+  - its keys and bar: `c` writes a comment in its field (Return is a new
+    line, ⌘↩ or Ctrl+Enter posts, Esc keeps it for later), `x` closes or
+    reopens, `m` merges, `f` shows the files changed, `o` opens the page, `r`
+    reads it again, and the page keys scroll; a merge and the files changed
+    are the pull request tab's, never an issue tab's whose number is one;
+  - closing and merging are the core's questions, as sheets: an issue closes
+    as completed or not planned, and a merge offers the ways the repository
+    allows, one it refuses shown with why and never picked, merging the head
+    the tab showed;
+  - the files changed are discobox-review in the box over the base and head
+    the tab showed, on a tab given the window as a tool's is: shown again,
+    and waited for while starting, rather than started twice; ended when its
+    tab is closed, and said to be when it lands after you left its box.
 - **Creating a box** is the core's (`console.RunOptions`, held by the bridge):
   - the composer, under the list, is what the new box is given to do: Return
     creates and Shift+Return is a new line; under it, what a create would be
@@ -297,6 +324,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/view.rs` | The list, the sidebar, the workspace (its header, columns, split and tab chips), frames |
 | `src/overlay.rs` | The palette, the menu bar and its menus, a box's actions menu, a pane's menu, the help, and the list's filter menu |
 | `src/sheet.rs` | The core's forms, questions and edits as sheets: the queue, the answers held while they are typed, drafts, refusals, a file opened in the person's editor, and their keys |
+| `src/issue.rs` | A box's issue and pull request as tabs: following the issue topic, drawn natively with its markdown, the comment field, closing, merging, the files changed, and the tab's keys |
 | `src/tools.rs` | The tools menu, a tool's tab given the window, a tool on this machine handed the box, a tool's files edited, an address copied |
 | `src/audit.rs` | A box's audit view: the timeline followed, runs opened and folded, a record and its recordings read over it |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
@@ -313,6 +341,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/paste_tests.rs` | An image pasted, under the image key, or dropped, carried in with what was typed held behind it; a failure, a drop that is not images, one at a time, one too large; a folder dropped on the composer |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
+| `src/issue_tests.rs` | An issue and a pull request as tabs on the mock: drawn from the core's issue, a box with no tag refused, a merge of the allowed ways, a comment posted, a close asked, the files changed given the window, following only on screen, the header's link |
 | `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window and put away, one running shown not started again, a host tool, a file edited and given up, an address copied |
 | `src/secret_tests.rs` | The page's secrets and keys, a secret and a binding read, an unbind asked first, a binding, an edit, a delete and a new secret through their sheets, the history, refresh |
 | `src/audit_tests.rs` | The timeline followed, a row held while records arrive, a run opened and folded, a record and a recording read and put away, what could not be read, a box taking the screen |

@@ -23,6 +23,9 @@ mod harness_tests;
 mod icons;
 #[cfg(test)]
 mod identity_tests;
+mod issue;
+#[cfg(test)]
+mod issue_tests;
 mod keys;
 mod mark;
 mod overlay;
@@ -82,14 +85,21 @@ pub struct Pane {
     /// What was typed or pasted into it while an image is on its way in (`paste.rs`), sent after
     /// the image's path, in order; `None` while nothing is on its way.
     pub held: Option<Vec<Vec<u8>>>,
+    /// The box's issue or pull request, which the pane draws in place of a terminal: its stream
+    /// is never opened (`issue.rs`).
+    pub issue: Option<issue::IssueTab>,
 }
 
 impl Pane {
     fn new(stream: u32, exec: Tab) -> Pane {
-        Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None, held: None }
+        Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None, held: None, issue: None }
     }
 
-    pub fn side(&self) -> Side { if matches!(self.exec.kind, TabKind::Shell | TabKind::Tool) { Side::Shells } else { Side::Terminals } }
+    /// Its column: the shells for a shell, a tool, a pull request's files changed and an issue's
+    /// tab, as the TUI has them; the terminals for the rest.
+    pub fn side(&self) -> Side {
+        if self.issue.is_some() || matches!(self.exec.kind, TabKind::Shell | TabKind::Tool | TabKind::Files) { Side::Shells } else { Side::Terminals }
+    }
 
     /// Whether it draws one of the box's declared services: read-only, stopped rather than ended,
     /// and numbered apart from the other tabs.
@@ -246,6 +256,8 @@ enum Pending {
     /// A record of a box's audit timeline, or a recording of it, read for the audit view
     /// (`audit::landed`, which knows the read in flight by its command).
     Audit,
+    /// A comment, a close or reopen, or a merge, from the issue tab on a stream.
+    Act(u32, wire::IssueAct),
 }
 
 /// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
@@ -476,6 +488,9 @@ pub struct State {
     draft: String,
     edited: Option<f64>,
     now: f64,
+    /// A pull request's files changed still starting, by the stream they will open on, and the
+    /// box: one is never started twice (`issue::files`).
+    pub files_starting: HashMap<u32, String>,
     /// A warning a running command gave (uncommitted changes left out, a settings file not read
     /// whole): it stays on the status line past the steps that follow, until the next command.
     warned: bool,
@@ -513,7 +528,7 @@ impl State {
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
-            composer: TextEdit::new(draft.clone()), summary: vec![], composer_sub: 0, draft: draft.clone(), edited: None, now: 0.0, warned: false, drop_over: None,
+            composer: TextEdit::new(draft.clone()), summary: vec![], composer_sub: 0, draft: draft.clone(), edited: None, now: 0.0, warned: false, drop_over: None, files_starting: HashMap::new(),
         };
         // The prompt the last window left is back: closing a window is not how one is lost.
         if !draft.is_empty() {
@@ -1049,10 +1064,12 @@ impl State {
         let header = self.subscribe(Subscribe { topic: Topic::Header, r#box: sandbox.to_string(), ..Default::default() });
         let ws = self.workspaces.get_mut(sandbox).unwrap();
         (ws.sessions_sub, ws.header_sub) = (sessions, header);
+        issue::follow_all(self, sandbox);
     }
 
     /// Stops following a workspace's sessions and header: what either still sends is dropped.
     fn unfollow_workspace(&mut self, sandbox: &str) {
+        issue::unfollow_all(self, sandbox);
         let Some(ws) = self.workspaces.get_mut(sandbox) else { return };
         let subs = [std::mem::take(&mut ws.sessions_sub), std::mem::take(&mut ws.header_sub)];
         for sub in subs.into_iter().filter(|&s| s != 0) {
@@ -1082,7 +1099,8 @@ impl State {
         if ws.provisioning_sub != 0 {
             self.backend.send(Out::Unsubscribe(ws.provisioning_sub));
         }
-        for p in ws.panes.iter().filter(|p| !p.exited) {
+        // An issue's tab has no stream to let go.
+        for p in ws.panes.iter().filter(|p| !p.exited && p.issue.is_none()) {
             self.backend.send(Out::Close(p.stream));
         }
         for p in &ws.panes {
@@ -1117,6 +1135,12 @@ impl State {
         // A service is the box's own furniture: stopped from its menu, never ended.
         if pane.service() {
             self.message = Some(format!("a service is stopped rather than ended — stop it from {}", self.spec.command("services").map_or("services", |c| c.label.as_str())));
+            return;
+        }
+        // An issue's tab is closed, with what it follows.
+        if pane.issue.is_some() {
+            let stream = pane.stream;
+            issue::close(self, stream);
             return;
         }
         // A tab held after its program finished has no session left to end: it is dismissed.
@@ -1413,7 +1437,9 @@ impl State {
     /// An input method on the focused pane: its composition drawn at the cursor, and what it
     /// commits typed.
     pub fn ime(&mut self, ime: &Ime) -> bool {
-        if !self.pane_has_keys() || self.finding() {
+        // An issue's tab has no terminal to compose at: its comment field takes the input
+        // method itself.
+        if !self.pane_has_keys() || self.finding() || self.focused_pane().is_some_and(|p| p.issue.is_some()) {
             return false;
         }
         let Some(p) = self.focused_pane_mut() else { return false };
@@ -1575,8 +1601,9 @@ impl State {
         let Some(ws) = self.live_ws_mut() else { return };
         let Some(i) = ws.focused() else { return };
         let pane = &mut ws.panes[i];
-        // A service runs on pipes, and its card is text: nothing is typed into either.
-        if pane.exited || pane.service() {
+        // A service runs on pipes, and its card is text: nothing is typed into either; an
+        // issue's tab has no program to type into.
+        if pane.exited || pane.service() || pane.issue.is_some() {
             return;
         }
         pane.screen.to_bottom();
@@ -1876,6 +1903,9 @@ impl State {
         self.sheets.finished(r.id);
         let Some(why) = self.pending.remove(&r.id) else { return };
         let failed = r.status == Status::Failed;
+        if let Pending::Session(stream, ..) = &why {
+            self.files_starting.remove(stream);
+        }
         match why {
             // A form or question dismissed: nothing came of it, and nothing to say. A session's
             // cancel still lets its stream go below.
@@ -1886,6 +1916,8 @@ impl State {
                 return;
             }
             Pending::Enter(_) | Pending::Verb(..) | Pending::Harness(_) | Pending::Change | Pending::Secret(_) if r.status == Status::Canceled => self.message = None,
+            // An act on an issue settles its tab whatever came of it.
+            Pending::Act(stream, what) => issue::acted(self, stream, what, &r),
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
             // What came of it (`renamed to …`, `settings saved`), or nothing to say.
             Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
@@ -1908,16 +1940,22 @@ impl State {
                 } else if !self.workspaces.contains_key(&r.r#box) {
                     self.early.remove(&stream);
                     self.backend.send(Out::Close(stream));
+                    // The files changed are no listed session to open with the workspace later:
+                    // letting its stream go ends it, and that is said.
+                    if exec.kind == TabKind::Files {
+                        let name = self.box_by_id(&r.r#box).map_or(r.r#box.clone(), |b| b.name.clone());
+                        self.message = Some(format!("{name}: the files changed were ended — you had left the box before they started"));
+                    }
                     self.retake_sessions(&sandbox);
                     return;
                 }
-                let tool = exec.kind == TabKind::Tool;
+                let tool = matches!(exec.kind, TabKind::Tool | TabKind::Files);
                 let pane = Pane::new(stream, exec);
                 let ws = self.workspaces.get_mut(&r.r#box).unwrap();
                 ws.panes.push(pane);
                 ws.show(ws.panes.len() - 1);
-                // A tool is given the window, as the TUI's opens over the workspace; maximize
-                // gives the workspace back with the tool on its tab.
+                // A tool — or a pull request's files changed — is given the window, as the TUI's
+                // opens over the workspace; maximize gives the workspace back with it on its tab.
                 if tool {
                     ws.maximized = true;
                     self.focus = Focus::Panes;
@@ -2039,6 +2077,7 @@ pub const ANSWERED: &[&str] = &[
     "next pane", "previous pane", "next box", "previous box", "sidebar",
     "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools", "credentials",
     "audit",
+    "issue", "pr", "files",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -2087,6 +2126,8 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
             }
         }
         "terminal" => s.new_session(None),
+        // A pull request's files changed: a session on a stream allocated for its tab.
+        "files" => issue::files(s, targets),
         "end" => s.end_focused(),
         "repaint" => s.repaint_focused(),
         "actions" => {
@@ -2180,6 +2221,8 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         "tools" => tools::open_menu(s, r),
         // The box's audit timeline, beside the list in place of the workspace.
         "audit" => audit::open(s, &r.r#box),
+        // The box's issue or pull request, as a tab in its workspace.
+        "issue" | "pr" => issue::open(s, r, id == "pr"),
         // The box's services, on its workspace: a box that declares none says so instead.
         "services" => {
             s.show_workspace(&r.r#box);
@@ -2292,6 +2335,7 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
             Event::Composer(sub, r) => s.take_composer(sub, r),
             Event::Provisioning(sub, r) => s.take_provisioning(sub, r),
             Event::Audit(sub, r) => audit::take(s, sub, r),
+            Event::Issue(sub, r) => issue::take(s, sub, r),
             Event::Progress(p) => s.take_progress(p),
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
@@ -2578,6 +2622,30 @@ fn main() {
                 poll(s, 0.0, &mut Tx::default());
                 audit::page_key(s, &KeyEvent { key: rune::Key::Enter, mods: Mods::default() });
                 poll(s, 0.0, &mut Tx::default());
+            }),
+            // The second box's issue and pull request as tabs beside its primary: the issue's
+            // labels, sub-issues and timeline; the pull request ready to merge, its checks, a
+            // review's thread, and a comment being written.
+            ("issue", |s| {
+                s.open_row(1);
+                poll(s, 0.0, &mut Tx::default());
+                run_command(s, "issue", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            ("pull", |s| {
+                s.open_row(1);
+                poll(s, 0.0, &mut Tx::default());
+                run_command(s, "pr", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(stream) = s.focused_pane().map(|p| p.stream) {
+                    issue::compose(s, stream);
+                    if let Some(t) = s.pane_mut(stream).and_then(|p| p.issue.as_mut()) {
+                        t.composer = TextEdit::new("Thanks — the race is gone on my machine too.");
+                        t.composer.focused = true;
+                    }
+                }
             }),
         ],
         fonts: theme::FONTS,
