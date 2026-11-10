@@ -135,10 +135,25 @@ func TestVerbNarratesAndAsks(t *testing.T) {
 	}
 	core.setListing(running("b1"))
 	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: "once"}})
-	if r := a.result(id); r.Status != StatusDone || r.Note != "chose once" {
+	// The listing's re-read and the verb's result can arrive in either order.
+	var r *Result
+	var snap *Snapshot
+	for r == nil || snap == nil {
+		switch m := a.message(); m.Type {
+		case TypeResult:
+			if m.Result.ID == id {
+				r = m.Result
+			}
+		case TypeSnapshot:
+			if m.Snapshot.Sub == 1 {
+				snap = m.Snapshot
+			}
+		}
+	}
+	if r.Status != StatusDone || r.Note != "chose once" {
 		t.Fatalf("result %+v", r)
 	}
-	if snap := a.expect(TypeSnapshot).Snapshot; snap.Listing == nil || snap.Listing.Boxes[0].State != "running" {
+	if snap.Listing == nil || len(snap.Listing.Boxes) != 1 || snap.Listing.Boxes[0].State != "running" {
 		t.Errorf("the listing was not read again after the verb: %+v", snap)
 	}
 }
@@ -1558,6 +1573,11 @@ func TestAnAuditSearchNarrowsWhatWasRead(t *testing.T) {
 	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 5, Topic: TopicAudit, Box: "b1"}})
 	if s := a.expect(TypeSnapshot).Snapshot; s.Sub != 5 || s.Audit == nil || s.Audit.Note != console.AuditReading {
 		t.Fatalf("opened again, it reads afresh: %+v", s)
+	}
+	// The reading snapshot precedes FollowAudit; wait for its records before
+	// counting the reads, as on the first subscription above.
+	if s := a.expect(TypeSnapshot).Snapshot; s.Sub != 5 || s.Audit == nil || len(s.Audit.Records) != 2 {
+		t.Fatalf("the fresh read: %+v", s)
 	}
 	if n := reads(); n != 2 {
 		t.Fatalf("the trails were read %d times, want twice", n)

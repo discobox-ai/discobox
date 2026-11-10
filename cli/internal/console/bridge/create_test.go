@@ -252,8 +252,27 @@ func TestTheComposerAndItsDraft(t *testing.T) {
 	id := a.command(Command{Command: "options"})
 	form := a.expect(TypeForm).Form
 	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{"harness": "codex", "dirty": "include"}}})
-	a.result(id)
-	snap := a.expect(TypeSnapshot).Snapshot
+	// The composer can send its changed options before the result arrives.
+	var result *Result
+	var snap *Snapshot
+	for result == nil || snap == nil {
+		switch m := a.message(); m.Type {
+		case TypeResult:
+			if m.Result.ID == id {
+				result = m.Result
+			}
+		case TypeSnapshot:
+			if m.Snapshot.Sub == 1 {
+				snap = m.Snapshot
+			}
+		}
+	}
+	if result.Status != StatusDone {
+		t.Fatalf("options: %+v", result)
+	}
+	if snap.Composer == nil {
+		t.Fatalf("composer missing: %+v", snap)
+	}
 	var chips []string
 	for _, c := range snap.Composer.Chips {
 		chips = append(chips, c.Text)
