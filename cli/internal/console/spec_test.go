@@ -95,6 +95,7 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 				Gesture string `json:"gesture"`
 				Service string `json:"service"`
 				Verb    string `json:"verb"`
+				Prompt  string `json:"prompt"`
 			} `json:"steps"`
 		}
 		if err := json.Unmarshal(data, &sc); err != nil {
@@ -104,6 +105,11 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 			t.Errorf("%s has no steps", file)
 		}
 		for i, step := range sc.Steps {
+			// A prompt is written in the composer, which is the list's, and
+			// sent with new: the one command it is for.
+			if step.Prompt != "" && (step.Command != "new" || sc.Attach) {
+				t.Errorf("%s step %d: a prompt is written in the list's composer and sent with new", file, i)
+			}
 			if step.Service != "" {
 				verbs := []string{"output"}
 				for _, a := range (Service{ID: step.Service}).Actions() {

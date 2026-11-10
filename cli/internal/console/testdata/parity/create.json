@@ -1,0 +1,7 @@
+{
+  "name": "a prompt written in the composer creates a box through the create card, and the new box's workspace opens",
+  "about": "Run by both consoles, each pressing its own binding for each step: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. A step with a prompt writes it in the composer and runs new from the list with each console's binding — the TUI's key opens its composer card first, the desktop's composer is beside the list — then accepts the create card as it opens with Enter; created is the name of the box whose workspace is then on screen, which each console's fake names after the prompt it was created with.",
+  "steps": [
+    {"command": "new", "prompt": "fix the reaper", "expect": {"created": "fix the reaper"}}
+  ]
+}

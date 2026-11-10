@@ -33,6 +33,7 @@ type parityScenario struct {
 		Gesture string `json:"gesture"`
 		Service string `json:"service"`
 		Verb    string `json:"verb"`
+		Prompt  string `json:"prompt"`
 		Expect  struct {
 			Shells    *int    `json:"shells"`
 			Terminals *int    `json:"terminals"`
@@ -44,6 +45,7 @@ type parityScenario struct {
 			Archived  *bool   `json:"archived"`
 			Services  *int    `json:"services"`
 			Output    *string `json:"output"`
+			Created   *string `json:"created"`
 		} `json:"expect"`
 	} `json:"steps"`
 }
@@ -91,6 +93,14 @@ func TestParityScenarios(t *testing.T) {
 					} else {
 						keys = listKeys(t, step.Command, step.Gesture)
 					}
+					if step.Prompt != "" {
+						// The composer card, the prompt written in it, then
+						// Enter for the create card and Enter to create.
+						for _, r := range step.Prompt {
+							keys = append(keys, string(r))
+						}
+						keys = append(keys, "enter", "enter")
+					}
 					for _, k := range keys {
 						d.key(k)
 					}
@@ -100,8 +110,8 @@ func TestParityScenarios(t *testing.T) {
 						if m.onShells {
 							focus = "shells"
 						}
-						return fmt.Sprintf("box=%d terminals=%d shells=%d services=%d focus=%s maximized=%v targets=%d selected=%d archived=%v",
-							shownRow(m), m.Terminals.Len(), m.Shells.Len(), len(m.ServiceTabs()), focus, m.maximized, len(m.list.targets()), m.list.selectionCount(), m.list.Filter.Archived)
+						return fmt.Sprintf("box=%d terminals=%d shells=%d services=%d focus=%s maximized=%v targets=%d selected=%d archived=%v created=%q",
+							shownRow(m), m.Terminals.Len(), m.Shells.Len(), len(m.ServiceTabs()), focus, m.maximized, len(m.list.targets()), m.list.selectionCount(), m.list.Filter.Archived, created(m, ds))
 					}
 					d.wait(step.Command+step.Gesture+step.Service+" "+fmt.Sprint(keys)+" from "+got(), func() bool {
 						focus := "terminals"
@@ -117,7 +127,8 @@ func TestParityScenarios(t *testing.T) {
 							(want.Selected == nil || m.list.selectionCount() == *want.Selected) &&
 							(want.Archived == nil || m.list.Filter.Archived == *want.Archived) &&
 							(want.Services == nil || len(m.ServiceTabs()) == *want.Services) &&
-							(want.Output == nil || strings.Contains(plainFrame(m), *want.Output))
+							(want.Output == nil || strings.Contains(plainFrame(m), *want.Output)) &&
+							(want.Created == nil || created(m, ds) == *want.Created)
 					})
 					if t.Failed() {
 						t.Fatalf("step %d (%s%s%s, keys %v): %s", i, step.Command, step.Gesture, step.Service, keys, got())
@@ -126,6 +137,19 @@ func TestParityScenarios(t *testing.T) {
 			})
 		})
 	}
+}
+
+// created is the name of the box on screen when it is the one the last
+// create made, or nothing.
+func created(m *Model, ds *fakeSource) string {
+	ds.mu.Lock()
+	id := ds.createdID
+	runs := len(ds.runs)
+	ds.mu.Unlock()
+	if runs == 0 || !m.hasWorkspace() || m.Box.ID != id {
+		return ""
+	}
+	return m.Box.Name
 }
 
 // shownRow is the row of the list the box whose workspace is on screen is
