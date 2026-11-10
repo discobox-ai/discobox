@@ -720,7 +720,7 @@ var registry = []Command{
 	{ID: "refresh", Label: "refresh", Detail: "read the boxes again", Aliases: []string{"refresh"},
 		Bindings: Bindings{TUI: tui("r").leader("r"), Desktop: desktop("primary+r").in(MenuConsole)}},
 	{ID: "servers", Label: "servers", Detail: "choose the server, folder or tags", Aliases: []string{"servers", "tags", "filters"},
-		Bindings: Bindings{Desktop: desktop("primary+f").in(MenuView)}},
+		Bindings: Bindings{Desktop: desktop("primary+l").in(MenuView)}},
 	{ID: "all", Label: "all discoboxes", Detail: "show every discobox, with this one beside them", Aliases: []string{"all discoboxes", "boxes"},
 		Bindings: Bindings{TUI: tui().menu(".", "l"), Desktop: desktop().in(MenuView)}},
 	{ID: "services", Label: "services", Detail: "view output, start, stop or restart a service", Aliases: []string{"services"},
@@ -856,4 +856,11 @@ var gestures = []Gesture{
 	{ID: "menu bar", Label: "the menu bar", Bindings: Bindings{Desktop: desktop("f10")}},
 	{ID: "pane", Label: "a pane by its number", Bindings: Bindings{TUI: digits("", 0, 9), Desktop: desktopDigits("primary", 1, 9)}},
 	{ID: "service", Label: "a service by its number", Bindings: Bindings{TUI: digits("S", 1, 9), Desktop: desktopDigits("primary+alt", 1, 9)}},
+	// A pane's own keys on the desktop, which a terminal there answers
+	// itself: the TUI's are the terminal it runs in.
+	{ID: "copy", Label: "copy the selection", Bindings: Bindings{Desktop: desktop("primary+c")}},
+	{ID: "paste", Label: "paste", Bindings: Bindings{Desktop: desktop("primary+v")}},
+	{ID: "find", Label: "find in the scrollback", Bindings: Bindings{Desktop: desktop("primary+f")}},
+	{ID: "scroll back", Label: "a screen back through the scrollback", Bindings: Bindings{Desktop: desktop("shift+pageup")}},
+	{ID: "scroll on", Label: "a screen on through the scrollback", Bindings: Bindings{Desktop: desktop("shift+pagedown")}},
 }

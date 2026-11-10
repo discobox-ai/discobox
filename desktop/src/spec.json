@@ -856,7 +856,7 @@
         },
         "desktop": {
           "keys": [
-            "primary+f"
+            "primary+l"
           ],
           "menu": "View"
         }
@@ -1923,6 +1923,96 @@
             "primary+alt+7",
             "primary+alt+8",
             "primary+alt+9"
+          ]
+        }
+      }
+    },
+    {
+      "id": "copy",
+      "label": "copy the selection",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+c"
+          ]
+        }
+      }
+    },
+    {
+      "id": "paste",
+      "label": "paste",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+v"
+          ]
+        }
+      }
+    },
+    {
+      "id": "find",
+      "label": "find in the scrollback",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+f"
+          ]
+        }
+      }
+    },
+    {
+      "id": "scroll back",
+      "label": "a screen back through the scrollback",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "shift+pageup"
+          ]
+        }
+      }
+    },
+    {
+      "id": "scroll on",
+      "label": "a screen on through the scrollback",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "shift+pagedown"
           ]
         }
       }

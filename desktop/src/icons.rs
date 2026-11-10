@@ -31,6 +31,7 @@ stroked!(COMMAND, "command", "M5 7l5 5-5 5M13 17h6");
 stroked!(CHECK, "check", "M5 12.5l4.5 4.5L19 7.5");
 stroked!(FILTER, "filter", "M4 6h16M7 12h10M10 18h4");
 stroked!(CARET, "caret", "M7 10l5 5 5-5");
+stroked!(UP, "up", "M7 14l5-5 5 5");
 
 pub static MORE: Icon = Icon {
     name: "discobox-more",

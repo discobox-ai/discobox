@@ -31,6 +31,8 @@ fn key_name(ev: &KeyEvent) -> Option<String> {
         Key::Right => "right".into(),
         Key::Home => "home".into(),
         Key::End => "end".into(),
+        Key::PageUp => "pageup".into(),
+        Key::PageDown => "pagedown".into(),
         Key::ContextMenu => "contextmenu".into(),
         Key::Function(n) => format!("f{n}"),
         _ => return None,
@@ -162,6 +164,13 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         }
         return true;
     }
+    // The find bar keeps its own keys (`view::find_bar`); what it leaves, it keeps from the pane.
+    if s.finding() {
+        if ev.key == Key::Escape {
+            s.close_find();
+        }
+        return true;
+    }
     // A harness's card and a box's harness changes are panels over the window, which keep the
     // keys while they are up; the harnesses page keeps its own, as a screen does.
     if s.card.is_some() || s.review.is_some() {
@@ -184,12 +193,28 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         s.goto_service(n.saturating_sub(1) as usize);
         return true;
     }
+    // A pane's own gestures: the terminal answers them itself, and the program never hears them.
+    if s.pane_has_keys() {
+        match gesture_for(s, ev) {
+            Some(("copy", _)) => s.copy_selection(tx),
+            Some(("paste", _)) => s.paste(tx),
+            Some(("find", _)) => s.open_find(),
+            Some(("scroll back", _)) => s.page_pane(1),
+            Some(("scroll on", _)) => s.page_pane(-1),
+            _ => return command_or_key(s, ev, tx),
+        }
+        return true;
+    }
+    command_or_key(s, ev, tx)
+}
+
+/// A command's shortcut, the list's keys, or a key for the focused pane's program.
+fn command_or_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if let Some(id) = command_for(s, ev) {
         // A shortcut with no modifier (Enter attaches, F2 renames) is the list's; in a pane the
         // key is the program's.
-        let in_pane = s.focus == Focus::Panes && s.harnesses.is_none() && s.live_ws().is_some_and(|w| !w.panes.is_empty());
         let bare = !(ev.mods.ctrl || ev.mods.alt || ev.mods.shift || ev.mods.cmd);
-        if !(bare && in_pane) {
+        if !(bare && s.pane_has_keys()) {
             run_command(s, &id, tx);
             return true;
         }

@@ -55,13 +55,30 @@ Global review expectations:
   never reach `encode`. Its first version left the focus on the panes, so a
   letter typed on the page went to the terminal it covered, and a box command
   acted on that hidden box; the TUI learned it as "what draws in front takes
-  the keys" (`cli/internal/tui/REVIEW.md`).
+  the keys" (`cli/internal/tui/REVIEW.md`). Every input path is held to it,
+  not only keys: the input method's commits asked less than the keys did and
+  typed into a pane behind help, a menu or the page, so the key path and
+  `State::ime` ask one question (`State::pane_has_keys`).
 - The desktop app's mock (`desktop/src/backend.rs`) sends a stream's bytes as
   the bridge sends them, never reshaped. A service runs on pipes, so its output
   and transcript end lines with a bare line feed; the mock first turned them
   into CRLF, and service panes that stair-stepped on every real box passed
   every test. The pane does the turning (`Screen::newline_mode`), since
   alacritty_terminal applies LNM to NEL but not to a line feed.
+- Each console drops a clipboard write (OSC 52) from a box that is not on
+  screen — parked, or covered by a page such as the desktop's harnesses page
+  (`State::workspace_shown`) — then and when it is back: the TUI's window
+  (`cli/internal/tui`, `tree.go`), and the desktop app's
+  (`desktop/src/main.rs`, `take_copies`). A
+  box switched away from keeps running, and its copy would replace what the
+  user just copied in the box they are in. Both consoles' first versions of
+  the feature took it from every box.
+- A paste's bracketed-paste markers are stripped until none is left, not in
+  one pass, and in one linear scan, not a pass per layer: taking one out of
+  `\x1b[20\x1b[201~1~` joins its two sides into another, which ends the paste
+  early and runs the rest as typed, and a pass per layer is quadratic in a
+  clipboard a box can fill (OSC 52). The desktop's `Screen::paste` keeps
+  both; termpane's `stripPasteMarkers` is still one pass (#927).
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

@@ -178,3 +178,327 @@ fn the_archived_are_not_toggled_before_a_listing() {
     assert_eq!(rt.state.asked, sub);
     assert!(rt.state.message.as_deref().is_some_and(|m| m.contains("not been read")), "{:?}", rt.state.message);
 }
+
+// ---------------------------------------------------------------------------------------------
+// A pane is a terminal (`term.rs`): what reaches its program, and what reaches the clipboard.
+
+use std::sync::{Arc, Mutex};
+
+use rune::{Ime, clipboard::MemoryClipboard};
+
+use crate::backend::{Backend, Event, Out};
+use crate::wire::Command;
+
+/// What the app sent past the window: program input by stream, commands, and resizes.
+#[derive(Clone, Default)]
+struct Sent {
+    input: Arc<Mutex<Vec<(u32, Vec<u8>)>>>,
+    commands: Arc<Mutex<Vec<Command>>>,
+    resizes: Arc<Mutex<Vec<(u32, u16, u16)>>>,
+}
+
+impl Sent {
+    fn input_to(&self, stream: u32) -> Vec<u8> {
+        self.input.lock().unwrap().iter().filter(|(s, _)| *s == stream).flat_map(|(_, b)| b.clone()).collect()
+    }
+    fn clear(&self) {
+        self.input.lock().unwrap().clear();
+        self.commands.lock().unwrap().clear();
+        self.resizes.lock().unwrap().clear();
+    }
+}
+
+/// The mock, with everything sent to it written down.
+struct Recorder {
+    inner: Box<dyn Backend + Send>,
+    sent: Sent,
+}
+
+impl Backend for Recorder {
+    fn send(&mut self, m: Out) {
+        if let Out::Command(c) = &m {
+            self.sent.commands.lock().unwrap().push(c.clone());
+        }
+        self.inner.send(m);
+    }
+    fn input(&mut self, stream: u32, bytes: &[u8]) {
+        self.sent.input.lock().unwrap().push((stream, bytes.to_vec()));
+        self.inner.input(stream, bytes);
+    }
+    fn resize(&mut self, stream: u32, cols: u16, rows: u16) {
+        self.sent.resizes.lock().unwrap().push((stream, cols, rows));
+        self.inner.resize(stream, cols, rows);
+    }
+}
+
+struct Null;
+
+impl Backend for Null {
+    fn send(&mut self, _: Out) {}
+    fn input(&mut self, _: u32, _: &[u8]) {}
+    fn resize(&mut self, _: u32, _: u16, _: u16) {}
+}
+
+/// A box attached, its primary focused, with what is sent recorded and a clipboard of its own.
+fn attached() -> (Runtime<State>, Sent, MemoryClipboard, u32) {
+    let mut rt = runtime();
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(&mut rt);
+    let sent = Sent::default();
+    let inner = std::mem::replace(&mut rt.state.backend, Box::new(Null));
+    rt.state.backend = Box::new(Recorder { inner, sent: sent.clone() });
+    let clip = rune::clipboard::memory();
+    rt.use_clipboard(&clip);
+    let stream = rt.state.focused_pane().expect("a focused pane").stream;
+    (rt, sent, clip, stream)
+}
+
+/// The focused pane's screen, written to as its program would, and its rect in the window.
+fn write(rt: &mut Runtime<State>, bytes: &[u8]) -> [f32; 4] {
+    let p = rt.state.focused_pane_mut().unwrap();
+    p.screen.feed(bytes);
+    let stream = p.stream;
+    settle(rt);
+    rt.presented(&format!("screen-{stream}")).expect("the screen is drawn").0
+}
+
+/// A key with the platform's primary modifier: ⌘ on macOS, Ctrl+Shift elsewhere.
+fn primary(c: char) -> KeyEvent {
+    let mods = if cfg!(target_os = "macos") { Mods { cmd: true, ..Mods::default() } } else { Mods { ctrl: true, shift: true, cmd: true, ..Mods::default() } };
+    KeyEvent { key: Key::Command(c), mods }
+}
+
+fn cell(r: [f32; 4], col: usize, row: usize) -> (f32, f32) {
+    (r[0] + (col as f32 + 0.25) * theme::cell_w(), r[1] + (row as f32 + 0.5) * theme::CELL_H)
+}
+
+// A drag in a pane selects, and its release copies; the copy chord copies a selection and lets
+// it go, and with none it is nothing — not the program's; the paste chord pastes the clipboard
+// to the program, as it asked to be pasted to.
+#[test]
+fn the_copy_and_paste_gestures_are_the_panes() {
+    let (mut rt, sent, clip, stream) = attached();
+    let r = write(&mut rt, b"\x1b[2J\x1b[Hcopy this text");
+    let (x0, y) = cell(r, 0, 0);
+    let (x1, _) = cell(r, 8, 0);
+    rt.pointer_down(x0, y);
+    rt.pointer_move(x1 - 0.1 * theme::cell_w(), y);
+    rt.pointer_move(x1 + 0.6 * theme::cell_w(), y);
+    rt.pointer_up(x1 + 0.6 * theme::cell_w(), y);
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("copy this"), "the release copied the selection");
+    assert!(rt.state.focused_pane().unwrap().screen.has_selection(), "the selection stays until it is copied again");
+
+    clip.set_text("nothing");
+    rt.key(primary('c'));
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("copy this"));
+    assert!(!rt.state.focused_pane().unwrap().screen.has_selection(), "the copy chord let the selection go");
+    sent.clear();
+    rt.key(primary('c'));
+    settle(&mut rt);
+    assert!(sent.input_to(stream).is_empty(), "the copy chord with nothing selected reached the program");
+
+    clip.set_text("pasted\nline");
+    rt.key(primary('v'));
+    settle(&mut rt);
+    let want = rt.state.focused_pane().unwrap().screen.paste("pasted\nline");
+    assert_eq!(sent.input_to(stream), want, "the clipboard, as a paste");
+
+    // The secondary button copies a showing selection too.
+    let (xa, _) = cell(r, 5, 0);
+    rt.pointer_down(xa, y);
+    rt.pointer_move(x1 + 0.6 * theme::cell_w(), y);
+    rt.pointer_up(x1 + 0.6 * theme::cell_w(), y);
+    settle(&mut rt);
+    clip.set_text("other");
+    rt.secondary_down(x0, y);
+    rt.secondary_up(x0, y);
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("this"));
+    assert!(!rt.state.focused_pane().unwrap().screen.has_selection());
+}
+
+// A program's own copy (OSC 52) reaches the clipboard.
+#[test]
+fn a_programs_copy_reaches_the_clipboard() {
+    let (mut rt, _, clip, stream) = attached();
+    rt.state.inbox.push(Event::Data(stream, b"\x1b]52;c;ZnJvbSB2aW0=\x07".to_vec()));
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("from vim"));
+}
+
+// The mouse is the program's once it asks, and the `mouse` command takes it back so a press
+// selects; `repaint` asserts the pane's size again, then asks the core for its screen.
+#[test]
+fn mouse_and_repaint_act_on_the_focused_pane() {
+    let (mut rt, sent, _, stream) = attached();
+    let r = write(&mut rt, b"\x1b[2J\x1b[2;1Hsome text here\x1b[?1000h\x1b[?1006h");
+    let (x, y) = cell(r, 2, 1);
+    sent.clear();
+    rt.pointer_down(x, y);
+    rt.pointer_up(x, y);
+    settle(&mut rt);
+    assert_eq!(sent.input_to(stream), b"\x1b[<0;3;2M\x1b[<0;3;2m".to_vec(), "the program heard the click");
+    assert!(!rt.state.focused_pane().unwrap().screen.has_selection());
+
+    run_command(&mut rt.state, "mouse", &mut Tx::default());
+    settle(&mut rt);
+    assert!(rt.state.focused_pane().unwrap().screen.seized, "{:?}", rt.state.message);
+    sent.clear();
+    let (x2, _) = cell(r, 6, 1);
+    rt.pointer_down(x, y);
+    rt.pointer_move(x2, y);
+    rt.pointer_up(x2, y);
+    settle(&mut rt);
+    assert!(sent.input_to(stream).is_empty(), "a taken-back mouse reached the program");
+    assert!(rt.state.focused_pane().unwrap().screen.has_selection(), "a taken-back mouse selects");
+    run_command(&mut rt.state, "mouse", &mut Tx::default());
+    settle(&mut rt);
+    assert!(!rt.state.focused_pane().unwrap().screen.seized);
+
+    sent.clear();
+    run_command(&mut rt.state, "repaint", &mut Tx::default());
+    settle(&mut rt);
+    let (cols, rows) = { let p = &rt.state.focused_pane().unwrap().screen; (p.cols as u16, p.rows as u16) };
+    assert_eq!(sent.resizes.lock().unwrap().as_slice(), &[(stream, cols, rows)], "the size asserted again");
+    let commands = sent.commands.lock().unwrap();
+    assert!(commands.iter().any(|c| c.command == "repaint" && c.args.stream == stream), "{commands:?}");
+    assert_eq!(rt.state.message, None);
+}
+
+// The find opens on the focused pane and keeps the keys while it is open; Escape closes it.
+#[test]
+fn find_opens_on_the_focused_pane_and_keeps_its_keys() {
+    let (mut rt, sent, _, stream) = attached();
+    let lines: String = (0..80).map(|i| format!("row {i}\r\n")).collect();
+    write(&mut rt, format!("{lines}\x1b[?1h").as_bytes());
+    rt.key(primary('f'));
+    settle(&mut rt);
+    assert_eq!(rt.state.find.as_ref().map(|f| f.stream), Some(stream));
+    rt.state.find.as_mut().unwrap().query = rune::TextEdit::new("row 12");
+    rt.state.find_changed();
+    settle(&mut rt);
+    let screen = &rt.state.focused_pane().unwrap().screen;
+    assert!(screen.offset() > 0, "scrolled back to the match");
+    assert!(screen.find.as_ref().unwrap().hit.is_some());
+    sent.clear();
+    rt.key(KeyEvent { key: Key::Up, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(sent.input_to(stream).is_empty(), "a key typed into the find reached the program");
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(rt.state.find.is_none());
+    assert!(rt.state.focused_pane().unwrap().screen.find.is_none());
+    // Back in the pane, keys are the program's again.
+    rt.key(KeyEvent { key: Key::Up, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(sent.input_to(stream), b"\x1bOA".to_vec());
+}
+
+// An input method's composition is drawn at the cursor, not sent; what it commits is typed.
+#[test]
+fn an_input_method_composes_at_the_cursor_and_commits_to_the_program() {
+    let (mut rt, sent, _, stream) = attached();
+    assert!(rt.state.ime(&Ime::Preedit("かん".into(), None)));
+    assert_eq!(rt.state.focused_pane().unwrap().screen.preedit.as_deref(), Some("かん"));
+    assert!(sent.input_to(stream).is_empty(), "a composition reached the program");
+    assert!(rt.state.ime(&Ime::Commit("漢".into())));
+    assert_eq!(rt.state.focused_pane().unwrap().screen.preedit, None);
+    assert_eq!(sent.input_to(stream), "漢".as_bytes().to_vec());
+    // With the list's keys, the pane hears nothing.
+    rt.state.focus = Focus::List;
+    assert!(!rt.state.ime(&Ime::Commit("x".into())));
+}
+
+// The header says what the core's header says of the box's agent, and nothing of its own: a
+// header with none draws none.
+#[test]
+fn the_header_says_what_the_core_sent() {
+    let (mut rt, _, _, _) = attached();
+    let key = rt.state.live.clone().unwrap();
+    let ws = rt.state.live_ws().unwrap();
+    let (sub, mut h) = (ws.header_sub, ws.header.clone().expect("the core's header"));
+    let listed = rt.state.box_by_id(&key).map(|b| b.agent.clone()).unwrap();
+    assert_eq!(h.agent, listed, "the mock's header says its poll");
+    h.agent = "blocked".into();
+    h.agent_msg = "which branch?".into();
+    rt.state.inbox.push(Event::Header(sub, Ok(h.clone())));
+    settle(&mut rt);
+    assert!(rt.presented("agent").is_some(), "the header drew no agent");
+    h.agent.clear();
+    h.agent_msg.clear();
+    rt.state.inbox.push(Event::Header(sub, Ok(h)));
+    settle(&mut rt);
+    assert!(rt.presented("agent").is_none_or(|(_, opacity)| opacity == 0.0), "nothing to say is said as nothing");
+}
+
+// A program's copy (OSC 52) reaches the clipboard only from the box on screen: a box switched
+// away from keeps running, and what it copies is dropped rather than replacing the user's.
+#[test]
+fn only_the_box_on_screen_copies() {
+    let (mut rt, _, clip, stream) = attached();
+    let parked = rt.state.live.clone().unwrap();
+    let other = (0..rt.state.rows().len()).find_map(|i| rt.state.row_box(i).filter(|b| b.running() && b.key != parked).map(|b| b.key.clone()))
+        .expect("another running box");
+    rt.state.open_box(&other);
+    settle(&mut rt);
+    assert_ne!(rt.state.live.as_ref(), Some(&parked));
+    clip.set_text("the user's");
+    rt.state.inbox.push(Event::Data(stream, b"\x1b]52;c;cGFya2Vk\x07".to_vec()));
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("the user's"));
+    // Nor is it held until the box is back on screen.
+    rt.state.open_box(&parked);
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("the user's"));
+}
+
+// A find whose pane loses the keys closes, so it never keeps them from the pane that has them.
+#[test]
+fn a_find_closes_when_its_pane_loses_the_keys() {
+    let (mut rt, sent, _, _) = attached();
+    rt.key(primary('f'));
+    settle(&mut rt);
+    assert!(rt.state.find.is_some());
+    // The list takes the keys (a click there, say): the bar over the pane is no longer drawn.
+    rt.update(|s, _| s.focus = Focus::List);
+    settle(&mut rt);
+    let cursor = rt.state.cursor;
+    rt.key(KeyEvent { key: Key::Down, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(rt.state.find.is_none(), "the find outlived its pane's keys");
+    assert_ne!(rt.state.cursor, cursor, "the find kept the list's keys");
+    let _ = sent;
+}
+
+// Whatever is in front of the panes takes the input method as it takes the keys: help, a
+// menu or the harnesses page up, a composition reaches no pane (one test for both, as both ask
+// `State::pane_has_keys`).
+#[test]
+fn an_input_method_reaches_no_pane_behind_anything() {
+    let (mut rt, sent, _, stream) = attached();
+    rt.update(|s, _| s.help = true);
+    settle(&mut rt);
+    assert!(!rt.state.ime(&Ime::Commit("x".into())), "help took no composition");
+    rt.update(|s, _| s.help = false);
+    rt.update(|s, _| s.harnesses = Some(crate::harnesses::HarnessPage { server: String::new(), rows: vec![], cursor: 0 }));
+    settle(&mut rt);
+    assert!(!rt.state.ime(&Ime::Preedit("か".into(), None)));
+    assert!(!rt.state.ime(&Ime::Commit("漢".into())));
+    rt.key(KeyEvent { key: Key::Text("a".into()), mods: Mods::default() });
+    settle(&mut rt);
+    assert!(sent.input_to(stream).is_empty(), "the page let a key or a composition through to the pane");
+}
+
+// A box covered by the harnesses page is not on screen: what its program copies is dropped.
+#[test]
+fn a_box_under_a_page_copies_nothing() {
+    let (mut rt, _, clip, stream) = attached();
+    rt.update(|s, _| s.harnesses = Some(crate::harnesses::HarnessPage { server: String::new(), rows: vec![], cursor: 0 }));
+    settle(&mut rt);
+    clip.set_text("the user's");
+    rt.state.inbox.push(Event::Data(stream, b"\x1b]52;c;Y292ZXJlZA==\x07".to_vec()));
+    settle(&mut rt);
+    assert_eq!(clip.text().as_deref().map(String::as_str), Some("the user's"));
+}

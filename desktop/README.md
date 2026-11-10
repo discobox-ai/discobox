@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 8. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 9. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -36,7 +36,7 @@ the epic, and does not yet follow the ADRs everywhere:
   as strokes), the remark a picked row says in place of its name, the server
   notes, and the filter with its choices. The app holds the filter and
   subscribes again to change it: the filter control at the list's head (and
-  `servers`, `primary+f`) opens the core's choices with their counts, and `archived`
+  `servers`, `primary+l`) opens the core's choices with their counts, and `archived`
   shows or hides the archived. Selection is the app's: Space marks a row,
   Shift-Space draws a range the cursor extends, `primary+d` lets them go; ⌘-click (Ctrl-click elsewhere)
   marks, Shift-click marks a run. A box's lifecycle verbs, from its row's
@@ -74,6 +74,22 @@ the epic, and does not yet follow the ADRs everywhere:
     pull request it is tagged with, its git position and word in their tone,
     its diff, its desktop and the ports it serves — a forwarded web port is a
     link that opens the browser — and the rest of its tags.
+- **A pane is a terminal** (`term.rs`), with termpane's behaviours
+  (`docs/console/parity.md`, "Terminal behaviours"): a drag selects (a word on
+  a double click, a line on a triple, a block with Alt), copied on release;
+  `primary+c` copies a selection and `primary+v` pastes, bracketed when the
+  program asks; a program's OSC 52 copy reaches the clipboard and its reads
+  get nothing; a link it made (OSC 8) opens on ⌘-click (Ctrl-click
+  elsewhere); a program that asked for the mouse hears it in its encoding
+  until `mouse` takes it back or Shift is held; the wheel scrolls the
+  program, a pager's arrows or the scrollback; `primary+f` finds through the
+  scrollback and `shift+pageup`/`pagedown` page it; wide characters and emoji
+  are drawn at their cells; an input method composes at the cursor; and
+  `repaint` asserts the pane's size again and asks for its screen. The workspace
+  header leads with what the box's agent is doing, as the core's header says
+  it (`console.Header.Agent`): the core's choice between what the primary's
+  program reports (OSC 7501) and the listing's poll. A program's copy reaches the clipboard
+  only from the box on screen.
 - **The spec** is the console core's (`cli/internal/console/spec.go`): the
   registry's commands by their IDs (`attach`, `shell`) with each frontend's
   bindings, the glyphs, and the design language's colour tokens in both
@@ -213,7 +229,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/sheet.rs` | The core's forms, questions and edits as sheets: the queue, the answers held while they are typed, drafts, refusals, a file opened in the person's editor, and their keys |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
-| `src/term.rs` | A pane's terminal (`alacritty_terminal`) and its screen as rows |
+| `src/term.rs` | A pane's terminal (`alacritty_terminal`): its screen as rows, selection, the program's copies and links, mouse reporting, the wheel, paste, find, wide characters and the input method's composition |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |
 | `src/icons.rs`, `src/mark.rs` | The window's vector icons, and the mark from `assets/brand/logo-purple.svg` |
 | `fonts/` | JetBrains Mono 2.304 at the weights the chrome sets and the italic, and its licence |

@@ -48,7 +48,7 @@ use wire::{
     Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget,
     Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Topic,
 };
-use rune::{App, AppSpec, Drag, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
+use rune::{App, AppSpec, Drag, Ime, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
 use term::Screen;
 
 /// Which of the two columns a pane lives in: harness terminals left, shells right.
@@ -70,6 +70,10 @@ pub struct Pane {
 }
 
 impl Pane {
+    fn new(stream: u32, exec: Tab) -> Pane {
+        Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None }
+    }
+
     pub fn side(&self) -> Side { if matches!(self.exec.kind, TabKind::Shell | TabKind::Tool) { Side::Shells } else { Side::Terminals } }
 
     /// Whether it draws one of the box's declared services: read-only, stopped rather than ended,
@@ -213,6 +217,12 @@ enum Pending {
     /// A create from the composer, and the prompt it was sent with: the composer lets go of it
     /// once the server has taken the create.
     Create(String),
+}
+
+/// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
+pub struct FindBar {
+    pub query: TextEdit,
+    pub stream: u32,
 }
 
 /// The palette (ADR 26-11-06-671): the query, at most one chip — a command, or a box by its key —
@@ -384,6 +394,7 @@ pub struct State {
     /// A box to put the cursor on once a listing shows it: one the palette went to that the
     /// filter hid, until the view revealing it lands.
     point: Option<String>,
+    pub find: Option<FindBar>,
     pub bridged: bool,
     pending: HashMap<u64, Pending>,
     /// The listing subscription: the filter is changed by subscribing again under a new one.
@@ -435,6 +446,12 @@ const DRAG_SLOP: f32 = 4.0;
 
 /// The least share of the width either column keeps when the split is dragged.
 pub const MIN_SPLIT: f32 = 0.2;
+/// The cell a point on a screen is in, as a column, a row (negative above it), and whether it
+/// is in the cell's right half: where a selection's edge falls.
+fn cell_at(x: f32, y: f32) -> (usize, i32, bool) {
+    let col = (x / theme::cell_w()).max(0.0);
+    (col.floor() as usize, (y / theme::CELL_H).floor() as i32, col.fract() >= 0.5)
+}
 
 impl State {
     fn new() -> State { State::with(BOOT.lock().unwrap().take().unwrap_or_else(boot_mock)) }
@@ -445,7 +462,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, recent: vec![], reveal: None, point: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, recent: vec![], reveal: None, point: None, find: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
@@ -622,6 +639,7 @@ impl State {
         }
         self.filter_menu = None;
         self.help = false;
+        self.close_find();
     }
 
     /// Opens a menu of the menu bar, or the pane's menu, at a place: its commands from the spec,
@@ -770,13 +788,34 @@ impl State {
 
     /// Where a command is asked from, for the core's rules: the box whose workspace is on
     /// screen, and whether a pane or the list has the keys. The list is always beside it.
+    /// Whether the box on screen's workspace is shown: one is live and no page covers it. What
+    /// a workspace not shown does — its program's copies included — reaches nobody.
+    pub fn workspace_shown(&self) -> bool { self.live.is_some() && self.harnesses.is_none() }
+
+    /// Whether the focused pane has the keys and the input method: its workspace is shown, the
+    /// panes have the focus, and nothing in front of it — a sheet, a menu, the palette, help, a
+    /// harness's card or review — takes them first. The key path and the input method both ask
+    /// this, so a surface added in front of the panes cannot be missed by one of them.
+    pub fn pane_has_keys(&self) -> bool {
+        self.workspace_shown()
+            && self.focus == Focus::Panes
+            && self.live_ws().is_some_and(|w| !w.panes.is_empty())
+            && !self.sheets.is_open()
+            && self.menu.is_none()
+            && self.filter_menu.is_none()
+            && self.palette.is_none()
+            && !self.help
+            && self.card.is_none()
+            && self.review.is_none()
+    }
+
     fn context(&self) -> Context {
         let shown = self.live.is_some();
         Context {
             workspace: self.live.clone().unwrap_or_default(),
             has_workspace: shown,
             // A page beside the list covers the workspace: it is held, not on screen.
-            workspace_shown: shown && self.harnesses.is_none(),
+            workspace_shown: self.workspace_shown(),
             pane_focused: shown && self.focus == Focus::Panes && self.harnesses.is_none(),
             list_has_keys: self.focus == Focus::List,
             tree: true,
@@ -859,7 +898,7 @@ impl State {
     fn new_pane(&mut self, exec: Tab) -> Pane {
         let stream = self.next_stream;
         self.next_stream += 1;
-        Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None }
+        Pane::new(stream, exec)
     }
 
     /// Show the box on a row: its workspace if it has one, attaching on first use.
@@ -1154,6 +1193,287 @@ impl State {
         }
     }
 
+    /// The pane with the keys, in the box on screen.
+    pub fn focused_pane(&self) -> Option<&Pane> {
+        let ws = self.live_ws()?;
+        ws.focused().map(|i| &ws.panes[i])
+    }
+
+    fn focused_pane_mut(&mut self) -> Option<&mut Pane> {
+        let ws = self.live_ws_mut()?;
+        let i = ws.focused()?;
+        Some(&mut ws.panes[i])
+    }
+
+    /// Bytes for a pane's program that are not a key: a mouse report, a wheel's arrows, a
+    /// paste. A session that ended is sent nothing.
+    pub fn send_to(&mut self, stream: u32, bytes: &[u8]) {
+        if bytes.is_empty() || self.pane_mut(stream).is_none_or(|p| p.exited) {
+            return;
+        }
+        self.backend.input(stream, bytes);
+    }
+
+    /// The copy gesture: the focused pane's selection to the clipboard, and the highlight let
+    /// go. With nothing selected it copies nothing; the chord is never the program's.
+    pub fn copy_selection(&mut self, tx: &mut Tx) {
+        let Some(p) = self.focused_pane_mut() else { return };
+        if let Some(text) = p.screen.selection_text() {
+            tx.copy(text);
+            p.screen.clear_selection();
+        }
+    }
+
+    /// The paste gesture: what the clipboard holds, into the focused pane, as its program asked
+    /// to be pasted to.
+    pub fn paste(&mut self, tx: &mut Tx) {
+        let Some(stream) = self.focused_pane().filter(|p| !p.exited).map(|p| p.stream) else { return };
+        tx.read_clipboard(move |s: &mut State, content, _| s.paste_text(stream, content.text()));
+    }
+
+    pub fn paste_text(&mut self, stream: u32, text: &str) {
+        let Some(p) = self.pane_mut(stream) else { return };
+        if text.is_empty() {
+            return;
+        }
+        p.screen.to_bottom();
+        let bytes = p.screen.paste(text);
+        self.send_to(stream, &bytes);
+    }
+
+    /// The find gesture: a find bar over the focused pane, on what it last looked for.
+    pub fn open_find(&mut self) {
+        let Some(p) = self.focused_pane_mut() else { return };
+        p.screen.open_find();
+        let query = p.screen.find.as_ref().map(|f| f.query.clone()).unwrap_or_default();
+        let stream = p.stream;
+        let mut edit = TextEdit::new(&query);
+        edit.focused = true;
+        self.find = Some(FindBar { query: edit, stream });
+    }
+
+    /// What the find bar holds, looked for again from the live screen back.
+    pub fn find_changed(&mut self) {
+        let Some(f) = &self.find else { return };
+        let (stream, query) = (f.stream, f.query.text.clone());
+        if let Some(p) = self.pane_mut(stream) {
+            p.screen.find(&query);
+        }
+    }
+
+    /// The next match back through the scrollback, or on toward the live screen.
+    pub fn find_next(&mut self, back: bool) {
+        let Some(stream) = self.find.as_ref().map(|f| f.stream) else { return };
+        if let Some(p) = self.pane_mut(stream) {
+            p.screen.find_next(back);
+        }
+    }
+
+    /// Whether the find bar has the keys: it is open, on the pane that has them. One whose
+    /// pane lost them — another box or pane focused, the list, its session gone — is closed.
+    pub fn finding(&mut self) -> bool {
+        if self.find.is_some() && self.find_stream().is_none() {
+            self.close_find();
+        }
+        self.find.is_some()
+    }
+
+    /// The stream of the pane the find bar is open on while that pane has the keys: where the
+    /// bar is drawn, and whether it is.
+    pub fn find_stream(&self) -> Option<u32> {
+        let f = self.find.as_ref()?;
+        (self.focus == Focus::Panes && self.focused_pane().is_some_and(|p| p.stream == f.stream)).then_some(f.stream)
+    }
+
+    /// The pane on a stream, in any workspace.
+    pub fn pane(&self, stream: u32) -> Option<&Pane> {
+        self.workspaces.values().flat_map(|w| w.panes.iter()).find(|p| p.stream == stream)
+    }
+
+    /// Closes the find bar, leaving the pane where it scrolled to.
+    pub fn close_find(&mut self) {
+        let Some(f) = self.find.take() else { return };
+        if let Some(p) = self.pane_mut(f.stream) {
+            p.screen.close_find();
+        }
+    }
+
+    /// A screen back (`pages` > 0) or on through the focused pane's scrollback.
+    pub fn page_pane(&mut self, pages: i32) {
+        if let Some(p) = self.focused_pane_mut() {
+            p.screen.page(pages);
+        }
+    }
+
+    /// The `mouse` command's flow: takes the focused pane's mouse back from its program, so a
+    /// drag selects, or gives it back.
+    fn toggle_mouse(&mut self) {
+        let Some(p) = self.focused_pane_mut() else { return };
+        p.screen.seized = !p.screen.seized;
+        let wants = p.screen.wants_mouse();
+        self.message = Some(match (p.screen.seized, wants) {
+            (true, true) => "the mouse selects; the program hears none of it",
+            (true, false) => "the mouse selects, and will when the program asks for it",
+            (false, true) => "the mouse is the program's again",
+            (false, false) => "the mouse is the program's whenever it asks",
+        }.into());
+    }
+
+    /// The `repaint` command: the pane's size asserted again, since another window on the same
+    /// session may have laid it out at its own, then the core asked for the screen again at it.
+    fn repaint_focused(&mut self) {
+        let Some(p) = self.focused_pane() else {
+            self.message = Some("no pane to repaint".into());
+            return;
+        };
+        let stream = p.stream;
+        self.resend_size(stream);
+        let context = self.context();
+        self.command("repaint", vec![], context, Args { stream, ..Default::default() }, Pending::Enter("repaint".into()));
+    }
+
+    /// An input method on the focused pane: its composition drawn at the cursor, and what it
+    /// commits typed.
+    pub fn ime(&mut self, ime: &Ime) -> bool {
+        if !self.pane_has_keys() || self.finding() {
+            return false;
+        }
+        let Some(p) = self.focused_pane_mut() else { return false };
+        match ime {
+            Ime::Preedit(text, _) => p.screen.preedit = (!text.is_empty()).then(|| text.clone()),
+            Ime::Commit(text) => {
+                p.screen.preedit = None;
+                let text = text.clone();
+                self.send(text.as_bytes());
+            }
+            Ime::Enabled | Ime::Disabled => p.screen.preedit = None,
+        }
+        true
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The mouse on a pane: points are the screen's own, from its top-left.
+
+    /// A press, drag and release on a pane (`index` in its workspace). ⌘-click (Ctrl-click
+    /// elsewhere) opens a link a program made; a program that asked for the mouse hears it
+    /// unless it was taken back or Shift is held, as in every terminal; otherwise the primary
+    /// button selects, copied on release.
+    pub fn pane_drag(&mut self, stream: u32, index: usize, d: &rune::Drag, tx: &mut Tx) {
+        let mods = tx.mods();
+        let button = if tx.button() == rune::PointerButton::Middle { term::Button::Middle } else { term::Button::Left };
+        if d.phase == rune::Phase::Down {
+            self.select_pane(index);
+        }
+        let Some(p) = self.pane_mut(stream) else { return };
+        let (col, row, right) = cell_at(d.x, d.y);
+        let (x, y) = (col.min(p.screen.cols.saturating_sub(1)), row.clamp(0, p.screen.rows as i32 - 1) as usize);
+        let report = |p: &mut Pane, act| p.screen.mouse(button, act, x, y, mods.shift, mods.alt, mods.ctrl);
+        let bytes = match d.phase {
+            rune::Phase::Down => {
+                if mods.cmd && let Some(url) = p.screen.link_at(x, y as i32) {
+                    if let Err(e) = tx.open_url(&url) {
+                        self.message = Some(format!("could not open {url}: {e:?}"));
+                    }
+                    return;
+                }
+                if p.screen.reports_mouse() && !mods.shift {
+                    report(p, term::MouseAct::Press)
+                } else {
+                    if button == term::Button::Left {
+                        p.screen.select_start(col, row, right, d.clicks, mods.alt);
+                    }
+                    None
+                }
+            }
+            rune::Phase::Move if p.screen.selecting => {
+                p.screen.select_to(col, row, right);
+                None
+            }
+            rune::Phase::Move => report(p, term::MouseAct::Motion),
+            rune::Phase::Up => match report(p, term::MouseAct::Release) {
+                Some(b) => Some(b),
+                None => {
+                    if let Some(text) = p.screen.select_end() {
+                        tx.copy(text);
+                    }
+                    None
+                }
+            },
+        };
+        if let Some(b) = bytes {
+            self.send_to(stream, &b);
+        }
+    }
+
+    /// The pointer moving over a pane with no button held: news only to a program that asked
+    /// for every motion.
+    pub fn pane_hover(&mut self, stream: u32, x: f32, y: f32) {
+        let Some(p) = self.pane_mut(stream) else { return };
+        if p.screen.pressed() || p.screen.selecting || !p.screen.reports_mouse() {
+            return;
+        }
+        let (col, row, _) = cell_at(x, y);
+        if row < 0 || row >= p.screen.rows as i32 || col >= p.screen.cols {
+            return;
+        }
+        if let Some(b) = p.screen.mouse(term::Button::None, term::MouseAct::Motion, col, row as usize, false, false, false) {
+            self.send_to(stream, &b);
+        }
+    }
+
+    /// The secondary button on a pane (`index` in its workspace): a program with the mouse hears
+    /// it; otherwise over a selection it copies it and lets it go, as Windows terminals do; else
+    /// it opens the pane's menu where it was pressed.
+    pub fn pane_secondary(&mut self, stream: u32, index: usize, at: rune::PointerEvent, tx: &mut Tx) {
+        let mods = tx.mods();
+        self.select_pane(index);
+        let Some(p) = self.pane_mut(stream) else { return };
+        let (col, row, _) = cell_at(at.x, at.y);
+        let (col, row) = (col.min(p.screen.cols.saturating_sub(1)), row.clamp(0, p.screen.rows as i32 - 1) as usize);
+        if p.screen.reports_mouse() && !mods.shift {
+            let mut b = p.screen.mouse(term::Button::Right, term::MouseAct::Press, col, row, mods.shift, mods.alt, mods.ctrl).unwrap_or_default();
+            b.extend(p.screen.mouse(term::Button::Right, term::MouseAct::Release, col, row, mods.shift, mods.alt, mods.ctrl).unwrap_or_default());
+            self.send_to(stream, &b);
+        } else if let Some(text) = p.screen.selection_text() {
+            tx.copy(text);
+            p.screen.clear_selection();
+        } else {
+            self.open_commands_menu(MenuKind::Pane, (at.window_x, at.window_y));
+        }
+    }
+
+    /// A wheel or trackpad over a pane, to whoever can scroll (`Screen::wheel`): a notched
+    /// wheel turns a tick a notch (Rune gives a notch as 40 points), a trackpad the lines its
+    /// points come to.
+    pub fn pane_wheel(&mut self, stream: u32, w: &rune::WheelEvent) {
+        const NOTCH: f32 = 40.0;
+        let Some(p) = self.pane_mut(stream) else { return };
+        let (col, row, _) = cell_at(w.x, w.y);
+        let (col, row) = (col.min(p.screen.cols.saturating_sub(1)), row.clamp(0, p.screen.rows as i32 - 1) as usize);
+        let lines = if w.precise { w.dy / theme::CELL_H } else { w.dy / NOTCH * term::WHEEL_LINES };
+        if let Some(b) = p.screen.wheel(lines, col, row) {
+            self.send_to(stream, &b);
+        }
+    }
+
+    /// What the programs on screen copied (OSC 52), to the clipboard. A box that is not on
+    /// screen — parked, or covered by a page (`workspace_shown`) — keeps running, and what its
+    /// program copies is dropped, then and later: it would replace what the user just copied
+    /// where they are, as the TUI's rule has it.
+    fn take_copies(&mut self, tx: &mut Tx) {
+        let live = self.workspace_shown().then(|| self.live.clone()).flatten();
+        for (key, ws) in self.workspaces.iter_mut() {
+            for p in ws.panes.iter_mut() {
+                if let Some(text) = p.screen.copied.take()
+                    && live.as_ref() == Some(key)
+                {
+                    tx.copy(text);
+                }
+            }
+        }
+    }
+
+
     pub fn send(&mut self, bytes: &[u8]) {
         let Some(ws) = self.live_ws_mut() else { return };
         let Some(i) = ws.focused() else { return };
@@ -1176,14 +1496,6 @@ impl State {
         }
         if hit {
             self.backend.resize(stream, cols as u16, rows as u16);
-        }
-    }
-
-    pub fn scroll_pane(&mut self, stream: u32, lines: i32) {
-        for ws in self.workspaces.values_mut() {
-            for p in ws.panes.iter_mut().filter(|p| p.stream == stream) {
-                p.screen.scroll(lines);
-            }
         }
     }
 
@@ -1484,7 +1796,7 @@ impl State {
                     self.retake_sessions(&sandbox);
                     return;
                 }
-                let pane = Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None };
+                let pane = Pane::new(stream, exec);
                 let ws = self.workspaces.get_mut(&r.r#box).unwrap();
                 ws.panes.push(pane);
                 ws.show(ws.panes.len() - 1);
@@ -1586,7 +1898,7 @@ impl State {
 /// an entry in the parity ledger (`docs/console/parity.md`) saying which issue brings it.
 pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
-    "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions",
+    "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions", "mouse", "repaint",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
     "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options",
 ];
@@ -1638,6 +1950,7 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
         }
         "terminal" => s.new_session(None),
         "end" => s.end_focused(),
+        "repaint" => s.repaint_focused(),
         "actions" => {
             // The box's menu, where the keys are: by its row in the list, by its header beside a pane.
             let Some(key) = targets.first().cloned() else { return };
@@ -1702,6 +2015,7 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
             }
             s.show_workspace(&r.r#box);
         }
+        "mouse" => s.toggle_mouse(),
         "maximize" => {
             if let Some(ws) = s.live_ws_mut() {
                 ws.maximized = !ws.maximized;
@@ -1834,10 +2148,13 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
     }
+    s.take_copies(tx);
     true
 }
 
 fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool { keys::on_key(s, ev, tx) }
+
+fn on_ime(s: &mut State, ime: &Ime, _tx: &mut Tx) -> bool { s.ime(ime) }
 
 /// What the window opens on: the backend, the spec, its inbox, whether it is the CLI's, and the
 /// prompt the last window left.
@@ -1917,6 +2234,29 @@ fn main() {
                 let b = s.live.clone();
                 s.new_session(b);
                 poll(s, 0.0, &mut Tx::default());
+            }),
+            // A pane as a terminal: wide characters and emoji at their cells, a link, a
+            // selection, and the find bar on a match.
+            ("terminal", |s| {
+                s.open_row(0);
+                poll(s, 0.0, &mut Tx::default());
+                let mut out = String::from("\x1b[2J\x1b[H");
+                for i in 0..40 {
+                    out.push_str(&format!("build step {i}: ok\r\n"));
+                }
+                out.push_str("wide: 漢字かな 😀 🚀 é done\r\n");
+                out.push_str("docs: \x1b]8;;https://example.com/guide\x1b\\the guide\x1b]8;;\x1b\\ is linked\r\n");
+                out.push_str("\x1b[1;32mselect\x1b[0m this line\r\n$ ");
+                if let Some(p) = s.focused_pane_mut() {
+                    p.screen.feed(out.as_bytes());
+                    let rows = p.screen.rows as i32;
+                    p.screen.select_start(0, rows - 2, false, 3, false);
+                }
+                s.open_find();
+                if let Some(f) = s.find.as_mut() {
+                    f.query = TextEdit::new("step 3");
+                }
+                s.find_changed();
             }),
             ("palette", |s| {
                 s.open_row(0);
@@ -2071,5 +2411,5 @@ fn main() {
         }
         app = app.menu_item(item);
     }
-    app.run();
+    app.on_ime(on_ime).run();
 }

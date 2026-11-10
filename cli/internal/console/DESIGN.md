@@ -119,7 +119,9 @@ where focus goes is each frontend's, the key that moves it the registry's.
   screen's. What is not a command —
   a cursor's motion, choosing a row, a pane by its number — is a `Gesture`:
   declared with each frontend's keys, never searched, counted or dispatched.
-  A numbered gesture's sequences end in the digit it goes to.
+  A numbered gesture's sequences end in the digit it goes to. The desktop's
+  pane keys (copy, paste, find, a screen back or on) are gestures with no TUI
+  binding: the TUI's terminal is the one it runs in, which keeps its own.
 
 ```mermaid
 flowchart LR

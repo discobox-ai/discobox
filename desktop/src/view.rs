@@ -470,23 +470,69 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
             s.resize_pane(id, (r[2] / theme::cell_w()).floor() as usize, (r[3] / CELL_H).floor() as usize)
         })
         .on_wheel(move |s: &mut State, w, _| {
-            s.scroll_pane(id, (w.dy / CELL_H).round() as i32);
+            s.pane_wheel(id, &w);
             true
         })
-        .on_press(move |s: &mut State| s.select_pane(active))
-        .on_secondary_press(move |s: &mut State, p: PointerPress, _tx: &mut Tx| {
-            s.select_pane(active);
-            s.open_commands_menu(MenuKind::Pane, (p.x, p.y));
-        })
-        .cursor(rune::Cursor::Text);
+        .pointer_buttons([rune::PointerButton::Middle])
+        .on_drag(move |s: &mut State, d: &mut rune::Drag, tx: &mut Tx| s.pane_drag(id, active, d, tx))
+        .on_pointer_move_local(move |s: &mut State, p, _| s.pane_hover(id, p.x, p.y))
+        .on_secondary_press_local(move |s: &mut State, p, tx| s.pane_secondary(id, active, p, tx))
+        // A program with the mouse is pointed at, not selected in.
+        .cursor(if pane.screen.reports_mouse() { rune::Cursor::Default } else { rune::Cursor::Text });
+    let mut chips = row().gap(6.0).pin(None, None, Some(6.0), Some(6.0));
+    if pane.screen.seized && pane.screen.wants_mouse() {
+        chips = chips.child(text("mouse taken").font(theme::UI_SMALL).color(theme::grey()).px(8.0).py(2.0).radius(theme::r_key())
+            .fill(theme::raised()).border(theme::stroke_quiet(), theme::line()));
+    }
     // What the tab says over its program: reconnecting in gold, what a held tab's ending left it
     // saying quietly.
     if let Some(st) = &pane.status {
         let (fill, ink) = if pane.settled() { (theme::line_bright(), theme::grey()) } else { (theme::gold(), theme::on_gold()) };
-        screen = screen.child(el().key(format!("status-{id}")).px(8.0).py(2.0).radius(theme::r_key()).fill(fill).pin(None, None, Some(6.0), Some(6.0))
+        chips = chips.child(el().key(format!("status-{id}")).px(8.0).py(2.0).radius(theme::r_key()).fill(fill)
             .child(text(st.clone()).font(theme::UI_SMALL).color(ink)));
     }
+    screen = screen.child(chips);
+    if let Some(bar) = find_bar(s, id) {
+        screen = screen.child(bar);
+    }
     frame(format!("col-{side:?}"), focused, Some(tabs), Some(buttons), screen).min_w(0.0)
+}
+
+/// How far down the screen the find bar sits: below the scrollback's "lines back" badge, which
+/// the find moves and which says how far back a match is.
+const FIND_TOP: f32 = 26.0;
+
+/// The find through a pane's scrollback, over its top right while it is open: what is typed is
+/// looked for as it is typed; Enter goes back to the match before, Shift-Enter on to the next,
+/// Escape closes it.
+fn find_bar(s: &State, stream: u32) -> Option<El> {
+    let f = s.find.as_ref().filter(|_| s.find_stream() == Some(stream))?;
+    let screen = &s.pane(stream)?.screen;
+    let missing = screen.find.as_ref().is_some_and(|f| f.missing && !f.query.is_empty());
+    let field = text_input(&f.query, theme::UI.lh(20.0)).key("find-query").single_line().w(220.0).color(theme::text())
+        .placeholder("find in the scrollback", theme::dim())
+        .on_edit(|s: &mut State| &mut s.find.as_mut().unwrap().query)
+        .on_input_change(|s: &mut State, _| s.find_changed())
+        .on_input_key(|s: &mut State, ev: &rune::KeyEvent, _tx: &mut Tx| {
+            match ev.key {
+                rune::Key::Enter => s.find_next(!ev.mods.shift),
+                rune::Key::Escape => s.close_find(),
+                _ => return false,
+            }
+            true
+        });
+    let step = |key: &str, glyph: &'static Icon, what: &str, back: bool| {
+        icon_button(format!("find-{key}"), glyph, Some(what.into())).on_press(move |s: &mut State| s.find_next(back))
+    };
+    Some(row().key("find-bar").pin(None, Some(FIND_TOP), Some(8.0), None).h(32.0).px(8.0).gap(6.0).center_y()
+        .radius(theme::r_row()).fill(theme::raised()).border(theme::stroke_focus(), if missing { theme::err() } else { theme::line_bright() })
+        .shadow(8.0, 24.0, Color::BLACK.alpha(0.4))
+        .child(icon(&icons::SEARCH, 14.0).color(theme::grey()))
+        .child(field)
+        .child(t(if missing { "no match" } else { "" }, theme::err()).font(theme::UI_SMALL))
+        .child(step("back", &icons::UP, "the match before", true))
+        .child(step("on", &icons::CARET, "the next match", false))
+        .child(icon_button("find-close", &icons::CLOSE, Some("close".into())).on_press(|s: &mut State| s.close_find())))
 }
 
 /// The divider between the two columns: dragged, it moves where they split; a double press puts
@@ -535,7 +581,14 @@ fn header(s: &State, ws: &Workspace, sbx: &Sandbox) -> El {
     };
     // What does not fit is cut at the right, where the readouts start: the ports and tags,
     // which have no bound on their width, come last.
-    let mut mid = row().h(24.0).gap(14.0).center_y().grow(1.0).min_w(0.0).clip_rounded(0.0).child(t(source_label(sbx), theme::grey()));
+    let mut mid = row().h(24.0).gap(14.0).center_y().grow(1.0).min_w(0.0).clip_rounded(0.0);
+    // What its agent is doing, as the core says it last said: in its own words while it says any.
+    if let Some(h) = ws.header.as_ref().filter(|h| !h.agent.is_empty()) {
+        let (g, c) = glyph(s, true, &h.agent);
+        let said = if h.agent_msg.is_empty() { h.agent.clone() } else { h.agent_msg.clone() };
+        mid = mid.child(row().key("agent").gap(6.0).center_y().min_w(0.0).child(t(g, c)).child(t(said, c).max_w(420.0).truncate()));
+    }
+    mid = mid.child(t(source_label(sbx), theme::grey()));
     match &ws.header {
         None => mid = mid.child(t(sbx.id.clone(), theme::dim())),
         Some(h) => {

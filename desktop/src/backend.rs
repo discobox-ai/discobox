@@ -901,7 +901,9 @@ impl Mock {
         Header {
             id: b.id.clone(), work: vec![], blocked: if b.agent == "blocked" { "blocked".into() } else { String::new() }, changes: if b.agent == "blocked" || base.is_empty() { String::new() } else if b.dirty { "dirty".into() } else { "clean".into() },
             base, tone: if b.dirty { GitTone::Dirty } else { GitTone::Quiet }, diff: b.added + b.deleted > 0, added: b.added, deleted: b.deleted,
-            ports, tags: b.tags.iter().map(|t| format!("#{t}")).collect(), ..Default::default()
+            ports, tags: b.tags.iter().map(|t| format!("#{t}")).collect(),
+            // The mock's poll: its local shells report nothing of their own.
+            agent: b.agent.clone(), agent_msg: b.agent_msg.clone(), ..Default::default()
         }
     }
 
@@ -924,7 +926,10 @@ impl Mock {
         match c.command.as_str() {
             "attach" if running => enter(&target),
             "attach" | "shell" if !running => fail("the box has no container; repair rebuilds it"),
-            "terminal" | "end" | "maximize" | "detach" if !on_pane => fail("requires a workspace pane"),
+            "terminal" | "end" | "maximize" | "detach" | "mouse" if !on_pane => fail("requires a workspace pane"),
+            "repaint" if c.args.stream == 0 => fail("no pane to repaint"),
+            // A local shell has no far end to ask: its screen is already the one drawn.
+            "repaint" => CommandResult { status: Status::Done, ..Default::default() },
             "shell" | "terminal" => {
                 let sandbox = if c.command == "shell" { target } else { workspace };
                 self.made += 1;
