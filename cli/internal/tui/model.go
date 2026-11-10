@@ -2016,28 +2016,22 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 // would cost somebody the first words of their prompt, typed straight after
 // signing in. The leader stays held, so a chord cannot open another card over
 // this one; Enter reaches the terminal, where a sign-in needs it, but never
-// sends a prompt nobody can see.
+// sends a prompt nobody can see. A pane showing an issue or a finished command
+// is not being typed into — its keys answer or close it — so it gets nothing.
 func (m *Model) passHeldKey(msg tea.KeyPressMsg) tea.Cmd {
 	if keyName(msg) == m.leader() {
 		return nil
 	}
 	if m.focus == focusPane && m.inPanes() && m.audit == nil {
 		if p := m.focusedPane(); p != nil && p.issue == nil && !p.exited {
-			return m.paneInput(p, msg)
+			return m.updatePane(msg)
 		}
 		return nil
 	}
-	if m.focus != focusPrompt || m.inPanes() || m.harnessesOpen || m.secretsOpen || m.optionsOpen || m.submitting {
+	if m.optionsOpen || m.submitting || !m.composerHasKeys() || !editsText(msg) {
 		return nil
 	}
-	switch keyName(msg) {
-	case "backspace", "delete":
-		return m.updatePrompt(msg)
-	}
-	if inserting(msg) {
-		return m.updatePrompt(msg)
-	}
-	return nil
+	return m.updatePrompt(msg)
 }
 
 // typingIntoPrompt is whether a key reaches the composer as an edit of its
@@ -2045,9 +2039,18 @@ func (m *Model) passHeldKey(msg tea.KeyPressMsg) tea.Cmd {
 // motion, a chord, a key some other screen takes first — counts as doing
 // something.
 func (m *Model) typingIntoPrompt(msg tea.KeyPressMsg) bool {
-	if m.focus != focusPrompt || m.modalUp() || m.inPanes() || m.harnessesOpen || m.secretsOpen {
-		return false
-	}
+	return !m.modalUp() && m.composerHasKeys() && editsText(msg)
+}
+
+// composerHasKeys is whether the composer is what a key reaches, cards and
+// the run options aside: it has the focus and no screen is drawn over it.
+func (m *Model) composerHasKeys() bool {
+	return m.focus == focusPrompt && !m.inPanes() && !m.harnessesOpen && !m.secretsOpen
+}
+
+// editsText is whether a key is an edit of the text it is typed into: a
+// character, or one deleted.
+func editsText(msg tea.KeyPressMsg) bool {
 	switch keyName(msg) {
 	case "backspace", "delete":
 		return true

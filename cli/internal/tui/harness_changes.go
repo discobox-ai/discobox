@@ -131,7 +131,13 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 	})
 	m.dialog.sections = sections
 	if msg.unasked {
+		// Reached from a card that came up unasked, over typing: a hold says
+		// only that the keyboard paused, not that the card was read, so Save
+		// answers to no letter and is not where Enter lands. It is chosen
+		// with the arrows, deliberately.
 		m.dialog.holdUntilQuiet(m.now())
+		m.dialog.items[0].press = ""
+		m.dialog.cursor = len(m.dialog.items) - 1
 	}
 	return nil
 }
