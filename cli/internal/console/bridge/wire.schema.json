@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 2,
+  "x-protocol": 3,
   "x-specVersion": 4,
   "x-frameKinds": {
     "json": {
@@ -487,7 +487,7 @@
       ]
     },
     "Subscribe": {
-      "description": "Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the box key, for a topic about one box.",
+      "description": "Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the box key, for a topic about one box. Filter is what the listing is narrowed to: the app's to hold (ADR 26-11-07-876 §2), subscribed again under the same Sub to change it. Without one the listing opens on the filter this machine's last window left (console.ListView).",
       "type": "object",
       "properties": {
         "sub": {
@@ -499,6 +499,9 @@
         },
         "box": {
           "type": "string"
+        },
+        "filter": {
+          "$ref": "#/$defs/Filter"
         }
       },
       "required": [
@@ -538,6 +541,39 @@
           "description": "TopicSessions is what a box's workspace opens: its sessions and services, as the core orders and names them (Box).",
           "const": "sessions"
         }
+      ]
+    },
+    "Filter": {
+      "description": "Filter is what the listing is narrowed to (console.Filter): a server, a folder (by its key; none is every folder), the tags a box must carry, and whether the archived are listed.",
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string"
+        },
+        "folderKey": {
+          "type": "string"
+        },
+        "folderLabel": {
+          "type": "string"
+        },
+        "folderSource": {
+          "type": "string"
+        },
+        "folderLocal": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tags"
       ]
     },
     "Unsubscribe": {
@@ -595,14 +631,53 @@
       ]
     },
     "Listing": {
-      "description": "Listing is the boxes, newest first, and the servers that did not answer.",
+      "description": "Listing is the box listing as the console shows it (console.List): every box listed, and the rows the filter shows, in the order they are drawn.",
       "type": "object",
       "properties": {
         "boxes": {
+          "description": "Boxes is every box listed, on every server and whatever the filter: what a box is looked up in, and what the palette searches.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Box"
           }
+        },
+        "rows": {
+          "description": "Rows are the boxes the filter shows, as drawn: folder sections when Grouped, and in each a box followed by the boxes it created.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Row"
+          }
+        },
+        "grouped": {
+          "description": "Grouped is whether the rows are drawn in sections, one per folder.",
+          "type": "boolean"
+        },
+        "notes": {
+          "description": "Notes are what the list says about servers after its rows.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "filter": {
+          "$ref": "#/$defs/Filter",
+          "description": "Filter is what the rows are narrowed to."
+        },
+        "label": {
+          "description": "Label is how the filter reads: \"all discoboxes\", or what it narrows the rows to.",
+          "type": "string"
+        },
+        "choices": {
+          "description": "Choices are every way to narrow the rows, counted against the filter as it stands (console.List.FilterChoices).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FilterChoice"
+          }
+        },
+        "archived": {
+          "description": "Archived is how many more rows showing the archived would draw.",
+          "type": "integer",
+          "format": "int64"
         },
         "unreachable": {
           "description": "Unreachable are servers that did not answer; Waiting, ones still being asked with nothing of theirs to show.",
@@ -620,6 +695,13 @@
       },
       "required": [
         "boxes",
+        "rows",
+        "grouped",
+        "notes",
+        "filter",
+        "label",
+        "choices",
+        "archived",
         "unreachable",
         "waiting"
       ]
@@ -696,10 +778,6 @@
           "type": "string",
           "format": "date-time"
         },
-        "parent": {
-          "description": "Parent is the key of the box that made this one.",
-          "type": "string"
-        },
         "message": {
           "type": "string"
         },
@@ -748,6 +826,139 @@
         },
         {
           "const": "error"
+        }
+      ]
+    },
+    "Row": {
+      "description": "Row is one box's place in the list (console.List.Rows, Nesting): its section, how deep it is nested under the box that created it, and what it says in place of its name when picked out.",
+      "type": "object",
+      "properties": {
+        "box": {
+          "description": "Box is the box's key.",
+          "type": "string"
+        },
+        "section": {
+          "description": "Section is the key of the folder section it is drawn in, and SectionTitle how that section is headed.",
+          "type": "string"
+        },
+        "sectionTitle": {
+          "type": "string"
+        },
+        "depth": {
+          "description": "Depth is how many creators it is nested under; Last, whether it is its creator's last row; Rules, for each level between the top and its creator, whether a branch carries on past it there.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "last": {
+          "type": "boolean"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "remark": {
+          "$ref": "#/$defs/Remark",
+          "description": "Remark is what the row says in place of its name when picked out."
+        },
+        "origin": {
+          "description": "Origin is the machine it was created on, when that is not this one.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "box",
+        "section",
+        "sectionTitle",
+        "depth",
+        "rules"
+      ]
+    },
+    "Remark": {
+      "description": "Remark is console.Remark: the text, and the command that answers it when one does, with what doing so does as a verb. The app spells the command's key with its own binding.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "verb": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "Note": {
+      "description": "Note is a line the list draws about a server rather than a box.",
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "server",
+        "title",
+        "detail"
+      ]
+    },
+    "FilterChoice": {
+      "description": "FilterChoice is one way to narrow the listing (console.FilterChoice): the filter marking it makes, and for a marked tag the one letting it go.",
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/ChoiceGroup"
+        },
+        "label": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "marked": {
+          "type": "boolean"
+        },
+        "several": {
+          "type": "boolean"
+        },
+        "mark": {
+          "$ref": "#/$defs/Filter"
+        },
+        "unmark": {
+          "$ref": "#/$defs/Filter"
+        }
+      },
+      "required": [
+        "group",
+        "label",
+        "detail",
+        "mark",
+        "unmark"
+      ]
+    },
+    "ChoiceGroup": {
+      "description": "ChoiceGroup is which of the filter's three parts a choice is in.",
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "server"
+        },
+        {
+          "const": "folder"
+        },
+        {
+          "const": "tag"
         }
       ]
     },

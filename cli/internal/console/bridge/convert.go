@@ -18,10 +18,6 @@ func wireBox(b console.Sandbox) Box {
 	if out.Harness == "" {
 		out.Harness = b.Harness
 	}
-	if b.CreatedBy != "" {
-		// The box that made it is on the same server.
-		out.Parent = Key(b.Server, b.CreatedBy)
-	}
 	if b.Git.Known {
 		out.Branch, out.Commit = b.Git.Branch, b.Git.Commit
 	}
@@ -31,6 +27,67 @@ func wireBox(b console.Sandbox) Box {
 	// A box that is not up uses nothing, and has no sample to report.
 	if b.Up() && b.Usage.Known {
 		out.CPU, out.MemoryBytes = b.Usage.CPUPercent, b.Usage.MemoryBytes
+	}
+	return out
+}
+
+// wireListing is the core's list as the app draws it: every box listed, and
+// the rows the filter shows with their places, notes and choices.
+func wireListing(l *console.List) Listing {
+	all := l.All()
+	out := Listing{
+		Boxes: make([]Box, 0, len(all)), Grouped: l.Grouped(), Notes: []Note{},
+		Filter: wireFilter(l.Filter), Label: l.FilterLabel(), Archived: l.ArchivedCount(),
+		Unreachable: nonNil(l.Unreachable()), Waiting: nonNil(l.Waiting()),
+	}
+	for _, b := range all {
+		out.Boxes = append(out.Boxes, wireBox(b))
+	}
+	rows := l.Rows()
+	out.Rows = make([]Row, 0, len(rows))
+	for _, b := range rows {
+		n := l.Nesting(b)
+		r := Row{
+			Box: Key(b.Server, b.ID), Section: l.Section(b), SectionTitle: l.SectionTitle(b),
+			Depth: n.Depth, Last: n.Last, Rules: nonNil(n.Rules), Origin: l.Origin(b),
+		}
+		if rm := b.Remark(); rm.Text != "" {
+			r.Remark = &Remark{Text: rm.Text, Command: rm.Command, Verb: rm.Verb}
+		}
+		out.Rows = append(out.Rows, r)
+	}
+	for _, n := range l.Notes() {
+		out.Notes = append(out.Notes, Note{Server: n.Server, Title: n.Title, Detail: n.Detail})
+	}
+	choices := l.FilterChoices()
+	out.Choices = make([]FilterChoice, 0, len(choices))
+	for _, c := range choices {
+		out.Choices = append(out.Choices, FilterChoice{
+			Group: c.Group, Label: c.Label, Detail: c.Detail, Marked: c.Marked, Several: c.Several,
+			Mark: wireFilter(c.Mark), Unmark: wireFilter(c.Unmark),
+		})
+	}
+	return out
+}
+
+// wireFilter is a filter as the wire carries it: the view it saves as, and
+// whether the archived are listed.
+func wireFilter(f console.Filter) Filter {
+	v := f.View()
+	return Filter{
+		Server: v.Server, FolderKey: v.FolderKey, FolderLabel: v.FolderLabel, FolderSource: v.FolderSource,
+		FolderLocal: v.FolderLocal, Tags: nonNil(v.Tags), Archived: f.Archived,
+	}
+}
+
+// consoleFilter is the filter the app sent: no folder key is every folder.
+func consoleFilter(f Filter) console.Filter {
+	out := console.Filter{Server: f.Server, Tags: f.Tags, Archived: f.Archived, Folder: console.EveryFolder}
+	if len(out.Tags) == 0 {
+		out.Tags = nil
+	}
+	if f.FolderKey != "" {
+		out.Folder = console.Folder{Key: f.FolderKey, Label: f.FolderLabel, Source: f.FolderSource, Local: f.FolderLocal}
 	}
 	return out
 }
@@ -95,4 +152,4 @@ func wireEntry(e console.Entry, uses int) Entry {
 }
 
 // nonNil is a copy that is never nil, so the wire carries [] rather than null.
-func nonNil(s []string) []string { return append([]string{}, s...) }
+func nonNil[T any](s []T) []T { return append([]T{}, s...) }

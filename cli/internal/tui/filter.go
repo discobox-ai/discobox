@@ -72,56 +72,42 @@ func (m *Model) filterDialog() *dialog {
 	return &dialog{kind: dlgFilter, title: title, filter: p}
 }
 
-// rows are the card's choices, group by group: the servers when there is more
-// than one, the folders on the server marked, and the tags inside both once
-// anything there is tagged. The servers and folders are one choice each; the
-// tags are any number, with `all tags` the way to none.
+// rows are the card's choices, the core's (console.List.FilterChoices): the
+// servers when there is more than one, the folders on the server marked, and
+// the tags inside both once anything there is tagged. Over the config screens
+// it is the servers alone.
 func (p *filterPicker) rows() []filterRow {
 	l := &p.list
-	var rows []filterRow
-	if servers := l.Session.Servers; len(servers) > 1 {
-		choices := servers
-		if !p.config {
-			choices = append([]string{""}, servers...)
-		}
-		for _, name := range choices {
-			label := name
-			if name == "" {
-				label = allServers
-			}
-			rows = append(rows, filterRow{
-				group: "Server", label: label, detail: p.serverDetail(name),
-				marked: p.shows(name),
-				mark:   func(l *sandboxList) { l.Filter.Server = name },
-			})
-		}
-	}
+	choices := l.FilterChoices()
 	if p.config {
-		return rows
+		choices = l.ServerChoices(false)
 	}
-	for _, f := range append(l.Folders(), console.EveryFolder) {
-		rows = append(rows, filterRow{
-			group: "Folder", label: f.Label, detail: p.folderDetail(f),
-			marked: l.Filter.Folder.Key == f.Key,
-			mark:   func(l *sandboxList) { l.Filter.Folder = f },
-		})
-	}
-	if tags := l.TagChoices(); len(tags) > 0 {
-		rows = append(rows, filterRow{
-			group: "Tag", label: allTags, detail: p.tagDetail(""),
-			marked: len(l.Filter.Tags) == 0, several: true,
-			mark: func(l *sandboxList) { l.Filter.Tags = nil },
-		})
-		for _, tag := range tags {
-			rows = append(rows, filterRow{
-				group: "Tag", label: tagLabel(tag), detail: p.tagDetail(tag),
-				marked: slices.Contains(l.Filter.Tags, tag), several: true,
-				mark:   func(l *sandboxList) { l.Filter.AddTag(tag) },
-				unmark: func(l *sandboxList) { l.Filter.ToggleTag(tag) },
-			})
+	rows := make([]filterRow, 0, len(choices))
+	for _, c := range choices {
+		row := filterRow{
+			group: groupTitle(c.Group), label: c.Label, detail: c.Detail, marked: c.Marked, several: c.Several,
+			mark: func(l *sandboxList) { l.Filter = c.Mark },
 		}
+		if c.Group == console.GroupTag && c.Label != console.AllTags {
+			row.unmark = func(l *sandboxList) { l.Filter = c.Unmark }
+		}
+		if p.config && c.Group == console.GroupServer {
+			row.marked = p.shows(c.Mark.Server)
+		}
+		rows = append(rows, row)
 	}
 	return rows
+}
+
+// groupTitle is a choice's group as the card heads it.
+func groupTitle(g console.ChoiceGroup) string {
+	switch g {
+	case console.GroupServer:
+		return "Server"
+	case console.GroupFolder:
+		return "Folder"
+	}
+	return "Tag"
 }
 
 // shows reports whether a server is the one marked. Over the harnesses and
@@ -133,55 +119,6 @@ func (p *filterPicker) shows(name string) bool {
 		return name == p.list.Session.Servers[0]
 	}
 	return p.list.Filter.Server == name
-}
-
-// count is how many discoboxes the list would show with one more choice
-// marked, counted the way the list counts its rows.
-func (p *filterPicker) count(mark func(l *sandboxList)) int {
-	l := p.list
-	mark(&l)
-	return l.Count()
-}
-
-// serverDetail is what a server is worth knowing beside its count: which one
-// is the primary — where a create goes when the filter names none — and which
-// did not answer.
-func (p *filterPicker) serverDetail(name string) string {
-	if slices.Contains(p.list.Unreachable(), name) {
-		return "not answering"
-	}
-	detail := plural(p.count(func(l *sandboxList) { l.Filter.Server = name }), "box", "boxes")
-	switch name {
-	case "":
-		detail += " · created on " + p.list.Session.Servers[0]
-	case p.list.Session.Servers[0]:
-		detail += " · the primary"
-	}
-	return detail
-}
-
-// folderDetail is a folder's count, and whether it is the one this window is
-// running in.
-func (p *filterPicker) folderDetail(f console.Folder) string {
-	detail := plural(p.count(func(l *sandboxList) { l.Filter.Folder = f }), "box", "boxes")
-	if f.Key != "" && f.Key == p.list.Session.Folder().Key {
-		detail += " · where this window is running"
-	}
-	return detail
-}
-
-// tagDetail is a tag's count alongside the tags marked, and for a key=value
-// tag what the value is of. The empty tag is `all tags`, counted with none.
-func (p *filterPicker) tagDetail(tag string) string {
-	mark := func(l *sandboxList) { l.Filter.AddTag(tag) }
-	if tag == "" {
-		mark = func(l *sandboxList) { l.Filter.Tags = nil }
-	}
-	detail := plural(p.count(mark), "box", "boxes")
-	if key, _, ok := strings.Cut(tag, "="); ok {
-		detail += " · " + key + " set to this value"
-	}
-	return detail
 }
 
 // move steps the cursor, stopping at either end.
@@ -371,25 +308,7 @@ func (m *Model) filterLabel() string {
 		}
 		return "server " + m.configServer()
 	}
-	return m.listFilterLabel()
-}
-
-// listFilterLabel is what the discobox list is narrowed to.
-func (m *Model) listFilterLabel() string {
-	var parts []string
-	if m.list.Filter.Server != "" && m.manyServers() {
-		parts = append(parts, "server "+m.list.Filter.Server)
-	}
-	if m.list.Filter.Folder.Key != "" {
-		parts = append(parts, m.list.Filter.Folder.Label)
-	}
-	if len(m.list.Filter.Tags) > 0 {
-		parts = append(parts, tagsLabel(m.list.Filter.Tags))
-	}
-	if len(parts) == 0 {
-		return "all discoboxes"
-	}
-	return strings.Join(parts, " · ")
+	return m.list.FilterLabel()
 }
 
 // viewFilter draws the header's filter: the line saying what the list is

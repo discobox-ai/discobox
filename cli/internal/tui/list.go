@@ -69,7 +69,7 @@ type sandboxList struct {
 }
 
 func newSandboxList(session console.Session) *sandboxList {
-	return &sandboxList{List: console.NewList(session, listingStaleAfter), selected: map[console.BoxRef]bool{}}
+	return &sandboxList{List: console.NewList(session, console.ListStaleAfter), selected: map[console.BoxRef]bool{}}
 }
 
 // setAll takes a refreshed listing, keeping the cursor on the sandbox it was
@@ -665,7 +665,7 @@ func (l *sandboxList) row(st *styles, z *zones, s console.Sandbox, i, y int, foc
 	if len(s.Tags) > 0 && !l.inTree {
 		room := nameW - (nameReserve - lipgloss.Width(head))
 		for _, tag := range s.RowTags() {
-			next := taggedW + lipgloss.Width(" "+tagLabel(tag))
+			next := taggedW + lipgloss.Width(" "+console.TagLabel(tag))
 			if next > room {
 				break
 			}
@@ -771,7 +771,7 @@ func (l *sandboxList) tagLine(st *styles, z *zones, s console.Sandbox, i, y int,
 	var shown []string
 	used := 0
 	for n, tag := range tags {
-		w := lipgloss.Width(" " + tagLabel(tag))
+		w := lipgloss.Width(" " + console.TagLabel(tag))
 		// The last that fits leaves room to say how many did not, unless it
 		// is the last of them.
 		more := 0
@@ -812,7 +812,7 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s console.Sandbox, tags []s
 	var out strings.Builder
 	var links []rowLink
 	for _, tag := range tags {
-		label := tagLabel(tag)
+		label := console.TagLabel(tag)
 		out.WriteString(st.dimText.Render(" "))
 		x++
 		width := lipgloss.Width(label)
@@ -1004,7 +1004,7 @@ func tagsField(st *styles, s console.Sandbox) paneHeaderField {
 	var labels []string
 	for _, tag := range s.Tags {
 		if s.TagURL(tag) == "" && !console.IsStatusTag(tag) {
-			labels = append(labels, tagLabel(tag))
+			labels = append(labels, console.TagLabel(tag))
 		}
 	}
 	if len(labels) == 0 {

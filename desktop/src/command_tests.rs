@@ -46,7 +46,7 @@ fn a_shell_for_a_stopped_box_opens_nowhere() {
     settle(&mut rt);
     let live = rt.state.live.clone().expect("a box on screen");
     let before = panes(&rt.state);
-    let stopped = rt.state.boxes.iter().position(|b| !b.running()).expect("a box that is not running");
+    let stopped = (0..rt.state.rows().len()).find(|&i| rt.state.row_box(i).is_some_and(|b| !b.running())).expect("a box that is not running");
     rt.state.cursor = stopped;
     rt.state.focus = Focus::List;
     run_command(&mut rt.state, "shell", &mut Tx::default());

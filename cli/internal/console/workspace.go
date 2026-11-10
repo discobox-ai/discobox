@@ -29,6 +29,14 @@ import (
 // waiting to be told.
 const ListPollEvery = 5 * time.Second
 
+// ListStaleAfter is how old the rows on screen may get before they say how
+// old they are (List.ListedAgo). Three refreshes: an ordinary poll leaves
+// them at most one refresh and a round trip old, and a server that takes a
+// few seconds to list is merely remote — but rows that have missed two
+// refreshes in a row are rows that have stopped following the server, and
+// drawn as though they had not, they are a window that looks stuck.
+const ListStaleAfter = 3 * ListPollEvery
+
 // WorkspacePollEvery is how often an open workspace re-reads the exec and
 // service listings. It only has to catch sessions started elsewhere — the
 // attach streams deliver every exit — so it is paced like a refresh rather

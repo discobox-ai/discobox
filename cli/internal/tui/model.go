@@ -685,14 +685,6 @@ var listen = func(cmd tea.Cmd) tea.Cmd { return cmd }
 // which is what a window with one server has instead.
 const listingSlowAfter = console.ListPollEvery
 
-// listingStaleAfter is how old the rows on screen may get before they say how
-// old they are (console.List.ListedAgo). Three refreshes: an ordinary poll
-// leaves them at most one refresh and a round trip old, and a server that
-// takes a few seconds to list is merely remote — but rows that have missed
-// two refreshes in a row are rows that have stopped following the server,
-// and drawn as though they had not, they are a window that looks stuck.
-const listingStaleAfter = 3 * console.ListPollEvery
-
 // poll is one thing the window re-reads on the beat: when the request still
 // out was sent, and whether another read was asked for while it was out.
 //

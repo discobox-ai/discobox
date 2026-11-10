@@ -1,13 +1,16 @@
-//! The palette and a box's actions menu: the desktop's ways in to every command.
+//! The palette, a box's actions menu and the list's filter: the desktop's ways in to every
+//! command.
 //!
 //! The palette lists every command the spec names and the app's navigation, with their
 //! shortcuts, and every box. The menu is a box's actions as the console core gives them (the
 //! TUI's own entries, rules and reasons), natively on macOS and drawn in the window elsewhere,
-//! where a disabled entry says why it is.
+//! where a disabled entry says why it is. The filter is the core's choices for the list, each
+//! with what it would list, drawn in the window on every platform: a native menu has no room
+//! for the counts.
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{Entry, SpecTarget};
+use crate::wire::{ChoiceGroup, Entry, SpecTarget, State as BoxState};
 use crate::{Focus, Menu, State, icons, keys, run_command, theme, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
@@ -30,9 +33,13 @@ pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<En
     }
 }
 
-/// Runs a box command on the box the menu was opened for.
+/// Runs a box command on the box the menu was opened for — with the boxes marked beside it
+/// when it is one of them, as the menu's entries were ruled on for them all.
 fn run_on(s: &mut State, sandbox: &str, id: &str, tx: &mut Tx) {
-    if let Some(i) = s.boxes.iter().position(|b| b.key == sandbox) {
+    if let Some(i) = s.row_of(sandbox) {
+        if !s.is_selected(i) {
+            s.clear_selection();
+        }
         s.cursor = i;
     }
     s.focus = Focus::List;
@@ -107,7 +114,10 @@ fn items(s: &State) -> Vec<Item> {
         let mut it = t.chars();
         query.chars().all(|q| it.any(|c| c == q))
     };
-    let mut out: Vec<Item> = s.boxes.iter().filter(|b| fits(&b.name)).map(|b| Item {
+    // Every box listed, whatever the list's filter (the core's search ignores it, ADR
+    // 26-11-06-671 §5); the archived only while they are shown.
+    let archived = s.listing.filter.archived;
+    let mut out: Vec<Item> = s.boxes.iter().filter(|b| fits(&b.name) && (archived || b.state != BoxState::Archived)).map(|b| Item {
         title: b.name.clone(), group: "discobox".into(), shortcut: None, command: None, sandbox: Some(b.key.clone()),
     }).collect();
     for c in &s.spec.commands {
@@ -128,10 +138,10 @@ fn pick(s: &mut State, i: usize, tx: &mut Tx) {
     let (cmd, sbx) = (it.command.clone(), it.sandbox.clone());
     s.palette = None;
     if let Some(id) = sbx
-        && let Some(i) = s.boxes.iter().position(|b| b.key == id)
+        && let Some(b) = s.box_by_id(&id).cloned()
     {
-        s.open_box(i);
-        if !s.boxes[i].running() {
+        s.open_box(&b.key);
+        if !b.running() {
             s.focus = Focus::List;
         }
     } else if let Some(c) = cmd {
@@ -189,4 +199,92 @@ pub fn palette_view(s: &State) -> Option<El> {
     Some(el().w_full().h_full().absolute(0.0, 0.0).fill(theme::bg().alpha(0.6))
         .on_press(|s: &mut State| s.palette = None)
         .child(row().w_full().pt(90.0).items_start().child(spacer()).child(panel.on_press(|_: &mut State| {})).child(spacer())))
+}
+
+// ---------------------------------------------------------------------------------------------
+// The list's filter
+
+/// Marks a choice, as the core says marking it does: in place of its group's choice, or a tag
+/// alongside the others — and a tag marked already is let go.
+fn choose(s: &mut State, i: usize) {
+    let Some(c) = s.listing.choices.get(i) else { return };
+    let f = if c.marked && c.several { c.unmark.clone() } else { c.mark.clone() };
+    // A choice marked already, and not one to let go, changes nothing.
+    if f == s.listing.filter {
+        return;
+    }
+    s.set_filter(f);
+}
+
+pub fn filter_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
+    let n = s.listing.choices.len().max(1);
+    let Some(m) = s.filter_menu.as_mut() else { return false };
+    match ev.key {
+        Key::Up => m.picked = (m.picked + n - 1) % n,
+        Key::Down => m.picked = (m.picked + 1) % n,
+        Key::Escape => s.filter_menu = None,
+        // Space marks and stays, for several tags in one trip; Enter marks and closes.
+        Key::Text(ref t) if t == " " => {
+            let i = m.picked;
+            choose(s, i);
+        }
+        Key::Enter => {
+            let i = m.picked;
+            s.filter_menu = None;
+            choose(s, i);
+        }
+        _ => {}
+    }
+    true
+}
+
+fn group_title(g: ChoiceGroup) -> &'static str {
+    match g {
+        ChoiceGroup::Server => "Server",
+        ChoiceGroup::Folder => "Folder",
+        _ => "Tag",
+    }
+}
+
+pub fn filter_view(s: &State) -> Option<El> {
+    let m = s.filter_menu.as_ref()?;
+    let mut list = col().key("filter-menu").w(360.0).padding(6.0).gap(2.0).radius(theme::r_card())
+        .fill(theme::raised()).border(theme::stroke_quiet(), theme::line_bright()).shadow(12.0, 36.0, Color::BLACK.alpha(0.5));
+    let mut group = None;
+    for (i, c) in s.listing.choices.iter().enumerate() {
+        if group != Some(c.group) {
+            group = Some(c.group);
+            list = list.child(text(group_title(c.group)).font(theme::UI_SMALL).color(theme::dim()).px(10.0).pt(if i == 0 { 2.0 } else { 6.0 }));
+        }
+        let on = i == m.picked;
+        let mark = if c.marked { icon(&icons::CHECK, 12.0).color(theme::mark()) } else { el() };
+        list = list.child(row().key(format!("filter-{i}")).w_full().px(10.0).py(4.0).gap(8.0).center_y().radius(theme::r_row())
+            .fill(if on { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
+            .child(el().size(12.0, 12.0).child(mark))
+            .child(text(c.label.clone()).font(if c.marked { theme::UI_BOLD } else { theme::UI }).color(theme::text()).truncate().shrink())
+            .child(spacer())
+            .child(text(c.detail.clone()).font(theme::UI_SMALL).color(theme::grey()))
+            .on_hover(move |s: &mut State| if let Some(m) = s.filter_menu.as_mut() { m.picked = i })
+            .on_press(move |s: &mut State| {
+                // A tag stays open for the next; anything else is one choice, and closes.
+                if !s.listing.choices.get(i).is_some_and(|c| c.several) {
+                    s.filter_menu = None;
+                }
+                choose(s, i);
+            }));
+    }
+    let archived = s.listing.filter.archived;
+    let (what, id) = (if archived { "hide archived" } else { "show archived" }, "archived");
+    let mut toggle = row().key("filter-archived").w_full().px(10.0).py(4.0).gap(8.0).center_y().radius(theme::r_row())
+        .hover(theme::text().alpha(0.06)).cursor(rune::Cursor::Pointer)
+        .child(el().size(12.0, 12.0).child(if archived { icon(&icons::CHECK, 12.0).color(theme::mark()) } else { el() }))
+        .child(text(what).font(theme::UI).color(theme::grey()))
+        .child(spacer());
+    if let Some(k) = keys::shortcut_of(s, id) {
+        toggle = toggle.child(view::keycap(k));
+    }
+    list = list.child(el().h(1.0).w_full().fill(theme::line())).child(toggle.on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "archived", tx)));
+    Some(el().w_full().h_full().absolute(0.0, 0.0)
+        .on_press(|s: &mut State| s.filter_menu = None)
+        .child(list.absolute(s.filter_at.0, s.filter_at.1).on_press(|_: &mut State| {})))
 }

@@ -1,6 +1,7 @@
 //! The window's icons: vector strokes on a 24-unit grid, tinted by the element that draws them.
 //! They stand where the TUI types characters: `[+]` and `[x]`, the sidebar's arrows, the
-//! cursor chevron, a nested box's elbow.
+//! cursor chevron, a selected row's mark, the filter's caret. A nested row's branches are
+//! strokes of their own (`view::branches`).
 
 use rune::Icon;
 
@@ -25,9 +26,11 @@ stroked!(HIDE_SIDEBAR, "hide-sidebar", "M15 6l-6 6 6 6");
 stroked!(SHOW_SIDEBAR, "show-sidebar", "M9 6l6 6-6 6");
 stroked!(CHEVRON, "chevron", "M9 6l6 6-6 6");
 stroked!(SEARCH, "search", "M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13M15.5 15.5L20 20");
-stroked!(NESTED, "nested", "M7 4v7a2 2 0 0 0 2 2h8");
 stroked!(BOX, "box", "M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3");
 stroked!(COMMAND, "command", "M5 7l5 5-5 5M13 17h6");
+stroked!(CHECK, "check", "M5 12.5l4.5 4.5L19 7.5");
+stroked!(FILTER, "filter", "M4 6h16M7 12h10M10 18h4");
+stroked!(CARET, "caret", "M7 10l5 5 5-5");
 
 pub static MORE: Icon = Icon {
     name: "discobox-more",

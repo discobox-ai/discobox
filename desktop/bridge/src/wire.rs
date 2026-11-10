@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 2;
+pub const PROTOCOL: i64 = 3;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 4;
@@ -380,7 +380,9 @@ pub struct Session {
 }
 
 /// Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the
-/// box key, for a topic about one box.
+/// box key, for a topic about one box. Filter is what the listing is narrowed to: the app's to hold
+/// (ADR 26-11-07-876 §2), subscribed again under the same Sub to change it. Without one the
+/// listing opens on the filter this machine's last window left (console.ListView).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Subscribe {
     pub sub: u32,
@@ -389,6 +391,9 @@ pub struct Subscribe {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub r#box: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Filter>,
 }
 
 /// Topic is what a subscription follows.
@@ -442,6 +447,31 @@ impl Topic {
     }
 }
 
+/// Filter is what the listing is narrowed to (console.Filter): a server, a folder (by its key; none
+/// is every folder), the tags a box must carry, and whether the archived are listed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Filter {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub server: String,
+
+    #[serde(rename = "folderKey", default, skip_serializing_if = "is_default")]
+    pub folder_key: String,
+
+    #[serde(rename = "folderLabel", default, skip_serializing_if = "is_default")]
+    pub folder_label: String,
+
+    #[serde(rename = "folderSource", default, skip_serializing_if = "is_default")]
+    pub folder_source: String,
+
+    #[serde(rename = "folderLocal", default, skip_serializing_if = "is_default")]
+    pub folder_local: bool,
+
+    pub tags: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub archived: bool,
+}
+
 /// Unsubscribe stops one.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Unsubscribe {
@@ -481,10 +511,36 @@ pub struct Snapshot {
     pub sessions: Option<Sessions>,
 }
 
-/// Listing is the boxes, newest first, and the servers that did not answer.
+/// Listing is the box listing as the console shows it (console.List): every box listed, and the
+/// rows the filter shows, in the order they are drawn.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Listing {
+    /// Boxes is every box listed, on every server and whatever the filter: what a box is looked up
+    /// in, and what the palette searches.
     pub boxes: Vec<Box>,
+
+    /// Rows are the boxes the filter shows, as drawn: folder sections when Grouped, and in each a
+    /// box followed by the boxes it created.
+    pub rows: Vec<Row>,
+
+    /// Grouped is whether the rows are drawn in sections, one per folder.
+    pub grouped: bool,
+
+    /// Notes are what the list says about servers after its rows.
+    pub notes: Vec<Note>,
+
+    /// Filter is what the rows are narrowed to.
+    pub filter: Filter,
+
+    /// Label is how the filter reads: "all discoboxes", or what it narrows the rows to.
+    pub label: String,
+
+    /// Choices are every way to narrow the rows, counted against the filter as it stands
+    /// (console.List.FilterChoices).
+    pub choices: Vec<FilterChoice>,
+
+    /// Archived is how many more rows showing the archived would draw.
+    pub archived: i64,
 
     /// Unreachable are servers that did not answer; Waiting, ones still being asked with nothing of
     /// theirs to show.
@@ -550,10 +606,6 @@ pub struct Box {
 
     pub created: String,
 
-    /// Parent is the key of the box that made this one.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub parent: String,
-
     #[serde(default, skip_serializing_if = "is_default")]
     pub message: String,
 
@@ -611,6 +663,108 @@ impl State {
             State::Suspended => "suspended",
             State::Archived => "archived",
             State::Error => "error",
+        }
+    }
+}
+
+/// Row is one box's place in the list (console.List.Rows, Nesting): its section, how deep it is
+/// nested under the box that created it, and what it says in place of its name when picked out.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Row {
+    /// Box is the box's key.
+    pub r#box: String,
+
+    /// Section is the key of the folder section it is drawn in, and SectionTitle how that section
+    /// is headed.
+    pub section: String,
+
+    #[serde(rename = "sectionTitle")]
+    pub section_title: String,
+
+    /// Depth is how many creators it is nested under; Last, whether it is its creator's last row;
+    /// Rules, for each level between the top and its creator, whether a branch carries on past it
+    /// there.
+    pub depth: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub last: bool,
+
+    pub rules: Vec<bool>,
+
+    /// Remark is what the row says in place of its name when picked out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remark: Option<Remark>,
+
+    /// Origin is the machine it was created on, when that is not this one.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub origin: String,
+}
+
+/// Remark is console.Remark: the text, and the command that answers it when one does, with what
+/// doing so does as a verb. The app spells the command's key with its own binding.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Remark {
+    pub text: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub command: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub verb: String,
+}
+
+/// Note is a line the list draws about a server rather than a box.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Note {
+    pub server: String,
+
+    pub title: String,
+
+    pub detail: String,
+}
+
+/// FilterChoice is one way to narrow the listing (console.FilterChoice): the filter marking it
+/// makes, and for a marked tag the one letting it go.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FilterChoice {
+    pub group: ChoiceGroup,
+
+    pub label: String,
+
+    pub detail: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub marked: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub several: bool,
+
+    pub mark: Filter,
+
+    pub unmark: Filter,
+}
+
+/// ChoiceGroup is which of the filter's three parts a choice is in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ChoiceGroup {
+    #[default]
+    #[serde(rename = "server")]
+    Server,
+
+    #[serde(rename = "folder")]
+    Folder,
+
+    #[serde(rename = "tag")]
+    Tag,
+}
+
+impl ChoiceGroup {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChoiceGroup::Server => "server",
+            ChoiceGroup::Folder => "folder",
+            ChoiceGroup::Tag => "tag",
         }
     }
 }

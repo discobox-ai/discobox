@@ -23,13 +23,16 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, Command, Entry, Form, Message, Open, Progress, Question, Result as CommandResult, Sessions,
-    Spec, State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabKind, Topic, Type,
+    Answer, Box as Sandbox, ChoiceGroup, Command, Entry, Filter, FilterChoice, Form, Listing, Message, Open, Progress,
+    Question, Remark, Result as CommandResult, Row, Sessions, Spec, State, Status, Stream, StreamState, Submit, Subscribe, Tab,
+    TabKind, Topic, Type, Unsubscribe,
 };
 
 /// What the app sends, by message: the type and its body.
 pub enum Out {
-    Subscribe { sub: u32, topic: Topic, sandbox: String },
+    /// A topic followed; the listing's narrowed to `filter` (none: what the last window left).
+    Subscribe { sub: u32, topic: Topic, sandbox: String, filter: Option<Filter> },
+    Unsubscribe(u32),
     Command(Command),
     Open { stream: u32, sandbox: String, exec: String, cols: u16, rows: u16 },
     /// A question left unanswered: the app draws none yet (#808).
@@ -41,11 +44,12 @@ pub enum Out {
 impl Out {
     fn message(self) -> Message {
         match self {
-            Out::Subscribe { sub, topic, sandbox } => Message {
+            Out::Subscribe { sub, topic, sandbox, filter } => Message {
                 r#type: Type::Subscribe,
-                subscribe: Some(Subscribe { sub, topic, r#box: sandbox }),
+                subscribe: Some(Subscribe { sub, topic, r#box: sandbox, filter }),
                 ..Default::default()
             },
+            Out::Unsubscribe(sub) => Message { r#type: Type::Unsubscribe, unsubscribe: Some(Unsubscribe { sub }), ..Default::default() },
             Out::Command(c) => Message { r#type: Type::Command, command: Some(c), ..Default::default() },
             Out::Open { stream, sandbox, exec, cols, rows } => Message {
                 r#type: Type::Open,
@@ -71,7 +75,8 @@ pub fn bundled_spec() -> Spec { serde_json::from_str(include_str!("spec.json")).
 
 /// What arrives for the window.
 pub enum Event {
-    Listing(Vec<Sandbox>),
+    /// A listing subscription's snapshot, or why it could not be read.
+    Listing(u32, Result<Listing, String>),
     /// A sessions subscription's snapshot, or why it could not be read.
     Sessions(u32, Result<Sessions, String>),
     Result(CommandResult),
@@ -113,7 +118,10 @@ fn event(m: Message) -> Option<Event> {
         Type::Snapshot => {
             let s = m.snapshot?;
             match s.topic {
-                Topic::Listing => s.listing.map(|l| Event::Listing(l.boxes)),
+                Topic::Listing => Some(Event::Listing(s.sub, match s.listing {
+                    Some(l) if s.error.is_empty() => Ok(l),
+                    _ => Err(s.error),
+                })),
                 Topic::Sessions => Some(Event::Sessions(s.sub, match s.sessions {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
@@ -171,6 +179,11 @@ impl Backend for Bridge {
 pub struct Mock {
     inbox: Inbox,
     boxes: Vec<Sandbox>,
+    /// Which box made which, by key: the core's to nest by, which the wire does not carry.
+    parents: HashMap<String, String>,
+    /// The listing subscription, and what it is narrowed to.
+    list_sub: u32,
+    filter: Filter,
     extra: HashMap<String, Vec<Tab>>,
     ptys: HashMap<u32, Pty>,
     made: u64,
@@ -190,6 +203,15 @@ fn mock_box(id: &str, name: &str, state: State, agent: &str, harness: &str, sour
     }
 }
 
+/// A mock box's folder: its source, or this machine for none.
+fn mock_folder(b: &Sandbox) -> String { if b.source.is_empty() { "this machine".into() } else { b.source.clone() } }
+
+/// What a mock box's row says in place of its name, as the core's `Sandbox.Remark` would.
+fn mock_remark(b: &Sandbox) -> Option<Remark> {
+    let text = [&b.message, &b.agent_msg, &b.provisioning].into_iter().find(|t| !t.is_empty())?;
+    Some(Remark { text: text.clone(), ..Default::default() })
+}
+
 impl Mock {
     pub fn new(inbox: Inbox) -> Mock {
         let boxes = vec![
@@ -204,7 +226,7 @@ impl Mock {
                 ..mock_box("sbx_p8c3n0vd6rgs2hkq", "reaper race", State::Running, "blocked", "codex", "discobox")
             },
             Sandbox {
-                branch: "docs/attach".into(), commit: "41d9e2a".into(), parent: "sbx_p8c3n0vd6rgs2hkq".into(),
+                branch: "docs/attach".into(), commit: "41d9e2a".into(),
                 ..mock_box("sbx_r5t1y7u3i9o0pzx2", "attach docs", State::Running, "done", "claude", "discobox")
             },
             Sandbox {
@@ -212,9 +234,102 @@ impl Mock {
                 ..mock_box("sbx_v6svx9a5hndxswfp", "lucid_lalande", State::Starting, "", "shell", "")
             },
             mock_box("sbx_a1b2c3d4e5f6g7h8", "quiet_hopper", State::Stopped, "idle", "opencode", ""),
+            Sandbox { tags: vec!["wip".into()], ..mock_box("sbx_z0x9c8v7b6n5m4l3", "old experiment", State::Archived, "", "claude", "discobox") },
         ];
-        Mock { inbox, boxes, extra: HashMap::new(), ptys: HashMap::new(), made: 0 }
+        let parents = HashMap::from([("sbx_r5t1y7u3i9o0pzx2".to_string(), "sbx_p8c3n0vd6rgs2hkq".to_string())]);
+        let filter = Filter { tags: vec![], ..Default::default() };
+        Mock { inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0 }
     }
+
+    /// The rows the core would draw for a filter, roughly: archived boxes only when asked for,
+    /// the tags a box must carry, folders by source as sections, and a box under the one that
+    /// made it.
+    fn rows(&self, f: &Filter) -> Vec<Row> {
+        let tagged = |b: &Sandbox| f.tags.iter().all(|t| b.tags.contains(t));
+        let shown = |b: &Sandbox| (f.archived || b.state != State::Archived) && tagged(b);
+        let in_folder = |b: &Sandbox| f.folder_key.is_empty() || mock_folder(b) == f.folder_key;
+        let parent_shown = |b: &Sandbox| {
+            self.parents.get(&b.key).and_then(|p| self.sandbox(p)).is_some_and(|p| shown(p) && in_folder(p))
+        };
+        let mut rows = vec![];
+        for sec in self.folders() {
+            for b in self.boxes.iter().filter(|b| mock_folder(b) == sec && shown(b) && in_folder(b) && !parent_shown(b)) {
+                rows.push(Row { r#box: b.key.clone(), section: sec.clone(), section_title: sec.clone(), remark: mock_remark(b), ..Default::default() });
+                let kids: Vec<&Sandbox> = self.boxes.iter().filter(|c| self.parents.get(&c.key) == Some(&b.key) && shown(c)).collect();
+                for (i, c) in kids.iter().enumerate() {
+                    rows.push(Row {
+                        r#box: c.key.clone(), section: sec.clone(), section_title: sec.clone(), depth: 1, last: i + 1 == kids.len(),
+                        remark: mock_remark(c), ..Default::default()
+                    });
+                }
+            }
+        }
+        rows
+    }
+
+    /// Every folder a box is in, in the order the boxes are.
+    fn folders(&self) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for b in &self.boxes {
+            if !out.contains(&mock_folder(b)) {
+                out.push(mock_folder(b));
+            }
+        }
+        out
+    }
+
+    /// The listing as the core would give it, roughly: the rows, and the filter's choices each
+    /// counted against the rest of it.
+    fn listing(&self) -> Listing {
+        let f = &self.filter;
+        let count = |g: &Filter| {
+            let n = self.rows(g).len();
+            format!("{n} box{}", if n == 1 { "" } else { "es" })
+        };
+        let mut choices = vec![];
+        for key in self.folders().into_iter().map(Some).chain([None]) {
+            let k = key.clone().unwrap_or_default();
+            let mark = Filter { folder_key: k.clone(), folder_label: k.clone(), ..f.clone() };
+            choices.push(FilterChoice {
+                group: ChoiceGroup::Folder, label: key.unwrap_or_else(|| "all folders".into()), detail: count(&mark),
+                marked: f.folder_key == k, unmark: mark.clone(), mark, ..Default::default()
+            });
+        }
+        let mut tags: Vec<String> = self.boxes.iter().filter(|b| f.archived || b.state != State::Archived).flat_map(|b| b.tags.clone()).collect();
+        tags.sort();
+        tags.dedup();
+        if !tags.is_empty() {
+            let none = Filter { tags: vec![], ..f.clone() };
+            choices.push(FilterChoice {
+                group: ChoiceGroup::Tag, label: "all tags".into(), detail: count(&none), marked: f.tags.is_empty(), several: true,
+                mark: none.clone(), unmark: none,
+            });
+            for t in tags {
+                let on = f.tags.contains(&t);
+                let mut mark = f.clone();
+                if !on {
+                    mark.tags.push(t.clone());
+                    mark.tags.sort();
+                }
+                let unmark = if on { Filter { tags: f.tags.iter().filter(|x| **x != t).cloned().collect(), ..f.clone() } } else { mark.clone() };
+                choices.push(FilterChoice { group: ChoiceGroup::Tag, label: format!("#{t}"), detail: count(&mark), marked: on, several: true, mark, unmark });
+            }
+        }
+        let mut parts = vec![];
+        if !f.folder_key.is_empty() {
+            parts.push(f.folder_label.clone());
+        }
+        parts.extend(f.tags.iter().map(|t| format!("#{t}")));
+        let rows = self.rows(f);
+        let archived = if f.archived { 0 } else { self.rows(&Filter { archived: true, ..f.clone() }).len() - rows.len() };
+        Listing {
+            boxes: self.boxes.clone(), grouped: f.folder_key.is_empty(), rows, notes: vec![], filter: f.clone(),
+            label: if parts.is_empty() { "all discoboxes".into() } else { parts.join(" · ") },
+            choices, archived: archived as i64, unreachable: vec![], waiting: vec![],
+        }
+    }
+
+    fn relist(&self) { self.inbox.push(Event::Listing(self.list_sub, Ok(self.listing()))); }
 
     fn sandbox(&self, key: &str) -> Option<&Sandbox> { self.boxes.iter().find(|b| b.key == key) }
 
@@ -263,21 +378,36 @@ impl Mock {
                 CommandResult { status: Status::Done, ..Default::default() }
             }
             "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
-                let actions = self.actions(&target);
-                if let Some(a) = actions.iter().find(|a| a.command == c.command && !a.enabled) {
-                    return fail(&format!("cannot {}: {}", a.label, a.why));
-                }
-                if let Some(b) = self.boxes.iter_mut().find(|b| b.key == target) {
-                    match c.command.as_str() {
-                        "stop" => b.state = State::Stopped,
-                        "start" => b.state = State::Running,
-                        "archive" => b.state = State::Archived,
-                        _ => {}
+                // Every target, as the core sends a batch; one that cannot take it is refused alone.
+                let mut failures = vec![];
+                for t in &c.targets {
+                    let actions = self.actions(t);
+                    if let Some(a) = actions.iter().find(|a| a.command == c.command && !a.enabled) {
+                        failures.push(format!("cannot {}: {}", a.label, a.why));
+                        continue;
+                    }
+                    if let Some(b) = self.boxes.iter_mut().find(|b| b.key == *t) {
+                        b.state = match c.command.as_str() {
+                            "stop" => State::Stopped,
+                            "start" => State::Running,
+                            "archive" => State::Archived,
+                            "unarchive" => State::Stopped,
+                            _ => b.state,
+                        };
+                        b.attachable = b.state == State::Running;
                     }
                 }
-                self.inbox.push(Event::Listing(self.boxes.clone()));
+                self.relist();
+                if failures.len() == c.targets.len() && !failures.is_empty() {
+                    return fail(&failures.join("; "));
+                }
+                CommandResult { status: Status::Done, why: failures.join("; "), ..Default::default() }
+            }
+            "refresh" => {
+                self.relist();
                 CommandResult { status: Status::Done, ..Default::default() }
             }
+            "all" => fail("available in a wide attach window"),
             "actions" => CommandResult { status: Status::Enter, r#box: target.clone(), entries: self.actions(&target), ..Default::default() },
             _ => enter(""),
         }
@@ -286,14 +416,16 @@ impl Mock {
     /// The registry's lifecycle commands, with the core's rules roughly.
     fn actions(&self, sandbox: &str) -> Vec<Entry> {
         let running = self.sandbox(sandbox).is_some_and(Sandbox::running);
+        let archived = self.sandbox(sandbox).is_some_and(|b| b.state == State::Archived);
         bundled_spec().commands.iter().filter(|c| c.lifecycle).map(|c| {
             let (enabled, why) = match c.id.as_str() {
                 "attach" | "shell" => (running, "the box has no container; repair rebuilds it"),
                 "review config" | "stop" => (running, "not running"),
-                "start" => (!running, "already on, or archived"),
+                "start" => (!running && !archived, "already on, or archived"),
+                "archive" => (!archived, "already archived"),
                 "upgrade" => (false, "already on the current image"),
-                "unarchive" => (false, "not archived"),
-                "purge" => (false, "archive it first — purge only takes archived boxes"),
+                "unarchive" => (archived, "not archived"),
+                "purge" => (archived, "archive it first — purge only takes archived boxes"),
                 _ => (true, ""),
             };
             Entry { command: c.id.clone(), label: c.label.clone(), detail: c.detail.clone(), enabled, why: if enabled { String::new() } else { why.into() }, uses: 0 }
@@ -304,14 +436,20 @@ impl Mock {
 impl Backend for Mock {
     fn send(&mut self, m: Out) {
         match m {
-            Out::Subscribe { topic: Topic::Listing, .. } => self.inbox.push(Event::Listing(self.boxes.clone())),
-            Out::Subscribe { sub, topic: Topic::Sessions, sandbox } => {
+            Out::Subscribe { sub, topic: Topic::Listing, filter, .. } => {
+                self.list_sub = sub;
+                if let Some(f) = filter {
+                    self.filter = f;
+                }
+                self.relist();
+            }
+            Out::Subscribe { sub, topic: Topic::Sessions, sandbox, .. } => {
                 let running = self.sandbox(&sandbox).is_some_and(Sandbox::running);
                 let mut sessions = vec![mock_exec("primary", TabKind::Primary, "")];
                 sessions.extend(self.extra.get(&sandbox).into_iter().flatten().cloned());
                 self.inbox.push(Event::Sessions(sub, Ok(Sessions { running, sessions, services: vec![] })));
             }
-            Out::Subscribe { .. } => {}
+            Out::Subscribe { .. } | Out::Unsubscribe(_) => {}
             Out::Command(c) => {
                 let mut r = self.command(c.clone());
                 r.id = c.id;
@@ -415,8 +553,13 @@ mod tests {
     #[test]
     fn messages_read_as_events() {
         let read = |s: &str| event(serde_json::from_str(s).unwrap());
-        let Some(Event::Listing(boxes)) = read(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"listing","listing":{"boxes":[{"key":"work/b1","id":"b1","server":"work","name":"one","state":"running","harness":"claude","source":"","tags":[],"created":"2026-11-09T12:00:00Z","attachable":true}],"unreachable":[],"waiting":[]}}}"#) else { panic!("listing") };
-        assert_eq!((boxes[0].key.as_str(), boxes[0].id.as_str()), ("work/b1", "b1"));
+        let Some(Event::Listing(1, Ok(l))) = read(r##"{"type":"snapshot","snapshot":{"sub":1,"topic":"listing","listing":{"boxes":[{"key":"work/b1","id":"b1","server":"work","name":"one","state":"running","harness":"claude","source":"","tags":[],"created":"2026-11-09T12:00:00Z","attachable":true}],"rows":[{"box":"work/b1","section":"k","sectionTitle":"repo","depth":1,"last":true,"rules":[false],"remark":{"text":"harness changes","command":"review config","verb":"review"}}],"grouped":true,"notes":[{"server":"work","title":"server work","detail":"still listing"}],"filter":{"tags":["wip"],"archived":true},"label":"#wip","choices":[{"group":"tag","label":"#wip","detail":"1 box","marked":true,"several":true,"mark":{"tags":["wip"]},"unmark":{"tags":[]}}],"archived":0,"unreachable":[],"waiting":["work"]}}}"##) else { panic!("listing") };
+        assert_eq!((l.boxes[0].key.as_str(), l.boxes[0].id.as_str()), ("work/b1", "b1"));
+        assert_eq!((l.rows[0].depth, l.rows[0].last, l.rows[0].remark.as_ref().map(|r| r.command.as_str())), (1, true, Some("review config")));
+        assert_eq!((l.filter.tags.as_slice(), l.filter.archived, l.choices[0].group), (["wip".to_string()].as_slice(), true, ChoiceGroup::Tag));
+        // A listing that could not be read says why, rather than staying at "listing…".
+        let Some(Event::Listing(1, Err(e))) = read(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"listing","error":"connection refused"}}"#) else { panic!("a listing's error") };
+        assert_eq!(e, "connection refused");
         let Some(Event::Sessions(2, Ok(s))) = read(r#"{"type":"snapshot","snapshot":{"sub":2,"topic":"sessions","sessions":{"running":true,"sessions":[{"exec":"primary","kind":"primary","title":"","live":true,"argv":[]}],"services":[]}}}"#) else { panic!("sessions") };
         assert_eq!(s.sessions[0].kind, TabKind::Primary);
         let Some(Event::Sessions(3, Err(e))) = read(r#"{"type":"snapshot","snapshot":{"sub":3,"topic":"sessions","error":"no discobox x is listed"}}"#) else { panic!("an error") };
@@ -440,6 +583,9 @@ mod tests {
         assert_eq!(v["command"]["args"], json!({"stream": 7}));
         assert_eq!(json(Out::Decline(9)), json!({"type": "answer", "answer": {"question": 9, "declined": true}}));
         assert_eq!(json(Out::Dismiss(2)), json!({"type": "submit", "submit": {"form": 2, "answers": {}, "cancel": true}}));
+        let sub = json(Out::Subscribe { sub: 1, topic: Topic::Listing, sandbox: String::new(), filter: Some(Filter { archived: true, tags: vec![], ..Default::default() }) });
+        assert_eq!(sub, json!({"type": "subscribe", "subscribe": {"sub": 1, "topic": "listing", "filter": {"tags": [], "archived": true}}}));
+        assert_eq!(json(Out::Unsubscribe(1)), json!({"type": "unsubscribe", "unsubscribe": {"sub": 1}}));
         let open = json(Out::Open { stream: 4, sandbox: "b1".into(), exec: "primary".into(), cols: 80, rows: 24 });
         assert_eq!(open, json!({"type": "open", "open": {"stream": 4, "box": "b1", "exec": "primary", "cols": 80, "rows": 24}}));
     }

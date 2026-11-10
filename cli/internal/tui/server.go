@@ -22,12 +22,6 @@ import (
 // §5), which is the same condition the list groups under and the run options
 // offer their Server row under: naming the one server there is says nothing.
 
-// allServers is the choice that is not a server: every discobox the window can
-// reach, in its sections. It leads the servers, where "all folders" trails the
-// folders, for the one reason either order has — the choice the window opens
-// on is the one to lead with, and this is where the window opens.
-const allServers = "all servers"
-
 // serverChoices are what ← → step through on the harnesses and secrets
 // screens: every server the window lists, the primary first. Every server at
 // once is not among them: what those screens show is one server's, and a

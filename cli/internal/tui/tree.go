@@ -748,7 +748,7 @@ func (m *Model) viewTree() string {
 	side := edge.Render("│")
 	out := []string{titledEdge(m.st, edge, "discoboxes", m.treeControls(edge, treeWidth, 0), inner)}
 
-	label := m.listFilterLabel()
+	label := m.list.FilterLabel()
 	filter := m.styleFilter(label, false, m.focus == focusFilter)
 	if filter != "" {
 		fw := min(lipgloss.Width(filter)+1, inner)

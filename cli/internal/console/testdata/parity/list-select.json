@@ -1,0 +1,17 @@
+{
+  "name": "rows are marked one at a time and as a range, a verb takes every one marked and lets them go, and the archived are shown and hidden",
+  "about": "Run by both consoles, each pressing its own binding for each step: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. Each step is a registry command or gesture ID (cli/internal/console/commands.go), pressed with the list's keys and the cursor on its first row; expect is what the list looks like after it: how many boxes a command would act on (targets), how many rows are marked (selected), and whether the archived are listed.",
+  "attach": false,
+  "steps": [
+    {"gesture": "select", "expect": {"targets": 1, "selected": 1}},
+    {"gesture": "down", "expect": {"targets": 1, "selected": 1}},
+    {"gesture": "select", "expect": {"targets": 2, "selected": 2}},
+    {"gesture": "clear selection", "expect": {"targets": 1, "selected": 0}},
+    {"gesture": "range", "expect": {"targets": 1, "selected": 0}},
+    {"gesture": "up", "expect": {"targets": 2, "selected": 0}},
+    {"gesture": "select", "expect": {"targets": 2, "selected": 2}},
+    {"command": "stop", "expect": {"targets": 1, "selected": 0}},
+    {"command": "archived", "expect": {"archived": true}},
+    {"command": "archived", "expect": {"archived": false}}
+  ]
+}

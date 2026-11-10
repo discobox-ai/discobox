@@ -506,9 +506,10 @@ func TestAppGoingCancelsCommands(t *testing.T) {
 
 // Nothing the bridge sends is null: lists are [] when empty.
 func TestNoNullsOnTheWire(t *testing.T) {
-	data, err := json.Marshal(Message{Type: TypeSnapshot, Snapshot: &Snapshot{Listing: &Listing{
-		Boxes: []Box{wireBox(console.Sandbox{ID: "b"})}, Unreachable: nonNil(nil), Waiting: nonNil(nil),
-	}}})
+	l := console.NewList(console.Session{}, console.ListStaleAfter)
+	l.SetAll([]console.Sandbox{{ID: "b"}})
+	listing := wireListing(&l)
+	data, err := json.Marshal(Message{Type: TypeSnapshot, Snapshot: &Snapshot{Listing: &listing}})
 	if err != nil {
 		t.Fatal(err)
 	}

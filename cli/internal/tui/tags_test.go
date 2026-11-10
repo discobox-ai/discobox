@@ -49,11 +49,11 @@ func TestATagNarrowsTheList(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(taggedSandboxes()...))
 	filterTo(t, m, "Folder: "+m.session.Folder().Label)
-	if got := tagRows(m); len(got) != 3 || got[0] != allTags || got[1] != "#ticket=ENG-12" || got[2] != "#wip" {
+	if got := tagRows(m); len(got) != 3 || got[0] != console.AllTags || got[1] != "#ticket=ENG-12" || got[2] != "#wip" {
 		t.Fatalf("tags = %q, want every box then each tag in order", got)
 	}
 	view := m.filterDialog().view(m.st, &m.zones, 120, 40)
-	for _, want := range []string{allTags, "#ticket=ENG-12", "#wip", "2 boxes", "ticket set to this value"} {
+	for _, want := range []string{console.AllTags, "#ticket=ENG-12", "#wip", "2 boxes", "ticket set to this value"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the card is missing %q:\n%s", want, view)
 		}
@@ -80,7 +80,7 @@ func TestATagNarrowsTheList(t *testing.T) {
 	if got := rows(); len(got) != 1 || got[0] != "sbx_one" {
 		t.Fatalf("rows = %v, want only the box carrying both tags", got)
 	}
-	filterTo(t, m, allTags)
+	filterTo(t, m, console.AllTags)
 	if len(m.list.Filter.Tags) != 0 || strings.Contains(headerLine(m), "#") {
 		t.Fatalf("tags = %q, header = %q, want every box and no tag named", m.list.Filter.Tags, headerLine(m))
 	}
@@ -117,7 +117,7 @@ func TestSpaceTogglesTagsAndEnterOnlyMarks(t *testing.T) {
 	if got := marked(); !slices.Equal(got, []string{"ticket=ENG-12", "wip"}) {
 		t.Fatalf("marked %q, want both tags", got)
 	}
-	if got := dialogText(m); !strings.Contains(got, "■ #wip") || !strings.Contains(got, "□ "+allTags) {
+	if got := dialogText(m); !strings.Contains(got, "■ #wip") || !strings.Contains(got, "□ "+console.AllTags) {
 		t.Fatalf("the tags are not drawn as boxes, marked:\n%s", got)
 	}
 	markFilter(t, m, "#wip")
@@ -137,7 +137,7 @@ func TestSpaceTogglesTagsAndEnterOnlyMarks(t *testing.T) {
 
 	m.dialog = m.filterDialog()
 	markFilter(t, m, "#ticket=ENG-12")
-	markFilter(t, m, allTags)
+	markFilter(t, m, console.AllTags)
 	if got := m.dialog.filter.list.Filter.Tags; len(got) != 0 {
 		t.Fatalf("marked %q after all tags, want none", got)
 	}

@@ -7,7 +7,7 @@
 
 use rune::{Color, Cx, El, Icon, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{Box as Sandbox, TabKind};
+use crate::wire::{Box as Sandbox, Row, TabKind};
 use crate::theme::{self, CELL_H};
 use crate::{Focus, Side, State, Workspace, icons, keys, mark, overlay, run_command};
 
@@ -15,26 +15,6 @@ pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
 /// A tab chip's height; half of it rides above the frame's top edge.
 const CHIP_H: f32 = 22.0;
-
-/// Sections in first-seen order, and a box nested under the box that created it.
-pub fn list_order(boxes: Vec<Sandbox>) -> Vec<Sandbox> {
-    let mut sources: Vec<String> = vec![];
-    for b in &boxes {
-        if !sources.contains(&b.source) {
-            sources.push(b.source.clone());
-        }
-    }
-    let ids: Vec<&str> = boxes.iter().map(|b| b.key.as_str()).collect();
-    let nested = |b: &Sandbox| !b.parent.is_empty() && ids.contains(&b.parent.as_str());
-    let mut out = vec![];
-    for src in sources {
-        for b in boxes.iter().filter(|b| b.source == src && !nested(b)) {
-            out.push(b.clone());
-            out.extend(boxes.iter().filter(|c| c.parent == b.key).cloned());
-        }
-    }
-    out
-}
 
 /// A state's glyph and colour, as the spec gives them.
 fn glyph(s: &State, agent: bool, state: &str) -> (String, Color) {
@@ -135,42 +115,90 @@ fn chip_close(key: impl Into<String>, tip: Option<String>) -> El {
 // ---------------------------------------------------------------------------------------------
 // The list
 
-/// What the cursor row says in place of a box's name, as the TUI's row does.
-fn note(b: &Sandbox) -> Option<&str> {
-    [&b.provisioning, &b.message].into_iter().find(|s| !s.is_empty()).map(|s| s.as_str())
+/// A nesting level's width: the branch to a row's creator.
+const BRANCH_W: f32 = 12.0;
+
+/// The branches a nested row hangs from, drawn as strokes where the TUI types `├ └ │`: for each
+/// level above its creator's, a rule where a branch carries on past it there; then its own
+/// elbow, running on below when it is not its creator's last.
+fn branches(r: &Row) -> El {
+    let rule = |on: bool, full: bool| {
+        let mut c = el().w(BRANCH_W).h(ROW_H);
+        if on {
+            c = c.child(el().w(theme::stroke_quiet()).h(if full { ROW_H } else { ROW_H / 2.0 }).fill(theme::dim()).absolute(BRANCH_W / 2.0 - 1.0, 0.0));
+        }
+        c
+    };
+    let mut out = row().h(ROW_H);
+    for &on in &r.rules {
+        out = out.child(rule(on, true));
+    }
+    out.child(rule(true, !r.last).child(el().w(BRANCH_W / 2.0).h(theme::stroke_quiet()).fill(theme::dim()).absolute(BRANCH_W / 2.0 - 1.0, ROW_H / 2.0)))
 }
 
 fn list_row(s: &State, i: usize, wide: bool) -> El {
-    let b = &s.boxes[i];
+    let r = &s.rows()[i];
+    let Some(b) = s.box_by_id(&r.r#box) else { return el() };
     let on = i == s.cursor;
+    let marked = s.is_selected(i);
     let live = s.live.as_deref() == Some(&b.key);
     let (dot, dot_c) = glyph(s, false, b.state.as_str());
     let (ag, ag_c) = glyph(s, true, &b.agent);
-    let nested = !b.parent.is_empty() && s.box_by_id(&b.parent).is_some();
-    let name = match (note(b), on) {
-        (Some(m), true) => m.to_string(),
-        _ => b.name.clone(),
-    };
+    // The cursor row says what the core has to say about the box in place of its name.
+    let remark = r.remark.as_ref().filter(|_| on);
+    let name = remark.map(|m| m.text.clone()).unwrap_or_else(|| b.name.clone());
     let lit = s.focus == Focus::List || s.live.is_none();
-    // The cursor row is the selection; the box on screen keeps a quieter one when the keys are
-    // elsewhere.
-    let fill = if on && lit { theme::selection() } else if live { theme::line() } else { Color::TRANSPARENT };
-    let mut r = row().key(format!("box-{}", b.key)).w_full().h(ROW_H).px(6.0).gap(8.0).center_y().radius(theme::r_row()).fill(fill)
+    // The cursor row is the selection; marked rows wear the accent; the box on screen keeps a
+    // quieter fill when the keys are elsewhere.
+    let fill = if on && lit {
+        theme::selection()
+    } else if marked {
+        theme::mark().alpha(0.16)
+    } else if live {
+        theme::line()
+    } else {
+        Color::TRANSPARENT
+    };
+    let lead = if marked {
+        icon(&icons::CHECK, 12.0).color(theme::mark())
+    } else if on {
+        icon(&icons::CHEVRON, 12.0).color(theme::gold())
+    } else {
+        el()
+    };
+    let mut row_el = row().key(format!("box-{}", b.key)).w_full().h(ROW_H).px(6.0).gap(8.0).center_y().radius(theme::r_row()).fill(fill)
         .hover(theme::text().alpha(0.05)).press(theme::text().alpha(0.1)).motion(theme::SNAPPY)
         .cursor(rune::Cursor::Pointer)
-        .child(el().size(12.0, 12.0).child(if on { icon(&icons::CHEVRON, 12.0).color(theme::gold()) } else { el() }))
+        .child(el().size(12.0, 12.0).child(lead))
         .child(t(dot, dot_c).w(12.0))
         .child(t(ag, ag_c).w(12.0));
-    if nested {
-        r = r.child(icon(&icons::NESTED, 12.0).color(theme::dim()));
+    if r.depth > 0 {
+        row_el = row_el.child(branches(r));
     }
-    r = r.child(text(name).font(if on || live { theme::UI_BOLD } else { theme::UI }).color(theme::text()).truncate().shrink());
+    row_el = row_el.child(text(name).font(if on || live { theme::UI_BOLD } else { theme::UI }).color(if remark.is_some() { theme::warn() } else { theme::text() }).truncate().shrink());
+    // A remark a command answers offers that command, by its own name and this app's key.
+    if let Some(m) = remark.filter(|m| !m.command.is_empty()) {
+        let (cmd, verb) = (m.command.clone(), if m.verb.is_empty() { m.command.clone() } else { m.verb.clone() });
+        let mut offer = row().key(format!("remark-{}", b.key)).gap(4.0).center_y().px(4.0).radius(theme::r_key())
+            .hover(theme::text().alpha(0.08)).cursor(rune::Cursor::Pointer)
+            .child(text(verb).font(theme::UI_SMALL).color(theme::mark()));
+        if let Some(k) = keys::shortcut_of(s, &cmd) {
+            offer = offer.child(keycap(k));
+        }
+        row_el = row_el.child(offer.on_press_tx(move |s: &mut State, tx: &mut Tx| {
+            s.cursor = i;
+            run_command(s, &cmd, tx);
+        }));
+    }
+    if !r.origin.is_empty() {
+        row_el = row_el.child(t(r.origin.clone(), theme::dim()).font(theme::UI_SMALL));
+    }
     if wide {
         for tag in &b.tags {
-            r = r.child(tag_chip(tag));
+            row_el = row_el.child(tag_chip(tag));
         }
         let branch = if b.branch.is_empty() { "·".into() } else { format!("{}@{}", b.branch, b.commit) };
-        r = r.child(spacer())
+        row_el = row_el.child(spacer())
             .child(t(b.harness.clone(), theme::dim()).w(80.0))
             .child(t(branch, theme::grey()).w(190.0).truncate())
             .child(t(if b.dirty { "dirty" } else { "" }, theme::warn()).w(50.0))
@@ -179,19 +207,16 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
             .child(diffstat(b).w(90.0));
     }
     let id = b.key.clone();
-    r.on_press(move |s: &mut State| {
-        s.cursor = i;
-        s.focus = Focus::List;
-        // A press on a running box beside a workspace switches to it, as the TUI's tree does.
-        if s.live.is_some() && s.boxes[i].running() {
-            s.open_box(i);
-        }
-    })
+    row_el.on_press_tx(move |s: &mut State, tx: &mut Tx| s.press_row(i, tx.mods()))
     .on_double_press_tx(move |s: &mut State, tx: &mut Tx| {
         s.cursor = i;
+        s.clear_selection();
         run_command(s, "attach", tx);
     })
     .on_secondary_press(move |s: &mut State, p: PointerPress, _tx: &mut Tx| {
+        if !s.is_selected(i) {
+            s.clear_selection();
+        }
         s.cursor = i;
         s.open_menu(id.clone(), (p.x, p.y));
     })
@@ -223,23 +248,77 @@ fn band(label: &str, right: String, gold: bool) -> El {
 
 fn plural(n: usize) -> String { format!("{n} box{}", if n == 1 { "" } else { "es" }) }
 
-fn list_block(s: &State, wide: bool) -> El {
-    let mut c = col().w_full().gap(2.0).child(band("Discoboxes", plural(s.boxes.len()), true));
-    if s.boxes.is_empty() {
-        return c.child(t(if s.bridged { "listing…" } else { "no discoboxes here yet" }, theme::dim()).padding(10.0));
+/// The filter: what the list is narrowed to, as the core says it, with a caret that says it
+/// opens — the servers command's control. Its place is where the filter menu opens.
+fn filter_control(s: &State) -> El {
+    let mut c = row().key("filter").h(24.0).px(8.0).gap(6.0).center_y().radius(theme::r_row())
+        .hover(theme::text().alpha(0.06)).press(theme::text().alpha(0.12)).motion(theme::SNAPPY).cursor(rune::Cursor::Pointer)
+        .child(icon(&icons::FILTER, 12.0).color(theme::grey()))
+        .child(t(s.listing.label.clone(), theme::text()).truncate().shrink())
+        .child(icon(&icons::CARET, 12.0).color(theme::grey()))
+        .on_layout(|s: &mut State, r: [f32; 4]| s.filter_at = (r[0], r[1] + r[3] + 4.0))
+        .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "servers", tx));
+    if let Some(tip) = tip(s, "choose the server, folder or tags", "servers") {
+        c = c.help(tip);
     }
-    let mut src: Option<String> = None;
-    for i in 0..s.boxes.len() {
-        let b = &s.boxes[i];
-        if src.as_deref() != Some(&b.source) {
-            src = Some(b.source.clone());
-            let n = s.boxes.iter().filter(|x| x.source == b.source).count();
-            c = c.child(el().h(4.0)).child(band(&source_label(b), plural(n), false));
+    c
+}
+
+/// A line under the rows that runs a command: the archived offer.
+fn offer(key: &str, label: String, id: &'static str) -> El {
+    row().key(key.to_string()).h(22.0).px(10.0).gap(6.0).center_y().radius(theme::r_row())
+        .hover(theme::text().alpha(0.06)).cursor(rune::Cursor::Pointer)
+        .child(t(label, theme::dim()).font(theme::UI_SMALL))
+        .on_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, id, tx))
+}
+
+fn list_block(s: &State, wide: bool) -> El {
+    let rows = s.rows();
+    let marked = s.list_targets().len();
+    let right = if s.range.is_some() || !s.selected.is_empty() { format!("{marked} selected · {}", plural(rows.len())) } else { plural(rows.len()) };
+    let mut c = col().w_full().gap(2.0).child(band("Discoboxes", right, true))
+        .child(row().w_full().gap(6.0).center_y().child(filter_control(s)).child(spacer()));
+    if !s.loaded {
+        let what = match &s.list_error {
+            Some(e) => format!("could not list the discoboxes: {e}"),
+            None if s.bridged => "listing…".into(),
+            None => "no discoboxes here yet".into(),
+        };
+        return c.child(t(what, theme::dim()).padding(10.0).wrap());
+    }
+    if let Some(e) = &s.list_error {
+        c = c.child(t(format!("could not list again: {e}"), theme::warn()).font(theme::UI_SMALL).px(10.0).truncate());
+    }
+    if rows.is_empty() {
+        let none = if s.listing.filter == Default::default() || s.listing.label == "all discoboxes" && !s.listing.filter.archived {
+            "no discoboxes here yet"
+        } else {
+            "no discoboxes match the filter"
+        };
+        c = c.child(t(none, theme::dim()).padding(10.0));
+    }
+    let mut section: Option<&str> = None;
+    for i in 0..rows.len() {
+        let r = &rows[i];
+        if s.listing.grouped && section != Some(r.section.as_str()) {
+            section = Some(r.section.as_str());
+            let n = rows.iter().filter(|x| x.section == r.section).count();
+            c = c.child(el().h(4.0)).child(band(&r.section_title, plural(n), false));
         }
         c = c.child(list_row(s, i, wide));
-        if !wide && !b.tags.is_empty() {
+        if !wide && let Some(b) = s.box_by_id(&r.r#box) && !b.tags.is_empty() {
             c = c.child(row().pl(54.0).h(18.0).gap(6.0).center_y().children(b.tags.iter().map(|x| tag_chip(x))));
         }
+    }
+    for n in &s.listing.notes {
+        c = c.child(row().h(22.0).px(10.0).gap(8.0).center_y()
+            .child(t(n.title.clone(), theme::grey()).font(theme::UI_SMALL))
+            .child(t(n.detail.clone(), theme::warn()).font(theme::UI_SMALL)));
+    }
+    if s.listing.filter.archived {
+        c = c.child(offer("archived-offer", "hide archived".into(), "archived"));
+    } else if s.listing.archived > 0 {
+        c = c.child(offer("archived-offer", format!("{} archived · show them", s.listing.archived), "archived"));
     }
     c
 }
@@ -450,6 +529,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let mut stack = el().w_full().h_full().child(root);
     if let Some(m) = overlay::menu_view(s) {
         stack = stack.child(m);
+    }
+    if let Some(f) = overlay::filter_view(s) {
+        stack = stack.child(f);
     }
     if let Some(p) = overlay::palette_view(s) {
         stack = stack.child(p);

@@ -31,6 +31,7 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 	f := &follower{s: s, sub: sub, ctx: ctx}
 	switch sub.Topic {
 	case TopicListing:
+		f.filter = s.filter(ctx, sub.Filter)
 		go f.poll(ctx, console.ListPollEvery, true, f.listing)
 	case TopicResources:
 		go f.poll(ctx, console.ListPollEvery, false, f.resources)
@@ -103,6 +104,8 @@ type follower struct {
 	// for its server.
 	box console.Sandbox
 	src console.DataSource
+	// filter is what a listing subscription narrows the list to.
+	filter console.Filter
 }
 
 // send sends a snapshot unless it is the one sent last, or the subscription
@@ -162,15 +165,21 @@ func (f *follower) poll(ctx context.Context, every time.Duration, kicked bool, r
 	}
 }
 
+// listing is the core's list (console.List) over the last listing, narrowed
+// to the subscription's filter.
 func (f *follower) listing(ctx context.Context) (Snapshot, error) {
-	l, err := f.s.list(ctx)
+	listing, err := f.s.list(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	out := Listing{Boxes: make([]Box, 0, len(l.Sandboxes)), Unreachable: nonNil(l.Unreachable), Waiting: nonNil(l.Waiting)}
-	for _, b := range l.Sandboxes {
-		out.Boxes = append(out.Boxes, wireBox(b))
-	}
+	session, _ := f.s.listed()
+	l := console.NewList(session, console.ListStaleAfter)
+	l.Filter = f.filter
+	l.SetAll(listing.Sandboxes)
+	l.SetUnreachable(listing.Unreachable)
+	l.SetWaiting(listing.Waiting)
+	l.SetListed(listing.Listed)
+	out := wireListing(&l)
 	return Snapshot{Listing: &out}, nil
 }
 

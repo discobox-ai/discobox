@@ -15,8 +15,9 @@ import (
 
 // Protocol is the bridge's version, carried by hello and welcome. The CLI
 // pins the exact app it runs (983 §2), so two that differ are a development
-// override: the app says which side is older and exits.
-const Protocol = 2
+// override: the app says which side is older and exits. 3 made the listing
+// the core's list (rows, notes, the filter and its choices).
+const Protocol = 3
 
 // Type names a message.
 type Type string
@@ -141,11 +142,15 @@ const (
 )
 
 // Subscribe starts following a topic. Sub is the app's, unique for the
-// bridge's life; Box is the box key, for a topic about one box.
+// bridge's life; Box is the box key, for a topic about one box. Filter is
+// what the listing is narrowed to: the app's to hold (ADR 26-11-07-876 §2),
+// subscribed again under the same Sub to change it. Without one the listing
+// opens on the filter this machine's last window left (console.ListView).
 type Subscribe struct {
-	Sub   uint32 `json:"sub"`
-	Topic Topic  `json:"topic"`
-	Box   string `json:"box,omitempty"`
+	Sub    uint32  `json:"sub"`
+	Topic  Topic   `json:"topic"`
+	Box    string  `json:"box,omitempty"`
+	Filter *Filter `json:"filter,omitempty"`
 }
 
 // Unsubscribe stops one.
@@ -170,13 +175,96 @@ type Snapshot struct {
 	Sessions     *Sessions     `json:"sessions,omitempty"`
 }
 
-// Listing is the boxes, newest first, and the servers that did not answer.
+// Listing is the box listing as the console shows it (console.List): every
+// box listed, and the rows the filter shows, in the order they are drawn.
 type Listing struct {
+	// Boxes is every box listed, on every server and whatever the filter:
+	// what a box is looked up in, and what the palette searches.
 	Boxes []Box `json:"boxes"`
+	// Rows are the boxes the filter shows, as drawn: folder sections when
+	// Grouped, and in each a box followed by the boxes it created.
+	Rows []Row `json:"rows"`
+	// Grouped is whether the rows are drawn in sections, one per folder.
+	Grouped bool `json:"grouped"`
+	// Notes are what the list says about servers after its rows.
+	Notes []Note `json:"notes"`
+	// Filter is what the rows are narrowed to.
+	Filter Filter `json:"filter"`
+	// Label is how the filter reads: "all discoboxes", or what it narrows
+	// the rows to.
+	Label string `json:"label"`
+	// Choices are every way to narrow the rows, counted against the filter
+	// as it stands (console.List.FilterChoices).
+	Choices []FilterChoice `json:"choices"`
+	// Archived is how many more rows showing the archived would draw.
+	Archived int `json:"archived"`
 	// Unreachable are servers that did not answer; Waiting, ones still being
 	// asked with nothing of theirs to show.
 	Unreachable []string `json:"unreachable"`
 	Waiting     []string `json:"waiting"`
+}
+
+// Row is one box's place in the list (console.List.Rows, Nesting): its
+// section, how deep it is nested under the box that created it, and what it
+// says in place of its name when picked out.
+type Row struct {
+	// Box is the box's key.
+	Box string `json:"box"`
+	// Section is the key of the folder section it is drawn in, and
+	// SectionTitle how that section is headed.
+	Section      string `json:"section"`
+	SectionTitle string `json:"sectionTitle"`
+	// Depth is how many creators it is nested under; Last, whether it is its
+	// creator's last row; Rules, for each level between the top and its
+	// creator, whether a branch carries on past it there.
+	Depth int    `json:"depth"`
+	Last  bool   `json:"last,omitempty"`
+	Rules []bool `json:"rules"`
+	// Remark is what the row says in place of its name when picked out.
+	Remark *Remark `json:"remark,omitempty"`
+	// Origin is the machine it was created on, when that is not this one.
+	Origin string `json:"origin,omitempty"`
+}
+
+// Remark is console.Remark: the text, and the command that answers it when
+// one does, with what doing so does as a verb. The app spells the command's
+// key with its own binding.
+type Remark struct {
+	Text    string `json:"text"`
+	Command string `json:"command,omitempty"`
+	Verb    string `json:"verb,omitempty"`
+}
+
+// Note is a line the list draws about a server rather than a box.
+type Note struct {
+	Server string `json:"server"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+// Filter is what the listing is narrowed to (console.Filter): a server, a
+// folder (by its key; none is every folder), the tags a box must carry, and
+// whether the archived are listed.
+type Filter struct {
+	Server       string   `json:"server,omitempty"`
+	FolderKey    string   `json:"folderKey,omitempty"`
+	FolderLabel  string   `json:"folderLabel,omitempty"`
+	FolderSource string   `json:"folderSource,omitempty"`
+	FolderLocal  bool     `json:"folderLocal,omitempty"`
+	Tags         []string `json:"tags"`
+	Archived     bool     `json:"archived,omitempty"`
+}
+
+// FilterChoice is one way to narrow the listing (console.FilterChoice): the
+// filter marking it makes, and for a marked tag the one letting it go.
+type FilterChoice struct {
+	Group   console.ChoiceGroup `json:"group"`
+	Label   string              `json:"label"`
+	Detail  string              `json:"detail"`
+	Marked  bool                `json:"marked,omitempty"`
+	Several bool                `json:"several,omitempty"`
+	Mark    Filter              `json:"mark"`
+	Unmark  Filter              `json:"unmark"`
 }
 
 // Box is one box as the app draws its row.
@@ -204,13 +292,11 @@ type Box struct {
 	Deleted int  `json:"deleted,omitempty"`
 	// CPU and MemoryBytes are what a box that is up is using; none for one
 	// that is not.
-	CPU         int       `json:"cpu,omitempty"`
-	MemoryBytes int64     `json:"memoryBytes,omitempty"`
-	Created     time.Time `json:"created"`
-	// Parent is the key of the box that made this one.
-	Parent       string `json:"parent,omitempty"`
-	Message      string `json:"message,omitempty"`
-	Provisioning string `json:"provisioning,omitempty"`
+	CPU          int       `json:"cpu,omitempty"`
+	MemoryBytes  int64     `json:"memoryBytes,omitempty"`
+	Created      time.Time `json:"created"`
+	Message      string    `json:"message,omitempty"`
+	Provisioning string    `json:"provisioning,omitempty"`
 	// Attachable is whether the box has a container to open now.
 	Attachable bool `json:"attachable"`
 }

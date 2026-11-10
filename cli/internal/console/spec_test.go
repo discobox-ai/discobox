@@ -79,14 +79,17 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no parity scenarios: %v", err)
 	}
+	menu, _ := LookupGesture("context menu")
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var sc struct {
-			Steps []struct {
+			Attach bool `json:"attach"`
+			Steps  []struct {
 				Command string `json:"command"`
+				Gesture string `json:"gesture"`
 			} `json:"steps"`
 		}
 		if err := json.Unmarshal(data, &sc); err != nil {
@@ -96,13 +99,39 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 			t.Errorf("%s has no steps", file)
 		}
 		for i, step := range sc.Steps {
+			if (step.Command == "") == (step.Gesture == "") {
+				t.Errorf("%s step %d names %q and %q; want a command or a gesture", file, i, step.Command, step.Gesture)
+				continue
+			}
+			if step.Gesture != "" {
+				// A gesture is pressed in the list, never from a pane.
+				g, ok := LookupGesture(step.Gesture)
+				switch {
+				case !ok:
+					t.Errorf("%s step %d: %q is not a registry gesture", file, i, step.Gesture)
+				case sc.Attach:
+					t.Errorf("%s step %d: the gesture %s is the list's, and the scenario is in a pane", file, i, step.Gesture)
+				case len(g.Bindings.TUI.Keys) == 0 || len(g.Bindings.Desktop.Keys) == 0:
+					t.Errorf("%s step %d: %s is not bound in the list in both consoles", file, i, step.Gesture)
+				}
+				continue
+			}
 			c, ok := Lookup(step.Command)
 			if !ok {
 				t.Errorf("%s step %d: %q is not a registry command", file, i, step.Command)
 				continue
 			}
-			if len(c.Bindings.TUI.Leader) == 0 || len(c.Bindings.Desktop.Keys) == 0 {
-				t.Errorf("%s step %d: %s is not bound from a pane in both consoles", file, i, step.Command)
+			if sc.Attach {
+				if len(c.Bindings.TUI.Leader) == 0 || len(c.Bindings.Desktop.Keys) == 0 {
+					t.Errorf("%s step %d: %s is not bound from a pane in both consoles", file, i, step.Command)
+				}
+				continue
+			}
+			// From the list: the TUI's bare key, and the desktop's shortcut — or, for a box's
+			// lifecycle, its row's menu, which is how the desktop reaches a verb.
+			desktop := len(c.Bindings.Desktop.Keys) > 0 || c.Lifecycle && len(menu.Bindings.Desktop.Keys) > 0
+			if len(c.Bindings.TUI.Keys) == 0 || !desktop {
+				t.Errorf("%s step %d: %s is not reached from the list in both consoles", file, i, step.Command)
 			}
 		}
 	}

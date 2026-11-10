@@ -24,13 +24,16 @@ mod term;
 mod theme;
 mod view;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
-use wire::{Args, Box as Sandbox, Command, Context, Entry, Result as CommandResult, Sessions, Spec, SpecTarget, Status, StreamState, Tab, TabKind, Topic};
-use rune::{App, AppSpec, KeyEvent, MenuItem, TextEdit, Tx, Waker};
+use wire::{
+    Args, Box as Sandbox, Command, Context, Entry, Filter, Listing, Result as CommandResult, Row, Sessions, Spec, SpecTarget, Status,
+    StreamState, Tab, TabKind, Topic,
+};
+use rune::{App, AppSpec, KeyEvent, MenuItem, Mods, TextEdit, Tx, Waker};
 use term::Screen;
 
 /// Which of the two columns a pane lives in: harness terminals left, shells right.
@@ -125,6 +128,11 @@ pub struct Palette {
     pub picked: usize,
 }
 
+/// The list's filter, open: the core's choices, and the one the keys are on.
+pub struct FilterMenu {
+    pub picked: usize,
+}
+
 /// A box's actions menu, drawn in the window where the platform has no native one.
 pub struct Menu {
     pub sandbox: String,
@@ -137,8 +145,25 @@ pub struct State {
     backend: Box<dyn Backend + Send>,
     inbox: Inbox,
     pub spec: Spec,
+    /// Every box listed, whatever the filter: what a box is looked up in.
     pub boxes: Vec<Sandbox>,
+    /// The core's list: the rows the filter shows, in the order they are drawn, with their
+    /// sections, nesting and remarks, the notes, the filter and its choices.
+    pub listing: Listing,
+    /// Whether a listing has landed; until one has, an empty list is a question, not an answer.
+    pub loaded: bool,
+    /// Why the listing could not be read last time; the last one stands.
+    pub list_error: Option<String>,
+    /// The row under the cursor, as an index into the listing's rows.
     pub cursor: usize,
+    /// The rows marked to act on together, by box key.
+    pub selected: HashSet<String>,
+    /// Where a range being drawn started: the rows from it to the cursor are what a command
+    /// acts on until it is folded into the selection or let go.
+    pub range: Option<usize>,
+    pub filter_menu: Option<FilterMenu>,
+    /// Where the filter control is drawn, which is where its menu opens.
+    pub filter_at: (f32, f32),
     pub workspaces: HashMap<String, Workspace>,
     /// The box on screen; `None` is the list of every box.
     pub live: Option<String>,
@@ -149,6 +174,8 @@ pub struct State {
     pub menu: Option<Menu>,
     pub bridged: bool,
     pending: HashMap<u64, Pending>,
+    /// The listing subscription: the filter is changed by subscribing again under a new one.
+    list_sub: u32,
     next_id: u64,
     next_sub: u32,
     next_stream: u32,
@@ -168,31 +195,146 @@ impl State {
         let (backend, spec, inbox, bridged) = BOOT.lock().unwrap().take().unwrap_or_else(boot_mock);
         theme::set_tokens(&spec);
         let mut s = State {
-            backend, inbox, spec, boxes: vec![], cursor: 0, workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), next_id: 1,
+            backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
+            selected: HashSet::new(), range: None, filter_menu: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
+            sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
         };
-        s.subscribe(Topic::Listing, String::new());
+        s.follow_listing(None);
         if !bridged {
             // The mock lists at once; taking it here lets a headless scene open a box.
             for e in s.inbox.drain() {
-                if let Event::Listing(boxes) = e {
-                    s.take_listing(boxes);
+                if let Event::Listing(sub, l) = e {
+                    s.take_listing(sub, l);
                 }
             }
         }
         s
     }
 
-    fn subscribe(&mut self, topic: Topic, sandbox: String) -> u32 {
+    fn subscribe(&mut self, topic: Topic, sandbox: String, filter: Option<Filter>) -> u32 {
         let sub = self.next_sub;
         self.next_sub += 1;
         if topic == Topic::Sessions {
             self.subs.insert(sub, sandbox.clone());
         }
-        self.backend.send(Out::Subscribe { sub, topic, sandbox });
+        self.backend.send(Out::Subscribe { sub, topic, sandbox, filter });
         sub
     }
+
+    /// Follows the listing narrowed to `filter` (none: what this machine's last window left),
+    /// in place of the subscription there was: what that one still sends is dropped.
+    fn follow_listing(&mut self, filter: Option<Filter>) {
+        if self.list_sub != 0 {
+            self.backend.send(Out::Unsubscribe(self.list_sub));
+        }
+        self.list_sub = self.subscribe(Topic::Listing, String::new(), filter);
+    }
+
+    /// Narrows the list to another filter, from the core's choices or the archived toggle. The
+    /// rows under the cursor and the marks are another set now, so both start again.
+    pub fn set_filter(&mut self, filter: Filter) {
+        self.cursor = 0;
+        self.selected.clear();
+        self.range = None;
+        self.follow_listing(Some(filter));
+    }
+
+    /// The rows the filter shows, as drawn.
+    pub fn rows(&self) -> &[Row] { &self.listing.rows }
+
+    /// The box on a row.
+    pub fn row_box(&self, i: usize) -> Option<&Sandbox> { self.listing.rows.get(i).and_then(|r| self.box_by_id(&r.r#box)) }
+
+    /// The row a box is on, if the filter shows it.
+    pub fn row_of(&self, key: &str) -> Option<usize> { self.listing.rows.iter().position(|r| r.r#box == key) }
+
+    /// The span of a range being drawn, from its start to the cursor.
+    fn range_span(&self) -> Option<(usize, usize)> { self.range.map(|a| (a.min(self.cursor), a.max(self.cursor))) }
+
+    /// Whether a row is among what a command acts on: marked, or inside the range being drawn.
+    pub fn is_selected(&self, i: usize) -> bool {
+        self.range_span().is_some_and(|(lo, hi)| (lo..=hi).contains(&i))
+            || self.listing.rows.get(i).is_some_and(|r| self.selected.contains(&r.r#box))
+    }
+
+    /// What the list's command acts on, in row order: the range being drawn, else the rows
+    /// marked, else the row under the cursor — as the TUI's list answers it.
+    pub fn list_targets(&self) -> Vec<String> {
+        let rows = &self.listing.rows;
+        if let Some((lo, hi)) = self.range_span() {
+            return rows[lo..=hi.min(rows.len().saturating_sub(1))].iter().map(|r| r.r#box.clone()).collect();
+        }
+        let marked: Vec<String> = rows.iter().filter(|r| self.selected.contains(&r.r#box)).map(|r| r.r#box.clone()).collect();
+        if !marked.is_empty() {
+            return marked;
+        }
+        rows.get(self.cursor).map(|r| vec![r.r#box.clone()]).unwrap_or_default()
+    }
+
+    /// Marks the row under the cursor, or lets it go; with a range being drawn, folds the range
+    /// into the marks instead (the select gesture).
+    pub fn toggle_select(&mut self) {
+        if let Some((lo, hi)) = self.range_span() {
+            for r in &self.listing.rows[lo..=hi.min(self.listing.rows.len().saturating_sub(1))] {
+                self.selected.insert(r.r#box.clone());
+            }
+            self.range = None;
+            return;
+        }
+        let Some(key) = self.listing.rows.get(self.cursor).map(|r| r.r#box.clone()) else { return };
+        if !self.selected.remove(&key) {
+            self.selected.insert(key);
+        }
+    }
+
+    /// Starts a range at the cursor, or lets the one being drawn go (the range gesture).
+    pub fn toggle_range(&mut self) {
+        self.range = match self.range {
+            Some(_) => None,
+            None if self.listing.rows.is_empty() => None,
+            None => Some(self.cursor),
+        };
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected.clear();
+        self.range = None;
+    }
+
+    /// A press on a row, as a desktop list takes one: on its own it moves the cursor there and
+    /// lets the marks go; with ⌘ (Ctrl elsewhere) it marks the row or lets it go; with Shift it
+    /// marks every row from the last one pressed to this one.
+    pub fn press_row(&mut self, i: usize, mods: Mods) {
+        if i >= self.listing.rows.len() {
+            return;
+        }
+        self.focus = Focus::List;
+        if mods.shift {
+            let from = self.range.unwrap_or(self.cursor);
+            let (lo, hi) = (from.min(i), from.max(i));
+            for r in &self.listing.rows[lo..=hi] {
+                self.selected.insert(r.r#box.clone());
+            }
+            self.range = None;
+            self.cursor = i;
+            return;
+        }
+        self.range = None;
+        self.cursor = i;
+        if mods.cmd {
+            self.toggle_select();
+            return;
+        }
+        self.selected.clear();
+        // A press on a running box beside a workspace switches to it, as the TUI's tree does.
+        if self.live.is_some() && self.row_box(i).is_some_and(Sandbox::running) {
+            self.open_row(i);
+        }
+    }
+
+    /// Moves the cursor (the list's gestures); a range being drawn follows it.
+    pub fn move_cursor(&mut self, to: usize) { self.cursor = to.min(self.listing.rows.len().saturating_sub(1)); }
 
     /// Where a command is asked from, for the core's rules: the box whose workspace is on
     /// screen, and whether a pane or the list has the keys. The list is always beside it.
@@ -233,14 +375,43 @@ impl State {
     fn target(&self) -> Option<Sandbox> {
         match (&self.live, self.focus) {
             (Some(id), Focus::Panes) => self.box_by_id(id).cloned(),
-            _ => self.boxes.get(self.cursor).cloned(),
+            _ => self.row_box(self.cursor).cloned(),
         }
     }
 
-    fn take_listing(&mut self, boxes: Vec<Sandbox>) {
-        let at = self.boxes.get(self.cursor).map(|b| b.key.clone());
-        self.boxes = view::list_order(boxes);
-        self.cursor = at.and_then(|id| self.boxes.iter().position(|b| b.key == id)).unwrap_or(self.cursor.min(self.boxes.len().saturating_sub(1)));
+    /// The boxes a box command acts on, by key: the one on screen while its panes have the
+    /// keys, else what the list's selection says.
+    fn targets(&self) -> Vec<String> {
+        match (&self.live, self.focus) {
+            (Some(id), Focus::Panes) => vec![id.clone()],
+            _ => self.list_targets(),
+        }
+    }
+
+    /// A listing snapshot: the core's list, taken whole, with the cursor kept on its box and the
+    /// marks on the boxes still shown. One from a subscription since replaced is dropped.
+    fn take_listing(&mut self, sub: u32, l: Result<Listing, String>) {
+        if sub != self.list_sub {
+            return;
+        }
+        let l = match l {
+            Ok(l) => l,
+            Err(e) => {
+                self.list_error = Some(e);
+                return;
+            }
+        };
+        let at = self.listing.rows.get(self.cursor).map(|r| r.r#box.clone());
+        let anchor = self.range.and_then(|i| self.listing.rows.get(i)).map(|r| r.r#box.clone());
+        self.loaded = true;
+        self.list_error = None;
+        self.boxes = l.boxes.clone();
+        self.listing = l;
+        let last = self.listing.rows.len().saturating_sub(1);
+        self.cursor = at.and_then(|id| self.row_of(&id)).unwrap_or(self.cursor.min(last));
+        self.range = self.range.map(|i| anchor.and_then(|id| self.row_of(&id)).unwrap_or(i.min(last))).filter(|_| !self.listing.rows.is_empty());
+        let shown: HashSet<String> = self.listing.rows.iter().map(|r| r.r#box.clone()).collect();
+        self.selected.retain(|k| shown.contains(k));
     }
 
     fn new_pane(&mut self, exec: Tab) -> Pane {
@@ -249,11 +420,21 @@ impl State {
         Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None }
     }
 
+    /// Show the box on a row: its workspace if it has one, attaching on first use.
+    pub fn open_row(&mut self, index: usize) {
+        if let Some(key) = self.listing.rows.get(index).map(|r| r.r#box.clone()) {
+            self.open_box(&key);
+        }
+    }
+
     /// Show a box: its workspace if it has one, attaching on first use. A box that is not
-    /// running is only pointed at — starting one is a command of its own.
-    pub fn open_box(&mut self, index: usize) {
-        let Some(sbx) = self.boxes.get(index).cloned() else { return };
-        self.cursor = index;
+    /// running is only pointed at — starting one is a command of its own. The cursor goes to its
+    /// row when the filter shows it.
+    pub fn open_box(&mut self, key: &str) {
+        let Some(sbx) = self.box_by_id(key).cloned() else { return };
+        if let Some(i) = self.row_of(key) {
+            self.cursor = i;
+        }
         if !sbx.running() && !self.workspaces.contains_key(&sbx.key) {
             self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state.as_str()));
             return;
@@ -269,7 +450,7 @@ impl State {
             self.workspaces.insert(sandbox.to_string(), Workspace {
                 sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true, error: None,
             });
-            self.subscribe(Topic::Sessions, sandbox.to_string());
+            self.subscribe(Topic::Sessions, sandbox.to_string(), None);
         }
     }
 
@@ -345,13 +526,14 @@ impl State {
 
     /// Previous or next box: switch to it when it is running, otherwise point at it.
     fn step_box(&mut self, by: i32) {
-        let n = self.boxes.len() as i32;
+        let n = self.listing.rows.len() as i32;
         if n == 0 {
             return;
         }
         self.cursor = (self.cursor as i32 + by).clamp(0, n - 1) as usize;
-        if self.boxes[self.cursor].running() || self.workspaces.contains_key(&self.boxes[self.cursor].key) {
-            self.open_box(self.cursor);
+        let Some(b) = self.row_box(self.cursor).cloned() else { return };
+        if b.running() || self.workspaces.contains_key(&b.key) {
+            self.open_box(&b.key);
         } else {
             self.focus = Focus::List;
         }
@@ -389,10 +571,15 @@ impl State {
         }
     }
 
-    /// A box's action menu, from its row: the core's entries for it.
+    /// A box's action menu, from its row: the core's entries for it — for every box marked,
+    /// when it is one of them, as the TUI's menu is for the selection.
     pub fn open_menu(&mut self, sandbox: String, at: (f32, f32)) {
         let context = Context { list_has_keys: true, ..self.context() };
-        self.command("actions", vec![sandbox], context, Args::default(), Pending::Actions(at));
+        let targets = match self.row_of(&sandbox) {
+            Some(i) if self.is_selected(i) => self.list_targets(),
+            _ => vec![sandbox],
+        };
+        self.command("actions", targets, context, Args::default(), Pending::Actions(at));
     }
 
     fn pane_mut(&mut self, stream: u32) -> Option<&mut Pane> {
@@ -460,6 +647,7 @@ impl State {
         let failed = r.status == Status::Failed;
         match why {
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
+            Pending::Enter(id) if id == "refresh" && r.status == Status::Done => self.message = None,
             Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
             Pending::Session(stream, sandbox) if r.status == Status::Done => {
                 let Some(exec) = r.session.clone() else { return };
@@ -481,8 +669,15 @@ impl State {
                 self.retake_sessions(&sandbox);
             }
             Pending::Actions(at) if r.status == Status::Enter => overlay::show_menu(self, r.r#box.clone(), at, r.entries.clone(), tx),
-            Pending::Verb(verb, name) if !failed => {
-                self.message = Some(if r.note.is_empty() { format!("{verb}: {name}") } else { r.note.clone() });
+            Pending::Verb(verb, name) => {
+                // A verb that acted on anything is worth letting the marks go for: they were put
+                // there to run this, and leaving them invites running it twice (the TUI's rule).
+                if !failed || !r.note.is_empty() {
+                    self.clear_selection();
+                }
+                if !failed {
+                    self.message = Some(if r.note.is_empty() { format!("{verb}: {name}") } else { r.note.clone() });
+                }
             }
             _ => {}
         }
@@ -525,6 +720,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive",
     "quit", "palette", "terminal", "end", "maximize", "detach",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
+    "refresh", "servers", "archived", "all",
 ];
 
 /// Every command, by its registry ID. The keys, the palette, the menus and a row's actions all
@@ -535,6 +731,7 @@ pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
     s.message = None;
     s.palette = None;
     s.menu = None;
+    s.filter_menu = None;
     if !ANSWERED.contains(&id) {
         s.message = Some(match s.spec.command(id) {
             Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
@@ -550,19 +747,29 @@ pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
         "shell" => s.new_session(true),
         "terminal" => s.new_session(false),
         "end" => s.end_focused(),
+        // A verb takes every box the list's selection holds, in one batch the core rules on and
+        // sends, asking first where the core's rules ask.
         "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
-            if let Some(b) = s.target() {
-                let doing = match id {
-                    "stop" => "stopping",
-                    "start" => "starting",
-                    "upgrade" => "upgrading",
-                    "repair" => "repairing",
-                    "archive" => "archiving",
-                    _ => "unarchiving",
-                };
-                s.message = Some(format!("{doing} {}…", b.name));
-                s.command(id, vec![b.key], context, Args::default(), Pending::Verb(id.into(), b.name.clone()));
-            }
+            let targets = s.targets();
+            let name = match targets.as_slice() {
+                [] => return,
+                [one] => s.box_by_id(one).map(|b| b.name.clone()).unwrap_or_else(|| one.clone()),
+                many => format!("{} boxes", many.len()),
+            };
+            let doing = match id {
+                "stop" => "stopping",
+                "start" => "starting",
+                "upgrade" => "upgrading",
+                "repair" => "repairing",
+                "archive" => "archiving",
+                _ => "unarchiving",
+            };
+            s.message = Some(format!("{doing} {name}…"));
+            s.command(id, targets, context, Args::default(), Pending::Verb(id.into(), name));
+        }
+        "refresh" => {
+            s.message = Some("refreshing…".into());
+            s.command(id, vec![], context, Args::default(), Pending::Enter(id.into()));
         }
         _ => {
             let targets = match s.spec.command(id) {
@@ -580,7 +787,7 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         // The core has ruled the box can be attached, whatever its state: its primary is
         // what waits for it.
         "attach" => {
-            if let Some(i) = s.boxes.iter().position(|b| b.key == r.r#box) {
+            if let Some(i) = s.row_of(&r.r#box) {
                 s.cursor = i;
             }
             s.ensure_workspace(&r.r#box);
@@ -608,6 +815,22 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
                 s.focus = Focus::Panes;
             }
         }
+        // The filter's choices are the listing's; the menu opens on the first one marked.
+        "servers" => {
+            let picked = s.listing.choices.iter().position(|c| c.marked).unwrap_or(0);
+            s.filter_menu = Some(FilterMenu { picked });
+        }
+        "archived" => {
+            let mut f = s.listing.filter.clone();
+            f.archived = !f.archived;
+            s.message = Some(if f.archived { "showing archived boxes" } else { "archived boxes hidden" }.into());
+            s.set_filter(f);
+        }
+        // Every box beside the one on screen: the list is that already.
+        "all" => {
+            s.live = None;
+            s.focus = Focus::List;
+        }
         _ => {}
     }
 }
@@ -622,7 +845,7 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
     }
     for e in events {
         match e {
-            Event::Listing(boxes) => s.take_listing(boxes),
+            Event::Listing(sub, l) => s.take_listing(sub, l),
             Event::Sessions(sub, r) => s.take_sessions(sub, r),
             Event::Result(r) => s.take_result(r, tx),
             Event::Stream(st) => match st.state {
@@ -683,6 +906,7 @@ const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
     ("Box", "new"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
     ("Box", "attach"), ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"),
     ("View", "detach"), ("View", "sidebar"), ("View", "palette"), ("View", "maximize"),
+    ("View", "servers"), ("View", "archived"), ("View", "refresh"), ("View", "all"),
     ("View", "next pane"), ("View", "previous pane"), ("View", "next box"), ("View", "previous box"),
 ];
 
@@ -715,20 +939,33 @@ fn main() {
         scenes: &[
             // A scene is one frame: what the mock answered is taken before it is drawn.
             ("list", |_| {}),
+            // Two boxes marked and a range drawn, with every row nested and sectioned.
+            ("selection", |s| {
+                s.toggle_select();
+                s.move_cursor(2);
+                s.toggle_select();
+                s.move_cursor(3);
+                s.toggle_range();
+                s.move_cursor(4);
+            }),
+            ("filter", |s| {
+                run_command(s, "servers", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
             ("workspace", |s| {
-                s.open_box(0);
+                s.open_row(0);
                 s.new_session(true);
                 poll(s, 0.0, &mut Tx::default());
             }),
             ("palette", |s| {
-                s.open_box(0);
+                s.open_row(0);
                 poll(s, 0.0, &mut Tx::default());
                 s.palette = Some(Palette { query: TextEdit::new(""), picked: 0 });
             }),
             ("menu", |s| {
-                s.open_box(0);
+                s.open_row(0);
                 poll(s, 0.0, &mut Tx::default());
-                let id = s.boxes[0].key.clone();
+                let id = s.rows()[0].r#box.clone();
                 s.open_menu(id, (420.0, 140.0));
                 poll(s, 0.0, &mut Tx::default());
             }),

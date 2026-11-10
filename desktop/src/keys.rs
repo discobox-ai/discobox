@@ -18,7 +18,9 @@ const MAC: bool = cfg!(target_os = "macos");
 /// A key's name as the spec spells it: `t`, `enter`, `tab`, `up`, `f2`, `backslash`.
 fn key_name(ev: &KeyEvent) -> Option<String> {
     Some(match &ev.key {
+        Key::Command(' ') => "space".into(),
         Key::Command(c) => c.to_lowercase().to_string(),
+        Key::Text(t) if t == " " => "space".into(),
         Key::Text(t) if t.chars().count() == 1 => t.to_lowercase(),
         Key::Enter => "enter".into(),
         Key::Tab => "tab".into(),
@@ -92,6 +94,8 @@ pub fn label(binding: &str) -> String {
         "enter" => if MAC { "↩".into() } else { "Enter".into() },
         "tab" => "Tab".into(),
         "up" => "↑".into(),
+        "space" => if MAC { "␣".into() } else { "Space".into() },
+        "escape" => "Esc".into(),
         "down" => "↓".into(),
         "left" => "←".into(),
         "right" => "→".into(),
@@ -139,6 +143,9 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.menu.is_some() {
         return overlay::menu_key(s, ev, tx);
     }
+    if s.filter_menu.is_some() {
+        return overlay::filter_key(s, ev, tx);
+    }
     if s.palette.is_some() {
         if ev.key == Key::Escape {
             s.palette = None;
@@ -174,15 +181,21 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
 /// The list's keys: the spec's gestures. Enter is attach's own shortcut, which runs before this.
 fn list_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
     let Some((gesture, _)) = gesture_for(s, ev) else { return false };
+    let last = s.rows().len().saturating_sub(1);
     match gesture {
-        "up" => s.cursor = s.cursor.saturating_sub(1),
-        "down" => s.cursor = (s.cursor + 1).min(s.boxes.len().saturating_sub(1)),
-        "first" => s.cursor = 0,
-        "last" => s.cursor = s.boxes.len().saturating_sub(1),
+        "up" => s.move_cursor(s.cursor.saturating_sub(1)),
+        "down" => s.move_cursor(s.cursor + 1),
+        "first" => s.move_cursor(0),
+        "last" => s.move_cursor(last),
+        "select" => s.toggle_select(),
+        "range" => s.toggle_range(),
+        "clear selection" => s.clear_selection(),
+        // Back lets a range being drawn go first, as the TUI's Esc does; then to the panes.
+        "back" if s.range.is_some() => s.range = None,
         "back" if s.live.is_some() => s.focus = Focus::Panes,
         "context menu" => {
-            if let Some(b) = s.boxes.get(s.cursor) {
-                let id = b.key.clone();
+            if let Some(r) = s.rows().get(s.cursor) {
+                let id = r.r#box.clone();
                 s.open_menu(id, (260.0, 120.0 + s.cursor as f32 * 28.0));
             }
         }

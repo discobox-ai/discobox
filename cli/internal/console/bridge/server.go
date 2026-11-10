@@ -34,6 +34,10 @@ type Server struct {
 
 	mu      sync.Mutex
 	session console.Session
+	// saved is the list's filter as this machine's windows last left it
+	// (console.ListView): what a listing subscribed without a filter opens
+	// on, and what a filter the app chooses is saved over.
+	saved console.ListView
 	// boxes is every box of the last listing, by the key the app knows it by,
 	// and unanswered the servers that listing had no answer from, whose boxes
 	// are missing from it rather than gone.
@@ -145,8 +149,9 @@ func (s *Server) hello(ctx context.Context, h Hello) bool {
 		return false
 	}
 	session, _ := s.ds.Session(ctx)
+	saved, _ := session.Restore(session.View)
 	s.mu.Lock()
-	s.session = session
+	s.session, s.saved = session, saved
 	s.mu.Unlock()
 	spec := console.NewSpec()
 	s.send(Message{Type: TypeWelcome, Welcome: &Welcome{Protocol: Protocol, Spec: &spec, Session: &Session{
@@ -282,6 +287,28 @@ func (s *Server) list(ctx context.Context) (console.Listing, error) {
 	s.boxes, s.unanswered = boxes, unanswered
 	s.mu.Unlock()
 	return listing, nil
+}
+
+// filter is what a listing subscription narrows the list to: the app's
+// filter, saved as this machine's windows open on it, or with none the one
+// they were left on.
+func (s *Server) filter(ctx context.Context, asked *Filter) console.Filter {
+	s.mu.Lock()
+	session, saved := s.session, s.saved
+	s.mu.Unlock()
+	if asked == nil {
+		_, f := session.Restore(saved)
+		return f
+	}
+	f := consoleFilter(*asked)
+	// A window opened nowhere has no view to keep (the TUI's viewToSave).
+	if view := f.View(); session.Directory != "" && !view.Equal(saved) {
+		s.mu.Lock()
+		s.saved = view
+		s.mu.Unlock()
+		_ = s.ds.SaveView(ctx, view)
+	}
+	return f
 }
 
 // listed is the session and the boxes of the last listing.

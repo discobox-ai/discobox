@@ -467,7 +467,7 @@ func TestTheHeaderServerIsWhereThePromptRuns(t *testing.T) {
 			servers = append(servers, row.label)
 		}
 	}
-	if !slices.Equal(servers, []string{allServers, "alpha", "beta"}) {
+	if !slices.Equal(servers, []string{console.AllServers, "alpha", "beta"}) {
 		t.Fatalf("servers = %q, want every server, then alpha and beta", servers)
 	}
 	markFilter(t, m, "beta")
@@ -499,7 +499,7 @@ func TestEveryServerStillCreatesOnThePrimary(t *testing.T) {
 	// Out to beta and back, so this is the choice being made rather than the
 	// window never having been touched.
 	filterTo(t, m, "beta")
-	filterTo(t, m, allServers)
+	filterTo(t, m, console.AllServers)
 	if m.list.Filter.Server != "" {
 		t.Fatalf("the list is showing %q, want every server", m.list.Filter.Server)
 	}
@@ -591,7 +591,7 @@ func TestOneServerOffersNoServers(t *testing.T) {
 			t.Fatalf("the card offers server %q with one server", row.label)
 		}
 	}
-	if strings.Contains(plainFrame(m), allServers) {
+	if strings.Contains(plainFrame(m), console.AllServers) {
 		t.Fatalf("the window offers a server filter with one server:\n%s", plainFrame(m))
 	}
 }
@@ -675,7 +675,7 @@ func TestTheConfigScreensNameThePrimaryFromEveryServer(t *testing.T) {
 	send(t, m, keyPress(secretsKey))
 
 	header := ansi.Strip(windowLines(m)[0])
-	if !strings.Contains(header, "server alpha") || strings.Contains(header, allServers) {
+	if !strings.Contains(header, "server alpha") || strings.Contains(header, console.AllServers) {
 		t.Fatalf("header = %q, want it to name the primary", header)
 	}
 	if choices := m.serverChoices(); slices.Contains(choices, "") {
