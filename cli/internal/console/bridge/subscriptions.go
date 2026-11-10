@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -326,25 +327,97 @@ func (f *follower) provisioning(ctx context.Context) {
 // trails the last read could not reach, whole on every update.
 func (f *follower) audit(ctx context.Context) {
 	box, src := f.box, f.src
-	timeline := Audit{Records: []AuditRecord{}, Missing: []string{}}
-	f.send(Snapshot{Audit: &timeline})
-	err := src.FollowAudit(ctx, box.ID, func(u console.AuditUpdate) {
-		for _, r := range u.Records {
-			timeline.Records = append(timeline.Records, AuditRecord{
-				ID: r.ID, Time: r.Time, Source: r.Source, Summary: r.Summary, Group: r.Group, GroupSummary: r.GroupSummary,
-			})
+	var (
+		mu      sync.Mutex
+		records []console.AuditRecord
+		missing = []string{}
+		polled  bool
+	)
+	// A record's time says its day once it is another day's: the timeline
+	// is sent again as the day turns, however quiet the trails are — for as
+	// long as they are followed. Once the follow ends, the read having failed
+	// whole, nothing more is sent (console.AuditUnreadable). Every send, the
+	// failure's included, is under mu, so none lands after the failure.
+	following, stop := context.WithCancel(ctx)
+	defer stop()
+	turns := dayTurns
+	send := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if following.Err() == nil {
+			f.send(Snapshot{Audit: wireAudit(records, missing, polled, time.Now())})
 		}
-		if extra := len(timeline.Records) - auditKeep; extra > 0 {
-			timeline.Records = append([]AuditRecord{}, timeline.Records[extra:]...)
+	}
+	send()
+	go func() {
+		for {
+			turn := time.NewTimer(turns(time.Now()))
+			select {
+			case <-following.Done():
+				turn.Stop()
+				return
+			case <-turn.C:
+				send()
+			}
+		}
+	}()
+	err := src.FollowAudit(ctx, box.ID, func(u console.AuditUpdate) {
+		mu.Lock()
+		records = append(records, u.Records...)
+		if extra := len(records) - auditKeep; extra > 0 {
+			records = append([]console.AuditRecord(nil), records[extra:]...)
 		}
 		if u.Polled {
-			timeline.Missing = nonNil(u.Missing)
+			missing, polled = nonNil(u.Missing), true
 		}
-		f.send(Snapshot{Audit: &timeline})
+		mu.Unlock()
+		send()
 	})
+	stop()
 	if err != nil && ctx.Err() == nil {
-		f.failed(err)
+		mu.Lock()
+		f.failed(errors.New(console.AuditUnreadable(err)))
+		mu.Unlock()
 	}
+}
+
+// dayTurns is how long a followed timeline waits before it is sent again
+// for a new day: untilTomorrow, which a test shortens.
+var dayTurns = untilTomorrow
+
+// untilTomorrow is how long from now until the next local midnight, and a
+// moment past it, so the times read then are the new day's.
+func untilTomorrow(now time.Time) time.Duration {
+	y, m, d := now.Date()
+	return time.Date(y, m, d+1, 0, 0, 0, 0, now.Location()).Sub(now) + time.Second
+}
+
+// wireAudit is the timeline as the audit topic sends it: its records with
+// their times as of now, the rows they fold into, and what it says with
+// none.
+func wireAudit(records []console.AuditRecord, missing []string, polled bool, now time.Time) *Audit {
+	a := &Audit{Records: make([]AuditRecord, 0, len(records)), Runs: []AuditRun{}, Missing: missing}
+	for _, r := range records {
+		a.Records = append(a.Records, AuditRecord{
+			ID: r.ID, Time: r.Time, Clock: console.AuditTime(r.Time, now), Source: r.Source, Summary: r.Summary,
+			Group: r.Group, GroupSummary: r.GroupSummary,
+		})
+	}
+	for _, run := range console.AuditRuns(records) {
+		w := AuditRun{First: run.First, Last: run.Last}
+		if run.Folds() {
+			w.Summary = console.AuditRunSummary(records[run.Last], run.Count())
+		}
+		a.Runs = append(a.Runs, w)
+	}
+	switch {
+	case len(records) > 0:
+	case polled:
+		a.Note = console.AuditNothing
+	default:
+		a.Note = console.AuditReading
+	}
+	return a
 }
 
 // header follows a box's workspace header: the core's (console.NewHeader)

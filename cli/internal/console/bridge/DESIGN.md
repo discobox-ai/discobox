@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 14; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 15; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -101,7 +101,12 @@ run after the registry is let go, whose `Result` ends the command:
   with the secrets read again, and the page's words (`SecretWords`). `read`
   reads them again for a page already open; a read that fails fails the
   command, an action already done saying so in its why, so the app keeps the
-  rows it has. Each of the five counts its use only as its flow opens. A box flow with preconditions the registry leaves to
+  rows it has.
+  `audit` enters the app's view of a box's timeline; with a record in its
+  args it reads it in full, with the recordings it offers
+  (`console.AuditRecordDetail.AuditRecordings`), and with a part too, that
+  recording, each under the core's title. Each of the six counts its use only
+  as its flow opens. A box flow with preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
@@ -189,7 +194,10 @@ as it reports, until the app unsubscribes — the watch behind it says what an
 attach waits on and never ends on its own (once provisioned it says
 "connecting to the terminal"), so the app ends it when the box's primary
 attaches, as the TUI's ends with its attach; the audit timeline as it
-reports; and a workspace's header (`console.Header`)
+reports, its most recent records each with its time as the core says it
+(`console.AuditTime`, sent again as the day turns so a record says its day), the rows they fold into (`console.AuditRuns`,
+`AuditRunSummary`) and what it says with none (`AuditReading`,
+`AuditNothing`); and a workspace's header (`console.Header`)
 with its ports at the local ports of a forward that lasts as long as the
 subscription — the workspace's, which the app ends when it parks one — read
 again whenever the forward binds or loses a port and whenever another listing

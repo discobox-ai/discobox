@@ -1554,14 +1554,17 @@ type AuditRecordDetail struct {
 	// Recordings are the parts of an http record the pool kept the bytes of
 	// — AuditRequestBody, AuditResponseBody, AuditStream — which are unbounded
 	// and so read on their own, with AuditBody.
-	Recordings []string
+	Recordings []AuditPart
 }
 
-// The recordings an http record can have, as AuditBody names them.
+// AuditPart is one recording an http record can have, as AuditBody names it.
+type AuditPart string
+
+// The recordings an http record can have.
 const (
-	AuditRequestBody  = "request"
-	AuditResponseBody = "response"
-	AuditStream       = "stream"
+	AuditRequestBody  AuditPart = "request"
+	AuditResponseBody AuditPart = "response"
+	AuditStream       AuditPart = "stream"
 )
 
 // AuditUpdate is one delivery from a followed timeline.
@@ -2457,7 +2460,7 @@ type DataSource interface {
 	// stream — as `discobox admin audit http --body` prints it, escaped for
 	// the terminal. A body is unbounded, so a long one comes back cut, saying
 	// so and how to read the rest.
-	AuditBody(ctx context.Context, sandboxID, recordID, part string) (string, error)
+	AuditBody(ctx context.Context, sandboxID, recordID string, part AuditPart) (string, error)
 
 	// Issue is one GitHub issue as its page shows it — the issue, its
 	// sub-issues, and its whole timeline of comments and events, and for a

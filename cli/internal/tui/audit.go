@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -52,10 +51,6 @@ const (
 	// already moved past — so this is only slack for a burst.
 	auditFeedCapacity = 16
 )
-
-// auditTitle names the card a record is opened on, so a record arriving after
-// the card it was for has gone can tell.
-const auditTitle = "Audit record"
 
 // auditScreen is the audit screen's state while it is up.
 type auditScreen struct {
@@ -152,18 +147,19 @@ type auditDetailMsg struct {
 type auditBodyMsg struct {
 	from   *dialog
 	record console.AuditRecord
-	part   string
+	part   console.AuditPart
 	text   string
 	err    error
 }
 
-// auditRecordings are the keys a record's card reads its recordings on, and
-// what each is called: b for the body the service answered, which is the one
-// most worth reading, r for what was sent, s for an upgraded stream.
-var auditRecordings = []struct{ part, key, label string }{
-	{console.AuditResponseBody, "b", "response body"},
-	{console.AuditRequestBody, "r", "request body"},
-	{console.AuditStream, "s", "stream"},
+// auditRecordingKeys are the keys a record's card reads its recordings on
+// (console.AuditRecordDetail.AuditRecordings, which also says what each is
+// called and in what order they are offered): b for the body the service
+// answered, r for what was sent, s for an upgraded stream.
+var auditRecordingKeys = map[console.AuditPart]string{
+	console.AuditResponseBody: "b",
+	console.AuditRequestBody:  "r",
+	console.AuditStream:       "s",
 }
 
 // openAudit puts the audit screen over the workspace and starts following the
@@ -250,7 +246,7 @@ func (m *Model) auditUpdated(msg auditUpdateMsg) tea.Cmd {
 // auditEnded records why a follow stopped, when it stopped on its own.
 func (m *Model) auditEnded(msg auditEndedMsg) tea.Cmd {
 	if a := m.audit; a != nil && a.gen == msg.gen && msg.err != nil {
-		a.err = msg.err.Error()
+		a.err = console.AuditUnreadable(msg.err)
 	}
 	return nil
 }
@@ -414,21 +410,19 @@ func (a *auditScreen) relayout(change func()) {
 	}
 	a.rows = a.rows[:0]
 	live := map[string]bool{}
-	for i := 0; i < len(a.shown); {
-		j := i
-		if group := a.rec(i).Group; group != "" {
-			for j+1 < len(a.shown) && a.rec(j+1).Group == group {
-				j++
-			}
-		}
+	shown := make([]console.AuditRecord, len(a.shown))
+	for i := range a.shown {
+		shown[i] = a.rec(i)
+	}
+	for _, run := range console.AuditRuns(shown) {
+		i, j := run.First, run.Last
 		a.rows = append(a.rows, auditRow{first: i, last: j})
-		if id := a.rec(i).ID; j > i && a.expanded[id] {
+		if id := a.rec(i).ID; run.Folds() && a.expanded[id] {
 			live[id] = true
 			for k := i; k <= j; k++ {
 				a.rows = append(a.rows, auditRow{first: k, last: k, member: true})
 			}
 		}
-		i = j + 1
 	}
 	if a.search.Empty() {
 		// A run whose head the history let go of is not coming back. Under a
@@ -512,16 +506,18 @@ func (m *Model) auditDetail(msg auditDetailMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		return m.report(true, "%s: %v", msg.record.ID, msg.err)
+		return m.report(true, "%s", console.AuditRecordUnreadable(msg.record.ID, msg.err))
 	}
-	d := m.readableDialog(auditTitle, cardText(msg.detail.Text))
+	d := m.readableDialog(console.AuditRecordTitle, cardText(msg.detail.Text))
 	d.titleRight = msg.record.ID
-	for _, rec := range auditRecordings {
-		if slices.Contains(msg.detail.Recordings, rec.part) {
-			d.offers = append(d.offers, cardKey{key: rec.key, label: rec.label, act: func() tea.Cmd {
-				return m.openAuditBody(d, msg.record, rec.part, rec.label)
-			}})
+	for _, rec := range msg.detail.AuditRecordings() {
+		key, ok := auditRecordingKeys[rec.Part]
+		if !ok {
+			continue
 		}
+		d.offers = append(d.offers, cardKey{key: key, label: rec.Label, act: func() tea.Cmd {
+			return m.openAuditBody(d, msg.record, rec.Part, rec.Label)
+		}})
 	}
 	m.dialog = d
 	return nil
@@ -537,7 +533,7 @@ func cardText(text string) string {
 // openAuditBody reads one recording of the record on the card, saying so on
 // the card while it does: the card is the whole window, so the status line is
 // not there to say it.
-func (m *Model) openAuditBody(from *dialog, record console.AuditRecord, part, label string) tea.Cmd {
+func (m *Model) openAuditBody(from *dialog, record console.AuditRecord, part console.AuditPart, label string) tea.Cmd {
 	a := m.audit
 	if a == nil {
 		return nil
@@ -557,18 +553,12 @@ func (m *Model) auditBody(msg auditBodyMsg) tea.Cmd {
 	if m.dialog != msg.from {
 		return nil
 	}
-	label := msg.part
-	for _, rec := range auditRecordings {
-		if rec.part == msg.part {
-			label = rec.label
-		}
-	}
 	if msg.err != nil {
-		msg.from.emphasis = label + ": " + msg.err.Error()
+		msg.from.emphasis = console.AuditRecordingUnreadable(msg.part, msg.err)
 		return nil
 	}
 	msg.from.emphasis = ""
-	d := m.readableDialog(strings.ToUpper(label[:1])+label[1:], cardText(msg.text))
+	d := m.readableDialog(console.AuditRecordingTitle(msg.part), cardText(msg.text))
 	d.titleRight = msg.record.ID
 	d.back = msg.from
 	m.dialog = d
@@ -663,7 +653,7 @@ func (a *auditScreen) view(st *styles, z *zones, width, height int, now time.Tim
 		foot = append(foot, st.statusER.Render(truncate(gap, width)))
 	}
 	if a.err != "" {
-		foot = append(foot, st.statusER.Render(truncate("the audit trails could not be read: "+a.err, width)))
+		foot = append(foot, st.statusER.Render(truncate(a.err, width)))
 	}
 	foot = foot[:min(len(foot), max(height-2, 0))]
 	// The search line is the last row of the list, where fzf keeps its
@@ -698,9 +688,9 @@ func (a *auditScreen) view(st *styles, z *zones, width, height int, now time.Tim
 	a.drawn = drawn{top: len(out), first: a.offset}
 	switch {
 	case len(a.records) == 0 && a.err == "":
-		note := "reading the audit trails…"
+		note := console.AuditReading
 		if a.polled {
-			note = "nothing recorded yet — records appear here as they are"
+			note = console.AuditNothing
 		}
 		if a.page > 0 {
 			out = append(out, st.dimText.Render(truncate("  "+note, width)))
@@ -749,7 +739,7 @@ func (a *auditScreen) row(st *styles, i, width int, now time.Time) string {
 		fold = "  "
 	case row.run():
 		r = a.rec(row.last)
-		summary = fmt.Sprintf("%s (count %d)", r.GroupSummary, row.last-row.first+1)
+		summary = console.AuditRunSummary(r, row.last-row.first+1)
 		fold = "▸ "
 		if a.expanded[a.rec(row.first).ID] {
 			fold = "▾ "
@@ -763,7 +753,7 @@ func (a *auditScreen) row(st *styles, i, width int, now time.Time) string {
 	// row as it reads, so a run is lit where its own line matches.
 	hits, _ := a.search.Match(matchText(r.Source, summary))
 	source := litRunes(pad(r.Source, auditSourceWidth), hits, 0, lipgloss.NewStyle(), st.match)
-	lead := marker + st.dimText.Render(pad(auditTime(r.Time, now), auditTimeWidth)) + "  " +
+	lead := marker + st.dimText.Render(pad(console.AuditTime(r.Time, now), auditTimeWidth)) + "  " +
 		source + "  " + st.dimText.Render(fold)
 	summary = truncate(summary, max(width-lipgloss.Width(lead), 1))
 	return padANSI(lead+litRunes(summary, hits, len([]rune(r.Source))+1, text, st.match), width)
@@ -792,15 +782,4 @@ func litRunes(text string, hits map[int]bool, from int, base, hit lipgloss.Style
 		i = j
 	}
 	return b.String()
-}
-
-// auditTime is when a record was recorded, as a clock time: the command
-// prints one while following for the reason this screen does, that a relative
-// time is stale the moment it is drawn. A record from another day says which.
-func auditTime(at, now time.Time) string {
-	at, now = at.Local(), now.Local()
-	if y, mo, d := at.Date(); y == now.Year() && mo == now.Month() && d == now.Day() {
-		return at.Format("15:04:05")
-	}
-	return at.Format("Jan 02 15:04")
 }

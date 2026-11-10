@@ -34,8 +34,10 @@ import (
 // composer (the options command's Args.Source); 13, the secrets page (the
 // credentials command's secrets, their bindings and cards, a secret's binding
 // history, its actions and its words) and what a form is about (Form.About);
-// 14, a question's count, sent again as it climbs (Question.Count).
-const Protocol = 14
+// 14, a question's count, sent again as it climbs (Question.Count); 15, the
+// audit view: the timeline's runs, times and note, and the audit command's
+// record read in full and its recordings.
+const Protocol = 15
 
 // Type names a message.
 type Type string
@@ -521,21 +523,58 @@ type Provisioning struct {
 	Step string `json:"step"`
 }
 
-// Audit is a box's audit timeline: its most recent records, oldest first,
-// and the trails the last read could not reach.
+// Audit is a box's audit timeline: its most recent records, oldest first;
+// the rows they are drawn as (console.AuditRuns), every record in exactly
+// one, in order; the trails the last read could not reach; and, with no
+// record, what the timeline says (console.AuditReading before any read has
+// finished, console.AuditNothing after).
 type Audit struct {
 	Records []AuditRecord `json:"records"`
+	Runs    []AuditRun    `json:"runs"`
 	Missing []string      `json:"missing"`
+	Note    string        `json:"note,omitempty"`
 }
 
-// AuditRecord is one line of the timeline.
+// AuditRecord is one line of the timeline. Clock is when it was recorded, as
+// the timeline says it (console.AuditTime) as of the snapshot: the timeline
+// is sent again as the day turns, so a record of the day before says which.
 type AuditRecord struct {
 	ID           string    `json:"id"`
 	Time         time.Time `json:"time"`
+	Clock        string    `json:"clock"`
 	Source       string    `json:"source"`
 	Summary      string    `json:"summary"`
 	Group        string    `json:"group,omitempty"`
 	GroupSummary string    `json:"groupSummary,omitempty"`
+}
+
+// AuditRun is one row of the timeline: Records[First] alone, or the run
+// First to Last folded behind one row that opens it, which says Summary
+// (console.AuditRunSummary) at the time of its newest record.
+type AuditRun struct {
+	First   int    `json:"first"`
+	Last    int    `json:"last"`
+	Summary string `json:"summary,omitempty"`
+}
+
+// AuditText is what the audit command read: a record in full, as `discobox
+// admin audit get` prints it, with the recordings it offers to read
+// (console.AuditRecordDetail.AuditRecordings); or one of those recordings,
+// as `discobox admin audit http --body` prints it, cut when it is long and
+// saying so, and with none. Title is what it is shown under.
+type AuditText struct {
+	Record     string            `json:"record"`
+	Part       console.AuditPart `json:"part,omitempty"`
+	Title      string            `json:"title"`
+	Text       string            `json:"text"`
+	Recordings []AuditRecording  `json:"recordings"`
+}
+
+// AuditRecording is one recording a record offers to read: the part the
+// audit command takes, and what it is called.
+type AuditRecording struct {
+	Part  console.AuditPart `json:"part"`
+	Label string            `json:"label"`
 }
 
 // Header is what a box's workspace header says (console.Header): each
@@ -756,6 +795,11 @@ type Args struct {
 	Secret       string               `json:"secret,omitempty"`
 	SecretAction console.SecretAction `json:"secretAction,omitempty"`
 	Binding      string               `json:"binding,omitempty"`
+	// Record names one record of the box's audit timeline for the audit
+	// command, which reads it in full; with Part, it reads that recording of
+	// it instead.
+	Record string            `json:"record,omitempty"`
+	Part   console.AuditPart `json:"part,omitempty"`
 }
 
 // Status is how a command ended.
@@ -825,6 +869,9 @@ type Result struct {
 	// SecretWords are what the secrets page says beside its secrets, sent
 	// with them and with a history.
 	SecretWords *SecretWords `json:"secretWords,omitempty"`
+	// Audit is what the audit command read of a record: the record in full,
+	// or one of its recordings.
+	Audit *AuditText `json:"audit,omitempty"`
 }
 
 // Tool is one of a box's tools as the tools menu lists it: what it is called

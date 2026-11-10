@@ -88,7 +88,11 @@ func (d *apiDataSource) AuditDetail(ctx context.Context, sandboxID, recordID str
 	if err != nil {
 		return console.AuditRecordDetail{}, err
 	}
-	return console.AuditRecordDetail{Text: out.String(), Recordings: recordings}, nil
+	detail := console.AuditRecordDetail{Text: out.String(), Recordings: make([]console.AuditPart, 0, len(recordings))}
+	for _, part := range recordings {
+		detail.Recordings = append(detail.Recordings, console.AuditPart(part))
+	}
+	return detail, nil
 }
 
 // auditBodyShown is the most of one recording the console draws. A card is
@@ -98,7 +102,7 @@ const auditBodyShown = 1 << 20
 // AuditBody is one recording of an http record, as `audit http --body` prints
 // it to a terminal: escaped, and laid out to be read when it is JSON the
 // recording holds whole.
-func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part string) (string, error) {
+func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID string, part console.AuditPart) (string, error) {
 	client, err := d.app.apiClient()
 	if err != nil {
 		return "", err
@@ -113,7 +117,7 @@ func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part
 	}
 	var body, spooled bytes.Buffer
 	shown := &cappedWriter{w: &body, room: auditBodyShown}
-	err = d.app.writeHTTPAuditArtifact(ctx, shown, &spooled, false, true, d.projectID, pool, sandboxID, id, part)
+	err = d.app.writeHTTPAuditArtifact(ctx, shown, &spooled, false, true, d.projectID, pool, sandboxID, id, string(part))
 	if err != nil && !errors.Is(err, errCapped) {
 		return "", err
 	}

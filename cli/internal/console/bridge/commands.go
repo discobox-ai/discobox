@@ -601,6 +601,42 @@ func (f *frontend) Tools(box console.Sandbox) outcome {
 	}
 }
 
+// Audit is a box's audit timeline: its view entered — counted as the
+// command's use, which its flow is — whose records the audit topic follows;
+// or, with a record in the args, that record read in full, with the
+// recordings it offers; with a part too, that recording of it read.
+func (f *frontend) Audit(box console.Sandbox) outcome {
+	a := f.c.Args
+	key := Key(box.Server, box.ID)
+	src := f.s.ds.ForServer(box.Server)
+	switch {
+	case a.Record == "":
+		f.s.reg.Use("audit")
+		return f.enterBox(box)
+	case a.Part == "":
+		return func() Result {
+			d, err := src.AuditDetail(f.ctx, box.ID, a.Record)
+			if err != nil {
+				return failed(console.AuditRecordUnreadable(a.Record, err))
+			}
+			text := AuditText{Record: a.Record, Title: console.AuditRecordTitle, Text: d.Text, Recordings: []AuditRecording{}}
+			for _, r := range d.AuditRecordings() {
+				text.Recordings = append(text.Recordings, AuditRecording{Part: r.Part, Label: r.Label})
+			}
+			return Result{Status: StatusDone, Box: key, Audit: &text}
+		}
+	}
+	return func() Result {
+		body, err := src.AuditBody(f.ctx, box.ID, a.Record, a.Part)
+		if err != nil {
+			return failed(console.AuditRecordingUnreadable(a.Part, err))
+		}
+		return Result{Status: StatusDone, Box: key, Audit: &AuditText{
+			Record: a.Record, Part: a.Part, Title: console.AuditRecordingTitle(a.Part), Text: body, Recordings: []AuditRecording{},
+		}}
+	}
+}
+
 // release lets go of a stream the app allocated for a session that is not
 // made: one refused fails with why, as a shell's does, and one no session
 // was wanted on is forgotten.
@@ -855,7 +891,6 @@ func (f *frontend) actionTargets() []console.Sandbox {
 func (f *frontend) Issue(box console.Sandbox) outcome               { return f.enterIfAble(box) }
 func (f *frontend) PullRequest(box console.Sandbox) outcome         { return f.enterIfAble(box) }
 func (f *frontend) FilesChanged(box console.Sandbox) outcome        { return f.enterIfAble(box) }
-func (f *frontend) Audit(box console.Sandbox) outcome               { return f.enterBox(box) }
 func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
 func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
 

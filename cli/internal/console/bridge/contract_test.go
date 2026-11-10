@@ -46,6 +46,9 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //     answers on ssh and git; b3, stopped, on neither.
 //   - The project has one secret, sec_gh (gh), bound to b1 as GH_TOKEN
 //     (bind_1), with one decision in its history. Unbinding asks first.
+//   - Every box's audit timeline is two http exchanges of one group, which
+//     fold into one run, then a credential lent. http-1's response body was
+//     recorded, and reads `{"login":"b1"}`.
 //
 // A create (new) is made on claude, the project's default, and makes the box
 // made: it reports the last draft the app sent as a step, and is taken. In the
@@ -102,6 +105,18 @@ func TestContractCore(t *testing.T) {
 	core.secretBindings = []console.SecretBinding{{ID: "bind_1", SecretID: "sec_gh", SecretName: "gh",
 		TargetKind: console.BindingSandbox, TargetID: "b1", Use: true, EnvVar: "GH_TOKEN"}}
 	core.history = []console.BindingDecision{{ID: "ev1", Event: "created", Actor: "ann", At: time.Unix(0, 0).UTC(), BindingID: "bind_1"}}
+	exchange := func(id string) console.AuditRecord {
+		return console.AuditRecord{ID: id, Time: time.Now(), Source: "http", Summary: "GET 200 https://api.github.com/user",
+			Group: "GET 200 api.github.com", GroupSummary: "GET 200 https://api.github.com"}
+	}
+	core.audit = []console.AuditUpdate{{Records: []console.AuditRecord{
+		exchange("http-1"), exchange("http-2"),
+		{ID: "creds-1", Time: time.Now(), Source: "creds", Summary: "github lent"},
+	}, Polled: true, Missing: []string{}}}
+	core.details = map[string]console.AuditRecordDetail{
+		"http-1": {Text: "GET https://api.github.com/user\n", Recordings: []console.AuditPart{console.AuditResponseBody}},
+	}
+	core.bodies = map[string]string{"http-1/response": `{"login":"b1"}`}
 	core.run = func(ctx context.Context, _ console.RunRequest, n *console.Narration) (console.Sandbox, error) {
 		core.mu.Lock()
 		draft := ""

@@ -81,7 +81,7 @@ func TestTheAuditScreenFollowsTheBoxOnScreen(t *testing.T) {
 		records := auditRecords("GET 200 https://api.github.com/user", "POST 201 https://api.anthropic.com/v1/messages")
 		deliverAudit(d, ds, console.AuditUpdate{Records: records})
 		frame = frameText(m)
-		for _, want := range []string{"GET 200 https://api.github.com/user", "❯ " + auditTime(records[1].Time, time.Now()), "following"} {
+		for _, want := range []string{"GET 200 https://api.github.com/user", "❯ " + console.AuditTime(records[1].Time, time.Now()), "following"} {
 			if !strings.Contains(frame, want) {
 				t.Fatalf("the timeline should show %q, with the cursor on the newest:\n%s", want, frame)
 			}
@@ -141,7 +141,7 @@ func TestTheAuditScreenOpensARecordAndClosesBackToTheBox(t *testing.T) {
 		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 
 		d.key("enter")
-		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
+		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == console.AuditRecordTitle })
 		if _, _, reads := ds.auditState(); len(reads) != 1 || reads[0] != records[0].ID {
 			t.Fatalf("read %v, want the highlighted record", reads)
 		}
@@ -216,7 +216,7 @@ func TestTheAuditScreenAnswersThePointer(t *testing.T) {
 		}
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
-		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
+		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == console.AuditRecordTitle })
 	})
 }
 
@@ -313,7 +313,7 @@ func TestTheAuditScreenOpensARun(t *testing.T) {
 		d.key("down")
 		d.key("down")
 		d.key("enter")
-		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
+		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == console.AuditRecordTitle })
 		if m.dialog.titleRight != records[1].ID {
 			t.Fatalf("opened %q, want the record under the cursor", m.dialog.titleRight)
 		}
@@ -346,13 +346,13 @@ func TestTheAuditScreenReadsARecordsBodies(t *testing.T) {
 		id := records[0].ID
 		ds.auditDetails = map[string]string{id: "record:   " + id + "\nmethod:   POST"}
 		ds.auditBodies = map[string]string{
-			id + "/" + console.AuditResponseBody: "{\n  \"id\": \"msg_01\"\n}",
-			id + "/" + console.AuditRequestBody:  "{\"model\": \"claude\"}",
+			id + "/" + string(console.AuditResponseBody): "{\n  \"id\": \"msg_01\"\n}",
+			id + "/" + string(console.AuditRequestBody):  "{\"model\": \"claude\"}",
 		}
 		d, m, _ := openAuditScreen(t, ds)
 		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 		d.key("enter")
-		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
+		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == console.AuditRecordTitle })
 		record := m.dialog
 
 		frame := plainFrame(m)
@@ -397,15 +397,15 @@ func TestTheAuditScreenSaysWhenABodyCannotBeRead(t *testing.T) {
 		records := auditRecords("GET 200 https://example.com/")
 		id := records[0].ID
 		ds.auditDetails = map[string]string{id: "record:   " + id}
-		ds.auditBodies = map[string]string{id + "/" + console.AuditResponseBody: ""}
+		ds.auditBodies = map[string]string{id + "/" + string(console.AuditResponseBody): ""}
 		d, m, _ := openAuditScreen(t, ds)
 		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 		d.key("enter")
-		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
-		delete(ds.auditBodies, id+"/"+console.AuditResponseBody)
+		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == console.AuditRecordTitle })
+		delete(ds.auditBodies, id+"/"+string(console.AuditResponseBody))
 		d.key("b")
 		d.wait("the error", func() bool { return strings.Contains(plainFrame(m), "response body: no response recorded") })
-		if m.dialog.title != auditTitle {
+		if m.dialog.title != console.AuditRecordTitle {
 			t.Fatal("a body that could not be read should leave the record up")
 		}
 	})

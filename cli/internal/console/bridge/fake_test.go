@@ -102,6 +102,13 @@ type fakeCore struct {
 	counts       []console.DirectoryTotal
 	measured     []string
 	walksStopped int
+	// audit is what FollowAudit delivers, in order, before it waits for
+	// its end, and auditErr what it then fails with; details and bodies are
+	// what AuditDetail and AuditBody read, by record ID (and part).
+	audit    []console.AuditUpdate
+	auditErr error
+	details  map[string]console.AuditRecordDetail
+	bodies   map[string]string
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -310,6 +317,36 @@ func (f *fakeCore) EditToolFile(ctx context.Context, tf console.ToolFile, n *con
 	changed := string(after) != tf.Default
 	f.call("edit tool %s %s changed=%v", tf.Tool, tf.Name, changed)
 	return changed, err
+}
+
+func (f *fakeCore) FollowAudit(ctx context.Context, id string, report func(console.AuditUpdate)) error {
+	f.call("audit %s", id)
+	for _, u := range f.audit {
+		report(u)
+	}
+	if f.auditErr != nil {
+		return f.auditErr
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (f *fakeCore) AuditDetail(_ context.Context, id, record string) (console.AuditRecordDetail, error) {
+	f.call("audit get %s %s", id, record)
+	d, ok := f.details[record]
+	if !ok {
+		return d, errors.New("no such record")
+	}
+	return d, nil
+}
+
+func (f *fakeCore) AuditBody(_ context.Context, id, record string, part console.AuditPart) (string, error) {
+	f.call("audit body %s %s %s", id, record, part)
+	b, ok := f.bodies[record+"/"+string(part)]
+	if !ok {
+		return "", errors.New("not recorded")
+	}
+	return b, nil
 }
 
 func (f *fakeCore) HarnessChanges(_ context.Context, id string) (console.HarnessChanges, error) {

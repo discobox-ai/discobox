@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 14;
+pub const PROTOCOL: i64 = 15;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
@@ -1096,21 +1096,32 @@ pub struct Provisioning {
     pub step: String,
 }
 
-/// Audit is a box's audit timeline: its most recent records, oldest first, and the trails the last
-/// read could not reach.
+/// Audit is a box's audit timeline: its most recent records, oldest first; the rows they are drawn
+/// as (console.AuditRuns), every record in exactly one, in order; the trails the last read could
+/// not reach; and, with no record, what the timeline says (console.AuditReading before any read has
+/// finished, console.AuditNothing after).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Audit {
     pub records: Vec<AuditRecord>,
 
+    pub runs: Vec<AuditRun>,
+
     pub missing: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub note: String,
 }
 
-/// AuditRecord is one line of the timeline.
+/// AuditRecord is one line of the timeline. Clock is when it was recorded, as the timeline says it
+/// (console.AuditTime) as of the snapshot: the timeline is sent again as the day turns, so a record
+/// of the day before says which.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AuditRecord {
     pub id: String,
 
     pub time: String,
+
+    pub clock: String,
 
     pub source: String,
 
@@ -1121,6 +1132,19 @@ pub struct AuditRecord {
 
     #[serde(rename = "groupSummary", default, skip_serializing_if = "is_default")]
     pub group_summary: String,
+}
+
+/// AuditRun is one row of the timeline: Records[First] alone, or the run First to Last folded
+/// behind one row that opens it, which says Summary (console.AuditRunSummary) at the time of its
+/// newest record.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AuditRun {
+    pub first: i64,
+
+    pub last: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub summary: String,
 }
 
 /// Header is what a box's workspace header says (console.Header): each field the core's answer,
@@ -1507,6 +1531,14 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub binding: String,
+
+    /// Record names one record of the box's audit timeline for the audit command, which reads it in
+    /// full; with Part, it reads that recording of it instead.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub record: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<AuditPart>,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -1648,6 +1680,31 @@ impl SecretAction {
     }
 }
 
+/// AuditPart is one recording an http record can have, as AuditBody names it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AuditPart {
+    #[default]
+    #[serde(rename = "request")]
+    Request,
+
+    #[serde(rename = "response")]
+    Response,
+
+    #[serde(rename = "stream")]
+    Stream,
+}
+
+impl AuditPart {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AuditPart::Request => "request",
+            AuditPart::Response => "response",
+            AuditPart::Stream => "stream",
+        }
+    }
+}
+
 /// Result ends a command (or an upload or a follow, by its ID).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Result {
@@ -1728,6 +1785,11 @@ pub struct Result {
     /// history.
     #[serde(rename = "secretWords", default, skip_serializing_if = "Option::is_none")]
     pub secret_words: Option<SecretWords>,
+
+    /// Audit is what the audit command read of a record: the record in full, or one of its
+    /// recordings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audit: Option<AuditText>,
 }
 
 /// Status is how a command ended.
@@ -2146,6 +2208,33 @@ pub struct SecretWords {
 
     #[serde(rename = "historyNote")]
     pub history_note: String,
+}
+
+/// AuditText is what the audit command read: a record in full, as `discobox admin audit get` prints
+/// it, with the recordings it offers to read (console.AuditRecordDetail.AuditRecordings); or one of
+/// those recordings, as `discobox admin audit http --body` prints it, cut when it is long and
+/// saying so, and with none. Title is what it is shown under.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AuditText {
+    pub record: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<AuditPart>,
+
+    pub title: String,
+
+    pub text: String,
+
+    pub recordings: Vec<AuditRecording>,
+}
+
+/// AuditRecording is one recording a record offers to read: the part the audit command takes, and
+/// what it is called.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AuditRecording {
+    pub part: AuditPart,
+
+    pub label: String,
 }
 
 /// Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again,

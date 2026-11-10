@@ -1381,6 +1381,121 @@ func TestToolsAreTheCores(t *testing.T) {
 	}
 }
 
+// A box's audit timeline is the core's: its records with their times as
+// the timeline says them, the runs they fold into, what the trails the last
+// read missed are, and what it says with no record; a whole read failing is
+// said in the core's words.
+func TestTheAuditTimelineIsTheCores(t *testing.T) {
+	at := time.Now().Add(-time.Minute)
+	rec := func(id, group string) console.AuditRecord {
+		return console.AuditRecord{ID: id, Time: at, Source: "http", Summary: "GET 200 " + id, Group: group, GroupSummary: "GET 200 api"}
+	}
+	core := newFakeCore("home", running("b1"))
+	core.audit = []console.AuditUpdate{
+		{Polled: true, Missing: []string{}},
+		{Records: []console.AuditRecord{rec("http-1", "g"), rec("http-2", "g"), rec("creds-1", "")}},
+		{Records: []console.AuditRecord{rec("http-3", "g")}, Polled: true, Missing: []string{"the execs trail could not be read"}},
+	}
+	core.auditErr = errors.New("no route to the pool")
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicAudit, Box: "b1"}})
+	if tl := a.expect(TypeSnapshot).Snapshot.Audit; tl == nil || len(tl.Records) != 0 || tl.Note != console.AuditReading {
+		t.Fatalf("before a read: %+v", tl)
+	}
+	if tl := a.expect(TypeSnapshot).Snapshot.Audit; tl == nil || len(tl.Records) != 0 || tl.Note != console.AuditNothing {
+		t.Fatalf("a read with nothing: %+v", tl)
+	}
+	a.expect(TypeSnapshot)
+	tl := a.expect(TypeSnapshot).Snapshot.Audit
+	want := []AuditRun{{First: 0, Last: 1, Summary: "GET 200 api (count 2)"}, {First: 2, Last: 2}, {First: 3, Last: 3}}
+	if tl == nil || len(tl.Records) != 4 || !reflect.DeepEqual(tl.Runs, want) || tl.Note != "" ||
+		!reflect.DeepEqual(tl.Missing, []string{"the execs trail could not be read"}) {
+		t.Fatalf("timeline %+v", tl)
+	}
+	if r := tl.Records[0]; r.ID != "http-1" || r.Clock != console.AuditTime(at, time.Now()) || r.Group != "g" {
+		t.Fatalf("a record %+v", r)
+	}
+	if s := a.expect(TypeSnapshot).Snapshot; s.Error != "the audit trails could not be read: no route to the pool" {
+		t.Fatalf("a failed read: %+v", s)
+	}
+}
+
+// The timeline is sent again just past the next local midnight, whatever
+// time of day it is followed from.
+func TestTheAuditTimelineIsSentAgainAsTheDayTurns(t *testing.T) {
+	for _, now := range []time.Time{
+		time.Date(2026, 11, 10, 23, 59, 30, 0, time.Local),
+		time.Date(2026, 11, 10, 0, 0, 0, 0, time.Local),
+		time.Date(2026, 12, 31, 12, 0, 0, 0, time.Local),
+	} {
+		at := now.Add(untilTomorrow(now))
+		y, m, d := now.Date()
+		if want := time.Date(y, m, d+1, 0, 0, 1, 0, time.Local); !at.Equal(want) {
+			t.Fatalf("from %v: sent again at %v, want %v", now, at, want)
+		}
+	}
+}
+
+// Once the whole read has failed nothing more is sent, the day turning
+// included: a timeline sent after the failure would say it is reading again.
+func TestNothingFollowsAFailedAuditRead(t *testing.T) {
+	dayTurns = func(time.Time) time.Duration { return 20 * time.Millisecond }
+	t.Cleanup(func() { dayTurns = untilTomorrow })
+	core := newFakeCore("home", running("b1"))
+	core.auditErr = errors.New("no route to the pool")
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicAudit, Box: "b1"}})
+	a.expect(TypeSnapshot)
+	if s := a.expect(TypeSnapshot).Snapshot; s.Error == "" {
+		t.Fatalf("the failure: %+v", s)
+	}
+	a.quiet(200 * time.Millisecond)
+}
+
+// The audit command enters the app's view, and with a record reads it in
+// full with the recordings it offers, response first, or with a part too,
+// that recording; what cannot be read is said against the record or part.
+func TestTheAuditCommandReadsARecordAndItsRecordings(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.details = map[string]console.AuditRecordDetail{
+		"http-1":  {Text: "GET https://api.github.com/user\n200 OK\n", Recordings: []console.AuditPart{console.AuditRequestBody, console.AuditResponseBody}},
+		"creds-1": {Text: "a credential lent"},
+	}
+	core.bodies = map[string]string{"http-1/response": `{"login":"x"}`}
+	a := dial(t, core)
+	a.hello()
+	audit := func(args Args) Result {
+		return a.result(a.command(Command{Command: "audit", Targets: []string{"b1"}, Args: args}))
+	}
+	if r := audit(Args{}); r.Status != StatusEnter || r.Box != "b1" || r.Audit != nil {
+		t.Fatalf("the view: %+v", r)
+	}
+	r := audit(Args{Record: "http-1"})
+	want := []AuditRecording{{Part: "response", Label: "response body"}, {Part: "request", Label: "request body"}}
+	if r.Status != StatusDone || r.Audit == nil || r.Audit.Record != "http-1" || r.Audit.Title != "Audit record" ||
+		!strings.HasPrefix(r.Audit.Text, "GET https://") || !reflect.DeepEqual(r.Audit.Recordings, want) {
+		t.Fatalf("a record: %+v / %+v", r, r.Audit)
+	}
+	if r := audit(Args{Record: "creds-1"}); r.Status != StatusDone || r.Audit == nil || len(r.Audit.Recordings) != 0 {
+		t.Fatalf("a record with no recordings: %+v", r)
+	}
+	r = audit(Args{Record: "http-1", Part: "response"})
+	if r.Status != StatusDone || r.Audit == nil || r.Audit.Title != "Response body" || r.Audit.Text != `{"login":"x"}` || r.Audit.Part != "response" {
+		t.Fatalf("a body: %+v / %+v", r, r.Audit)
+	}
+	if r := audit(Args{Record: "gone"}); r.Status != StatusFailed || r.Why != "gone: no such record" {
+		t.Fatalf("a record gone: %+v", r)
+	}
+	if r := audit(Args{Record: "http-1", Part: "request"}); r.Status != StatusFailed || r.Why != "request body: not recorded" {
+		t.Fatalf("a body not read: %+v", r)
+	}
+	if !slices.Contains(core.called(), "audit body b1 http-1 response") {
+		t.Fatalf("calls %q", core.called())
+	}
+}
+
 // The app is handed a copy of a file to edit, never the file: what was saved
 // there is written back once it is done with, and nothing once it is given
 // up, so the app's Cancel keeps the file as it was even for a tool's file,

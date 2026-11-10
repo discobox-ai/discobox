@@ -1194,19 +1194,19 @@ func (f *fakeSource) AuditDetail(_ context.Context, _, recordID string) (console
 		return console.AuditRecordDetail{}, fmt.Errorf("no audit record %s", recordID)
 	}
 	detail := console.AuditRecordDetail{Text: text}
-	for _, part := range []string{console.AuditRequestBody, console.AuditResponseBody, console.AuditStream} {
-		if _, ok := f.auditBodies[recordID+"/"+part]; ok {
+	for _, part := range []console.AuditPart{console.AuditRequestBody, console.AuditResponseBody, console.AuditStream} {
+		if _, ok := f.auditBodies[recordID+"/"+string(part)]; ok {
 			detail.Recordings = append(detail.Recordings, part)
 		}
 	}
 	return detail, nil
 }
 
-func (f *fakeSource) AuditBody(_ context.Context, _, recordID, part string) (string, error) {
+func (f *fakeSource) AuditBody(_ context.Context, _, recordID string, part console.AuditPart) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.auditReads = append(f.auditReads, recordID+"/"+part)
-	body, ok := f.auditBodies[recordID+"/"+part]
+	f.auditReads = append(f.auditReads, recordID+"/"+string(part))
+	body, ok := f.auditBodies[recordID+"/"+string(part)]
 	if !ok {
 		return "", fmt.Errorf("no %s recorded for %s", part, recordID)
 	}

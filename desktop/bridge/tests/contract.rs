@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
+    Answer, Args, AuditPart, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
@@ -611,6 +611,48 @@ fn secrets_reach_the_app() {
     let r = cli.result(id);
     assert_eq!((r.status, r.note.as_str(), r.secret.as_str()), (Status::Done, "unbound", "sec_gh"));
     assert_eq!((r.secrets[0].standing, r.secrets[0].bindings.len()), (SecretStanding::Unbound, 0));
+}
+
+// A box's audit timeline reaches the app as the core's: first what it says before any read, then
+// its records with their times and the runs they fold into with what a run says; and the audit
+// command reads a record in full, with the recordings it offers, and a recording.
+#[test]
+fn the_audit_timeline_and_its_records_reach_the_app() {
+    let mut cli = Cli::start("default");
+    let id = cli.command("audit", &["b1"], pane("b1"), Args::default());
+    let r = cli.result(id);
+    assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "b1"));
+
+    cli.subscribe(1, Topic::Audit, "b1");
+    let first = cli.take("the timeline before a read", |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 1 => s.audit.clone(),
+        _ => None,
+    });
+    assert_eq!((first.records.len(), first.note.as_str()), (0, "reading the audit trails…"));
+    let timeline = cli.take("the timeline", |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 1 => s.audit.clone().filter(|a| !a.records.is_empty()),
+        _ => None,
+    });
+    let ids: Vec<_> = timeline.records.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["http-1", "http-2", "creds-1"]);
+    assert!(!timeline.records[0].clock.is_empty() && timeline.note.is_empty());
+    let runs: Vec<_> = timeline.runs.iter().map(|r| (r.first, r.last, r.summary.as_str())).collect();
+    assert_eq!(runs, [(0, 1, "GET 200 https://api.github.com (count 2)"), (2, 2, "")]);
+
+    let id = cli.command("audit", &["b1"], pane("b1"), Args { record: "http-1".into(), ..Default::default() });
+    let r = cli.result(id);
+    let text = r.audit.expect("the record");
+    assert_eq!((r.status, text.title.as_str(), text.text.as_str()), (Status::Done, "Audit record", "GET https://api.github.com/user\n"));
+    let recordings: Vec<_> = text.recordings.iter().map(|r| (r.part, r.label.as_str())).collect();
+    assert_eq!(recordings, [(AuditPart::Response, "response body")]);
+    assert_eq!(text.part, None);
+
+    let id = cli.command("audit", &["b1"], pane("b1"), Args { record: "http-1".into(), part: Some(AuditPart::Response), ..Default::default() });
+    let body = cli.result(id).audit.expect("the body");
+    assert_eq!((body.title.as_str(), body.text.as_str(), body.part), ("Response body", "{\"login\":\"b1\"}", Some(AuditPart::Response)));
+    let id = cli.command("audit", &["b1"], pane("b1"), Args { record: "gone".into(), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.why.as_str()), (Status::Failed, "gone: no such record"));
 }
 
 // A box's primary is read for what its program says of itself: the header says the poll's

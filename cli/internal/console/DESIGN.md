@@ -500,6 +500,25 @@ second policy.
 - Which key or menu entry takes each action (`SecretAction`) is the
   renderer's.
 
+## Audit
+
+`audit.go` (876 §1). The audit timeline's rules, which the TUI's audit screen
+and the desktop's audit view both draw; which trails, and how they are read,
+is the data source's (`FollowAudit`, the reader `discobox admin audit ls
+--follow` prints from):
+
+- **Which records fold is the core's** (`AuditRuns`): consecutive records of
+  one `Group` are one row, never across a record between them;
+  `AuditRunSummary` is what that row says.
+- **A record's time is a clock time** (`AuditTime`), with the date for one
+  from another day.
+- **What a record offers to read** (`AuditRecordDetail.AuditRecordings`): the
+  recordings it has, response body first, each with its label; the titles a
+  record and a recording are read under (`AuditRecordTitle`,
+  `AuditRecordingTitle`), and what the timeline says with nothing to show
+  (`AuditReading`, `AuditNothing`, `AuditUnreadable`). The cursor, following,
+  searching and which key reads what are each renderer's.
+
 ## Narration and questions
 
 `narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks

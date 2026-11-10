@@ -134,7 +134,10 @@
   bridge would at the same moment. That includes what another subscription
   holds: `follow` points a URL through a forward only while the box's header
   topic is followed, and the mock's first `follow` rewrote regardless, so a
-  desktop that stopped following the header would still have passed.
+  desktop that stopped following the header would still have passed. The
+  audit topic's mock first answered with the whole timeline, skipping the
+  bridge's "reading the audit trails…" snapshot, so the desktop's empty
+  timeline went untested.
 - **A command sends nothing else while its form is up.** The app takes a
   submitted form down once its command asks, fills another form or reports a
   step (`desktop/src/sheet.rs`, `went_on`): that is how a create's card gives
