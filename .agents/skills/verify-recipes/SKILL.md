@@ -332,6 +332,15 @@ themes, to `build/desktop/<scene>-<dark|light>.png`.
   mock).
 - `desktop/target` is gigabytes; `.dockerignore` keeps it out of the
   root-context bundle builds.
+- The harnesses page (Console menu → harnesses; the arrows, Enter for the
+  card, Shift+F10 for a harness's actions) runs against the dev server's
+  built-in harnesses. A file edit sends `edit` with a temp path (stderr's
+  `← {"type":"edit"…}`); `xdg-open` opens it in Chromium here, as the box has
+  no desktop text editor. Kill that Chromium by its pid, write the temp file
+  from the shell, and press Done (Enter) or Esc in the app; `admin harness
+  get <slug> -o json | jq .fileOverrides` shows what was saved. Reset with
+  "your files too" puts the harness back. No default can be unset, so the
+  default the run set stays.
 
 # Verifying a skill change (`.agents/skills`, discobox-ai/skills)
 
