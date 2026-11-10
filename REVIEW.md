@@ -25,6 +25,16 @@ Global review expectations:
   the flake had that shell, and an agent follows a recipe literally.
   The change that lands what such a doc waits on rewrites it too: the
   recipe kept its workaround after the shell landed until review caught it.
+- Changing what a desktop task makes or where (`desktop:snap`'s file names, a
+  shell, a flag) rewrites `.agents/skills/verify-recipes` in the same change:
+  that recipe has lagged the desktop's build twice, the second time still
+  naming `build/desktop/<scene>.png` after the snapshots became
+  `<scene>-<dark|light>.png`.
+- Terminal content in the desktop app never springs (ADR 26-11-07-363 §1): its
+  element sets both `.instant_changes()` and `.motion(Spring::NONE)`.
+  `instant_changes` lands layout, opacity and transforms at once but leaves
+  colours on the spring they inherit, so without `Spring::NONE` every cell
+  background a program repaints fades in.
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

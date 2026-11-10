@@ -5,10 +5,10 @@
 //! TUI's own entries, rules and reasons), natively on macOS and drawn in the window elsewhere,
 //! where a disabled entry says why it is.
 
-use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Span, Tx, col, el, rich, row, spacer, text, text_input};
+use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
 use crate::wire::{Entry, SpecTarget};
-use crate::{Focus, Menu, State, keys, run_command, theme};
+use crate::{Focus, Menu, State, icons, keys, run_command, theme, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
@@ -61,17 +61,20 @@ pub fn menu_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
 
 pub fn menu_view(s: &State) -> Option<El> {
     let m = s.menu.as_ref()?;
-    let mut list = col().key("box-menu").w(320.0).padding(6.0).gap(2.0).radius(10.0)
-        .fill(theme::hex(0x18181b)).border(1.0, theme::inactive()).shadow(12.0, 36.0, Color::BLACK.alpha(0.5));
+    let mut list = col().key("box-menu").w(320.0).padding(6.0).gap(2.0).radius(theme::r_card())
+        .fill(theme::raised()).border(theme::stroke_quiet(), theme::line_bright()).shadow(12.0, 36.0, Color::BLACK.alpha(0.5));
     for (i, a) in m.actions.iter().enumerate() {
         let on = i == m.picked;
         let ink = if a.enabled { theme::text() } else { theme::dim() };
         let sub = if a.enabled { a.detail.clone() } else { a.why.clone() };
         let (sandbox, id, enabled) = (m.sandbox.clone(), a.command.clone(), a.enabled);
-        list = list.child(col().key(format!("menu-{}", a.command)).w_full().px(10.0).py(5.0).radius(6.0)
-            .fill(if on && a.enabled { theme::mark().alpha(0.22) } else { Color::TRANSPARENT })
-            .child(row().w_full().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer())
-                .child(text(keys::shortcut_of(s, &a.command).unwrap_or_default()).font(theme::UI_SMALL).color(theme::dim())))
+        let mut head = row().w_full().center_y().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer());
+        if let Some(k) = keys::shortcut_of(s, &a.command) {
+            head = head.child(view::keycap(k));
+        }
+        list = list.child(col().key(format!("menu-{}", a.command)).w_full().px(10.0).py(5.0).gap(2.0).radius(theme::r_row())
+            .fill(if on && a.enabled { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
+            .child(head)
             .child(text(sub).font(theme::UI_SMALL).color(if a.enabled { theme::grey() } else { theme::warn().alpha(0.8) }).truncate())
             .on_hover(move |s: &mut State| if let Some(m) = s.menu.as_mut() { m.picked = i })
             .on_press_tx(move |s: &mut State, tx: &mut Tx| {
@@ -161,30 +164,29 @@ pub fn palette_view(s: &State) -> Option<El> {
     let mut list = col().w_full().gap(1.0);
     for (i, it) in all.iter().enumerate().take(14) {
         let on = i == p.picked;
-        let glyph = if it.sandbox.is_some() { "▸ " } else { "" };
-        let label = format!("{glyph}{}", it.title);
-        let n = label.len();
-        let g = it.group.clone();
-        let line = rich(format!("{label}   {g}"), vec![
-            Span::new(0, n).color(theme::text()),
-            Span::new(n, n + 3 + g.len()).color(theme::dim()),
-        ]).font(theme::UI);
-        list = list.child(row().key(format!("pal-{i}")).w_full().h(30.0).px(12.0).center_y().radius(6.0)
-            .fill(if on { theme::mark().alpha(0.22) } else { Color::TRANSPARENT })
-            .child(line).child(spacer())
-            .child(text(it.shortcut.clone().unwrap_or_default()).font(theme::UI_SMALL).color(theme::grey()))
+        let glyph = if it.sandbox.is_some() { &icons::BOX } else { &icons::COMMAND };
+        let mut line = row().key(format!("pal-{i}")).w_full().h(30.0).px(12.0).gap(10.0).center_y().radius(theme::r_row())
+            .fill(if on { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
+            .child(icon(glyph, 14.0).color(if on { theme::mark() } else { theme::grey() }))
+            .child(text(it.title.clone()).font(theme::UI).color(theme::text()))
+            .child(text(it.group.clone()).font(theme::UI_SMALL).color(theme::dim()))
+            .child(spacer());
+        if let Some(k) = &it.shortcut {
+            line = line.child(view::keycap(k.clone()));
+        }
+        list = list.child(line
             .on_hover(move |s: &mut State| if let Some(p) = s.palette.as_mut() { p.picked = i })
             .on_press_tx(move |s: &mut State, tx: &mut Tx| pick(s, i, tx)));
     }
     if all.is_empty() {
         list = list.child(text("nothing matches").font(theme::UI).color(theme::dim()).padding(12.0));
     }
-    let panel = col().key("palette").w(620.0).padding(8.0).gap(6.0).radius(12.0)
-        .fill(theme::hex(0x18181b)).border(1.0, theme::mark().alpha(0.6)).shadow(16.0, 48.0, Color::BLACK.alpha(0.55))
-        .child(row().w_full().h(36.0).px(10.0).gap(10.0).center_y().radius(8.0).fill(theme::hex(0x0f0f12))
-            .child(text("⌕").font(theme::UI).color(theme::grey())).child(field))
+    let panel = col().key("palette").w(620.0).padding(8.0).gap(6.0).radius(theme::r_card())
+        .fill(theme::raised()).border(theme::stroke_focus(), theme::mark()).shadow(16.0, 48.0, Color::BLACK.alpha(0.55))
+        .child(row().w_full().h(36.0).px(10.0).gap(10.0).center_y().radius(theme::r_row()).fill(theme::sunken())
+            .child(icon(&icons::SEARCH, 16.0).color(theme::grey())).child(field))
         .child(list);
-    Some(el().w_full().h_full().absolute(0.0, 0.0).fill(Color::BLACK.alpha(0.35))
+    Some(el().w_full().h_full().absolute(0.0, 0.0).fill(theme::bg().alpha(0.6))
         .on_press(|s: &mut State| s.palette = None)
         .child(row().w_full().pt(90.0).items_start().child(spacer()).child(panel.on_press(|_: &mut State| {})).child(spacer())))
 }

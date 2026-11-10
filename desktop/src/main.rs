@@ -10,11 +10,14 @@
 //! `--snap console.png --scene workspace`.
 
 mod backend;
-mod keys;
-mod logo;
-mod overlay;
 #[cfg(test)]
 mod command_tests;
+mod icons;
+#[cfg(test)]
+mod identity_tests;
+mod keys;
+mod mark;
+mod overlay;
 #[cfg(test)]
 mod parity_tests;
 mod term;
@@ -163,7 +166,7 @@ const DEFAULT_SIZE: (u16, u16) = (100, 30);
 impl State {
     fn new() -> State {
         let (backend, spec, inbox, bridged) = BOOT.lock().unwrap().take().unwrap_or_else(boot_mock);
-        theme::set_tokens(&spec.colors);
+        theme::set_tokens(&spec);
         let mut s = State {
             backend, inbox, spec, boxes: vec![], cursor: 0, workspaces: HashMap::new(), live: None, focus: Focus::List,
             sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), next_id: 1,
@@ -708,8 +711,10 @@ fn main() {
 
     let mut app = App::new(AppSpec::<State> {
         min_size: Some((760.0, 480.0)),
+        // Every scene is drawn in both themes by `desktop:snap` (`--theme dark|light`).
         scenes: &[
             // A scene is one frame: what the mock answered is taken before it is drawn.
+            ("list", |_| {}),
             ("workspace", |s| {
                 s.open_box(0);
                 s.new_session(true);
@@ -720,7 +725,16 @@ fn main() {
                 poll(s, 0.0, &mut Tx::default());
                 s.palette = Some(Palette { query: TextEdit::new(""), picked: 0 });
             }),
+            ("menu", |s| {
+                s.open_box(0);
+                poll(s, 0.0, &mut Tx::default());
+                let id = s.boxes[0].key.clone();
+                s.open_menu(id, (420.0, 140.0));
+                poll(s, 0.0, &mut Tx::default());
+            }),
         ],
+        fonts: theme::FONTS,
+        families: (theme::FAMILY, theme::FAMILY),
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),

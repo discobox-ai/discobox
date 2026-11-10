@@ -1,17 +1,20 @@
 //! Drawing: the list of every box, and a box's workspace — the sidebar of boxes down the left
-//! and the box's terminals in two tabbed columns right of it. The shapes are the TUI's:
-//! rounded frames whose tabs ride the top border, `[+][x]` buttons, a header row above. Where
-//! the TUI has a hint line of leader keys, this has the desktop's own shortcuts.
+//! and the box's terminals in two tabbed columns right of it. The structure is the TUI's: framed
+//! columns with their sessions on the frame, a gold title band, a pink focus. The materials are
+//! a desktop app's (ADR 26-11-07-363 §1): rounded vector frames, tab chips set into the frame's
+//! top edge, icon buttons with tooltips, keycaps, rounded selections, the mark as vector art,
+//! and spring motion. Nothing here types out the TUI's brackets, box drawing or blocks.
 
-use rune::{Color, Cx, El, PointerPress, Span, Tx, col, el, rich, row, spacer, text, text_input};
+use rune::{Color, Cx, El, Icon, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
 
 use crate::wire::{Box as Sandbox, TabKind};
 use crate::theme::{self, CELL_H};
-use crate::{Focus, Side, State, Workspace, keys, logo, overlay, run_command};
+use crate::{Focus, Side, State, Workspace, icons, keys, mark, overlay, run_command};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
-const TITLE_H: f32 = 20.0;
+/// A tab chip's height; half of it rides above the frame's top edge.
+const CHIP_H: f32 = 22.0;
 
 /// Sections in first-seen order, and a box nested under the box that created it.
 pub fn list_order(boxes: Vec<Sandbox>) -> Vec<Sandbox> {
@@ -37,7 +40,7 @@ pub fn list_order(boxes: Vec<Sandbox>) -> Vec<Sandbox> {
 fn glyph(s: &State, agent: bool, state: &str) -> (String, Color) {
     let table = if agent { &s.spec.agents } else { &s.spec.states };
     match table.get(state) {
-        Some(g) => (g.glyph.clone(), theme::token(&g.color, 0xb0a0bf)),
+        Some(g) => (g.glyph.clone(), if g.color.is_empty() { theme::text() } else { theme::token(&g.color) }),
         None => ((if agent { " " } else { "○" }).into(), theme::dim()),
     }
 }
@@ -46,68 +49,83 @@ fn t(s: impl Into<String>, c: Color) -> El { text(s).font(theme::UI).color(c) }
 
 fn source_label(b: &Sandbox) -> String { if b.source.is_empty() { "no source".into() } else { b.source.clone() } }
 
-/// `label shortcut · label shortcut`: the commands that matter here, with their keys.
-fn shortcut_hints(s: &State, ids: &[&str]) -> El {
-    let mut out = String::new();
-    let mut spans = vec![];
-    for id in ids {
-        let (Some(label), Some(k)) = (keys::label_of(&s.spec, id), keys::shortcut_of(s, id)) else { continue };
-        if !out.is_empty() {
-            let a = out.len();
-            out.push_str("   ·   ");
-            spans.push(Span::new(a, out.len()).color(theme::inactive()));
-        }
-        let a = out.len();
-        out.push_str(&label.to_lowercase());
-        spans.push(Span::new(a, out.len()).color(theme::dim()));
-        let a = out.len();
-        out.push(' ');
-        out.push_str(&k);
-        spans.push(Span::new(a, out.len()).color(theme::grey()));
-    }
-    rich(out, spans).font(theme::UI_SMALL).truncate()
+/// A shortcut as a keycap: mono, a 1 pt edge with a 2 pt bottom, 4 pt corners.
+pub fn keycap(k: impl Into<String>) -> El {
+    el().radius(theme::r_key()).fill(theme::line_bright()).pt(1.0).px(1.0).pb(2.0)
+        .child(text(k).font(theme::UI_SMALL).color(theme::grey()).px(5.0).radius(theme::r_key() - 1.0).fill(theme::raised()))
 }
 
-fn status_line(s: &State, ids: &[&str]) -> El {
+/// The status line: a message, when there is one. Shortcuts are on the controls' tooltips, the
+/// sidebar's and menus' keycaps and the palette's shortcut column (ADR 26-11-07-363 §1).
+fn status_line(s: &State) -> El {
     match &s.message {
         Some(m) => t(m.clone(), theme::warn()).font(theme::UI_SMALL).truncate(),
-        None => shortcut_hints(s, ids),
+        None => el(),
     }
 }
 
-/// A rounded frame whose title and buttons ride its top border, as the TUI draws a box.
+/// A control drawn as its icon, with a tooltip naming what it does and its shortcut.
+fn icon_button(key: impl Into<String>, glyph: &'static Icon, tip: Option<String>) -> El {
+    let b = el().key(key.into()).size(24.0, 22.0).center().radius(theme::r_row()).fill(theme::raised())
+        .hover(theme::text().alpha(0.08)).press(theme::text().alpha(0.16)).motion(theme::SNAPPY)
+        .cursor(rune::Cursor::Pointer)
+        .child(icon(glyph, 14.0).color(theme::grey()));
+    match tip {
+        Some(t) => b.help(t),
+        None => b,
+    }
+}
+
+/// What a control does, and its shortcut where it has one.
+fn tip(s: &State, what: &str, id: &str) -> Option<String> {
+    Some(match keys::shortcut_of(s, id) {
+        Some(k) => format!("{what}  {k}"),
+        None => what.to_string(),
+    })
+}
+
+/// A rounded vector frame: the accent at 1.5 pt when focused, the line colour at 1 pt when not.
+/// Its tab chips sit in its top edge on the left, its buttons on the right.
 fn frame(key: impl Into<String>, focused: bool, title: Option<El>, buttons: Option<El>, body: El) -> El {
-    let c = if focused { theme::mark() } else { theme::inactive() };
-    let mut outer = el().key(key.into()).w_full().h_full().pt(TITLE_H / 2.0).min_w(0.0).min_h(0.0)
-        .child(col().w_full().h_full().radius(10.0).border(1.0, c).pt(TITLE_H / 2.0 + 4.0).pb(8.0).px(10.0).min_h(0.0)
-            .motion(rune::tok::motion::SNAPPY)
+    let (w, c) = if focused { (theme::stroke_focus(), theme::mark()) } else { (theme::stroke_quiet(), theme::line()) };
+    let mut outer = el().key(key.into()).w_full().h_full().pt(CHIP_H / 2.0).min_w(0.0).min_h(0.0)
+        .child(col().w_full().h_full().radius(theme::r_frame()).fill(theme::raised()).border(w, c)
+            .pt(CHIP_H / 2.0 + 6.0).pb(8.0).px(10.0).min_h(0.0)
+            .motion(theme::SNAPPY)
             .child(body));
     if let Some(title) = title {
-        outer = outer.child(row().absolute(18.0, 0.0).h(TITLE_H).px(4.0).gap(2.0).center_y().fill(theme::bg()).child(title));
+        outer = outer.child(row().absolute(14.0, 0.0).h(CHIP_H).gap(4.0).center_y().child(title));
     }
     if let Some(b) = buttons {
-        outer = outer.child(row().pin(None, Some(0.0), Some(18.0), None).h(TITLE_H).px(4.0).center_y().fill(theme::bg()).child(b));
+        outer = outer.child(row().pin(None, Some(0.0), Some(14.0), None).h(CHIP_H).gap(4.0).center_y().child(b));
     }
     outer
 }
 
-/// `[ label ]` in the frame's colour, the label bold when it is the one shown.
-fn tab(label: &str, active: bool, border: Color) -> El {
-    let s = format!("[ {label} ]");
-    let n = s.len();
-    rich(s, vec![
-        Span::new(0, 2).color(border),
-        Span::new(2, n - 2).color(if active { theme::text() } else { theme::dim() }).weight(if active { 600.0 } else { 400.0 }),
-        Span::new(n - 2, n).color(border),
-    ]).font(theme::UI)
+/// A tab chip in a frame's edge: the one shown in the frame's colour and bold, the others quiet,
+/// each lit on hover. `close` ends the session it names.
+fn chip(key: impl Into<String>, label: &str, active: bool, focused: bool, close: Option<El>) -> El {
+    let edge = match (active, focused) {
+        (true, true) => theme::mark(),
+        (true, false) => theme::line_bright(),
+        _ => theme::line(),
+    };
+    let ink = if active { theme::text() } else { theme::grey() };
+    let mut c = row().key(key.into()).h(CHIP_H).pl(10.0).pr(if close.is_some() { 4.0 } else { 10.0 }).gap(4.0).center_y()
+        .radius(theme::r_key()).fill(theme::raised()).border(if active && focused { theme::stroke_focus() } else { theme::stroke_quiet() }, edge)
+        .hover(theme::text().alpha(0.06)).press(theme::text().alpha(0.12)).motion(theme::SNAPPY)
+        .child(text(label.to_string()).font(if active { theme::UI_BOLD } else { theme::UI }).color(ink).truncate());
+    if let Some(x) = close {
+        c = c.child(x);
+    }
+    c
 }
 
-fn button(glyph: &str, border: Color, tip: Option<String>) -> El {
-    let b = rich(format!("[{glyph}]"), vec![
-        Span::new(0, 1).color(border),
-        Span::new(1, 1 + glyph.len()).color(theme::grey()),
-        Span::new(1 + glyph.len(), 2 + glyph.len()).color(border),
-    ]).font(theme::UI).cursor(rune::Cursor::Pointer);
+/// A chip's close control.
+fn chip_close(key: impl Into<String>, tip: Option<String>) -> El {
+    let b = el().key(key.into()).size(16.0, 16.0).center().radius(theme::r_key())
+        .hover(theme::text().alpha(0.12)).press(theme::text().alpha(0.2)).cursor(rune::Cursor::Pointer)
+        .child(icon(&icons::CLOSE, 10.0).color(theme::grey()));
     match tip {
         Some(t) => b.help(t),
         None => b,
@@ -128,23 +146,28 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     let live = s.live.as_deref() == Some(&b.key);
     let (dot, dot_c) = glyph(s, false, b.state.as_str());
     let (ag, ag_c) = glyph(s, true, &b.agent);
-    let nested = if b.parent.is_empty() || s.box_by_id(&b.parent).is_none() { "" } else { "└ " };
+    let nested = !b.parent.is_empty() && s.box_by_id(&b.parent).is_some();
     let name = match (note(b), on) {
         (Some(m), true) => m.to_string(),
         _ => b.name.clone(),
     };
     let lit = s.focus == Focus::List || s.live.is_none();
-    let fill = if on && lit { theme::row_cursor() } else if live { theme::band() } else { Color::TRANSPARENT };
-    let mut r = row().key(format!("box-{}", b.key)).w_full().h(ROW_H).px(6.0).gap(8.0).center_y().radius(5.0).fill(fill)
+    // The cursor row is the selection; the box on screen keeps a quieter one when the keys are
+    // elsewhere.
+    let fill = if on && lit { theme::selection() } else if live { theme::line() } else { Color::TRANSPARENT };
+    let mut r = row().key(format!("box-{}", b.key)).w_full().h(ROW_H).px(6.0).gap(8.0).center_y().radius(theme::r_row()).fill(fill)
+        .hover(theme::text().alpha(0.05)).press(theme::text().alpha(0.1)).motion(theme::SNAPPY)
         .cursor(rune::Cursor::Pointer)
-        .child(t(if on { "❯" } else { " " }, theme::gold()).w(10.0))
+        .child(el().size(12.0, 12.0).child(if on { icon(&icons::CHEVRON, 12.0).color(theme::gold()) } else { el() }))
         .child(t(dot, dot_c).w(12.0))
-        .child(t(ag, ag_c).w(12.0))
-        .child(t(nested, theme::dim()))
-        .child(text(name).font(if on || live { theme::UI_BOLD } else { theme::UI }).color(theme::text()).truncate().shrink());
+        .child(t(ag, ag_c).w(12.0));
+    if nested {
+        r = r.child(icon(&icons::NESTED, 12.0).color(theme::dim()));
+    }
+    r = r.child(text(name).font(if on || live { theme::UI_BOLD } else { theme::UI }).color(theme::text()).truncate().shrink());
     if wide {
         for tag in &b.tags {
-            r = r.child(t(tag.clone(), theme::dim()));
+            r = r.child(tag_chip(tag));
         }
         let branch = if b.branch.is_empty() { "·".into() } else { format!("{}@{}", b.branch, b.commit) };
         r = r.child(spacer())
@@ -174,19 +197,25 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     })
 }
 
-fn diffstat(b: &Sandbox) -> El {
-    if (b.added, b.deleted) == (0, 0) {
-        return t("", theme::dim());
-    }
-    let (a, d) = (format!("+{}", b.added), format!(" −{}", b.deleted));
-    let n = a.len();
-    rich(format!("{a}{d}"), vec![Span::new(0, n).color(theme::done()), Span::new(n, n + d.len()).color(theme::salmon())]).font(theme::UI_SMALL)
+/// A tag as a chip: outlined in its text colour, never filled.
+fn tag_chip(tag: &str) -> El {
+    text(tag.to_string()).font(theme::UI_SMALL).color(theme::dim()).px(5.0).radius(theme::r_key()).border(theme::stroke_quiet(), theme::dim())
 }
 
+fn diffstat(b: &Sandbox) -> El {
+    if (b.added, b.deleted) == (0, 0) {
+        return el();
+    }
+    row().gap(6.0)
+        .child(text(format!("+{}", b.added)).font(theme::UI_SMALL).color(theme::done()))
+        .child(text(format!("−{}", b.deleted)).font(theme::UI_SMALL).color(theme::salmon()))
+}
+
+/// The gold title band heading the list, or a section band grouping the rows beneath it.
 fn band(label: &str, right: String, gold: bool) -> El {
-    let (bg, fg) = if gold { (theme::gold(), theme::on_gold()) } else { (theme::band(), theme::grey()) };
+    let (bg, fg) = if gold { (theme::gold(), theme::on_gold()) } else { (theme::line(), theme::grey()) };
     let font = if gold { theme::UI_BOLD } else { theme::UI };
-    row().w_full().h(ROW_H).px(10.0).center_y().fill(bg).radius(4.0)
+    row().w_full().h(ROW_H).px(10.0).center_y().fill(bg).radius(theme::r_row())
         .child(text(label.to_string()).font(font).color(fg))
         .child(spacer())
         .child(text(right).font(font).color(fg))
@@ -209,7 +238,7 @@ fn list_block(s: &State, wide: bool) -> El {
         }
         c = c.child(list_row(s, i, wide));
         if !wide && !b.tags.is_empty() {
-            c = c.child(row().pl(54.0).h(16.0).gap(6.0).children(b.tags.iter().map(|x| t(x.clone(), theme::dim()).font(theme::UI_SMALL))));
+            c = c.child(row().pl(54.0).h(18.0).gap(6.0).center_y().children(b.tags.iter().map(|x| tag_chip(x))));
         }
     }
     c
@@ -218,28 +247,41 @@ fn list_block(s: &State, wide: bool) -> El {
 // ---------------------------------------------------------------------------------------------
 // The sidebar
 
+/// A row that runs a command: its icon, what it does, and its keycap.
+fn entry(s: &State, glyph: &'static Icon, label: &str, id: &'static str) -> El {
+    let mut r = row().key(format!("entry-{id}")).w_full().h(28.0).px(8.0).gap(8.0).center_y().radius(theme::r_row())
+        .hover(theme::text().alpha(0.06)).press(theme::text().alpha(0.12)).motion(theme::SNAPPY)
+        .cursor(rune::Cursor::Pointer)
+        .child(icon(glyph, 14.0).color(theme::grey()))
+        .child(t(label.to_string(), theme::grey()).truncate().shrink())
+        .child(spacer());
+    if let Some(k) = keys::shortcut_of(s, id) {
+        r = r.child(keycap(k));
+    }
+    r.on_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, id, tx))
+}
+
+/// The mark and the product's name, where the TUI prints its own.
+fn brand_line() -> El {
+    row().h(22.0).px(4.0).gap(8.0).center_y().child(mark::view(16.0)).child(text("discobox").font(theme::UI_BOLD).color(theme::grey()))
+}
+
 fn sidebar(s: &State) -> El {
     let focused = s.focus == Focus::List;
-    let border = if focused { theme::mark() } else { theme::inactive() };
-    let entry = |label: &str, id: &'static str| {
-        row().w_full().h(24.0).px(6.0).center_y().radius(5.0).cursor(rune::Cursor::Pointer)
-            .child(t(label.to_string(), theme::grey())).child(spacer())
-            .child(t(keys::shortcut_of(s, id).unwrap_or_default(), theme::dim()).font(theme::UI_SMALL))
-            .on_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, id, tx))
-    };
     let body = col().w_full().h_full().gap(6.0).min_h(0.0)
         .child(list_block(s, false))
         .child(spacer())
-        .child(row().w_full().center().child(logo::view(5.0, theme::bg())))
+        .child(row().w_full().center().child(mark::view(72.0)))
         .child(spacer())
-        .child(el().h(1.0).w_full().fill(theme::inactive()))
-        .child(entry("+ new discobox", "new"))
-        .child(entry("find a box or command", "palette"))
-        .child(entry("all discoboxes", "detach"));
+        .child(el().h(1.0).w_full().fill(theme::line()))
+        .child(entry(s, &icons::PLUS, "new discobox", "new"))
+        .child(entry(s, &icons::SEARCH, "search", "palette"))
+        .child(entry(s, &icons::BOX, "all discoboxes", "detach"));
     col().key("sidebar").w(SIDEBAR_W).h_full().gap(4.0)
-        .child(row().h(20.0).px(4.0).center_y().child(t("discobox", theme::grey())))
-        .child(frame("sidebar-frame", focused, Some(tab("discoboxes", true, border)),
-            Some(button("‹", border, keys::shortcut_of(s, "sidebar").map(|k| format!("hide the sidebar  {k}")))
+        .transition(Transition::offset(-24.0, 0.0).combined(Transition::opacity()))
+        .child(brand_line())
+        .child(frame("sidebar-frame", focused, Some(chip("sidebar-title", "discoboxes", true, focused, None)),
+            Some(icon_button("sidebar-hide", &icons::HIDE_SIDEBAR, tip(s, "hide the sidebar", "sidebar"))
                 .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx))), body).grow(1.0))
 }
 
@@ -253,40 +295,43 @@ fn pane_label(ws: &Workspace, i: usize, sbx: &Sandbox) -> String {
         TabKind::Primary => sbx.name.clone(),
         _ => p.screen.title.clone().filter(|t| !t.is_empty() && t.len() < 24).unwrap_or_else(|| p.exec.title.clone()),
     };
-    format!("{n} {name}{}", if p.exited { " ·done" } else { "" })
+    format!("{n} {name}{}", if p.exited { " · done" } else { "" })
 }
 
 fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El {
     let idx = ws.column(side);
     let Some(active) = ws.active[side as usize] else { return el() };
     let focused = s.focus == Focus::Panes && ws.focus == side;
-    let border = if focused { theme::mark() } else { theme::inactive() };
-    let mut tabs = row().gap(2.0);
+    let mut tabs = row().gap(4.0);
     for &i in &idx {
         let label = if two || idx.len() > 1 { pane_label(ws, i, sbx) } else { sbx.name.clone() };
-        tabs = tabs.child(tab(&label, i == active, border).cursor(rune::Cursor::Pointer)
+        let stream = ws.panes[i].stream;
+        let close = (ws.panes[i].exec.kind != TabKind::Primary).then(|| {
+            chip_close(format!("tab-close-{stream}"), tip(s, "end this session", "end")).on_press_tx(move |s: &mut State, tx: &mut Tx| {
+                s.select_pane(i);
+                run_command(s, "end", tx);
+            })
+        });
+        tabs = tabs.child(chip(format!("tab-{stream}"), &label, i == active, focused, close).cursor(rune::Cursor::Pointer)
             .on_press(move |s: &mut State| s.select_pane(i))
             .on_double_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, "maximize", tx)));
     }
-    let mut buttons = row().gap(2.0);
+    let mut buttons = row().gap(4.0);
     if two || ws.maximized {
-        let tip = keys::shortcut_of(s, "maximize").map(|k| format!("{}  {k}", if ws.maximized { "restore" } else { "maximize" }));
-        buttons = buttons.child(button(if ws.maximized { "-" } else { "+" }, border, tip)
+        let (glyph, what) = if ws.maximized { (&icons::RESTORE, "restore") } else { (&icons::MAXIMIZE, "maximize") };
+        buttons = buttons.child(icon_button(format!("maximize-{side:?}"), glyph, tip(s, what, "maximize"))
             .on_press_tx(move |s: &mut State, tx: &mut Tx| {
                 s.select_pane(active);
                 run_command(s, "maximize", tx)
             }));
     }
-    if ws.panes[active].exec.kind != TabKind::Primary {
-        let tip = keys::shortcut_of(s, "end").map(|k| format!("end this session  {k}"));
-        buttons = buttons.child(button("x", border, tip).on_press_tx(move |s: &mut State, tx: &mut Tx| {
-            s.select_pane(active);
-            run_command(s, "end", tx);
-        }));
-    }
     let pane = &ws.panes[active];
     let id = pane.stream;
-    let mut screen = el().key(format!("screen-{id}")).w_full().grow(1.0).min_h(0.0).clip_rounded(2.0)
+    // Terminal content never moves on a spring: what a program draws lands as it is drawn, its
+    // layout (`instant_changes`) and its colours (`Spring::NONE`; `instant_changes` leaves colours
+    // on their springs) alike.
+    let mut screen = el().key(format!("screen-{id}")).w_full().grow(1.0).min_h(0.0).clip_rounded(theme::r_key())
+        .fill(theme::term_bg()).instant_changes().motion(Spring::NONE)
         .child(pane.screen.view(&format!("p{id}"), focused))
         .on_layout(move |s: &mut State, r: [f32; 4]| {
             s.resize_pane(id, (r[2] / theme::cell_w()).floor() as usize, (r[3] / CELL_H).floor() as usize)
@@ -298,16 +343,16 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
         .on_press(move |s: &mut State| s.select_pane(active))
         .cursor(rune::Cursor::Text);
     if let Some(st) = &pane.status {
-        screen = screen.child(text(st.clone()).font(theme::UI_SMALL).color(theme::on_gold()).px(8.0).py(2.0).radius(4.0)
+        screen = screen.child(text(st.clone()).font(theme::UI_SMALL).color(theme::on_gold()).px(8.0).py(2.0).radius(theme::r_key())
             .fill(if pane.exited { theme::err() } else { theme::gold() }).pin(None, None, Some(6.0), Some(6.0)));
     }
     frame(format!("col-{side:?}"), focused, Some(tabs), Some(buttons), screen).grow(1.0).min_w(0.0)
 }
 
 fn header(s: &State, sbx: &Sandbox) -> El {
-    let mut r = row().w_full().h(20.0).px(12.0).gap(18.0).center_y();
+    let mut r = row().w_full().h(24.0).px(12.0).gap(18.0).center_y();
     if !s.sidebar {
-        r = r.child(button("›", theme::inactive(), keys::shortcut_of(s, "sidebar").map(|k| format!("show the sidebar  {k}")))
+        r = r.child(icon_button("sidebar-show", &icons::SHOW_SIDEBAR, tip(s, "show the sidebar", "sidebar"))
             .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx)));
     }
     r = r.child(t(source_label(sbx), theme::grey()))
@@ -322,29 +367,28 @@ fn header(s: &State, sbx: &Sandbox) -> El {
         r = r.child(diffstat(sbx));
     }
     for tag in &sbx.tags {
-        r = r.child(t(tag.clone(), theme::dim()));
+        r = r.child(tag_chip(tag));
     }
     let id = sbx.key.clone();
     r.child(spacer())
         .child(t(format!("cpu {}%  mem {:.1} GiB", sbx.cpu, sbx.memory_bytes as f64 / (1u64 << 30) as f64), theme::dim()))
-        .child(button("…", theme::inactive(), Some("box actions".into()))
-            .key("box-actions")
+        .child(icon_button("box-actions", &icons::MORE, Some("box actions".into()))
             .on_press(move |s: &mut State| s.open_menu(id.clone(), (900.0, 30.0))))
 }
 
 fn workspace(s: &State, ws: &Workspace) -> El {
     let Some(sbx) = s.box_by_id(&ws.sandbox) else { return el() };
     let two = !ws.column(Side::Shells).is_empty() && !ws.column(Side::Terminals).is_empty();
-    let mut cols = row().w_full().grow(1.0).gap(8.0).min_h(0.0);
+    let mut cols = row().w_full().grow(1.0).gap(10.0).min_h(0.0);
     if let Some(e) = &ws.error {
         let enter = keys::shortcut_of(s, "attach").unwrap_or_else(|| "Enter".into());
-        cols = cols.child(frame("failed", true, Some(tab(&sbx.name, true, theme::mark())), None,
+        cols = cols.child(frame("failed", true, Some(chip("failed-title", &sbx.name, true, true, None)), None,
             col().w_full().h_full().center().gap(8.0)
                 .child(t("could not open its sessions", theme::warn()))
                 .child(text(e.clone()).font(theme::UI_SMALL).color(theme::grey()).max_w(640.0).wrap())
-                .child(t(format!("{enter} tries again"), theme::dim()))));
+                .child(row().gap(6.0).center_y().child(keycap(enter)).child(t("tries again", theme::dim())))));
     } else if ws.opening {
-        cols = cols.child(frame("opening", true, Some(tab(&sbx.name, true, theme::mark())), None,
+        cols = cols.child(frame("opening", true, Some(chip("opening-title", &sbx.name, true, true, None)), None,
             col().w_full().h_full().center().child(t("attaching…", theme::dim()))));
     } else if ws.maximized {
         cols = cols.child(column(s, ws, sbx, ws.focus, two));
@@ -354,38 +398,35 @@ fn workspace(s: &State, ws: &Workspace) -> El {
             cols = cols.child(column(s, ws, sbx, Side::Shells, two));
         }
     }
-    col().key("workspace").grow(1.0).h_full().min_w(0.0).gap(4.0)
+    col().key("workspace").grow(1.0).h_full().min_w(0.0).gap(4.0).motion(theme::SNAPPY)
         .child(header(s, sbx))
         .child(cols)
-        .child(row().h(20.0).px(12.0).center_y()
-            .child(status_line(s, &["shell", "terminal", "end", "next pane", "maximize", "next box", "palette"])))
+        .child(row().w_full().h(24.0).px(12.0).center_y().min_w(0.0)
+            .child(status_line(s)))
 }
 
 // ---------------------------------------------------------------------------------------------
 // Every box
 
 fn home(s: &State) -> El {
-    let header = row().w_full().h(24.0).gap(16.0).center_y()
-        .child(t("discobox", theme::grey()))
+    let header = row().w_full().h(26.0).gap(16.0).center_y()
+        .child(brand_line())
         .child(t("all discoboxes", theme::grey()))
         .child(spacer())
         .child(t(if s.bridged { "" } else { "mock data" }, theme::warn()).font(theme::UI_SMALL));
-    let rule = || el().h(1.0).w_full().fill(theme::inactive());
     let composer = col().w_full().gap(8.0).px(18.0)
-        .child(t("Enter runs the prompt in a new discobox, or just creates one when it is empty", theme::dim()))
-        .child(rule())
-        .child(row().w_full().gap(10.0).center_y()
-            .child(t("❯", theme::grey()))
+        .child(text("Enter runs the prompt in a new discobox, or just creates one when it is empty").font(theme::UI_SMALL).color(theme::dim()))
+        .child(row().w_full().h(40.0).px(12.0).gap(10.0).center_y().radius(theme::r_row()).fill(theme::sunken()).border(theme::stroke_quiet(), theme::line())
+            .child(icon(&icons::CHEVRON, 14.0).color(theme::mark()))
             .child(text_input(&TEXT_EDIT.with(|e| e.clone()), theme::UI.lh(20.0)).key("composer").single_line().grow(1.0).color(theme::text())
                 .placeholder("What should the new discobox do?", theme::dim())
-                .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "new", tx))))
-        .child(rule());
+                .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "new", tx))));
     let body = col().w_full().h_full().gap(10.0).px(8.0).min_h(0.0)
         .child(header)
         .child(list_block(s, true))
         .child(spacer())
         .child(composer)
-        .child(row().h(20.0).px(18.0).center_y().child(status_line(s, &["attach", "new", "palette", "quit"])));
+        .child(row().w_full().h(24.0).px(18.0).center_y().min_w(0.0).child(status_line(s)));
     frame("home", true, None, None, body)
 }
 
@@ -393,7 +434,9 @@ thread_local! {
     static TEXT_EDIT: rune::TextEdit = rune::TextEdit::new("");
 }
 
-pub fn view(s: &State, _: &mut Cx<State>) -> El {
+pub fn view(s: &State, cx: &mut Cx<State>) -> El {
+    // The system's appearance, or the one `--theme` picks.
+    theme::set_dark(cx.system_dark());
     let mut root = row().w_full().h_full().padding(10.0).gap(10.0).fill(theme::bg());
     match s.live_ws() {
         Some(ws) => {

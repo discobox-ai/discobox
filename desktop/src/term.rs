@@ -108,6 +108,8 @@ impl Screen {
             let row = &grid[line];
             let cells: Vec<(char, AColor, AColor, Flags)> =
                 (0..self.cols).map(|x| { let c = &row[Column(x)]; (c.c, c.fg, c.bg, c.flags) }).collect();
+            // The palette a row is drawn in is part of every memo's key already: Rune hashes the
+            // window's appearance into it.
             let version = hash_row(&cells);
             body = body.child(memo(format!("{key}-r{y}"), version, || draw_row(&cells, y)));
         }
@@ -149,7 +151,7 @@ fn resolve(c: AColor, fg: bool) -> Option<Color> {
             n => {
                 // Dim colours follow the 16 they dim.
                 let base = (n as usize).saturating_sub(NamedColor::DimBlack as usize) as u8;
-                Some(theme::xterm(base.min(7)).mix(theme::bg(), 0.35))
+                Some(theme::xterm(base.min(7)).mix(theme::term_bg(), 0.35))
             }
         },
     }
@@ -166,12 +168,12 @@ fn draw_row(cells: &[(char, AColor, AColor, Flags)], y: usize) -> El {
         }
         let (mut ink, mut back) = (resolve(fg, true).unwrap_or(theme::term_fg()), resolve(bg, false));
         if flags.contains(Flags::INVERSE) {
-            let b = back.unwrap_or(theme::bg());
+            let b = back.unwrap_or(theme::term_bg());
             back = Some(ink);
             ink = b;
         }
         if flags.contains(Flags::DIM) {
-            ink = ink.mix(theme::bg(), 0.4);
+            ink = ink.mix(theme::term_bg(), 0.4);
         }
         if let Some(b) = back {
             match backs.last_mut() {

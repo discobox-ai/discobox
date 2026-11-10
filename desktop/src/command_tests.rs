@@ -3,10 +3,10 @@
 
 use rune::{Env, Key, KeyEvent, Mods, Runtime, Tx};
 
-use crate::{ANSWERED, Focus, State, on_key, poll, run_command, view};
+use crate::{ANSWERED, Focus, State, on_key, poll, run_command, theme, view};
 
 fn runtime() -> Runtime<State> {
-    let mut rt = Runtime::new(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 });
+    let mut rt = Runtime::with_text(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
     rt.poll = Some(poll);
     rt.on_key = Some(on_key);
     settle(&mut rt);

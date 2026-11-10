@@ -5,7 +5,7 @@
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use serde::Deserialize;
 
-use crate::{Side, State, on_key, poll, view};
+use crate::{Side, State, on_key, poll, theme, view};
 
 #[derive(Deserialize)]
 struct Scenario {
@@ -76,7 +76,7 @@ fn parity_scenarios() {
     for entry in std::fs::read_dir(dir).expect("the parity scenarios") {
         let path = entry.unwrap().path();
         let sc: Scenario = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let mut rt = Runtime::new(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 });
+        let mut rt = Runtime::with_text(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
         rt.poll = Some(poll);
         rt.on_key = Some(on_key);
         settle(&mut rt);

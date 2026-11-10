@@ -314,8 +314,8 @@ DISPLAY=:77 xwd -root -silent | magick xwd:- $S/shot.png   # what it drew
 ```
 
 What CI checks needs no window: `nix develop .#desktop --command go tool task
-ci:desktop` runs the app's tests and renders every scene on the mock to
-`build/desktop/<scene>.png`.
+ci:desktop` runs the app's tests and renders every scene on the mock, in both
+themes, to `build/desktop/<scene>-<dark|light>.png`.
 
 - `DISCOBOX_DESKTOP_DEBUG=1` logs every request and answer (`→ op …`, `← id …`)
   to stderr, through the CLI's escaping. An idle list sends no request (the
