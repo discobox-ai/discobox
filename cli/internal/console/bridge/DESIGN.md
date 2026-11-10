@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 17; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 18; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -210,7 +210,8 @@ finds the link and opens what it is told; it decides nothing about where.
 
 ## Subscriptions
 
-`subscriptions.go`. Each subscription follows one topic on its own until
+`subscriptions.go`. Each subscription follows one topic on its own (but the
+audit timeline's, below, which share a box's read) until
 unsubscribed, and sends a `snapshot` whole on subscribe and whenever what it
 read changed: the listing, the machine's resources and the requests every
 `console.ListPollEvery`, as the TUI reads them (the listing at once after a
@@ -227,7 +228,15 @@ attaches, as the TUI's ends with its attach; the audit timeline as it
 reports, its most recent records each with its time as the core says it
 (`console.AuditTime`, sent again as the day turns so a record says its day), the rows they fold into (`console.AuditRuns`,
 `AuditRunSummary`) and what it says with none (`AuditReading`,
-`AuditNothing`); a box's issue or pull request (the issue topic, `wireIssue`:
+`AuditNothing`), narrowed by the subscription's search to what the core lets
+through (`console.AuditSearch`, the runs folded over those), each lit where it
+matched (`AuditLit`), with its tally (`AuditTally`), `AuditNoMatch` when it
+hides every record, and the words for the records below a row the app holds
+(`AuditBelowWords`) — a box's trails read once for every subscription
+following them (`auditFeed`, from the first to the last, each leaving as it
+is unsubscribed, and let go of once its read fails or its box is gone), so
+the app's next query, subscribed before it ends the last, narrows what was
+read at once; a box's issue or pull request (the issue topic, `wireIssue`:
 every answer the core's, every body made safe by `console.MarkdownSource`, every
 time said as `console.Ago` when read) as it is subscribed, every
 `console.IssueRefreshEvery`, soon again while GitHub has yet to say whether it

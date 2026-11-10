@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, AuditPart, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
+    Answer, Args, AuditPart, AuditQuery, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, IssueAct, IssueItemKind, IssueQuery, IssueTone,
 };
 use discobox_bridge::{Client, Incoming};
@@ -614,8 +614,10 @@ fn secrets_reach_the_app() {
 }
 
 // A box's audit timeline reaches the app as the core's: first what it says before any read, then
-// its records with their times and the runs they fold into with what a run says; and the audit
-// command reads a record in full, with the recordings it offers, and a recording.
+// its records with their times and the runs they fold into with what a run says; a search,
+// subscribed before the last subscription ends, narrows what was read at once, lit, with its
+// tally; and the audit command reads a record in full, with the recordings it offers, and a
+// recording.
 #[test]
 fn the_audit_timeline_and_its_records_reach_the_app() {
     let mut cli = Cli::start("default");
@@ -638,6 +640,20 @@ fn the_audit_timeline_and_its_records_reach_the_app() {
     assert!(!timeline.records[0].clock.is_empty() && timeline.note.is_empty());
     let runs: Vec<_> = timeline.runs.iter().map(|r| (r.first, r.last, r.summary.as_str())).collect();
     assert_eq!(runs, [(0, 1, "GET 200 https://api.github.com (count 2)"), (2, 2, "")]);
+
+    cli.send(Message {
+        r#type: Type::Subscribe,
+        subscribe: Some(Subscribe { sub: 2, topic: Topic::Audit, r#box: "b1".into(), audit: Some(AuditQuery { text: "lent".into() }), ..Default::default() }),
+        ..Default::default()
+    });
+    cli.send(Message { r#type: Type::Unsubscribe, unsubscribe: Some(Unsubscribe { sub: 1 }), ..Default::default() });
+    let found = cli.take("the timeline searched", |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 2 => s.audit.clone(),
+        _ => None,
+    });
+    let ids: Vec<_> = found.records.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!((ids.as_slice(), found.tally.as_str()), (["creds-1"].as_slice(), "1 of 3"), "a search read the trails again");
+    assert_eq!((found.records[0].source_lit.as_slice(), found.records[0].summary_lit.as_slice()), ([].as_slice(), [7, 8, 9, 10].as_slice()));
 
     let id = cli.command("audit", &["b1"], pane("b1"), Args { record: "http-1".into(), ..Default::default() });
     let r = cli.result(id);

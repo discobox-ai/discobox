@@ -113,6 +113,13 @@ type Server struct {
 	// optsMu guards options, the window's run options.
 	optsMu  sync.Mutex
 	options runOptions
+	// audits is each box's audit timeline being read, by box key, for every
+	// audit subscription following it (auditFeed), and auditSubs each of
+	// those subscriptions on its feed, by Sub; auditMu guards both, and is
+	// taken before any feed's own lock, never while holding subMu.
+	auditMu   sync.Mutex
+	audits    map[string]*auditFeed
+	auditSubs map[uint32]auditFollower
 }
 
 // NewServer is a bridge serving ds, writing to the app on out.
@@ -134,6 +141,8 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		tabs:      map[string]map[string]console.Tab{},
 		services:  map[string]map[string]console.Service{},
 		following: map[string]int{},
+		audits:    map[string]*auditFeed{},
+		auditSubs: map[uint32]auditFollower{},
 		forwards:  map[string][]*func() []console.Binding{},
 		options:   openOptions(console.Session{}, console.Filter{}),
 	}

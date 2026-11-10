@@ -103,13 +103,15 @@ type fakeCore struct {
 	counts       []console.DirectoryTotal
 	measured     []string
 	walksStopped int
-	// audit is what FollowAudit delivers, in order, before it waits for
-	// its end, and auditErr what it then fails with; details and bodies are
-	// what AuditDetail and AuditBody read, by record ID (and part).
-	audit    []console.AuditUpdate
-	auditErr error
-	details  map[string]console.AuditRecordDetail
-	bodies   map[string]string
+	// audit is what FollowAudit delivers, in order, and auditErr what it
+	// then fails with; without one it delivers what arrives on auditMore
+	// until its end. details and bodies are what AuditDetail and AuditBody
+	// read, by record ID (and part).
+	audit     []console.AuditUpdate
+	auditErr  error
+	auditMore chan console.AuditUpdate
+	details   map[string]console.AuditRecordDetail
+	bodies    map[string]string
 	// issues is what Issue reads, by repository#number; review, when set,
 	// runs as a files changed session starts, ignoring its context, as a
 	// server that made the session before the command was let go.
@@ -333,8 +335,14 @@ func (f *fakeCore) FollowAudit(ctx context.Context, id string, report func(conso
 	if f.auditErr != nil {
 		return f.auditErr
 	}
-	<-ctx.Done()
-	return ctx.Err()
+	for {
+		select {
+		case u := <-f.auditMore:
+			report(u)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func (f *fakeCore) AuditDetail(_ context.Context, id, record string) (console.AuditRecordDetail, error) {

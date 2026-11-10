@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 17;
+pub const PROTOCOL: i64 = 18;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
@@ -463,6 +463,11 @@ pub struct Session {
 /// shows that box whatever the filter hid (console.Revealing): a view the palette navigates to,
 /// which is never saved over the person's filter.
 ///
+/// The audit timeline is narrowed to what a search lets through (Audit): the app subscribes again
+/// under a new Sub for each query, before it ends the old, and a box's trails are read once for
+/// every subscription following them, so a new query narrows what was read rather than reading it
+/// again.
+///
 /// The commands and the palette are about where the app asks from (Context) and, for the commands,
 /// the boxes it names (Targets). They are read from the last listing, never the servers, and sent
 /// again as it changes; the app subscribes again under a new Sub when what it asks changes — each
@@ -493,6 +498,9 @@ pub struct Subscribe {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue: Option<IssueQuery>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audit: Option<AuditQuery>,
 }
 
 /// Topic is what a subscription follows.
@@ -518,7 +526,8 @@ pub enum Topic {
     #[serde(rename = "provisioning")]
     Provisioning,
 
-    /// TopicAudit is a box's audit timeline, followed (Box).
+    /// TopicAudit is a box's audit timeline, followed (Box), narrowed to what a search lets through
+    /// (Audit).
     #[serde(rename = "audit")]
     Audit,
 
@@ -677,6 +686,14 @@ pub struct IssueQuery {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub shown: String,
+}
+
+/// AuditQuery is what the audit topic's search is (console.ParseQuery): the text typed, read as the
+/// TUI's audit screen reads it (console.AuditMatches).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AuditQuery {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub text: String,
 }
 
 /// Unsubscribe stops one.
@@ -1244,10 +1261,13 @@ pub struct Provisioning {
     pub step: String,
 }
 
-/// Audit is a box's audit timeline: its most recent records, oldest first; the rows they are drawn
-/// as (console.AuditRuns), every record in exactly one, in order; the trails the last read could
-/// not reach; and, with no record, what the timeline says (console.AuditReading before any read has
-/// finished, console.AuditNothing after).
+/// Audit is a box's audit timeline: its most recent records, oldest first — under a search, those
+/// it lets through (console.AuditSearch); the rows they are drawn as (console.AuditRuns, over the
+/// records sent), every record in exactly one, in order; the trails the last read could not reach;
+/// and, with no record, what the timeline says (console.AuditReading before any read has finished,
+/// console.AuditNothing after, console.AuditNoMatch when a search hid every one). Tally is what a
+/// search says of what it let through (console.AuditTally), and set only under one. Below is what
+/// it says of the records newer than a row held off the newest.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Audit {
     pub records: Vec<AuditRecord>,
@@ -1258,11 +1278,17 @@ pub struct Audit {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub note: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tally: String,
+
+    pub below: AuditBelow,
 }
 
 /// AuditRecord is one line of the timeline. Clock is when it was recorded, as the timeline says it
 /// (console.AuditTime) as of the snapshot: the timeline is sent again as the day turns, so a record
-/// of the day before says which.
+/// of the day before says which. SourceLit and SummaryLit are what a search lights in its Source
+/// and its Summary (console.AuditLit), by rune index into each, in order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AuditRecord {
     pub id: String,
@@ -1280,11 +1306,18 @@ pub struct AuditRecord {
 
     #[serde(rename = "groupSummary", default, skip_serializing_if = "is_default")]
     pub group_summary: String,
+
+    #[serde(rename = "sourceLit", default, skip_serializing_if = "is_default")]
+    pub source_lit: Vec<i64>,
+
+    #[serde(rename = "summaryLit", default, skip_serializing_if = "is_default")]
+    pub summary_lit: Vec<i64>,
 }
 
 /// AuditRun is one row of the timeline: Records[First] alone, or the run First to Last folded
 /// behind one row that opens it, which says Summary (console.AuditRunSummary) at the time of its
-/// newest record.
+/// newest record. SourceLit and SummaryLit are what a search lights on that row — the newest
+/// record's Source, and Summary — as AuditRecord's are.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AuditRun {
     pub first: i64,
@@ -1293,6 +1326,22 @@ pub struct AuditRun {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub summary: String,
+
+    #[serde(rename = "sourceLit", default, skip_serializing_if = "is_default")]
+    pub source_lit: Vec<i64>,
+
+    #[serde(rename = "summaryLit", default, skip_serializing_if = "is_default")]
+    pub summary_lit: Vec<i64>,
+}
+
+/// AuditBelow is what the timeline says of the records newer than the row the app's cursor holds
+/// off the newest, after their count, which is the app's (console.AuditBelowWords): One for one,
+/// Many for any other number — matches, under a search.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AuditBelow {
+    pub one: String,
+
+    pub many: String,
 }
 
 /// Header is what a box's workspace header says (console.Header): each field the core's answer,

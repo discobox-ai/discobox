@@ -55,7 +55,10 @@
   core's `NoSecrets`, `BindThisSecret` and history head into `secrets.rs`, and
   dropped what the TUI says above the edit and bind forms; they are
   `SecretWords` and `Form.About` now. A copy in the app is one the Go tests
-  never see change.
+  never see change. Words around a number only the app knows (a count from
+  its own cursor) still come over the wire, as words for one and for many:
+  the audit view's "newer records below" was typed in Rust twice before it
+  became `Audit.Below`.
 - **A result that cannot carry what it is about fails.** `Secrets` is
   omitted when empty, so a re-read that failed after an action, sent as done
   with no secrets, read as a project with none and emptied the page. Fail it,
@@ -189,3 +192,9 @@
   `sheet.offers`). A submit with no action, or one the card does not offer,
   is refused on the card: its first version read it as an approval on a
   credential's card and as a denial on a trust's.
+- **A subscription that shares a read leaves it when it is unsubscribed,
+  not when a goroutine notices its context end** (`leaveAudit`). The app
+  ends one and subscribes again at once — a new search, the audit view
+  opened again — and a feed whose last follower was still on it was joined
+  as it ended, or, failed, never read again. A feed that will read nothing
+  more is let go of (`dropAudit`), so the next subscription reads afresh.

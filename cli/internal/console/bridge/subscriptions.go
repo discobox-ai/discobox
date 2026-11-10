@@ -18,8 +18,11 @@ import (
 const auditKeep = 1000
 
 // subscribe starts following a topic. Each subscription reads on its own
-// until it is ended, and sends a snapshot whenever what it read changed.
+// until it is ended — but for the audit timeline, whose subscriptions on one
+// box share one read (auditFeed) — and sends a snapshot whenever what it read
+// changed.
 func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
+	serving := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	s.subMu.Lock()
 	s.mu.Lock()
@@ -29,6 +32,7 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 	s.subs[sub.Sub] = cancel
 	s.mu.Unlock()
 	s.subMu.Unlock()
+	s.leaveAudit(sub.Sub)
 	f := &follower{s: s, sub: sub, ctx: ctx}
 	switch sub.Topic {
 	case TopicListing:
@@ -51,7 +55,7 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 	case TopicProvisioning:
 		go f.about(ctx, func() { f.provisioning(ctx) })
 	case TopicAudit:
-		go f.about(ctx, func() { f.audit(ctx) })
+		s.followAudit(serving, f)
 	case TopicHeader:
 		go f.about(ctx, func() { f.header(ctx) })
 	case TopicCommands:
@@ -68,28 +72,37 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 }
 
 // about follows a topic about one box: the box is resolved once, as the
-// subscription starts, and followed on its server from then on. A box no
-// server lists is said once, rather than the listing read again on every
-// beat for a box that is gone; one whose server could not be reached is
-// tried again every beat, and followed once it can be.
+// subscription starts (findBox), and followed on its server from then on.
 func (f *follower) about(ctx context.Context, follow func()) {
+	box, src, ok := f.s.findBox(ctx, f.sub.Box, f.failed)
+	if !ok {
+		return
+	}
+	f.box, f.src = box, src
+	follow()
+}
+
+// findBox finds the box a topic about one box follows, and the source for
+// its server, saying why it could not to failed. A box no server lists is
+// said once, and given up on, rather than the listing read again on every
+// beat for a box that is gone; one whose server could not be reached is tried
+// again every beat until ctx ends.
+func (s *Server) findBox(ctx context.Context, key string, failed func(error)) (console.Sandbox, console.DataSource, bool) {
 	for {
-		box, src, err := f.s.source(ctx, f.sub.Box)
+		box, src, err := s.source(ctx, key)
 		if err == nil {
-			f.box, f.src = box, src
-			follow()
-			return
+			return box, src, true
 		}
 		if ctx.Err() != nil {
-			return
+			return box, nil, false
 		}
-		f.failed(err)
+		failed(err)
 		if errors.Is(err, errNotListed) {
-			return
+			return box, nil, false
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return box, nil, false
 		case <-time.After(console.ListPollEvery):
 		}
 	}
@@ -99,7 +112,6 @@ func (f *follower) about(ctx context.Context, follow func()) {
 // sent: a snapshot being written is finished first (Server.subMu).
 func (s *Server) unsubscribe(sub uint32) {
 	s.subMu.Lock()
-	defer s.subMu.Unlock()
 	s.mu.Lock()
 	cancel := s.subs[sub]
 	delete(s.subs, sub)
@@ -107,6 +119,11 @@ func (s *Server) unsubscribe(sub uint32) {
 	if cancel != nil {
 		cancel()
 	}
+	s.subMu.Unlock()
+	// Off its feed now, not when something notices it ended: the app's next
+	// audit subscription on the box, made at once, must not join a feed
+	// this one's leaving is about to end.
+	s.leaveAudit(sub)
 }
 
 // follower is one subscription: what it last sent, so only a change is sent
@@ -354,32 +371,130 @@ func (f *follower) provisioning(ctx context.Context) {
 	}
 }
 
-// audit follows a box's audit timeline: its most recent records and the
-// trails the last read could not reach, whole on every update.
-func (f *follower) audit(ctx context.Context) {
-	box, src := f.box, f.src
-	var (
-		mu      sync.Mutex
-		records []console.AuditRecord
-		missing = []string{}
-		polled  bool
-	)
+// auditFeed is one box's audit timeline, read once for every audit
+// subscription following it (Server.audits), each narrowed by its own search:
+// a new query is a new subscription, which narrows what was read rather than
+// reading the trails again — and drawing nothing while it does. It is read
+// from the first subscription until the last one leaves (leaveAudit); one
+// opened after that, or after its read failed whole or its box was found
+// gone, reads the trails afresh.
+type auditFeed struct {
+	mu sync.Mutex
+	// records are its most recent, oldest first; missing what the last read
+	// could not reach; polled whether any read has finished.
+	records []console.AuditRecord
+	missing []string
+	polled  bool
+	// reading is whether its box was found and its trails are being read:
+	// before, nothing is sent but why the box could not be found. err is why,
+	// the last time it was looked for, or the whole read failing, after
+	// which done is set and nothing more is sent (console.AuditUnreadable).
+	reading bool
+	err     error
+	done    bool
+	// followers is each subscription following it, with its search.
+	followers map[*follower]console.Query
+	stop      context.CancelFunc
+}
+
+// auditFollower is an audit subscription on the feed it follows, by its
+// Sub in Server.auditSubs: what leaveAudit takes off it.
+type auditFollower struct {
+	f    *follower
+	feed *auditFeed
+}
+
+// followAudit follows a box's audit timeline for f, narrowed to what its
+// search lets through: on the box's feed, started for it if none is being
+// read, until it leaves (leaveAudit). f joins it here, in the order the app's
+// messages came, so a subscription for a new query made before the old is
+// ended finds the feed still read.
+func (s *Server) followAudit(serving context.Context, f *follower) {
+	var q console.Query
+	if f.sub.Audit != nil {
+		q = console.ParseQuery(f.sub.Audit.Text)
+	}
+	key := f.sub.Box
+	s.auditMu.Lock()
+	defer s.auditMu.Unlock()
+	feed := s.audits[key]
+	if feed == nil {
+		// The first follower is on it before it reads anything, so it is
+		// sent every step, from the first.
+		ctx, stop := context.WithCancel(serving)
+		feed = &auditFeed{missing: []string{}, followers: map[*follower]console.Query{f: q}, stop: stop}
+		s.audits[key] = feed
+		go feed.read(ctx, s, key)
+	} else {
+		feed.mu.Lock()
+		feed.followers[f] = q
+		feed.mu.Unlock()
+		// What it has is sent off the pipe's reader: a snapshot is written
+		// to the app, which the reader never waits on.
+		go func() {
+			feed.mu.Lock()
+			defer feed.mu.Unlock()
+			if _, on := feed.followers[f]; on {
+				feed.joined(f, q)
+			}
+		}()
+	}
+	s.auditSubs[f.sub.Sub] = auditFollower{f: f, feed: feed}
+}
+
+// leaveAudit takes an audit subscription off its feed as it ends, and ends
+// the feed once nothing follows it. It is called once the subscription's
+// context is canceled and Server.subMu is let go: a feed sends under its
+// own lock, and a send takes subMu. Anything else is not on a feed, and
+// leaving is nothing.
+func (s *Server) leaveAudit(sub uint32) {
+	s.auditMu.Lock()
+	defer s.auditMu.Unlock()
+	on, ok := s.auditSubs[sub]
+	if !ok {
+		return
+	}
+	delete(s.auditSubs, sub)
+	feed := on.feed
+	feed.mu.Lock()
+	delete(feed.followers, on.f)
+	last := len(feed.followers) == 0
+	feed.mu.Unlock()
+	if last {
+		feed.stop()
+		s.dropAudit(on.f.sub.Box, feed)
+	}
+}
+
+// dropAudit lets go of a box's feed, under auditMu, so the next subscription
+// on the box reads its trails afresh: the feed ended, failed whole, or found
+// its box gone. Its followers stay on it until they leave.
+func (s *Server) dropAudit(key string, feed *auditFeed) {
+	if s.audits[key] == feed {
+		delete(s.audits, key)
+	}
+}
+
+// read reads the box's trails until ctx ends or the read fails whole: the
+// box resolved once, as `about` resolves one for a topic (findBox), and
+// followed on its server. Every change is sent to every follower, under mu.
+func (feed *auditFeed) read(ctx context.Context, s *Server, key string) {
+	box, src, ok := s.findBox(ctx, key, func(err error) {
+		feed.failed(s, key, err, errors.Is(err, errNotListed))
+	})
+	if !ok {
+		return
+	}
+	feed.mu.Lock()
+	feed.reading, feed.err = true, nil
+	feed.sent()
+	feed.mu.Unlock()
 	// A record's time says its day once it is another day's: the timeline
 	// is sent again as the day turns, however quiet the trails are — for as
-	// long as they are followed. Once the follow ends, the read having failed
-	// whole, nothing more is sent (console.AuditUnreadable). Every send, the
-	// failure's included, is under mu, so none lands after the failure.
+	// long as they are followed.
 	following, stop := context.WithCancel(ctx)
 	defer stop()
 	turns := dayTurns
-	send := func() {
-		mu.Lock()
-		defer mu.Unlock()
-		if following.Err() == nil {
-			f.send(Snapshot{Audit: wireAudit(records, missing, polled, time.Now())})
-		}
-	}
-	send()
 	go func() {
 		for {
 			turn := time.NewTimer(turns(time.Now()))
@@ -388,27 +503,72 @@ func (f *follower) audit(ctx context.Context) {
 				turn.Stop()
 				return
 			case <-turn.C:
-				send()
+				feed.mu.Lock()
+				if !feed.done {
+					feed.sent()
+				}
+				feed.mu.Unlock()
 			}
 		}
 	}()
 	err := src.FollowAudit(ctx, box.ID, func(u console.AuditUpdate) {
-		mu.Lock()
-		records = append(records, u.Records...)
-		if extra := len(records) - auditKeep; extra > 0 {
-			records = append([]console.AuditRecord(nil), records[extra:]...)
+		feed.mu.Lock()
+		defer feed.mu.Unlock()
+		feed.records = append(feed.records, u.Records...)
+		if extra := len(feed.records) - auditKeep; extra > 0 {
+			feed.records = append([]console.AuditRecord(nil), feed.records[extra:]...)
 		}
 		if u.Polled {
-			missing, polled = nonNil(u.Missing), true
+			feed.missing, feed.polled = nonNil(u.Missing), true
 		}
-		mu.Unlock()
-		send()
+		feed.sent()
 	})
 	stop()
 	if err != nil && ctx.Err() == nil {
-		mu.Lock()
-		f.failed(errors.New(console.AuditUnreadable(err)))
-		mu.Unlock()
+		feed.failed(s, key, errors.New(console.AuditUnreadable(err)), true)
+	}
+}
+
+// failed says why to every follower: the box could not be found this time,
+// or, done, the feed will read nothing more — its read failed whole, or its
+// box is gone. A feed that is done is let go of first, so a subscription on
+// the box from then on, a new search or the view opened again, tries afresh
+// rather than joining it.
+func (feed *auditFeed) failed(s *Server, key string, err error, done bool) {
+	s.auditMu.Lock()
+	defer s.auditMu.Unlock()
+	if done {
+		s.dropAudit(key, feed)
+	}
+	feed.mu.Lock()
+	defer feed.mu.Unlock()
+	feed.err, feed.done = err, done
+	feed.sent()
+}
+
+// sent sends what changed to every follower, under mu: why the box could
+// not be found or the read failed, or else the timeline under each one's
+// search.
+func (feed *auditFeed) sent() {
+	now := time.Now()
+	for f, q := range feed.followers {
+		if feed.err != nil {
+			f.failed(feed.err)
+		} else if feed.reading {
+			f.send(Snapshot{Audit: wireAudit(feed.records, feed.missing, feed.polled, q, now)})
+		}
+	}
+}
+
+// joined sends a follower that just joined what the feed has, under mu: the
+// timeline under its search once it is being read, then why it could not be
+// found or failed, if it could not.
+func (feed *auditFeed) joined(f *follower, q console.Query) {
+	if feed.reading {
+		f.send(Snapshot{Audit: wireAudit(feed.records, feed.missing, feed.polled, q, time.Now())})
+	}
+	if feed.err != nil {
+		f.failed(feed.err)
 	}
 }
 
@@ -423,26 +583,40 @@ func untilTomorrow(now time.Time) time.Duration {
 	return time.Date(y, m, d+1, 0, 0, 0, 0, now.Location()).Sub(now) + time.Second
 }
 
-// wireAudit is the timeline as the audit topic sends it: its records with
-// their times as of now, the rows they fold into, and what it says with
-// none.
-func wireAudit(records []console.AuditRecord, missing []string, polled bool, now time.Time) *Audit {
-	a := &Audit{Records: make([]AuditRecord, 0, len(records)), Runs: []AuditRun{}, Missing: missing}
-	for _, r := range records {
+// wireAudit is the timeline as the audit topic sends it, under a search:
+// the records it lets through with their times as of now and what it lights
+// in each, the rows they fold into, what it says with none, and what the
+// search let through of how many.
+func wireAudit(records []console.AuditRecord, missing []string, polled bool, q console.Query, now time.Time) *Audit {
+	shown := make([]console.AuditRecord, 0, len(records))
+	for _, i := range console.AuditSearch(q, records) {
+		shown = append(shown, records[i])
+	}
+	a := &Audit{Records: make([]AuditRecord, 0, len(shown)), Runs: []AuditRun{}, Missing: missing}
+	for _, r := range shown {
+		source, summary := console.AuditLit(q, r.Source, r.Summary)
 		a.Records = append(a.Records, AuditRecord{
 			ID: r.ID, Time: r.Time, Clock: console.AuditTime(r.Time, now), Source: r.Source, Summary: r.Summary,
-			Group: r.Group, GroupSummary: r.GroupSummary,
+			Group: r.Group, GroupSummary: r.GroupSummary, SourceLit: source, SummaryLit: summary,
 		})
 	}
-	for _, run := range console.AuditRuns(records) {
+	for _, run := range console.AuditRuns(shown) {
 		w := AuditRun{First: run.First, Last: run.Last}
 		if run.Folds() {
-			w.Summary = console.AuditRunSummary(records[run.Last], run.Count())
+			newest := shown[run.Last]
+			w.Summary = console.AuditRunSummary(newest, run.Count())
+			w.SourceLit, w.SummaryLit = console.AuditLit(q, newest.Source, w.Summary)
 		}
 		a.Runs = append(a.Runs, w)
 	}
+	if !q.Empty() {
+		a.Tally = console.AuditTally(len(shown), len(records))
+	}
+	a.Below.One, a.Below.Many = console.AuditBelowWords(!q.Empty())
 	switch {
+	case len(shown) > 0:
 	case len(records) > 0:
+		a.Note = console.AuditNoMatch
 	case polled:
 		a.Note = console.AuditNothing
 	default:

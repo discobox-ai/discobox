@@ -46,8 +46,12 @@ import (
 // (Requests.Arrived), automatic renewals (Requests.Said), a form's card and
 // its actions (Form.Card, Form.Aside, Form.Actions, Form.Leave, Submit.Action,
 // FormAction.Declines), and a
-// detail line's bullet.
-const Protocol = 17
+// detail line's bullet; 18, the audit view's search: the audit topic's query
+// (Subscribe.Audit), the records it lets through with what it lights in each
+// and its runs (AuditRecord.SourceLit, SummaryLit; AuditRun.SourceLit,
+// SummaryLit), its tally (Audit.Tally), and what the timeline says of the
+// records below a row held (Audit.Below).
+const Protocol = 18
 
 // Type names a message.
 type Type string
@@ -195,7 +199,8 @@ const (
 	// unsubscribed — once the box is provisioned it says "connecting to the
 	// terminal" — so the app ends it when the box's primary attaches.
 	TopicProvisioning Topic = "provisioning"
-	// TopicAudit is a box's audit timeline, followed (Box).
+	// TopicAudit is a box's audit timeline, followed (Box), narrowed to what
+	// a search lets through (Audit).
 	TopicAudit Topic = "audit"
 	// TopicHeader is what a box's workspace header says of it, as the core
 	// says it (console.Header), with its ports forwarded to this machine for
@@ -234,6 +239,11 @@ const (
 // hid (console.Revealing): a view the palette navigates to, which is never
 // saved over the person's filter.
 //
+// The audit timeline is narrowed to what a search lets through (Audit): the
+// app subscribes again under a new Sub for each query, before it ends the
+// old, and a box's trails are read once for every subscription following
+// them, so a new query narrows what was read rather than reading it again.
+//
 // The commands and the palette are about where the app asks from (Context)
 // and, for the commands, the boxes it names (Targets). They are read from the
 // last listing, never the servers, and sent again as it changes; the app
@@ -249,6 +259,13 @@ type Subscribe struct {
 	Targets []string      `json:"targets,omitempty"`
 	Palette *PaletteQuery `json:"palette,omitempty"`
 	Issue   *IssueQuery   `json:"issue,omitempty"`
+	Audit   *AuditQuery   `json:"audit,omitempty"`
+}
+
+// AuditQuery is what the audit topic's search is (console.ParseQuery): the
+// text typed, read as the TUI's audit screen reads it (console.AuditMatches).
+type AuditQuery struct {
+	Text string `json:"text,omitempty"`
 }
 
 // IssueQuery is which of a box's work the issue topic follows: its issue, or
@@ -773,21 +790,38 @@ type Provisioning struct {
 	Step string `json:"step"`
 }
 
-// Audit is a box's audit timeline: its most recent records, oldest first;
-// the rows they are drawn as (console.AuditRuns), every record in exactly
-// one, in order; the trails the last read could not reach; and, with no
-// record, what the timeline says (console.AuditReading before any read has
-// finished, console.AuditNothing after).
+// Audit is a box's audit timeline: its most recent records, oldest first —
+// under a search, those it lets through (console.AuditSearch); the rows they
+// are drawn as (console.AuditRuns, over the records sent), every record in
+// exactly one, in order; the trails the last read could not reach; and, with
+// no record, what the timeline says (console.AuditReading before any read
+// has finished, console.AuditNothing after, console.AuditNoMatch when a
+// search hid every one). Tally is what a search says of what it let through
+// (console.AuditTally), and set only under one. Below is what it says of the
+// records newer than a row held off the newest.
 type Audit struct {
 	Records []AuditRecord `json:"records"`
 	Runs    []AuditRun    `json:"runs"`
 	Missing []string      `json:"missing"`
 	Note    string        `json:"note,omitempty"`
+	Tally   string        `json:"tally,omitempty"`
+	Below   AuditBelow    `json:"below"`
+}
+
+// AuditBelow is what the timeline says of the records newer than the row
+// the app's cursor holds off the newest, after their count, which is the
+// app's (console.AuditBelowWords): One for one, Many for any other number —
+// matches, under a search.
+type AuditBelow struct {
+	One  string `json:"one"`
+	Many string `json:"many"`
 }
 
 // AuditRecord is one line of the timeline. Clock is when it was recorded, as
 // the timeline says it (console.AuditTime) as of the snapshot: the timeline
 // is sent again as the day turns, so a record of the day before says which.
+// SourceLit and SummaryLit are what a search lights in its Source and its
+// Summary (console.AuditLit), by rune index into each, in order.
 type AuditRecord struct {
 	ID           string    `json:"id"`
 	Time         time.Time `json:"time"`
@@ -796,15 +830,21 @@ type AuditRecord struct {
 	Summary      string    `json:"summary"`
 	Group        string    `json:"group,omitempty"`
 	GroupSummary string    `json:"groupSummary,omitempty"`
+	SourceLit    []int     `json:"sourceLit,omitempty"`
+	SummaryLit   []int     `json:"summaryLit,omitempty"`
 }
 
 // AuditRun is one row of the timeline: Records[First] alone, or the run
 // First to Last folded behind one row that opens it, which says Summary
-// (console.AuditRunSummary) at the time of its newest record.
+// (console.AuditRunSummary) at the time of its newest record. SourceLit and
+// SummaryLit are what a search lights on that row — the newest record's
+// Source, and Summary — as AuditRecord's are.
 type AuditRun struct {
-	First   int    `json:"first"`
-	Last    int    `json:"last"`
-	Summary string `json:"summary,omitempty"`
+	First      int    `json:"first"`
+	Last       int    `json:"last"`
+	Summary    string `json:"summary,omitempty"`
+	SourceLit  []int  `json:"sourceLit,omitempty"`
+	SummaryLit []int  `json:"summaryLit,omitempty"`
 }
 
 // AuditText is what the audit command read: a record in full, as `discobox

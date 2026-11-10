@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 17,
+  "x-protocol": 18,
   "x-specVersion": 6,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -550,7 +550,7 @@
       ]
     },
     "Subscribe": {
-      "description": "Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the box key, for a topic about one box. Filter is what the listing is narrowed to, which a renderer holds as the TUI holds its List's (console/DESIGN.md, \"The list\"): the app subscribes again under a new Sub to change it, and ends the old. Without one the listing opens on the filter this machine's last window left (console.ListView). Reveal, a box's key, narrows it instead to what shows that box whatever the filter hid (console.Revealing): a view the palette navigates to, which is never saved over the person's filter.\n\nThe commands and the palette are about where the app asks from (Context) and, for the commands, the boxes it names (Targets). They are read from the last listing, never the servers, and sent again as it changes; the app subscribes again under a new Sub when what it asks changes — each query of the palette, a menu opened somewhere else.",
+      "description": "Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the box key, for a topic about one box. Filter is what the listing is narrowed to, which a renderer holds as the TUI holds its List's (console/DESIGN.md, \"The list\"): the app subscribes again under a new Sub to change it, and ends the old. Without one the listing opens on the filter this machine's last window left (console.ListView). Reveal, a box's key, narrows it instead to what shows that box whatever the filter hid (console.Revealing): a view the palette navigates to, which is never saved over the person's filter.\n\nThe audit timeline is narrowed to what a search lets through (Audit): the app subscribes again under a new Sub for each query, before it ends the old, and a box's trails are read once for every subscription following them, so a new query narrows what was read rather than reading it again.\n\nThe commands and the palette are about where the app asks from (Context) and, for the commands, the boxes it names (Targets). They are read from the last listing, never the servers, and sent again as it changes; the app subscribes again under a new Sub when what it asks changes — each query of the palette, a menu opened somewhere else.",
       "type": "object",
       "properties": {
         "sub": {
@@ -583,6 +583,9 @@
         },
         "issue": {
           "$ref": "#/$defs/IssueQuery"
+        },
+        "audit": {
+          "$ref": "#/$defs/AuditQuery"
         }
       },
       "required": [
@@ -611,7 +614,7 @@
           "const": "provisioning"
         },
         {
-          "description": "TopicAudit is a box's audit timeline, followed (Box).",
+          "description": "TopicAudit is a box's audit timeline, followed (Box), narrowed to what a search lets through (Audit).",
           "const": "audit"
         },
         {
@@ -745,6 +748,15 @@
           "type": "boolean"
         },
         "shown": {
+          "type": "string"
+        }
+      }
+    },
+    "AuditQuery": {
+      "description": "AuditQuery is what the audit topic's search is (console.ParseQuery): the text typed, read as the TUI's audit screen reads it (console.AuditMatches).",
+      "type": "object",
+      "properties": {
+        "text": {
           "type": "string"
         }
       }
@@ -1478,7 +1490,7 @@
       ]
     },
     "Audit": {
-      "description": "Audit is a box's audit timeline: its most recent records, oldest first; the rows they are drawn as (console.AuditRuns), every record in exactly one, in order; the trails the last read could not reach; and, with no record, what the timeline says (console.AuditReading before any read has finished, console.AuditNothing after).",
+      "description": "Audit is a box's audit timeline: its most recent records, oldest first — under a search, those it lets through (console.AuditSearch); the rows they are drawn as (console.AuditRuns, over the records sent), every record in exactly one, in order; the trails the last read could not reach; and, with no record, what the timeline says (console.AuditReading before any read has finished, console.AuditNothing after, console.AuditNoMatch when a search hid every one). Tally is what a search says of what it let through (console.AuditTally), and set only under one. Below is what it says of the records newer than a row held off the newest.",
       "type": "object",
       "properties": {
         "records": {
@@ -1501,16 +1513,23 @@
         },
         "note": {
           "type": "string"
+        },
+        "tally": {
+          "type": "string"
+        },
+        "below": {
+          "$ref": "#/$defs/AuditBelow"
         }
       },
       "required": [
         "records",
         "runs",
-        "missing"
+        "missing",
+        "below"
       ]
     },
     "AuditRecord": {
-      "description": "AuditRecord is one line of the timeline. Clock is when it was recorded, as the timeline says it (console.AuditTime) as of the snapshot: the timeline is sent again as the day turns, so a record of the day before says which.",
+      "description": "AuditRecord is one line of the timeline. Clock is when it was recorded, as the timeline says it (console.AuditTime) as of the snapshot: the timeline is sent again as the day turns, so a record of the day before says which. SourceLit and SummaryLit are what a search lights in its Source and its Summary (console.AuditLit), by rune index into each, in order.",
       "type": "object",
       "properties": {
         "id": {
@@ -1534,6 +1553,20 @@
         },
         "groupSummary": {
           "type": "string"
+        },
+        "sourceLit": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "summaryLit": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
         }
       },
       "required": [
@@ -1545,7 +1578,7 @@
       ]
     },
     "AuditRun": {
-      "description": "AuditRun is one row of the timeline: Records[First] alone, or the run First to Last folded behind one row that opens it, which says Summary (console.AuditRunSummary) at the time of its newest record.",
+      "description": "AuditRun is one row of the timeline: Records[First] alone, or the run First to Last folded behind one row that opens it, which says Summary (console.AuditRunSummary) at the time of its newest record. SourceLit and SummaryLit are what a search lights on that row — the newest record's Source, and Summary — as AuditRecord's are.",
       "type": "object",
       "properties": {
         "first": {
@@ -1558,11 +1591,41 @@
         },
         "summary": {
           "type": "string"
+        },
+        "sourceLit": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "summaryLit": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
         }
       },
       "required": [
         "first",
         "last"
+      ]
+    },
+    "AuditBelow": {
+      "description": "AuditBelow is what the timeline says of the records newer than the row the app's cursor holds off the newest, after their count, which is the app's (console.AuditBelowWords): One for one, Many for any other number — matches, under a search.",
+      "type": "object",
+      "properties": {
+        "one": {
+          "type": "string"
+        },
+        "many": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "one",
+        "many"
       ]
     },
     "Header": {

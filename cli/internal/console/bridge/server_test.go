@@ -1437,6 +1437,133 @@ func TestTheAuditTimelineIsTheCores(t *testing.T) {
 	}
 }
 
+// The audit topic's search is the core's: only the records it lets through,
+// what it lights in each — a folded run where its own line matches — the
+// runs folded over what it let through, how many of how many, and what the
+// timeline says when it lets none through. What arrives is narrowed as it
+// arrives.
+func TestTheAuditSearchIsTheCores(t *testing.T) {
+	at := time.Now()
+	rec := func(id, group, summary string) console.AuditRecord {
+		return console.AuditRecord{ID: id, Time: at, Source: "http", Summary: summary, Group: group, GroupSummary: "GET 200 api.github.com"}
+	}
+	core := newFakeCore("home", running("b1"))
+	core.audit = []console.AuditUpdate{{Polled: true, Records: []console.AuditRecord{
+		rec("http-1", "g", "GET 200 https://api.github.com/user"),
+		rec("http-2", "", "POST 201 https://api.anthropic.com/v1/messages"),
+		rec("http-3", "g", "GET 200 https://api.github.com/user"),
+		{ID: "cvd_needle", Time: at, Source: "creds", Summary: "use github (at use): approved"},
+	}}}
+	core.auditMore = make(chan console.AuditUpdate)
+	a := dial(t, core)
+	a.hello()
+	search := func(sub uint32, text string) *Audit {
+		t.Helper()
+		a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: sub, Topic: TopicAudit, Box: "b1", Audit: &AuditQuery{Text: text}}})
+		for {
+			m := a.expect(TypeSnapshot)
+			if s := m.Snapshot; s.Sub == sub && s.Audit != nil && len(s.Audit.Records)+len(s.Audit.Note) > 0 && s.Audit.Note != console.AuditReading {
+				return s.Audit
+			}
+		}
+	}
+	tl := search(1, "ghub")
+	ids := func(tl *Audit) []string {
+		var out []string
+		for _, r := range tl.Records {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+	if got := ids(tl); !reflect.DeepEqual(got, []string{"http-1", "http-3", "cvd_needle"}) || tl.Tally != "3 of 4" {
+		t.Fatalf("ghub lets through %v, %q", got, tl.Tally)
+	}
+	want := []AuditRun{{First: 0, Last: 1, Summary: "GET 200 api.github.com (count 2)", SummaryLit: []int{12, 15, 16, 17}}, {First: 2, Last: 2}}
+	if !reflect.DeepEqual(tl.Runs, want) {
+		t.Fatalf("the runs fold over what it let through: %+v", tl.Runs)
+	}
+	if r := tl.Records[2]; len(r.SourceLit) != 0 || !reflect.DeepEqual(r.SummaryLit, []int{4, 7, 8, 9}) {
+		t.Fatalf("a record lit %+v", r)
+	}
+	core.auditMore <- console.AuditUpdate{Records: []console.AuditRecord{rec("http-4", "", "POST 201 https://api.anthropic.com/v1/messages")}}
+	core.auditMore <- console.AuditUpdate{Records: []console.AuditRecord{rec("http-5", "", "GET 200 https://api.github.com/repos")}}
+	for {
+		tl = a.expect(TypeSnapshot).Snapshot.Audit
+		if tl.Tally == "4 of 6" {
+			break
+		}
+		if tl.Tally != "3 of 5" {
+			t.Fatalf("an arrival: %+v", tl)
+		}
+	}
+	if got := ids(tl); got[len(got)-1] != "http-5" {
+		t.Fatalf("what arrives is narrowed: %v", got)
+	}
+	// The app's next query is subscribed before the last one is ended.
+	tl = search(2, "zzz")
+	a.send(Message{Type: TypeUnsubscribe, Unsubscribe: &Unsubscribe{Sub: 1}})
+	if len(tl.Records) != 0 || tl.Note != console.AuditNoMatch || tl.Tally != "0 of 6" {
+		t.Fatalf("a search nothing matches: %+v", tl)
+	}
+	if tl.Below != (AuditBelow{One: "newer match below", Many: "newer matches below"}) {
+		t.Fatalf("below a held row, under a search: %+v", tl.Below)
+	}
+	if tl := search(3, ""); len(tl.Records) != 6 || tl.Tally != "" || len(tl.Records[0].SummaryLit) != 0 || tl.Below.Many != "newer records below" {
+		t.Fatalf("no search: %+v", tl)
+	}
+}
+
+// A box's trails are read once for every audit subscription following them:
+// a new query, subscribed before the old one ends, narrows what was read at
+// once rather than reading it again; once the last ends, the next reads them
+// afresh.
+func TestAnAuditSearchNarrowsWhatWasRead(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.audit = []console.AuditUpdate{{Polled: true, Records: []console.AuditRecord{
+		{ID: "http-1", Time: time.Now(), Source: "http", Summary: "GET 200 https://api.github.com/user"},
+		{ID: "http-2", Time: time.Now(), Source: "http", Summary: "GET 200 https://registry.npmjs.org/react"},
+	}}}
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicAudit, Box: "b1"}})
+	// Its read lands, after what the timeline says before it.
+	if tl := a.expect(TypeSnapshot).Snapshot.Audit; tl.Note != console.AuditReading {
+		t.Fatalf("before the read: %+v", tl)
+	}
+	if tl := a.expect(TypeSnapshot).Snapshot.Audit; len(tl.Records) != 2 {
+		t.Fatalf("the read: %+v", tl)
+	}
+	reads := func() int {
+		n := 0
+		for _, c := range core.called() {
+			if c == "audit b1" {
+				n++
+			}
+		}
+		return n
+	}
+	for i, text := range []string{"n", "np", "npm"} {
+		sub := uint32(i + 2)
+		a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: sub, Topic: TopicAudit, Box: "b1", Audit: &AuditQuery{Text: text}}})
+		a.send(Message{Type: TypeUnsubscribe, Unsubscribe: &Unsubscribe{Sub: sub - 1}})
+		s := a.expect(TypeSnapshot).Snapshot
+		if s.Sub != sub || s.Audit == nil || s.Audit.Note == console.AuditReading || len(s.Audit.Records) == 0 {
+			t.Fatalf("%q's first snapshot: %+v", text, s)
+		}
+	}
+	if n := reads(); n != 1 {
+		t.Fatalf("the trails were read %d times, want once", n)
+	}
+	a.send(Message{Type: TypeUnsubscribe, Unsubscribe: &Unsubscribe{Sub: 4}})
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 5, Topic: TopicAudit, Box: "b1"}})
+	if s := a.expect(TypeSnapshot).Snapshot; s.Sub != 5 || s.Audit == nil || s.Audit.Note != console.AuditReading {
+		t.Fatalf("opened again, it reads afresh: %+v", s)
+	}
+	if n := reads(); n != 2 {
+		t.Fatalf("the trails were read %d times, want twice", n)
+	}
+}
+
 // The timeline is sent again just past the next local midnight, whatever
 // time of day it is followed from.
 func TestTheAuditTimelineIsSentAgainAsTheDayTurns(t *testing.T) {
@@ -1468,6 +1595,18 @@ func TestNothingFollowsAFailedAuditRead(t *testing.T) {
 		t.Fatalf("the failure: %+v", s)
 	}
 	a.quiet(200 * time.Millisecond)
+	// Another subscription on the box — a new search, the view opened
+	// again — reads the trails afresh, with the failed one still followed.
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicAudit, Box: "b1", Audit: &AuditQuery{Text: "x"}}})
+	if s := a.expect(TypeSnapshot).Snapshot; s.Sub != 2 || s.Audit == nil || s.Audit.Note != console.AuditReading {
+		t.Fatalf("a search after the failure: %+v", s)
+	}
+	if s := a.expect(TypeSnapshot).Snapshot; s.Sub != 2 || s.Error == "" {
+		t.Fatalf("its own failure: %+v", s)
+	}
+	if reads := slices.DeleteFunc(core.called(), func(c string) bool { return c != "audit b1" }); len(reads) != 2 {
+		t.Fatalf("the trails were read %d times, want twice", len(reads))
+	}
 }
 
 // The audit command enters the app's view, and with a record reads it in
