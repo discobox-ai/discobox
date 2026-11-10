@@ -288,6 +288,9 @@ pub struct Mock {
     requests: Vec<Request>,
     requests_sub: u32,
     dismissed: Vec<String>,
+    /// Whether the project owes the harness changes explainer: the requests topic names the
+    /// first box with changes to save while it does, and asking it pays it.
+    explain: bool,
     /// The action each form was submitted with, by its ID, for the one that answers it.
     actions_taken: HashMap<u64, CardAction>,
     /// The run options a create is made with, and the composer topic that says them.
@@ -482,6 +485,8 @@ enum Ask {
     Secret(SecretAction, String, String),
     /// A request's card, by the request's ID; from the secrets page, answered with the page.
     Request(String, bool),
+    /// The harness changes explainer, about a box by its key.
+    Explain(String),
 }
 
 /// A field of a card the core describes, in its tone.
@@ -854,9 +859,16 @@ impl Mock {
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
             services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(),
-            requests, requests_sub: 0, dismissed: vec![], actions_taken: HashMap::new(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
+            requests, requests_sub: 0, dismissed: vec![], explain: false, actions_taken: HashMap::new(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
             issues: HashMap::new(), issue_subs: HashMap::new(), audit_subs: HashMap::new(),
         }
+    }
+
+    /// The mock on a project that has yet to explain saving harness changes.
+    #[cfg(test)]
+    pub fn owing_explainer(mut self) -> Mock {
+        self.explain = true;
+        self
     }
 
     /// What the app sent the mock that only the CLI would act on.
@@ -1214,7 +1226,32 @@ impl Mock {
             r#box: r.r#box.clone(), kind: NoticeKind::Request, subject: "credential request".into(), detail: format!("{} for {}", r.name, r.r#where),
             call: "click to answer".into(), command: "requests".into(), urgent: true, ..Default::default()
         }).collect();
-        Requests { requests: self.requests.clone(), notices, ..Default::default() }
+        // The core's rule, against the boxes listed: the first with changes to save.
+        let explain = self.boxes.iter().find(|b| self.explain && self.changes.contains_key(&b.key)).map(|b| b.key.clone()).unwrap_or_default();
+        Requests { requests: self.requests.clone(), notices, explain, ..Default::default() }
+    }
+
+    /// The harness changes explainer, asked as the bridge asks it: the once the project owes it,
+    /// which asking pays, whichever way it is answered; any other asking is canceled unasked.
+    fn explain(&mut self, c: &Command) {
+        if !self.explain {
+            self.inbox.push(Event::Result(CommandResult { id: c.id, status: Status::Canceled, ..Default::default() }));
+            return;
+        }
+        self.explain = false;
+        let target = c.targets.first().cloned().unwrap_or_default();
+        let (name, harness) = self.sandbox(&target).map(|b| (b.name.clone(), b.harness.clone())).unwrap_or_default();
+        let id = self.next_ask;
+        self.next_ask += 1;
+        self.asks.insert(id, (c.clone(), Ask::Explain(target)));
+        let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), ..Default::default() };
+        self.inbox.push(Event::Question(Question {
+            id, command: c.id, title: "Saving harness changes".into(), subject: name,
+            body: format!("{harness} in this discobox changed its settings or signed in.\n\nSaving makes those settings, and that login, the shared default for every discobox on {harness} in this project."),
+            choices: vec![choice("review", "Review changes", "see what changed, then save or discard it"), choice("later", "Not now", "the workspace goes on saying so, to review it later")],
+            ..Default::default()
+        }));
+        self.send_waiting();
     }
 
     fn send_waiting(&self) {
@@ -1884,6 +1921,8 @@ impl Mock {
                     _ => done("settings saved".into()),
                 }
             }
+            Ask::Explain(sandbox) if get("key") == "review" => CommandResult { id: command, ..self.review(&c, sandbox) },
+            Ask::Explain(_) => canceled,
             Ask::Purge(_) if get("key") != "yes" => canceled,
             Ask::Purge(keys) => {
                 self.boxes.retain(|b| !keys.contains(&b.key) || b.state != State::Archived);
@@ -2209,6 +2248,7 @@ impl Backend for Mock {
                 self.inbox.push(Event::Result(r));
             }
             Out::Saved(v) => self.saved(v),
+            Out::Command(c) if c.command == "review config" && c.args.explain => self.explain(&c),
             Out::Command(c) if self.ask(&c) => {}
             // A stream let go is a session left running in the box: the mock's is a local shell,
             // which nothing would show again, so it goes.

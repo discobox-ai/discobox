@@ -81,7 +81,6 @@ does not do. Each has a way round on the desktop, said in its reason.
 | Behaviour | Reason, and the way round | Closed by |
 | --- | --- | --- |
 | The automatic push: while a workspace is open, commits made on this machine are sent into the box's origin (`cli/internal/tui/push.go`, the core's `Workspace.PushLook` and `Pushed`) | The bridge does not run the core's push loop yet. `discobox push` sends them | #961 |
-| The first harness change a project sees is explained before it is saved (`cli/internal/tui/harness_changes.go`, `Project.HarnessChangesExplained`) | The explainer's rule and text are the TUI's, not the core's, so the bridge cannot offer it. The notice and `review config` are there | #957 |
 | The window title follows the box on screen and its primary's report (`model.go`'s title) | The app's title is fixed; the header and the list say what the agent is doing | #959 |
 | The prompt and a comment opened in an external editor (Alt-E, F2) | No editor hand-off from the composer or the comment field; F2 is `rename` on the desktop | #958 |
 | Questions answered by their letter (`y`, `n`, a choice's key); the create card's `1`–`9` and `e`; Shift-Tab on the prompt for the harness; Ctrl-D at an empty prompt | The sheets take the arrows and Enter; the harness is on the create card and in `options`; `primary+q` and `/exit` quit | #958 |

@@ -317,6 +317,9 @@ enum Pending {
     Audit,
     /// A comment, a close or reopen, or a merge, from the issue tab on a stream.
     Act(u32, wire::IssueAct),
+    /// The harness changes explainer, asked for unprompted: its review opened on Review changes,
+    /// and nothing said when it is left or was not owed — the status line is not its.
+    Explain,
 }
 
 /// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
@@ -504,6 +507,11 @@ pub struct State {
     /// What waits on a person, as the requests topic last said it: each box's notice among it.
     pub waiting: Requests,
     requests_sub: u32,
+    /// Whether this window has asked for the harness changes explainer the requests topic said
+    /// the project owes (`explain_if_owed`): it is asked once.
+    explained: bool,
+    /// When a key last went into the composer, which the explainer waits to have gone quiet.
+    typed_at: f64,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -586,7 +594,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, waiting: Requests::default(), requests_sub: 0, recent: vec![], reveal: None, point: None, find: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, waiting: Requests::default(), requests_sub: 0, explained: false, typed_at: f64::NEG_INFINITY, recent: vec![], reveal: None, point: None, find: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
@@ -1864,6 +1872,34 @@ impl State {
         self.waiting = w;
     }
 
+    /// Asks for the harness changes explainer once the requests topic says the project owes it
+    /// (`Requests::explain`, the box it is about by the core's rule) and nothing else has the
+    /// screen (`explainer_screen_free`). What it says, and recording it on the project, are the
+    /// bridge's (`review config` with `explain`); Review changes opens the review.
+    fn explain_if_owed(&mut self) {
+        if self.explained || self.waiting.explain.is_empty() || !self.explainer_screen_free() {
+            return;
+        }
+        self.explained = true;
+        let (sandbox, context) = (self.waiting.explain.clone(), self.context());
+        let args = Args { explain: true, ..Default::default() };
+        self.command("review config", vec![sandbox], context, args, Pending::Explain);
+    }
+
+    /// Whether nothing else has the screen, by the core's rule (`console.ExplainerScreen.Free`)
+    /// over what this window reports of it: nothing in front of the window, no workspace with
+    /// the focus on its panes (from the moment a box opens, before its first pane attaches: the
+    /// change is made by signing in there), and no prompt being written — the composer, when it
+    /// has the keys, empty and untyped in for the spec's `prompt_quiet`. The rule is the core's,
+    /// written out here because the app cannot call it; the facts are this window's.
+    fn explainer_screen_free(&self) -> bool {
+        let covered = self.overlaid();
+        let terminal = self.workspace_shown() && self.focus == Focus::Panes;
+        let composing = self.composer.focused && self.focus == Focus::List;
+        let writing = composing && (!self.composer.text.is_empty() || self.now - self.typed_at < self.spec.prompt_quiet);
+        !covered && !terminal && !writing
+    }
+
     /// The notice of the box on screen, as the core says it.
     pub fn notice(&self) -> Option<&Notice> {
         let live = self.live.as_ref()?;
@@ -1905,7 +1941,10 @@ impl State {
     }
 
     /// The composer's prompt changed: it is told to the CLI once it has been still a moment.
-    pub fn composer_changed(&mut self) { self.edited = Some(self.now); }
+    pub fn composer_changed(&mut self) {
+        self.edited = Some(self.now);
+        self.typed_at = self.now;
+    }
 
     /// Tells the CLI the prompt if it changed and has been still for `still` seconds (`0` on the
     /// way out, when a prompt still in the composer is told even unchanged: there is one draft on
@@ -2090,6 +2129,7 @@ impl State {
                 self.review = None;
                 self.message = (!r.note.is_empty()).then(|| r.note.clone());
             }
+            Pending::Explain if r.status == Status::Enter => harnesses::open_review(self, &r),
             Pending::Follow(from) if from != self.live => return,
             Pending::Follow(_) if r.status == Status::Done => {
                 if let Err(e) = tx.open_url(&r.url) {
@@ -2439,6 +2479,9 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
     s.save_draft(DRAFT_STILL);
     s.sheets.reveal(tx);
     audit::reveal(s, tx);
+    // Checked on every poll: what holds it back (a sheet, a pane with the keys, a prompt) goes
+    // without anything arriving.
+    s.explain_if_owed();
     let events = s.inbox.drain();
     if events.is_empty() {
         return false;
@@ -2466,6 +2509,9 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
         }
     }
     s.take_copies(tx);
+    // And again once they are taken: the requests snapshot naming the box arrives among them, and
+    // an idle window may not poll again for a while.
+    s.explain_if_owed();
     true
 }
 

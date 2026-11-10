@@ -190,6 +190,16 @@ its actions as the core offers them.
   harness's config card, its default, reset, variant and files. A box's harness
   changes (`review config`) are a panel: the candidate's standing, what saving
   does, diffs, credentials, diagnostics and the core's offers.
+- **The harness changes explainer**: while the requests topic names a box the
+  project owes it about (`Requests.explain`), the window asks for it once
+  (`explain_if_owed`, `review config` with `explain`, `Pending::Explain`) on a
+  screen the core's rule reads as free (`explainer_screen_free`, the core's
+  `ExplainerScreen.Free` over this window's facts: nothing in front, no
+  workspace with the focus on its panes, no prompt being written within the
+  spec's `prompt_quiet`). It checks on every poll, and again once the poll's
+  events are taken, so it asks in the poll the snapshot naming the box lands
+  in. The bridge asks the core's question and records it once answered;
+  Review changes opens the panel, and leaving it says nothing.
 - **Secrets** (`src/secrets.rs`): the narrowed server's secrets and the
   requests waiting on it; a secret read as a panel with its bindings, its
   history, and new, edit, bind, unbind and delete through the core's forms and
@@ -326,7 +336,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/request_tests.rs` | A notice and its dismissal, a card answered and left, the requests table, a notification pressed |
 | `src/secret_tests.rs` | The secrets page and its sheets, the history, refresh |
 | `src/audit_tests.rs` | The timeline followed and held, runs, a record and a recording read, the timeline searched |
-| `src/harness_tests.rs` | The harnesses page, its card and actions, a file edited, harness changes reviewed |
+| `src/harness_tests.rs` | The harnesses page, its card and actions, a file edited, harness changes reviewed, the explainer asked once on a free screen |
 | `src/identity_tests.rs` | No TUI character art, every colour and length a token, the bundled face measured |
 
 The Go side, its parity scenarios included, runs in every CI job; the app's

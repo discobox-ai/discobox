@@ -4,10 +4,10 @@
 
 use rune::{Env, Key, KeyEvent, Mods, Runtime, Tx};
 
-use crate::backend::Out;
+use crate::backend::{Event, Inbox, Mock, Out, bundled_spec};
 use crate::sheet::{OPENED, Sheet};
 use crate::wire::{HarnessAction, HarnessChange, Submit};
-use crate::{MenuKind, State, harnesses, on_key, poll, run_command, theme, view};
+use crate::{Focus, MenuKind, State, harnesses, on_key, poll, run_command, theme, view};
 
 fn runtime() -> Runtime<State> {
     let mut rt = Runtime::with_text(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
@@ -217,4 +217,97 @@ fn harness_changes_are_reviewed_and_saved() {
     assert!(!rv.changes.nothing.is_empty() && rv.changes.offers.iter().all(|o| !o.enabled && !o.why.is_empty()), "{:?}", rv.changes.offers);
     key(&mut rt, Key::Escape);
     assert!(rt.state.review.is_none());
+}
+
+/// The window on a project that has yet to explain saving harness changes.
+fn owing() -> Runtime<State> {
+    let inbox = Inbox::default();
+    let mock = Mock::new(inbox.clone()).owing_explainer();
+    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, String::new()));
+    let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
+    rt.poll = Some(poll);
+    rt.on_key = Some(on_key);
+    settle(&mut rt);
+    rt
+}
+
+// A project that owes the explainer has it asked once, about the box the requests topic names,
+// and Review changes opens that box's review; the window never asks it again.
+#[test]
+fn the_explainer_is_asked_once_and_opens_the_review() {
+    let mut rt = owing();
+    let q = rt.state.sheets.question().expect("the explainer");
+    assert_eq!(q.question.title, "Saving harness changes");
+    let keys: Vec<&str> = q.question.choices.iter().map(|c| c.key.as_str()).collect();
+    assert_eq!(keys, ["review", "later"]);
+    key(&mut rt, Key::Enter);
+    let rv = rt.state.review.as_ref().expect("the review");
+    assert_eq!(rv.changes.candidate, "hcc_7f3a");
+    key(&mut rt, Key::Escape);
+    settle(&mut rt);
+    assert!(!rt.state.sheets.is_open() && rt.state.review.is_none(), "asked again");
+}
+
+// It waits for a screen the core reads as free: not over a prompt being written in the composer
+// that has the keys, nor one typed into within the spec's quiet, nor a workspace with the focus
+// on its panes, nor a sheet.
+#[test]
+fn the_explainer_waits_for_a_free_screen() {
+    let inbox = Inbox::default();
+    let mock = Mock::new(inbox.clone()).owing_explainer();
+    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, "a prompt left".into()));
+    let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
+    rt.poll = Some(poll);
+    rt.on_key = Some(on_key);
+    rt.update(|s, _| s.composer.focused = true);
+    settle(&mut rt);
+    assert!(!rt.state.sheets.is_open(), "asked over a prompt being written");
+
+    // Emptied just now: still being written, until the composer has been quiet a while.
+    rt.update(|s, _| {
+        s.composer.text.clear();
+        s.composer_changed();
+    });
+    settle(&mut rt);
+    assert!(!rt.state.sheets.is_open(), "asked over a composer typed into just now");
+    assert!(rt.state.spec.prompt_quiet > 1.0, "the spec's quiet: {}", rt.state.spec.prompt_quiet);
+
+    // A workspace with the focus on its panes, from the moment it opens.
+    rt.update(|s, _| {
+        s.open_row(0);
+        s.focus = Focus::Panes;
+    });
+    rt.frame(rt.state.spec.prompt_quiet + 1.0);
+    settle(&mut rt);
+    assert!(rt.state.workspace_shown() && !rt.state.sheets.is_open(), "asked over a workspace's panes");
+
+    rt.update(|s, _| s.focus = Focus::List);
+    settle(&mut rt);
+    assert!(rt.state.sheets.question().is_some_and(|q| q.question.title == "Saving harness changes"), "not asked once the screen was free");
+}
+
+// Leaving it says nothing on the status line, and keeps what was there: the window asked for it,
+// not the person.
+#[test]
+fn the_explainer_left_keeps_the_status_line() {
+    let mut rt = owing();
+    assert!(rt.state.sheets.question().is_some(), "the explainer");
+    rt.update(|s, _| s.message = Some("something the person was told".into()));
+    key(&mut rt, Key::Escape);
+    assert!(!rt.state.sheets.is_open() && rt.state.review.is_none());
+    assert_eq!(rt.state.message.as_deref(), Some("something the person was told"));
+}
+
+// The window asks in the very poll the snapshot naming the box lands in: an idle window may not
+// poll again for a while, and the live app first sat on a free screen without asking.
+#[test]
+fn the_explainer_is_asked_in_the_poll_its_snapshot_lands_in() {
+    let inbox = Inbox::default();
+    let mut s = State::with((Box::new(Mock::new(inbox.clone())), bundled_spec(), inbox.clone(), false, String::new()));
+    assert!(!s.explained && s.waiting.explain.is_empty());
+    let mut w = s.waiting.clone();
+    w.explain = s.boxes[0].key.clone();
+    inbox.push(Event::Requests(s.requests_sub, Ok(w)));
+    poll(&mut s, 0.0, &mut Tx::default());
+    assert!(s.explained, "not asked in the poll the snapshot landed in");
 }
