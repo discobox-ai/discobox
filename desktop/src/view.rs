@@ -9,6 +9,7 @@ use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col,
 
 use crate::wire::{Box as Sandbox, GitTone, Link, Row, TabKind};
 use crate::theme::{self, CELL_H};
+use crate::paste::{self, DropOver};
 use crate::{Focus, MenuKind, Pane, Side, State, Workspace, harnesses, icons, keys, mark, overlay, run_command, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
@@ -484,6 +485,18 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
         .on_secondary_press_local(move |s: &mut State, p, tx| s.pane_secondary(id, active, p, tx))
         // A program with the mouse is pointed at, not selected in.
         .cursor(if pane.screen.reports_mouse() { rune::Cursor::Default } else { rune::Cursor::Text });
+    // Files dropped on one of the box's sessions: images carried in, anything else pasted as its
+    // path (`paste.rs`); lit while a drag is over it. A service's tab takes nothing typed.
+    // The border is there only under a drag: one drawn transparent would still cut a ring out of
+    // the screen's ground.
+    if s.takes_images(id) {
+        if s.drop_over == Some(DropOver::Pane(id)) {
+            screen = screen.border(theme::stroke_focus(), theme::mark());
+        }
+        screen = screen
+            .on_drop_files(move |s: &mut State, files, _| s.drop_files(id, files))
+            .on_drop_hover(move |s: &mut State, on, _| s.drop_hover(DropOver::Pane(id), on));
+    }
     let mut chips = row().gap(6.0).pin(None, None, Some(6.0), Some(6.0));
     if pane.screen.seized && pane.screen.wants_mouse() {
         chips = chips.child(text("mouse taken").font(theme::UI_SMALL).color(theme::grey()).px(8.0).py(2.0).radius(theme::r_key())
@@ -716,11 +729,17 @@ fn composer(s: &State) -> El {
         summary = summary.child(t(c.text.clone(), if c.chosen { theme::gold() } else { theme::dim() }).font(theme::UI_SMALL));
     }
     summary = summary.child(spacer()).child(offer(s, "options-offer", "run options".into(), "options"));
+    // A folder dropped on it is where the next discobox is cut from (`paste.rs`); lit while a
+    // drag carrying one is over it.
+    let over = s.drop_over == Some(DropOver::Composer);
     col().w_full().gap(6.0).px(18.0)
-        .child(text("Return runs the prompt in a new discobox, or just creates one when it is empty · Shift+Return is a new line")
+        .child(text("Return runs the prompt in a new discobox, or just creates one when it is empty · Shift+Return is a new line · drop a folder to cut it from there")
             .font(theme::UI_SMALL).color(theme::dim()))
-        .child(row().w_full().px(12.0).py(10.0).gap(10.0).items_start().radius(theme::r_row()).fill(theme::sunken())
-            .border(theme::stroke_quiet(), if s.composer.focused { theme::mark() } else { theme::line() })
+        .child(row().key("composer-box").w_full().px(12.0).py(10.0).gap(10.0).items_start().radius(theme::r_row()).fill(theme::sunken())
+            .border(if over { theme::stroke_focus() } else { theme::stroke_quiet() }, if s.composer.focused || over { theme::mark() } else { theme::line() })
+            .on_drop_files(|s: &mut State, folders, _| s.drop_source(folders))
+            .accepts_files(paste::is_folder)
+            .on_drop_hover(|s: &mut State, on, _| s.drop_hover(DropOver::Composer, on))
             .child(icon(&icons::CHEVRON, 14.0).color(theme::mark()).mt(3.0))
             .child(rune::auto_grow(field, 1, 8).grow(1.0)))
         .child(summary)

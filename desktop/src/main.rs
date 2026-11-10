@@ -25,6 +25,9 @@ mod mark;
 mod overlay;
 #[cfg(test)]
 mod parity_tests;
+mod paste;
+#[cfg(test)]
+mod paste_tests;
 #[cfg(test)]
 mod service_tests;
 mod sheet;
@@ -70,11 +73,14 @@ pub struct Pane {
     pub exited: bool,
     /// What the tab says over its program: reconnecting, or what its ending left it saying.
     pub status: Option<String>,
+    /// What was typed or pasted into it while an image is on its way in (`paste.rs`), sent after
+    /// the image's path, in order; `None` while nothing is on its way.
+    pub held: Option<Vec<Vec<u8>>>,
 }
 
 impl Pane {
     fn new(stream: u32, exec: Tab) -> Pane {
-        Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None }
+        Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None, held: None }
     }
 
     pub fn side(&self) -> Side { if matches!(self.exec.kind, TabKind::Shell | TabKind::Tool) { Side::Shells } else { Side::Terminals } }
@@ -224,6 +230,9 @@ enum Pending {
     /// from the box that was on screen when it was pressed (`live` then), as the TUI drops an
     /// answer that took its time: a person who moved on is not sent back.
     Follow(Option<String>),
+    /// Images carried into the box of the pane on a stream, which holds its input until they
+    /// are in; and what goes to its program instead when they were not images.
+    Upload(u32, paste::NoImage),
 }
 
 /// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
@@ -447,6 +456,8 @@ pub struct State {
     /// A warning a running command gave (uncommitted changes left out, a settings file not read
     /// whole): it stays on the status line past the steps that follow, until the next command.
     warned: bool,
+    /// The drop target a file drag is over, which is lit while it is.
+    pub drop_over: Option<paste::DropOver>,
 }
 
 const DEFAULT_SIZE: (u16, u16) = (100, 30);
@@ -479,7 +490,7 @@ impl State {
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
-            composer: TextEdit::new(draft.clone()), summary: vec![], composer_sub: 0, draft: draft.clone(), edited: None, now: 0.0, warned: false,
+            composer: TextEdit::new(draft.clone()), summary: vec![], composer_sub: 0, draft: draft.clone(), edited: None, now: 0.0, warned: false, drop_over: None,
         };
         // The prompt the last window left is back: closing a window is not how one is lost.
         if !draft.is_empty() {
@@ -1219,10 +1230,23 @@ impl State {
         Some(&mut ws.panes[i])
     }
 
-    /// Bytes for a pane's program that are not a key: a mouse report, a wheel's arrows, a
-    /// paste. A session that ended is sent nothing.
+    /// Bytes for a pane's program that are not typed: a mouse report, a wheel's arrows. A
+    /// session that ended is sent nothing. They are never held behind an image on its way in,
+    /// as the TUI holds none: replayed after it, a wheel's arrows would walk an agent's prompt
+    /// history over the path just pasted, and a click would land on a screen since redrawn.
     pub fn send_to(&mut self, stream: u32, bytes: &[u8]) {
         if bytes.is_empty() || self.pane_mut(stream).is_none_or(|p| p.exited) {
+            return;
+        }
+        self.backend.input(stream, bytes);
+    }
+
+    /// Bytes typed or pasted into a pane: held behind an image on its way in, and sent after
+    /// its path, in order (`paste.rs`).
+    pub fn type_into(&mut self, stream: u32, bytes: &[u8]) {
+        let Some(p) = self.pane_mut(stream).filter(|p| !p.exited && !bytes.is_empty()) else { return };
+        if let Some(held) = &mut p.held {
+            held.push(bytes.to_vec());
             return;
         }
         self.backend.input(stream, bytes);
@@ -1238,13 +1262,6 @@ impl State {
         }
     }
 
-    /// The paste gesture: what the clipboard holds, into the focused pane, as its program asked
-    /// to be pasted to.
-    pub fn paste(&mut self, tx: &mut Tx) {
-        let Some(stream) = self.focused_pane().filter(|p| !p.exited).map(|p| p.stream) else { return };
-        tx.read_clipboard(move |s: &mut State, content, _| s.paste_text(stream, content.text()));
-    }
-
     pub fn paste_text(&mut self, stream: u32, text: &str) {
         let Some(p) = self.pane_mut(stream) else { return };
         if text.is_empty() {
@@ -1252,7 +1269,7 @@ impl State {
         }
         p.screen.to_bottom();
         let bytes = p.screen.paste(text);
-        self.send_to(stream, &bytes);
+        self.type_into(stream, &bytes);
     }
 
     /// The find gesture: a find bar over the focused pane, on what it last looked for.
@@ -1516,6 +1533,11 @@ impl State {
             return;
         }
         pane.screen.to_bottom();
+        // Behind an image on its way in, in order (`paste.rs`).
+        if let Some(held) = &mut pane.held {
+            held.push(bytes.to_vec());
+            return;
+        }
         let stream = pane.stream;
         self.backend.input(stream, bytes);
     }
@@ -1898,6 +1920,7 @@ impl State {
             }
             Pending::Create(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
             Pending::Create(_) if r.status == Status::Canceled => self.message = None,
+            Pending::Upload(stream, otherwise) => self.uploaded(stream, otherwise, &r),
             Pending::Verb(verb, name) => {
                 // A verb that acted on anything is worth letting the marks go for: they were put
                 // there to run this, and leaving them invites running it twice (the TUI's rule).

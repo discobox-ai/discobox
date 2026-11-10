@@ -241,3 +241,46 @@ func TestNewWithExitLeaves(t *testing.T) {
 		t.Fatal("/exit created a box")
 	}
 }
+
+// A folder dropped on the composer is options with a source: checked as a
+// source typed on a form is, it sets the Source row without asking anything,
+// the composer's line names it, and the next create's card opens on it. One
+// the creation path refuses is refused with why, and moves nothing.
+func TestOptionsWithADroppedFolder(t *testing.T) {
+	core := withHarnesses(newFakeCore("home"))
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicComposer}})
+	a.expect(TypeSnapshot)
+
+	id := a.command(Command{Command: "options", Args: Args{Source: "nowhere"}})
+	if r := a.result(id); r.Status != StatusFailed || !strings.Contains(r.Why, "not a directory") {
+		t.Fatalf("a folder the creation path refuses: %+v", r)
+	}
+
+	id = a.command(Command{Command: "options", Args: Args{Source: "app"}})
+	var r *Result
+	var chips []Chip
+	for r == nil || chips == nil {
+		switch m := a.message(); m.Type {
+		case TypeForm:
+			t.Fatal("a dropped folder asked the run options' form")
+		case TypeResult:
+			r = m.Result
+		case TypeSnapshot:
+			chips = m.Snapshot.Composer.Chips
+		}
+	}
+	if r.ID != id || r.Status != StatusDone || !strings.Contains(r.Note, "/abs/app") {
+		t.Fatalf("result %+v", r)
+	}
+	if !slices.ContainsFunc(chips, func(c Chip) bool { return c.Text == "/abs/app" && c.Chosen }) {
+		t.Fatalf("the composer's line does not name the folder: %+v", chips)
+	}
+
+	a.command(Command{Command: "new"})
+	card := a.expect(TypeForm).Form
+	if source, _ := formField(card, console.SourceField); source.Value != "/abs/app" {
+		t.Fatalf("the card opens on %q, not the dropped folder", source.Value)
+	}
+}

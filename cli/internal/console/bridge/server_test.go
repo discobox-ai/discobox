@@ -445,6 +445,12 @@ func TestSubscriptions(t *testing.T) {
 	if want := []string{"primary:primary:", "shell:sh:bash", "terminal:claude:claude"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("sessions %q, want %q", got, want)
 	}
+	// Which take images and the image keys is the core's (console.Tab).
+	for _, s := range sessions.Sessions {
+		if s.Images != true || s.ImageKeys != (s.Kind != TabShell) {
+			t.Errorf("%s: images %v, image keys %v", s.Exec, s.Images, s.ImageKeys)
+		}
+	}
 
 	a.send(Message{Type: TypeUnsubscribe, Unsubscribe: &Unsubscribe{Sub: 1}})
 	a.send(Message{Type: TypeUnsubscribe, Unsubscribe: &Unsubscribe{Sub: 2}})
@@ -565,17 +571,57 @@ func TestCommandsAndPaletteNeverList(t *testing.T) {
 	}
 }
 
-// A pasted image lands in the box, and its path is the answer.
+// A pasted image lands in the box under the core's name for it, never the
+// name the app sent, and its path is the answer.
 func TestUpload(t *testing.T) {
 	core := newFakeCore("home", running("b1"))
 	a := dial(t, core)
 	a.hello()
-	a.send(Message{Type: TypeUpload, Upload: &Upload{ID: 9, Box: "b1", Name: "shot.png", Data: []byte{1, 2, 3}}})
-	if r := a.result(9); r.Status != StatusDone || r.Path != "/tmp/shot.png" {
+	a.send(Message{Type: TypeUpload, Upload: &Upload{ID: 9, Box: "b1", Name: "../shot.png", Data: []byte{1, 2, 3}}})
+	r := a.result(9)
+	if r.Status != StatusDone || len(r.Paths) != 1 || !strings.HasSuffix(r.Paths[0], "-0-shot.png") || strings.Contains(r.Paths[0], "..") {
 		t.Fatalf("result %+v", r)
 	}
-	if !slices.Contains(core.called(), "put b1 shot.png 3") {
+	name := strings.TrimPrefix(r.Paths[0], "/tmp/")
+	if !slices.Contains(core.called(), "put b1 "+name+" 3") {
 		t.Fatalf("calls %q", core.called())
+	}
+
+	a.send(Message{Type: TypeUpload, Upload: &Upload{ID: 10, Box: "b1", Name: "empty.png"}})
+	if r := a.result(10); r.Status != StatusFailed {
+		t.Fatalf("an upload with no image: %+v", r)
+	}
+}
+
+// Files dropped on a pane are read here, and carried in when every one is an
+// image, in the order dropped; a drop that is not all images carries nothing
+// in and is answered with no paths, for the app to paste them as text.
+func TestUploadDroppedFiles(t *testing.T) {
+	dir := t.TempDir()
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+	shot, other, notes := filepath.Join(dir, "shot.png"), filepath.Join(dir, "b.png"), filepath.Join(dir, "notes.txt")
+	for _, f := range []string{shot, other, notes} {
+		if err := os.WriteFile(f, png, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	core := newFakeCore("home", running("b1"))
+	a := dial(t, core)
+	a.hello()
+
+	a.send(Message{Type: TypeUpload, Upload: &Upload{ID: 4, Box: "b1", Files: []string{shot, other}}})
+	r := a.result(4)
+	if r.Status != StatusDone || len(r.Paths) != 2 || !strings.HasSuffix(r.Paths[0], "-0-shot.png") || !strings.HasSuffix(r.Paths[1], "-1-b.png") {
+		t.Fatalf("result %+v", r)
+	}
+
+	before := len(core.called())
+	a.send(Message{Type: TypeUpload, Upload: &Upload{ID: 5, Box: "b1", Files: []string{shot, notes}}})
+	if r := a.result(5); r.Status != StatusDone || len(r.Paths) != 0 {
+		t.Fatalf("a drop that is not all images: %+v", r)
+	}
+	if after := core.called()[before:]; slices.ContainsFunc(after, func(c string) bool { return strings.HasPrefix(c, "put ") }) {
+		t.Fatalf("a drop that is not all images carried something in: %q", after)
 	}
 }
 

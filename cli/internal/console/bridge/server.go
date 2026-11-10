@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
@@ -387,16 +388,40 @@ func size(cols, rows int) (int, int) {
 	return cols, rows
 }
 
+// upload carries an upload's images into its box, as the TUI carries a
+// paste's (tui/imagepaste.go): the clipboard's image, or the files dropped when
+// every one is an image (clipimage.Files), each written under the core's name
+// for it. A drop that is not all images is done with no paths, for the app to
+// paste the files' paths as text.
 func (s *Server) upload(ctx context.Context, u Upload) Result {
 	box, src, err := s.source(ctx, u.Box)
 	if err != nil {
 		return failed(err.Error())
 	}
-	path, err := src.PutImage(ctx, box.ID, u.Name, u.Data)
-	if err != nil {
-		return failed(err.Error())
+	images := []clipimage.Image{{Name: u.Name, Data: u.Data}}
+	switch {
+	case len(u.Files) > 0:
+		if images, err = clipimage.Files(u.Files); err != nil {
+			return failed("cannot read the dropped image: " + err.Error())
+		}
+		if len(images) == 0 {
+			return Result{Status: StatusDone}
+		}
+	case len(u.Data) == 0:
+		return failed("the upload carries no image")
 	}
-	return Result{Status: StatusDone, Path: path}
+	ctx, cancel := context.WithTimeout(ctx, console.PutImageTimeout)
+	defer cancel()
+	now := time.Now()
+	paths := make([]string, 0, len(images))
+	for i, image := range images {
+		path, err := src.PutImage(ctx, box.ID, console.PastedImageName(image.Name, now, i), image.Data)
+		if err != nil {
+			return failed(err.Error())
+		}
+		paths = append(paths, path)
+	}
+	return Result{Status: StatusDone, Paths: paths}
 }
 
 // ---------------------------------------------------------------------------

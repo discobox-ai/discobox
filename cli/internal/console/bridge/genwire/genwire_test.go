@@ -153,7 +153,7 @@ func TestRust(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := &Document{Title: "Fixture", Protocol: 7, SpecVersion: 1, Defs: b.defs,
+	d := &Document{Title: "Fixture", Protocol: 7, SpecVersion: 1, MaxFrame: 1024, Defs: b.defs,
 		FrameKinds: Ordered[FrameKind]{{Key: "json", Value: FrameKind{Kind: 255, Description: "JSON."}}}}
 	encoded, err := encodeSchema(d)
 	if err != nil {
@@ -169,6 +169,7 @@ func TestRust(t *testing.T) {
 	}
 	for _, want := range []string{
 		"pub const PROTOCOL: i64 = 7;",
+		"pub const MAX_FRAME: usize = 1024;",
 		"    pub const JSON: u8 = 255;",
 		"pub struct fixture {\n    pub kind: fixtureKind,\n",
 		"    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub body: Option<fixtureBody>,\n",

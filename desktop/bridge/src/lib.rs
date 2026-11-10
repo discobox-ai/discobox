@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 
 use crate::wire::{
-    Form, Hello, Message, PROTOCOL, Question, ResizePayload, Result as CommandResult, SPEC_VERSION, Status, Stream,
+    Form, Hello, MAX_FRAME, Message, PROTOCOL, Question, ResizePayload, Result as CommandResult, SPEC_VERSION, Status, Stream,
     StreamState, Type, Welcome, kind,
 };
 
@@ -155,8 +155,13 @@ fn welcome(input: &mut impl Read) -> Result<Welcome, String> {
     }
 }
 
-/// Writes one frame: kind (1), stream (u32), length (u32), big-endian, then the payload.
+/// Writes one frame: kind (1), stream (u32), length (u32), big-endian, then the payload. One
+/// past the bridge's bound is refused and nothing is written: the CLI would end the bridge on
+/// it, since the two sides would no longer agree where a frame starts.
 fn write_frame(w: &mut impl Write, kind: u8, stream: u32, payload: &[u8]) -> io::Result<()> {
+    if payload.len() > MAX_FRAME {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("a frame of {} bytes is over the bridge's {MAX_FRAME}", payload.len())));
+    }
     let len = u32::try_from(payload.len()).map_err(io::Error::other)?;
     let mut head = [0u8; 9];
     head[0] = kind;
@@ -251,6 +256,17 @@ mod tests {
         assert_eq!(read_frame(&mut r).unwrap(), (kind::STDOUT, 7, b"hello".to_vec()));
         assert_eq!(read_frame(&mut r).unwrap(), (kind::JSON, 0, vec![]));
         assert!(read_frame(&mut r).is_err());
+    }
+
+    // A frame past the bridge's bound is refused before a byte of it is written, so the bridge
+    // goes on: the CLI would have ended it.
+    #[test]
+    fn a_frame_past_the_bound_is_refused_whole() {
+        let mut wire = Vec::new();
+        let err = write_frame(&mut wire, kind::JSON, 0, &vec![b'x'; MAX_FRAME + 1]).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(wire.is_empty(), "part of a refused frame was written");
+        write_frame(&mut wire, kind::JSON, 0, &vec![b'x'; MAX_FRAME]).unwrap();
     }
 
     // A CLI of another protocol is refused, naming which side is older.

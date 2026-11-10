@@ -28,8 +28,12 @@ import (
 // a box's tools: the tools command's tools and addresses, a tool run or its
 // session made, a tool's file edited, and the tool a tab runs (Tab.Tool); 11,
 // a link pressed in a pane followed through the core (Follow), and the spec's
-// link schemes.
-const Protocol = 11
+// link schemes; 12,
+// images dropped on a pane as files (Upload.Files), every path an upload
+// landed at (Result.Paths), which tabs take images and the image keys
+// (Tab.Images, Tab.ImageKeys), and a folder dropped on the composer (the
+// options command's Args.Source).
+const Protocol = 12
 
 // Type names a message.
 type Type string
@@ -67,7 +71,7 @@ const (
 	// TypeSaved is the app's word that it was saved (app).
 	TypeEdit  Type = "edit"
 	TypeSaved Type = "saved"
-	// TypeUpload is a pasted or dropped image for a box (app).
+	// TypeUpload is images pasted or dropped on a box's session (app).
 	TypeUpload Type = "upload"
 	// TypeOpen attaches a stream the app allocated to a session, and
 	// TypeClose detaches it, ending nothing in the box (app).
@@ -635,6 +639,11 @@ type Tab struct {
 	// Tool is the tool a tool's tab runs, by its ID: what the tools menu
 	// finds a running tool's tab by.
 	Tool string `json:"tool,omitempty"`
+	// Images is a tab an image pasted or dropped on is carried into the box
+	// for (console.Tab.TakesImages); ImageKeys, one the paste image gesture is
+	// taken on (console.Tab.TakesImageKeys).
+	Images    bool `json:"images,omitempty"`
+	ImageKeys bool `json:"imageKeys,omitempty"`
 }
 
 // TabKind is what a session is, which says the column its tab is in.
@@ -732,6 +741,10 @@ type Args struct {
 	// session made on Stream — and with File, that file of it is edited.
 	Tool string `json:"tool,omitempty"`
 	File string `json:"file,omitempty"`
+	// Source is a folder dropped on the composer: the options command with
+	// one sets the Source row to it, checked as a source typed by hand is,
+	// in place of asking the run options' form.
+	Source string `json:"source,omitempty"`
 }
 
 // Status is how a command ended.
@@ -771,8 +784,8 @@ type Result struct {
 	// Services are the box's declared services, in declaration order, read
 	// as the services menu opens: what it lists.
 	Services []Service `json:"services,omitempty"`
-	// Path is where an upload landed in the box.
-	Path string `json:"path,omitempty"`
+	// Paths are where an upload's images landed in the box, in order.
+	Paths []string `json:"paths,omitempty"`
 	// URL is where a followed link goes, for the app to open.
 	URL string `json:"url,omitempty"`
 	// Harnesses are the harnesses of the server the harnesses command read,
@@ -1037,13 +1050,24 @@ type Saved struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// Upload is an image pasted or dropped on a box. It is answered with a
-// result, by ID, whose Path is where the image is in the box.
+// Upload is images for one of a box's sessions: an image pasted from the
+// clipboard (Name and Data), or files dropped on its pane (Files). It is
+// answered with a result, by ID, whose Paths are where the images are in the
+// box, in order, for the app to paste in their place; a drop that is not all
+// images is answered done with none, and the app pastes the files' paths as
+// text, as a terminal does a dragged file.
 type Upload struct {
-	ID   uint64 `json:"id"`
-	Box  string `json:"box"`
-	Name string `json:"name"`
-	Data []byte `json:"data"`
+	ID  uint64 `json:"id"`
+	Box string `json:"box"`
+	// Name is what the clipboard calls the image, and Data its bytes. The
+	// image is written under a name of the core's (console.PastedImageName),
+	// never this one.
+	Name string `json:"name,omitempty"`
+	Data []byte `json:"data,omitempty"`
+	// Files are paths on this machine, as dropped. The CLI reads them, and
+	// they are images only when every one is an image file
+	// (clipimage.Files).
+	Files []string `json:"files,omitempty"`
 }
 
 // Open attaches the stream the app allocated to one of a box's sessions,

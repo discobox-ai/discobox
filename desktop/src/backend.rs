@@ -27,7 +27,7 @@ use crate::wire::{
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
-    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address,
+    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -50,6 +50,8 @@ pub enum Out {
     Draft(String),
     /// A link pressed in a pane, for the core to say where it goes.
     Follow(Follow),
+    /// Images for one of a box's sessions: the clipboard's, or files dropped on its pane.
+    Upload(Upload),
 }
 
 impl Out {
@@ -69,6 +71,7 @@ impl Out {
             Out::Saved(v) => Message { r#type: Type::Saved, saved: Some(v), ..Default::default() },
             Out::Draft(prompt) => Message { r#type: Type::Draft, draft: Some(Draft { prompt }), ..Default::default() },
             Out::Follow(f) => Message { r#type: Type::Follow, follow: Some(f), ..Default::default() },
+            Out::Upload(u) => Message { r#type: Type::Upload, upload: Some(u), ..Default::default() },
         }
     }
 }
@@ -179,33 +182,42 @@ fn event(m: Message) -> Option<Event> {
 
 pub struct Bridge {
     client: Client,
+    inbox: Inbox,
 }
 
 impl Bridge {
     /// Says hello and waits for the welcome; then what arrives goes to the inbox, until the CLI
     /// is gone, when the app is too. Beside the spec, the prompt the last window left.
     pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec, String), String> {
+        let reader = inbox.clone();
         let (client, welcome) = Client::connect(std::io::stdin(), std::io::stdout(), move |incoming| match incoming {
             Incoming::Message(m) => {
                 if let Some(e) = event(m) {
-                    inbox.push(e);
+                    reader.push(e);
                 }
             }
-            Incoming::Output(stream, bytes) => inbox.push(Event::Data(stream, bytes)),
-            Incoming::Exited(stream, why) => inbox.push(Event::Exited(stream, why)),
+            Incoming::Output(stream, bytes) => reader.push(Event::Data(stream, bytes)),
+            Incoming::Exited(stream, why) => reader.push(Event::Exited(stream, why)),
             // Nothing more will arrive, and nothing can be sent.
             Incoming::Closed => std::process::exit(0),
         })?;
         let draft = welcome.session.as_ref().map(|s| s.draft.clone()).unwrap_or_default();
-        Ok((Bridge { client }, welcome.spec.ok_or("the CLI's welcome carried no spec")?, draft))
+        Ok((Bridge { client, inbox }, welcome.spec.ok_or("the CLI's welcome carried no spec")?, draft))
     }
 }
 
 impl Backend for Bridge {
-    // A write fails only once the CLI is gone, and then the reader ends the app.
+    // A write fails once the CLI is gone, and then the reader ends the app; or for a message past
+    // the bridge's bound, which is refused whole and the bridge goes on. What waits on a result
+    // for it (a command, an upload holding its pane's input) gets one, failed with why.
     fn send(&mut self, m: Out) {
-        if let Err(e) = self.client.send(&m.message()) {
+        let m = m.message();
+        if let Err(e) = self.client.send(&m) {
             eprintln!("desktop: a message could not be written: {e}");
+            let id = m.command.as_ref().map(|c| c.id).or(m.upload.as_ref().map(|u| u.id));
+            if let Some(id) = id {
+                self.inbox.push(Event::Result(CommandResult { id, status: Status::Failed, why: format!("could not send it to the CLI: {e}"), ..Default::default() }));
+            }
         }
     }
     fn input(&mut self, stream: u32, bytes: &[u8]) { let _ = self.client.input(stream, bytes); }
@@ -334,6 +346,8 @@ impl Default for MockRun {
 pub struct MockRecord {
     pub drafts: Vec<String>,
     pub created: Vec<String>,
+    /// Every upload, as sent.
+    pub uploads: Vec<Upload>,
 }
 
 /// Where the mock's window runs, which a create is cut from unless told otherwise.
@@ -372,7 +386,7 @@ impl MockService {
         Tab {
             exec: format!("service:{}", self.id), kind: TabKind::Service, title: format!("{}{mark}", self.id), live: self.live(), argv: vec![],
             service: self.id.clone(), run: format!("{}|{}", self.runs, self.status), status: if self.live() { String::new() } else { self.status.clone() },
-            tool: String::new(),
+            ..Default::default()
         }
     }
 
@@ -436,7 +450,9 @@ fn mock_tools(running: bool) -> Vec<Tool> {
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
-    Tab { exec: exec.into(), kind, title: title.into(), live: true, argv: vec![], ..Default::default() }
+    // Which take images and the image keys, as the core's `Tab.TakesImages` and `TakesImageKeys` say.
+    let (images, image_keys) = (kind != TabKind::Service, matches!(kind, TabKind::Primary | TabKind::Terminal));
+    Tab { exec: exec.into(), kind, title: title.into(), live: true, argv: vec![], images, image_keys, ..Default::default() }
 }
 
 /// A made-up box, as the CLI would list it: one server, so its key is its ID.
@@ -1119,6 +1135,14 @@ impl Mock {
             "services" => self.services(&c, target),
             "review config" if !running => fail("cannot review config: takes one running box"),
             "review config" => self.review(&c, target),
+            // A folder dropped on the composer: checked, roughly as the creation path checks a
+            // source, and where the creates that follow are cut from.
+            "options" if !std::path::Path::new(&c.args.source).is_dir() => fail(&format!("{} is not a directory", c.args.source)),
+            "options" => {
+                self.run.source = c.args.source.clone();
+                self.send_chips();
+                CommandResult { status: Status::Done, note: format!("new discoboxes are cut from {}", c.args.source), ..Default::default() }
+            }
             _ => enter(""),
         }
     }
@@ -1181,7 +1205,7 @@ impl Mock {
             // A harness's own way out is the window's, as the core's `LeavesWindow` says: no card.
             "new" if matches!(c.args.prompt.trim(), "/exit" | "/quit") => return None,
             "new" => (Ask::Create(c.args.prompt.clone()), Event::Form(self.run_form(id, c, true, &HashMap::new()))),
-            "options" => (Ask::Options, Event::Form(self.run_form(id, c, false, &HashMap::new()))),
+            "options" if c.args.source.is_empty() => (Ask::Options, Event::Form(self.run_form(id, c, false, &HashMap::new()))),
             _ => return None,
         };
         Some((ask, event))
@@ -1413,6 +1437,11 @@ impl Backend for Mock {
                 let r = self.follow(&f);
                 self.inbox.push(Event::Result(CommandResult { id: f.id, ..r }));
             }
+            Out::Upload(u) => {
+                let r = mock_upload(&u);
+                self.record.lock().unwrap().uploads.push(u);
+                self.inbox.push(Event::Result(r));
+            }
             Out::Unsubscribe(sub) => {
                 self.following.remove(&sub);
                 self.headers.remove(&sub);
@@ -1485,6 +1514,22 @@ impl Backend for Mock {
             let _ = p.master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
         }
     }
+}
+
+/// Where an upload's images land, as the core names them roughly: the clipboard's image, or
+/// files dropped when every one is an image by its name (the CLI reads them, and their bytes say
+/// so too); a drop that is not all images, done with no paths.
+fn mock_upload(u: &Upload) -> CommandResult {
+    let image = |f: &String| ["png", "jpg", "jpeg", "gif", "webp"].iter().any(|e| f.to_ascii_lowercase().ends_with(&format!(".{e}")));
+    let name = |f: &str| f.rsplit(['/', '\\']).next().unwrap_or(f).to_string();
+    let paths = if u.files.is_empty() {
+        vec![format!("/tmp/discobox-paste/{}", name(&u.name))]
+    } else if u.files.iter().all(image) {
+        u.files.iter().map(|f| format!("/tmp/discobox-paste/{}", name(f))).collect()
+    } else {
+        vec![]
+    };
+    CommandResult { id: u.id, status: Status::Done, paths, ..Default::default() }
 }
 
 struct Pty {

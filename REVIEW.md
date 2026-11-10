@@ -77,6 +77,13 @@ Global review expectations:
   box switched away from keeps running, and its copy would replace what the
   user just copied in the box they are in. Both consoles' first versions of
   the feature took it from every box.
+- While an image pasted or dropped on a pane is carried into its box, each
+  console holds only what is typed or pasted into the pane, and sends it after
+  the image's path: never the mouse or the wheel (the TUI's `imageInput`, the
+  desktop's `State::type_into` beside `send_to`). The desktop's first version
+  held everything `send_to` sends, so a wheel turned while a screenshot copied
+  in replayed as arrows after the path, walking a full-screen agent's prompt
+  history over it.
 - A paste's bracketed-paste markers are stripped until none is left, not in
   one pass, and in one linear scan, not a pass per layer: taking one out of
   `\x1b[20\x1b[201~1~` joins its two sides into another, which ends the paste

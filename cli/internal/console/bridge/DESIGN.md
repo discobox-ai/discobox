@@ -19,7 +19,10 @@ flowchart LR
 
 - **Framing** (`frame.go`, 289 §1): kind, stream (u32), length (u32), payload,
   big-endian, one pipe each way. `KindJSON` is a `Message` on stream 0; every
-  other kind is an execstream frame type on a terminal stream.
+  other kind is an execstream frame type on a terminal stream. A frame past
+  `MaxFrame` ends the bridge, so the app's client refuses to write one
+  (`MAX_FRAME`, generated with the types) and the message's command or upload
+  fails instead.
 - **Messages** (`wire.go`, 289 §2): one envelope, `type` and the body of that
   type under the same name. No field is null (lists are `[]`, absent values
   omitted).
@@ -44,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 11; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 12; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -113,6 +116,19 @@ the list shows is the app's navigation (the TUI's header and row are one
 control); a `draft` message is the composer's
 prompt, saved in order on the reader (`SaveDraft`), and `welcome` carries the
 last one.
+
+A folder dropped on the composer is `options` with `Args.Source`: no form,
+the folder checked as a source typed on the card is (`ResolveSource`) and the
+Source row set to it (`RunOptions.NameSource`), which the composer topic says.
+
+An `upload` is images for one of a box's sessions, answered by its ID like a
+command (`Server.upload`): the clipboard's image as bytes, or files dropped on
+a pane as their paths, which are read here and carried in only when every one
+is an image (`clipimage.Files`, the TUI's rule for a pasted path). Each is
+written through `PutImage` under the core's name (`console.PastedImageName`),
+never the app's, and the result's `Paths` are where they landed, in order; a
+drop that is not all images is done with none, and the app pastes the paths
+as text. The app holds the pane's input until the result, as the TUI does.
 
 A running command talks to the app through `narrate` (progress, the box a
 create made, questions, a file to edit as `edit`, answered by the app's

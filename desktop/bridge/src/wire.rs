@@ -14,10 +14,14 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 11;
+pub const PROTOCOL: i64 = 12;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
+
+/// The largest frame payload either side accepts: a larger one ends the bridge, since the two sides
+/// no longer agree where a frame starts.
+pub const MAX_FRAME: usize = 16777216;
 
 /// The kinds of frame the bridge carries: each frame is a kind (1 byte), a stream (u32), a length
 /// (u32), big-endian, then the payload.
@@ -174,7 +178,7 @@ pub enum Type {
     #[serde(rename = "saved")]
     Saved,
 
-    /// TypeUpload is a pasted or dropped image for a box (app).
+    /// TypeUpload is images pasted or dropped on a box's session (app).
     #[serde(rename = "upload")]
     Upload,
 
@@ -1275,6 +1279,15 @@ pub struct Tab {
     /// tab by.
     #[serde(default, skip_serializing_if = "is_default")]
     pub tool: String,
+
+    /// Images is a tab an image pasted or dropped on is carried into the box for
+    /// (console.Tab.TakesImages); ImageKeys, one the paste image gesture is taken on
+    /// (console.Tab.TakesImageKeys).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub images: bool,
+
+    #[serde(rename = "imageKeys", default, skip_serializing_if = "is_default")]
+    pub image_keys: bool,
 }
 
 /// TabKind is what a session is, which says the column its tab is in.
@@ -1475,6 +1488,11 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub file: String,
+
+    /// Source is a folder dropped on the composer: the options command with one sets the Source row
+    /// to it, checked as a source typed by hand is, in place of asking the run options' form.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub source: String,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -1598,9 +1616,9 @@ pub struct Result {
     #[serde(default, skip_serializing_if = "is_default")]
     pub services: Vec<Service>,
 
-    /// Path is where an upload landed in the box.
+    /// Paths are where an upload's images landed in the box, in order.
     #[serde(default, skip_serializing_if = "is_default")]
-    pub path: String,
+    pub paths: Vec<String>,
 
     /// URL is where a followed link goes, for the app to open.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -2097,17 +2115,29 @@ pub struct Saved {
     pub error: String,
 }
 
-/// Upload is an image pasted or dropped on a box. It is answered with a result, by ID, whose Path
-/// is where the image is in the box.
+/// Upload is images for one of a box's sessions: an image pasted from the clipboard (Name and
+/// Data), or files dropped on its pane (Files). It is answered with a result, by ID, whose Paths
+/// are where the images are in the box, in order, for the app to paste in their place; a drop that
+/// is not all images is answered done with none, and the app pastes the files' paths as text, as a
+/// terminal does a dragged file.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Upload {
     pub id: u64,
 
     pub r#box: String,
 
+    /// Name is what the clipboard calls the image, and Data its bytes. The image is written under a
+    /// name of the core's (console.PastedImageName), never this one.
+    #[serde(default, skip_serializing_if = "is_default")]
     pub name: String,
 
+    #[serde(default, skip_serializing_if = "is_default")]
     pub data: String,
+
+    /// Files are paths on this machine, as dropped. The CLI reads them, and they are images only
+    /// when every one is an image file (clipimage.Files).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub files: Vec<String>,
 }
 
 /// Open attaches the stream the app allocated to one of a box's sessions, sized for its pane.

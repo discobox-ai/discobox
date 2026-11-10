@@ -3,8 +3,9 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 11,
+  "x-protocol": 12,
   "x-specVersion": 6,
+  "x-maxFrame": 16777216,
   "x-frameKinds": {
     "json": {
       "kind": 255,
@@ -171,7 +172,7 @@
           "const": "saved"
         },
         {
-          "description": "TypeUpload is a pasted or dropped image for a box (app).",
+          "description": "TypeUpload is images pasted or dropped on a box's session (app).",
           "const": "upload"
         },
         {
@@ -1557,6 +1558,13 @@
         "tool": {
           "description": "Tool is the tool a tool's tab runs, by its ID: what the tools menu finds a running tool's tab by.",
           "type": "string"
+        },
+        "images": {
+          "description": "Images is a tab an image pasted or dropped on is carried into the box for (console.Tab.TakesImages); ImageKeys, one the paste image gesture is taken on (console.Tab.TakesImageKeys).",
+          "type": "boolean"
+        },
+        "imageKeys": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1819,6 +1827,10 @@
         },
         "file": {
           "type": "string"
+        },
+        "source": {
+          "description": "Source is a folder dropped on the composer: the options command with one sets the Source row to it, checked as a source typed by hand is, in place of asking the run options' form.",
+          "type": "string"
         }
       }
     },
@@ -1916,9 +1928,12 @@
             "$ref": "#/$defs/Service"
           }
         },
-        "path": {
-          "description": "Path is where an upload landed in the box.",
-          "type": "string"
+        "paths": {
+          "description": "Paths are where an upload's images landed in the box, in order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "url": {
           "description": "URL is where a followed link goes, for the app to open.",
@@ -2667,7 +2682,7 @@
       ]
     },
     "Upload": {
-      "description": "Upload is an image pasted or dropped on a box. It is answered with a result, by ID, whose Path is where the image is in the box.",
+      "description": "Upload is images for one of a box's sessions: an image pasted from the clipboard (Name and Data), or files dropped on its pane (Files). It is answered with a result, by ID, whose Paths are where the images are in the box, in order, for the app to paste in their place; a drop that is not all images is answered done with none, and the app pastes the files' paths as text, as a terminal does a dragged file.",
       "type": "object",
       "properties": {
         "id": {
@@ -2678,18 +2693,24 @@
           "type": "string"
         },
         "name": {
+          "description": "Name is what the clipboard calls the image, and Data its bytes. The image is written under a name of the core's (console.PastedImageName), never this one.",
           "type": "string"
         },
         "data": {
           "type": "string",
           "contentEncoding": "base64"
+        },
+        "files": {
+          "description": "Files are paths on this machine, as dropped. The CLI reads them, and they are images only when every one is an image file (clipimage.Files).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
         "id",
-        "box",
-        "name",
-        "data"
+        "box"
       ]
     },
     "Open": {

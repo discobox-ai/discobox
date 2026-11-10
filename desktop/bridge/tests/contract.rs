@@ -220,9 +220,17 @@ fn subscriptions_send_snapshots_until_unsubscribed() {
     cli.subscribe(2, Topic::Sessions, "b1");
     let sessions = cli.expect(Type::Snapshot).snapshot.unwrap();
     assert_eq!(sessions.sub, 2);
-    let tabs: Vec<_> = sessions.sessions.unwrap().sessions.into_iter().map(|t| (t.kind, t.exec)).collect();
+    let sessions = sessions.sessions.unwrap().sessions;
+    let tabs: Vec<_> = sessions.iter().map(|t| (t.kind, t.exec.clone())).collect();
     let services = ["service:web", "service:migrate", "service:broken"].map(|e| (TabKind::Service, e.to_string()));
     assert_eq!(tabs, [&services[..], &[(TabKind::Primary, "primary".to_string()), (TabKind::Shell, "sh".to_string())]].concat());
+    // Which take images and the image keys is the core's: every session but a service's, and the
+    // keys on the harness terminal only.
+    let images: Vec<_> = sessions.iter().map(|t| (t.exec.as_str(), t.images, t.image_keys)).collect();
+    assert_eq!(images, [
+        ("service:web", false, false), ("service:migrate", false, false), ("service:broken", false, false),
+        ("primary", true, true), ("sh", true, false),
+    ]);
 
     cli.subscribe(3, Topic::Resources, "");
     let resources = cli.expect(Type::Snapshot).snapshot.unwrap().resources.expect("resources");
@@ -285,10 +293,19 @@ fn commands_and_uploads_end_in_results() {
 
     cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: 1, ..Default::default() }), ..Default::default() });
     // [1, 2, 3], as Go writes bytes in JSON.
-    let upload = Upload { id: 99, r#box: "b1".into(), name: "shot.png".into(), data: "AQID".into() };
+    let upload = Upload { id: 99, r#box: "b1".into(), name: "shot.png".into(), data: "AQID".into(), ..Default::default() };
     cli.send(Message { r#type: Type::Upload, upload: Some(upload), ..Default::default() });
     let r = cli.result(99);
-    assert_eq!((r.status, r.path.as_str()), (Status::Done, "/tmp/shot.png"));
+    assert_eq!(r.status, Status::Done);
+    let [path] = r.paths.as_slice() else { panic!("paths {:?}", r.paths) };
+    assert!(path.starts_with("/tmp/") && path.ends_with("-0-shot.png"), "{path}: not the core's name for it");
+
+    // Files dropped on a pane go by their paths, which the CLI reads: one that is not an image is
+    // answered with no paths, for the app to paste it as text.
+    let upload = Upload { id: 100, r#box: "b1".into(), files: vec!["/nowhere/notes.txt".into()], ..Default::default() };
+    cli.send(Message { r#type: Type::Upload, upload: Some(upload), ..Default::default() });
+    let r = cli.result(100);
+    assert_eq!((r.status, r.paths.len()), (Status::Done, 0));
 }
 
 // A form is the core's: a draft is answered with the form again, a refusal with field errors
@@ -650,6 +667,25 @@ fn a_create_reaches_the_app() {
     assert_eq!(steps.last().unwrap().accepted.as_ref().unwrap().key, "made");
     let r = cli.result(id);
     assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "made"));
+}
+
+// A folder dropped on the composer is the options command with a source: checked, it is done
+// without a form, and the composer's line names it.
+#[test]
+fn a_dropped_folder_is_the_next_source() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Composer, "");
+    cli.expect(Type::Snapshot);
+    let id = cli.command("options", &[], Context::default(), Args { source: "app".into(), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!(r.status, Status::Done, "{}", r.why);
+    let composer = cli.take("the composer naming the folder", |i| match i {
+        Incoming::Message(m) if m.r#type == Type::Snapshot => {
+            m.snapshot.as_ref().and_then(|s| s.composer.clone()).filter(|c| c.chips.iter().any(|c| c.text == "/abs/app" && c.chosen))
+        }
+        _ => None,
+    });
+    assert!(!composer.chips.is_empty());
 }
 
 #[test]

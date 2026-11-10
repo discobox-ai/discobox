@@ -111,8 +111,13 @@ func (s *Server) resolve(ctx context.Context) console.Resolve {
 }
 
 // RunOptions asks the run options as the core's form, and keeps what was
-// answered for the creates that follow.
+// answered for the creates that follow. With a source in its args — a folder
+// dropped on the composer — it asks nothing: the source is checked as one
+// typed on the form is, and the Source row set to it.
 func (f *frontend) RunOptions() outcome {
+	if f.c.Args.Source != "" {
+		return f.dropSource(f.c.Args.Source)
+	}
 	return func() Result {
 		o, _, _, _ := f.s.readOptions(f.ctx)
 		answer, ok, err := fill(f.ctx, f.s, f.c.ID, "Run options", "", o.OptionsForm(f.c.Args.Prompt, f.s.resolve(f.ctx)))
@@ -127,6 +132,26 @@ func (f *frontend) RunOptions() outcome {
 		f.s.optsMu.Unlock()
 		f.s.optionsChanged()
 		return Result{Status: StatusDone, Note: "run options saved"}
+	}
+}
+
+// dropSource sets the Source row to a folder dropped on the composer, once
+// the creation path has checked it (DataSource.ResolveSource), as a source
+// typed on the run options' form is: where the creates that follow are cut
+// from. The list is not moved, as a source answered on a form never moves it.
+func (f *frontend) dropSource(folder string) outcome {
+	return func() Result {
+		s := f.s
+		source, err := s.ds.ResolveSource(f.ctx, folder)
+		if err != nil {
+			return failed(err.Error())
+		}
+		s.optsMu.Lock()
+		s.options.opts.NameSource(source)
+		said := s.options.opts.Opts[console.OptSource].Display()
+		s.optsMu.Unlock()
+		s.optionsChanged()
+		return Result{Status: StatusDone, Note: "new discoboxes are cut from " + said}
 	}
 }
 

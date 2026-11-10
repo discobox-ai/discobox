@@ -19,7 +19,8 @@ import (
 // Document is the wire's JSON Schema (draft 2020-12). Its root is a Message;
 // every type the wire carries is in Defs, in the order it is first reached.
 // The x- keywords carry what a schema has no word for: the protocol and spec
-// versions, and the frame kinds the bridge carries.
+// versions, the largest frame either side accepts, and the frame kinds the
+// bridge carries.
 type Document struct {
 	Schema      string             `json:"$schema"`
 	Title       string             `json:"title"`
@@ -27,6 +28,7 @@ type Document struct {
 	Ref         string             `json:"$ref"`
 	Protocol    int                `json:"x-protocol"`
 	SpecVersion int                `json:"x-specVersion"`
+	MaxFrame    int                `json:"x-maxFrame"`
 	FrameKinds  Ordered[FrameKind] `json:"x-frameKinds"`
 	Defs        Ordered[*Schema]   `json:"$defs"`
 }
@@ -88,6 +90,7 @@ func wireSchema(src *sources) (*Document, error) {
 		Ref:         "#/$defs/Message",
 		Protocol:    bridge.Protocol,
 		SpecVersion: console.SpecVersion,
+		MaxFrame:    bridge.MaxFrame,
 		Defs:        b.defs,
 	}
 	for _, k := range frameKinds {

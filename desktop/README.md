@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 10. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 12. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -94,6 +94,22 @@ the epic, and does not yet follow the ADRs everywhere:
   it (`console.Header.Agent`): the core's choice between what the primary's
   program reports (OSC 7501) and the listing's poll. A program's copy reaches the clipboard
   only from the box on screen.
+- **Images are carried in** (`paste.rs`), as the TUI carries them
+  (`cli/internal/tui/imagepaste.go`): a box cannot read this machine's
+  clipboard or files, so an image meant for one of its sessions is written
+  into it by the core (`upload`) and the path it landed at is pasted in its
+  place, which every agent takes as an image. An image means: the paste
+  gesture with an image and no text on the clipboard, or files copied there;
+  `paste image` (Ctrl+V, Alt+V) on a harness terminal with an image or image
+  files there — with none, the key goes to the program, and shells never take
+  it; and files dropped on a pane, lit while the drag is over it, which the
+  CLI carries in when every one is an image and which are otherwise pasted as
+  their paths, quoted for a shell. Which panes take images and the image keys
+  is the core's (`Tab.images`, `Tab.image_keys`). What is typed or pasted
+  meanwhile is held and sent after the paths, never the mouse or the wheel;
+  one image at a time per pane. A clipboard image past what a bridge
+  message carries is said, never sent. On Linux, drops reach the window under
+  X11 only: winit reports no file drags on Wayland.
 - **The spec** is the console core's (`cli/internal/console/spec.go`): the
   registry's commands by their IDs (`attach`, `shell`) with each frontend's
   bindings, the glyphs, and the design language's colour tokens in both
@@ -179,7 +195,11 @@ the epic, and does not yet follow the ADRs everywhere:
     what the box is being made to do (the provisioning topic). From a
     workspace, `new` goes back to the composer first;
   - `options` is every run option as a sheet; what it keeps is what the next
-    create is made with.
+    create is made with;
+  - a folder dropped on the composer, which lights while the drag carries one,
+    is where the next create is cut from: `options` with the folder as its
+    source, checked by the core as a source typed on the card is, and named on
+    the composer's line.
 - **The command surfaces** (ADR 26-11-07-598 §2) reach every registry command:
   - the palette (`primary+k`) is ADR 26-11-06-671's: a query and at most one
     chip, in either order. A box command's alias and a space make it the
@@ -250,6 +270,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/sheet.rs` | The core's forms, questions and edits as sheets: the queue, the answers held while they are typed, drafts, refusals, a file opened in the person's editor, and their keys |
 | `src/tools.rs` | The tools menu, a tool's tab given the window, a tool on this machine handed the box, a tool's files edited, an address copied |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
+| `src/paste.rs` | Images pasted or dropped on a pane carried into its box, the pane's input held meanwhile; a folder dropped on the composer as the next source |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`): its screen as rows, selection, the program's copies and links, mouse reporting, the wheel, paste, find, wide characters and the input method's composition |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |
@@ -258,6 +279,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/parity_tests.rs` | Runs `cli/internal/console/testdata/parity` with the desktop's keys |
 | `src/service_tests.rs` | Services as tabs in the core's order, numbered apart, closed and reopened by the listing, stopped not ended; the services menu and its verbs |
 | `src/create_tests.rs` | The composer, the create card and the run options through their sheets on the mock: a source refused, rows that grow, a detached create, `new` from a workspace, the draft |
+| `src/paste_tests.rs` | An image pasted, under the image key, or dropped, carried in with what was typed held behind it; a failure, a drop that is not images, one at a time, one too large; a folder dropped on the composer |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window and put away, one running shown not started again, a host tool, a file edited and given up, an address copied |

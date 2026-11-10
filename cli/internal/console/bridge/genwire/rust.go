@@ -47,6 +47,8 @@ func generateRust(d *Document) ([]byte, error) {
 	fmt.Fprintf(&out, "pub const PROTOCOL: i64 = %d;\n\n", d.Protocol)
 	doc(&out, "", "The console spec's shape (Spec.version) this side reads.", "///")
 	fmt.Fprintf(&out, "pub const SPEC_VERSION: i64 = %d;\n\n", d.SpecVersion)
+	doc(&out, "", "The largest frame payload either side accepts: a larger one ends the bridge, since the two sides no longer agree where a frame starts.", "///")
+	fmt.Fprintf(&out, "pub const MAX_FRAME: usize = %d;\n\n", d.MaxFrame)
 	doc(&out, "", "The kinds of frame the bridge carries: each frame is a kind (1 byte), a stream (u32), a length (u32), big-endian, then the payload.", "///")
 	out.WriteString("pub mod kind {\n")
 	for i, k := range d.FrameKinds {

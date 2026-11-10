@@ -24,6 +24,7 @@ alacritty_terminal = "0.26"
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.22"
 
 [profile.release]
 incremental = true

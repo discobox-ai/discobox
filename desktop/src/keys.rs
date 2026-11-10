@@ -198,6 +198,10 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         match gesture_for(s, ev) {
             Some(("copy", _)) => s.copy_selection(tx),
             Some(("paste", _)) => s.paste(tx),
+            Some(("paste image", _)) if s.harness_focused() => {
+                let key = encode(s, ev).unwrap_or_default();
+                s.paste_image(key, tx);
+            }
             Some(("find", _)) => s.open_find(),
             Some(("scroll back", _)) => s.page_pane(1),
             Some(("scroll on", _)) => s.page_pane(-1),

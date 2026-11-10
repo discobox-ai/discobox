@@ -109,7 +109,8 @@ func wireTab(t console.Tab, e console.Exec) Tab {
 	case t.Side() == console.SideTerminals:
 		kind = TabTerminal
 	}
-	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command), Service: t.Service, Run: t.ServiceRun, Status: t.Status, Tool: t.Tool}
+	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command), Service: t.Service, Run: t.ServiceRun, Status: t.Status, Tool: t.Tool,
+		Images: t.TakesImages(), ImageKeys: t.TakesImageKeys()}
 }
 
 // wireTool is a tool as the tools menu lists it for a box: why it cannot run
