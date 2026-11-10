@@ -13,7 +13,8 @@ factory. Work comes home through Git.
   and collect the work.
 - [Concepts](concepts.md): boxes and sources, harnesses, skills, boxes that
   lead other boxes, providers, lifecycle and credentials.
-- [Console guide](console.md): workflows, navigation and keybindings.
+- [Console guide](console.md): workflows, navigation and keybindings, in the
+  terminal and in the desktop app.
 - [CLI reference](cli.md): generated public commands and flags.
 
 The manual and command reference are maintained alongside the product. A

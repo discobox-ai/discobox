@@ -98,3 +98,121 @@ Ctrl-L repaints and refreshes; inside a pane it repaints the program too.
 Outside panes, Ctrl-C quits. At an empty prompt, Ctrl-D also quits; `/exit`
 or `/quit` alone in the prompt does the same. Leaving the window keeps
 sessions running. Use the stop action when you want to stop the box.
+
+## The desktop app
+
+`discobox desktop` opens the same console in a native window: the same boxes,
+commands, questions and terminals, operated the way a desktop app is. It runs
+on Linux; on macOS and Windows the command says the platform is not yet
+supported. The first run downloads the app this release of the CLI pins,
+checks its digest, and keeps it in the discobox state directory; later runs
+start it straight away. The app talks to the server only through the
+`discobox` command that started it, so `--server`, `--token` and your
+configured servers work as they do for `discobox console`. Closing the window
+keeps sessions running.
+
+### Keys
+
+There is no leader. A desktop shortcut is written with **primary**, which is
+Ctrl+Shift on Linux and Windows and ⌘ on macOS. Every other key goes to the
+focused terminal, so Ctrl-A, Ctrl-C and Ctrl-W reach the program in the pane.
+
+| Shortcut | Action |
+| --- | --- |
+| primary+K or primary+P | Command palette |
+| F1 | Help: every command, by menu, with its shortcut |
+| F10 | Menu bar (from the list) |
+| Shift+F10, or a right click | A box's actions, or a pane's menu |
+| primary+N | New discobox |
+| primary+T / primary+Alt+T | Another shell / another harness terminal |
+| primary+W | End the current terminal or shell |
+| primary+Enter | Maximize the focused column and restore it |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous pane |
+| primary+Alt+Down / Up | Next / previous discobox |
+| primary+B | Show or hide the list |
+| primary+0 | Detach: back to all discoboxes |
+| primary+Alt+O / primary+Alt+S | The box's tools / services |
+| primary+L / primary+Alt+A | Filter by server / show archived |
+| primary+R | Refresh |
+| F2 | Rename |
+| primary+Q | Quit, keeping sessions running |
+
+Every command is also in the menu bar and the palette, whether or not it has a
+shortcut. The palette finds commands and boxes together: type a command such
+as `stop` and a space, and the boxes it can act on follow; press Tab on a box,
+and the commands it can take follow. Esc drops the chip, then the query, then
+the palette. A command that cannot act says why, in the menu and when run.
+
+### The list and new boxes
+
+The composer under the list is what a new box is given to do: Return creates
+it, Shift+Return adds a line. primary+N opens the create card, where the
+source, harness, pool and server are chosen; `run options` sets every option
+for the next create. Drop a folder on the composer to cut the next box from
+it. Unfinished prompts are kept for the next window.
+
+The control at the head of the list filters by server, source and tags. Space
+marks a box, Shift+Space marks a range, primary+D clears the marks, and
+Ctrl-click (⌘-click on macOS) or Shift-click marks with the pointer. A
+lifecycle action from a box's menu or the palette acts on every marked box.
+
+### Workspaces and terminals
+
+A box's harness terminals are on the left and its shells on the right, each
+column with its tabs in its frame. Drag the divider to resize the columns and
+double-click it to halve them; drag a tab along its strip to reorder it, and
+double-click it to maximize its column. Service tabs follow the harness
+terminals in the left column; they show output and are stopped from the
+services menu, not closed.
+Switching to another box keeps the first one's sessions running.
+
+The header says what the agent is doing, and shows the box's issue and pull
+request, git state, ports and tags; a forwarded web port opens in the browser.
+A notice under it says when a credential request is waiting on the box, a
+credential was refused, or harness changes are ready to review; click it to
+act, or close it.
+
+In a terminal:
+
+- Drag to select (double-click a word, triple-click a line, Alt-drag a
+  block); the selection is copied. primary+C copies and primary+V pastes.
+- Ctrl-click (⌘-click on macOS) opens a link. A `localhost` link the box
+  printed opens at the port the console forwards; a discobox address opens
+  that box on a plain click.
+- A program that uses the mouse gets it; hold Shift, or use `toggle mouse`
+  from the pane's menu, to select instead.
+- primary+F finds text in the scrollback; Shift+Page Up and Page Down scroll
+  it.
+- Ctrl-V or Alt-V in a harness terminal, with an image on the clipboard, or
+  an image file dropped on a pane, copies the image into the box and pastes
+  its path. Files dropped that are not all images are pasted as paths. On
+  Wayland the window receives no dropped files; paste instead.
+
+### Pages, tabs and requests
+
+`harnesses` and `credentials` open their pages beside the list, and `audit`
+opens a box's audit timeline there. On a page, the arrows move, Enter opens
+the row, Shift+F10 opens its actions and Esc leaves. Questions and forms open
+as a sheet over the window; Tab moves between fields, Enter submits, and Esc
+cancels. A destructive question starts on No.
+
+`issue` and `pull request` open as tabs among the box's shells. In one, `c`
+writes a comment (Ctrl+Enter, or ⌘↩ on macOS, posts it), `x` closes or
+reopens, `m` merges a pull request, `f` shows its files changed, `o` opens
+the page on GitHub, and `r` reads it again.
+
+A credential request that arrives while the window is open raises a desktop
+notification on Linux; clicking it opens the request.
+
+### Differences from the terminal console
+
+- The desktop app has no `all` command: its list is always beside the
+  workspace, and `detach` returns to every box.
+- Commits you make on this machine are not pushed into an open box
+  automatically, as `discobox console` does; run `discobox push`.
+- The audit timeline cannot be searched yet; use `discobox console`.
+- primary+1 to 9 (a tab by its number) and primary+Alt+1 to 9 (a service's
+  tab) do not work on Linux yet, because Shift turns the digit into another
+  character. Click the tab, or use Ctrl+Tab.
+- The prompt and comments cannot be opened in an external editor, and
+  questions are answered with the arrows and Enter rather than by letter.
