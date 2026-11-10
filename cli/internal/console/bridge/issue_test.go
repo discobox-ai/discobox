@@ -83,10 +83,25 @@ func TestTheIssueTopicIsTheCores(t *testing.T) {
 	pushed := testPull()
 	pushed.Pull.HeadSHA = "def4567890123"
 	core.setIssue(testRepo, 9, pushed)
-	if r := a.result(a.command(Command{Command: "pr", Targets: []string{"b1"}, Args: Args{Act: ActComment, Comment: "thanks"}})); r.Status != StatusDone || r.Note != "commented on #9" {
+	id := a.command(Command{Command: "pr", Targets: []string{"b1"}, Args: Args{Act: ActComment, Comment: "thanks"}})
+	// The follower can send its snapshot before the command's result.
+	var r *Result
+	i = nil
+	for r == nil || i == nil {
+		switch m := a.message(); m.Type {
+		case TypeResult:
+			if m.Result.ID == id {
+				r = m.Result
+			}
+		case TypeSnapshot:
+			if m.Snapshot.Sub == 1 {
+				i = m.Snapshot.Issue
+			}
+		}
+	}
+	if r.Status != StatusDone || r.Note != "commented on #9" {
 		t.Fatalf("comment %+v", r)
 	}
-	i = a.expect(TypeSnapshot).Snapshot.Issue
 	if i.Pushed != "abc1234567890" || i.Notice != console.PushedNotice("abc1234567890", "def4567890123") {
 		t.Fatalf("the push is not said: %q %q", i.Pushed, i.Notice)
 	}
