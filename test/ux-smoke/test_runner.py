@@ -142,5 +142,71 @@ class PurgeCleanupTest(unittest.TestCase):
                     runner.purge_box("box")
 
 
+class DiagnosticCleanupTest(unittest.TestCase):
+    setUpClass = classmethod(BuilderReadinessTest.setUpClass.__func__)
+    tearDownClass = classmethod(BuilderReadinessTest.tearDownClass.__func__)
+
+    def run_cleanup(self, *, failed=False, teardown_fails=False):
+        runner = self.runner
+        calls = []
+        reset = "recvfrom: connection reset by peer"
+
+        def command(args, **kwargs):
+            calls.append(args)
+            if args[:2] == ["docker", "ps"]:
+                return "first second"
+            if args[:2] == ["docker", "logs"]:
+                return "container output"
+            if args[:2] == ["docker", "inspect"]:
+                return "true"
+            if args[:3] == ["docker", "exec", "first"]:
+                result = subprocess.CompletedProcess(args, 128, stdout="", stderr=reset)
+                raise runner.CommandFailure(reset, result)
+            if args[:3] == ["docker", "exec", "second"]:
+                return "second journal"
+            if args[:2] == ["docker", "rm"] and teardown_fails:
+                raise RuntimeError("container removal failed")
+            return ""
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(runner, "ARTIFACTS", Path(directory)), \
+                patch.object(runner, "BOXES", ["box"]), \
+                patch.object(runner, "POOLS", ["pool"]), \
+                patch.object(runner, "CLI", ["cli"]), \
+                patch.object(runner, "SERVER", None), \
+                patch.object(runner, "BUILDER_CREATED", False), \
+                patch.object(runner, "command", side_effect=command), \
+                patch.object(runner, "cli", return_value="screen"), \
+                patch.object(runner, "obj", return_value={"pools": []}), \
+                patch.object(runner, "purge_box") as purge:
+            if teardown_fails and not failed:
+                with self.assertRaisesRegex(RuntimeError, "cleanup failed: container removal failed"):
+                    runner.cleanup(failed)
+            else:
+                runner.cleanup(failed)
+            self.assertIn(reset, (Path(directory) / "diagnostic-errors.log").read_text())
+            self.assertEqual((Path(directory) / "second-journal.log").read_text(), "second journal")
+            purge.assert_called_once_with("box")
+            self.assertIn(["docker", "rm", "-f", "first", "second"], calls)
+            if teardown_fails:
+                self.assertIn("container removal failed", (Path(directory) / "cleanup-errors.log").read_text())
+            else:
+                self.assertFalse((Path(directory) / "cleanup-errors.log").exists())
+
+    def test_journal_reset_is_diagnostic_and_collection_continues(self):
+        self.run_cleanup()
+
+    def test_teardown_failure_still_fails_successful_run(self):
+        self.run_cleanup(teardown_fails=True)
+
+    def test_cleanup_does_not_replace_original_failure(self):
+        original = RuntimeError("original smoke failure")
+        with self.assertRaisesRegex(RuntimeError, "original smoke failure"):
+            try:
+                raise original
+            finally:
+                self.run_cleanup(failed=True, teardown_fails=True)
+
+
 if __name__ == "__main__":
     unittest.main()
