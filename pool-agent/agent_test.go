@@ -293,6 +293,9 @@ func TestHTTPClientReportsSandboxStates(t *testing.T) {
 		t.Fatalf("encode public key: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			return // Ignore port discovery before asserting the state report.
+		}
 		if r.URL.Path != "/api/pools/pool-1/sandbox-states" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
@@ -328,6 +331,21 @@ func TestHTTPClientReportsSandboxStates(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
+
+	// A newly listening port can be probed before the state report arrives.
+	probe, err := http.NewRequest(http.MethodHead, server.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.Header.Set("User-Agent", "discobox-sandbox-agent (port probe)")
+	resp, err := server.Client().Do(probe)
+	if err != nil {
+		t.Fatalf("port probe: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("port probe status = %d", resp.StatusCode)
+	}
 
 	err = poolagent.NewHTTPClient(server.URL, poolagent.WithHTTPClient(server.Client())).ReportSandboxStates(context.Background(), poolagent.SandboxStateRequest{
 		ProjectID: "project-1", PoolID: "pool-1", PrivateKey: privateKey,
