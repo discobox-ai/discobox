@@ -999,6 +999,14 @@ impl State {
 
     pub fn live_ws(&self) -> Option<&Workspace> { self.live.as_ref().and_then(|id| self.workspaces.get(id)) }
 
+    /// What the window is called: the core's title for the box on screen (`Header.title`, the
+    /// text the TUI gives its title bar: the box's name and what its agent says it is doing), so
+    /// the window can be told apart from outside it; `discobox` with no box on screen, or before
+    /// its header has arrived.
+    pub fn window_title(&self) -> String {
+        self.live_ws().and_then(|w| w.header.as_ref()).map(|h| h.title.as_str()).filter(|t| !t.is_empty()).unwrap_or(APP_TITLE).to_string()
+    }
+
     fn live_ws_mut(&mut self) -> Option<&mut Workspace> {
         let id = self.live.clone()?;
         self.workspaces.get_mut(&id)
@@ -2459,6 +2467,9 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
 /// How long the composer is still before its prompt is told to the CLI, in seconds.
 const DRAFT_STILL: f64 = 1.0;
 
+/// What the window is called with no box on screen.
+const APP_TITLE: &str = "discobox";
+
 impl State {
     /// A running command's step or warning, said on the status line; and for a create, the box
     /// the moment the server takes it: the prompt it carried is running now, and no longer the
@@ -2506,6 +2517,9 @@ fn setup(s: &mut State, waker: Waker) { s.inbox.set_waker(waker); }
 /// Drain what the backend sent into the window.
 fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
     s.now = t;
+    // Before anything arrives as well as after: the box on screen changes on a key, and the
+    // window takes a title it already has as no change.
+    tx.set_title(s.window_title());
     s.save_draft(DRAFT_STILL);
     s.sheets.reveal(tx);
     audit::reveal(s, tx);
@@ -2540,6 +2554,7 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
         }
     }
     s.take_copies(tx);
+    tx.set_title(s.window_title());
     // And again once they are taken: the requests snapshot naming the box arrives among them, and
     // an idle window may not poll again for a while.
     s.explain_if_owed();
@@ -2870,7 +2885,7 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        ..AppSpec::new("discobox", (1440.0, 900.0), State::new, view::view)
+        ..AppSpec::new(APP_TITLE, (1440.0, 900.0), State::new, view::view)
     }).on_close(close);
     for &(menu, id, action) in MENU {
         let Some(label) = keys::label_of(&spec, id) else { continue };

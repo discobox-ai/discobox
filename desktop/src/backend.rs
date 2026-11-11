@@ -1580,7 +1580,9 @@ impl Mock {
             base, tone: if b.dirty { GitTone::Dirty } else { GitTone::Quiet }, diff: b.added + b.deleted > 0, added: b.added, deleted: b.deleted,
             ports, tags,
             // The mock's poll: its local shells report nothing of their own.
-            agent: b.agent.clone(), agent_msg: b.agent_msg.clone(), ..Default::default()
+            agent: b.agent.clone(), agent_msg: b.agent_msg.clone(),
+            title: if b.agent_msg.is_empty() { b.name.clone() } else { format!("{}: {}", b.name, b.agent_msg) },
+            ..Default::default()
         }
     }
 

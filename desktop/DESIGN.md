@@ -117,6 +117,10 @@ tab chips in each frame's edge.
   (`Header.Agent`, the core's choice between the primary's OSC 7501 report and
   the poll), the box's id, its issue and pull request, git position, diff,
   desktop, ports (a forwarded web port is a link) and tags.
+- **The window is titled by the box on screen**: the header's `title`, the
+  core's (`Sandbox.PrimaryTitle`, what the TUI puts in its title bar: the box's
+  name, else the title its primary set, and what its agent says it is doing),
+  set on every poll; `discobox` with no box on screen.
 - **A notice under the header** says a box a request waits on, a refused
   credential affects, or a captured harness change, one at a time in the
   core's precedence; pressing it runs its command, its close is `dismiss`.
@@ -336,7 +340,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/parity_tests.rs` | `cli/internal/console/testdata/parity` with the desktop's keys |
 | `src/command_tests.rs` | Commands reach no further than what they name; every registry command answered or in the ledger; no shortcut outside the spec |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's orders, Esc and reveal; menus that say why not |
-| `src/workspace_tests.rs` | Parking, the automatic push, endings, chips dragged, the split, the header's links |
+| `src/workspace_tests.rs` | Parking, the automatic push, endings, chips dragged, the split, the header's links, the window's title |
 | `src/service_tests.rs` | Services as tabs, numbered apart, stopped not ended; the services menu |
 | `src/sheet_tests.rs` | Rename, settings and purge through sheets: drafts, a refusal, Enter on a destruction |
 | `src/create_tests.rs` | The composer, the create card and run options on the mock |

@@ -352,3 +352,40 @@ fn a_workspace_pushes_while_it_is_attached_and_says_what_moved() {
     assert!(!rt.state.workspaces.contains_key(&first));
     assert!(record.lock().unwrap().pushing.values().all(|b| *b != first), "a workspace let go still pushes");
 }
+
+/// The window's title as Rune holds it: its accessibility root's name.
+fn window_title(rt: &Runtime<State>) -> String {
+    rt.accessibility_json()["name"].as_str().unwrap_or_default().to_string()
+}
+
+// The window is titled by the core's title for the box on screen, the TUI's title bar's text
+// (`Header.title`), and follows it as the core says it again; with no box on screen it is
+// `discobox`.
+#[test]
+fn the_window_title_follows_the_box_on_screen() {
+    let mut rt = runtime();
+    assert_eq!(window_title(&rt), "discobox", "no box on screen: {}", rt.accessibility_json());
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(&mut rt);
+    let first = rt.state.live.clone().expect("a box on screen");
+    let ws = rt.state.live_ws().unwrap();
+    let (sub, mut h) = (ws.header_sub, ws.header.clone().expect("the core's header"));
+    assert!(!h.title.is_empty(), "the mock titles its header");
+    assert_eq!(window_title(&rt), h.title, "the box on screen titles the window");
+
+    h.title = "fixer: which branch?".into();
+    rt.state.inbox.push(Event::Header(sub, Ok(h)));
+    settle(&mut rt);
+    assert_eq!(window_title(&rt), "fixer: which branch?", "the title follows the core's");
+
+    run_command(&mut rt.state, "next box", &mut Tx::default());
+    settle(&mut rt);
+    assert_ne!(rt.state.live.as_ref(), Some(&first));
+    let other = rt.state.live_ws().and_then(|w| w.header.clone()).expect("the next box's header").title;
+    assert_eq!(window_title(&rt), other, "another box on screen titles it");
+
+    run_command(&mut rt.state, "detach", &mut Tx::default());
+    settle(&mut rt);
+    assert!(rt.state.live.is_none(), "detached");
+    assert_eq!(window_title(&rt), "discobox", "no box on screen again");
+}
