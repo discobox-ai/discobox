@@ -53,8 +53,10 @@ import (
 // records below a row held (Audit.Below); 19, the harness changes explainer:
 // the box it is owed about (Requests.Explain), asked by the review config
 // command (Args.Explain); 20, a workspace's automatic push (the push
-// topic); 21, the window's title for the box on screen (Header.Title).
-const Protocol = 21
+// topic); 21, the window's title for the box on screen (Header.Title); 22,
+// the window's theme: the appearance it opens on (Session.Appearance), and
+// the theme command's answer (Result.Appearance).
+const Protocol = 22
 
 // Type names a message.
 type Type string
@@ -162,6 +164,9 @@ type Session struct {
 	// Draft is the prompt the last window on this machine left in its
 	// composer, which this one opens holding.
 	Draft string `json:"draft,omitempty"`
+	// Appearance is the palette the last window on this machine was picked
+	// to draw in, which this one opens on.
+	Appearance console.Appearance `json:"appearance"`
 }
 
 // Follow is a link pressed in a pane: a program's (OSC 8) or text the app
@@ -1245,6 +1250,9 @@ type Result struct {
 	// Requests are the requests waiting on the secrets page's server, oldest
 	// first (console.RequestsOn), sent with its secrets.
 	Requests []Request `json:"requests,omitempty"`
+	// Appearance is the palette the theme command was answered with, for the
+	// window to draw in from now on.
+	Appearance console.Appearance `json:"appearance,omitempty"`
 }
 
 // Tool is one of a box's tools as the tools menu lists it: what it is called

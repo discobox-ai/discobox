@@ -506,6 +506,11 @@ type Session struct {
 	// folder and every tag. See DataSource.SaveView.
 	View ListView
 
+	// Appearance is the palette the last window on this machine that draws
+	// its own was picked to draw in, and is what the next one opens on. See
+	// DataSource.SaveAppearance.
+	Appearance Appearance
+
 	// LastSource is the source the last create on this machine was cut from,
 	// as the Source row spells it, and is what the row opens on and leads
 	// with. Empty when nothing has been created yet. See
@@ -2267,6 +2272,12 @@ type DataSource interface {
 	// Source row spells it, so the next window opens cutting from it: Session
 	// hands it back as Session.LastSource.
 	SaveLastSource(ctx context.Context, source string) error
+
+	// SaveAppearance records the palette a person picked for a window that
+	// draws its own, so the next one opens on it: Session hands it back as
+	// Session.Appearance. The system's is the default, and saving it drops
+	// what was kept.
+	SaveAppearance(ctx context.Context, a Appearance) error
 
 	// MarkHarnessChangesExplained records that the project has explained
 	// saving a discobox's harness changes, so no window on it explains again

@@ -377,8 +377,10 @@ convenience and never the command.
   one of each on this machine whatever directory a window opens in (ADR
   26-10-20-596): the composer's unsent prompt (`tui.Session.Draft`,
   `DataSource.SaveDraft`), the header's server, folder and tag filters
-  (`Session.View`, `SaveView`), and the source the last create was cut from
-  (`Session.LastSource`, `SaveLastSource`). Each save rewrites one field and
+  (`Session.View`, `SaveView`), the source the last create was cut from
+  (`Session.LastSource`, `SaveLastSource`), and the palette a desktop window
+  was picked to draw in (`Session.Appearance`, `SaveAppearance`; the system's
+  is kept as nothing). Each save rewrites one field and
   keeps the rest, serialized across processes by `console.lock` beside it
   (`acquireFileLock`, as the server registry's lock is). A prompt past the cap
   is cut on a rune boundary — a state file is not where a pasted log belongs.

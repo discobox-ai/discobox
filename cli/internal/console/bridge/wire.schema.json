@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 21,
+  "x-protocol": 22,
   "x-specVersion": 7,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -549,10 +549,33 @@
         "draft": {
           "description": "Draft is the prompt the last window on this machine left in its composer, which this one opens holding.",
           "type": "string"
+        },
+        "appearance": {
+          "$ref": "#/$defs/Appearance",
+          "description": "Appearance is the palette the last window on this machine was picked to draw in, which this one opens on."
         }
       },
       "required": [
-        "primaryServer"
+        "primaryServer",
+        "appearance"
+      ]
+    },
+    "Appearance": {
+      "description": "Appearance is the palette a window that draws its own picks (the desktop app): the system's, unless the person picks dark or light, which the next window opens on as well (DataSource.SaveAppearance). The terminal console draws in its terminal's colors and picks none.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "AppearanceSystem follows the system's light or dark.",
+          "const": "system"
+        },
+        {
+          "description": "AppearanceDark is the dark palette whatever the system's.",
+          "const": "dark"
+        },
+        {
+          "description": "AppearanceLight is the light palette whatever the system's.",
+          "const": "light"
+        }
       ]
     },
     "Subscribe": {
@@ -2932,6 +2955,10 @@
           "items": {
             "$ref": "#/$defs/Request"
           }
+        },
+        "appearance": {
+          "$ref": "#/$defs/Appearance",
+          "description": "Appearance is the palette the theme command was answered with, for the window to draw in from now on."
         }
       },
       "required": [

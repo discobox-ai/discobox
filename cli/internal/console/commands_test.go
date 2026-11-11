@@ -288,6 +288,7 @@ func (f *recorder) ToggleArchived() string { return f.call("archived") }
 func (f *recorder) RunOptions() string     { return f.call("options") }
 func (f *recorder) Repaint() string        { return f.call("repaint") }
 func (f *recorder) Palette() string        { return f.call("palette") }
+func (f *recorder) Theme() string          { return f.call("theme") }
 func (f *recorder) NewTerminal() string    { return f.call("terminal") }
 func (f *recorder) EndSession() string     { return f.call("end") }
 func (f *recorder) Maximize() string       { return f.call("maximize") }
@@ -307,7 +308,7 @@ func TestEveryCommandDispatches(t *testing.T) {
 	r := NewRegistry(servers{})
 	box := Sandbox{ID: "sbx_one", State: StateRunning, HasRuntime: true, Upgrade: true,
 		Repository: "https://github.com/acme/foo", Tags: []string{"issue=1", "pr=2"}}
-	ctx := Context{HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true, TreeFits: true,
+	ctx := Context{HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true, TreeFits: true, Themed: true,
 		Waiting: func(Sandbox) bool { return true }, Refused: func(Sandbox) bool { return true }}
 	flows := map[string]string{}
 	for _, c := range Commands() {

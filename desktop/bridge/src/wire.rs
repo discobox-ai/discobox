@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 21;
+pub const PROTOCOL: i64 = 22;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 7;
@@ -458,6 +458,40 @@ pub struct Session {
     /// opens holding.
     #[serde(default, skip_serializing_if = "is_default")]
     pub draft: String,
+
+    /// Appearance is the palette the last window on this machine was picked to draw in, which this
+    /// one opens on.
+    pub appearance: Appearance,
+}
+
+/// Appearance is the palette a window that draws its own picks (the desktop app): the system's,
+/// unless the person picks dark or light, which the next window opens on as well
+/// (DataSource.SaveAppearance). The terminal console draws in its terminal's colors and picks none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Appearance {
+    /// AppearanceSystem follows the system's light or dark.
+    #[default]
+    #[serde(rename = "system")]
+    System,
+
+    /// AppearanceDark is the dark palette whatever the system's.
+    #[serde(rename = "dark")]
+    Dark,
+
+    /// AppearanceLight is the light palette whatever the system's.
+    #[serde(rename = "light")]
+    Light,
+}
+
+impl Appearance {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Appearance::System => "system",
+            Appearance::Dark => "dark",
+            Appearance::Light => "light",
+        }
+    }
 }
 
 /// Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the
@@ -2500,6 +2534,11 @@ pub struct Result {
     /// (console.RequestsOn), sent with its secrets.
     #[serde(default, skip_serializing_if = "is_default")]
     pub requests: Vec<Request>,
+
+    /// Appearance is the palette the theme command was answered with, for the window to draw in
+    /// from now on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<Appearance>,
 }
 
 /// Status is how a command ended.

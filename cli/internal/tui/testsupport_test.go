@@ -519,6 +519,9 @@ func (f *fakeSource) SaveLastSource(_ context.Context, source string) error {
 	return nil
 }
 
+// SaveAppearance keeps nothing: the terminal console picks no palette.
+func (f *fakeSource) SaveAppearance(context.Context, console.Appearance) error { return nil }
+
 func (f *fakeSource) List(context.Context) (console.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

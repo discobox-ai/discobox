@@ -370,6 +370,10 @@ func (m *Model) Repaint() tea.Cmd { return tea.Batch(tea.ClearScreen, m.rereadNo
 
 func (m *Model) Palette() tea.Cmd { return m.openPalette() }
 
+// Theme is the desktop app's: this window's context is never Themed, so
+// Dispatch says why before it gets here.
+func (m *Model) Theme() tea.Cmd { return m.Unavailable(console.ThemeUnavailable) }
+
 // The workspace's own commands go to the focused pane, whose handlers keep
 // their service and tool semantics and confirmations.
 

@@ -246,6 +246,7 @@ func (s *Server) hello(ctx context.Context, h Hello) bool {
 	s.send(Message{Type: TypeWelcome, Welcome: &Welcome{Protocol: Protocol, Spec: &spec, Session: &Session{
 		PrimaryServer: s.ds.PrimaryServer(), Project: session.Project,
 		Directory: session.Directory, Branch: session.Branch, Host: session.Host, Draft: session.Draft,
+		Appearance: console.ParseAppearance(string(session.Appearance)),
 	}}})
 	return true
 }

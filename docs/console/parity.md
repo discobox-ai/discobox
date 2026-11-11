@@ -44,7 +44,9 @@ that lacks what it needs; every other entry names its issue.
 
 ## The TUI lacks
 
-Nothing.
+| Command | Reason | Closed by |
+| --- | --- | --- |
+| `theme` | The terminal console draws in its terminal's colours, so there is no palette of its own to pick; the command says so. | None: by design |
 
 ## Terminal behaviours
 

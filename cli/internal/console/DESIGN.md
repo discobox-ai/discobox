@@ -154,7 +154,9 @@ flowchart LR
   command can act, and why not, from the targets' own fields and the
   `Context` the frontend hands it: workspace, pane, the list's keys, tree,
   the box whose workspace is open, the one box an attach window belongs to,
-  and the credential inbox's answers for a box. A frontend never rewrites an
+  whether the window draws its own palette (`Themed`: the desktop's, which
+  `theme` picks through `ThemeQuestion` and `SaveAppearance`), and the
+  credential inbox's answers for a box. A frontend never rewrites an
   entry's answer.
   `Lifecycle` is the box's action menu with its reasons.
 - **Dispatch is against the core** (`Dispatch`): it resolves the command,

@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 21; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 22; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -172,7 +172,11 @@ server chosen on a sheet does not move the app's list back, since which server
 the list shows is the app's navigation (the TUI's header and row are one
 control); a `draft` message is the composer's
 prompt, saved in order on the reader (`SaveDraft`), and `welcome` carries the
-last one.
+last one. `welcome` carries the palette the last window was picked to draw in
+too (`Session.Appearance`); the `theme` command asks the core's question
+(`console.ThemeQuestion`), keeps the answer (`SaveAppearance`) and hands it
+back as `Result.Appearance`. The bridge's context is always `Themed`: the app
+draws its own palette.
 
 A folder dropped on the composer is `options` with `Args.Source`: no form,
 the folder checked as a source typed on the card is (`ResolveSource`) and the

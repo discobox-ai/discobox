@@ -168,6 +168,9 @@ type Context struct {
 	// ListHasKeys: the list is the leftmost thing on screen, and a page
 	// covers the panes.
 	PageShown bool
+	// Themed is a window that draws its own palette, which a person can pick
+	// (the desktop app); the terminal console draws in its terminal's.
+	Themed bool
 	// Waiting reports credential requests waiting on a box, and Refused a
 	// refused credential shown for it. Nil reports none.
 	Waiting, Refused func(Sandbox) bool
@@ -308,6 +311,10 @@ func (r *Registry) entry(ctx Context, c Command, targets []Sandbox) Entry {
 		if !ctx.Tree {
 			e.Unavailable = "there is no list beside a workspace in this window"
 		}
+	case "theme":
+		if !ctx.Themed {
+			e.Unavailable = ThemeUnavailable
+		}
 	case "new", "credentials", "harnesses":
 		if ctx.HasWorkspace && !ctx.Tree {
 			e.Unavailable = "the pages open beside the list; this window has no tree"
@@ -383,6 +390,9 @@ type Frontend[R any] interface {
 	RunOptions() R
 	Repaint() R
 	Palette() R
+	// Theme asks which palette the window draws in (ThemeQuestion), and
+	// keeps the answer for the next window.
+	Theme() R
 
 	NewTerminal() R
 	EndSession() R
@@ -511,6 +521,8 @@ func Dispatch[R any](r *Registry, f Frontend[R], ctx Context, id string, targets
 		return f.Repaint()
 	case "palette":
 		return f.Palette()
+	case "theme":
+		return f.Theme()
 	case "terminal":
 		return f.NewTerminal()
 	case "end":
@@ -747,6 +759,10 @@ var registry = []Command{
 		Bindings: Bindings{TUI: tui("ctrl+o"), Desktop: desktop().in(MenuConsole)}},
 	{ID: "repaint", Label: "repaint", Detail: "redraw and reread the console", Aliases: []string{"repaint"},
 		Bindings: Bindings{TUI: tui("ctrl+l"), Desktop: desktop().in(MenuView)}},
+	// The desktop app's palette, which it draws itself; the terminal console
+	// draws in its terminal's colors, and has no binding.
+	{ID: "theme", Label: "theme", Detail: "draw the window dark, light, or as the system does", Aliases: []string{"theme", "appearance"},
+		Bindings: Bindings{Desktop: desktop().in(MenuView)}},
 
 	// These own a workspace pane rather than a box chosen from the list.
 	{ID: "terminal", Label: "new terminal", Detail: "open another harness terminal", Aliases: []string{"new terminal"},

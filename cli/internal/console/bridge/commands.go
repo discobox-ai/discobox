@@ -78,6 +78,8 @@ func (s *Server) contextOf(x Context, workspace *console.Sandbox, requests []con
 	return console.Context{
 		Session: session, HasWorkspace: x.HasWorkspace, WorkspaceShown: x.WorkspaceShown, PaneFocused: x.PaneFocused,
 		ListHasKeys: x.ListHasKeys, Tree: x.Tree, TreeShown: x.TreeShown, TreeFits: x.TreeFits, PageShown: x.PageShown,
+		// The app draws its own palette.
+		Themed:    true,
 		Workspace: workspace,
 		Waiting:   func(b console.Sandbox) bool { return len(console.RequestsFor(session, b, requests)) > 0 },
 		Refused:   func(b console.Sandbox) bool { return len(console.RejectionsFor(session, b, rejections)) > 0 },
@@ -365,6 +367,30 @@ func (f *frontend) Refresh() outcome {
 func (f *frontend) Palette() outcome {
 	f.s.reg.Use("palette")
 	return f.enter()
+}
+
+// Theme asks which palette the window draws in, keeps the answer for the
+// next window, and hands it to the app to draw in (Result.Appearance). One
+// that cannot be kept is still drawn in, and says so.
+func (f *frontend) Theme() outcome {
+	return func() Result {
+		f.s.mu.Lock()
+		now := f.s.session.Appearance
+		f.s.mu.Unlock()
+		key, err := f.s.ask(f.ctx, f.c.ID, console.ThemeQuestion(now))
+		if r, over := f.asked(err); over {
+			return r
+		}
+		a := console.ParseAppearance(key)
+		f.s.mu.Lock()
+		f.s.session.Appearance = a
+		f.s.mu.Unlock()
+		r := Result{Status: StatusDone, Appearance: a}
+		if err := f.s.ds.SaveAppearance(f.ctx, a); err != nil {
+			r.Note = "the theme is not kept for the next window: " + err.Error()
+		}
+		return r
+	}
 }
 
 // Actions hands the app a box's action menu, as the core rules on it for the

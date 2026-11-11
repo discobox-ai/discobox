@@ -55,6 +55,37 @@ func TestConsoleStateRoundTrips(t *testing.T) {
 	}
 }
 
+// A picked theme is kept beside the rest, and the system's, the default, is
+// kept as nothing; one kept that names no appearance opens on the system's.
+func TestTheAppearanceIsKeptAndTheSystemsIsNothing(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if err := savePromptDraft("keep me"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveAppearance(console.AppearanceLight); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConsoleState(); got.Appearance != "light" || got.Draft != "keep me" {
+		t.Fatalf("state = %+v", got)
+	}
+	if err := saveAppearance(console.AppearanceSystem); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(consoleStatePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "appearance") {
+		t.Errorf("the system's appearance is kept: %s", data)
+	}
+	if err := updateConsoleState(func(s *consoleState) { s.Appearance = "sepia" }); err != nil {
+		t.Fatal(err)
+	}
+	if got := console.ParseAppearance(loadConsoleState().Appearance); got != console.AppearanceSystem {
+		t.Errorf("an unknown appearance opens on %q", got)
+	}
+}
+
 func TestConsoleStateLivesUnderXDGStateHome(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)

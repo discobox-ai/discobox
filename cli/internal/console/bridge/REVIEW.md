@@ -87,6 +87,9 @@
   it was started on, and a timeout context canceled once the start returned
   ended every files changed the moment it opened (found only by running it:
   the test fake's terminal ignored its context, and now ends with it).
+- **A `Protocol` bump moves the number in `DESIGN.md`'s Versions bullet** in
+  the same change: nothing checks that line, and it has been left a version
+  behind.
 - **A wire change is regenerated, never mirrored.** Change `wire.go` (or the
   console's `Spec`), run `go tool task generate`, and build the app against
   the new `desktop/bridge/src/wire.rs`. A type the app reads written by hand in

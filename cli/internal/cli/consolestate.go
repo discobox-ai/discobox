@@ -11,10 +11,11 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-// The console keeps three things across launches, one of each on this machine
+// The console keeps four things across launches, one of each on this machine
 // whatever directory a window is opened in (ADR 26-10-20-596): the prompt left
-// unsent in the composer, the header's filters — server, folder, tags — and the
-// source the last create was cut from. They are derived convenience state, kept
+// unsent in the composer, the header's filters — server, folder, tags — the
+// source the last create was cut from, and the palette a desktop window was
+// picked to draw in. They are derived convenience state, kept
 // in the CLI's state directory (statedir.go) and always best-effort: a missing,
 // unreadable or corrupt file opens the window empty, on everything, cutting
 // from where it runs, which is where it opens without one.
@@ -40,6 +41,8 @@ type consoleState struct {
 	Draft      string      `json:"draft,omitempty"`
 	View       consoleView `json:"view"`
 	LastSource string      `json:"lastSource,omitempty"`
+	// Appearance is a picked dark or light; the system's is kept as nothing.
+	Appearance string `json:"appearance,omitempty"`
 }
 
 type consoleView struct {
@@ -126,6 +129,17 @@ func saveConsoleView(view console.ListView) error {
 // console's Source row spelled it.
 func saveLastSource(source string) error {
 	return updateConsoleState(func(s *consoleState) { s.LastSource = source })
+}
+
+// saveAppearance records the palette a desktop window was picked to draw in.
+// The system's is the default, and is stored as nothing at all.
+func saveAppearance(a console.Appearance) error {
+	return updateConsoleState(func(s *consoleState) {
+		s.Appearance = ""
+		if a = console.ParseAppearance(string(a)); a != console.AppearanceSystem {
+			s.Appearance = string(a)
+		}
+	})
 }
 
 func (v consoleView) listView() console.ListView {

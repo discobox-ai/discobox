@@ -51,6 +51,11 @@ type fakeCore struct {
 	// view is the list's filter as the last window left it: what Session
 	// hands back and SaveView records.
 	view console.ListView
+	// appearance is the palette the last window was picked to draw in: what
+	// Session hands back and SaveAppearance records, failing with
+	// appearanceErr when set.
+	appearance    console.Appearance
+	appearanceErr error
 	// explain is whether the session says the project owes the harness
 	// changes explainer; MarkHarnessChangesExplained clears it, failing with
 	// explainErr when set.
@@ -172,7 +177,18 @@ func (f *fakeCore) ForServer(server string) console.DataSource {
 func (f *fakeCore) Session(context.Context) (console.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return console.Session{Project: "proj", Directory: "/src", Branch: "main", View: f.view, ExplainHarnessChanges: f.explain}, nil
+	return console.Session{Project: "proj", Directory: "/src", Branch: "main", View: f.view, Appearance: f.appearance, ExplainHarnessChanges: f.explain}, nil
+}
+
+func (f *fakeCore) SaveAppearance(_ context.Context, a console.Appearance) error {
+	f.call("appearance %s", a)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.appearanceErr != nil {
+		return f.appearanceErr
+	}
+	f.appearance = a
+	return nil
 }
 
 func (f *fakeCore) MarkHarnessChangesExplained(context.Context) error {

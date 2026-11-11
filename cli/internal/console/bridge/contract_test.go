@@ -54,6 +54,8 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //   - Every box's audit timeline is two http exchanges of one group, which
 //     fold into one run, then a credential lent. http-1's response body was
 //     recorded, and reads `{"login":"b1"}`.
+//   - The last window was picked to draw dark: the welcome says so, and the
+//     theme command's question opens on a change from it.
 //   - b1 is on acme/foo, tagged with issue 4 and pull request 9 (testPull):
 //     ready to merge by squashing only, its review threaded, and its files
 //     changed a session of their own.
@@ -103,6 +105,7 @@ func TestContractCore(t *testing.T) {
 		{ID: "broken", Status: "stopped", Problem: "it is not executable"},
 	}
 	core.serviceLogs = map[string]string{"migrate": "migrated 3 tables\n"}
+	core.appearance = console.AppearanceDark
 	core.harnesses = []console.Harness{{ID: "hc_claude", Name: "Claude", Slug: "claude", Default: true,
 		Files: []console.HarnessFile{{Path: ".claude.json", Content: "{}", Source: console.HarnessFileSaved}}}}
 	core.changes = console.HarnessChanges{CandidateID: "c1", State: "pending", Revision: 1,

@@ -433,11 +433,12 @@ func (d *apiDataSource) Session(ctx context.Context) (console.Session, error) {
 		session.Branch = branch
 	}
 	// Whatever the last window on this machine was left holding: the prompt
-	// left unsent, the header's filters and where the last create was cut
-	// from. It is this machine's state, not the project's, and not the
+	// left unsent, the header's filters, where the last create was cut from,
+	// and the palette a desktop window was picked to draw in. It is this machine's state, not the project's, and not the
 	// directory's either. See consolestate.go.
 	state := loadConsoleState()
 	session.Draft, session.View, session.LastSource = state.Draft, state.View.listView(), state.LastSource
+	session.Appearance = console.ParseAppearance(state.Appearance)
 	session.ServerChosen = d.serverChosen
 	session.PrimaryServer = d.primaryName
 	// The harnesses are not here: they are read on their own by Harnesses,
@@ -497,6 +498,13 @@ func (d *apiDataSource) SaveView(_ context.Context, view console.ListView) error
 // SaveDraft's is.
 func (d *apiDataSource) SaveLastSource(_ context.Context, source string) error {
 	return saveLastSource(source)
+}
+
+// SaveAppearance keeps the palette a desktop window was picked to draw in,
+// which the next one opens on. The context is unused, for the reason
+// SaveDraft's is.
+func (d *apiDataSource) SaveAppearance(_ context.Context, a console.Appearance) error {
+	return saveAppearance(a)
 }
 
 // List is every sandbox in the project, newest-created first — the same

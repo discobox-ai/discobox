@@ -130,7 +130,7 @@ func TestPaletteCommitsAnExactAliasOnASpace(t *testing.T) {
 // that can matches.
 func TestPaletteFindsEveryCommandByName(t *testing.T) {
 	r, l := NewRegistry(servers{}), paletteList()
-	for name, ctx := range map[string]Context{"the list": {ListHasKeys: true, Tree: true}, "a pane": {HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true, TreeShown: true}} {
+	for name, ctx := range map[string]Context{"the list": {ListHasKeys: true, Tree: true, Themed: true}, "a pane": {HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true, TreeShown: true, Themed: true}} {
 		for _, c := range Commands() {
 			rows := r.Palette(l, ctx, PaletteQuery{Text: c.Label}).Rows
 			found := false
