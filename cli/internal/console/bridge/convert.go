@@ -143,7 +143,7 @@ func wireEnd(e console.TabEnd) TabEnd {
 func wireHeader(h console.Header) Header {
 	out := Header{
 		ID: h.ID, Work: make([]Link, 0, len(h.Work)), Base: h.Base, Changes: h.Changes,
-		Tone: ToneQuiet, Ready: h.Ready, Desktop: nil, Ports: make([]PortGroup, 0, len(h.Ports)), Tags: nonNil(h.Tags),
+		Tone: ToneQuiet, Ready: h.Ready, Title: h.Title, Desktop: nil, Ports: make([]PortGroup, 0, len(h.Ports)), Tags: nonNil(h.Tags),
 	}
 	if h.Blocked {
 		out.Blocked = console.StatusBlocked

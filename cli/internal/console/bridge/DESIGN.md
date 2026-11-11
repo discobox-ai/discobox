@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 20; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 21; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -339,8 +339,10 @@ between what the program in its attached primary reports over OSC 7501 (ADR
 26-10-16-424) and the listing's poll (`program.go`). The bridge reads the
 primary's output through the parser termpane and the shim use
 (`charmbracelet/x/ansi`), takes each OSC 7501 and OSC 133 by the protocol's
-rules (`programstatus.Set.Observe`), and hands what it heard to
-`console.NewHeader` for the box's header (the header topic), read again whenever a report, a
-prompt, an attach or the session's end changes what the primary has said, as
-it is for a new listing. The app draws it and decides nothing; its emulator
+rules (`programstatus.Set.Observe`), keeps the title an OSC 0 or 2 sets as
+the TUI's emulator reads it, and hands what it heard to
+`console.NewHeader` for the box's header (the header topic), whose `title`
+the app titles its window by. It is read again whenever a report, a
+prompt, a title, an attach or the session's end changes what the primary has
+said, as it is for a new listing. The app draws it and decides nothing; its emulator
 never sees a sequence it does not know.

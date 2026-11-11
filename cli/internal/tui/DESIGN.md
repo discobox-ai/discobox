@@ -2535,7 +2535,7 @@ find the window among the others you have open. The title bar follows the
 primary terminal — never the focused tab — because it is read
 from outside the window, where what matters is which discobox this is and what
 its agent is doing; a tab or a report is something you are doing inside the
-window and already looking at. What the box is called (`primaryTitle`) comes
+window and already looking at. What the box is called (`primaryTitle`, the core's `Sandbox.PrimaryTitle`, which titles the desktop's window too) comes
 first in both: `title: msg` (`sandboxmeta.Title`, the server's display name
 rule), where the title is the name it was given (`Sandbox.GivenName`), else
 the primary's window title, else its configured name, else its ID, and the msg

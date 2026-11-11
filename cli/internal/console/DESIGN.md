@@ -282,8 +282,11 @@ flowchart LR
   workspace's header says of its box — its id, the issue and pull request its
   tags number (`WorkLinks`), its git position and word and how they read, its
   diff, its desktop, the ports it serves, the tags it says nothing of
-  otherwise (`HeaderTags`), and what its agent is doing (`AgentHeard`, from
-  what the primary's stream has said and the poll). The git tone and the diff
+  otherwise (`HeaderTags`), what its agent is doing (`AgentHeard`, from
+  what the primary's stream has said and the poll), and what the window
+  showing it is called (`PrimaryTitle`, the TUI's primary tab and title bar
+  too: its name, else the title its primary set, and what its agent says).
+  The git tone and the diff
   are the list's column's answers too (`GitTone`, `Changed`). The order the fields go in, their colors
   and what is given up for room are each renderer's. The TUI draws it, and the
   bridge serves it with the workspace's forward (`bridge`).

@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"bytes"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -12,7 +13,10 @@ import (
 // 26-10-16-424): what the program in its primary terminal reports of itself
 // over OSC 7501, read off the stream the bridge relays, or the listing's poll,
 // whichever the core's rule says (console.Sandbox.AgentHeard), the choice the
-// TUI makes for what it says on its terminal's tab and title. It goes to the app in the box's header (console.Header.Agent),
+// TUI makes for what it says on its terminal's tab and title; and the title
+// the program gives its terminal (OSC 0, 2), which with that is what the
+// window is called (console.Header.Title). It goes to the app in the box's
+// header (console.Header.Agent, console.Header.Title),
 // which is read again whenever what the primary says changes; the app draws
 // it and decides nothing (289 §2). Its emulator never sees a sequence it does not
 // know, so this is the one place the desktop's stream is read for it.
@@ -29,6 +33,10 @@ type heard struct {
 	stream uint32
 	set    programstatus.Set
 	ended  bool
+	// title is the window title the primary's program last set (OSC 0 or 2),
+	// empty before it has set one: what the box's header is titled by
+	// (console.Header.Title).
+	title string
 	// changed is closed when what the primary has said changes, and replaced:
 	// what a header following the box waits on.
 	changed chan struct{}
@@ -48,16 +56,38 @@ type programWatch struct {
 func (s *Server) watchProgram(box string, stream uint32) *programWatch {
 	w := &programWatch{s: s, box: box, stream: stream, parser: ansi.NewParser()}
 	w.parser.SetHandler(ansi.Handler{HandleOsc: func(cmd int, data []byte) {
-		if cmd != programstatus.Code && cmd != programstatus.PromptCode {
-			return
+		switch cmd {
+		case programstatus.Code, programstatus.PromptCode:
+			w.hear(func(h *heard) bool { return h.set.Observe(data, time.Now().UTC(), 0) != programstatus.SeenNothing })
+		case 0, 2:
+			if title, ok := windowTitle(data); ok {
+				w.hear(func(h *heard) bool {
+					changed := h.title != title
+					h.title = title
+					return changed
+				})
+			}
 		}
-		w.hear(func(h *heard) bool { return h.set.Observe(data, time.Now().UTC(), 0) != programstatus.SeenNothing })
 	}})
+	// The title belongs to the stream, as a TUI pane's does: a new one
+	// announces its own.
 	s.hear(box, func(h *heard) bool {
-		h.stream, h.set, h.ended = stream, programstatus.Set{}, false
+		h.stream, h.set, h.ended, h.title = stream, programstatus.Set{}, false, ""
 		return true
 	})
 	return w
+}
+
+// windowTitle is the title an OSC 0 or 2 sequence's data sets, read as the
+// TUI's emulator reads it (charmbracelet/x/vt's handleTitle), so the desktop's
+// title and the TUI's agree: the text after the code, refused when it holds
+// another separator.
+func windowTitle(data []byte) (string, bool) {
+	parts := bytes.Split(data, []byte{';'})
+	if len(parts) != 2 {
+		return "", false
+	}
+	return string(parts[1]), true
 }
 
 // hear changes what the box's primary has said, if this is still its
@@ -105,14 +135,14 @@ func (s *Server) heardOf(box string) *heard {
 }
 
 // header is box's header as the core says it (console.NewHeader), its agent
-// from what the box's primary has said, and what is closed when that
+// and its title from what the box's primary has said, and what is closed when that
 // changes. The record is read under heardMu: a primary's output goes on
 // changing it.
 func (s *Server) header(key string, box console.Sandbox, forwarded map[console.PortKey]int) (console.Header, <-chan struct{}) {
 	s.heardMu.Lock()
 	defer s.heardMu.Unlock()
 	h := s.heardOf(key)
-	return console.NewHeader(box, forwarded, &h.set, h.ended), h.changed
+	return console.NewHeader(box, forwarded, &h.set, h.ended, h.title), h.changed
 }
 
 // primaryOf is whether an exec a stream attaches is its box's primary, the

@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 20,
+  "x-protocol": 21,
   "x-specVersion": 7,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -1715,6 +1715,10 @@
         },
         "agentMsg": {
           "type": "string"
+        },
+        "title": {
+          "description": "Title is what the window showing the box is called (console.Header.Title): its name and what its agent says it is doing, as the TUI titles its window.",
+          "type": "string"
         }
       },
       "required": [
@@ -1722,7 +1726,8 @@
         "work",
         "tone",
         "ports",
-        "tags"
+        "tags",
+        "title"
       ]
     },
     "Link": {

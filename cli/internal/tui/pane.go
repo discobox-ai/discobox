@@ -1882,7 +1882,7 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	// What the header says is the core's (console.Header); the order of the
 	// fields, their colors and what is given up first are this window's.
 	heard, ended := m.primaryHeard()
-	header := console.NewHeader(box, m.forwardedPorts(), heard, ended)
+	header := console.NewHeader(box, m.forwardedPorts(), heard, ended, m.primaryTermTitle())
 	git := gitStyle(m.st, header.Tone)
 
 	fields := paneHeaderFields{textField(m.st.dimText.Render(header.ID))}

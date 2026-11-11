@@ -93,12 +93,15 @@
   `desktop/` is the drift the generated types exist to prevent. A new named
   string type on the wire declares its values as constants: they are its
   enum.
-- **A field added to the spec bumps `SpecVersion`.** Every wire field is
+- **A field added to the spec bumps `SpecVersion`, and one added to any
+  other wire message bumps `Protocol`** (saying in its comment what the new
+  number added). Every wire field is
   required in the generated Rust, so an app built for the new spec, run
   against a CLI from before it (`--binary`, `DISCOBOX_DESKTOP_BINARY`, a dev
   build beside an older CLI), passed the version check and stopped on a bare
   missing field instead of the check's "run the app built with this CLI".
-  Adding `Dimensions` nearly shipped that way.
+  Adding `Dimensions` nearly shipped that way, and so did `Header.Title`
+  without its protocol bump.
 - **Something absent is an omitted pointer, never a zero value.** A struct
   left at its zero value puts `""` in each named-enum field it holds, and
   `""` is no value of the enum: the app's generated type refuses the whole

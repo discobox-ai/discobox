@@ -53,8 +53,8 @@ import (
 // records below a row held (Audit.Below); 19, the harness changes explainer:
 // the box it is owed about (Requests.Explain), asked by the review config
 // command (Args.Explain); 20, a workspace's automatic push (the push
-// topic).
-const Protocol = 20
+// topic); 21, the window's title for the box on screen (Header.Title).
+const Protocol = 21
 
 // Type names a message.
 type Type string
@@ -939,6 +939,10 @@ type Header struct {
 	// poll. None when there is nothing to say.
 	Agent    string `json:"agent,omitempty"`
 	AgentMsg string `json:"agentMsg,omitempty"`
+	// Title is what the window showing the box is called
+	// (console.Header.Title): its name and what its agent says it is doing,
+	// as the TUI titles its window.
+	Title string `json:"title"`
 }
 
 // Link is something in the header a press opens in the browser; one without

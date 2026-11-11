@@ -17,7 +17,7 @@ func TestHeaderSaysEachThingOnce(t *testing.T) {
 		Commit: "000", Git: GitState{Known: true, Branch: "fix", Commit: "abc"},
 		Diff: DiffStat{Known: true, Added: 2, Deleted: 1, Files: 1},
 	}
-	h := NewHeader(box, nil, nil, false)
+	h := NewHeader(box, nil, nil, false, "")
 	if h.ID != "sbx_1" || len(h.Work) != 1 || h.Work[0] != (Link{Label: "PR #12", URL: "https://github.com/acme/foo/pull/12", Issue: 12, Pull: true}) {
 		t.Fatalf("work %+v", h.Work)
 	}
@@ -34,7 +34,7 @@ func TestHeaderSaysEachThingOnce(t *testing.T) {
 		t.Fatalf("git %q %q tone %v ready %v", h.Base, h.Changes, h.Tone, h.Ready)
 	}
 	box.Tags = append(box.Tags, "blocked")
-	if h := NewHeader(box, nil, nil, false); !h.Blocked || h.Changes != "" || h.Ready {
+	if h := NewHeader(box, nil, nil, false, ""); !h.Blocked || h.Changes != "" || h.Ready {
 		t.Fatalf("a blocked box's git word: %+v", h)
 	}
 }
@@ -49,12 +49,12 @@ func TestHeaderPorts(t *testing.T) {
 		{Number: 3000, Protocol: "http"},
 		{Number: 9000, Protocol: "unknown"},
 	}}
-	h := NewHeader(box, nil, nil, false)
+	h := NewHeader(box, nil, nil, false, "")
 	if h.Desktop != nil {
 		t.Fatalf("an unforwarded desktop is offered: %+v", h.Desktop)
 	}
 	forwarded := Forwarded([]Binding{{Port: 6900, Local: 6901}, {Port: 3000, Local: 3000}, {Port: 53, UDP: true, Local: 5353}})
-	h = NewHeader(box, forwarded, nil, false)
+	h = NewHeader(box, forwarded, nil, false, "")
 	if h.Desktop == nil || *h.Desktop != (Link{Label: "Browser desktop", URL: "http://localhost:6901"}) {
 		t.Fatalf("desktop %+v", h.Desktop)
 	}
@@ -74,18 +74,47 @@ func TestHeaderPorts(t *testing.T) {
 // once that session has ended.
 func TestHeaderSaysWhatTheAgentIsDoing(t *testing.T) {
 	box := Sandbox{ID: "b1", Agent: programstatus.Status{State: programstatus.Working, Msg: "polled"}, AgentObservedAt: time.Unix(100, 0)}
-	if h := NewHeader(box, nil, nil, false); h.Agent.State != programstatus.Working || h.Agent.Msg != "polled" {
+	if h := NewHeader(box, nil, nil, false, ""); h.Agent.State != programstatus.Working || h.Agent.Msg != "polled" {
 		t.Fatalf("with nothing heard: %+v", h.Agent)
 	}
 	var heard programstatus.Set
 	heard.Observe([]byte("7501;state=blocked"), time.Unix(200, 0), 0)
-	if h := NewHeader(box, nil, &heard, false); h.Agent.State != programstatus.Blocked {
+	if h := NewHeader(box, nil, &heard, false, ""); h.Agent.State != programstatus.Blocked {
 		t.Fatalf("a newer report: %+v", h.Agent)
 	}
-	if h := NewHeader(box, nil, &heard, true); h.Agent.Msg != "polled" {
+	if h := NewHeader(box, nil, &heard, true, ""); h.Agent.Msg != "polled" {
 		t.Fatalf("an ended session: %+v", h.Agent)
 	}
-	if h := NewHeader(Sandbox{ID: "b2"}, nil, nil, false); h.Agent.State != "" {
+	if h := NewHeader(Sandbox{ID: "b2"}, nil, nil, false, ""); h.Agent.State != "" {
 		t.Fatalf("nothing to say: %+v", h.Agent)
+	}
+}
+
+// A header is titled as the TUI titles its window: the box's name, else the
+// title its primary set, else the one it last reported, else its configured
+// name, else its ID, then what its agent is said to be doing while it says
+// something.
+func TestHeaderTitleIsThePrimarysTitle(t *testing.T) {
+	box := Sandbox{ID: "b1", TerminalTitle: "listed", Agent: programstatus.Status{State: programstatus.Working, Msg: "polled"}, AgentObservedAt: time.Unix(100, 0)}
+	if got := NewHeader(box, nil, nil, false, "").Title; got != "listed: polled" {
+		t.Fatalf("with no title set: %q", got)
+	}
+	if got := NewHeader(box, nil, nil, false, "go test").Title; got != "go test: polled" {
+		t.Fatalf("with a title set: %q", got)
+	}
+	var heard programstatus.Set
+	heard.Observe([]byte("7501;state=idle"), time.Unix(200, 0), 0)
+	if got := NewHeader(box, nil, &heard, false, "go test").Title; got != "go test" {
+		t.Fatalf("an idle report says nothing: %q", got)
+	}
+	box.GivenName = "fixer"
+	if got := NewHeader(box, nil, nil, false, "go test").Title; got != "fixer: polled" {
+		t.Fatalf("a given name: %q", got)
+	}
+	if got := NewHeader(Sandbox{ID: "b2", ConfigName: "cfg"}, nil, nil, false, "").Title; got != "cfg" {
+		t.Fatalf("a configured name: %q", got)
+	}
+	if got := NewHeader(Sandbox{ID: "b2"}, nil, nil, false, "  ").Title; got != "b2" {
+		t.Fatalf("only an ID: %q", got)
 	}
 }

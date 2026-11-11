@@ -901,6 +901,21 @@ func (s Sandbox) Title() string {
 	return sandboxmeta.Title(s.GivenName, s.TerminalTitle, s.Unnamed(), "")
 }
 
+// PrimaryTitle is what a window calls the box its primary terminal shows:
+// its resolved title — the name it was given, else the title that terminal
+// last set (title; empty before it has set one, which leaves the one the box
+// last reported, TerminalTitle), else its configured name, else its ID —
+// followed by msg, what its agent says it is doing (AgentHeard's), while it
+// says something: "title: msg" (sandboxmeta.Title, the server's display name
+// rule). The TUI's primary tab and title bar say it, and so does the
+// desktop's window title (Header.Title). Never empty: a box always has an ID.
+func (s Sandbox) PrimaryTitle(title, msg string) string {
+	if strings.TrimSpace(title) == "" {
+		title = s.TerminalTitle
+	}
+	return sandboxmeta.Title(s.GivenName, title, s.Unnamed(), msg)
+}
+
 // Startable reports whether start is offered for this box: powered off, or
 // frozen whole. Attaching to one starts it too (attachable).
 func (s Sandbox) Startable() bool {

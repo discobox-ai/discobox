@@ -823,14 +823,16 @@ fn a_primarys_report_reaches_the_header() {
         }
     };
     let h = header(&mut cli);
-    assert_eq!((h.id.as_str(), h.agent.as_str()), ("b1", ""), "the poll says nothing for b1");
+    assert_eq!((h.id.as_str(), h.agent.as_str(), h.title.as_str()), ("b1", "", "b1"), "the poll says nothing for b1");
     let open = Open { stream: 4, r#box: "b1".into(), exec: "primary".into(), cols: 80, rows: 24 };
     cli.send(Message { r#type: Type::Open, open: Some(open), ..Default::default() });
     cli.expect(Type::Stream);
     // "which?" in base64.
     cli.client.input(4, b"\x1b]7501;state=blocked:kind=question:msg=d2hpY2g/\x07").unwrap();
     let h = header(&mut cli);
-    assert_eq!((h.agent.as_str(), h.agent_msg.as_str()), ("blocked", "which?"));
+    assert_eq!((h.agent.as_str(), h.agent_msg.as_str(), h.title.as_str()), ("blocked", "which?", "b1: which?"));
+    cli.client.input(4, b"\x1b]2;go test\x07").unwrap();
+    assert_eq!(header(&mut cli).title, "go test: which?", "the title the primary set titles the window");
 }
 
 // A link pressed in a pane is answered by its ID with where it goes: a URL its box printed at

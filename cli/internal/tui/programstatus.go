@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
-	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
 
 // The window speaks OSC 7501 to the terminal it runs in for the discobox it
@@ -122,28 +121,20 @@ func recordTitle(box console.Sandbox) string {
 }
 
 // primaryTitle is what the box in the workspace is called from the primary
-// terminal's side: its resolved title — the name it was given, else the title
-// the terminal last set, else its configured name, else its ID — followed by
-// the msg its program reports while it has one, as "title: msg"
-// (sandboxmeta.Title, the server's display name rule). The msg is
-// focusedProgramStatus's, so it is the one the program said last, from the
-// stream or the poll, whichever is newer — the listing's name carries the
-// poll's, which lags what the pane has drawn; the title is the pane's own, for
-// the same reason, and the one the box last reported until the pane has drawn
-// one. Never empty: a workspace always has a box, and a box always has an ID.
+// terminal's side (console.Sandbox.PrimaryTitle): its resolved title
+// followed by the msg its program reports while it has one, as "title: msg".
+// The msg is focusedProgramStatus's, so it is the one the program said last,
+// from the stream or the poll, whichever is newer — the listing's name
+// carries the poll's, which lags what the pane has drawn; the title is the
+// pane's own, for the same reason, and the one the box last reported until
+// the pane has drawn one. Never empty: a workspace always has a box, and a
+// box always has an ID.
 func (m *Model) primaryTitle() string {
-	var msg, title string
+	var msg string
 	if rec, ok := m.focusedProgramStatus(); ok {
 		msg = rec.Msg
 	}
-	if p := m.Primary(); p != nil {
-		title = p.term.Title()
-	}
-	box := m.currentBox()
-	if strings.TrimSpace(title) == "" {
-		title = box.TerminalTitle
-	}
-	return sandboxmeta.Title(box.GivenName, title, box.Unnamed(), msg)
+	return m.currentBox().PrimaryTitle(m.primaryTermTitle(), msg)
 }
 
 // syncProgramStatus sends the focused box's status when it is not what was
@@ -201,4 +192,14 @@ func (m *Model) primaryHeard() (*programstatus.Set, bool) {
 		return nil, false
 	}
 	return &p.reported, p.Exited
+}
+
+// primaryTermTitle is the title the workspace's primary terminal last set:
+// empty before it has set one, or with no primary.
+func (m *Model) primaryTermTitle() string {
+	p := m.Primary()
+	if p == nil || p.term == nil {
+		return ""
+	}
+	return p.term.Title()
 }

@@ -80,7 +80,7 @@ func TestPortsFieldGroupsByProtocol(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: tc.ports}, nil, nil, false).Ports).text()); got != tc.want {
+			if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: tc.ports}, nil, nil, false, "").Ports).text()); got != tc.want {
 				t.Fatalf("portsField = %q, want %q", got, tc.want)
 			}
 		})
@@ -102,7 +102,7 @@ func TestPortsFieldShowsTheLocalPortForForwardedPorts(t *testing.T) {
 	// so the same way even though nothing can link to it.
 	forwarded := tcpForwards(map[int]int{8080: 8082, 3000: 3000, 5432: 5433})
 	want := "http:3000,8082->8080 · tcp:5433->5432"
-	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, forwarded, nil, false).Ports).text()); got != want {
+	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, forwarded, nil, false, "").Ports).text()); got != want {
 		t.Fatalf("portsField = %q, want %q", got, want)
 	}
 }
@@ -114,7 +114,7 @@ func TestPortsFieldLeavesUnforwardedPortsAlone(t *testing.T) {
 	st := newStyles(false)
 	ports := []console.Port{{Number: 8080, Protocol: "http"}, {Number: 9000, Protocol: "http"}}
 	want := "http:8081->8080,9000"
-	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{8080: 8081}), nil, false).Ports).text()); got != want {
+	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{8080: 8081}), nil, false, "").Ports).text()); got != want {
 		t.Fatalf("portsField = %q, want %q", got, want)
 	}
 }
@@ -131,7 +131,7 @@ func TestPortsFieldLinksForwardedWebPorts(t *testing.T) {
 		{Number: 5432, Protocol: "tcp"},
 		{Number: 9000, Protocol: "http"},
 	}
-	rendered := portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{8080: 8082, 8443: 8444, 5432: 5433}), nil, false).Ports).text()
+	rendered := portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{8080: 8082, 8443: 8444, 5432: 5433}), nil, false, "").Ports).text()
 	for _, want := range []string{
 		hyperlink("http://localhost:8082", "8082->8080"),
 		hyperlink("https://localhost:8444", "8444->8443"),
@@ -156,7 +156,7 @@ func TestPortsFieldLinksForwardedWebPorts(t *testing.T) {
 func TestPortsFieldLinksAForwardThatKeptItsNumber(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
-	rendered := portsField(st, console.NewHeader(console.Sandbox{Ports: []console.Port{{Number: 5173, Protocol: "http"}}}, tcpForwards(map[int]int{5173: 5173}), nil, false).Ports).text()
+	rendered := portsField(st, console.NewHeader(console.Sandbox{Ports: []console.Port{{Number: 5173, Protocol: "http"}}}, tcpForwards(map[int]int{5173: 5173}), nil, false, "").Ports).text()
 	if want := hyperlink("http://localhost:5173", "5173"); !strings.Contains(rendered, want) {
 		t.Fatalf("portsField = %q, want it to contain %q", rendered, want)
 	}
@@ -172,7 +172,7 @@ func TestPortsFieldLeavesTheDesktopOut(t *testing.T) {
 		{Number: 8080, Protocol: "http"},
 		{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"},
 	}
-	got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{8080: 8080, 6900: 6900}), nil, false).Ports).text())
+	got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{8080: 8080, 6900: 6900}), nil, false, "").Ports).text())
 	if want := "http:8080"; got != want {
 		t.Fatalf("portsField = %q, want %q", got, want)
 	}
@@ -184,7 +184,7 @@ func TestPortsFieldIsEmptyWhenOnlyTheDesktopIsServed(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	ports := []console.Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID}}
-	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{6900: 6900}), nil, false).Ports).text()); got != "" {
+	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{6900: 6900}), nil, false, "").Ports).text()); got != "" {
 		t.Fatalf("portsField = %q, want empty", got)
 	}
 }
@@ -196,7 +196,7 @@ func TestDesktopFieldLinksTheForwardedDesktop(t *testing.T) {
 	st := newStyles(false)
 	ports := []console.Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
 
-	rendered := desktopField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{6900: 6901}), nil, false).Desktop).text()
+	rendered := desktopField(st, console.NewHeader(console.Sandbox{Ports: ports}, tcpForwards(map[int]int{6900: 6901}), nil, false, "").Desktop).text()
 	if got := ansi.Strip(rendered); got != "Desktop" {
 		t.Fatalf("desktopField = %q, want the declaration's name", got)
 	}
@@ -216,7 +216,7 @@ func TestDesktopFieldIsEmptyWithoutAForward(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	ports := []console.Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
-	if got := desktopField(st, console.NewHeader(console.Sandbox{Ports: ports}, nil, nil, false).Desktop).text(); got != "" {
+	if got := desktopField(st, console.NewHeader(console.Sandbox{Ports: ports}, nil, nil, false, "").Desktop).text(); got != "" {
 		t.Fatalf("desktopField = %q, want empty with no forward", got)
 	}
 }
@@ -227,18 +227,18 @@ func TestTheDesktopIsRecognizedByIDNotByPortNumber(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	elsewhere := []console.Port{{Number: 7100, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
-	if got := ansi.Strip(desktopField(st, console.NewHeader(console.Sandbox{Ports: elsewhere}, tcpForwards(map[int]int{7100: 7100}), nil, false).Desktop).text()); got != "Desktop" {
+	if got := ansi.Strip(desktopField(st, console.NewHeader(console.Sandbox{Ports: elsewhere}, tcpForwards(map[int]int{7100: 7100}), nil, false, "").Desktop).text()); got != "Desktop" {
 		t.Fatalf("a desktop on another port was not recognized: %q", got)
 	}
-	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: elsewhere}, tcpForwards(map[int]int{7100: 7100}), nil, false).Ports).text()); got != "" {
+	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: elsewhere}, tcpForwards(map[int]int{7100: 7100}), nil, false, "").Ports).text()); got != "" {
 		t.Fatalf("a desktop on another port was still listed as a port: %q", got)
 	}
 
 	plain := []console.Port{{Number: 6900, Protocol: "http"}}
-	if got := desktopField(st, console.NewHeader(console.Sandbox{Ports: plain}, tcpForwards(map[int]int{6900: 6900}), nil, false).Desktop).text(); got != "" {
+	if got := desktopField(st, console.NewHeader(console.Sandbox{Ports: plain}, tcpForwards(map[int]int{6900: 6900}), nil, false, "").Desktop).text(); got != "" {
 		t.Fatalf("an undeclared port on 6900 was treated as the desktop: %q", got)
 	}
-	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: plain}, tcpForwards(map[int]int{6900: 6900}), nil, false).Ports).text()); got != "http:6900" {
+	if got := ansi.Strip(portsField(st, console.NewHeader(console.Sandbox{Ports: plain}, tcpForwards(map[int]int{6900: 6900}), nil, false, "").Ports).text()); got != "http:6900" {
 		t.Fatalf("an undeclared port on 6900 was not listed: %q", got)
 	}
 }
@@ -269,7 +269,7 @@ func TestPortsFieldTellsTheTCPAndUDPPortsOfANumberApart(t *testing.T) {
 		{Number: 53}:            8053,
 		{Number: 53, UDP: true}: 8054,
 	}
-	rendered := portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, forwarded, nil, false).Ports).text()
+	rendered := portsField(st, console.NewHeader(console.Sandbox{Ports: ports}, forwarded, nil, false, "").Ports).text()
 	if got, want := ansi.Strip(rendered), "tcp:8053->53 · udp:8054->53,5353"; got != want {
 		t.Fatalf("portsField = %q, want %q", got, want)
 	}

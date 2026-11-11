@@ -82,7 +82,7 @@ func (m *Model) bareStatus() string {
 
 	var fields paneHeaderFields
 	heard, ended := m.primaryHeard()
-	header := console.NewHeader(m.currentBox(), m.forwardedPorts(), heard, ended)
+	header := console.NewHeader(m.currentBox(), m.forwardedPorts(), heard, ended, m.primaryTermTitle())
 	for _, f := range []paneHeaderField{desktopField(m.st, header.Desktop), portsField(m.st, header.Ports)} {
 		if f.empty() {
 			continue

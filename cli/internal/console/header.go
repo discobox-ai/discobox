@@ -54,6 +54,10 @@ type Header struct {
 	// program in its primary reports while that is newer than the poll; the
 	// zero State when there is nothing to say.
 	Agent programstatus.Status
+	// Title is what the window showing the box is called
+	// (Sandbox.PrimaryTitle): the box's name and what its agent says it is
+	// doing, the text the TUI gives its title bar.
+	Title string
 }
 
 // Link is something in a header a press opens. A Link without a URL is text.
@@ -87,10 +91,11 @@ type PortGroup struct {
 }
 
 // NewHeader is the header of a box, with its ports at the local ports
-// forwarded names (nil before the workspace's forward has bound any), and its
+// forwarded names (nil before the workspace's forward has bound any), its
 // agent from what its primary's stream has said (heard; nil with none
-// attached) and whether that session has ended.
-func NewHeader(box Sandbox, forwarded map[PortKey]int, heard *programstatus.Set, ended bool) Header {
+// attached) and whether that session has ended, and its title from the title
+// that terminal last set (empty with none).
+func NewHeader(box Sandbox, forwarded map[PortKey]int, heard *programstatus.Set, ended bool, title string) Header {
 	h := Header{ID: box.ID, Work: box.WorkLinks(), Tags: box.HeaderTags(), Base: box.Base(), Tone: box.GitTone(), Diff: box.Changed()}
 	h.Blocked = box.Standing() == StandingBlocked
 	if changes := box.Changes(); changes != "-" && !h.Blocked {
@@ -102,6 +107,7 @@ func NewHeader(box Sandbox, forwarded map[PortKey]int, heard *programstatus.Set,
 	if agent, ok := box.AgentHeard(heard, ended); ok {
 		h.Agent = agent
 	}
+	h.Title = box.PrimaryTitle(title, h.Agent.Msg)
 	return h
 }
 
