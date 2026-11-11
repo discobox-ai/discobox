@@ -43,6 +43,10 @@ func (m *fakeMaker) Enroll(context.Context, string) error {
 func infoDaemon(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A newly listening port is probed by the sandbox agent (REVIEW.md).
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
 		if stripDockerAPIVersion(r.URL.Path) == "/info" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"OSType":"linux","Architecture":"x86_64"}`))
@@ -60,7 +64,23 @@ func infoDaemon(t *testing.T) *httptest.Server {
 // closing placement or failing the reconcile that would repair it, and only
 // newer intent, through begin, stops the pass.
 func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
-	cli, err := testDockerClient(infoDaemon(t).URL)
+	daemon := infoDaemon(t)
+	// Exercise the sandbox-agent's automatic port probe deterministically.
+	probe, err := http.NewRequest(http.MethodHead, daemon.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.Header.Set("User-Agent", "discobox-sandbox-agent (port probe)")
+	resp, err := daemon.Client().Do(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("port probe: status %d; want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	cli, err := testDockerClient(daemon.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
