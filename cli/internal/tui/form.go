@@ -64,8 +64,8 @@ type formRow struct {
 	// locked is a row this form never answers: what a credential already is, on
 	// the card that edits the parts of it that can change.
 	locked bool
-	// why stands in for the value on a row that cannot be answered, saying
-	// which it is: not applicable yet, or not editable at all.
+	// why stands in for the value on a locked row, saying why it cannot be
+	// edited. A row whose when says no is not drawn, so says nothing.
 	why string
 	// required refuses an empty typed row on submit, saying why.
 	required string

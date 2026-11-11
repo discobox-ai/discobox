@@ -575,7 +575,7 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 	if d == nil || idx < 0 || idx >= len(d.items) {
 		return nil
 	}
-	if !d.items[idx].enabled {
+	if !d.items[idx].enabled || d.decisionsBlocked {
 		d.cursor = idx
 		return nil
 	}

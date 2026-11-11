@@ -39,9 +39,15 @@ const (
 // routes do not cover the request would be refused on the requests it was
 // approved for. A variable held from the harness config or project takes
 // another secret as a replacement shadowing it (requestAnswer.useAs).
-func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, pinned bool) string {
+func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, pinned, readable bool) string {
 	if req.Use != nil && pinned && s.ID != holder.SecretID {
 		return notHeld
+	}
+	// The secret the variable holds, when it is not one this window can read
+	// (heldSecret names it and nothing more), has routes nobody here can
+	// check: it is not said to cover nothing, and the server takes it.
+	if s.ID == holder.SecretID && !readable {
+		return ""
 	}
 	if uncovered(s, req) != nil {
 		return notCovered
@@ -53,13 +59,17 @@ func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, pinned bool
 // that can answer when at is empty.
 func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, at string) tea.Cmd {
 	holder, pinned := heldBy(held)
+	readable := func(s Secret) bool {
+		return slices.ContainsFunc(secrets, func(r Secret) bool { return r.ID == s.ID })
+	}
+	why := func(s Secret) string { return cannotAnswer(s, req, holder, pinned, readable(s)) }
 	var ordered []Secret
 	if holder.SecretID != "" {
 		ordered = append(ordered, heldSecret(secrets, holder))
 	}
 	for _, fits := range []bool{true, false} {
 		for _, s := range secretsForRequest(secrets, req) {
-			if s.ID != holder.SecretID && (cannotAnswer(s, req, holder, pinned) == "") == fits {
+			if s.ID != holder.SecretID && (why(s) == "") == fits {
 				ordered = append(ordered, s)
 			}
 		}
@@ -68,7 +78,7 @@ func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []
 	cursor := -1
 	for i, s := range ordered {
 		label := "  " + s.Name
-		if cannotAnswer(s, req, holder, pinned) != "" {
+		if why(s) != "" {
 			label = "✗ " + s.Name
 		} else if cursor < 0 {
 			cursor = i
@@ -101,13 +111,11 @@ func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []
 			return nil
 		}
 		s := ordered[i]
-		if why := cannotAnswer(s, req, holder, pinned); why != "" {
-			return m.whyNotCompatible(req, s, why, heldSecret(secrets, holder), again)
+		if reason := why(s); reason != "" {
+			return m.whyNotCompatible(req, s, reason, heldSecret(secrets, holder), again)
 		}
-		return m.readStanding(req, s, held, again, func(standing, parents []SecretBinding, held []HeldGrant) tea.Cmd {
-			ans := requestAnswer{credential: s.Name, secret: s, credentialRoutes: s.Routes, maxTTL: s.MaxTTL, standing: standing, parents: parents, held: held, holderID: holder.SecretID}
-			return m.askSummary(req, ans, again)
-		})
+		ans := requestAnswer{credential: s.Name, secret: s, credentialRoutes: s.Routes, maxTTL: s.MaxTTL, held: held, holderID: holder.SecretID}
+		return m.readStanding(req, ans, again)
 	})
 	d.titleRight = "credential"
 	d.answerLabel = "Which credential should it get?"
@@ -126,58 +134,87 @@ func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []
 	return nil
 }
 
+// standingReadMsg is what the asking box holds of the secret an answer
+// was chosen with, read before the summary (readStanding).
+type standingReadMsg struct {
+	wait *dialog
+	req  CredentialRequest
+	ans  requestAnswer
+	back func() tea.Cmd
+	err  error
+}
+
 // readStanding reads what the asking box holds of a saved secret before
 // anything is decided, so the last step can say what approving replaces:
 // the box's own bindings of it, the delegations they were handed on under,
 // and what applies in the variable the use part names. back is step 1.
-func (m *Model) readStanding(req CredentialRequest, s Secret, held []HeldGrant, back func() tea.Cmd, next func(standing, parents []SecretBinding, held []HeldGrant) tea.Cmd) tea.Cmd {
+func (m *Model) readStanding(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
 	if req.SandboxID == "" {
-		return next(nil, nil, held)
+		return m.askSummary(req, ans, back)
 	}
-	m.dialog = statusDialog("Credential request", "reading what the discobox holds of "+s.Name+"…")
-	wait := m.dialog
+	wait := statusDialog("Credential request", "reading what the discobox holds of "+ans.credential+"…")
+	wait.onCancel = back
+	m.dialog = wait
 	ctx, ds := m.ctx, m.ds
 	return func() tea.Msg {
-		bindings, err := ds.Bindings(ctx, req.Server, BindingFilter{SecretID: s.ID})
-		var standing []SecretBinding
-		for _, b := range bindings {
-			if b.TargetKind == BindingSandbox && b.TargetID == req.SandboxID {
-				standing = append(standing, b)
-			}
-		}
-		now := held
+		msg := standingReadMsg{wait: wait, req: req, ans: ans, back: back}
+		bindings, err := ds.Bindings(ctx, req.Server, BindingFilter{SecretID: ans.secret.ID})
 		if err == nil && req.Use != nil && req.EnvVar != "" {
-			now, err = ds.HeldGrants(ctx, req.Server, req.SandboxID, req.EnvVar)
+			msg.ans.held, err = ds.HeldGrants(ctx, req.Server, req.SandboxID, req.EnvVar)
 		}
+		msg.err = err
 		byID := map[string]SecretBinding{}
 		for _, b := range bindings {
 			byID[b.ID] = b
+			if b.TargetKind == BindingSandbox && b.TargetID == req.SandboxID {
+				msg.ans.standing = append(msg.ans.standing, b)
+			}
 		}
-		var parents []SecretBinding
 		seen := map[string]bool{}
-		for _, b := range standing {
+		for _, b := range msg.ans.standing {
 			for id := b.ParentID; id != "" && !seen[id]; {
 				seen[id] = true
 				parent, ok := byID[id]
 				if !ok {
 					break
 				}
-				parents = append(parents, parent)
+				msg.ans.parents = append(msg.ans.parents, parent)
 				id = parent.ParentID
 			}
 		}
-		return thenMsg{then: func() tea.Cmd {
-			if m.dialog != wait {
-				return nil
-			}
-			if err != nil {
-				m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read what the discobox holds of %s: %v\n\nThe request is still waiting.", s.Name, err))
-				m.dialog.onCancel = back
-				return nil
-			}
-			return next(standing, parents, now)
-		}}
+		return msg
 	}
+}
+
+// standingRead goes on to the summary, unless the read was left or failed.
+func (m *Model) standingRead(msg standingReadMsg) tea.Cmd {
+	if m.dialog != msg.wait {
+		return nil
+	}
+	if msg.err != nil {
+		m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read what the discobox holds of %s: %v\n\nThe request is still waiting.", msg.ans.credential, msg.err))
+		m.dialog.onCancel = msg.back
+		return nil
+	}
+	return m.askSummary(msg.req, msg.ans, msg.back)
+}
+
+// commandRanMsg is a new credential's command come back, run to read the
+// format of what it prints.
+type commandRanMsg struct {
+	wait   *dialog
+	output string
+	err    error
+	then   func(output string, err error) tea.Cmd
+}
+
+// commandRan hands the output on, unless the wait for it was left: a slow
+// command never lands its card over whatever was opened since.
+func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
+	if m.dialog != msg.wait {
+		return nil
+	}
+	return msg.then(msg.output, msg.err)
 }
 
 // enterNewCredential is step 2 for a credential the project does not hold
@@ -262,19 +299,22 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 			f.focus()
 			return nil
 		}
-		m.dialog = statusDialog("Credential request", "running "+refreshcmd.Join(words)+" to read its format…")
+		wait := statusDialog("Credential request", "running "+refreshcmd.Join(words)+" to read its format…")
+		wait.onCancel = backToForm
+		m.dialog = wait
 		ctx := m.ctx
+		then := func(out string, err error) tea.Cmd {
+			if err != nil {
+				m.dialog = errorDialog("Credential request", refreshcmd.Join(words)+" failed: "+err.Error()+"\n\nNothing was stored.")
+				m.dialog.onCancel = backToForm
+				return nil
+			}
+			ran.command, ran.output = text, strings.TrimSpace(out)
+			return openFormat()
+		}
 		return func() tea.Msg {
 			out, err := refreshcmd.Run(ctx, words)
-			return thenMsg{then: func() tea.Cmd {
-				if err != nil {
-					m.dialog = errorDialog("Credential request", refreshcmd.Join(words)+" failed: "+err.Error()+"\n\nNothing was stored.")
-					m.dialog.onCancel = backToForm
-					return nil
-				}
-				ran.command, ran.output = text, strings.TrimSpace(out)
-				return openFormat()
-			}}
+			return commandRanMsg{wait: wait, output: out, err: err, then: then}
 		}
 	}
 	f.moveTo(2)
@@ -285,10 +325,23 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 			return nil
 		}
 		// A new credential is sent to the hosts the request names, and the
-		// approval narrows it to what was asked (hosts only).
-		ans := requestAnswer{credential: n, fresh: true, value: f.value("value"), credentialRoutes: []secretroute.Route{{Hosts: requestHosts(req)}}, held: held, holderID: holderID}
+		// approval narrows it to what was asked (ADR 26-11-11-857).
+		hosts := newCredentialHosts(req)
+		if len(hosts) == 0 {
+			f.cursor, f.err = 0, "it names no exact host a new credential can be held to — only patterns, or hosts it blocks — so store it on the secrets screen (F4) with the routes it should have"
+			return nil
+		}
+		ans := requestAnswer{credential: n, fresh: true, value: f.value("value"), credentialRoutes: []secretroute.Route{{Hosts: hosts}}, held: held, holderID: holderID}
 		if chosen != auto(f) {
 			ans.format = chosen
+		}
+		// A format chosen before the value was typed is held to the value
+		// as it now is.
+		if ans.format != "" {
+			if _, err := checkFormat(ans.format, sample(f)); err != nil {
+				f.cursor, f.err = 4, "the sentinel format: "+err.Error()
+				return nil
+			}
 		}
 		if f.chosen("source") == "command" {
 			words, err := refreshcmd.Split(f.value("command"))
@@ -312,73 +365,16 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 	return nil
 }
 
-// minSentinelBits is the least randomness a chosen format may mint with.
-// Sentinels are how the proxy tells one credential's grants from another's,
-// so two must never come out the same.
-const minSentinelBits = 64
-
 // checkFormat says what is wrong with a format a person typed, and what is
-// worth knowing about one that is right. value is the credential's value,
-// when there is one, which a format may not copy and should fit.
+// worth knowing about one that is right, by the rules every writer of a
+// format is held to (secretformat.ParseChosen, CheckValue). value is the
+// credential's value, when there is one.
 func checkFormat(format, value string) (warning string, err error) {
-	depth, open := 0, 0
-	for i, r := range format {
-		switch r {
-		case '{':
-			if depth > 0 {
-				return "", fmt.Errorf("the { at %d is inside another {…}; tokens don't nest", i+1)
-			}
-			depth, open = 1, i
-		case '}':
-			if depth == 0 {
-				return "", fmt.Errorf("the } at %d closes nothing; a format has no literal braces", i+1)
-			}
-			depth = 0
-			token := format[open+1 : i]
-			name, length, ok := strings.Cut(token, ":")
-			if !ok {
-				return "", fmt.Errorf("{%s} needs a charset and a length, as {alnum:36}", token)
-			}
-			if !slices.ContainsFunc(secretformat.Charsets(), func(c secretformat.Charset) bool { return c.Name == name }) {
-				return "", fmt.Errorf("{%s}: %q is not a charset; the charsets are listed above", token, name)
-			}
-			if n, err := strconv.Atoi(length); err != nil || n <= 0 {
-				return "", fmt.Errorf("{%s}: the length is a whole number above 0", token)
-			}
-		}
-	}
-	if depth > 0 {
-		return "", fmt.Errorf("the { at %d is never closed", open+1)
-	}
 	t, err := secretformat.ParseChosen(format)
 	if err != nil {
 		return "", err
 	}
-	if t.RandomBits() == 0 {
-		return "", fmt.Errorf("it has no {charset:length} token, so every sentinel would be the same")
-	}
-	if bits := t.RandomBits(); bits < minSentinelBits {
-		return "", fmt.Errorf("its {…} tokens give %.0f random bits, and a sentinel needs at least %d so no two come out the same", bits, minSentinelBits)
-	}
-	value = strings.TrimSpace(value)
-	if value != "" {
-		// The value's own prefix — what inference keeps, ghp_ or
-		// github_pat_ — may be written out; nothing else of it may.
-		prefix := ""
-		if t, err := secretformat.Parse(secretformat.Describe(value)); err == nil && len(t.Literals()) > 0 && strings.HasPrefix(value, t.Literals()[0]) {
-			prefix = t.Literals()[0]
-		}
-		for _, lit := range t.Literals() {
-			at := strings.Index(value, lit)
-			if len(lit) >= 8 && at >= 0 && (at != 0 || len(lit) > len(prefix)) {
-				return "", fmt.Errorf("the text %q is copied from the value; a format is stored in the clear, so only the value's prefix (%q) may come from it", lit, prefix)
-			}
-		}
-		if !t.Validate(value) {
-			warning = "The value itself doesn't have this shape. A tool that checks a token's shape may treat the two differently."
-		}
-	}
-	return warning, nil
+	return secretformat.CheckValue(t, value)
 }
 
 // editSentinelFormat is the screen a sentinel format is typed on, with the
@@ -535,7 +531,6 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 		{key: "deny", label: "Deny", enabled: true},
 		{key: "review", label: "Review…", enabled: true},
 	}
-	gateUntilSeen(d)
 	d.titleRight = "summary"
 	d.body = m.credentialSentence(req)
 	what := section{label: ans.credential + " would be"}
@@ -554,14 +549,6 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	d.onCancel = back
 	m.dialog = d
 	return nil
-}
-
-// gateUntilSeen holds a step's decisions until it has been drawn: a key typed
-// ahead of a new step never answers it unseen, which is what keeps a
-// replacement's consequences from being sent past (ADR 26-11-04-616 §4).
-// Unlike the scroll gate, nothing has to be read to its end.
-func gateUntilSeen(d *dialog) {
-	d.requireEnd, d.requireSeen, d.decisionsBlocked = false, true, true
 }
 
 // partAnswer is the decision for a part, or none for a part the request
@@ -652,7 +639,6 @@ func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool,
 		{key: "deny", label: "Deny", enabled: true},
 		{key: "modify", label: "Modify…", enabled: true},
 	}
-	gateUntilSeen(d)
 	d.titleRight = step
 	d.body = body
 	d.sections = []section{choiceSection(label, part, *choice, ans)}
@@ -735,10 +721,6 @@ func (m *Model) modifyPart(req CredentialRequest, ans requestAnswer, part *Reque
 	m.dialog = d
 	return nil
 }
-
-// thenMsg carries work that finished off the update loop back onto it, to
-// change the screen there.
-type thenMsg struct{ then func() tea.Cmd }
 
 // routesEditedMsg is the editor coming back with a part's routes.
 type routesEditedMsg struct {
@@ -874,7 +856,7 @@ func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func()
 	var d *dialog
 	d = actionsDialog("Credential request", "How long should Discobox “"+boxLabel(m, req)+"” hold "+what+"?", items, func(key string) tea.Cmd {
 		if key == "custom" {
-			return m.customHowLong(ans, limit, func() tea.Cmd { m.dialog = d; return nil }, func(ttl time.Duration) tea.Cmd {
+			return m.customHowLong(req, ans, limit, func() tea.Cmd { m.dialog = d; return nil }, func(ttl time.Duration) tea.Cmd {
 				ans.ttl = ttl
 				return m.sendAnswer(req, ans)
 			})
@@ -884,7 +866,10 @@ func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func()
 		return m.sendAnswer(req, ans)
 	})
 	d.titleRight = "how long"
-	gateUntilSeen(d)
+	// What it replaces is read to its end before a lifetime sends it, as on
+	// every approval card (ADR 26-11-04-616 §4): a short window must not
+	// leave the consequences below the fold.
+	d.requireEnd, d.decisionsBlocked = true, true
 	d.cursor = d.nextEnabled(cursor, -1)
 	d.refreshSections = func() {
 		ttl, known := time.Duration(0), false
@@ -901,23 +886,35 @@ func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func()
 	return nil
 }
 
-// customHowLong takes a lifetime typed as the CLI's flags take one.
-func (m *Model) customHowLong(ans requestAnswer, limit string, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
+// customHowLong takes a lifetime typed as the CLI's flags take one, over
+// the whole approval and what it replaces at the lifetime typed so far: a
+// custom one is held to the same consequences as a preset (ADR 26-11-04-616
+// §4), read to their end before it sends.
+func (m *Model) customHowLong(req CredentialRequest, ans requestAnswer, limit string, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
 	input := textRow("ttl", "For", "90m, 3d, 6mo or forever", "")
 	input.required = "say how long, such as 90m, 3d, 6mo or forever"
 	f := newForm(input)
-	d := formDialog("How long", f, func(f *form) tea.Cmd {
+	var d *dialog
+	d = formDialog("How long", f, func(f *form) tea.Cmd {
 		ttl, err := lifetime.Parse(f.value("ttl"))
-		if err != nil {
+		switch {
+		case err != nil:
 			f.err = err.Error()
 			return nil
-		}
-		if !withinLimit(Secret{MaxTTL: ans.maxTTL}, ttl) {
+		case !withinLimit(Secret{MaxTTL: ans.maxTTL}, ttl):
 			f.err = limit
+			return nil
+		case d.decisionsBlocked:
+			f.err = "scroll to the end of what this replaces first"
 			return nil
 		}
 		return done(ttl)
 	})
+	d.requireEnd, d.decisionsBlocked = true, true
+	d.refreshSections = func() {
+		ttl, err := lifetime.Parse(f.value("ttl"))
+		d.sections = answerSections(req, ans, ttl, err == nil)
+	}
 	d.keys = []hint{pressing("Enter sends", "enter"), pressing("Esc goes back", "esc")}
 	d.onCancel = back
 	m.dialog = d
@@ -934,6 +931,15 @@ func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration,
 		with += " · new, stored when this is sent"
 	}
 	sec := section{label: "this approval", fields: []field{{label: "credential", value: with, tone: toneAccent}}}
+	// A new credential's own reach is said before it is stored: the hosts
+	// it may ever be sent to, whatever later grants of it say.
+	if ans.fresh {
+		var hosts []string
+		for _, r := range ans.credentialRoutes {
+			hosts = append(hosts, r.Hosts...)
+		}
+		sec.fields = append(sec.fields, field{label: "stored for", value: "any request to " + strings.Join(hosts, ", ")})
+	}
 	part := func(label, answer string, c partChoice) {
 		value := "denied — what it holds of it stays as it is"
 		if answer == PartApprove {
@@ -951,6 +957,16 @@ func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration,
 		part("its workers", ans.delegate, ans.delegateChoice)
 	}
 	out := []section{sec}
+	// Held to exact hosts, a new credential can leave out routes the request
+	// names on a pattern: approved, they are never sent on. Said as a saved
+	// secret's ✗ says it (uncovered), before it is stored.
+	if ans.fresh {
+		if missing := gaps(Secret{Routes: ans.credentialRoutes}, approvedRoutes(req, ans)); len(missing) > 0 {
+			gap := approvalRouteSection("requested, but this credential will not be sent on", &RequestPart{Routes: missing})
+			gap.labelTone = toneAlert
+			out = append(out, gap)
+		}
+	}
 	if lines := replaces(req, ans, ttl, known); len(lines) > 0 {
 		out = append(out, section{label: "this replaces", labelTone: toneAlert, lines: lines})
 	}
@@ -1032,7 +1048,7 @@ func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known
 		if ans.use == PartApprove {
 			useAs = ans.useAs(req)
 		}
-		for _, f := range replacedFields(ans.standing, true, req.EnvVar, useAs, delegatedRoutes(req, ans), ans.secret.Routes) {
+		for _, f := range replacedFields(ans.standing, true, req.EnvVar, useAs, partRoutes(req.Delegate, ans.delegateChoice), ans.secret.Routes) {
 			if f.tone == toneDim {
 				continue
 			}
@@ -1042,17 +1058,35 @@ func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known
 	return out
 }
 
-// delegatedRoutes is the routes an approved delegate part grants.
-func delegatedRoutes(req CredentialRequest, ans requestAnswer) []secretroute.Route {
-	switch ans.delegateChoice.scope {
+// approvedRoutes is the routes the answer grants: each approved part's, as
+// it is approved for — what a new credential is checked against. A denied
+// part grants none, and one approved anywhere is the credential's own routes,
+// which never leave a gap.
+func approvedRoutes(req CredentialRequest, ans requestAnswer) []secretroute.Route {
+	var out []secretroute.Route
+	if req.Use != nil && ans.use == PartApprove {
+		out = append(out, partRoutes(req.Use, ans.useChoice)...)
+	}
+	if req.Delegate != nil && ans.delegate == PartApprove {
+		out = append(out, partRoutes(req.Delegate, ans.delegateChoice)...)
+	}
+	return out
+}
+
+// partRoutes is the routes a part grants as it is approved for, as the server
+// maps a decision's scope (partDecision): the routes it asked for, its open
+// hosts, the routes edited for it, or none of its own — anywhere is the
+// credential's routes.
+func partRoutes(part *RequestPart, c partChoice) []secretroute.Route {
+	switch c.scope {
 	case "hosts":
-		return []secretroute.Route{{Hosts: secretroute.OpenRouteHosts(req.Delegate.Routes)}}
+		return []secretroute.Route{{Hosts: secretroute.OpenRouteHosts(part.Routes)}}
 	case "anywhere":
 		return nil
 	case "edited":
-		return ans.delegateChoice.routes
+		return c.routes
 	}
-	return req.Delegate.Routes
+	return part.Routes
 }
 
 // routeRowsLines is routes as lines, one to a row.
@@ -1114,7 +1148,7 @@ func (m *Model) whyNotCompatible(req CredentialRequest, s Secret, why string, ho
 	case why == notHeld:
 		d.body = variableOf(req) + " already holds “" + holding.Name + "” in this discobox, and a variable it holds takes no other credential. Answer with “" + holding.Name + "”, or take it back from the discobox on the secrets screen (F4) first."
 	case len(s.Routes) == 0:
-		d.body = "“" + s.Name + "” has no routes, so discobox never sends it anywhere. This request needs it sent to " + strings.Join(requestHosts(req), ", ") + "."
+		d.body = "“" + s.Name + "” has no routes, so discobox never sends it anywhere. This request needs it sent to " + strings.Join(secretroute.OpenRouteHosts(req.routes()), ", ") + "."
 	default:
 		d.body = "Discobox sends “" + s.Name + "” only where its routes allow, and they don't cover everything this request asks for. Approving with it would give the box a credential that is refused on those requests."
 		d.sections = append(d.sections, routesSection(s.Name+" may be sent to", s.Routes))
@@ -1139,17 +1173,52 @@ func (m *Model) whyNotCompatible(req CredentialRequest, s Secret, why string, ho
 // only by two secret routes together counts as uncovered: a working secret
 // may be marked ✗, never the other way round.
 func uncovered(s Secret, req CredentialRequest) []secretroute.Route {
+	return gaps(s, req.routes())
+}
+
+// gaps is the routes the secret may not be sent on, of those given: uncovered's
+// rule over any list of routes.
+func gaps(s Secret, routes []secretroute.Route) []secretroute.Route {
 	var out []secretroute.Route
-	for _, r := range uniqueRoutes(req.routes()) {
+	lists := append([][]secretroute.Route{s.Routes}, s.RouteConstraints...)
+	for _, r := range uniqueRoutes(routes) {
 		if r.Blocked {
 			continue
 		}
-		lists := append([][]secretroute.Route{s.Routes}, s.RouteConstraints...)
-		for _, list := range lists {
-			if len(list) == 0 || secretroute.ProveContained(nil, []secretroute.Route{r}, list) != nil {
-				out = append(out, r)
-				break
+		covered := true
+		for _, piece := range routePieces(r) {
+			for _, list := range lists {
+				if len(list) == 0 || secretroute.ProveContained(nil, []secretroute.Route{piece}, list) != nil {
+					covered = false
+				}
 			}
+		}
+		if !covered {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// routePieces is a route split into one route per host and path, each the
+// same in every other respect, so a route naming two hosts is covered by a
+// secret's two routes, one for each: ProveContained fits a route to one
+// route of the list, never to several together.
+func routePieces(r secretroute.Route) []secretroute.Route {
+	paths := r.Paths
+	if len(paths) == 0 {
+		paths = []string{""}
+	}
+	var out []secretroute.Route
+	for _, h := range r.Hosts {
+		for _, p := range paths {
+			piece := r
+			piece.Hosts = []string{h}
+			piece.Paths = nil
+			if p != "" {
+				piece.Paths = []string{p}
+			}
+			out = append(out, piece)
 		}
 	}
 	return out
@@ -1182,17 +1251,14 @@ func uniqueRoutes(routes []secretroute.Route) []secretroute.Route {
 	return out
 }
 
-// requestHosts is the hosts a request names.
-func requestHosts(req CredentialRequest) []string {
-	var hosts []string
-	for _, r := range req.routes() {
-		for _, h := range r.Hosts {
-			if !slices.Contains(hosts, h) {
-				hosts = append(hosts, h)
-			}
-		}
-	}
-	return hosts
+// newCredentialHosts is the hosts a credential stored to answer req is held
+// to (ADR 26-11-11-857): the exact names an open route of the request names,
+// never one it only blocks (ADR 26-11-04-616 §1), and never a pattern — *
+// would leave the credential no ceiling of its own, and *.com nearly none,
+// with nothing here to tell a public suffix from a company's. None is no new
+// credential.
+func newCredentialHosts(req CredentialRequest) []string {
+	return slices.DeleteFunc(secretroute.OpenRouteHosts(req.routes()), func(h string) bool { return strings.Contains(h, "*") })
 }
 
 // credentialSentence is the request in one sentence: which box, which
@@ -1205,12 +1271,14 @@ func (m *Model) credentialSentence(req CredentialRequest) string {
 	return "Discobox “" + boxLabel(m, req) + "” has asked for a credential, " + what + "."
 }
 
-// boxLabel names the box by the name a person gave it, falling back to its
-// ID.
+// boxLabel names the asking box as a person named it (recordTitle), never by
+// the title its own program sets: the box does not get to word the card that
+// decides what it receives. It is matched on the request's server as well as
+// its ID, since two servers' boxes can share one, and falls back to the ID.
 func boxLabel(m *Model, req CredentialRequest) string {
 	for _, box := range m.list.all {
-		if box.ID == req.SandboxID && strings.TrimSpace(box.Name) != "" {
-			return box.Name
+		if box.ID == req.SandboxID && m.session.serverName(box.Server) == m.session.serverName(req.Server) {
+			return recordTitle(box)
 		}
 	}
 	return req.SandboxID

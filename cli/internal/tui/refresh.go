@@ -71,11 +71,9 @@ func (m *Model) askAboutRefresh(req CredentialRequest, secrets []Secret) tea.Cmd
 	}
 	permission := pickRow("permission", "Run permission", choice{key: "once", label: "Once"}, choice{key: "session", label: "While this window is open", hint: "Run again without asking for this exact credential and command"})
 	permission.when = func(f *form) bool { return f.chosen("source") == "command" }
-	permission.why = "No command runs for a pasted value"
 	value := textRow("value", "Token", "Paste the replacement token", "")
 	value.masked = true
 	value.when = func(f *form) bool { return f.chosen("source") == "manual" }
-	value.why = "The command supplies the value"
 	f := newForm(source, permission, value)
 	var d *dialog
 	d = approvalDialog("Refresh "+secret.Name+"?", f, func(*form) tea.Cmd {

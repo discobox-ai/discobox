@@ -602,7 +602,11 @@ harness login's rows carry one too. `Store.RefreshSecretFormats` runs at
 startup as the upgrade path: it re-reads every such row, so a shape stored under
 an older provider table (`sk-ant-{alnum:5}-` before the kind marker was kept) is
 corrected without anybody replacing the value. A person may set a format instead
-(`format` on create and update, bounded by `secretformat.ParseChosen`);
+(`format` on create and update, held by `secretformat.ParseChosen` to braces
+that pair and do not nest, known charsets, at least 64 random bits — two
+sentinels must never come out the same — and its length bound, when it is
+written: a format stored under older rules keeps minting until somebody
+replaces it, and an update that does not name a format does not re-check it);
 `FormatSet` then keeps it through every write and the startup pass, and setting
 it to empty clears it. Minters read it through `Store.SentinelFormat`. A changed
 format reaches every sentinel minted after it — a new sandbox's, and the pool

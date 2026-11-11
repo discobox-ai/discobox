@@ -89,10 +89,7 @@ type dialog struct {
 	formActions  []action
 	formActionAt int
 	// Approval decisions remain disabled until the current summary has been shown through its end.
-	requireEnd bool
-	// requireSeen holds decisions only until the card has been drawn once
-	// (gateUntilSeen).
-	requireSeen      bool
+	requireEnd       bool
 	readEnd          bool
 	readContent      string
 	reviewState      string
@@ -537,7 +534,7 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		default:
 			for _, it := range d.items {
-				if it.press != "" && it.press == keyName(msg) && it.enabled && d.action != nil {
+				if it.press != "" && it.press == keyName(msg) && it.enabled && d.action != nil && !d.decisionsBlocked {
 					return d.action(it.key), !it.stays
 				}
 			}
@@ -962,9 +959,6 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		maxBody = max(avail-foot-1, dialogMinRows)
 	}
 	d.page = maxBody
-	if d.requireSeen {
-		d.decisionsBlocked = false
-	}
 	if d.requireEnd {
 		content := strings.Join(lines, "\n")
 		if content != d.readContent {
@@ -1153,6 +1147,17 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		// whose rows only answer their letters is a menu the pointer cannot
 		// work.
 		b.WriteString(d.viewItems(st, z, row(), inner, itemRoom))
+		// A menu held until its summary is read says so, on a row it keeps
+		// whether or not it is held, so the card's height does not move as
+		// the hold lifts.
+		if d.requireEnd {
+			hint := ""
+			if d.decisionsBlocked {
+				hint = "Scroll to the end to choose"
+			}
+			b.WriteString(st.dimText.Render(truncate(hint, inner)))
+			b.WriteString("\n")
+		}
 		footer()
 		keys(pressing("Enter runs the highlighted action", "enter"), pressing("Esc cancels", "esc"))
 	case dlgForm:

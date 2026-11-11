@@ -98,8 +98,8 @@ func TestSettingsSendsOnlyWhatChanged(t *testing.T) {
 	}
 }
 
-// The harness is changed only on a stopped box; on a running one the row says
-// why and is stepped over.
+// The harness is changed only on a stopped box; on a running one the row is
+// locked — drawn with its harness and why — and stepped over.
 func TestSettingsChangesTheHarnessOnlyWhenStopped(t *testing.T) {
 	t.Parallel()
 	ds := settingsSource()
@@ -107,6 +107,9 @@ func TestSettingsChangesTheHarnessOnlyWhenStopped(t *testing.T) {
 	f := openSettings(t, m, "sbx_run")
 	if f.answerable(1) {
 		t.Fatal("the harness row should not be answerable on a running box")
+	}
+	if !strings.Contains(plainFrame(m), "stop the box to change its harness") {
+		t.Fatalf("the running box's card does not say why its harness is fixed:\n%s", plainFrame(m))
 	}
 	send(t, m, keyPress("esc"))
 

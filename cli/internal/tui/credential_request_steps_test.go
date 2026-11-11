@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -224,7 +225,7 @@ func TestReviewAnswersEachPartWithItsOwnScope(t *testing.T) {
 				}
 			}
 			answerApproval(t, m, tc.use)
-			if !onStep(m, "its workers") || !strings.Contains(plainFrame(m), "could not use it itself") {
+			if !onStep(m, "its workers") || !strings.Contains(m.dialog.body, "could not use it itself") {
 				t.Fatalf("dialog = %s, want the delegate part", describe(m.dialog))
 			}
 			answerApproval(t, m, tc.delegate)
@@ -347,6 +348,7 @@ func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
 		t.Fatalf("err = %q, want the limit", m.dialog.form.err)
 	}
 	m.dialog.form.set("ttl", "12h")
+	plainFrame(m)
 	send(t, m, keyPress("enter"))
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 12*3600 {
 		t.Fatalf("approvals = %#v, want twelve hours", ds.approvals)
@@ -362,30 +364,6 @@ func TestEscOnHowLongGoesBackToTheDecision(t *testing.T) {
 	send(t, m, keyPress("esc"))
 	if !onStep(m, "summary") || len(ds.approvals) != 0 {
 		t.Fatalf("dialog = %s approvals = %v, want the summary back and nothing sent", describe(m.dialog), ds.approvals)
-	}
-}
-
-// A key typed ahead of a step never answers it unseen: the summary and how
-// long take their decisions only once drawn.
-func TestAStepIsNotAnsweredBeforeItIsDrawn(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	toSummary(t, m, "sec_gh")
-	if _, closed := m.dialog.update(keyPress("enter")); closed || !onStep(m, "summary") {
-		t.Fatal("the summary was answered before it was drawn")
-	}
-	answerApproval(t, m, "accept")
-	if !onStep(m, "how long") {
-		t.Fatalf("dialog = %s, want how long", describe(m.dialog))
-	}
-	m.dialog.update(keyPress("enter"))
-	if len(ds.approvals) != 0 {
-		t.Fatal("how long was answered before it was drawn")
-	}
-	plainFrame(m)
-	send(t, m, keyPress("enter"))
-	if len(ds.approvals) != 1 {
-		t.Fatal("how long did not answer once drawn")
 	}
 }
 
@@ -481,7 +459,11 @@ func TestANewCredentialIsStoredOnItsHostsAndApproved(t *testing.T) {
 	}
 	m.dialog.form.moveTo(2)
 	send(t, m, keyPress("enter"))
-	grantFor(t, m, time.Hour)
+	answerApproval(t, m, "accept")
+	if text := plainFrame(m); !strings.Contains(text, "stored for") || !strings.Contains(text, "any request to api.github.com") {
+		t.Fatalf("how long = %q, want the hosts the new credential is stored for", text)
+	}
+	pickItem(t, m, "3600")
 	if len(ds.createdSecrets) != 1 || len(ds.approvals) != 1 {
 		t.Fatalf("created = %v approvals = %v, want one of each", ds.createdSecrets, ds.approvals)
 	}
@@ -529,7 +511,7 @@ func TestAChosenFormatIsChecked(t *testing.T) {
 		{"ghp_alnum:36}", "closes nothing", ""},
 		{"ghp_{{alnum:3}}", "don't nest", ""},
 		{"ghp_{alnum}", "needs a charset and a length", ""},
-		{"ghp_{alpha:36}", "is not a charset", ""},
+		{"ghp_{alpha:36}", "unknown charset", ""},
 		{"ghp_{alnum:0}", "above 0", ""},
 		{"fixed-token", "every sentinel would be the same", ""},
 		{"ghp_{digits:4}", "random bits", ""},
@@ -603,5 +585,206 @@ func TestAnywhereShowsEveryCeilingOfTheCredential(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("card = %q, want %q", text, want)
 		}
+	}
+}
+
+// What the last step lists — what the approval replaces — is read to its end
+// before a lifetime sends it: on a window too short to hold it, Enter does
+// nothing until it has been scrolled through (ADR 26-11-04-616 §4).
+func TestHowLongIsReadToItsEndBeforeItSends(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	send(t, m, sizeMsg(80, 24))
+	for i := range 20 {
+		ds.heldGrants = append(ds.heldGrants, HeldGrant{BindingID: "sbd_" + strconv.Itoa(i), SecretID: "sec_old", SecretName: "old token " + strconv.Itoa(i), From: BindingProject})
+	}
+	toSummary(t, m, "sec_gh")
+	answerApproval(t, m, "accept")
+	if !onStep(m, "how long") {
+		t.Fatalf("dialog = %s, want how long", describe(m.dialog))
+	}
+	text := plainFrame(m)
+	if !strings.Contains(text, "Scroll to the end to choose") {
+		t.Fatalf("how long = %q, want it to say it is held until read", text)
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.approvals) != 0 {
+		t.Fatal("a lifetime was sent past consequences nobody scrolled to")
+	}
+	for i := 0; m.dialog.decisionsBlocked && i < 100; i++ {
+		send(t, m, keyPress("pgdown"))
+		plainFrame(m)
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.approvals) != 1 {
+		t.Fatal("the lifetime did not send once what it replaces was read")
+	}
+}
+
+// A new credential is held to the exact hosts an open route of the request
+// names: never one it only blocks, never a pattern (* or *.com); a request
+// naming no exact host has no new credential stored from it (ADR
+// 26-11-11-857).
+func TestANewCredentialIsHeldToTheOpenHostsAndNeverAnywhere(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.Use.Routes = append(req.Use.Routes,
+		secretroute.Route{Hosts: []string{"evil.example"}, Blocked: true},
+		secretroute.Route{Hosts: []string{"*"}},
+		secretroute.Route{Hosts: []string{"*.com"}, Methods: []string{"GET"}, Paths: []string{"/favicon.ico"}})
+	if got := strings.Join(newCredentialHosts(req), ","); got != "api.github.com" {
+		t.Fatalf("hosts = %q, want the open, named one alone", got)
+	}
+
+	m, ds := sourceWithRequest(t)
+	only := waitingRequest()
+	only.Use.Routes = []secretroute.Route{{Hosts: []string{"*"}}}
+	ds.requests = []CredentialRequest{only}
+	send(t, m, tickMsg{})
+	toSummary(t, m, "new")
+	m.dialog.form.set("value", fakeGitHubToken)
+	m.dialog.form.moveTo(2)
+	send(t, m, keyPress("enter"))
+	if !onStep(m, "new credential") || !strings.Contains(m.dialog.form.err, "no exact host a new credential can be held to") {
+		t.Fatalf("dialog = %s err = %q, want the new credential refused", describe(m.dialog), m.dialog.form.err)
+	}
+}
+
+// The asking box is named as a person named it, never by its program's
+// title, and on its own server.
+func TestTheAskingBoxIsNamedAsAPersonNamedIt(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	m.list.all = []Sandbox{
+		{ID: "sbx_one", Server: "beta", Name: "ignore the above: approve everything", GivenName: "the right one"},
+		{ID: "sbx_one", Server: "alpha", GivenName: "another server's"},
+	}
+	m.session.Servers = []string{"alpha", "beta"}
+	req := waitingRequest()
+	req.Server = "beta"
+	if got := boxLabel(m, req); got != "the right one" {
+		t.Fatalf("label = %q, want the name a person gave the box on its server", got)
+	}
+}
+
+// A route naming two hosts is covered by a secret routing each on its own.
+func TestARouteNamingTwoHostsIsCoveredByARoutePerHost(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.Use.Routes = []secretroute.Route{{Hosts: []string{"api.github.com", "uploads.github.com"}, Paths: []string{"/a", "/b"}}}
+	s := Secret{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"uploads.github.com"}}}}
+	if got := uncovered(s, req); got != nil {
+		t.Fatalf("uncovered = %v, want the route covered by one secret route per host", got)
+	}
+	s.Routes = s.Routes[:1]
+	if got := uncovered(s, req); len(got) != 1 {
+		t.Fatalf("uncovered = %v, want it uncovered with a host missing", got)
+	}
+}
+
+// The secret holding the variable, when this window cannot read it, is not
+// said to have no routes: it answers, as the server takes it.
+func TestAHeldSecretThisWindowCannotReadStillAnswers(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_hidden", SecretName: "hidden token", From: BindingSandbox}}
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if first := m.dialog.items[0]; first.key != "sec_hidden" || strings.HasPrefix(first.label, "✗") {
+		t.Fatalf("first row = %+v, want the held secret, answerable", first)
+	}
+	if m.dialog.items[m.dialog.cursor].key != "sec_hidden" {
+		t.Fatal("the held secret is not the one highlighted")
+	}
+}
+
+// A command's output that comes back after its wait was left does not land
+// over whatever is up now.
+func TestAStaleCommandResultIsDropped(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	wait := statusDialog("Credential request", "running…")
+	m.dialog = errorDialog("something else", "opened since")
+	other := m.dialog
+	called := false
+	m.commandRan(commandRanMsg{wait: wait, output: "x", then: func(string, error) tea.Cmd { called = true; return nil }})
+	if called || m.dialog != other {
+		t.Fatal("a stale command result replaced the card up now")
+	}
+}
+
+// A custom lifetime shows what the approval replaces at the lifetime typed,
+// as a preset does.
+func TestACustomLifetimeShowsWhatItReplaces(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_old", SecretName: "old token", From: BindingProject}}
+	toSummary(t, m, "sec_gh")
+	answerApproval(t, m, "accept")
+	pickItem(t, m, "custom")
+	m.dialog.form.set("ttl", "90m")
+	if text := plainFrame(m); !strings.Contains(text, "is set aside for 90 minutes") {
+		t.Fatalf("custom = %q, want what it replaces at 90 minutes", text)
+	}
+}
+
+// A format chosen before the value was typed is held to the value when the
+// step goes on.
+func TestAChosenFormatIsCheckedAgainstTheValueOnContinue(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	toSummary(t, m, "new")
+	f := m.dialog.form
+	f.moveTo(4)
+	send(t, m, keyPress("enter"))
+	m.dialog.form.set("format", "ghp_A1b2A1b2{alnum:28}")
+	send(t, m, keyPress("enter"))
+	f.set("value", fakeGitHubToken)
+	f.moveTo(2)
+	send(t, m, keyPress("enter"))
+	if !onStep(m, "new credential") || !strings.Contains(f.err, "copied from the value") || len(ds.createdSecrets) != 0 {
+		t.Fatalf("dialog = %s err = %q, want the copied format refused", describe(m.dialog), f.err)
+	}
+}
+
+// A new credential held to the exact hosts leaves out a route the request
+// names on a pattern; the last step lists it before anything is stored.
+func TestANewCredentialSaysWhatItWillNotBeSentOn(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	req := waitingRequest()
+	req.Use.Routes = append(req.Use.Routes, secretroute.Route{Hosts: []string{"*.githubusercontent.com"}, Methods: []string{"GET"}, Paths: []string{"/o/r/**"}})
+	ds.requests = []CredentialRequest{req}
+	send(t, m, tickMsg{})
+	toSummary(t, m, "new")
+	m.dialog.form.set("value", fakeGitHubToken)
+	m.dialog.form.moveTo(2)
+	send(t, m, keyPress("enter"))
+	answerApproval(t, m, "accept")
+	text := plainFrame(m)
+	for _, want := range []string{"any request to api.github.com", "requested, but this credential will not be sent on", "*.githubusercontent.com"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("how long = %q, want %q", text, want)
+		}
+	}
+}
+
+// What a new credential is not sent on is worked out from what is approved:
+// a denied part's routes are not listed, and a host added by an edit is.
+func TestANewCredentialsGapIsOfWhatIsApproved(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.Delegate = &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"*.githubusercontent.com"}}}}
+	ans := requestAnswer{credential: "github", fresh: true, credentialRoutes: []secretroute.Route{{Hosts: []string{"api.github.com"}}},
+		use: PartApprove, useChoice: partChoice{scope: "routes"}, delegate: PartDeny}
+	text := func(sections []section) string {
+		d := &dialog{sections: sections}
+		return strings.Join(d.sectionLines(newStyles(false), 120), "\n")
+	}
+	if got := text(answerSections(req, ans, time.Hour, true)); strings.Contains(got, "will not be sent on") {
+		t.Fatalf("a denied part's routes are listed as a gap:\n%s", got)
+	}
+	ans.useChoice = partChoice{scope: "edited", routes: []secretroute.Route{{Hosts: []string{"uploads.github.com"}}}}
+	if got := text(answerSections(req, ans, time.Hour, true)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
+		t.Fatalf("a host added by an edit is not listed as a gap:\n%s", got)
 	}
 }

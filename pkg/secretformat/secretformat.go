@@ -143,10 +143,46 @@ func Parse(format string) (*Template, error) {
 	return &Template{raw: format, parts: parts}, nil
 }
 
-// ParseChosen compiles a template a person wrote, which is also held to
-// MaxLength: every sentinel minted for the secret generates it, and nobody
-// means a template that generates megabytes.
+// MinChosenBits is the least randomness a template a person wrote may mint
+// with. Sentinels are how the proxy tells one credential's grants from
+// another's, so two must never come out the same.
+const MinChosenBits = 64
+
+// ParseChosen compiles a template a person wrote, held to what an inferred
+// one never needs holding to: braces that pair and do not nest, no literal
+// brace, at least MinChosenBits of randomness, and MaxLength, since every
+// sentinel minted for the secret generates it and nobody means a template
+// that generates megabytes. Its refusals say where, for a person to fix.
 func ParseChosen(format string) (*Template, error) {
+	depth, open := 0, 0
+	for i, r := range format {
+		switch r {
+		case '{':
+			if depth > 0 {
+				return nil, fmt.Errorf("the { at %d is inside another {…}; tokens don't nest", i+1)
+			}
+			depth, open = 1, i
+		case '}':
+			if depth == 0 {
+				return nil, fmt.Errorf("the } at %d closes nothing; a format has no literal braces", i+1)
+			}
+			depth = 0
+			token := format[open+1 : i]
+			name, length, ok := strings.Cut(token, ":")
+			if !ok {
+				return nil, fmt.Errorf("{%s} needs a charset and a length, as {alnum:36}", token)
+			}
+			if _, known := charsets[name]; !known {
+				return nil, fmt.Errorf("{%s}: unknown charset %q; it is one of %s", token, name, strings.Join(charsetOrder, ", "))
+			}
+			if n, err := strconv.Atoi(length); err != nil || n <= 0 {
+				return nil, fmt.Errorf("{%s}: the length is a whole number above 0", token)
+			}
+		}
+	}
+	if depth > 0 {
+		return nil, fmt.Errorf("the { at %d is never closed", open+1)
+	}
 	t, err := Parse(format)
 	if err != nil {
 		return nil, err
@@ -158,7 +194,42 @@ func ParseChosen(format string) (*Template, error) {
 	if total > MaxLength {
 		return nil, fmt.Errorf("format generates %d characters, more than %d", total, MaxLength)
 	}
+	switch bits := t.RandomBits(); {
+	case bits == 0:
+		return nil, fmt.Errorf("it has no {charset:length} token, so every sentinel would be the same")
+	case bits < MinChosenBits:
+		return nil, fmt.Errorf("its {…} tokens give %.0f random bits, and a sentinel needs at least %d so no two come out the same", bits, MinChosenBits)
+	}
 	return t, nil
+}
+
+// CheckValue holds a template a person wrote against the value it is for.
+// A format is stored in the clear, so it may copy nothing of the value but
+// the prefix inference itself would keep (ghp_, github_pat_): err says what
+// it copied. warning says the value does not have the template's shape,
+// which a person may mean, but which a tool checking a token's shape may
+// treat differently.
+func CheckValue(t *Template, value string) (warning string, err error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	prefix := ""
+	if inferred, err := Parse(Describe(value)); err == nil {
+		if lits := inferred.Literals(); len(lits) > 0 && strings.HasPrefix(value, lits[0]) {
+			prefix = lits[0]
+		}
+	}
+	for _, lit := range t.Literals() {
+		at := strings.Index(value, lit)
+		if len(lit) >= 8 && at >= 0 && (at != 0 || len(lit) > len(prefix)) {
+			return "", fmt.Errorf("the text %q is copied from the value; a format is stored in the clear, so only the value's prefix (%q) may come from it", lit, prefix)
+		}
+	}
+	if !t.Validate(value) {
+		return "The value itself doesn't have this shape. A tool that checks a token's shape may treat the two differently.", nil
+	}
+	return "", nil
 }
 
 // String returns the raw format string.

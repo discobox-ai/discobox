@@ -543,16 +543,14 @@ func (m *Model) askForBinding() tea.Cmd {
 	rows := []formRow{
 		withSection(who, pickRow("target", "bound to", targets...)),
 		unless(withSection(who, pickRow("harness", "harness", harnesses...)),
-			func(f *form) bool { return f.chosen("target") == BindingHarnessConfig },
-			"only when it is bound to one harness"),
+			func(f *form) bool { return f.chosen("target") == BindingHarnessConfig }),
 		unless(withSection(who, pickRow("sandbox", "discobox", boxes...)),
-			func(f *form) bool { return f.chosen("target") == BindingSandbox },
-			"only when it is bound to one discobox"),
+			func(f *form) bool { return f.chosen("target") == BindingSandbox }),
 		withSection(what, pickRow("purpose", "purpose",
 			choice{key: "use", label: "to use it", hint: "the discobox finds a sentinel for it in the variable below"},
 			choice{key: "delegate", label: "to give it on", hint: "the discobox may bind it to the discoboxes it leads, and never uses it itself"},
 			choice{key: "both", label: "to use it and give it on", hint: "both of the above"})),
-		unless(envVar, uses, "a credential only given on is in no variable"),
+		unless(envVar, uses),
 	}
 
 	routes := secretRouteRows(where, nil)
@@ -619,10 +617,10 @@ func withSection(label string, row formRow) formRow {
 	return row
 }
 
-// unless is a row that only applies under a condition, with what it says on the
-// card when it does not.
-func unless(row formRow, when func(f *form) bool, why string) formRow {
-	row.when, row.why = when, why
+// unless is a row that only applies under a condition, and is not drawn when
+// it does not (form.hidden).
+func unless(row formRow, when func(f *form) bool) formRow {
+	row.when = when
 	return row
 }
 
@@ -1063,7 +1061,6 @@ func ttlRows(key, label, section, forever string, presets []time.Duration, secon
 	// as a second field with the same name.
 	custom := textRow(key+"Custom", "…how long", "e.g. 90m, 3d, 6mo", lifetime.Label(time.Duration(seconds)*time.Second))
 	custom.section = section
-	custom.why = "the presets above cover it"
 	custom.when = func(f *form) bool { return f.chosen(key) == ttlCustom }
 	return []formRow{pick, custom}
 }
@@ -1169,14 +1166,12 @@ func secretForm(existing *Secret, routes []secretroute.Route) *form {
 		choice{key: "command", label: "get it from a command", hint: "run on this machine now, and again when it goes stale — with your say-so"})
 	source.section = value
 	source.when = token
-	source.why = "only for a token"
 
 	command := textRow("command", "command", "e.g. gh auth token", "")
 	command.section = value
 	command.hint = "prints the token; run without a shell, as you, on the machine renewing it"
 	command.required = "a token got from a command needs the command"
 	command.when = fromCommand
-	command.why = "only for a token got from a command"
 
 	valueTTL := int64(defaultValueLifetime / time.Second)
 	if editing {
@@ -1189,9 +1184,6 @@ func secretForm(existing *Secret, routes []secretroute.Route) *form {
 		row := &lasts[i]
 		base := row.when
 		row.when = func(f *form) bool { return fromCommand(f) && (base == nil || base(f)) }
-		if i == 0 {
-			row.why = "only for a token got from a command"
-		}
 	}
 
 	plain := textRow("token", "token", "the value itself", "")
@@ -1200,7 +1192,6 @@ func secretForm(existing *Secret, routes []secretroute.Route) *form {
 	plain.hint = "stored encrypted, and never shown again"
 	plain.required = "a secret is the value: nothing was stored"
 	plain.when = func(f *form) bool { return token(f) && !fromCommand(f) }
-	plain.why = "only for a token typed in"
 
 	access := textRow("access", "access token", "the value itself", "")
 	access.section = value
@@ -1208,7 +1199,6 @@ func secretForm(existing *Secret, routes []secretroute.Route) *form {
 	access.hint = "the one that travels, and the one that expires · stored encrypted, and never shown again"
 	access.required = "an oauth credential needs an access token"
 	access.when = oauth
-	access.why = "only for an OAuth credential"
 
 	refresh := textRow("refresh", "refresh token", "spent to renew the access token", "")
 	refresh.section = value
@@ -1216,26 +1206,22 @@ func secretForm(existing *Secret, routes []secretroute.Route) *form {
 	refresh.hint = "only the control plane ever spends it: it is never delivered to a discobox, and never leaves in a response"
 	refresh.required = "an oauth credential needs a refresh token"
 	refresh.when = oauth
-	refresh.why = "only for an OAuth credential"
 
 	tokenURL := textRow("tokenURL", "renews at", "e.g. https://console.anthropic.com/v1/oauth/token", "")
 	tokenURL.section = value
 	tokenURL.hint = "where the refresh token is exchanged for a new access token"
 	tokenURL.required = "an oauth credential needs somewhere to renew"
 	tokenURL.when = oauth
-	tokenURL.why = "only for an OAuth credential"
 
 	client := textRow("client", "client", "client id (optional)", "")
 	client.section = value
 	client.hint = "which OAuth client the grant belongs to · leave it empty if the token endpoint does not ask"
 	client.when = oauth
-	client.why = "only for an OAuth credential"
 
 	scopes := textRow("scopes", "may do", "e.g. user:profile user:inference", "")
 	scopes.section = value
 	scopes.hint = "space separated, as the authorization server returned them — a client may gate features on these, so record them rather than guess"
 	scopes.when = oauth
-	scopes.why = "only for an OAuth credential"
 
 	if editing {
 		// A stored credential opens on what it is. Only the kind is locked; a
@@ -1380,7 +1366,6 @@ func exchangeFieldRows(section string, fields []string, when func(*form) bool) [
 		row.input.Placeholder = keepStored
 		row.hint = "exchanged for a short-lived token by the control plane, which is all a discobox ever holds · typing here replaces what is stored"
 		row.when = when
-		row.why = "only for an exchange credential"
 		rows = append(rows, row)
 	}
 	return rows
@@ -1500,8 +1485,14 @@ func formFormat(f *form) (string, string) {
 	if format == "" {
 		return "", ""
 	}
-	if _, err := secretformat.ParseChosen(format); err != nil {
+	t, err := secretformat.ParseChosen(format)
+	if err != nil {
 		return "", "the sentinel format does not read (" + err.Error() + ") · it is text with {charset:length} slots"
+	}
+	// The format is stored in the clear: it may not carry the value it
+	// stands for (secretformat.CheckValue), whichever card it was typed on.
+	if _, err := secretformat.CheckValue(t, f.value("token")); err != nil {
+		return "", err.Error()
 	}
 	return format, ""
 }
@@ -1558,16 +1549,18 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 			}
 			update.Routes = &routes
 		}
-		format, why := formFormat(f)
-		if why != "" {
-			f.err = why
-			return nil
-		}
+		// Only a format being changed is held to the rules: one stored under
+		// older ones keeps working, and an edit that leaves it alone is not
+		// refused for it (secretformat.ParseChosen checks writes only).
 		wasFormat := ""
 		if was.FormatSet {
 			wasFormat = was.Format
 		}
-		if format != wasFormat {
+		if format := strings.TrimSpace(f.value("format")); format != wasFormat {
+			if _, why := formFormat(f); why != "" {
+				f.err = why
+				return nil
+			}
 			update.Format = &format
 		}
 		value, why := replacementValue(f, was)

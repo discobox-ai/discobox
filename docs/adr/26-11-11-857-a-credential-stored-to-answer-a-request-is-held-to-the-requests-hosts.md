@@ -39,8 +39,17 @@ A credential stored to answer a request is held to **the hosts the request
 names**, any method and path on them. The grant made with it is held to the
 routes the part was approved for: as asked, unless the person changes them.
 
-- The secret still never goes to a host nobody asked for: its routes are the
-  request's hosts, not `*`.
+- The secret still never goes to a host nobody asked for. Its hosts are
+  the exact names an open route of the request names
+  (`secretroute.OpenRouteHosts`): a host the request names only to block
+  adds none (ADR 26-11-04-616 §1), and no pattern is one — not `*`, and not
+  `*.suffix`, since nothing here tells a public suffix (`*.com`) from a
+  company's, and a box could add a harmless-looking route on one beside its
+  real ask. A request naming no exact host has no new credential stored from
+  it; the person stores one on the secrets screen with the routes they
+  choose.
+- The last step says the hosts the new credential will be stored for,
+  before it is stored.
 - What the box may do is the grant's, as before (ADR 26-10-27-880 §4).
 - A later request on those hosts can be answered with the same credential;
   one naming another host cannot, and the dialog says which routes are not
@@ -61,9 +70,10 @@ as a replacement, and the dialog says so. Handing over the value itself
 - **No routes, set by a person afterwards.** A secret with no routes is sent
   nowhere (ADR 26-10-27-880 §1): the approval would grant a credential every
   request refuses.
-- **`*`, anywhere.** The grant would still hold the box to its routes, but the
-  secret would carry no ceiling of its own, and every later grant of it would
-  rest on the grant alone.
+- **`*`, anywhere, or a host pattern.** The grant would still hold the box to
+  its routes, but the secret would carry no ceiling of its own (`*`) or
+  nearly none (`*.com`), and every later grant of it would rest on the grant
+  alone.
 - **Raw delivery and the addition/replacement choice in the guided dialog.**
   Each is a step most answers never need; the owner's design for the dialog
   keeps it to the decisions every request has. Revisit if a box's requests
@@ -72,6 +82,12 @@ as a replacement, and the dialog says so. Handing over the value itself
 ## Consequences
 
 - A credential typed in once serves every later request on its hosts.
+- A request that names a host pattern beside exact hosts gets a new
+  credential held to the exact ones only; the routes it asked for on the
+  pattern are approved but never sent on. The last step lists them under the
+  hosts it is stored for, as a saved secret that does not cover a route is
+  marked; a person who wants them stores the credential on the secrets screen
+  with the routes they choose.
 - A person who wants it narrower edits its routes on the secrets screen (F4);
   the new-credential step does not ask, so it stays one name and one value.
 - The secret's routes are wider than the grant's. Anyone binding it by hand

@@ -1568,8 +1568,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case routesEditedMsg:
 		return m.routesEdited(msg)
 
-	case thenMsg:
-		return msg.then()
+	case standingReadMsg:
+		return m.standingRead(msg)
+
+	case commandRanMsg:
+		return m.commandRan(msg)
 
 	case shimmerTickMsg:
 		return m.advanceShimmer(msg)
