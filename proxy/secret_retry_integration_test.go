@@ -27,6 +27,8 @@ type rotatingResolver struct {
 	mu     sync.Mutex
 	values []string
 	calls  int
+	// scope is the report scope handed out with every value; nil is none.
+	scope secrets.ReportScope
 }
 
 // reportLog records what a resolver was told about the credentials it handed
@@ -92,7 +94,7 @@ func (r *rotatingResolver) Resolve(context.Context, secrets.ResolveRequest) (sec
 	defer r.mu.Unlock()
 	value := r.values[min(r.calls, len(r.values)-1)]
 	r.calls++
-	return secrets.ResolveResult{Value: value, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	return secrets.ResolveResult{Value: value, ExpiresAt: time.Now().Add(time.Hour), ReportScope: r.scope, Generation: "gen-" + value}, nil
 }
 
 func (r *rotatingResolver) resolveCount() int {

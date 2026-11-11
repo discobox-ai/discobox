@@ -43,7 +43,7 @@ func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentin
 	if err != nil {
 		t.Fatalf("issue client certificate: %v", err)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{sentinel}, nil, map[string][]secretroute.Grant{sentinel: oneGrant(lists)}); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{sentinel}, nil, map[string][]secretroute.Grant{sentinel: oneGrant(lists)}, nil); err != nil {
 		t.Fatalf("register sentinel: %v", err)
 	}
 	cfg := proxy.DefaultConfig()

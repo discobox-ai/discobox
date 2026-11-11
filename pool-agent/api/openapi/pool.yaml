@@ -1091,6 +1091,12 @@ components:
                         type: array
                     nullable: true
                     type: object
+                sentinelGenerations:
+                    description: "The value generation of each stable sentinel's secret, keyed by sentinel, sent to an agent that declared sentinelGenerations (#1022). It moves when the secret's value is replaced; the pool's proxy drops a value it holds of another generation rather than sending it."
+                    additionalProperties:
+                        type: string
+                    nullable: true
+                    type: object
                 secretEnv:
                     description: Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as secrets rotate.
                     additionalProperties:
@@ -1749,6 +1755,12 @@ components:
                         items:
                             $ref: '#/components/schemas/SentinelGrant'
                         type: array
+                    nullable: true
+                    type: object
+                sentinelGenerations:
+                    description: Replacement value generations keyed by stable sentinel, sent with sentinels to an agent that declared sentinelGenerations and replacing the sandbox's whole map.
+                    additionalProperties:
+                        type: string
                     nullable: true
                     type: object
                 secretEnv:

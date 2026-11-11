@@ -22012,6 +22012,10 @@ type ReportSandboxSecretRejectionBody struct {
 	// What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is
 	// a 401 on a second, different credential too; `accepted` retracts a rejection reported earlier.
 	Outcome ReportSandboxSecretRejectionBodyOutcome `json:"outcome"`
+	// The value generation the control plane handed the answered value out with. A report about a value
+	// since replaced is about a credential no longer stored, and is not judged (#1022). Absent is the
+	// value stored now, as from an agent that predates generations.
+	ValueGeneration OptString `json:"valueGeneration"`
 }
 
 // GetSchema returns the value of Schema.
@@ -22039,6 +22043,11 @@ func (s *ReportSandboxSecretRejectionBody) GetOutcome() ReportSandboxSecretRejec
 	return s.Outcome
 }
 
+// GetValueGeneration returns the value of ValueGeneration.
+func (s *ReportSandboxSecretRejectionBody) GetValueGeneration() OptString {
+	return s.ValueGeneration
+}
+
 // SetSchema sets the value of Schema.
 func (s *ReportSandboxSecretRejectionBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -22062,6 +22071,11 @@ func (s *ReportSandboxSecretRejectionBody) SetHost(val string) {
 // SetOutcome sets the value of Outcome.
 func (s *ReportSandboxSecretRejectionBody) SetOutcome(val ReportSandboxSecretRejectionBodyOutcome) {
 	s.Outcome = val
+}
+
+// SetValueGeneration sets the value of ValueGeneration.
+func (s *ReportSandboxSecretRejectionBody) SetValueGeneration(val OptString) {
+	s.ValueGeneration = val
 }
 
 // What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is
@@ -22669,6 +22683,10 @@ type ResolveSandboxSecretResponse struct {
 	// reports a refusal or an acceptance of one of them and no others; absent is every request (ADR
 	// 26-10-13-595).
 	ReportScope []SecretReportRule `json:"reportScope"`
+	// Names the value: it moves when the secret's value is replaced, and not when the control plane
+	// renews it. Present only when status is approved. The pool's proxy drops a held value whose
+	// generation is no longer the sentinel's, and names it in a report about the value (#1022).
+	ValueGeneration OptString `json:"valueGeneration"`
 }
 
 // GetSchema returns the value of Schema.
@@ -22701,6 +22719,11 @@ func (s *ResolveSandboxSecretResponse) GetReportScope() []SecretReportRule {
 	return s.ReportScope
 }
 
+// GetValueGeneration returns the value of ValueGeneration.
+func (s *ResolveSandboxSecretResponse) GetValueGeneration() OptString {
+	return s.ValueGeneration
+}
+
 // SetSchema sets the value of Schema.
 func (s *ResolveSandboxSecretResponse) SetSchema(val OptURI) {
 	s.Schema = val
@@ -22729,6 +22752,11 @@ func (s *ResolveSandboxSecretResponse) SetSecretId(val OptString) {
 // SetReportScope sets the value of ReportScope.
 func (s *ResolveSandboxSecretResponse) SetReportScope(val []SecretReportRule) {
 	s.ReportScope = val
+}
+
+// SetValueGeneration sets the value of ValueGeneration.
+func (s *ResolveSandboxSecretResponse) SetValueGeneration(val OptString) {
+	s.ValueGeneration = val
 }
 
 func (*ResolveSandboxSecretResponse) resolveSandboxSecretRes() {}
@@ -36368,6 +36396,10 @@ type UpdatePoolStatusBody struct {
 	Platform    OptString `json:"platform"`
 	Ready       bool      `json:"ready"`
 	Schedulable bool      `json:"schedulable"`
+	// The agent takes each sentinel's value generation as sentinelGenerations, and its proxy drops a
+	// value it holds of another (#1022). Declared on every report; an agent from before generations
+	// sends none, and is sent none.
+	SentinelGenerations OptBool `json:"sentinelGenerations"`
 	// The agent holds each sentinel to grants, any one of which may allow a request, each with its own
 	// expiry, and takes them as sentinelGrants. Declared on every report; an agent from before grants
 	// sends none, and is sent each sentinel's first grant's route lists as sentinelRoutes.
@@ -36424,6 +36456,11 @@ func (s *UpdatePoolStatusBody) GetSchedulable() bool {
 	return s.Schedulable
 }
 
+// GetSentinelGenerations returns the value of SentinelGenerations.
+func (s *UpdatePoolStatusBody) GetSentinelGenerations() OptBool {
+	return s.SentinelGenerations
+}
+
 // GetSentinelGrants returns the value of SentinelGrants.
 func (s *UpdatePoolStatusBody) GetSentinelGrants() OptBool {
 	return s.SentinelGrants
@@ -36477,6 +36514,11 @@ func (s *UpdatePoolStatusBody) SetReady(val bool) {
 // SetSchedulable sets the value of Schedulable.
 func (s *UpdatePoolStatusBody) SetSchedulable(val bool) {
 	s.Schedulable = val
+}
+
+// SetSentinelGenerations sets the value of SentinelGenerations.
+func (s *UpdatePoolStatusBody) SetSentinelGenerations(val OptBool) {
+	s.SentinelGenerations = val
 }
 
 // SetSentinelGrants sets the value of SentinelGrants.

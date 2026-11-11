@@ -3248,6 +3248,69 @@ func (o OptNilPoolSandboxCreateRequestSecretEnv) Or(d PoolSandboxCreateRequestSe
 	return d
 }
 
+// NewOptNilPoolSandboxCreateRequestSentinelGenerations returns new OptNilPoolSandboxCreateRequestSentinelGenerations with value set to v.
+func NewOptNilPoolSandboxCreateRequestSentinelGenerations(v PoolSandboxCreateRequestSentinelGenerations) OptNilPoolSandboxCreateRequestSentinelGenerations {
+	return OptNilPoolSandboxCreateRequestSentinelGenerations{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxCreateRequestSentinelGenerations is optional nullable PoolSandboxCreateRequestSentinelGenerations.
+type OptNilPoolSandboxCreateRequestSentinelGenerations struct {
+	Value PoolSandboxCreateRequestSentinelGenerations
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxCreateRequestSentinelGenerations was set.
+func (o OptNilPoolSandboxCreateRequestSentinelGenerations) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxCreateRequestSentinelGenerations) Reset() {
+	var v PoolSandboxCreateRequestSentinelGenerations
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxCreateRequestSentinelGenerations) SetTo(v PoolSandboxCreateRequestSentinelGenerations) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxCreateRequestSentinelGenerations) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxCreateRequestSentinelGenerations) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxCreateRequestSentinelGenerations
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxCreateRequestSentinelGenerations) Get() (v PoolSandboxCreateRequestSentinelGenerations, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxCreateRequestSentinelGenerations) Or(d PoolSandboxCreateRequestSentinelGenerations) PoolSandboxCreateRequestSentinelGenerations {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilPoolSandboxCreateRequestSentinelGrants returns new OptNilPoolSandboxCreateRequestSentinelGrants with value set to v.
 func NewOptNilPoolSandboxCreateRequestSentinelGrants(v PoolSandboxCreateRequestSentinelGrants) OptNilPoolSandboxCreateRequestSentinelGrants {
 	return OptNilPoolSandboxCreateRequestSentinelGrants{
@@ -3494,6 +3557,69 @@ func (o OptNilPoolSandboxUpdateRequestSecretEnv) Get() (v PoolSandboxUpdateReque
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilPoolSandboxUpdateRequestSecretEnv) Or(d PoolSandboxUpdateRequestSecretEnv) PoolSandboxUpdateRequestSecretEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilPoolSandboxUpdateRequestSentinelGenerations returns new OptNilPoolSandboxUpdateRequestSentinelGenerations with value set to v.
+func NewOptNilPoolSandboxUpdateRequestSentinelGenerations(v PoolSandboxUpdateRequestSentinelGenerations) OptNilPoolSandboxUpdateRequestSentinelGenerations {
+	return OptNilPoolSandboxUpdateRequestSentinelGenerations{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxUpdateRequestSentinelGenerations is optional nullable PoolSandboxUpdateRequestSentinelGenerations.
+type OptNilPoolSandboxUpdateRequestSentinelGenerations struct {
+	Value PoolSandboxUpdateRequestSentinelGenerations
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxUpdateRequestSentinelGenerations was set.
+func (o OptNilPoolSandboxUpdateRequestSentinelGenerations) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGenerations) Reset() {
+	var v PoolSandboxUpdateRequestSentinelGenerations
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGenerations) SetTo(v PoolSandboxUpdateRequestSentinelGenerations) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxUpdateRequestSentinelGenerations) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGenerations) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxUpdateRequestSentinelGenerations
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxUpdateRequestSentinelGenerations) Get() (v PoolSandboxUpdateRequestSentinelGenerations, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxUpdateRequestSentinelGenerations) Or(d PoolSandboxUpdateRequestSentinelGenerations) PoolSandboxUpdateRequestSentinelGenerations {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5892,6 +6018,10 @@ type PoolSandboxCreateRequest struct {
 	// has not expired allows it, as every one of that grant's lists must; a sentinel with no grants is
 	// sent nowhere.
 	SentinelGrants OptNilPoolSandboxCreateRequestSentinelGrants `json:"sentinelGrants"`
+	// The value generation of each stable sentinel's secret, keyed by sentinel, sent to an agent that
+	// declared sentinelGenerations (#1022). It moves when the secret's value is replaced; the pool's
+	// proxy drops a value it holds of another generation rather than sending it.
+	SentinelGenerations OptNilPoolSandboxCreateRequestSentinelGenerations `json:"sentinelGenerations"`
 	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
 	// secrets rotate.
@@ -5971,6 +6101,11 @@ func (s *PoolSandboxCreateRequest) GetSentinelRoutes() OptNilPoolSandboxCreateRe
 // GetSentinelGrants returns the value of SentinelGrants.
 func (s *PoolSandboxCreateRequest) GetSentinelGrants() OptNilPoolSandboxCreateRequestSentinelGrants {
 	return s.SentinelGrants
+}
+
+// GetSentinelGenerations returns the value of SentinelGenerations.
+func (s *PoolSandboxCreateRequest) GetSentinelGenerations() OptNilPoolSandboxCreateRequestSentinelGenerations {
+	return s.SentinelGenerations
 }
 
 // GetSecretEnv returns the value of SecretEnv.
@@ -6053,6 +6188,11 @@ func (s *PoolSandboxCreateRequest) SetSentinelGrants(val OptNilPoolSandboxCreate
 	s.SentinelGrants = val
 }
 
+// SetSentinelGenerations sets the value of SentinelGenerations.
+func (s *PoolSandboxCreateRequest) SetSentinelGenerations(val OptNilPoolSandboxCreateRequestSentinelGenerations) {
+	s.SentinelGenerations = val
+}
+
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxCreateRequest) SetSecretEnv(val OptNilPoolSandboxCreateRequestSecretEnv) {
 	s.SecretEnv = val
@@ -6079,6 +6219,20 @@ func (s *PoolSandboxCreateRequestRawSecrets) init() PoolSandboxCreateRequestRawS
 type PoolSandboxCreateRequestSecretEnv map[string]string
 
 func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecretEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The value generation of each stable sentinel's secret, keyed by sentinel, sent to an agent that
+// declared sentinelGenerations (#1022). It moves when the secret's value is replaced; the pool's
+// proxy drops a value it holds of another generation rather than sending it.
+type PoolSandboxCreateRequestSentinelGenerations map[string]string
+
+func (s *PoolSandboxCreateRequestSentinelGenerations) init() PoolSandboxCreateRequestSentinelGenerations {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
@@ -6660,6 +6814,9 @@ type PoolSandboxUpdateRequest struct {
 	// Replacement grants keyed by stable sentinel, sent with sentinels in place of sentinelRoutes and
 	// replacing the sandbox's whole map.
 	SentinelGrants OptNilPoolSandboxUpdateRequestSentinelGrants `json:"sentinelGrants"`
+	// Replacement value generations keyed by stable sentinel, sent with sentinels to an agent that
+	// declared sentinelGenerations and replacing the sandbox's whole map.
+	SentinelGenerations OptNilPoolSandboxUpdateRequestSentinelGenerations `json:"sentinelGenerations"`
 	// Replacement secret-bound environment variable name to sentinel placeholder map for a running
 	// sandbox.
 	SecretEnv OptNilPoolSandboxUpdateRequestSecretEnv `json:"secretEnv"`
@@ -6708,6 +6865,11 @@ func (s *PoolSandboxUpdateRequest) GetSentinelRoutes() OptNilPoolSandboxUpdateRe
 // GetSentinelGrants returns the value of SentinelGrants.
 func (s *PoolSandboxUpdateRequest) GetSentinelGrants() OptNilPoolSandboxUpdateRequestSentinelGrants {
 	return s.SentinelGrants
+}
+
+// GetSentinelGenerations returns the value of SentinelGenerations.
+func (s *PoolSandboxUpdateRequest) GetSentinelGenerations() OptNilPoolSandboxUpdateRequestSentinelGenerations {
+	return s.SentinelGenerations
 }
 
 // GetSecretEnv returns the value of SecretEnv.
@@ -6760,6 +6922,11 @@ func (s *PoolSandboxUpdateRequest) SetSentinelGrants(val OptNilPoolSandboxUpdate
 	s.SentinelGrants = val
 }
 
+// SetSentinelGenerations sets the value of SentinelGenerations.
+func (s *PoolSandboxUpdateRequest) SetSentinelGenerations(val OptNilPoolSandboxUpdateRequestSentinelGenerations) {
+	s.SentinelGenerations = val
+}
+
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxUpdateRequest) SetSecretEnv(val OptNilPoolSandboxUpdateRequestSecretEnv) {
 	s.SecretEnv = val
@@ -6783,6 +6950,19 @@ func (s *PoolSandboxUpdateRequestRawSecrets) init() PoolSandboxUpdateRequestRawS
 type PoolSandboxUpdateRequestSecretEnv map[string]string
 
 func (s *PoolSandboxUpdateRequestSecretEnv) init() PoolSandboxUpdateRequestSecretEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Replacement value generations keyed by stable sentinel, sent with sentinels to an agent that
+// declared sentinelGenerations and replacing the sandbox's whole map.
+type PoolSandboxUpdateRequestSentinelGenerations map[string]string
+
+func (s *PoolSandboxUpdateRequestSentinelGenerations) init() PoolSandboxUpdateRequestSentinelGenerations {
 	m := *s
 	if m == nil {
 		m = map[string]string{}

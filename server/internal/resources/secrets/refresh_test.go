@@ -167,7 +167,7 @@ func TestRefreshAnswersTheRequestAndTheFirstAnswerWins(t *testing.T) {
 func TestRefreshingWithTheSameValueRestartsItsLifetime(t *testing.T) {
 	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
 	ctx := context.Background()
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
 		t.Fatal(err)
 	}
 	req := pendingRefresh(t, st, sec.ID)
@@ -315,7 +315,7 @@ func TestARefreshRequestIsAPersonsToAnswer(t *testing.T) {
 // rejection, its value is stale from now, and a refresh request says why.
 func TestARefusedRenewableTokenAsksForANewValue(t *testing.T) {
 	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-2*time.Minute))
-	err := svc.RecordSandboxSecretRejection(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome)
+	err := svc.RecordSandboxSecretRejection(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, "")
 	if err != nil {
 		t.Fatalf("record: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestTheStaleMarkSurvivesAnEditAndSparesAFreshValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
 		t.Fatal(err)
 	}
 	before.Name = "github-renamed"
@@ -431,7 +431,7 @@ func TestTheStaleMarkSurvivesAnEditAndSparesAFreshValue(t *testing.T) {
 	if _, err := svc.RefreshSecret(testPrincipalContext(), "project-1", sec.ID, services.RefreshSecretBody{Value: "gho_new", Via: apigen.RefreshSecretBodyViaEntered}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
 		t.Fatal(err)
 	}
 	fresh, _ := svc.GetSecret(ctx, "project-1", sec.ID)

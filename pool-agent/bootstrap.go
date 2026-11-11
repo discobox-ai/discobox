@@ -262,7 +262,12 @@ type StatusRequest struct {
 	// SentinelGrants declares that this agent holds each sentinel to grants
 	// and takes them as sentinelGrants (ADR 26-11-03-329 §3). Always true
 	// from an agent that has them; one from before sends none.
-	SentinelGrants        bool    `json:"sentinelGrants"`
+	SentinelGrants bool `json:"sentinelGrants"`
+	// SentinelGenerations declares that this agent takes each sentinel's
+	// value generation as sentinelGenerations, and drops a value its proxy
+	// holds of another (#1022). Always true from an agent that has them; one
+	// from before sends none.
+	SentinelGenerations   bool    `json:"sentinelGenerations"`
 	Ready                 bool    `json:"ready"`
 	Schedulable           bool    `json:"schedulable"`
 	Degraded              bool    `json:"degraded"`

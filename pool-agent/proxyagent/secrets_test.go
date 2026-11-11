@@ -20,10 +20,10 @@ import (
 func TestUpsertAndRemoveSentinels(t *testing.T) {
 	root := withTestRoot(t)
 
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, nil, nil); err != nil {
 		t.Fatalf("upsert sb-1: %v", err)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}, nil, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}, nil, nil, nil); err != nil {
 		t.Fatalf("upsert sb-2: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestUpsertAndRemoveSentinels(t *testing.T) {
 		t.Fatal("sb-2 should remain")
 	}
 
-	clients := secretClients(doc.Clients, nil)
+	clients := secretClients(doc.Clients, nil, nil)
 	if len(clients) != 1 || clients[0].ClientID != "sb-2" {
 		t.Fatalf("secretClients = %#v", clients)
 	}
@@ -227,7 +227,7 @@ func TestARoutePersistedWithAUseReadsBlocked(t *testing.T) {
 		t.Fatal("a route a judge used to read was allowed after the upgrade")
 	}
 	// Written back by this pool, as lists, it keeps saying so.
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil || !reflect.DeepEqual(doc.Routes["sb-1"]["SENT"], oneGrant(want)) {
@@ -260,7 +260,7 @@ func TestAnUnroutedSentinelReadsAsItsDocumentMeantIt(t *testing.T) {
 		t.Fatalf("a routed sentinel of an old document = %+v, want its one list", got)
 	}
 
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-NEW"}, nil, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-NEW"}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil {
@@ -341,7 +341,7 @@ func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 		"SENT-A":    {parsedRoutes(t, "github.com=blocked"), parsedRoutes(t, "api.github.com")},
 		"SENT-GONE": {parsedRoutes(t, "example.com")},
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, grantsOf(routes)); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, grantsOf(routes), nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
@@ -354,7 +354,7 @@ func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 	if doc.Version != secretsDocVersion {
 		t.Fatalf("version = %d, want %d", doc.Version, secretsDocVersion)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil, nil, nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
@@ -466,7 +466,7 @@ func TestAVersion2DocumentReadsThroughFromLegacy(t *testing.T) {
 	}
 
 	// Rewritten by this pool, the document is version 3 and reads the same.
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil || doc.Version != secretsDocVersion || !reflect.DeepEqual(doc.Routes["sb-1"]["SENT"], oneGrant(want)) {
@@ -489,7 +489,7 @@ func TestUpsertSandboxSentinelsHoldsAnUnreadableRouteClosed(t *testing.T) {
 			{Hosts: []string{"uploads.github.com"}, Paths: []string{"no-slash"}, Blocked: true},
 		},
 	}}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grantsOf(routes)); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grantsOf(routes), nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
@@ -612,7 +612,7 @@ func TestAuthorizeHoldsASentinelToItsGrantsAndTheirExpiry(t *testing.T) {
 		{Lists: [][]secretroute.Route{secret, parsedRoutes(t, "GET api.github.com/repos/acme/web/**", "api.github.com/repos/acme/web/pulls=blocked")}},
 		{Lists: [][]secretroute.Route{secret, parsedRoutes(t, "POST api.github.com/repos/acme/web/pulls")}, ExpiresAt: &soon},
 	}}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grants); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grants, nil); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
@@ -671,5 +671,86 @@ func TestAVersion3DocumentReadsAsOneGrant(t *testing.T) {
 	want := oneGrant([][]secretroute.Route{parsedRoutes(t, "*"), parsedRoutes(t, "GET api.github.com")})
 	if got := doc.Routes["sb-1"]["SENT"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("grants = %+v, want %+v", got, want)
+	}
+}
+
+// Each sentinel's value generation is kept beside it, replaced with its
+// sandbox's set and removed with it, and reaches the proxy with its client
+// (#1022). A sentinel delivered with none, as a control plane that predates
+// generations delivers every one, is written with none.
+func TestUpsertSandboxSentinelsKeepsTheirValueGenerations(t *testing.T) {
+	root := withTestRoot(t)
+	path := root.ProxySecretsFile(testProjectID, testPoolID)
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, nil, map[string]string{"SENT-A": "g1", "GONE": "g9"}); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := readSecretsDoc(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"SENT-A": "g1"}; !reflect.DeepEqual(doc.Generations["sb-1"], want) {
+		t.Fatalf("generations = %v, want %v: only the set's sentinels, and only those named", doc.Generations["sb-1"], want)
+	}
+	clients := secretClients(doc.Clients, nil, doc.Generations)
+	if len(clients) != 1 || clients[0].Generations["SENT-A"] != "g1" {
+		t.Fatalf("secretClients = %#v, want SENT-A's generation carried to the proxy", clients)
+	}
+
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if doc, _ = readSecretsDoc(path); doc.Generations["sb-1"] != nil {
+		t.Fatalf("generations = %v, want none after a delivery naming none", doc.Generations["sb-1"])
+	}
+
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil, nil, map[string]string{"SENT-A": "g2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveSandboxPolicy(root, testProjectID, testPoolID, "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	if doc, _ = readSecretsDoc(path); doc.Generations["sb-1"] != nil {
+		t.Fatalf("generations = %v, want them removed with the sandbox", doc.Generations["sb-1"])
+	}
+}
+
+// The value generation the control plane answers a resolve with reaches the
+// proxy, and a report about the value names it back (#1022); a report about a
+// value handed out with none sends none, so a control plane that predates
+// generations is sent no field it does not know.
+func TestResolveAndReportCarryTheValueGeneration(t *testing.T) {
+	root := withTestRoot(t)
+	var reported map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/resolve-sandbox-secret") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "approved", "value": "REAL", "secretId": "sec_1", "valueGeneration": "g7"})
+			return
+		}
+		reported = nil
+		_ = json.NewDecoder(r.Body).Decode(&reported)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
+
+	result, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Generation != "g7" {
+		t.Fatalf("generation = %q, want g7", result.Generation)
+	}
+	if err := resolver.Report(context.Background(), proxy.SecretReportRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h", Outcome: proxy.SecretRejected, Generation: "g7"}); err != nil {
+		t.Fatal(err)
+	}
+	if reported["valueGeneration"] != "g7" {
+		t.Fatalf("report = %v, want valueGeneration g7", reported)
+	}
+	if err := resolver.Report(context.Background(), proxy.SecretReportRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h", Outcome: proxy.SecretRejected}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reported["valueGeneration"]; ok {
+		t.Fatalf("report = %v, want no valueGeneration when the value had none", reported)
 	}
 }

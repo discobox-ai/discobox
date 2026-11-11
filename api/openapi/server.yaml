@@ -4741,6 +4741,9 @@ components:
                         - rejected-after-retry
                         - accepted
                     type: string
+                valueGeneration:
+                    description: The value generation the control plane handed the answered value out with. A report about a value since replaced is about a credential no longer stored, and is not judged (#1022). Absent is the value stored now, as from an agent that predates generations.
+                    type: string
             required:
                 - sandboxId
                 - sentinel
@@ -5535,6 +5538,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SecretReportRule'
                     type: array
+                valueGeneration:
+                    description: "Names the value: it moves when the secret's value is replaced, and not when the control plane renews it. Present only when status is approved. The pool's proxy drops a held value whose generation is no longer the sentinel's, and names it in a report about the value (#1022)."
+                    type: string
             required:
                 - status
             type: object
@@ -7248,6 +7254,9 @@ components:
                 ready:
                     type: boolean
                 schedulable:
+                    type: boolean
+                sentinelGenerations:
+                    description: "The agent takes each sentinel's value generation as sentinelGenerations, and its proxy drops a value it holds of another (#1022). Declared on every report; an agent from before generations sends none, and is sent none."
                     type: boolean
                 sentinelGrants:
                     description: The agent holds each sentinel to grants, any one of which may allow a request, each with its own expiry, and takes them as sentinelGrants. Declared on every report; an agent from before grants sends none, and is sent each sentinel's first grant's route lists as sentinelRoutes.

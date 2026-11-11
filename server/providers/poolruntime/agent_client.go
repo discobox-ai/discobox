@@ -43,12 +43,17 @@ type poolAgentClient struct {
 	// to grants (model.Pool.SentinelGrants, ADR 26-11-03-329 §3): it is sent
 	// sentinelGrants, and any other is sent sentinelRoutes.
 	holdsGrants bool
+	// holdsGenerations is whether it declared it takes each sentinel's value
+	// generation (model.Pool.SentinelGenerations, #1022): it is sent
+	// sentinelGenerations, and any other is sent none, since its decoder
+	// refuses a field it does not know.
+	holdsGenerations bool
 }
 
 // newPoolAgentClient is a client of one pool's agent over lease, speaking
 // what that agent last declared it takes.
 func newPoolAgentClient(pool *model.Pool, issuer poolAgentTokenIssuer, lease *transport.HTTPClientLease) *poolAgentClient {
-	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants}
+	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations}
 }
 
 type poolAgentTokenIssuer interface {
@@ -62,7 +67,7 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 		return nil, state, err
 	}
 	defer release()
-	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants)
+	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants, p.holdsGenerations)
 	if opts.ResolvedHarnessConfig != nil {
 		resolved := request.ResolvedHarnessConfig.Value
 		if value := opts.ResolvedHarnessConfig.SaveBack; value != nil {
@@ -450,6 +455,15 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 			req.SentinelGrants = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants))
 		} else {
 			req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants))
+		}
+		// Replacing the whole map, as the grants do: one left out would
+		// leave the proxy holding the last push's generations.
+		if p.holdsGenerations {
+			generations := opts.SentinelGenerations
+			if generations == nil {
+				generations = map[string]string{}
+			}
+			req.SentinelGenerations = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelGenerations(poolclient.PoolSandboxUpdateRequestSentinelGenerations(generations))
 		}
 	}
 	// Raw bindings ride with the sentinels and are sent only when there are
@@ -864,7 +878,7 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 	return out
 }
 
-func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants bool) *poolapimodel.PoolSandboxCreateRequest {
+func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants, holdsGenerations bool) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID, PullSources: poolclient.NewOptBool(opts.PullSources)}
 	if opts.HarnessChangeID != "" {
 		out.HarnessChangeId = poolclient.NewOptString(opts.HarnessChangeID)
@@ -894,6 +908,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, 
 		} else {
 			out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants))
 		}
+	}
+	if holdsGenerations && len(opts.SentinelGenerations) > 0 {
+		out.SentinelGenerations = poolclient.NewOptNilPoolSandboxCreateRequestSentinelGenerations(poolclient.PoolSandboxCreateRequestSentinelGenerations(opts.SentinelGenerations))
 	}
 	if len(opts.RawSecrets) > 0 {
 		out.RawSecrets = poolclient.NewOptNilPoolSandboxCreateRequestRawSecrets(poolclient.PoolSandboxCreateRequestRawSecrets(poolRawSecrets(opts.RawSecrets)))

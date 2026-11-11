@@ -105,6 +105,10 @@ type SecretClient struct {
 	ClientID  string
 	Sentinels []string
 	Raw       []string
+	// Generations is the current value generation of each sentinel, as the
+	// control plane delivered it: a value the proxy holds of another one was
+	// replaced, and is dropped rather than sent (secrets.Config.Generations).
+	Generations map[string]string
 }
 
 // ControlConfig controls the optional read-only control API, which

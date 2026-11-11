@@ -219,6 +219,32 @@ func (s *Store) SentinelGrants(ctx context.Context, sandbox *model.Sandbox, assi
 	return out, nil
 }
 
+// SentinelGenerations are the value generation (model.Secret.ValueGeneration)
+// of each sentinel's secret, keyed by sentinel: what a pool's proxy drops a
+// value it holds of another generation by (#1022). A row whose secret is gone
+// has none; its grants send it nowhere.
+func (s *Store) SentinelGenerations(ctx context.Context, projectID string, assignments []model.SandboxSecret) (map[string]string, error) {
+	out := make(map[string]string, len(assignments))
+	secrets := map[string]*model.Secret{}
+	for _, assignment := range assignments {
+		secret, ok := secrets[assignment.SecretID]
+		if !ok {
+			var err error
+			secret, err = s.GetSecret(ctx, projectID, assignment.SecretID)
+			if errors.Is(err, ErrNotFound) {
+				secret = nil
+			} else if err != nil {
+				return nil, err
+			}
+			secrets[assignment.SecretID] = secret
+		}
+		if secret != nil {
+			out[assignment.Sentinel] = secret.ValueGeneration()
+		}
+	}
+	return out, nil
+}
+
 // SentinelGrantsFor are the grants one row's sentinel is held to, as
 // SentinelGrants reads them: what a resolve of it checks.
 func (s *Store) SentinelGrantsFor(ctx context.Context, sandbox *model.Sandbox, assignment *model.SandboxSecret, now time.Time) ([]secretroute.Grant, error) {

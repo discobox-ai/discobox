@@ -90,18 +90,19 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	if err != nil {
 		return nil, err
 	}
-	// An agent that now holds sentinels to grants, or no longer does, is
-	// sent its sandboxes' sentinels again in the shape it takes, in the
-	// transaction that records it: nothing else about them has changed, so
-	// nothing else would send them (ADR 26-11-03-329 §3).
+	// An agent that now holds sentinels to grants or takes their value
+	// generations, or no longer does, is sent its sandboxes' sentinels again in
+	// the shape it takes, in the transaction that records it: nothing else
+	// about them has changed, so nothing else would send them (ADR
+	// 26-11-03-329 §3).
 	var pool *model.Pool
 	err = s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		reported, grantsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, input.SentinelGrants.Or(false), input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
+		reported, sentinelsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, input.SentinelGrants.Or(false), input.SentinelGenerations.Or(false), input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 		if err != nil {
 			return err
 		}
 		pool = reported
-		if !grantsChanged || s.sandboxes == nil {
+		if !sentinelsChanged || s.sandboxes == nil {
 			return nil
 		}
 		return s.sandboxes.MarkPoolSentinelsTx(ctx, txStore, txDB, pool.ProjectID, pool.ID)

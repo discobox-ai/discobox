@@ -612,6 +612,16 @@ Key properties:
   That sentinel stops resolving at that publish, and a resolve still in flight
   for it does not store its answer. Entries kept keep the bounds they were
   cached with; new tuning applies to what resolves next.
+- **A replaced value is dropped, not spent.** A secret's value can be
+  replaced behind a sentinel that stays (a saved login, an update), so a
+  publish carries each sentinel's value generation (`SecretClient.Generations`)
+  as the control plane last delivered it, and every resolved value records the
+  generation it was handed out with. A cached value, or a displaced one, of
+  another generation is dropped by the publish, and an answer of one arriving
+  after it is used once and not cached; the next request resolves the new
+  value instead of first sending the one it replaced (#1022). A sentinel
+  published with no generation, from a control plane that predates them, keeps
+  what it holds.
 - **Caching.** Resolved values are cached per `(clientID, sentinel, host)` until
   the grant expiry (capped by `PositiveTTLSeconds`, 300s by default); a result
   with no `ExpiresAt` is used once and not cached; denials are cached briefly
@@ -638,6 +648,11 @@ Key properties:
   instead, never read ahead: a bidirectional gRPC stream sends more only after
   it hears back, so reading it to the end first would deadlock. It is
   retryable only if all of it had been sent when the 401 arrived.
+  A `403` is retried the same way, on a request a harness declared answers for
+  its login (a sentinel whose resolver named a report scope that covers the
+  request, `Result.Declared`): a harness that reads it as a dead login is
+  stranded by it as by a 401. It is never reported, since anywhere a 403 is
+  what the credential may not do, and a report spends a renewal (#1022).
   The retry is a credential the first attempt did not carry, so it is
   authorized before it is sent, over `Match` of the request about to go — not
   over what the first attempt managed to resolve, since a sentinel that was
@@ -656,7 +671,9 @@ Key properties:
   swapped request the upstream accepted reports `accepted` only when a rejection
   was reported for that sentinel before it, which is how a credential fixed
   anywhere retracts what was said about it. The report names the sentinel, the
-  client and the host, never the value.
+  client, the host and the value's generation — after a retry, the retried
+  value's — never the value, so the control plane does not judge the value it
+  stores now by a refusal of one it has since replaced (#1022).
 
   Only a 2xx is an acceptance: a redirect to a sign-in page is how many
   upstreams say a session is *not* good, and taking it as success would retract

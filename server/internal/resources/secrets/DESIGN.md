@@ -566,6 +566,17 @@ proxy process that reported the rejection: restart the pool agent, or delete the
 discobox that hit the failure, and a credential fixed upstream would otherwise
 keep a band nobody can dismiss.
 
+**A report is about the value it names.** A resolve answers with the value's
+generation (`Secret.ValueGeneration`: when the value was written, which a
+replacement moves and a renewal in place does not), and the pool's proxy
+reports a refusal or an acceptance with the generation of the value the
+upstream answered for. One about a value since replaced is not judged: a dead
+login reported after a new one was saved over it would otherwise force a
+renewal of the new login — spending its rotating refresh token — or clear what
+was recorded about it (#1022). A report naming no generation, from an agent
+that predates them, is about the value stored now. The same generation is what
+a pool drops a replaced value by ([`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)).
+
 Replacing a value clears the rejections on it in `store.UpdateSecret`, which is
 the one point every writer passes through — the secrets service and a saved
 harness change's update-in-place both — and the test is against what is stored

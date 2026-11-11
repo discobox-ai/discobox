@@ -27,6 +27,10 @@ import (
 // fails on a settled generation records the sandbox as failed, which would
 // turn a pool that could not be reached for a moment into a running sandbox
 // reading failed, and the routes into a change nothing retries.
+//
+// It is marked as well in the transaction that replaces a secret's value
+// behind the sentinels that stand for it (MarkSecretHoldersDirtyTx), so the
+// pool is sent the new value generation and drops the value it holds (#1022).
 const SentinelsResourceType = "sandboxSentinels"
 
 // SentinelReconciler materializes a sandbox's bindings and re-sends its
@@ -85,8 +89,9 @@ func (r *SentinelReconciler) Reconcile(ctx context.Context, id string) (reconcil
 // rebuilds a container, minutes later — so a route change committed in between
 // can be delivered first and then overwritten by the send. Every send checks
 // after it lands, so the last delivery always follows the last send that read
-// the grants. An addition that lapsed in between is a change too.
-func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcile.Engine, sb *model.Sandbox, sent map[string][]secretroute.Grant) error {
+// the grants. An addition that lapsed in between is a change too, and so is a
+// value replaced since the send read its generation.
+func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcile.Engine, sb *model.Sandbox, sent map[string][]secretroute.Grant, sentGenerations map[string]string) error {
 	if engine == nil {
 		return nil
 	}
@@ -98,7 +103,11 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 	if err != nil {
 		return err
 	}
-	if maps.EqualFunc(sent, current, func(a, b []secretroute.Grant) bool { return slices.EqualFunc(a, b, sameGrant) }) {
+	generations, err := st.SentinelGenerations(ctx, sb.ProjectID, assignments)
+	if err != nil {
+		return err
+	}
+	if maps.EqualFunc(sent, current, func(a, b []secretroute.Grant) bool { return slices.EqualFunc(a, b, sameGrant) }) && maps.Equal(sentGenerations, generations) {
 		return nil
 	}
 	return engine.MarkDirty(ctx, SentinelsResourceType, SandboxDirtyID(sb.ProjectID, sb.ID))

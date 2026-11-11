@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -402,6 +403,118 @@ func TestReconfigureDropsALateAnswerForARemovedSentinel(t *testing.T) {
 	swapAuth(t, sw, "sandbox-1", "SENTINEL")
 	if calls := resolver.calls.Load(); calls != 2 {
 		t.Fatalf("resolver asked %d times, want the late answer discarded and the sentinel resolved again", calls)
+	}
+}
+
+// A delivery naming another value generation for a sentinel says the value
+// behind it was replaced (#1022): the value the proxy holds, and the one a
+// rotation displaced before it, are dropped, and the next request resolves the
+// new one rather than spending the replaced one first. The same generation,
+// and a sentinel delivered with none, keep what they hold.
+func TestReconfigureDropsAValueItsSecretReplaced(t *testing.T) {
+	now := time.Unix(1000, 0)
+	value, generation := "OLD", "g1"
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: value, ExpiresAt: now.Add(time.Hour), Generation: generation}, nil
+	}}
+	cfg := Config{
+		Sentinels:   map[string][]string{"sandbox-1": {"SENTINEL", "UNNAMED"}},
+		Generations: map[string]map[string]string{"sandbox-1": {"SENTINEL": "g1"}},
+	}
+	sw := New(resolver, cfg)
+	sw.now = func() time.Time { return now }
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	swapAuth(t, sw, "sandbox-1", "UNNAMED")
+	asked := resolver.calls.Load()
+
+	// The same generation again: nothing was replaced.
+	sw.Reconfigure(cfg)
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	if calls := resolver.calls.Load(); calls != asked {
+		t.Fatalf("resolver asked %d more times after an unchanged delivery, want none", calls-asked)
+	}
+
+	value, generation = "NEW", "g2"
+	cfg.Generations = map[string]map[string]string{"sandbox-1": {"SENTINEL": "g2"}}
+	sw.Reconfigure(cfg)
+	if got, ok := swapAuth(t, sw, "sandbox-1", "SENTINEL"); !ok || got != "Bearer NEW" {
+		t.Fatalf("Authorization = %q (swapped %v), want the replacing value resolved", got, ok)
+	}
+	if _, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); ok {
+		t.Fatal("the replaced value was kept as a retry fallback")
+	}
+	// UNNAMED was delivered with no generation, as a control plane that
+	// predates them delivers every sentinel: it keeps the value it holds.
+	if got, ok := swapAuth(t, sw, "sandbox-1", "UNNAMED"); !ok || got != "Bearer OLD" {
+		t.Fatalf("Authorization = %q (swapped %v), want the cached value of a sentinel with no generation", got, ok)
+	}
+	if calls := resolver.calls.Load(); calls != asked+1 {
+		t.Fatalf("resolver asked %d times after the replacement, want once", calls-asked)
+	}
+}
+
+// A resolve that left before a delivery replaced the value, and answers with
+// the replaced one after it, is used for its request and never cached.
+func TestAReplacedValueAnsweredLateIsNotCached(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	var late atomic.Bool
+	late.Store(true)
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		if late.Load() {
+			entered <- struct{}{}
+			<-release
+			return ResolveResult{Value: "OLD", ExpiresAt: time.Now().Add(time.Hour), Generation: "g1"}, nil
+		}
+		return ResolveResult{Value: "NEW", ExpiresAt: time.Now().Add(time.Hour), Generation: "g2"}, nil
+	}}
+	cfg := Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINEL"}}}
+	sw := New(resolver, cfg)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	}()
+	<-entered
+	cfg.Generations = map[string]map[string]string{"sandbox-1": {"SENTINEL": "g2"}}
+	sw.Reconfigure(cfg)
+	late.Store(false)
+	close(release)
+	<-done
+
+	if got, ok := swapAuth(t, sw, "sandbox-1", "SENTINEL"); !ok || got != "Bearer NEW" {
+		t.Fatalf("Authorization = %q (swapped %v), want the late replaced answer left uncached", got, ok)
+	}
+}
+
+// A swap names the generation of each value it substituted, which a report
+// about the request carries, and which sentinels a harness declared the
+// request answers for.
+func TestApplyNamesGenerationsAndDeclaredSentinels(t *testing.T) {
+	resolver := &fakeResolver{fn: func(req ResolveRequest) (ResolveResult, error) {
+		result := ResolveResult{Value: "REAL-" + req.Sentinel, ExpiresAt: time.Now().Add(time.Hour), Generation: "gen-" + req.Sentinel}
+		if req.Sentinel == "SCOPED" {
+			result.ReportScope = ReportScope{{Host: "api.example.com", Paths: []string{"/v1/messages"}}}
+		}
+		return result, nil
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SCOPED", "OPEN"}}})
+	req := newRequest(t, http.MethodPost, "https://api.example.com/v1/messages")
+	req.Header.Set("Authorization", "Bearer SCOPED")
+	req.Header.Set("X-Other", "OPEN")
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	if want := map[string]string{"SCOPED": "gen-SCOPED", "OPEN": "gen-OPEN"}; !maps.Equal(res.Generations, want) {
+		t.Fatalf("Generations = %v, want %v", res.Generations, want)
+	}
+	if !slices.Equal(res.Declared, []string{"SCOPED"}) {
+		t.Fatalf("Declared = %v, want only the sentinel whose scope names this request", res.Declared)
+	}
+
+	elsewhere := newRequest(t, http.MethodGet, "https://api.example.com/api/oauth/profile")
+	elsewhere.Header.Set("Authorization", "Bearer SCOPED")
+	if res := sw.Apply(context.Background(), elsewhere, "sandbox-1"); len(res.Declared) != 0 {
+		t.Fatalf("Declared = %v, want none outside the scope", res.Declared)
 	}
 }
 

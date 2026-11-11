@@ -512,7 +512,7 @@ type SecretService interface {
 	// RecordSandboxSecretRejection takes what an upstream made of a credential
 	// the pool's proxy swapped in, and decides whether it needs a person
 	// (ADR 0132). ListSecretRejections is what the window reads back.
-	RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome string) error
+	RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome, valueGeneration string) error
 	ListSecretRejections(ctx context.Context, projectID string) ([]model.SecretRejection, error)
 
 	// The agent credentials broker (ADR 0031). Every call is made by a pool

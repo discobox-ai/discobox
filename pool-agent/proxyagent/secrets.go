@@ -71,6 +71,13 @@ type secretsDoc struct {
 	// to watch its requests for; its route lists are in Routes beside the
 	// others. The value itself is never written here.
 	Raw map[string]map[string]RawSentinel `json:"raw,omitempty"`
+	// Generations are, per sandbox, the value generation the control plane
+	// last delivered for each sentinel (#1022): a value the proxy holds of
+	// another generation was replaced behind the sentinel, and the proxy drops
+	// it rather than sending it (proxy.SecretClient.Generations). A sentinel
+	// with none, from a control plane that predates generations, keeps what
+	// the proxy holds.
+	Generations map[string]map[string]string `json:"generations,omitempty"`
 }
 
 // RawSentinel is how a raw binding's value is delivered in its sandbox: the
@@ -107,9 +114,25 @@ const secretsDocVersion = 4
 // 26-11-03-329 §3). Passing empty sets removes the sandbox entry. A sentinel
 // grants names none for is sent nowhere. Each route is written normalized
 // (secretroute.Normalize), and one that does not normalize is held as heldList
-// says: never as anything wider than it was.
-func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, raw map[string]RawSentinel, grants map[string][]secretroute.Grant) error {
+// says: never as anything wider than it was. generations is the current value
+// generation of each sentinel (secretsDoc.Generations); nil from a control
+// plane that sends none.
+func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, raw map[string]RawSentinel, grants map[string][]secretroute.Grant, generations map[string]string) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
+		current := map[string]string{}
+		for _, sentinel := range sentinels {
+			if generation := generations[sentinel]; generation != "" {
+				current[sentinel] = generation
+			}
+		}
+		if len(current) == 0 {
+			delete(doc.Generations, sandboxID)
+		} else {
+			if doc.Generations == nil {
+				doc.Generations = map[string]map[string]string{}
+			}
+			doc.Generations[sandboxID] = current
+		}
 		if len(sentinels) == 0 {
 			delete(doc.Clients, sandboxID)
 		} else {
@@ -214,6 +237,7 @@ func RemoveSandboxPolicy(root layout.Root, projectID, poolID string, sandboxID s
 		delete(doc.Clients, sandboxID)
 		delete(doc.Raw, sandboxID)
 		delete(doc.Routes, sandboxID)
+		delete(doc.Generations, sandboxID)
 		delete(doc.Egress, sandboxID)
 		delete(doc.Passthrough, sandboxID)
 		delete(doc.Gateways, sandboxID)
@@ -528,6 +552,9 @@ type resolveResponseBody struct {
 	// request it swaps the value into (ADR 26-10-01-240). Empty from a control
 	// plane that predates it.
 	SecretID string `json:"secretId"`
+	// ValueGeneration names the value (proxy.SecretResolveResult.Generation).
+	// Empty from a control plane that predates it.
+	ValueGeneration string `json:"valueGeneration"`
 	// ReportScope names the requests that answer for the credential, which the
 	// proxy reports a refusal or an acceptance of and no others
 	// (ADR 26-10-13-595). Absent is every request.
@@ -546,6 +573,10 @@ type rejectionRequestBody struct {
 	Sentinel  string `json:"sentinel"`
 	Host      string `json:"host"`
 	Outcome   string `json:"outcome"`
+	// ValueGeneration is that of the value the upstream answered for, which
+	// the control plane handed out with it; left out when it did not, so a
+	// control plane that predates it is sent nothing it does not know.
+	ValueGeneration string `json:"valueGeneration,omitempty"`
 }
 
 func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveRequest) (proxy.SecretResolveResult, error) {
@@ -590,7 +621,7 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 	if out.Status != "approved" || out.Value == "" {
 		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
 	}
-	result := proxy.SecretResolveResult{Value: out.Value, SecretID: out.SecretID}
+	result := proxy.SecretResolveResult{Value: out.Value, SecretID: out.SecretID, Generation: out.ValueGeneration}
 	for _, rule := range out.ReportScope {
 		result.ReportScope = append(result.ReportScope, proxy.SecretReportRule{Host: rule.Host, Paths: rule.Paths})
 	}
@@ -731,6 +762,8 @@ func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportReque
 		Sentinel:  req.Sentinel,
 		Host:      req.Host,
 		Outcome:   string(req.Outcome),
+
+		ValueGeneration: req.Generation,
 	})
 	if err != nil {
 		return err
@@ -886,6 +919,10 @@ func (p *policyPublisher) apply() error {
 	for clientID, sentinels := range p.file.Clients {
 		merged[clientID] = append([]string(nil), sentinels...)
 	}
+	generations := make(map[string]map[string]string, len(p.file.Generations))
+	for clientID, bySentinel := range p.file.Generations {
+		generations[clientID] = maps.Clone(bySentinel)
+	}
 	raw := make(map[string][]string, len(p.file.Raw))
 	for clientID, sentinels := range p.file.Raw {
 		for sentinel := range sentinels {
@@ -912,7 +949,7 @@ func (p *policyPublisher) apply() error {
 	// Keep the swap tuning (TTLs, refresh interval, query scanning) from the
 	// startup config; only the sentinel client set changes per apply.
 	cfg.Secrets = p.base.Secrets
-	cfg.Secrets.Clients = secretClients(merged, raw)
+	cfg.Secrets.Clients = secretClients(merged, raw, generations)
 	cfg.Trusts = trusts
 	cfg.Allowlist = proxy.AllowlistConfig{Clients: allowlist}
 	cfg.Passthrough = proxy.PassthroughConfig{Clients: passthrough}
@@ -1014,15 +1051,16 @@ func pollSecretsFile(ctx context.Context, apply func()) {
 	}
 }
 
-// secretClients is each client's sentinels and raw sentinels as the proxy
-// takes them. A client with neither is left out.
-func secretClients(byClient, rawByClient map[string][]string) []proxy.SecretClient {
+// secretClients is each client's sentinels, raw sentinels and value
+// generations as the proxy takes them. A client with neither kind of sentinel
+// is left out.
+func secretClients(byClient, rawByClient map[string][]string, generations map[string]map[string]string) []proxy.SecretClient {
 	clients := make([]proxy.SecretClient, 0, len(byClient))
 	for clientID, sentinels := range byClient {
 		if len(sentinels) == 0 && len(rawByClient[clientID]) == 0 {
 			continue
 		}
-		clients = append(clients, proxy.SecretClient{ClientID: clientID, Sentinels: sentinels, Raw: rawByClient[clientID]})
+		clients = append(clients, proxy.SecretClient{ClientID: clientID, Sentinels: sentinels, Raw: rawByClient[clientID], Generations: generations[clientID]})
 	}
 	for clientID, raw := range rawByClient {
 		if _, ok := byClient[clientID]; ok || len(raw) == 0 {

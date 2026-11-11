@@ -33752,14 +33752,21 @@ func (s *ReportSandboxSecretRejectionBody) encodeFields(e *jx.Encoder) {
 		e.FieldStart("outcome")
 		s.Outcome.Encode(e)
 	}
+	{
+		if s.ValueGeneration.Set {
+			e.FieldStart("valueGeneration")
+			s.ValueGeneration.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfReportSandboxSecretRejectionBody = [5]string{
+var jsonFieldsNameOfReportSandboxSecretRejectionBody = [6]string{
 	0: "$schema",
 	1: "sandboxId",
 	2: "sentinel",
 	3: "host",
 	4: "outcome",
+	5: "valueGeneration",
 }
 
 // Decode decodes ReportSandboxSecretRejectionBody from json.
@@ -33826,6 +33833,16 @@ func (s *ReportSandboxSecretRejectionBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"outcome\"")
+			}
+		case "valueGeneration":
+			if err := func() error {
+				s.ValueGeneration.Reset()
+				if err := s.ValueGeneration.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"valueGeneration\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -34794,15 +34811,22 @@ func (s *ResolveSandboxSecretResponse) encodeFields(e *jx.Encoder) {
 			e.ArrEnd()
 		}
 	}
+	{
+		if s.ValueGeneration.Set {
+			e.FieldStart("valueGeneration")
+			s.ValueGeneration.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfResolveSandboxSecretResponse = [6]string{
+var jsonFieldsNameOfResolveSandboxSecretResponse = [7]string{
 	0: "$schema",
 	1: "status",
 	2: "value",
 	3: "expiresAt",
 	4: "secretId",
 	5: "reportScope",
+	6: "valueGeneration",
 }
 
 // Decode decodes ResolveSandboxSecretResponse from json.
@@ -34880,6 +34904,16 @@ func (s *ResolveSandboxSecretResponse) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reportScope\"")
+			}
+		case "valueGeneration":
+			if err := func() error {
+				s.ValueGeneration.Reset()
+				if err := s.ValueGeneration.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"valueGeneration\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -61993,6 +62027,12 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Schedulable)
 	}
 	{
+		if s.SentinelGenerations.Set {
+			e.FieldStart("sentinelGenerations")
+			s.SentinelGenerations.Encode(e)
+		}
+	}
+	{
 		if s.SentinelGrants.Set {
 			e.FieldStart("sentinelGrants")
 			s.SentinelGrants.Encode(e)
@@ -62000,7 +62040,7 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdatePoolStatusBody = [11]string{
+var jsonFieldsNameOfUpdatePoolStatusBody = [12]string{
 	0:  "$schema",
 	1:  "availableCpuVcpus",
 	2:  "availableMemoryBytes",
@@ -62011,7 +62051,8 @@ var jsonFieldsNameOfUpdatePoolStatusBody = [11]string{
 	7:  "platform",
 	8:  "ready",
 	9:  "schedulable",
-	10: "sentinelGrants",
+	10: "sentinelGenerations",
+	11: "sentinelGrants",
 }
 
 // Decode decodes UpdatePoolStatusBody from json.
@@ -62135,6 +62176,16 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"schedulable\"")
+			}
+		case "sentinelGenerations":
+			if err := func() error {
+				s.SentinelGenerations.Reset()
+				if err := s.SentinelGenerations.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinelGenerations\"")
 			}
 		case "sentinelGrants":
 			if err := func() error {

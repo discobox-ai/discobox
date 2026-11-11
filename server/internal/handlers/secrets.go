@@ -152,6 +152,7 @@ func (h *Handler) ReportSandboxSecretRejection(ctx context.Context, req *apimode
 		req.Sentinel,
 		req.Host,
 		string(req.Outcome),
+		req.ValueGeneration.Or(""),
 	)
 	if err != nil {
 		return apiError(err), nil
@@ -195,6 +196,7 @@ func (h *Handler) ResolveSandboxSecret(ctx context.Context, req *apimodel.Resolv
 			resp.SetExpiresAt(serverapi.NewOptDateTime(*resolution.ExpiresAt))
 		}
 		resp.SetSecretId(serverapi.NewOptString(resolution.SecretID))
+		resp.SetValueGeneration(serverapi.NewOptString(resolution.ValueGeneration))
 		for _, rule := range resolution.ReportScope {
 			resp.ReportScope = append(resp.ReportScope, apimodel.SecretReportRule{Host: rule.Host, Paths: rule.Paths})
 		}

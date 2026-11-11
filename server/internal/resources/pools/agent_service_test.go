@@ -836,6 +836,32 @@ func TestAReportThatChangesWhatAnAgentTakesResendsItsSentinels(t *testing.T) {
 	}
 }
 
+// An agent that now takes its sentinels' value generations is recorded as
+// taking them, and sent its sandboxes' sentinels again with them (#1022).
+func TestAReportThatAnAgentTakesGenerationsResendsItsSentinels(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(generations bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(true), SentinelGenerations: serverapi.NewOptBool(generations),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	marked := len(recorded.sentinels)
+	report(true)
+	report(true)
+	if len(recorded.sentinels) != marked+1 {
+		t.Fatalf("marked %v, want pool-a's sentinels once more, when its agent first declared generations", recorded.sentinels)
+	}
+	if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || !pool.SentinelGenerations {
+		t.Fatalf("pool = %+v, %v; want it recorded as taking generations", pool, err)
+	}
+}
+
 func TestStartAuthorizationUsesCurrentEpochAndPoolOwnership(t *testing.T) {
 	svc, _ := newAgentServiceTestFixture(t)
 	principal := auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"}

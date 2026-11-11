@@ -5183,6 +5183,56 @@ func (s *OptNilPoolSandboxCreateRequestSecretEnv) UnmarshalJSON(data []byte) err
 	return s.Decode(d)
 }
 
+// Encode encodes PoolSandboxCreateRequestSentinelGenerations as json.
+func (o OptNilPoolSandboxCreateRequestSentinelGenerations) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSandboxCreateRequestSentinelGenerations from json.
+func (o *OptNilPoolSandboxCreateRequestSentinelGenerations) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolSandboxCreateRequestSentinelGenerations to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolSandboxCreateRequestSentinelGenerations
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(PoolSandboxCreateRequestSentinelGenerations)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolSandboxCreateRequestSentinelGenerations) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolSandboxCreateRequestSentinelGenerations) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolSandboxCreateRequestSentinelGrants as json.
 func (o OptNilPoolSandboxCreateRequestSentinelGrants) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -5379,6 +5429,56 @@ func (s OptNilPoolSandboxUpdateRequestSecretEnv) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilPoolSandboxUpdateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolSandboxUpdateRequestSentinelGenerations as json.
+func (o OptNilPoolSandboxUpdateRequestSentinelGenerations) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSandboxUpdateRequestSentinelGenerations from json.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGenerations) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolSandboxUpdateRequestSentinelGenerations to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolSandboxUpdateRequestSentinelGenerations
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(PoolSandboxUpdateRequestSentinelGenerations)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolSandboxUpdateRequestSentinelGenerations) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolSandboxUpdateRequestSentinelGenerations) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -8589,6 +8689,12 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SentinelGenerations.Set {
+			e.FieldStart("sentinelGenerations")
+			s.SentinelGenerations.Encode(e)
+		}
+	}
+	{
 		if s.SecretEnv.Set {
 			e.FieldStart("secretEnv")
 			s.SecretEnv.Encode(e)
@@ -8596,7 +8702,7 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [16]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [17]string{
 	0:  "pullSources",
 	1:  "$schema",
 	2:  "agent",
@@ -8612,7 +8718,8 @@ var jsonFieldsNameOfPoolSandboxCreateRequest = [16]string{
 	12: "rawSecrets",
 	13: "sentinelRoutes",
 	14: "sentinelGrants",
-	15: "secretEnv",
+	15: "sentinelGenerations",
+	16: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -8620,7 +8727,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode PoolSandboxCreateRequest to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -8776,6 +8883,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinelGrants\"")
 			}
+		case "sentinelGenerations":
+			if err := func() error {
+				s.SentinelGenerations.Reset()
+				if err := s.SentinelGenerations.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinelGenerations\"")
+			}
 		case "secretEnv":
 			if err := func() error {
 				s.SecretEnv.Reset()
@@ -8795,9 +8912,10 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b00100000,
 		0b00000100,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8949,6 +9067,62 @@ func (s PoolSandboxCreateRequestSecretEnv) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxCreateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSandboxCreateRequestSentinelGenerations) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSandboxCreateRequestSentinelGenerations) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes PoolSandboxCreateRequestSentinelGenerations from json.
+func (s *PoolSandboxCreateRequestSentinelGenerations) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxCreateRequestSentinelGenerations to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSandboxCreateRequestSentinelGenerations")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxCreateRequestSentinelGenerations) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxCreateRequestSentinelGenerations) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -10619,6 +10793,12 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SentinelGenerations.Set {
+			e.FieldStart("sentinelGenerations")
+			s.SentinelGenerations.Encode(e)
+		}
+	}
+	{
 		if s.SecretEnv.Set {
 			e.FieldStart("secretEnv")
 			s.SecretEnv.Encode(e)
@@ -10626,17 +10806,18 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxUpdateRequest = [10]string{
-	0: "$schema",
-	1: "reserveHarnessChange",
-	2: "config",
-	3: "egress",
-	4: "gateways",
-	5: "sentinels",
-	6: "rawSecrets",
-	7: "sentinelRoutes",
-	8: "sentinelGrants",
-	9: "secretEnv",
+var jsonFieldsNameOfPoolSandboxUpdateRequest = [11]string{
+	0:  "$schema",
+	1:  "reserveHarnessChange",
+	2:  "config",
+	3:  "egress",
+	4:  "gateways",
+	5:  "sentinels",
+	6:  "rawSecrets",
+	7:  "sentinelRoutes",
+	8:  "sentinelGrants",
+	9:  "sentinelGenerations",
+	10: "secretEnv",
 }
 
 // Decode decodes PoolSandboxUpdateRequest from json.
@@ -10736,6 +10917,16 @@ func (s *PoolSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinelGrants\"")
+			}
+		case "sentinelGenerations":
+			if err := func() error {
+				s.SentinelGenerations.Reset()
+				if err := s.SentinelGenerations.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinelGenerations\"")
 			}
 		case "secretEnv":
 			if err := func() error {
@@ -10877,6 +11068,62 @@ func (s PoolSandboxUpdateRequestSecretEnv) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxUpdateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSandboxUpdateRequestSentinelGenerations) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSandboxUpdateRequestSentinelGenerations) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes PoolSandboxUpdateRequestSentinelGenerations from json.
+func (s *PoolSandboxUpdateRequestSentinelGenerations) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxUpdateRequestSentinelGenerations to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSandboxUpdateRequestSentinelGenerations")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxUpdateRequestSentinelGenerations) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxUpdateRequestSentinelGenerations) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
