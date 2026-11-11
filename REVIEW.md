@@ -35,6 +35,11 @@ Global review expectations:
   `instant_changes` lands layout, opacity and transforms at once but leaves
   colours on the spring they inherit, so without `Spring::NONE` every cell
   background a program repaints fades in.
+- A commit with `Tx::color_motion` (the desktop's change of palette) springs
+  every colour, terminal content's `Spring::NONE` included: Rune applies it
+  over each element's own. So it never shares a commit with anything a
+  program wrote — the poll that settles a theme takes no events (`poll`,
+  `theme::settle`) — or that output fades in.
 - In the desktop app, a session whose result lands late goes to its own box's
   workspace, parked or not, and takes the screen only if the box on screen is
   the one it was asked from (`Pending::Session` carries it) or its own. With

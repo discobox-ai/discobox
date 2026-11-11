@@ -602,8 +602,8 @@ impl Screen {
             let line = Line(y as i32 - offset);
             let row = &grid[line];
             let cells = self.drawn_row(y, row, line, selection.as_ref(), hit.as_ref(), claimed);
-            // The palette a row is drawn in is part of every memo's key already: Rune hashes the
-            // window's appearance into it.
+            // The palette a row is drawn in is part of its key (`hash_row`): Rune hashes the
+            // system's appearance into every memo's, which a picked theme overrides.
             let version = hash_row(&cells);
             body = body.child(memo(format!("{key}-r{y}"), version, || draw_row(&cells, y)));
         }
@@ -798,6 +798,7 @@ impl Drawn {
 fn hash_row(cells: &[Drawn]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
+    theme::dark().hash(&mut h);
     for d in cells {
         d.c.hash(&mut h);
         d.zero.hash(&mut h);

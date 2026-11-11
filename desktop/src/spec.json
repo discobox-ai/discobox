@@ -1090,6 +1090,30 @@
       }
     },
     {
+      "id": "theme",
+      "label": "theme",
+      "detail": "draw the window dark, light, or as the system does",
+      "aliases": [
+        "theme",
+        "appearance"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [],
+          "menu": "View"
+        }
+      }
+    },
+    {
       "id": "terminal",
       "label": "new terminal",
       "detail": "open another harness terminal",

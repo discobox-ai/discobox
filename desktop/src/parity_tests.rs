@@ -251,7 +251,7 @@ fn parity_scenarios() {
         let services = sc.services.iter().map(|v| MockService::new(&v.id, &v.status, &v.logs)).collect();
         let mock = Mock::with_services(inbox.clone(), services);
         let record = mock.record();
-        let state = State::with((Box::new(mock), bundled_spec(), inbox, false, String::new()));
+        let state = State::with((Box::new(mock), bundled_spec(), inbox, false, Default::default()));
         let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
         rt.poll = Some(poll);
         rt.on_key = Some(on_key);

@@ -223,7 +223,7 @@ fn harness_changes_are_reviewed_and_saved() {
 fn owing() -> Runtime<State> {
     let inbox = Inbox::default();
     let mock = Mock::new(inbox.clone()).owing_explainer();
-    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, String::new()));
+    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, Default::default()));
     let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
     rt.poll = Some(poll);
     rt.on_key = Some(on_key);
@@ -255,7 +255,7 @@ fn the_explainer_is_asked_once_and_opens_the_review() {
 fn the_explainer_waits_for_a_free_screen() {
     let inbox = Inbox::default();
     let mock = Mock::new(inbox.clone()).owing_explainer();
-    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, "a prompt left".into()));
+    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, crate::wire::Session { draft: "a prompt left".into(), ..Default::default() }));
     let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
     rt.poll = Some(poll);
     rt.on_key = Some(on_key);
@@ -303,7 +303,7 @@ fn the_explainer_left_keeps_the_status_line() {
 #[test]
 fn the_explainer_is_asked_in_the_poll_its_snapshot_lands_in() {
     let inbox = Inbox::default();
-    let mut s = State::with((Box::new(Mock::new(inbox.clone())), bundled_spec(), inbox.clone(), false, String::new()));
+    let mut s = State::with((Box::new(Mock::new(inbox.clone())), bundled_spec(), inbox.clone(), false, Default::default()));
     assert!(!s.explained && s.waiting.explain.is_empty());
     let mut w = s.waiting.clone();
     w.explain = s.boxes[0].key.clone();

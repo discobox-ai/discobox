@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, AuditPart, AuditQuery, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, Push, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
+    Answer, Appearance, Args, AuditPart, AuditQuery, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, Push, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, IssueAct, IssueItemKind, IssueQuery, IssueTone,
 };
 use discobox_bridge::{Client, Incoming};
@@ -200,6 +200,21 @@ fn the_welcome_carries_the_spec_and_the_session() {
         (session.primary_server.as_str(), session.project.as_str(), session.directory.as_str(), session.branch.as_str()),
         ("home", "proj", "/src", "main")
     );
+    assert_eq!(session.appearance, Appearance::Dark, "the welcome lost the theme the last window was picked to draw in");
+}
+
+// The theme command asks the core's question, opening on a change from the palette drawn now, and
+// its answer comes back for the window to draw in.
+#[test]
+fn a_picked_theme_reaches_the_app() {
+    let mut cli = Cli::start("default");
+    let theme = cli.command("theme", &[], Context::default(), Args::default());
+    let q = cli.expect(Type::Question).question.expect("the theme's question");
+    let closed: Vec<_> = q.choices.iter().filter(|c| !c.why.is_empty()).map(|c| c.key.as_str()).collect();
+    assert_eq!(closed, ["dark"], "{q:?}");
+    cli.answer(q.id, "light", false);
+    let r = cli.result(theme);
+    assert_eq!((r.status, r.appearance), (Status::Done, Some(Appearance::Light)), "{r:?}");
 }
 
 /// What b1's push says first, then next, as the app's client reads them.

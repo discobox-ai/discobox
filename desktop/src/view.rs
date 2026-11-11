@@ -801,8 +801,9 @@ fn composer(s: &State) -> El {
 }
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
-    // The system's appearance, or the one `--theme` picks.
-    theme::set_dark(cx.system_dark());
+    // The system's appearance (or the one `--theme` stands in for), which the palette follows
+    // unless one was picked; a change is drawn by the poll it wakes, on the calm spring.
+    theme::see_system(cx.system_dark(), || s.inbox.wake());
     let mut root = row().w_full().padding(10.0).gap(10.0).fill(theme::bg());
     match s.live_ws() {
         // A page opens beside the list, in place of whatever was on screen.

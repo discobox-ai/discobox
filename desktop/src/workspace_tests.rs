@@ -285,7 +285,7 @@ fn recorded() -> (Runtime<State>, std::sync::Arc<std::sync::Mutex<crate::backend
     let inbox = crate::backend::Inbox::default();
     let mock = crate::backend::Mock::new(inbox.clone());
     let record = mock.record();
-    let state = State::with((Box::new(mock), crate::backend::bundled_spec(), inbox, false, String::new()));
+    let state = State::with((Box::new(mock), crate::backend::bundled_spec(), inbox, false, Default::default()));
     let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
     rt.poll = Some(poll);
     rt.on_key = Some(on_key);

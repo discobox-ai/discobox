@@ -289,11 +289,18 @@ The core's `console.RunOptions`, held by the bridge.
 
 ADR 26-11-07-363 (`src/theme.rs`, `src/icons.rs`, `src/mark.rs`): JetBrains
 Mono throughout, bundled from `fonts/` (SIL OFL); the spec's colour, space,
-radius and stroke tokens in both palettes, following the system's appearance;
+radius and stroke tokens in both palettes, following the system's appearance
+unless the person picks one (`theme`: the core's question, kept by the CLI for
+the next window and opened on from `welcome`);
 terminal content keeps the program's colours on the sunken ground; the TUI's
 devices drawn natively (rounded frames, chips in a frame's edge, keycaps, icon
 buttons, the mark as vector art); spring motion for focus, chips, the sidebar
-and maximize, never in terminal content; a status line for messages only.
+and maximize, never in terminal content; a change of palette as one calm spring
+on every colour (`Tx::color_motion`), in a commit of its own that takes no
+program output (the terminal's ground and default colours, the palette's,
+cross with it), a pick or a system change noted and drawn by the poll it
+wakes, since Rune gives a system change no transaction; a status line for
+messages only.
 `identity_tests` fails on TUI character art in the chrome, a colour or length
 that is not a token, or a colour written outside the theme.
 
@@ -329,7 +336,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/notify.rs` | A request raised as a native notification, and a press on one taken back to the window |
 | `src/keys.rs` | Shortcuts from the spec (`primary` per platform); keys as xterm bytes |
 | `src/term.rs` | A pane's terminal |
-| `src/theme.rs` | Tokens in both palettes and the appearance that picks one; the bundled faces; springs |
+| `src/theme.rs` | Tokens in both palettes, the pick and the system's appearance that choose one, and its calm spring; the bundled faces; springs |
 | `src/icons.rs`, `src/mark.rs` | Vector icons, and the mark from `assets/brand/logo-purple.svg` |
 | `fonts/` | JetBrains Mono 2.304 at the chrome's weights and the italic, and its licence |
 
@@ -352,6 +359,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/audit_tests.rs` | The timeline followed and held, runs, a record and a recording read, the timeline searched |
 | `src/harness_tests.rs` | The harnesses page, its card and actions, a file edited, harness changes reviewed, the explainer asked once on a free screen |
 | `src/identity_tests.rs` | No TUI character art, every colour and length a token, the bundled face measured |
+| `src/theme_tests.rs` | A theme picked from the keys and kept for the next window; a change of palette, picked or the system's, one calm spring (the motion gate) |
 
 The Go side, its parity scenarios included, runs in every CI job; the app's
 own tests, the contract suite and the headless scenes run in `ci:desktop`, on

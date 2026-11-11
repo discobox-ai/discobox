@@ -50,6 +50,8 @@ mod surface_tests;
 mod term;
 mod theme;
 #[cfg(test)]
+mod theme_tests;
+#[cfg(test)]
 mod tool_tests;
 mod tools;
 mod view;
@@ -63,7 +65,7 @@ use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
     Address, Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Follow, Header, Listing, Note,
-    Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, SecretAction, Service, ServiceVerb, Sessions, Spec, SpecTarget,
+    Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, SecretAction, Service, ServiceVerb, Session, Sessions, Spec, SpecTarget,
     Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Tool, Topic, Arrival, Notice, Requests,
 };
 use rune::{App, AppSpec, Drag, Ime, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
@@ -594,8 +596,10 @@ impl State {
     fn new() -> State { State::with(BOOT.lock().unwrap().take().unwrap_or_else(boot_mock)) }
 
     /// The window on what `main` connected, or on a mock a test made.
-    fn with((backend, spec, inbox, bridged, draft): Boot) -> State {
+    fn with((backend, spec, inbox, bridged, session): Boot) -> State {
         theme::set_tokens(&spec);
+        theme::open_on(session.appearance);
+        let draft = session.draft;
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
@@ -2076,7 +2080,15 @@ impl State {
             Pending::Act(stream, what) => issue::acted(self, stream, what, &r),
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
             // What came of it (`renamed to …`, `settings saved`), or nothing to say.
-            Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
+            Pending::Enter(_) if r.status == Status::Done => {
+                // The theme command's answer: the window draws in it from the next poll, in a commit
+                // of its own.
+                if let Some(a) = r.appearance {
+                    theme::pick(a);
+                    self.inbox.wake();
+                }
+                self.message = (!r.note.is_empty()).then(|| r.note.clone());
+            }
             Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
             Pending::Session(stream, sandbox, shown) if r.status == Status::Done => {
                 // Nothing was made on the stream: a tool that turned out to run on this machine,
@@ -2254,7 +2266,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions", "mouse", "repaint",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools", "credentials",
+    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools", "credentials", "theme",
     "audit",
     "issue", "pr", "files",
     "requests", "rejections", "dismiss",
@@ -2520,6 +2532,12 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
     // Before anything arrives as well as after: the box on screen changes on a key, and the
     // window takes a title it already has as no change.
     tx.set_title(s.window_title());
+    // A change of palette (a pick, or the system's appearance the view saw change) is a commit of
+    // its own: its calm spring overrides every element's, the terminals' `Spring::NONE` too, so
+    // nothing a program wrote may land in it. What waits is taken on the next poll.
+    if theme::settle(tx) {
+        return true;
+    }
     s.save_draft(DRAFT_STILL);
     s.sheets.reveal(tx);
     audit::reveal(s, tx);
@@ -2566,15 +2584,15 @@ fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool { keys::on_key(s, e
 fn on_ime(s: &mut State, ime: &Ime, _tx: &mut Tx) -> bool { s.ime(ime) }
 
 /// What the window opens on: the backend, the spec, its inbox, whether it is the CLI's, and the
-/// prompt the last window left.
-type Boot = (Box<dyn Backend + Send>, Spec, Inbox, bool, String);
+/// session the CLI said it is opened on (the prompt and the theme the last window left).
+type Boot = (Box<dyn Backend + Send>, Spec, Inbox, bool, Session);
 
 /// What `main` connected, for `State::new` (an `AppSpec` init takes no arguments).
 static BOOT: Mutex<Option<Boot>> = Mutex::new(None);
 
 fn boot_mock() -> Boot {
     let inbox = Inbox::default();
-    (Box::new(Mock::new(inbox.clone())), backend::bundled_spec(), inbox, false, String::new())
+    (Box::new(Mock::new(inbox.clone())), backend::bundled_spec(), inbox, false, Session::default())
 }
 
 macro_rules! menu_commands {
@@ -2592,7 +2610,7 @@ const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
     ("Box", "attach"), ("Box", "rename"), ("Box", "settings"),
     ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"), ("Box", "purge"),
     ("View", "detach"), ("View", "sidebar"), ("View", "palette"), ("View", "maximize"),
-    ("View", "servers"), ("View", "archived"), ("View", "refresh"),
+    ("View", "servers"), ("View", "archived"), ("View", "refresh"), ("View", "theme"),
     ("View", "next pane"), ("View", "previous pane"), ("View", "next box"), ("View", "previous box"),
 ];
 
@@ -2607,7 +2625,7 @@ fn main() {
     let boot = if bridged {
         let inbox = Inbox::default();
         match Bridge::connect(inbox.clone()) {
-            Ok((bridge, spec, draft)) => (Box::new(bridge) as Box<dyn Backend + Send>, spec, inbox, true, draft),
+            Ok((bridge, spec, session)) => (Box::new(bridge) as Box<dyn Backend + Send>, spec, inbox, true, session),
             Err(e) => {
                 eprintln!("discobox desktop: {e}");
                 std::process::exit(1);
@@ -2736,6 +2754,11 @@ fn main() {
             // The core's forms and questions, as sheets.
             ("rename", |s| {
                 run_command(s, "rename", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // The theme's question, opening on a change from the palette drawn now.
+            ("theme", |s| {
+                run_command(s, "theme", &mut Tx::default());
                 poll(s, 0.0, &mut Tx::default());
             }),
             // A field that does not apply, sections, pickers, and a refusal under its field.

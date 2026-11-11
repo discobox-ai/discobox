@@ -23,9 +23,9 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, AuditBelow, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Follow,
+    Answer, Appearance, AuditBelow, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Follow,
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Push, Question,
-    Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
+    Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Session, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
     HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload, Secret, SecretAction, SecretBinding, SecretStanding,
     Decision, DetailSection, DetailField, DetailLine, SecretWords, Requests, Arrival, Request, RequestKind, Notice, NoticeKind, FormAction, CardAction,
@@ -135,6 +135,13 @@ impl Inbox {
     }
     pub fn drain(&self) -> Vec<Event> { std::mem::take(&mut *self.0.lock().unwrap()) }
     pub fn set_waker(&self, w: Waker) { *self.1.lock().unwrap() = Some(w); }
+    /// Asks for a frame, and so a poll, with nothing arrived: a system appearance the view saw
+    /// change, which the poll draws on its spring (`theme::see_system`).
+    pub fn wake(&self) {
+        if let Some(w) = self.1.lock().unwrap().as_ref() {
+            w();
+        }
+    }
 }
 
 pub trait Backend {
@@ -218,7 +225,7 @@ pub struct Bridge {
 impl Bridge {
     /// Says hello and waits for the welcome; then what arrives goes to the inbox, until the CLI
     /// is gone, when the app is too. Beside the spec, the prompt the last window left.
-    pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec, String), String> {
+    pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec, Session), String> {
         let reader = inbox.clone();
         let (client, welcome) = Client::connect(std::io::stdin(), std::io::stdout(), move |incoming| match incoming {
             Incoming::Message(m) => {
@@ -231,8 +238,8 @@ impl Bridge {
             // Nothing more will arrive, and nothing can be sent.
             Incoming::Closed => std::process::exit(0),
         })?;
-        let draft = welcome.session.as_ref().map(|s| s.draft.clone()).unwrap_or_default();
-        Ok((Bridge { client, inbox }, welcome.spec.ok_or("the CLI's welcome carried no spec")?, draft))
+        let session = welcome.session.clone().unwrap_or_default();
+        Ok((Bridge { client, inbox }, welcome.spec.ok_or("the CLI's welcome carried no spec")?, session))
     }
 }
 
@@ -303,6 +310,8 @@ pub struct Mock {
     composer_sub: u32,
     /// What the app sent that only the CLI would act on, for tests to read.
     record: Arc<Mutex<MockRecord>>,
+    /// The theme the window was last picked to draw in, which its question opens on a change from.
+    appearance: Appearance,
     /// Each box's issue and pull request as read, by its key and whether it is the pull request,
     /// and the issue subscriptions following each: an act sends them the issue again.
     issues: HashMap<(String, bool), Issue>,
@@ -395,6 +404,8 @@ impl Default for MockRun {
 #[derive(Default, Debug)]
 pub struct MockRecord {
     pub drafts: Vec<String>,
+    /// Every theme picked, as the CLI would keep it for the next window.
+    pub appearances: Vec<Appearance>,
     pub created: Vec<String>,
     /// Every upload, as sent.
     pub uploads: Vec<Upload>,
@@ -494,6 +505,8 @@ enum Ask {
     Request(String, bool),
     /// The harness changes explainer, about a box by its key.
     Explain(String),
+    /// The theme command's question.
+    Theme,
 }
 
 /// A field of a card the core describes, in its tone.
@@ -866,9 +879,17 @@ impl Mock {
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
             services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(),
-            requests, requests_sub: 0, dismissed: vec![], explain: false, actions_taken: HashMap::new(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
+            requests, requests_sub: 0, dismissed: vec![], explain: false, actions_taken: HashMap::new(), run: MockRun::default(), composer_sub: 0, record: Arc::default(), appearance: Appearance::System,
             issues: HashMap::new(), issue_subs: HashMap::new(), audit_subs: HashMap::new(),
         }
+    }
+
+    /// The mock as the CLI of a window opening on the theme the last one was picked to draw in, as
+    /// its welcome says (`Session.appearance`): what its theme question opens on a change from.
+    #[cfg(test)]
+    pub fn opening_on(mut self, a: Appearance) -> Mock {
+        self.appearance = a;
+        self
     }
 
     /// The mock on a project that has yet to explain saving harness changes.
@@ -1856,6 +1877,15 @@ impl Mock {
                 let body = format!("Purge {name}? The disk and everything on it goes, and unarchive cannot bring it back.");
                 (Ask::Purge(c.targets.clone()), Event::Question(Question { id, command: c.id, title: "Purge".into(), body, choices: vec![], default_no: true, ..Default::default() }))
             }
+            // The core's `ThemeQuestion`: every appearance, the one drawn now offered but closed.
+            "theme" => {
+                let choices = [(Appearance::System, "System", "follow the system's light or dark appearance"), (Appearance::Dark, "Dark", "dark, whatever the system's"), (Appearance::Light, "Light", "light, whatever the system's")]
+                    .into_iter()
+                    .map(|(a, label, hint)| Choice { why: if a == self.appearance { "the window is drawn this way now".into() } else { String::new() }, ..choice(a.as_str(), label, hint) })
+                    .collect();
+                let body = "Draw the window dark, light, or as the system does.".into();
+                (Ask::Theme, Event::Question(Question { id, command: c.id, title: "Theme".into(), body, choices, ..Default::default() }))
+            }
             // A harness's own way out is the window's, as the core's `LeavesWindow` says: no card.
             "new" if matches!(c.args.prompt.trim(), "/exit" | "/quit") => return None,
             "new" => (Ask::Create(c.args.prompt.clone()), Event::Form(self.run_form(id, c, true, &HashMap::new()))),
@@ -1932,6 +1962,13 @@ impl Mock {
             }
             Ask::Explain(sandbox) if get("key") == "review" => CommandResult { id: command, ..self.review(&c, sandbox) },
             Ask::Explain(_) => canceled,
+            Ask::Theme => {
+                // What names no appearance is the system's, as the core's `ParseAppearance` reads it.
+                let a = [Appearance::Dark, Appearance::Light].into_iter().find(|a| a.as_str() == get("key")).unwrap_or_default();
+                self.appearance = a;
+                self.record.lock().unwrap().appearances.push(a);
+                CommandResult { id: command, status: Status::Done, appearance: Some(a), ..Default::default() }
+            }
             Ask::Purge(_) if get("key") != "yes" => canceled,
             Ask::Purge(keys) => {
                 self.boxes.retain(|b| !keys.contains(&b.key) || b.state != State::Archived);

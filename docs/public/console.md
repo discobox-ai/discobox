@@ -162,7 +162,8 @@ focused terminal, so Ctrl-A, Ctrl-C and Ctrl-W reach the program in the pane.
 | primary+Q | Quit, keeping sessions running |
 
 Every command is also in the menu bar and the palette, whether or not it has a
-shortcut. The palette finds commands and boxes together: type a command such
+shortcut. `theme` (in the View menu) draws the window dark, light or as the
+system does; the choice is kept for the next window. The palette finds commands and boxes together: type a command such
 as `stop` and a space, and the boxes it can act on follow; press Tab on a box,
 and the commands it can take follow. Esc drops the chip, then the query, then
 the palette. A command that cannot act says why, in the menu and when run.

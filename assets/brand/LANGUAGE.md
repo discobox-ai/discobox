@@ -228,7 +228,7 @@ Inventory. It is never a number unless the sections are steps.
 | Hints | dim hint line of leader keys | menus, tooltips, palette shortcut column | keycaps inline in prose |
 | Mark | block-element capture (`logo.json`) | vector mark | `logo.svg` / `wordmark-*.svg` |
 | Type | the terminal's font | JetBrains Mono, bundled | JetBrains Mono and IBM Plex Sans |
-| Theme | dark (the terminal's) | dark and light, following the system | dark and light, following the system |
+| Theme | dark (the terminal's) | dark and light, following the system unless the person picks one | dark and light, following the system |
 
 ## Writing
 

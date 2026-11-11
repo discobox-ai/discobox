@@ -3,15 +3,26 @@
 //! both palettes, and JetBrains Mono, bundled. The TUI draws the same tokens by their xterm
 //! indices, so the two read as one product.
 //!
-//! The window follows the system's appearance: [`view`](crate::view::view) sets it from Rune's
-//! each frame, and every colour here reads it. Rune's `--theme light|dark` picks one, which is
-//! how the headless snapshots draw both.
+//! The window follows the system's appearance unless the person picks dark or light (the `theme`
+//! command, kept by the CLI for the next window): [`view`](crate::view::view) tells it the
+//! system's each frame, and every colour here reads the palette that picks. Rune's
+//! `--theme light|dark` stands in for the system's, which is how the headless snapshots draw both.
+//!
+//! A change of palette is one spring, the design language's calm one, on every colour at once
+//! (`Tx::color_motion`), never each element's own. Rune gives a system appearance change no
+//! transaction to set it on, so the view only notes it and asks for a poll, which draws it
+//! ([`settle`]); a pick is noted by the command's result and drawn by the poll after. The poll
+//! draws a change in a commit of its own: the spring overrides every element's, so nothing a
+//! program wrote may share it. A terminal's ground and default colours are the palette's, and
+//! cross with it.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use rune::tok::Family;
-use rune::{Color, Spring, TextStyle};
+use rune::{Color, Spring, TextStyle, Tx};
+
+use crate::wire::Appearance;
 
 /// `0xrrggbb` in sRGB, as the tokens are written, to Rune's linear colour.
 pub fn hex(rgb: u32) -> Color {
@@ -29,7 +40,12 @@ thread_local! {
     static TOKENS: RefCell<HashMap<String, [Color; 2]>> = Default::default();
     /// Each space, radius and stroke token, in points.
     static DIMENSIONS: RefCell<HashMap<String, f32>> = Default::default();
+    /// The palette drawn now.
     static DARK: Cell<bool> = const { Cell::new(true) };
+    /// What the person picked: the system's, unless dark or light.
+    static PICKED: Cell<Appearance> = const { Cell::new(Appearance::System) };
+    /// The system's appearance as the view last saw it; none before its first frame.
+    static SYSTEM: Cell<Option<bool>> = const { Cell::new(None) };
 }
 
 /// Takes the spec's tokens: its colours in both palettes, and its space, radii and strokes.
@@ -44,10 +60,56 @@ pub fn set_tokens(spec: &crate::wire::Spec) {
     DIMENSIONS.with_borrow_mut(|d| d.extend(spec.dimensions.iter().map(|(k, v)| (k.clone(), *v as f32))));
 }
 
-/// Which palette the window draws: the system's appearance, as Rune reports it.
-pub fn set_dark(dark: bool) { DARK.with(|d| d.set(dark)) }
+/// Draws one palette at once, whatever was picked: for a test of the palettes themselves.
+#[cfg(test)]
+pub fn set_dark(dark: bool) { DARK.set(dark) }
 
-pub fn dark() -> bool { DARK.with(Cell::get) }
+/// Whether the window draws the dark palette now.
+pub fn dark() -> bool { DARK.get() }
+
+/// The palette the window opens on: what the last window was picked to draw in. Drawn from the
+/// view's first frame, without a spring.
+pub fn open_on(a: Appearance) {
+    PICKED.set(a);
+    SYSTEM.set(None);
+}
+
+/// The palette the pick and the system's appearance make.
+fn wanted() -> bool {
+    match PICKED.get() {
+        Appearance::Dark => true,
+        Appearance::Light => false,
+        Appearance::System => SYSTEM.get().unwrap_or(true),
+    }
+}
+
+/// The system's appearance, as the view reads it from Rune each frame. The first sets the palette
+/// at once, as the window opens. A change after it is not drawn by this frame, which has no
+/// transaction to spring it on: `wake` asks for the poll that draws it ([`settle`]).
+pub fn see_system(dark: bool, wake: impl FnOnce()) {
+    if SYSTEM.replace(Some(dark)).is_none() {
+        DARK.set(wanted());
+    } else if wanted() != DARK.get() {
+        wake();
+    }
+}
+
+/// Draws the palette the pick and the system's appearance make, when it is not the one drawn, on
+/// the calm spring. True when it changed, which the poll reports so the change is drawn, alone:
+/// `color_motion` overrides every element's spring, the terminals' `Spring::NONE` included, so the
+/// poll takes nothing else into the commit it makes.
+pub fn settle(tx: &mut Tx) -> bool {
+    let want = wanted();
+    if want == DARK.get() {
+        return false;
+    }
+    DARK.set(want);
+    tx.color_motion(CALM);
+    true
+}
+
+/// A pick, from the theme command's answer: drawn by the next poll's [`settle`], on the calm spring.
+pub fn pick(a: Appearance) { PICKED.set(a) }
 
 /// A colour token by its name in the spec, in the window's palette. Every name the app asks
 /// for is in the spec (`identity_tests`); one that is not draws nothing rather than a colour
@@ -199,6 +261,8 @@ pub fn stroke_quiet() -> f32 { length("stroke-quiet") }
 /// Focus, chips, rows, the sidebar and maximize. The tokens carry no motion; the design
 /// language names Rune's springs.
 pub const SNAPPY: Spring = rune::tok::motion::SNAPPY;
+/// A change of palette, every colour on it at once.
+pub const CALM: Spring = rune::tok::motion::CALM;
 
 // ---------------------------------------------------------------------------------------------
 // Terminal content keeps the program's own colours in both themes, on the palette's sunken

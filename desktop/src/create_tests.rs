@@ -15,7 +15,7 @@ fn runtime(draft: &str) -> (Runtime<State>, Arc<Mutex<MockRecord>>) {
     let inbox = Inbox::default();
     let mock = Mock::new(inbox.clone());
     let record = mock.record();
-    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, draft.to_string()));
+    let state = State::with((Box::new(mock), bundled_spec(), inbox, false, crate::wire::Session { draft: draft.to_string(), ..Default::default() }));
     let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
     rt.poll = Some(poll);
     rt.on_key = Some(on_key);
