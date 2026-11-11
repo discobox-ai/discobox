@@ -1,6 +1,7 @@
 # 0072 — A service may declare a port discovery cannot see
 
 - **Status**: Accepted (amends [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) §1)
+- §3 narrowed by [26-11-11-176](26-11-11-176-an-ephemeral-tcp-port-is-listed-as-tcp-without-a-probe-and-a-silent-port-is-probed-once-more.md).
 - **Date**: 2026-08-25
 - **Relates to**: [ADR 0046](0046-listening-ports-are-polled-and-probed-in-the-background.md),
   whose watcher this adds a second input to, and

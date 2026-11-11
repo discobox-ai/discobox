@@ -1,6 +1,6 @@
 # 26-11-11-176 — An ephemeral TCP port is listed as `tcp` without a probe, and a silent port is probed once more
 
-- **Status**: Proposed (would narrow [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md)
+- **Status**: Accepted (narrows [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md)
   §2, which probes every newly observed TCP socket exactly once and calls a
   port `tcp` only once it was reached, and its Consequences, under which a
   non-HTTP service is written to once per socket; and
@@ -8,6 +8,7 @@
   under which a declared port is probed like a discovered one and keeps its
   first answer for the life of the declaration)
 - **Date**: 2026-11-11
+- Accepted by the owner by merging #999, 2026-11-11
 - **Relates to**: [0109](0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)
   §1, whose ephemeral range this reuses;
   [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md)
