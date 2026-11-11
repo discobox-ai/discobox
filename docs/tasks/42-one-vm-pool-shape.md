@@ -165,6 +165,8 @@ graph LR
   B["vm: Linux base released"] --> F423["#423 fence"]
   B --> P64["#64 pool machine on every driver"]
   KRUN["vm: libkrun runtime pin + passt"] --> P64
+  KRUN --> F423
+  SHIM["vm: engine meets an older shim"] --> P64
   VAG["vm: linux agent by digest"] --> P64
   F423 --> P64
   P1010["#1010 pool names its sandbox OS"] --> P64
@@ -174,9 +176,10 @@ graph LR
   XS["vm: cross-scope forward and From"] --> S122
   S122 --> P424["#424 one machine runtime"]
   P424 --> S425["#425 Linux sandbox, no NIC"]
-  S425 --> L1008["#1008 Linux e2e"]
+  S425 --> L1008["#1008 Linux e2e, libkrun"]
   P424 --> L1008
-  PROOF["vm#5 vz proof run (Mac)"] --> L1008
+  L1008 --> V1008["#1008 Linux e2e, vz"]
+  PROOF["vm#5 vz proof run (Mac)"] --> V1008
   L1008 --> C67["#67 capacity"]
   CAP63["vm#63 cap across scopes"] --> C67
   A59["#59 darwin agent"] --> A63["#63 darwin bundles"]
@@ -189,7 +192,7 @@ graph LR
   S122 --> D126
   PROOF --> D126
   MAC["vm: macOS agent check and move"] --> M128
-  L1008 --> M128["#128 macOS e2e"]
+  V1008 --> M128["#128 macOS e2e"]
   C67 --> M128
   A63 --> M128
   A125 --> M128
@@ -198,8 +201,8 @@ graph LR
   M128 --> W68["#68 Windows, deferred"]
 ```
 
-`PROOF` gates only the Mac halves. #1008's Linux half on libkrun waits on
-nothing from a Mac. #1010, #121 and #59 can start at once, as can step 1
+#1008 has two nodes, its libkrun half and its vz half, and `PROOF` gates
+only the vz one. #1008's Linux half waits on nothing from a Mac. #1010, #121 and #59 can start at once, as can step 1
 once its issues are filed.
 
 ## Done when (#42)
