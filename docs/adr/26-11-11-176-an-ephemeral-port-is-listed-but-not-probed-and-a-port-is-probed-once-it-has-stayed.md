@@ -31,8 +31,8 @@ to 60% of runs, some hanging until the test timeout when the probe filled a
 buffered channel. None of it happens in their CI. Rejecting the agent's
 loopback connections to the ephemeral range with iptables took those tests to
 zero failures in 50–100 runs each (#998). This repository has been patching
-its own tests one at a time to ignore the probe (#605, and the open flakes
-#975 and #969).
+its own tests one at a time to ignore the probe: #605, and the flakes #975
+and #969, closed by test-side patches that leave the cause in place.
 
 The obvious fix is the one ADR 0109 §1 already makes for UDP: drop ports in
 the ephemeral range at discovery. For TCP that breaks a sign-in. GitHub
@@ -65,10 +65,19 @@ Linux, `net.inet.ip.portrange.first`/`last` on darwin), with the platform
 default when it cannot be read. A sandbox user who changes the sysctl moves
 the line on the next scan.
 
+For this decision only, the range is never taken below the platform
+default's low end (32768 on Linux, 49152 on darwin). UDP discovery keeps
+using the range as read (ADR 0109 §1, unchanged). A range raised or
+narrowed above the floor is used as read. A range widened below it, such as
+`1024 65535` (a common tuning value), is cut off there. Otherwise every
+dev server would fall inside the range and lose its classification without
+anyone being told. A port below that line is treated like any fixed port and
+waits as §2 says, even when the kernel did pick it.
+
 A port is bound inside that range almost always because something asked for
 port 0. Test servers do that, and so does a sign-in callback. Dev servers
 almost never do: they take a fixed number a person types or a framework
-defaults to (3000, 5173, 8080), and are probed as before.
+defaults to (3000, 5173, 8080), and are probed after §2's wait.
 
 Such a port is reported as `unknown`, the value a port has before its probe
 answers. It is not reported as `tcp`: that means "reached, and not HTTP",
@@ -129,8 +138,8 @@ No setting is added.
   it gets a request, and so do Postgres and Redis, so silence cannot tell
   HTTP from anything else. The probe would stop classifying the case it
   exists for. Sending a TLS ClientHello to tell HTTPS apart is itself traffic
-  a test server sees: Go's TLS server logs a handshake error into the test's
-  output for a connection that closes after it. Even a bare connection is
+  a test server sees: a handshake it never asked for, which Go's `net/http`
+  reports as a TLS handshake error when the probe hangs up. Even a bare connection is
   visible to a test that counts connections or tracks connection state.
 - **Only wait before probing** (issue option 3 alone). It covers a test that
   is over before the wait ends, but not an integration suite whose server
@@ -171,16 +180,34 @@ No setting is added.
 - Every other dev server is classified about three seconds later than today.
   Nothing waits on the classification: the port is listed and forwarded from
   the first scan, as now.
-- This repository's tests that ignore the probe (#605 and its follow-ups) can
-  stay, and are no longer needed. #975 and #969 are re-checked against the
-  change.
+- A sandbox whose ephemeral range was widened below the platform default
+  probes the ports below that default after the wait, so a test server the
+  kernel put there is reached if it outlives three seconds.
+- This repository's tests that ignore the probe (#605, and the patches that
+  closed #975 and #969) stay. They are still needed for a test server on a
+  fixed port that lives past the wait, but no longer for one on a port the
+  kernel picked.
 
 ## What it needs
 
 - `sandbox-agent/ports`: the watcher learns the ephemeral range (the
   scanners already read it for UDP) and a first-seen time per socket, and
-  queues a probe by §§1–3 instead of on first sight. The API description of
-  `protocol` and the package's `DESIGN.md` say what `unknown` now covers.
+  queues a probe by §§1–3 instead of on first sight. The range reaches the
+  watcher through the `Scanner` seam, not a second read of the sysctl.
+- The texts that describe today's probe, updated in the same change:
+  - the `protocol` description in both `api/openapi/server.yaml` and
+    `api/openapi/sandbox.yaml`, which says what `unknown` now covers;
+  - the `ports` row of `sandbox-agent/DESIGN.md`'s package map ("probes each
+    newly seen socket once");
+  - the port discovery note in `sandbox-agent/REVIEW.md` ("connections to
+    every listening TCP socket");
+  - the root `REVIEW.md` note on test servers that count requests. It is
+    narrowed to a server on a fixed port that lives past the wait, not
+    removed;
+  - "What the user sees" in the in-box discobox skill
+    (`sandbox-agent/features/core/skills/discobox/SKILL.md`), which already
+    tells a UDP server to bind below the ephemeral range, and says the same
+    for a TCP server that wants its link.
 - A test that an undeclared listener in the ephemeral range is never probed
   and still appears in the snapshot, that a fixed-port listener is probed
   only after the wait, and that a declared one is probed at once.
