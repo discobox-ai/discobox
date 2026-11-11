@@ -210,9 +210,9 @@ pub const FONTS: &[&[u8]] = &[
 ];
 pub const FAMILY: &str = "JetBrains Mono";
 
-/// A text system in the app's faces, as the window's: tests lay out and measure with what ships.
-/// Rune keeps the faces it measures with per process, so every test's runtime is built on it.
-#[cfg(test)]
+/// A text system in the app's faces, as the window's: tests and `--bench` lay out and measure
+/// with what ships. Rune keeps the faces it measures with per process, so every test's runtime is
+/// built on it.
 pub fn text_system() -> rune::text::TextSystem { rune::text::TextSystem::new(FONTS, (FAMILY, FAMILY)) }
 
 /// Interface text.

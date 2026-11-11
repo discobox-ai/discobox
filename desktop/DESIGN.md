@@ -315,6 +315,35 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 (`release:desktop`, in `nix develop .#desktop`), linked by zig against glibc
 `DESKTOP_GLIBC`; Wayland, X11, xkbcommon and Vulkan are loaded at run time.
 
+## Drawing, without a GPU, and how fast
+
+- **The app draws with Vulkan** (wgpu, through Rune). Without a GPU, Rune takes
+  Mesa's software driver (lavapipe) like any other adapter, and the window
+  draws, slower. With no Vulkan driver at all Rune cannot make the window and
+  leaves the app running windowless; `gpu.rs` watches the window being made and
+  turns that into a plain message and exit 1, saying what to install when wgpu
+  finds no adapter, which `discobox desktop` passes on. No display is said
+  plainly too (`App::try_run`), never a panic.
+- **Every frame redraws the whole window**: Rune has no partial redraw. On a
+  GPU that costs nothing; in software a frame costs about the window's pixels
+  however little changed, so a key echoed on a four-CPU machine takes about
+  20 ms at the median to draw at 1440×900 (30 at the 95th percentile), and
+  twice that at 2×. The UI thread's own share
+  (taking output, building and laying out the view) is a few milliseconds.
+- **`--bench`** (`bench.rs`, `go tool task desktop:bench`) measures it
+  headless: workloads fed to a pane as a stream's output arrives, every frame
+  drawn offscreen and waited for on the GPU, reporting the emulator's rate,
+  the drawn rate and frame times. `ci:desktop` runs it on lavapipe with
+  `--bench-check`, which fails a workload past its floor (`FLOORS`): floors
+  about five times past a four-CPU machine's numbers, so they catch a
+  regression, not a slow runner.
+- **`DISCOBOX_DESKTOP_PERF=1`** (`perf.rs`) has a real window record its frames
+  (`App::on_frame_encoded`) and print a summary to stderr as the app ends,
+  however it ends but a signal (the window closed or quit, or the bridge
+  gone): frame CPU time, how far apart frames came while output arrived, and
+  the peak output a second. It is how a run against real boxes is measured;
+  a Ctrl-C in the terminal kills the app before it can say it.
+
 ## Files
 
 | File | What |
@@ -337,6 +366,9 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/keys.rs` | Shortcuts from the spec (`primary` per platform); keys as xterm bytes |
 | `src/term.rs` | A pane's terminal |
 | `src/theme.rs` | Tokens in both palettes, the pick and the system's appearance that choose one, and its calm spring; the bundled faces; springs |
+| `src/gpu.rs` | The window that cannot be made said plainly, and what to install without a Vulkan driver |
+| `src/perf.rs` | Frame-time histograms, the output counter, and `DISCOBOX_DESKTOP_PERF`'s recorder |
+| `src/bench.rs` | `--bench`: the workloads, the offscreen frame loop, and the floors `--bench-check` holds |
 | `src/icons.rs`, `src/mark.rs` | Vector icons, and the mark from `assets/brand/logo-purple.svg` |
 | `fonts/` | JetBrains Mono 2.304 at the chrome's weights and the italic, and its licence |
 
@@ -362,5 +394,5 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/theme_tests.rs` | A theme picked from the keys and kept for the next window; a change of palette, picked or the system's, one calm spring (the motion gate) |
 
 The Go side, its parity scenarios included, runs in every CI job; the app's
-own tests, the contract suite and the headless scenes run in `ci:desktop`, on
-Linux only.
+own tests, the contract suite, the headless scenes and the bench held to its
+floors run in `ci:desktop`, on Linux only.

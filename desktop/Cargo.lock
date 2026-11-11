@@ -740,11 +740,13 @@ dependencies = [
  "alacritty_terminal",
  "base64",
  "discobox-bridge",
+ "pollster",
  "portable-pty",
  "rune",
  "rune-kit",
  "serde",
  "serde_json",
+ "wgpu",
  "zbus 5.19.0",
 ]
 

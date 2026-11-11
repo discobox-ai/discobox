@@ -313,8 +313,8 @@ flowchart TD
   Linux job whose target needs a shell that extends the default names it
   (`shell: desktop` runs `nix develop .#desktop`). The desktop app is tested
   only on Linux, in `ci:desktop`: its tests, parity scenarios and the
-  bridge's contract suite included, and its scenes rendered headless on that
-  software driver. `release:build` also builds it on Linux, so the jobs that
+  bridge's contract suite included, its scenes rendered headless on that
+  software driver, and its bench held to its floors there. `release:build` also builds it on Linux, so the jobs that
   run it (CI's `build`, the release's linux leg) enter that shell too. Go's build and test cache is Depot Cache, which Depot's
   runners set as `GOCACHEPROG` and every run, pull requests included, reads and
   writes per object; a runner without it builds cold. Any run but a pull

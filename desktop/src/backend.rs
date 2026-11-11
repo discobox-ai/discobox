@@ -235,8 +235,15 @@ impl Bridge {
             }
             Incoming::Output(stream, bytes) => reader.push(Event::Data(stream, bytes)),
             Incoming::Exited(stream, why) => reader.push(Event::Exited(stream, why)),
-            // Nothing more will arrive, and nothing can be sent.
-            Incoming::Closed => std::process::exit(0),
+            // Nothing more will arrive, and nothing can be sent: the app ends here, at once,
+            // rather than through the window's quit. The bridge connects before the window's
+            // App exists, so this thread holds no handle to quit it with, and the window may
+            // have none to quit (it failed, or never opened). What the window measured
+            // (`DISCOBOX_DESKTOP_PERF`) is said first, as the window's own way out says it.
+            Incoming::Closed => {
+                crate::perf::report();
+                std::process::exit(0)
+            }
         })?;
         let session = welcome.session.clone().unwrap_or_default();
         Ok((Bridge { client, inbox }, welcome.spec.ok_or("the CLI's welcome carried no spec")?, session))

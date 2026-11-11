@@ -135,6 +135,13 @@ start it straight away. The app talks to the server only through the
 configured servers work as they do for `discobox console`. Closing the window
 keeps sessions running.
 
+The window draws with Vulkan. A machine without a GPU, such as a virtual
+machine, draws it in software on Mesa's Vulkan driver, more slowly; with no
+Vulkan driver at all, `discobox desktop` says so and what to install (on
+Debian and Ubuntu, `mesa-vulkan-drivers` and `libvulkan1`). Set
+`DISCOBOX_DESKTOP_PERF=1` to have the window print its frame times and
+terminal throughput when you close it or quit.
+
 ### Keys
 
 There is no leader. A desktop shortcut is written with **primary**, which is

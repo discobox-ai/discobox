@@ -314,8 +314,25 @@ DISPLAY=:77 xwd -root -silent | magick xwd:- $S/shot.png   # what it drew
 ```
 
 What CI checks needs no window: `nix develop .#desktop --command go tool task
-ci:desktop` runs the app's tests and renders every scene on the mock, in both
-themes, to `build/desktop/<scene>-<dark|light>.png`.
+ci:desktop` runs the app's tests, renders every scene on the mock, in both
+themes, to `build/desktop/<scene>-<dark|light>.png`, and runs the bench on
+lavapipe with `--bench-check`.
+
+- **Performance:** `VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD" go tool task
+  desktop:bench` (in the desktop shell) prints each workload's emulator rate,
+  drawn rate and frame times; `CPUS=4` holds it to four CPUs, as a GPU-less
+  VM or a CI runner, which is what the floors in `desktop/src/bench.rs` were
+  set on. This box shares its CPUs with others: check `/proc/loadavg` before
+  reading a slow run as a regression. Against real boxes, run the CLI with
+  `DISCOBOX_DESKTOP_PERF=1`, drive output in a pane (`seq 1 3000000` in a
+  shell), then quit with Ctrl+Shift+Q: the summary line
+  (`discobox desktop perf: …`) is on stderr. A Ctrl-C (or `kill`) of the CLI
+  kills the app before it can print it.
+- **No Vulkan driver:** run the app on the Xvfb display with
+  `VK_ICD_FILENAMES=/nonexistent.json`: it prints `discobox desktop: no
+  graphics driver to draw the window with: …` and exits 1 within a second,
+  rather than staying up windowless. With no `DISPLAY` it says it could not
+  open the window, never a panic.
 
 - `DISCOBOX_DESKTOP_DEBUG=1` logs every request and answer (`→ op …`, `← id …`)
   to stderr, through the CLI's escaping. An idle list sends no request (the

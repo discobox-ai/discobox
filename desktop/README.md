@@ -24,11 +24,17 @@ build/discobox desktop              # against the configured server
 go tool task desktop:spec           # refresh src/spec.json, which the mock runs with (generate does too)
 go tool task desktop:test           # unit, parity and contract tests
 go tool task desktop:snap           # every scene headless in both themes, to build/desktop/<scene>-<theme>.png
+go tool task desktop:bench          # terminal throughput and frame time, headless (WORKLOADS=text,tui ARGS=--bench-scale 2 CPUS=4)
 cd desktop && cargo run --release  # the app on the mock, without a CLI
 ```
 
 - **Debugging:** `DISCOBOX_DESKTOP_DEBUG=1` logs every bridge message each way
-  to stderr.
+  to stderr. `RUNE_GPU_LOG=1` says which adapter the window draws on.
+- **Measuring:** `DISCOBOX_DESKTOP_PERF=1 build/discobox desktop` prints the
+  window's frame times and terminal throughput when the window is closed or
+  quit (not on a Ctrl-C), against real boxes; `desktop:bench` measures the
+  same headless, and `CPUS=4` holds it to four CPUs, as a small GPU-less
+  machine.
 - **Headless:** `--snap ws.png --scene workspace` renders a frame with no
   window; `--theme light` (or `dark`) stands in for the system's appearance.
 - **Toolchain:** `nix develop .#desktop` is the repository's shell plus rustup
@@ -39,7 +45,8 @@ cd desktop && cargo run --release  # the app on the mock, without a CLI
   `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` for no GPU.
 - **CI:** the `desktop` job, on Linux only, runs `go tool task ci:desktop` in
   that shell: `desktop:test`, then `desktop:snap`, every scene rendered
-  headless in both themes on the software driver and kept as the `desktop-scenes` artifact.
+  headless in both themes on the software driver and kept as the `desktop-scenes` artifact,
+  then `desktop:bench --bench-check` on that driver.
   macOS and Windows do not build the app, or run the bridge's contract
   suite, in CI yet. The Go side, its parity scenarios included, runs in
   every job.

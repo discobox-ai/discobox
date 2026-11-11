@@ -13,10 +13,12 @@ mod audit;
 #[cfg(test)]
 mod audit_tests;
 mod backend;
+mod bench;
 #[cfg(test)]
 mod command_tests;
 #[cfg(test)]
 mod create_tests;
+mod gpu;
 mod harnesses;
 #[cfg(test)]
 mod harness_tests;
@@ -35,6 +37,7 @@ mod parity_tests;
 mod paste;
 #[cfg(test)]
 mod paste_tests;
+mod perf;
 #[cfg(test)]
 mod request_tests;
 #[cfg(test)]
@@ -59,7 +62,8 @@ mod view;
 mod workspace_tests;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
@@ -2242,6 +2246,7 @@ impl State {
         let Some(p) = self.pane_mut(stream) else { return };
         match e {
             Event::Data(_, bytes) => {
+                perf::took(bytes.len());
                 let reply = p.screen.feed(&bytes);
                 if !reply.is_empty() {
                     self.backend.input(stream, &reply);
@@ -2621,7 +2626,11 @@ fn title_case(label: &str) -> String {
 }
 
 fn main() {
-    let bridged = std::env::args().any(|a| a == "--bridge");
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--bench") {
+        bench::main(&args);
+    }
+    let bridged = args.iter().any(|a| a == "--bridge");
     let boot = if bridged {
         let inbox = Inbox::default();
         match Bridge::connect(inbox.clone()) {
@@ -2918,5 +2927,24 @@ fn main() {
         }
         app = app.menu_item(item);
     }
-    app.on_ime(on_ime).run();
+    // A window that cannot be made (no Vulkan driver, no GPU device) says why and exits, rather
+    // than leaving a windowless process behind (`gpu.rs`). Headless runs report their own.
+    let opened = Arc::new(AtomicBool::new(false));
+    if !rune::tooling::is_headless() {
+        gpu::watch(app.handle(), opened.clone());
+    }
+    app = app.on_window(move |_| opened.store(true, Ordering::Release));
+    if perf::start_from_env() {
+        app = app.on_frame_encoded(|f| {
+            if f.outcome() == rune::FrameOutcome::Drawn {
+                perf::record(f.at(), f.update_ms().zip(f.encode_ms()).map(|(u, e)| u + e));
+            }
+        });
+    }
+    let ran = app.on_ime(on_ime).try_run();
+    perf::report();
+    if let Err(error) = ran {
+        eprintln!("discobox desktop: could not open the window: {error}");
+        std::process::exit(1);
+    }
 }
