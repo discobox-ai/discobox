@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/discobox-ai/discobox/internal/filelock"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/health"
 )
 
@@ -45,9 +48,34 @@ func uninstallHome(t *testing.T) string {
 	for _, name := range []string{"DISCOBOX_INSTALL_DIR", "DISCOBOX_DATA_DIR", "DISCOBOX_CONFIG_DIR", "DISCOBOX_CACHE_DIR", "DISCOBOX_STATE_DIR", "DISCOBOX_CONFIG_FILE", ImageCacheEnv} {
 		t.Setenv(name, "")
 	}
+	// Nix pins the default socket independently of XDG_RUNTIME_DIR. Clear that
+	// override on Unix; Windows has no home-relative default, so give it a
+	// private pipe derived from this test's unique home instead.
+	t.Setenv(endpoint.AddressEnv, "")
+	if runtime.GOOS == "windows" {
+		t.Setenv(endpoint.AddressEnv, fmt.Sprintf("npipe:////./pipe/discobox-test-%x", sha256.Sum256([]byte(home))))
+	}
 	xdg.Reload()
 	t.Cleanup(xdg.Reload)
 	return home
+}
+
+// A shell may pin the local server independently of HOME and XDG_RUNTIME_DIR.
+// The test setup must replace that pin before uninstall probes either endpoint.
+func TestUninstallHomeIsolatesLocalEndpoint(t *testing.T) {
+	t.Setenv(endpoint.AddressEnv, "npipe:////./pipe/discobox-outside-test")
+	home := uninstallHome(t)
+	parsed, err := endpoint.Parse(endpoint.DefaultEndpoint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		if !strings.HasSuffix(parsed.Value, fmt.Sprintf("discobox-test-%x", sha256.Sum256([]byte(home)))) {
+			t.Fatalf("local endpoint is outside the test: %+v", parsed)
+		}
+	} else if parsed.Value != filepath.Join(home, "run", "discobox", "server.sock") {
+		t.Fatalf("local endpoint is outside the test: %+v", parsed)
+	}
 }
 
 func mustWriteFile(t *testing.T, path, content string) {
