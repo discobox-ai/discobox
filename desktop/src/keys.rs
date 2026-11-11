@@ -8,7 +8,7 @@
 //! An open menu or palette keeps its own keys (`overlay.rs`). Where focus
 //! goes is the app's (ADR 26-11-07-876 §2); which key moves it is the registry's.
 
-use rune::{Key, KeyEvent, Shortcut, Tx};
+use rune::{Key, KeyEvent, PhysicalKeyCode, Shortcut, Tx};
 
 use crate::wire::Spec;
 use crate::{Focus, State, audit, harnesses, issue, overlay, run_command, secrets, sheet};
@@ -46,7 +46,7 @@ fn key_name(ev: &KeyEvent) -> Option<String> {
 }
 
 /// Whether a spec shortcut (`primary+shift+t`, `ctrl+tab`, `f2`) is this key press.
-pub fn matches(binding: &str, ev: &KeyEvent) -> bool {
+pub fn matches(binding: &str, ev: &KeyEvent, physical: Option<PhysicalKeyCode>) -> bool {
     let parts: Vec<&str> = binding.split('+').collect();
     let (key, mods) = parts.split_last().unwrap();
     let (mut ctrl, mut shift, mut alt, mut cmd) = (false, false, false, false);
@@ -60,11 +60,25 @@ pub fn matches(binding: &str, ev: &KeyEvent) -> bool {
             _ => return false,
         }
     }
+    // Numbered shortcuts name positions on the number row, independent of layout and Shift.
+    // Logical-only input (headless callers) still matches its explicitly supplied digit.
+    let name = if key.len() == 1 && key.as_bytes()[0].is_ascii_digit() {
+        physical.map(|code| match code {
+            PhysicalKeyCode::Digit0 => "0", PhysicalKeyCode::Digit1 => "1",
+            PhysicalKeyCode::Digit2 => "2", PhysicalKeyCode::Digit3 => "3",
+            PhysicalKeyCode::Digit4 => "4", PhysicalKeyCode::Digit5 => "5",
+            PhysicalKeyCode::Digit6 => "6", PhysicalKeyCode::Digit7 => "7",
+            PhysicalKeyCode::Digit8 => "8", PhysicalKeyCode::Digit9 => "9",
+            _ => "",
+        }.to_string()).or_else(|| key_name(ev))
+    } else {
+        key_name(ev)
+    };
     let m = ev.mods;
     // On macOS `cmd` is Command and `ctrl` Control; elsewhere `cmd` mirrors Control.
     let (has_ctrl, has_cmd) = if MAC { (m.ctrl, m.cmd) } else { (m.ctrl, false) };
     // Shift is part of a letter's case; a shortcut without shift is matched only without it.
-    has_ctrl == ctrl && has_cmd == cmd && m.alt == alt && m.shift == shift && key_name(ev).as_deref() == Some(key)
+    has_ctrl == ctrl && has_cmd == cmd && m.alt == alt && m.shift == shift && name.as_deref() == Some(key)
 }
 
 /// A command's desktop shortcuts, from the spec.
@@ -76,15 +90,15 @@ pub fn bindings(spec: &Spec, id: &str) -> Vec<String> {
 pub fn label_of(spec: &Spec, id: &str) -> Option<String> { spec.command(id).map(|c| c.label.clone()) }
 
 /// The command a key press runs, if any.
-fn command_for(s: &State, ev: &KeyEvent) -> Option<String> {
-    s.spec.commands.iter().find(|c| c.bindings.desktop.keys.iter().any(|b| matches(b, ev))).map(|c| c.id.clone())
+fn command_for(s: &State, ev: &KeyEvent, tx: &Tx) -> Option<String> {
+    s.spec.commands.iter().find(|c| c.bindings.desktop.keys.iter().any(|b| matches(b, ev, tx.physical_key()))).map(|c| c.id.clone())
 }
 
 /// The gesture a key press is, if any, and the binding it matched: the spec's gestures, never a
 /// key written here.
-fn gesture_for<'a>(s: &'a State, ev: &KeyEvent) -> Option<(&'a str, &'a str)> {
+fn gesture_for<'a>(s: &'a State, ev: &KeyEvent, tx: &Tx) -> Option<(&'a str, &'a str)> {
     s.spec.gestures.iter().find_map(|g| {
-        g.bindings.desktop.keys.iter().find(|b| matches(b, ev)).map(|b| (g.id.as_str(), b.as_str()))
+        g.bindings.desktop.keys.iter().find(|b| matches(b, ev, tx.physical_key())).map(|b| (g.id.as_str(), b.as_str()))
     })
 }
 
@@ -164,7 +178,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return true;
     }
     if s.help {
-        if ev.key == Key::Escape || command_for(s, ev).as_deref() == Some("help") {
+        if ev.key == Key::Escape || command_for(s, ev, tx).as_deref() == Some("help") {
             s.help = false;
         }
         return true;
@@ -193,7 +207,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return audit::reading_key(s, ev);
     }
     // The find gesture over the view searches its timeline, as `/` does.
-    if s.audit.is_some() && matches!(gesture_for(s, ev), Some(("find", _))) {
+    if s.audit.is_some() && matches!(gesture_for(s, ev, tx), Some(("find", _))) {
         audit::search(s);
         return true;
     }
@@ -204,14 +218,14 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return true;
     }
     // A tab by its number (the pane gesture): ⌘1 is the first. The binding's digit is its number.
-    if let Some(("pane", binding)) = gesture_for(s, ev)
+    if let Some(("pane", binding)) = gesture_for(s, ev, tx)
         && let Some(n) = binding.chars().last().and_then(|c| c.to_digit(10))
     {
         s.goto_pane(n.saturating_sub(1) as usize);
         return true;
     }
     // A service's tab by its number (the service gesture): the services are counted apart.
-    if let Some(("service", binding)) = gesture_for(s, ev)
+    if let Some(("service", binding)) = gesture_for(s, ev, tx)
         && let Some(n) = binding.chars().last().and_then(|c| c.to_digit(10))
     {
         s.goto_service(n.saturating_sub(1) as usize);
@@ -226,7 +240,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     }
     // A pane's own gestures: the terminal answers them itself, and the program never hears them.
     if s.pane_has_keys() {
-        match gesture_for(s, ev) {
+        match gesture_for(s, ev, tx) {
             Some(("copy", _)) => s.copy_selection(tx),
             Some(("paste", _)) => s.paste(tx),
             Some(("paste image", _)) if s.harness_focused() => {
@@ -245,7 +259,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
 
 /// A command's shortcut, the list's keys, or a key for the focused pane's program.
 fn command_or_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
-    if let Some(id) = command_for(s, ev) {
+    if let Some(id) = command_for(s, ev, tx) {
         // A shortcut with no modifier (Enter attaches, F2 renames) is the list's; in a pane the
         // key is the program's.
         let bare = !(ev.mods.ctrl || ev.mods.alt || ev.mods.shift || ev.mods.cmd);
@@ -265,8 +279,8 @@ fn command_or_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
 }
 
 /// The list's keys: the spec's gestures. Enter is attach's own shortcut, which runs before this.
-fn list_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
-    let Some((gesture, _)) = gesture_for(s, ev) else { return false };
+fn list_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+    let Some((gesture, _)) = gesture_for(s, ev, tx) else { return false };
     let last = s.rows().len().saturating_sub(1);
     match gesture {
         "up" => s.move_cursor(s.cursor.saturating_sub(1)),
@@ -356,3 +370,7 @@ fn ctrl_byte(c: char) -> Option<Vec<u8>> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+#[path = "keys_tests.rs"]
+mod tests;

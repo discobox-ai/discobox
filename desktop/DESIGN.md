@@ -158,6 +158,10 @@ language's tokens.
   `primary` is ⌘ on macOS and Ctrl+Shift elsewhere (598 §2). A key no binding
   takes goes to the focused terminal. Overlays (menus, the palette, sheets,
   pages) keep their own keys while they are open.
+  Numbered bindings match the physical number row (`Tx::physical_key`), so
+  Shift and keyboard layout do not change which tab a chord selects; letters
+  continue to match the logical key. Logical-only headless events can supply
+  the digit directly.
   `no_shortcut_is_written_outside_the_spec` fails on a key matched by hand.
 - **Where focus goes is the app's**; which key moves it is the registry's
   (`next pane`, `previous box`, `sidebar`).
