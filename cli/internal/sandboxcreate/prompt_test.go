@@ -2,6 +2,7 @@ package sandboxcreate
 
 import (
 	"context"
+	"crypto/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,7 +46,12 @@ func (f *fakeCreator) CreateSandbox(_ context.Context, body *apimodel.CreateSand
 // generated, not chosen, so a collision is the CLI's to resolve rather than the
 // user's to see.
 func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
-	creator := &fakeCreator{conflicts: 2}
+	// Force every random draw to produce the same name, so collisions in the
+	// local generator cannot hide behind probability.
+	previousReader := rand.Reader
+	rand.Reader = strings.NewReader(strings.Repeat("\x00", 64))
+	t.Cleanup(func() { rand.Reader = previousReader })
+	creator := &fakeCreator{conflicts: nameConflictAttempts - 1}
 	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", "http://example.test", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
 	if err != nil {
 		t.Fatalf("create prompt sandbox: %v", err)
@@ -54,8 +60,8 @@ func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 	if sandbox.ID != "sbx_created0000001" {
 		t.Fatalf("sandbox ID = %q", sandbox.ID)
 	}
-	if len(creator.names) != 3 {
-		t.Fatalf("attempted %d names, want 3", len(creator.names))
+	if len(creator.names) != nameConflictAttempts {
+		t.Fatalf("attempted %d names, want %d", len(creator.names), nameConflictAttempts)
 	}
 	for i, name := range creator.names {
 		if strings.TrimSpace(name) == "" {
