@@ -1,5 +1,9 @@
 # desktop review notes
 
+- Draw terminal runs and IME composition with non-wrapping styled text. Rune's
+  `rich` wraps by default: it can break an emulator row a second time, leaving
+  the cursor on its original cell and overlapping the next row after resize.
+
 - Keep a Readline-enabled `bash` on the desktop devShell's PATH. The mock
   starts `bash -i` in its PTYs; Nix's stdenv bash lacks Readline and prints
   the prompt's `\[` and `\]` markers literally, as well as losing line editing.

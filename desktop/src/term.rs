@@ -28,7 +28,7 @@ use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::search::{Match, RegexSearch};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AColor, NamedColor, Processor};
-use rune::{Color, El, Span, el, memo, rich};
+use rune::{Color, El, Span, el, memo, text};
 
 use crate::theme;
 
@@ -616,7 +616,7 @@ impl Screen {
             body = body.child(c);
             if let Some(p) = self.preedit.as_ref().filter(|p| !p.is_empty() && focused) {
                 let span = Span::new(0, p.len()).color(theme::term_fg()).underline(theme::mark());
-                body = body.child(rich(p.clone(), vec![span]).font(theme::TERM).color(theme::term_fg())
+                body = body.child(text(p.clone()).spans(vec![span]).font(theme::TERM).color(theme::term_fg())
                     .absolute(x, y).fill(theme::term_bg()));
             }
         }
@@ -919,7 +919,8 @@ fn draw_row(cells: &[Drawn], y: usize) -> El {
         row = row.child(el().absolute(a as f32 * theme::cell_w(), 0.0).size((b - a) as f32 * theme::cell_w(), theme::CELL_H).fill(c));
     }
     for r in runs {
-        row = row.child(rich(r.text, r.spans).font(theme::TERM).color(theme::term_fg()).absolute(r.col as f32 * theme::cell_w(), 0.0));
+        // Only the emulator wraps terminal text; rich() would wrap each run again in Rune.
+        row = row.child(text(r.text).spans(r.spans).font(theme::TERM).color(theme::term_fg()).absolute(r.col as f32 * theme::cell_w(), 0.0));
     }
     row
 }
@@ -949,6 +950,31 @@ fn same_style(a: &Span, b: &Span) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_rows_stay_on_the_emulators_lines_after_resize() {
+        fn view(s: &Screen, _: &mut rune::Cx<Screen>) -> El {
+            s.view("terminal", true, &[])
+        }
+        let text = theme::text_system();
+        theme::set_tokens(&crate::backend::bundled_spec());
+        let mut s = Screen::new(68, 6);
+        s.feed(b"\x1b[32mdarren@sbx-k2m9q4tz7wbf1xay\x1b[0m:~$ ");
+        let mut rt = rune::Runtime::with_text(s, view, (68.0 * theme::cell_w(), 6.0 * theme::CELL_H), rune::Env::default(), text);
+        for cols in [68, 53, 41, 68] {
+            rt.state.resize(cols, 6);
+            rt.set_viewport((cols as f32 * theme::cell_w(), 6.0 * theme::CELL_H), 1.0);
+            // Readline clears and redraws the command when the terminal resizes.
+            rt.state.feed(b"\x1b[H\x1b[2J\x1b[32mdarren@sbx-k2m9q4tz7wbf1xay\x1b[0m:~$ echo abcdefghijklmnopqrstuvwxyz0123456789");
+            rt.invalidate();
+            for _ in 0..3 { rt.frame(1.0 / 60.0); }
+            let texts: Vec<_> = rt.elements().into_iter().filter(|e| e.text.is_some()).collect();
+            assert!(!texts.is_empty());
+            for e in texts {
+                assert!(e.target[3] <= theme::CELL_H + 0.1, "terminal row wrapped again at {cols} columns: {:?} {:?}", e.text, e.target);
+            }
+        }
+    }
 
     fn screen(cols: usize, rows: usize, out: &str) -> Screen {
         crate::theme::set_tokens(&crate::backend::bundled_spec());
