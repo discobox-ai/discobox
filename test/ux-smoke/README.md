@@ -41,7 +41,11 @@ background retry, cleanup observes the sandbox for up to 60 seconds until GET
 returns 404, without resending purge. It retains the pending sandbox state and
 error in `*-purge.json`; a timeout or any other purge/observation error still
 fails cleanup. Pool removal waits for this observation. Its fallback uses only pool IDs from its private
-database, including a pool seeded during failed bootstrap. Cleanup errors fail
-an otherwise successful run. CI retains command/server/pool logs, candidate
+database, including a pool seeded during failed bootstrap. Diagnostic collection
+is best effort: failures are printed and retained in
+`diagnostic-errors.log`, and collection continues for the other containers.
+Teardown errors fail an otherwise successful run and remain in
+`cleanup-errors.log`; they do not replace an existing smoke failure. CI retains
+command/server/pool logs, candidate
 previews and screen captures on failure for seven days; build archives and
 binaries are removed rather than uploaded.

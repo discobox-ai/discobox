@@ -56,6 +56,13 @@ func newOrigin(t *testing.T) *origin {
 	o := &origin{t: t, work: filepath.Join(root, "work"), bare: filepath.Join(root, "served", "primary.git")}
 	gitT(t, root, "init", "--quiet", "--initial-branch=main", o.work)
 	gitT(t, root, "init", "--quiet", "--bare", "--initial-branch=main", o.bare)
+	// Commits and receive-pack launch automatic maintenance. Keep it in the
+	// foreground so waiting for git also waits for every repository writer
+	// before TempDir cleanup, including the final push into the served origin.
+	for _, repo := range []string{o.work, o.bare} {
+		gitT(t, repo, "config", "maintenance.autoDetach", "false")
+		gitT(t, repo, "config", "gc.autoDetach", "false")
+	}
 	gitT(t, o.bare, "config", "http.receivepack", "false")
 	backend := gitBackend(t, filepath.Join(root, "served"))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

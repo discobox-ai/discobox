@@ -12,7 +12,14 @@
 // options, tool_result the tool's output, a compaction the entries it
 // summarizes. pi has no subagents, and a context carries no agent.
 import fs from "node:fs";
+import { mock } from "node:test";
 import extension from "../hook-extension.js";
+
+// This driver checks publication and payloads, not the production latency bound.
+// Freeze the publish timeout: a loaded builder can take longer than that just
+// to start the stub's Node process. Await the real child close instead, including
+// for session_shutdown, before reading its output. The Go test bounds the run.
+mock.timers.enable({ apis: ["setTimeout"] });
 
 const handlers = new Map();
 const pi = {

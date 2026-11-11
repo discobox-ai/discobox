@@ -110,7 +110,7 @@ func TestShimWaitEndsOnAProgramReportAfterTheInput(t *testing.T) {
 	go func() {
 		errCh <- RunShim(ctx, ShimConfig{
 			ExecID:      "exec_program_wait",
-			Command:     []string{"sh", "-c", "stty -echo; " + idle + "; while read line; do " + working + "; sleep 0.2; " + done + "; done"},
+			Command:     []string{"sh", "-c", "stty -echo; " + idle + "; while read line; do " + working + "; " + done + "; done"},
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
@@ -125,13 +125,19 @@ func TestShimWaitEndsOnAProgramReportAfterTheInput(t *testing.T) {
 		t.Fatalf("dial shim: %v", err)
 	}
 	_ = conn.Close()
+	started := time.Now().UTC()
 	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
 		t.Fatalf("start shim: %v", err)
 	}
 	finished := []shimruntime.ProgramMatch{{State: programstatus.Idle}, {State: programstatus.Done}, {State: programstatus.Error}}
 
+	// Observe the initial report through the shim before choosing the boundary.
+	// Starting the process alone does not mean its output has been consumed.
+	initial, err := shimproxy.CallJSON[ShimWaitResult](ctx, socketPath, http.MethodPost, "/wait", ShimWait{Since: &started, Program: []shimruntime.ProgramMatch{{State: programstatus.Idle}}, TimeoutSeconds: 5})
+	if err != nil || initial.Reason != shimruntime.WaitProgram || initial.Program == nil || initial.Program.State != programstatus.Idle {
+		t.Fatalf("initial report = %+v, %v; want idle", initial, err)
+	}
 	// Idle before anything was sent: a wait counting from now does not end on it.
-	time.Sleep(200 * time.Millisecond)
 	now := time.Now().UTC()
 	wait, err := shimproxy.CallJSON[ShimWaitResult](ctx, socketPath, http.MethodPost, "/wait", ShimWait{Since: &now, Program: finished, TimeoutSeconds: 1})
 	if err != nil || wait.Reason != shimruntime.WaitTimeout {
@@ -145,9 +151,13 @@ func TestShimWaitEndsOnAProgramReportAfterTheInput(t *testing.T) {
 	if err != nil || screen.SentAt == nil {
 		t.Fatalf("screen after input = %+v, %v; want a sent time", screen.SentAt, err)
 	}
-	// Made late, after the turn may already have ended: counting from the
-	// input, it still finds the report.
-	time.Sleep(400 * time.Millisecond)
+	// Observe completion before making the late wait; no scheduler delay can
+	// leave this call racing the program's final report.
+	completed, err := shimproxy.CallJSON[ShimWaitResult](ctx, socketPath, http.MethodPost, "/wait", ShimWait{Since: screen.SentAt, Program: []shimruntime.ProgramMatch{{State: programstatus.Done}}, TimeoutSeconds: 5})
+	if err != nil || completed.Reason != shimruntime.WaitProgram || completed.Program == nil || completed.Program.State != programstatus.Done {
+		t.Fatalf("completion report = %+v, %v; want done", completed, err)
+	}
+	// Made after the turn ended: counting from the input still finds the report.
 	wait, err = shimproxy.CallJSON[ShimWaitResult](ctx, socketPath, http.MethodPost, "/wait", ShimWait{Since: screen.SentAt, Program: finished, TimeoutSeconds: 5})
 	if err != nil {
 		t.Fatalf("wait after input: %v", err)

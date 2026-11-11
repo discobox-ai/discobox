@@ -547,7 +547,9 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 		return nil, nil, fmt.Errorf("retain source snapshot%s: %w", local.RetainedSources(), err)
 	}
 	report.step(StepCreating)
+	attemptedNames := make(map[string]struct{}, nameConflictAttempts)
 	for attempt := 1; ; attempt++ {
+		attemptedNames[body.Config.Name] = struct{}{}
 		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 		if err != nil {
 			local.Close()
@@ -575,7 +577,17 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 			local.Close()
 			return nil, nil, fmt.Errorf("generate discobox name: %w", err)
 		}
-		body.Config.Name = name
+		// A fresh random draw can repeat any earlier rejected name. Suffix
+		// repeated draws locally rather than spending another server attempt
+		// on a name we already know is taken.
+		candidate := name
+		for suffix := 2; ; suffix++ {
+			if _, tried := attemptedNames[candidate]; !tried {
+				break
+			}
+			candidate = fmt.Sprintf("%s_%d", name, suffix)
+		}
+		body.Config.Name = candidate
 	}
 }
 

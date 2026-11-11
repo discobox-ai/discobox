@@ -781,3 +781,7 @@ user waits on every single start.
 - A failed daemon prerequisite can exhaust a socket's trigger limit. A later
   successful feature application checks that the socket is listening and reopens
   it when needed, even when its persisted setup step digest still matches.
+
+- A test synchronizing on a program report passes a `Since` captured before
+  triggering that report. A wait with no boundary starts counting at the call
+  and can miss output already consumed; fixed sleeps race delayed output too.

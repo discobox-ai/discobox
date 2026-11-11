@@ -158,6 +158,13 @@ func TestAssignSandboxHarnessSecretsMintsPushesAndReuses(t *testing.T) {
 	svc, rec := newAssignFixture(t)
 	config := codexConfig(t, svc.store) // declares OPENAI_API_KEY required
 	sec := bearerSecret(t, svc.store, "openai", "")
+	// The short fixture value infers sk-{hex:3}, which can randomly mint
+	// sk-abc again (1 in 4096). Use an explicit, disjoint format so this
+	// assignment test can distinguish a minted sentinel from the raw value.
+	sec.Format, sec.FormatSet = "sentinel-{hex:32}", true
+	if err := svc.store.UpdateSecret(ctx, sec); err != nil {
+		t.Fatal(err)
+	}
 	bindUse(t, svc.store, sec.ID, model.SecretBindingTargetHarnessConfig, config.ID, "OPENAI_API_KEY")
 
 	got, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
