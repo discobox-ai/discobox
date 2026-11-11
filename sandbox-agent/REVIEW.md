@@ -796,3 +796,9 @@ user waits on every single start.
   silent retry. Count decrypted reply bytes after it succeeds; failed-handshake
   bytes (including alerts) still rule out silence. Otherwise a TLS dev server
   whose handler is not ready stays `tcp` for its socket's lifetime.
+
+- Homebrew recovery repairs shared prefix metadata before invoking brew, including
+  persisted locks and kegs with an obsolete group ID. Change only mismatched
+  metadata so healthy kegs stay in an overlay's lower layer. Preserve owners,
+  never follow symlinks, and exclude formula service data under `var` except
+  `var/homebrew`: a database can require private ownership and modes.

@@ -19,21 +19,27 @@ if ! git config --system --get-all safe.directory | grep -qxF "$prefix/Homebrew"
   git config --system --add safe.directory "$prefix/Homebrew"
 fi
 
-# The tree is root:brew, group-writable, setgid so what is installed later
-# keeps the group. Only what this step writes is given it, never the prefix
-# whole: on a booted box the prefix is an overlay over the sandbox's data
-# volume, where a recursive chown would copy every keg the sandbox installed
-# up into it.
-own() {
-  for dir in "$@"; do
-    [ -e "$dir" ] || continue
-    chown -R root:brew "$dir"
-    chmod -R g+w "$dir"
-    find "$dir" -type d -exec chmod g+s {} +
-  done
+# Repair the shared installation before invoking brew. The prefix persists,
+# while system groups can get different numbers on a later boot. Walk metadata
+# but change only entries needing repair: an unconditional recursive chown or
+# chmod copies every installed keg into an overlay's upper layer.
+# Formula service data under var keeps its own ownership and permissions.
+# Never follow a keg's symlink to something outside this shared installation.
+mkdir -p "$prefix/var/homebrew"
+repair() {
+  find "$prefix" \( -path "$prefix/var/*" ! -path "$prefix/var/homebrew" \
+    ! -path "$prefix/var/homebrew/*" \) -prune -o \
+    ! -group brew -exec chgrp -h brew {} +
+  find "$prefix" \( -path "$prefix/var/*" ! -path "$prefix/var/homebrew" \
+    ! -path "$prefix/var/homebrew/*" \) -prune -o \
+    ! -type l ! -perm -0020 -exec chmod g+w {} +
+  find "$prefix" \( -path "$prefix/var/*" ! -path "$prefix/var/homebrew" \
+    ! -path "$prefix/var/homebrew/*" \) -prune -o \
+    -type d ! -perm -2000 -exec chmod g+s {} +
 }
 chown root:brew /home/linuxbrew "$prefix"
 chmod g+ws /home/linuxbrew "$prefix"
+repair
 
 # Homebrew runs on its own vendored ruby and fetches it on first use. Left to
 # first use, every sandbox would fetch it and copy it up into its own overlay;
@@ -48,7 +54,6 @@ chmod g+ws /home/linuxbrew "$prefix"
 userdel brew-build 2>/dev/null || true
 useradd --system --gid brew --no-create-home --home-dir /home/linuxbrew brew-build
 trap 'userdel brew-build 2>/dev/null || true' EXIT
-own "$prefix/Homebrew" "$prefix/bin"
 setpriv --reuid brew-build --regid brew --clear-groups \
   env HOME=/home/linuxbrew HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 \
   "$prefix/bin/brew" vendor-install ruby
@@ -57,10 +62,9 @@ setpriv --reuid brew-build --regid brew --clear-groups \
 # The download cache vendor-install filled is scratch, and it landed beside
 # the prefix because that is where HOME pointed.
 rm -rf /home/linuxbrew/.cache
-# Homebrew's own state, if running it made any; never the rest of var, where
-# a formula's service keeps its data (a database refuses a group-writable
-# directory).
-if [ -d "$prefix/var" ]; then
-  chown root:brew "$prefix/var"
-fi
-own "$prefix/Homebrew" "$prefix/bin" "$prefix/var/homebrew"
+# Return Homebrew's own files to root before removing the throwaway account;
+# installed kegs keep their owners. Do not follow symlinks out of these trees.
+find "$prefix/Homebrew" "$prefix/var/homebrew" ! -user root -exec chown -h root {} +
+# Normalize anything vendor-install created, including lock files. Stale lock
+# files need no removal: Homebrew's advisory locks die with their process.
+repair
