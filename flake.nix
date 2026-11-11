@@ -203,7 +203,12 @@
               // {
                 packages =
                   baseShell.packages
-                  ++ [ pkgs.rustup ]
+                  ++ [
+                    pkgs.rustup
+                    # The mock's local PTYs need Readline for line editing and
+                    # PS1's non-printing markers; stdenv's bash lacks it.
+                    pkgs.bashInteractive
+                  ]
                   ++ pkgs.lib.optionals isLinux (
                     [
                       pkgs.pkg-config

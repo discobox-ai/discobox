@@ -1,5 +1,9 @@
 # desktop review notes
 
+- Keep a Readline-enabled `bash` on the desktop devShell's PATH. The mock
+  starts `bash -i` in its PTYs; Nix's stdenv bash lacks Readline and prints
+  the prompt's `\[` and `\]` markers literally, as well as losing line editing.
+
 - **A link a box or a stranger wrote opens on this machine only when it is
   a web address**, or a `discobox:` link the core answers itself. An issue's
   Markdown is written by anyone, and this machine's URL handler opens a
