@@ -333,7 +333,7 @@ func TestHTTPClientReportsSandboxStates(t *testing.T) {
 	defer server.Close()
 
 	// A newly listening port can be probed before the state report arrives.
-	probe, err := http.NewRequest(http.MethodHead, server.URL+"/", nil)
+	probe, err := http.NewRequestWithContext(t.Context(), http.MethodHead, server.URL+"/", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
