@@ -1,6 +1,6 @@
 # 26-10-13-595 — A harness names the requests whose refusal means its login is dead
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's "the retry itself is untouched" narrowed by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md): a `403` inside a declared scope is retried)
 - **Date**: 2026-10-13
 - **Supersedes**, in part:
   [0132](0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md)

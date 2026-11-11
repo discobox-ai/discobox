@@ -1,6 +1,6 @@
 # 26-10-14-482 — A sentinel the control plane could not resolve is never sent
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's cache surviving every publish that keeps the sentinel superseded by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md) for a replaced value)
 - **Date**: 2026-10-14
 - **Relates to**: [ADR 0059](0059-a-rejected-swapped-credential-is-retried-once.md),
   whose retry this leaves as it is, and

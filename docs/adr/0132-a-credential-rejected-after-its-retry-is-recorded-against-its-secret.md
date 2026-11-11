@@ -1,6 +1,6 @@
 # 0132 — A credential rejected after its retry is recorded against its secret
 
-- **Status**: Accepted (§1's reporting of every outcome, and the consequence that a `401` unrelated to the credential marks it rejected, superseded for a harness credential that declares a rejection scope by [26-10-13-595](26-10-13-595-a-harness-names-the-requests-whose-refusal-means-its-login-is-dead.md))
+- **Status**: Accepted (§1's reporting of every outcome, and the consequence that a `401` unrelated to the credential marks it rejected, superseded for a harness credential that declares a rejection scope by [26-10-13-595](26-10-13-595-a-harness-names-the-requests-whose-refusal-means-its-login-is-dead.md); §3 narrowed by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md): only a report about the value the secret holds is judged, and the renewal memory is per value)
 - **Date**: 2026-09-18
 
 ## Context
