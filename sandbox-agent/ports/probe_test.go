@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func targetOf(t *testing.T, address string) netip.AddrPort {
@@ -56,21 +57,38 @@ func TestProbeReportsTCPForAPortThatSpeaksSomethingElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = listener.Close() }()
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-done
+	})
 	go func() {
+		defer close(done)
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
+			_ = conn.SetDeadline(time.Now().Add(probeIOTimeout))
 			// A banner protocol: it announces itself and never speaks HTTP.
-			_, _ = conn.Write([]byte("SSH-2.0-OpenSSH_9.6\r\n"))
+			_, writeErr := conn.Write([]byte("SSH-2.0-OpenSSH_9.6\r\n"))
+			// Consume the complete probe request before closing. Closing with
+			// unread input can reset TCP, racing the probe's write/read on
+			// Windows and hiding a banner the fixture successfully wrote.
+			_, readErr := http.ReadRequest(bufio.NewReader(conn))
 			_ = conn.Close()
+			if writeErr != nil || readErr != nil {
+				t.Errorf("banner exchange: write: %v; read: %v", writeErr, readErr)
+				return
+			}
 		}
 	}()
 
-	if got := Probe(context.Background(), targetOf(t, listener.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP}) {
-		t.Fatalf("Probe = %+v, want tcp with bytes", got)
+	// Exercise both sides of the socket scheduling race on every CI platform.
+	for attempt := range 100 {
+		if got := Probe(t.Context(), targetOf(t, listener.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP}) {
+			t.Fatalf("attempt %d: Probe = %+v, want tcp with bytes", attempt, got)
+		}
 	}
 }
 
