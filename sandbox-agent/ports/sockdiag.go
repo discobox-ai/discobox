@@ -46,7 +46,7 @@ const (
 	tcpListen = 10
 )
 
-func (s *sockDiag) scan(ctx context.Context, uid int64) ([]listener, error) {
+func (s *sockDiag) scan(ctx context.Context, uid int64) ([]listener, portRange, error) {
 	if s.refused.Load() {
 		return s.Procfs.scan(ctx, uid)
 	}
@@ -57,11 +57,11 @@ func (s *sockDiag) scan(ctx context.Context, uid int64) ([]listener, error) {
 		}
 		return s.Procfs.scan(ctx, uid)
 	}
-	udp, err := s.Procfs.scanTables(procNetUDPTables, uid)
+	udp, ephemeral, err := s.Procfs.scanTables(procNetUDPTables, uid)
 	if err != nil && len(tcp) == 0 {
-		return nil, err
+		return nil, ephemeral, err
 	}
-	return append(tcp, udp...), nil
+	return append(tcp, udp...), ephemeral, nil
 }
 
 // listeners is every listening TCP socket uid holds, IPv4 and IPv6, as

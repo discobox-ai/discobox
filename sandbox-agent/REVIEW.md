@@ -1,8 +1,10 @@
 # Sandbox Agent Review Notes
 
 - Count DNS fixture connections only after successful mTLS authentication.
-  Port discovery opens plaintext and unauthenticated TLS connections to every
-  listening TCP socket; counting accepts inflates reuse and admission checks.
+  Port discovery opens plaintext and unauthenticated TLS connections to TCP
+  listeners outside the ephemeral range and declarations without a stated
+  protocol. A silent `tcp` result earns one repeat after three seconds;
+  counting accepts inflates reuse and admission checks.
 
 ## The DNS stub's firewall
 
@@ -785,3 +787,8 @@ user waits on every single start.
 - A test synchronizing on a program report passes a `Since` captured before
   triggering that report. A wait with no boundary starts counting at the call
   and can miss output already consumed; fixed sleeps race delayed output too.
+
+- A successful TLS handshake is not an application reply for the port probe's
+  silent retry. Count decrypted reply bytes after it succeeds; failed-handshake
+  bytes (including alerts) still rule out silence. Otherwise a TLS dev server
+  whose handler is not ready stays `tcp` for its socket's lifetime.

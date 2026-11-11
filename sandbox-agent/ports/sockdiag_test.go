@@ -104,7 +104,7 @@ func TestSockDiagReadsTCPFromTheDumpAndUDPFromProcfs(t *testing.T) {
 		}
 		return [][]byte{inetDiagMsg(afInet, tcpListen, netip.MustParseAddr("127.0.0.1"), 5173, 1000, 3)}, nil
 	}}
-	got, err := s.scan(context.Background(), 1000)
+	got, _, err := s.scan(context.Background(), 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestSockDiagFallsBackToProcfsForGoodWhenTheKernelRefuses(t *testing.T) {
 		return nil, fmt.Errorf("sock_diag dump: %w", errSockDiagUnsupported)
 	}}
 	for range 3 {
-		got, err := s.scan(context.Background(), 1000)
+		got, _, err := s.scan(context.Background(), 1000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -148,12 +148,12 @@ func TestSockDiagRetriesAfterAPassingFailure(t *testing.T) {
 		}
 		return [][]byte{inetDiagMsg(afInet, tcpListen, netip.MustParseAddr("127.0.0.1"), 5173, 1000, 3)}, nil
 	}}
-	got, err := s.scan(context.Background(), 1000)
+	got, _, err := s.scan(context.Background(), 1000)
 	if err != nil || fmt.Sprint(portsOf(got)) != "[tcp/4000 udp/53]" {
 		t.Fatalf("scan = %v, %v; want procfs's answer after a failed dump", portsOf(got), err)
 	}
 	fail = false
-	got, err = s.scan(context.Background(), 1000)
+	got, _, err = s.scan(context.Background(), 1000)
 	if err != nil || fmt.Sprint(portsOf(got)) != "[tcp/5173 udp/53]" {
 		t.Fatalf("scan = %v, %v; want the dump asked again", portsOf(got), err)
 	}

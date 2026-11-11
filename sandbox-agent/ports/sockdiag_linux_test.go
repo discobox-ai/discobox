@@ -56,7 +56,7 @@ func TestSockDiagListsWhatProcfsLists(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		p, err := Procfs{Root: "/proc"}.scanTables(procNetTCPTables, uid)
+		p, _, err := Procfs{Root: "/proc"}.scanTables(procNetTCPTables, uid)
 		if err != nil {
 			t.Fatal(err)
 		}

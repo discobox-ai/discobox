@@ -134,7 +134,9 @@ func TestGetSandboxAgentStatusReportsWatchedPorts(t *testing.T) {
 	watcher := ports.New(ports.Config{
 		UID:     4242,
 		Scanner: ports.Procfs{Root: procRoot},
-		Probe:   func(context.Context, netip.AddrPort) ports.Protocol { return ports.ProtocolHTTP },
+		Probe: func(context.Context, netip.AddrPort) ports.ProbeResult {
+			return ports.ProbeResult{Protocol: ports.ProtocolHTTP}
+		},
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

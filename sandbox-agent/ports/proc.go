@@ -65,14 +65,14 @@ var (
 //
 // A UDP socket on a port inside the ephemeral range is dropped (ADR 0109 §1;
 // see portRange).
-func (p Procfs) scan(_ context.Context, uid int64) ([]listener, error) {
+func (p Procfs) scan(_ context.Context, uid int64) ([]listener, portRange, error) {
 	return p.scanTables(procNetTables, uid)
 }
 
 // scanTables is scan over the named tables only. sockDiag reads the UDP ones
 // through it, since sock_diag lists TCP listeners far more cheaply than
 // net/tcp does and UDP no more cheaply than net/udp does.
-func (p Procfs) scanTables(tables []procNetTable, uid int64) ([]listener, error) {
+func (p Procfs) scanTables(tables []procNetTable, uid int64) ([]listener, portRange, error) {
 	procRoot := p.Root
 	if procRoot == "" {
 		procRoot = "/proc"
@@ -98,9 +98,9 @@ func (p Procfs) scanTables(tables []procNetTable, uid int64) ([]listener, error)
 		}
 	}
 	if len(out) == 0 && len(errs) > 0 {
-		return nil, errors.Join(errs...)
+		return nil, ephemeral.tcpRange(defaultEphemeralRange.low), errors.Join(errs...)
 	}
-	return out, nil
+	return out, ephemeral.tcpRange(defaultEphemeralRange.low), nil
 }
 
 func parseProcNet(table string, from procNetTable, uid int64) []listener {

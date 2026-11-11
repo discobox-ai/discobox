@@ -14,7 +14,7 @@ import (
 // It is sealed: the implementations are this package's, one per platform, and
 // a caller picks one rather than writing another.
 type Scanner interface {
-	scan(ctx context.Context, uid int64) ([]listener, error)
+	scan(ctx context.Context, uid int64) ([]listener, portRange, error)
 }
 
 // listener is one socket a server could be behind, as a Scanner reports it.
@@ -46,3 +46,9 @@ const (
 type portRange struct{ low, high int }
 
 func (r portRange) contains(port int) bool { return port >= r.low && port <= r.high }
+
+// tcpRange floors only the TCP probe exclusion; UDP keeps the kernel's range.
+func (r portRange) tcpRange(floor int) portRange {
+	r.low = max(r.low, floor)
+	return r
+}

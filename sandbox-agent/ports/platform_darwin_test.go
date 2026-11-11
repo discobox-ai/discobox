@@ -29,7 +29,7 @@ func TestPlatformScannerSeesOwnListeners(t *testing.T) {
 	}
 	defer udp.Close()
 
-	got, err := platformScanner().scan(ctx, int64(os.Getuid()))
+	got, _, err := platformScanner().scan(ctx, int64(os.Getuid()))
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}

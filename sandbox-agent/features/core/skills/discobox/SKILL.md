@@ -173,7 +173,11 @@ the pool yourself — `git fetch discobox && git rebase discobox/<branch>`
   so 80 → 8080. UDP ports you bind are forwarded too, but only ones outside
   the ephemeral range (`/proc/sys/net/ipv4/ip_local_port_range`, normally
   32768–60999) — inside it, a socket looks like a client's. Bind a fixed
-  number below it, or declare it (below).
+  number below it, or declare it (below). TCP listeners in that range are
+  forwarded too, but listed as `tcp` without a probe or a header link. For an
+  HTTP link, bind a fixed port below the range or declare the port (below).
+  The TCP cutoff is at least 32768 on Linux and 49152 on macOS, even if the
+  kernel's range starts lower.
 - They can also use `discobox exec`, `discobox cp`, `discobox tools`, or
   `ssh <box-id>` after `discobox admin ssh-config --write`. The id is
   `sandboxId` in `sandbox.json`; nothing sets it in your environment.
