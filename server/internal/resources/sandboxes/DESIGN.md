@@ -1123,8 +1123,9 @@ neither a harness run in the sandbox (`AssignSandboxHarnessSecrets`) nor a
 harness capture is handed it. `RawSecrets` is sent only when there are any, so
 a pool that predates them is not sent a field it would refuse.
 
-A change to a binding, or to a secret's routes (ADR 26-10-02-924), is
-delivered level-triggered by a reconciler of its own, `SentinelReconciler`
+A change to a binding, to a secret's routes (ADR 26-10-02-924), or to the
+value behind a sentinel (#1022), is delivered level-triggered by a reconciler
+of its own, `SentinelReconciler`
 (`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox it
 reaches in its transaction (`MarkBindingHoldersDirtyTx`,
 `MarkSecretHoldersDirtyTx`), and the reconciler materializes the sandbox's
@@ -1137,7 +1138,16 @@ addition that lapses last, so an addition coming or going repoints the row and
 keeps its sentinel. The pool provider sends the grants to a pool whose agent
 declared it holds them (`Pool.SentinelGrants`) and each sentinel's first
 grant's lists, as `sentinelRoutes`, to one that has not: an addition is not in
-effect there, and nothing it would refuse whole is sent. The set and the secret environment are each sent empty, never left
+effect there, and nothing it would refuse whole is sent. Each sentinel's value
+generation (`store.SentinelGenerations`, `Secret.ValueGeneration`) rides with
+the grants to a pool whose agent declared it takes them
+(`Pool.SentinelGenerations`): a write that replaces a secret's value — an
+update, an answered refresh request, a harness save over the login it owns —
+marks the secret's holders, and the pool drops the value its proxy holds of
+the old generation, which would otherwise be what the next request spends
+until its cache lapsed. A renewal in place keeps the generation and marks
+nothing. `markSentinelsIfStale` compares the generations a send carried as it
+does the grants. The set and the secret environment are each sent empty, never left
 out, when nothing is in them: the pool keeps what it was last sent of a field
 left out, so the last sentinel removed, or turned raw, would otherwise stay in
 the sandbox — where an `env` raw delivery's variable would still hold the

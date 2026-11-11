@@ -445,3 +445,51 @@ func TestReviewedCaptureUsesCurrentRowsAndDoesNotReplayCredentials(t *testing.T)
 		})
 	}
 }
+
+// A login saved over the one a config already owns keeps its secret, binding
+// and sentinel, so the save marks every discobox holding it: each pool is sent
+// the value's new generation and drops the value it holds, which would
+// otherwise be the first thing the next request spends (#1022). A save that
+// leaves the value as it is marks nothing.
+func TestCaptureOverASavedLoginMarksItsHolders(t *testing.T) {
+	s, cfg, c := captureFixture(t)
+	runtime := &stubSandboxRuntime{}
+	s.sandboxes = runtime
+	ctx := context.Background()
+	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.store.GetHarnessConfig(ctx, cfg.ProjectID, cfg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := stored.ConfiguredSecretIDs[0]
+	runtime.marked = nil
+
+	save := func(id, value string) {
+		t.Helper()
+		baseline, err := s.store.CaptureBaseline(ctx, cfg.ProjectID, cfg.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next := c
+		next.ID = id
+		next.Baseline = baseline
+		next.WriteRevision = baseline.ConfigRevision
+		next.SecretRevisions = baseline.SecretRevisions
+		next.Files = nil
+		next.Credentials = []harnesscapture.Credential{{Provider: "fixture", EnvName: "API_TOKEN", Type: "token", LocalID: "fixture", Generation: id, Value: json.RawMessage(value)}}
+		if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save("candidate-2", `{"token":"replacing-secret"}`)
+	if len(runtime.marked) != 1 || runtime.marked[0] != owned {
+		t.Fatalf("marked = %v, want the owned secret's holders once", runtime.marked)
+	}
+	runtime.marked = nil
+	save("candidate-3", `{"token":"replacing-secret"}`)
+	if len(runtime.marked) != 0 {
+		t.Fatalf("marked = %v, want nothing for the same value saved again", runtime.marked)
+	}
+}

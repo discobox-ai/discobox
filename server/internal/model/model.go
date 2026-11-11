@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -727,7 +728,13 @@ type Pool struct {
 	// agent has not declared it is sent each sentinel's first grant as route
 	// lists, as before grants: an addition is not in effect there, and no
 	// delivery it would refuse whole is sent.
-	SentinelGrants        bool    `gorm:"column:sentinel_grants;not null;default:false" json:"-"`
+	SentinelGrants bool `gorm:"column:sentinel_grants;not null;default:false" json:"-"`
+	// SentinelGenerations is whether the pool's agent takes each sentinel's
+	// value generation (Secret.ValueGeneration) and drops a value its proxy
+	// holds of another (#1022), declared on every status report. A pool whose
+	// agent has not declared it is sent none: its decoder refuses a field it
+	// does not know.
+	SentinelGenerations   bool    `gorm:"column:sentinel_generations;not null;default:false" json:"-"`
 	PublicKey             string  `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
 	KeyType               string  `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
 	Ready                 bool    `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
@@ -1728,6 +1735,17 @@ func (s *Secret) ValueWrittenAt() time.Time {
 	return s.CreatedAt
 }
 
+// ValueGeneration names the current value: it moves when the value is
+// replaced (a saved login, an update, an answered refresh request — every
+// write the store stamps), and not when the control plane renews it in place.
+// A pool's proxy drops a value it holds of another generation, and a report
+// about one is not judged against this one (#1022). It is opaque outside the
+// control plane. It is read to the microsecond, the finest every store keeps,
+// so a row read back names the generation the write stamped.
+func (s *Secret) ValueGeneration() string {
+	return strconv.FormatInt(s.ValueWrittenAt().UnixMicro(), 36)
+}
+
 // StaleTime is when the current value stops being trusted, and false for one
 // that never does. An expiry the value carries wins over the secret's TTL.
 func (s *Secret) StaleTime() (time.Time, bool) {
@@ -2154,6 +2172,8 @@ type SandboxSecretResolution struct {
 	BindingID string
 	// Revision is the secret's revision the value is of.
 	Revision int64
+	// ValueGeneration is the value's (Secret.ValueGeneration).
+	ValueGeneration string
 	// ReportScope is the rejection scope the sandbox's harness declares for
 	// the variable the sentinel is bound to, which the pool's proxy holds its
 	// reports to (ADR 26-10-13-595). Empty is every request.

@@ -406,6 +406,11 @@ leave remote state alone. Removing a settings override reveals the bundle baseli
 missing local credentials never delete shared secrets. Provider endpoints and
 routes come from registered metadata. Hand-bound secrets survive replacement:
 the config receives a new owned secret instead of modifying the user's secret.
+An owned secret is updated in place, keeping its binding and every holder's
+sentinel, so a save that replaces its value marks its holders
+(`MarkSecretHoldersDirtyTx`): their pools are sent the value's new generation
+and drop the value they hold, rather than spending the login it replaced on
+the next request (#1022).
 
 The receipt contains the accepted baseline, never exported credential values.
 A retry after a lost reply reads the receipt and retries acknowledgment rather

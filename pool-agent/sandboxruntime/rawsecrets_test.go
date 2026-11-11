@@ -15,7 +15,7 @@ import (
 func TestRawSecretsAreNamedOnlyToAnAgentThatTakesThem(t *testing.T) {
 	r := runtimeConfigTestRuntime(t)
 	raw := map[string]proxyagent.RawSentinel{"handle-1": {EnvName: "AWS_SECRET_ACCESS_KEY", Delivery: sandboxconfig.RawDeliveryFile}}
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, "sbx_1", nil, raw, nil); err != nil {
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, "sbx_1", nil, raw, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{"AWS_SECRET_ACCESS_KEY": sandboxconfig.RawDeliveryFile}

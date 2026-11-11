@@ -138,13 +138,18 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	current := map[string][]secretroute.Grant{"SENT-1": {{Lists: [][]secretroute.Route{{{Hosts: []string{"github.com"}}}}}}}
-	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, current); err != nil {
+	stored, err := st.GetSecret(ctx, "project-1", sec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generations := map[string]string{"SENT-1": stored.ValueGeneration()}
+	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, current, generations); err != nil {
 		t.Fatal(err)
 	}
 	if dirty, _ := svc.engine.ListDirty(ctx, SentinelsResourceType); len(dirty) != 0 {
 		t.Fatalf("dirty = %v, want nothing for a send that carried the routes as they are", dirty)
 	}
-	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, nil); err != nil {
+	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, nil, generations); err != nil {
 		t.Fatal(err)
 	}
 	dirty, err := svc.engine.ListDirty(ctx, SentinelsResourceType)
@@ -153,6 +158,59 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 	}
 	if len(dirty) != 1 || dirty[0].ResourceID != SandboxDirtyID("project-1", "sb-1") {
 		t.Fatalf("dirty = %v, want the sandbox's delivery marked again", dirty)
+	}
+}
+
+// A send that carried a value generation since replaced marks the delivery
+// again, as one that carried stale routes does: a save landing while a create
+// was on its way would otherwise leave the pool holding the replaced value
+// (#1022).
+func TestASendThatCarriedAReplacedValueMarksTheDeliveryAgain(t *testing.T) {
+	ctx, svc, st, _ := createIntentFixture(t)
+	if err := st.CreateSandbox(ctx, &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}); err != nil {
+		t.Fatal(err)
+	}
+	sec := bearerSecret(t, st, "github", "github.com")
+	deliver(t, st, "sb-1", sec.ID, "GH_TOKEN", "SENT-1")
+	sb, err := st.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignments, err := st.ListSandboxSecrets(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := st.SentinelGrants(ctx, sb, assignments, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := st.SentinelGenerations(ctx, "project-1", assignments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent["SENT-1"] == "" {
+		t.Fatalf("generations = %v, want one for the delivered sentinel", sent)
+	}
+	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, grants, sent); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, _ := svc.engine.ListDirty(ctx, SentinelsResourceType); len(dirty) != 0 {
+		t.Fatalf("dirty = %v, want nothing for a send that carried the value as it is", dirty)
+	}
+
+	stored, err := st.GetSecret(ctx, "project-1", sec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.EncryptedValue = []byte(`{"token":"sk-replaced"}`)
+	if err := st.UpdateSecret(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, grants, sent); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, _ := svc.engine.ListDirty(ctx, SentinelsResourceType); len(dirty) != 1 {
+		t.Fatalf("dirty = %v, want the delivery marked again for the replaced value", dirty)
 	}
 }
 

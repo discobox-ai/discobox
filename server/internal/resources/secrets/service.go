@@ -322,19 +322,23 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	// each of them remembering to.
 	//
 	// A running discobox's proxy holds its swaps to the routes it was last
-	// handed, so a change to them marks the sentinel delivery of every
-	// discobox holding the secret in the same transaction: each is sent the
-	// routes as written, and one that cannot be reached now is retried.
+	// handed, and keeps the value it last resolved, so a change to either
+	// marks the sentinel delivery of every discobox holding the secret in the
+	// same transaction: each is sent the routes as written and the value's new
+	// generation, which drops the value its pool holds (#1022), and one that
+	// cannot be reached now is retried.
+	generation := sec.ValueGeneration()
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		if err := txStore.UpdateSecret(ctx, sec); err != nil {
 			return secretCollision(err, sec)
 		}
+		valueReplaced := sec.ValueGeneration() != generation
 		if rawRevoked {
 			if err := s.deleteRawBindingsTx(ctx, txStore, txDB, sec); err != nil {
 				return err
 			}
 		}
-		if routesChanged && s.holders != nil {
+		if (routesChanged || valueReplaced) && s.holders != nil {
 			return s.holders.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, projectID, sec.ID)
 		}
 		return nil
@@ -1160,7 +1164,7 @@ func (s *Service) handOut(ctx context.Context, r resolved) (*model.SandboxSecret
 	if secret.Renewable() {
 		expiresAt = s.renewableResolution(ctx, secret, r.sandbox.ID, expiresAt)
 	}
-	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt, SecretID: secret.ID, Revision: secret.Revision}, nil
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt, SecretID: secret.ID, Revision: secret.Revision, ValueGeneration: secret.ValueGeneration()}, nil
 }
 
 // standingBinding is the binding a sentinel was delivered under and its

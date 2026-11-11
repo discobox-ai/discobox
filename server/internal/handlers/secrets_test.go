@@ -151,7 +151,7 @@ func (fakeSecretService) ResolveSandboxRawSecret(context.Context, string, string
 	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
 }
 
-func (fakeSecretService) RecordSandboxSecretRejection(context.Context, string, string, string, string, string) error {
+func (fakeSecretService) RecordSandboxSecretRejection(context.Context, string, string, string, string, string, string) error {
 	return nil
 }
 

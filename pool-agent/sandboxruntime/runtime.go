@@ -833,7 +833,8 @@ func (r *sandboxCore) stageSandbox(ctx context.Context, sandboxID string, req *w
 	rawSecrets, _ := req.RawSecrets.Get()
 	sentinelGrants, _ := req.SentinelGrants.Get()
 	sentinelRoutes, _ := req.SentinelRoutes.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelGrants(sentinelGrants, sentinelRoutes)); err != nil {
+	sentinelGenerations, _ := req.SentinelGenerations.Get()
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelGrants(sentinelGrants, sentinelRoutes), sentinelGenerations); err != nil {
 		return nil, err
 	}
 	// Recorded beside the sentinels, before the box exists, so the proxy
@@ -1699,8 +1700,9 @@ func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *
 			rawSecrets, _ := req.RawSecrets.Get()
 			sentinelGrants, _ := req.SentinelGrants.Get()
 			sentinelRoutes, _ := req.SentinelRoutes.Get()
+			sentinelGenerations, _ := req.SentinelGenerations.Get()
 			if err := r.updateSandboxProxyPolicy(ctx, sandboxID, func() error {
-				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelGrants(sentinelGrants, sentinelRoutes))
+				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelGrants(sentinelGrants, sentinelRoutes), sentinelGenerations)
 			}); err != nil {
 				return nil, err
 			}

@@ -64,7 +64,7 @@ func TestCredentialsEndpointHandsTheSandboxItsRawSecrets(t *testing.T) {
 		"RAW-REVOKED": {EnvName: "GONE", Delivery: sandboxconfig.RawDeliveryEnv},
 	}
 	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", nil, raw,
-		map[string][]secretroute.Grant{"RAW-FILE": anyHost, "RAW-ENV": anyHost, "RAW-REVOKED": anyHost}); err != nil {
+		map[string][]secretroute.Grant{"RAW-FILE": anyHost, "RAW-ENV": anyHost, "RAW-REVOKED": anyHost}, nil); err != nil {
 		t.Fatalf("register raw sentinels: %v", err)
 	}
 	if err := SetSandboxEnvironment(root, testProjectID, testPoolID, "sb-1", map[string]string{"GH_TOKEN": "ghp_SENTINEL"}); err != nil {

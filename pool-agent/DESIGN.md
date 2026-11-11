@@ -2047,7 +2047,13 @@ flowchart LR
   (`rawSecrets`, ADR 26-10-27-840) rides beside the set with its variable and
   delivery, kept in SecretsFile's `raw` (`UpsertSandboxSentinels`) and never
   in the runtime-config document; its lists are among the others, and an
-  update carrying sentinels but no `rawSecrets` removes them. The watcher stages the new lists
+  update carrying sentinels but no `rawSecrets` removes them. Each sentinel's
+  value generation (`sentinelGenerations`, kept in SecretsFile's
+  `generations`, #1022) rides with the set too, sent only to an agent that
+  declared `sentinelGenerations`: it moves when the secret's value is replaced
+  behind the sentinel, and the proxy drops a value it holds of another
+  generation rather than spending it. The resolve answer names the generation
+  of the value it hands out, and a rejection report names it back. The watcher stages the new lists
   beside those of any sentinel leaving before it moves the sentinel set, so no
   sentinel is ever swappable without its lists. `Authorize` holds the request
   — its method, host, URL, headers (for the method overrides they carry) and

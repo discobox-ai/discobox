@@ -491,10 +491,16 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 		}
 	}
 	if owned {
+		// A login saved over the one stored keeps its secret, binding and
+		// sentinel, so every discobox holding it — this one included — is
+		// marked: its pool is sent the value's new generation and drops the
+		// value it holds, which would otherwise be what the next request
+		// spends (#1022).
+		generation := secret.ValueGeneration()
 		if err := tx.UpdateSecret(ctx, secret); err != nil {
 			return err
 		}
-		if routesChanged && s.sandboxes != nil {
+		if (routesChanged || secret.ValueGeneration() != generation) && s.sandboxes != nil {
 			if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, tx, db, cfg.ProjectID, secret.ID); err != nil {
 				return err
 			}

@@ -291,7 +291,7 @@ func (s *Service) RefreshSecret(ctx context.Context, projectID, secretID string,
 	}
 	requestID := strings.TrimSpace(input.RequestId.Or(""))
 
-	err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		sec, err := txStore.GetSecret(ctx, projectID, secretID)
 		if err != nil {
 			return apperrors.NotFound(err, "secret not found")
@@ -325,7 +325,15 @@ func (s *Service) RefreshSecret(ctx context.Context, projectID, secretID string,
 		}
 		sec.EncryptedValue = valueBytes
 		sec.ValueWritten(now, expiresAt)
-		return txStore.UpdateSecret(ctx, sec)
+		if err := txStore.UpdateSecret(ctx, sec); err != nil {
+			return err
+		}
+		// The discoboxes holding it are sent the new value's generation, so
+		// their pools drop the value they hold rather than spending it (#1022).
+		if s.holders != nil {
+			return s.holders.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, projectID, sec.ID)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

@@ -115,7 +115,11 @@ func (r *credentialReporter) close() {
 
 // rejected reports every sentinel in a swapped request the upstream refused,
 // at most once per cooldown each.
-func (r *credentialReporter) rejected(clientID, host string, sentinels []string, outcome secrets.Outcome) {
+//
+// generations is the value generation each sentinel's refused value was
+// (secrets.Result.Generations), which the report names so a value replaced
+// since is not judged in its place.
+func (r *credentialReporter) rejected(clientID, host string, sentinels []string, generations map[string]string, outcome secrets.Outcome) {
 	if r == nil {
 		return
 	}
@@ -124,7 +128,7 @@ func (r *credentialReporter) rejected(clientID, host string, sentinels []string,
 		if !r.claim(clientID, sentinel, host, now) {
 			continue
 		}
-		r.enqueue(secrets.ReportRequest{ClientID: clientID, Sentinel: sentinel, Host: host, Outcome: outcome})
+		r.enqueue(secrets.ReportRequest{ClientID: clientID, Sentinel: sentinel, Host: host, Outcome: outcome, Generation: generations[sentinel]})
 	}
 }
 
@@ -136,7 +140,7 @@ func (r *credentialReporter) rejected(clientID, host string, sentinels []string,
 // set produces a call. That set is also the reason this is cheap enough to ask
 // on every swapped response — a map lookup per sentinel, and nothing else until
 // something has actually been reported.
-func (r *credentialReporter) accepted(clientID, host string, sentinels []string) {
+func (r *credentialReporter) accepted(clientID, host string, sentinels []string, generations map[string]string) {
 	if r == nil {
 		return
 	}
@@ -144,7 +148,7 @@ func (r *credentialReporter) accepted(clientID, host string, sentinels []string)
 		if !r.release(clientID, sentinel, host) {
 			continue
 		}
-		r.enqueue(secrets.ReportRequest{ClientID: clientID, Sentinel: sentinel, Host: host, Outcome: secrets.OutcomeAccepted})
+		r.enqueue(secrets.ReportRequest{ClientID: clientID, Sentinel: sentinel, Host: host, Outcome: secrets.OutcomeAccepted, Generation: generations[sentinel]})
 	}
 }
 

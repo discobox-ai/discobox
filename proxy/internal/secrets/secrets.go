@@ -54,6 +54,14 @@ type ResolveResult struct {
 	// is every request, which is also what a control plane that predates it
 	// says.
 	ReportScope ReportScope
+	// Generation names the value: it moves when the secret's value is
+	// replaced (a saved login, an update), and not when the control plane
+	// rotates it. The pool publishes each sentinel's current generation, and
+	// a cached value of another one is dropped (Config.Generations); a report
+	// carries the generation of the value the upstream refused, so one about a
+	// value since replaced judges nothing. Empty from a control plane that
+	// predates it.
+	Generation string
 }
 
 // ReportRule is one host, and the paths on it, whose answer says whether a
@@ -134,6 +142,9 @@ type ReportRequest struct {
 	Sentinel string
 	Host     string
 	Outcome  Outcome
+	// Generation is that of the value the upstream answered for
+	// (ResolveResult.Generation); empty when the resolver did not say.
+	Generation string
 }
 
 // AuthorizeRequest is a request carrying sentinels, as it is authorized
@@ -255,6 +266,13 @@ type Config struct {
 	// 26-10-27-840): never swapped, each the handle a value the sandbox holds
 	// is resolved by, to hand it over and to watch its requests for.
 	Raw map[string][]string
+	// Generations maps client (sandbox) ID to the current value generation of
+	// each of its sentinels, as the control plane last delivered them
+	// (ResolveResult.Generation). A cached value, or a displaced one, of any
+	// other generation is a value since replaced: Reconfigure drops it, and an
+	// answer of one is not cached. A sentinel with none here keeps what it
+	// holds, which is what a control plane that predates generations gets.
+	Generations map[string]map[string]string
 }
 
 const (
@@ -318,12 +336,21 @@ type settings struct {
 	refreshTTL   time.Duration
 	resolveRetry time.Duration
 	sentinels    map[string][]string
+	generations  map[string]map[string]string
 	gateHost     string
 }
 
 // watches reports whether sentinel is one of clientID's.
 func (st *settings) watches(clientID, sentinel string) bool {
 	return slices.Contains(st.sentinels[clientID], sentinel)
+}
+
+// replaced reports whether a value of generation is no longer the one
+// clientID's sentinel stands for: the control plane delivered another. A
+// sentinel delivered with no generation replaces nothing.
+func (st *settings) replaced(clientID, sentinel, generation string) bool {
+	current := st.generations[clientID][sentinel]
+	return current != "" && current != generation
 }
 
 // cacheKey is what a resolved value is cached under: a credential is
@@ -336,9 +363,10 @@ type cacheKey struct {
 }
 
 type previousValue struct {
-	value    string
-	secretID string
-	until    time.Time
+	value      string
+	secretID   string
+	generation string
+	until      time.Time
 }
 
 type cacheEntry struct {
@@ -350,7 +378,10 @@ type cacheEntry struct {
 	// reportScope rides it too: whether a request answers for the credential
 	// is asked of every request that carries it.
 	reportScope ReportScope
-	denied      bool
+	// generation is the value's (ResolveResult.Generation): what a delivery
+	// that replaced the value is told apart by, and what a report names.
+	generation string
+	denied     bool
 	// expiresAt is the hard bound: past it the entry is unusable and a request
 	// resolves synchronously.
 	expiresAt time.Time
@@ -396,13 +427,18 @@ func (s *Swapper) Reconfigure(cfg Config) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings.Store(next)
-	for key := range s.cache {
-		if !next.watches(key.clientID, key.sentinel) {
+	for key, entry := range s.cache {
+		// A value whose secret was since given another is dropped with the
+		// one it displaced (Config.Generations): the next request resolves
+		// the new value rather than spending the replaced one first. A cached
+		// denial has no value to be stale.
+		if !next.watches(key.clientID, key.sentinel) || (!entry.denied && next.replaced(key.clientID, key.sentinel, entry.generation)) {
 			delete(s.cache, key)
+			delete(s.previous, key)
 		}
 	}
-	for key := range s.previous {
-		if !next.watches(key.clientID, key.sentinel) {
+	for key, prev := range s.previous {
+		if !next.watches(key.clientID, key.sentinel) || next.replaced(key.clientID, key.sentinel, prev.generation) {
 			delete(s.previous, key)
 		}
 	}
@@ -433,6 +469,19 @@ func newSettings(cfg Config) *settings {
 	if resolveRetry <= 0 {
 		resolveRetry = defaultResolveRetry
 	}
+	generations := make(map[string]map[string]string, len(cfg.Generations))
+	for clientID, bySentinel := range cfg.Generations {
+		for sentinel, generation := range bySentinel {
+			sentinel, generation = strings.TrimSpace(sentinel), strings.TrimSpace(generation)
+			if sentinel == "" || generation == "" {
+				continue
+			}
+			if generations[clientID] == nil {
+				generations[clientID] = map[string]string{}
+			}
+			generations[clientID][sentinel] = generation
+		}
+	}
 	return &settings{
 		scanQuery:    cfg.ScanQuery,
 		posTTL:       cfg.PositiveTTL,
@@ -440,6 +489,7 @@ func newSettings(cfg Config) *settings {
 		refreshTTL:   refreshTTL,
 		resolveRetry: resolveRetry,
 		sentinels:    sentinels,
+		generations:  generations,
 		gateHost:     extractHost(strings.ToLower(strings.TrimSpace(cfg.GateHost))),
 	}
 }
@@ -462,6 +512,15 @@ type Result struct {
 	// reported for these and for no others. Apply fills it; ApplyPrevious does
 	// not, since a retry goes to the URL the first attempt was reported for.
 	Reportable []string
+	// Declared is the subset of Reportable whose resolver named a report
+	// scope, and one that covers this request: a request the harness itself
+	// says answers for its login. Only a refusal of one of these is retried
+	// whatever status the upstream used to say so.
+	Declared []string
+	// Generations is the value generation each substituted sentinel's value
+	// was (ResolveResult.Generation), keyed by sentinel; a sentinel whose
+	// resolver did not say has none.
+	Generations map[string]string
 	// Errors holds the transient resolution failures that outlasted the retry
 	// window: a sentinel left in place for no reason but the resolver being
 	// unreachable. A request with any must not be sent, since the upstream
@@ -546,6 +605,7 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 	dedupe(&res.SecretIDs)
 	dedupe(&res.Sentinels)
 	dedupe(&res.Reportable)
+	dedupe(&res.Declared)
 	return res
 }
 
@@ -688,7 +748,7 @@ func (s *Swapper) resolve(ctx context.Context, st *settings, clientID, sentinel 
 			s.triggerRefresh(key)
 		}
 		noteSwap(res, entry.secretID)
-		noteSentinel(res, sentinel, entry.reportScope, at)
+		noteSentinel(res, sentinel, entry.reportScope, entry.generation, at)
 		return entry.value, true
 	}
 	s.mu.Unlock()
@@ -709,7 +769,7 @@ func (s *Swapper) resolve(ctx context.Context, st *settings, clientID, sentinel 
 		s.store(key, entry)
 	}
 	noteSwap(res, result.SecretID)
-	noteSentinel(res, sentinel, result.ReportScope, at)
+	noteSentinel(res, sentinel, result.ReportScope, result.Generation, at)
 	return result.Value, true
 }
 
@@ -776,10 +836,19 @@ func requestPath(req *http.Request) string {
 
 // noteSentinel records a substituted sentinel on a swap result, and whether
 // the request it was substituted into is one that answers for it.
-func noteSentinel(res *Result, sentinel string, scope ReportScope, at destination) {
+func noteSentinel(res *Result, sentinel string, scope ReportScope, generation string, at destination) {
 	res.Sentinels = append(res.Sentinels, sentinel)
 	if scope.Covers(at.host, at.path) {
 		res.Reportable = append(res.Reportable, sentinel)
+		if len(scope) > 0 {
+			res.Declared = append(res.Declared, sentinel)
+		}
+	}
+	if generation != "" {
+		if res.Generations == nil {
+			res.Generations = map[string]string{}
+		}
+		res.Generations[sentinel] = generation
 	}
 }
 
@@ -810,7 +879,7 @@ func entryFor(st *settings, result ResolveResult, now time.Time) (cacheEntry, bo
 		// refresh, it will resolve synchronously once expired.
 		refreshAt = time.Time{}
 	}
-	return cacheEntry{value: result.Value, secretID: result.SecretID, reportScope: result.ReportScope, expiresAt: expiresAt, refreshAt: refreshAt}, true
+	return cacheEntry{value: result.Value, secretID: result.SecretID, reportScope: result.ReportScope, generation: result.Generation, expiresAt: expiresAt, refreshAt: refreshAt}, true
 }
 
 // triggerRefresh refreshes a soft-expired entry in the background, deduplicated
@@ -863,12 +932,15 @@ func (s *Swapper) triggerRefresh(key cacheKey) {
 // that arrives after it must not bring it back.
 func (s *Swapper) store(key cacheKey, entry cacheEntry) {
 	s.mu.Lock()
-	if !s.settings.Load().watches(key.clientID, key.sentinel) {
+	st := s.settings.Load()
+	// A resolve that left before a delivery replaced the value can answer
+	// with the replaced one after it: used once, never kept.
+	if !st.watches(key.clientID, key.sentinel) || (!entry.denied && st.replaced(key.clientID, key.sentinel, entry.generation)) {
 		s.mu.Unlock()
 		return
 	}
-	if old, ok := s.cache[key]; ok && !old.denied && old.value != "" && old.value != entry.value {
-		s.previous[key] = previousValue{value: old.value, secretID: old.secretID, until: s.now().Add(previousValueGrace)}
+	if old, ok := s.cache[key]; ok && !old.denied && old.value != "" && old.value != entry.value && !st.replaced(key.clientID, key.sentinel, old.generation) {
+		s.previous[key] = previousValue{value: old.value, secretID: old.secretID, generation: old.generation, until: s.now().Add(previousValueGrace)}
 	}
 	s.cache[key] = entry
 	s.mu.Unlock()
@@ -915,6 +987,12 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 				// its audit row names it too.
 				noteSwap(&res, prev.secretID)
 				res.Sentinels = append(res.Sentinels, sentinel)
+				if prev.generation != "" {
+					if res.Generations == nil {
+						res.Generations = map[string]string{}
+					}
+					res.Generations[sentinel] = prev.generation
+				}
 				return prev.value, true
 			})
 			if out.swapped {

@@ -90,7 +90,14 @@ const rejectionStaleAfter = 30 * time.Minute
 // The sentinel is resolved exactly as ResolveSandboxSecret resolves it, and the
 // calling pool must own the sandbox it belongs to: a report is about a
 // credential, and naming one is the same act of trust as asking for its value.
-func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome string) error {
+//
+// valueGeneration is that of the value the upstream answered for
+// (model.Secret.ValueGeneration), empty from an agent that predates it. A
+// report about a value since replaced says nothing about the one stored now,
+// and is not judged: a dead login reported after a new one was saved over it
+// would otherwise spend the new login's refresh token, or clear what was
+// recorded about it (#1022).
+func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome, valueGeneration string) error {
 	outcome = strings.TrimSpace(outcome)
 	if !slices.Contains(secretRejectionOutcomes, outcome) {
 		return apperrors.NewStatusError(http.StatusBadRequest, "unknown rejection outcome")
@@ -111,6 +118,9 @@ func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sand
 		return apperrors.NotFound(err, "secret not found")
 	}
 	host = normalizeHost(host)
+	if valueGeneration = strings.TrimSpace(valueGeneration); valueGeneration != "" && valueGeneration != secret.ValueGeneration() {
+		return nil
+	}
 
 	if outcome == SecretAcceptedOutcome {
 		return s.store.ClearSecretRejection(ctx, assignment.ProjectID, secret.ID, host)

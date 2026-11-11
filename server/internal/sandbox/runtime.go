@@ -227,6 +227,10 @@ type CreateOptions struct {
 	// request passes when some live grant's lists all allow it (ADR
 	// 26-10-27-880 §4). A sentinel with no grants is sent nowhere.
 	SentinelGrants map[string][]secretroute.Grant
+	// SentinelGenerations is, for every sentinel, its secret's value
+	// generation (model.Secret.ValueGeneration): a value the pool's proxy
+	// holds of another was replaced, and is dropped rather than sent (#1022).
+	SentinelGenerations map[string]string
 	// RawSecrets are the sandbox's raw bindings (ADR 26-10-27-840), keyed by
 	// the sentinel that is the pool's handle for the value. A raw binding's
 	// sentinel is in neither Sentinels nor SecretEnv, since it is never
@@ -331,6 +335,10 @@ type UpdateOptions struct {
 	// and is sent whenever Sentinels is. It mirrors
 	// CreateOptions.SentinelGrants.
 	SentinelGrants map[string][]secretroute.Grant
+	// SentinelGenerations replaces the sentinels' value generations along
+	// with Sentinels, and is sent whenever Sentinels is. It mirrors
+	// CreateOptions.SentinelGenerations.
+	SentinelGenerations map[string]string
 	// RawSecrets replaces the raw bindings along with Sentinels, and is sent
 	// whenever Sentinels is. It mirrors CreateOptions.RawSecrets.
 	RawSecrets map[string]RawSecret
