@@ -2,8 +2,11 @@ package ports
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -221,23 +224,45 @@ func TestProbeTLSAlertIsNotSilent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = l.Close() }()
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		_ = l.Close()
+		<-done
+	})
 	go func() {
+		defer close(done)
 		for {
 			c, err := l.Accept()
 			if err != nil {
 				return
 			}
-			buf := make([]byte, 512)
-			n, _ := c.Read(buf)
-			if n > 0 && buf[0] == 0x16 {
-				_, _ = c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28})
+			_ = c.SetDeadline(time.Now().Add(probeIOTimeout))
+			var header [5]byte
+			_, err = io.ReadFull(c, header[:])
+			if err == nil && header[0] == 0x16 {
+				// Consume the entire TLS record before sending the alert.
+				// A single 512-byte Read leaves most of the default ClientHello
+				// unread; closing then can reset TCP and lose the alert on Windows.
+				_, err = io.CopyN(io.Discard, c, int64(binary.BigEndian.Uint16(header[3:])))
+				if err == nil {
+					_, err = c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28})
+				}
+			} else if err == nil {
+				// The plaintext attempt gets no reply, but must also drain its
+				// request before closing. Put back the bytes read as a header.
+				_, err = http.ReadRequest(bufio.NewReader(io.MultiReader(bytes.NewReader(header[:]), c)))
 			}
 			_ = c.Close()
+			if err != nil {
+				t.Errorf("TLS alert exchange: %v", err)
+				return
+			}
 		}
 	}()
-	if got := Probe(t.Context(), targetOf(t, l.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP}) {
-		t.Fatalf("Probe = %+v, want non-silent TCP", got)
+	for attempt := range 100 {
+		if got := Probe(t.Context(), targetOf(t, l.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP}) {
+			t.Fatalf("attempt %d: Probe = %+v, want non-silent TCP", attempt, got)
+		}
 	}
 }
 
