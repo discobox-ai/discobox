@@ -55,6 +55,9 @@ type Identity struct {
 }
 
 type Config struct {
+	// Autostop supplies policy settings and filesystem paths. Runtime execs,
+	// primary status and idle timeout are wired by the server.
+	Autostop              autostop.Config
 	Identity              Identity
 	ControlPlanePublicKey string
 	ListenAddress         string
@@ -319,10 +322,13 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// to outlive the stop they ask to come back from (ADR 26-10-16-337 §2). A
 	// sandbox whose run user does not resolve reads none and still stops.
 	appliedAgent := appliedRuntimeAgent(cfg.RuntimeConfig)
-	idleStopConfig := autostop.Config{Execs: execManager.List, PrimaryStatus: manager.PrimaryProgramStatus, IdleTimeout: appliedAgent.IdleTimeoutDuration()}
+	idleStopConfig := cfg.Autostop
+	idleStopConfig.Execs = execManager.List
+	idleStopConfig.PrimaryStatus = manager.PrimaryProgramStatus
+	idleStopConfig.IdleTimeout = appliedAgent.IdleTimeoutDuration()
 	if home, owner, err := runUserHome(execManager); err != nil {
 		slog.Default().Warn("sandbox agent wakes disabled", "error", err)
-	} else {
+	} else if idleStopConfig.WakeDir == "" {
 		idleStopConfig.WakeDir = filepath.Join(home, ".discobox", "wake")
 		if owner.UID != nil && owner.GID != nil {
 			idleStopConfig.WakeOwner = &autostop.Owner{UID: int(*owner.UID), GID: int(*owner.GID)}

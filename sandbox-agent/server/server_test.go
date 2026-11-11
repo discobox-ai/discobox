@@ -168,14 +168,14 @@ func TestGetSandboxAgentStatusReportsWatchedPorts(t *testing.T) {
 // force, absent while it is not — a configure-mode sandbox never runs it and
 // must not claim a stop time it will never reach.
 func TestGetSandboxAgentStatusReportsAutostopWhileItRuns(t *testing.T) {
-	policy := autostop.New(autostop.Config{
-		LeaseDir: filepath.Join(t.TempDir(), "keepalive"),
-		Interval: time.Hour,
-		PowerOff: func(context.Context) error {
-			t.Error("powered off during a status test")
-			return nil
-		},
-	})
+	policyConfig := testAutostopConfig(t)
+	policyConfig.Interval = time.Hour
+	policyConfig.PowerOff = func(context.Context) error {
+		t.Error("powered off during a status test")
+		return nil
+	}
+	policy := autostop.New(policyConfig)
+
 	agent := &handler{
 		ports:           ports.New(ports.Config{Scanner: ports.Procfs{Root: t.TempDir()}}),
 		autostop:        policy,
@@ -509,10 +509,23 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	}
 }
 
+func testAutostopConfig(t *testing.T) autostop.Config {
+	t.Helper()
+	dir := t.TempDir()
+	return autostop.Config{
+		LeaseDir:           filepath.Join(dir, "keepalive"),
+		SleepDir:           filepath.Join(dir, "sleep"),
+		WakeDir:            filepath.Join(dir, "wake"),
+		ControlPlaneMarker: filepath.Join(dir, "control-plane-power"),
+		HandoverMarker:     filepath.Join(dir, "wakes-handed-over"),
+	}
+}
+
 func testConfig(t *testing.T, publicKey string) Config {
 	t.Helper()
 	runtimeDir := t.TempDir()
 	return Config{
+		Autostop: testAutostopConfig(t),
 		Identity: Identity{
 			ProjectID: "project-1",
 			SandboxID: "sandbox-1",
