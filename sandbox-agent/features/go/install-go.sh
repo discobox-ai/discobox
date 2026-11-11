@@ -6,7 +6,7 @@ set -euo pipefail
 # Keep extraction and validation away from the published toolchain. The sibling
 # directory also keeps publication on the same filesystem.
 stage="$(mktemp -d /usr/local/.go-install.XXXXXXXX)"
-# shellcheck disable=SC2329 # Invoked by the EXIT trap.
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT trap.
 cleanup() {
     if [[ -e "$stage/previous" && ! -e /usr/local/go ]]; then
         mv "$stage/previous" /usr/local/go
