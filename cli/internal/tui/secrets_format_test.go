@@ -118,3 +118,25 @@ func TestANewSecretTakesAFormat(t *testing.T) {
 		t.Fatalf("created = %#v, want the format sent with it", ds.createdSecrets)
 	}
 }
+
+// A format stored under older rules keeps working: an edit that leaves it
+// alone is not refused for it, and sends nothing for it, though the same
+// format typed in anew would be refused.
+func TestAFormatStoredUnderOlderRulesSurvivesAnEdit(t *testing.T) {
+	t.Parallel()
+	m, ds := formatFixture(t)
+	ds.mu.Lock()
+	ds.projectSecrets = []Secret{{ID: "sec_old", Name: "old", Type: "token", Format: "{digits:8}", FormatSet: true}}
+	ds.mu.Unlock()
+	send(t, m, keyPress("r"))
+
+	send(t, m, keyPress("e"))
+	if got := formValue(t, m, "format"); got != "{digits:8}" {
+		t.Fatalf("format row = %q, want the stored format", got)
+	}
+	typeInto(t, m, "token", "rotated-value")
+	drain(t, m, submitForm(t, m), 0)
+	if len(ds.updated) != 1 || ds.updated[0].Format != nil {
+		t.Fatalf("updated = %#v, want the edit sent and the stored format left alone", ds.updated)
+	}
+}

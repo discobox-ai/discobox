@@ -389,10 +389,25 @@
   granted as a replacement (`requestAnswer.useAs`); saying "replaces nothing"
   there misstates it, since a replacement clears the existing use grants.
 
-- **Every step of the request dialog holds its decisions until it is drawn**
-  (`gateUntilSeen`). A step built without it can be answered by a key typed
-  ahead of it — Enter, Enter on the summary sent a lifetime nobody saw, past
-  the replacement it listed.
+- **Every step of the request dialog that can send keeps the read-to-end
+  gate** (`requireEnd`, as `approvalDialog` sets it): a body longer than the
+  window is scrolled to its end before anything sends, so what an approval
+  replaces is never sent from below the fold. It holds nothing on a card that
+  fits — it opens on the first frame — and no gate lifted on a draw stops a
+  key typed ahead: Bubble Tea draws after every update. A first draft's
+  drawn-once gate claimed to, and protected nothing.
+
+- **A consent card names who is asking only from what they cannot set.**
+  The asking box is `recordTitle` of the box on the request's own server
+  (`boxLabel`), never `Sandbox.Name`: that carries the title and msg its
+  program posts, and two servers can list one ID, so the box would word the
+  card that decides what it receives.
+
+- **A credential's own routes taken from a request are the exact hosts its
+  open routes name, never a blocked one and never a pattern**
+  (`newCredentialHosts`, ADR 26-11-11-857). A box can add `* =blocked`, or a
+  harmless-looking `GET *.com/favicon.ico`, to a narrow ask; stored from every
+  host it named, the typed-in token had no ceiling of its own, or nearly none.
 
 - A card a step goes back to is the same card, so its focus is where it was
   left. Put the focus back on its first decision when coming back from a side

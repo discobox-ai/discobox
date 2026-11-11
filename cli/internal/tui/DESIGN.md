@@ -602,14 +602,19 @@ flowchart LR
   The sentinel row shows, dimmed, the format the value would be read as
   (`secretformat.Describe`), and Enter on it opens a card listing the syntax
   and every charset (`secretformat.Charsets`) with a live sample. A typed
-  format is held to `checkFormat`: braces balanced and unnested, a known
-  charset and a positive length in each, at least 64 random bits, nothing but
-  the value's own prefix copied from it, and the server's length limit; a
-  value that does not fit it is a warning. A format equal to the one read
+  format is held to the rules every writer of a format is (`secretformat.ParseChosen`:
+  braces that pair and do not nest, a known charset and a positive length in
+  each token, at least 64 random bits, the length bound) and to the value
+  (`secretformat.CheckValue`: nothing but its own prefix copied from it; a
+  value that does not fit is a warning), checked again when the step goes
+  on. F4's form holds a format to the same two. A format equal to the one read
   from the value is not a choice and is not sent. A command runs here only if
   its format is asked to be seen, and its output is then the first value;
   otherwise the data source runs it once when the credential is stored. A new
-  credential's routes are the request's hosts: the grant holds the box to the
+  credential's routes are the exact hosts an open route of the request names
+  — never a blocked one, never a pattern (`newCredentialHosts`, ADR
+  26-11-11-857), and the last step says them, with any requested route they
+  leave uncovered (`uncovered`, as a saved secret's ✗): the grant holds the box to the
   routes it asked for, so the credential stays usable for the next request on
   those hosts.
 - **Summary.** Each part in a line — the hosts it reaches and how many
@@ -646,11 +651,20 @@ A new credential is stored, then the request approved with it
 approval carries each part's decision, scope, edited routes
 (`Approval.UseRoutes`, `DelegateRoutes`) and lifetime in one call.
 
-**A step is not answered before it is drawn** (`gateUntilSeen`). Its
-decisions open on its first frame, so a key typed ahead of a step never
-answers it unseen — what keeps a replacement's consequences from being sent
-past — without the scroll-to-the-end gate the other approval cards
-(`approvalDialog`) keep.
+**An approval card longer than its window is read to its end before it is
+answered** (`approvalDialog`, `requireEnd`): its decisions open only once
+the summary above them has been drawn to its end, a summary that changes — a
+scope chosen, a lifetime moved under the cursor — starts the reading over,
+and a form decision is refused when the form changed since the frame that was
+read (`reviewState`). A card that fits its window opens on its first frame,
+so this keeps consequences from being sent from below the fold; it does not
+stop a key typed ahead of a card that fits. The API access,
+adoption, trust and refresh cards use it as they are; the request dialog's
+summary and part cards use it, and its last step — a menu — and its custom
+lifetime hold their choice behind it the same way, so what an approval
+replaces is never sent from below the fold (ADR 26-11-04-616 §4). The API
+access card says what turning the discobox API on gives (discovery, the
+boxes it leads, and its limits) and grants no credential.
 
 ## The attention band
 

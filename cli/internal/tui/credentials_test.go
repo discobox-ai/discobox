@@ -134,7 +134,7 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 		t.Fatalf("summary = %q, want the delegation alone", text)
 	}
 	answerApproval(t, m, "review")
-	if !strings.Contains(plainFrame(m), "could not use it itself") {
+	if !strings.Contains(m.dialog.body, "could not use it itself") {
 		t.Fatalf("card = %q, want it to say the box cannot use it", plainFrame(m))
 	}
 	if !onStep(m, "its workers") {

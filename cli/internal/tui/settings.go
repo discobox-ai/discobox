@@ -81,9 +81,10 @@ func (m *Model) settingsRead(msg boxSettingsReadMsg) tea.Cmd {
 	return nil
 }
 
-// settingsDialog is the card. The harness row is drawn on a box that is not
-// stopped, with why it cannot be changed, because the server refuses a harness
-// change on anything else and the card should say so before Enter does.
+// settingsDialog is the card. The harness row is locked on a box that is not
+// stopped — drawn with the harness it has and why it cannot be changed —
+// because the server refuses a harness change on anything else and the card
+// should say so before Enter does.
 func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 	name := textRow("name", "name", "the name it is configured with", was.Name)
 	name.required = "a discobox needs a configured name"
@@ -91,8 +92,12 @@ func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 
 	harness := pickRow("harness", "harness", harnessChoices(was.HarnessID, box, harnesses)...)
 	harness.hint = "the new harness provisions on the next start · conversation state is not carried over"
-	harness.when = func(*form) bool { return box.State == StateStopped }
-	harness.why = "stop the box to change its harness"
+	if box.State != StateStopped {
+		harness.locked = true
+		for i := range harness.choices {
+			harness.choices[i].label += " · stop the box to change its harness"
+		}
+	}
 
 	deny := pickRow("deny", "restrict",
 		choice{key: "no", label: "no", hint: "this level restricts nothing · the project, pool or harness may still"},

@@ -287,3 +287,60 @@ func TestRandomBitsAndLiterals(t *testing.T) {
 		t.Errorf("Literals = %q", got)
 	}
 }
+
+// A template a person wrote is refused for what would mint bad sentinels, and
+// the refusal says where.
+func TestParseChosenRefusesWhatWouldMintBadSentinels(t *testing.T) {
+	for _, tc := range []struct{ format, err string }{
+		{"ghp_{alnum:36}", ""},
+		{"ghp_{alnum:36", "never closed"},
+		{"ghp_alnum:36}", "closes nothing"},
+		{"ghp_{{alnum:3}}", "don't nest"},
+		{"ghp_{alnum}", "needs a charset and a length"},
+		{"ghp_{alpha:36}", "unknown charset"},
+		{"ghp_{alnum:0}", "above 0"},
+		{"fixed-token", "every sentinel would be the same"},
+		{"ghp_{digits:4}", "random bits"},
+		{"{hex:9999}", "more than 4096"},
+	} {
+		_, err := ParseChosen(tc.format)
+		if (err == nil) != (tc.err == "") || err != nil && !strings.Contains(err.Error(), tc.err) {
+			t.Errorf("%s: err = %v, want %q", tc.format, err, tc.err)
+		}
+	}
+}
+
+// A template may copy nothing of its value but the prefix inference keeps,
+// and a value that does not have its shape is a warning, not a refusal.
+func TestCheckValue(t *testing.T) {
+	value := "ghp_" + strings.Repeat("A1b2", 9)
+	for _, tc := range []struct{ format, err, warn string }{
+		{"ghp_{alnum:36}", "", ""},
+		{"ghp_A1b2A1b2{alnum:28}", "copied from the value", ""},
+		{"{hex:40}", "", "doesn't have this shape"},
+	} {
+		tmpl, err := ParseChosen(tc.format)
+		if err != nil {
+			t.Fatal(err)
+		}
+		warn, err := CheckValue(tmpl, value)
+		if (err == nil) != (tc.err == "") || err != nil && !strings.Contains(err.Error(), tc.err) {
+			t.Errorf("%s: err = %v, want %q", tc.format, err, tc.err)
+		}
+		if (warn == "") != (tc.warn == "") || !strings.Contains(warn, tc.warn) {
+			t.Errorf("%s: warning = %q, want %q", tc.format, warn, tc.warn)
+		}
+	}
+	if warn, err := CheckValue(mustParseChosen(t, "ghp_{alnum:36}"), ""); warn != "" || err != nil {
+		t.Errorf("no value: %q, %v, want nothing to hold it to", warn, err)
+	}
+}
+
+func mustParseChosen(t *testing.T, format string) *Template {
+	t.Helper()
+	tmpl, err := ParseChosen(format)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tmpl
+}
