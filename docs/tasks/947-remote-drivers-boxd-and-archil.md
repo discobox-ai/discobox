@@ -23,8 +23,9 @@ attach, run a harness, and have egress only through the pool's proxy.
     ADR PR #784 and its fix PR #776.
 
   This scope adds one gap no run has probed: every boxd sandbox machine has a
-  public URL the guest's root controls (B11). What is missing is fixing those,
-  a repeatable live run, and the account rules.
+  public URL the guest's root controls (B11). And boxd has added regions, which
+  neither the driver nor a pool can name yet (B12, B13). What is missing is
+  fixing those, a repeatable live run, and the account rules.
 - **archil** is a disco-vm driver that passes disco-vm's conformance suite on
   Archil itself, but discobox does not link it. Even linked, discobox would
   refuse it in three places, all for the same reason: archil has no machine
@@ -43,7 +44,7 @@ attach, run a harness, and have egress only through the pool's proxy.
 |---|---|---|
 | Driver in disco-vm | `pkg/machine/boxd`: real create, start, commit, exec, copy, TTY, isolation, egress fence. No data volume and no `Upgrade`. Proven against boxd's fake API (2026-11-03); not against boxd itself since disco-vm ADR 26-11-03-606 | `pkg/machine/archil`: real create, start, commit, `Upgrade`, data volume, egress fence. No isolation, no networks, no reboot. `TestConformance` passed on Archil itself (2026-11-03) |
 | Linked in discobox | `server/providers/discovm/drivers.go:16` and `pool-agent/drivers.go:10` | Neither |
-| Provider config | `vm` provider: `driver`, a sealed `apiKey`, and optional `controlPlaneUrl`, `deliverProviderKey` and `base` (`server/providers/discovm/provider.go:34-114`). `scripts/boxd-pool.sh` makes one | Would be the same fields. Region is environment only (`ARCHIL_REGION`) |
+| Provider config | `vm` provider: `driver`, a sealed `apiKey`, and optional `controlPlaneUrl`, `deliverProviderKey` and `base` (`server/providers/discovm/provider.go:34-114`). `scripts/boxd-pool.sh` makes one. No region: boxd added regions recently, and the boxd driver takes none (B12) | Would be the same fields. Region is environment only (`ARCHIL_REGION`), until B12 moves it to the same driver field |
 | Pool machine | `poolMachine.converge` (`poolmachine.go:227-362`) makes, re-adopts, repairs and removes the pool's machine on its own network | Refused at `poolmachine.go:241` (no `Isolation`; ADR 26-10-23-551 §4) |
 | Provisioning key | `poolkey.go:118-190`: an issued key, else the provider's own with `deliverProviderKey`, else the pool is blocked. boxd issues keys only from a `boxd login` session, so in practice `deliverProviderKey` is required | `KeysNone`: the same opt-in would be required. An Archil key never expires and reaches the whole account |
 | Pool agent up | `poolruntime/box.go:176-260` places the bundles and runs `provision apply --wait`. The pool's units are systemd units (ADR 26-10-23-551 §1, ADR 26-10-27-767) | No systemd in an Archil guest. PID 1 is Archil's init (disco-vm `docs/drivers/archil.md`) |
@@ -95,8 +96,8 @@ workers.
 
 | Credential | Held | For | What it must be |
 |---|---|---|---|
-| **A boxd API key (`bxd_…`)** | by the manager (granted) | B1, B3, B6, B9, B11 | A key of an org dedicated to this track. Neither the org nor the key's owner may hold host-bound secrets, since a machine reaches those hosts whatever its fence says. A new org without a payment method may run 2 machines (a pool plus one sandbox), which B6 and B9 outgrow, so the org needs a payment method or a quota of at least 4 |
-| **An Archil API key (`key-…`)** | by the manager (granted) | A1, A8, A9 | A key of an account that holds nothing else, since it never expires and reaches the whole account. Its region is set by `ARCHIL_REGION` (`aws-us-east-1` by default) |
+| **A boxd API key (`bxd_…`)** | by the manager (granted) | B1, B3, B6, B9, B11, B12, B13 | A key of an org dedicated to this track. Neither the org nor the key's owner may hold host-bound secrets, since a machine reaches those hosts whatever its fence says. A new org without a payment method may run 2 machines (a pool plus one sandbox), which B6 and B9 outgrow, so the org needs a payment method or a quota of at least 4 |
+| **An Archil API key (`key-…`)** | by the manager (granted) | A1, A8, A9 | A key of an account that holds nothing else, since it never expires and reaches the whole account. Its region is set by `ARCHIL_REGION` (`aws-us-east-1` by default) today, and by the driver's region field once B12 lands |
 | **A harness credential** (for Claude Code, an Anthropic key or subscription) | not covered by the grant: the owner provides it, or names one the manager already holds | B6, A9 (they run a harness) | A project secret on the run's server, so the sandbox sees only its sentinel through the pool's proxy. Revoked or rotated with the provider keys when the track ends |
 | **A `boxd login` session** | not granted | B10 only, if Q2 pursues issued keys | An API key cannot issue keys. Only an interactive session can, and that path has never been run |
 
@@ -134,13 +135,15 @@ open; the work is to resume it, not to file it again.
 
 | # | Issue | Repo | Depends on | Size | Linux |
 |---|---|---|---|---|---|
+| B12 | discobox-ai/vm#68: the boxd driver takes a region in its config, per driver instance, and archil moves from `ARCHIL_REGION` to the same field. Each driver maps a region to its endpoints through a fixed table, as archil's `controlPlanes` (`pkg/machine/archil/api.go`) does today, and refuses a region outside it before any request. It never builds a host from the region string, which would send the provider's key wherever a region names. An ADR in disco-vm first, if the seam change is not obvious. Starts first, independent of everything here | discobox-ai/vm (existing) | — | M | fake API; then **live** (boxd key, its hosts narrowed per Q1, for the region's endpoint) |
+| B13 | #997 (v0.20, priority/high): a pool's configuration has an optional region, set at create and shown by get/list; empty means the provider's default, and an upgrade keeps existing pools on the default. Its parts: **the server side**: today the server opens one engine per provider (`server/providers/discovm/runtime.go:64-84`, `newRuntime`), and every pool machine of the provider goes through it, so it opens an engine per region (or per pool) for making, finding, repairing and removing a pool's machine and for the pool's keys, and the pool machine and its sandboxes always share the region, or their private network breaks; **the pool agent** opens its engine in the pool's region; **validation**: an unknown region is refused at create against the driver's fixed table (B12), with the list of known regions, before any request to the provider. This is stricter than #997's "otherwise at the first call", since a first call would already carry the key to the region's endpoint; **a region change** with machines in the pool is decided by its ADR first (Q8); **the CLI, TUI and the boxd setup docs** show and set it. Starts once B12 merges, moving disco-vm to that commit | discobox (existing) | B12, R1, its ADR (Q8) | L | fake API; its live check is part of B6 (boxd key, its hosts narrowed per Q1) |
 | B1 | Run boxd's `TestConformance` against boxd itself again (it has not run there since disco-vm ADR 26-11-03-606), and give `internal/e2e` a `DISCO_VM_DRIVER=boxd` layout | discobox-ai/vm | R1 | M | fake, then **live** (boxd key) |
 | B2 | #455 (status/blocked, waiting on its reporter; this unblocks it): the control-plane channel is cut minutes after it opens. First, #455's own "To find out": hold a WebSocket through a discobox's egress proxy to a host that is not boxd for 10+ minutes. A cut there is the proxy's, and needs no account. Then add a heartbeat below the idle timeout found, and make an in-flight create survive a redial | discobox (existing) | — | M | fake (through a discobox's egress proxy, and a cutting proxy); B6 confirms it only for a server outside a box |
 | B3 | #456: a machine sandbox's `resolv.conf` names the provider's resolver. Needs its ADR first (extends ADR 0148 §2): the stub as the resolver, and the bridge resolving the pool's host against the recorded original | discobox (existing) | its ADR | M | fake for the bridge; **live** to find what on boxd rewrites the file |
 | B4 | #775: every machine sandbox mounts its declared volumes from its own data and cache roots, and features install into prefixes discobox owns. Land ADR PR #784, then fix PR #776 (both paused for v0.20). Without this, Claude Code cannot start on boxd | discobox (existing PRs #784, #776) | B5 | M | fake (and disco-vm's docker driver) |
 | B5 | Land ADR PR #785: a command discobox puts on `PATH` is linked in `/usr/local/bin`. #776's review raised the policy, and #776 waits on it | discobox (existing PR #785) | — | S | fake |
 | B11 | A boxd sandbox machine has no public URL the guest controls. Its pool dials the private URL, so the public one (`pinProxy` on every create) serves nothing discobox needs. Two options: drop or disable the default proxy for an isolated machine, if boxd allows it; or else put a provider-side check in front of it. Whether boxd allows either is unknown | discobox-ai/vm, discobox | R1 | M | fake API, then **live** (boxd key) |
-| B6 | A boxd pool end to end, live: R2's recipe on boxd. Done when a sandbox runs a harness, its secrets are sentinels, it fetches from its origin, egress goes only through the pool's proxy, nothing answers at its public URL, and the channel holds for an hour from the run's server. What it finds is filed as bugs | discobox | R2, B1, B2, B3, B4, B11 | S (the run) | **live** (boxd key) |
+| B6 | A boxd pool end to end, live: R2's recipe on boxd. Done when a sandbox runs a harness, its secrets are sentinels, it fetches from its origin, egress goes only through the pool's proxy, nothing answers at its public URL, the channel holds for an hour from the run's server, and a pool created with a non-default region makes its machines there (#997's live check). What it finds is filed as bugs | discobox | R2, B1, B2, B3, B4, B11, B13 | S (the run) | **live** (boxd key) |
 | B7 | A boxd provider's requirements are checked and documented. No host-bound secrets in the org or the key owner's scope: checked through boxd's API if it lists them, otherwise stated in `admin provider create`'s help and the docs. And the org's machine quota reported as the pool's capacity (`MaxRunning`) | discobox, discobox-ai/vm | R1 | S | fake |
 | B8 | User docs: setting up a `vm` provider on boxd (`docs/public`), with the credential's blast radius stated (the provisioning key's bounds, ADR 26-10-23-551 §4) | discobox | B6 | S | — |
 | B9 | Plan snapshots on boxd itself: `Commit` and create-from are proven on the fake API only. Check that a second sandbox of a plan starts from its snapshot | discobox | B6 | S | **live** (boxd key) |
@@ -174,6 +177,9 @@ graph LR
   R1 --> B1
   R1 --> B7
   R1 --> B11
+  R1 --> B13
+  B12 --> B13
+  B13 --> B6
   R1 --> A2
   R2 --> B6
   R2 --> A9
@@ -222,7 +228,8 @@ the held key, under three rules:
   only:
   - the provider's API hosts, as disco-vm dials them:
     - boxd: `boxd.sh:9443` (the API) and `app.boxd.sh` (the key's token
-      exchange), from `pkg/machine/boxd/api.go`;
+      exchange), from `pkg/machine/boxd/api.go`, plus the exact endpoint of
+      the region the run's pool names, as B12 documents it;
     - Archil: the region's control host, such as
       `control.green.us-east-1.aws.prod.archil.com`, from
       `pkg/machine/archil/api.go`, and the host of the process WebSocket
@@ -356,3 +363,14 @@ hop off Archil, which their fence would then have to allow.
 **Q7. Does archil ship in v0.20?** Recommended: boxd only. archil follows once
 A0 is accepted, since A3 alone is a week or more and A0 may take more than one
 round.
+
+**Q8. Can a pool's region change once it has machines?** (B13, #997; its
+ADR first, since the reason is not obvious.) A pool's machines, snapshots and
+listing all live in its region. A pool whose region moved would no longer see
+its own pool machine (`poolMachine.converge`), its orphan sweep and snapshot
+reuse would miss what is left in the old region, and a machine sandbox's disk
+is the only copy of its work. Recommended: the region is fixed once the pool
+has made a machine. A change is refused with that reason, and moving region
+means a new pool. The alternative, a change that applies only to new machines,
+splits one pool across two regions, which the pool's private network between
+its machine and its sandboxes cannot span.
