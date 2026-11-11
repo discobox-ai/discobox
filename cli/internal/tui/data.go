@@ -1887,6 +1887,10 @@ type Approval struct {
 	// (ADR 26-11-03-329 §4); empty sends nothing, which is what was asked.
 	UseAs                   string
 	UseScope, DelegateScope string
+	// UseRoutes and DelegateRoutes are a part approved on routes a person
+	// edited rather than those it asked for (ADR 26-11-02-022 §3); nil sends
+	// none, and the part takes its scope's.
+	UseRoutes, DelegateRoutes []secretroute.Route
 }
 
 // A part's answer.

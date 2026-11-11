@@ -171,31 +171,6 @@ func approvalRouteSection(label string, part *RequestPart) section {
 	return sec
 }
 
-// This is the binding's own restriction, not a flattening of the credential
-// or parent ceilings. Hosts scope intentionally drops request-level blocks.
-func approvalGrantSection(scope string, part *RequestPart, hosts []string) section {
-	if scope == "routes" {
-		return approvalRouteSection("Grant restriction · Requested routes", part)
-	}
-	sec := section{label: "Grant restriction · Requested hosts"}
-	if scope == "anywhere" {
-		sec.label = "Grant restriction · Anywhere"
-		sec.lines = []line{{text: "Any protocol · any host", tone: toneAccent}, {text: "  METHOD  PATH", tone: toneDim}, {text: "  *       *", tone: toneAccent}, {}, {text: "No grant restriction. Still limited by credential scope and any parent delegation.", tone: toneDim}}
-		return sec
-	}
-	for _, host := range hosts {
-		if len(sec.lines) > 0 {
-			sec.lines = append(sec.lines, line{})
-		}
-		sec.lines = append(sec.lines, line{text: "Any protocol · " + host, tone: toneAccent}, line{text: "  METHOD  PATH", tone: toneDim}, line{text: "  *       *", tone: toneAccent})
-	}
-	if len(hosts) == 0 {
-		sec.lines = append(sec.lines, line{text: "No open requested hosts. This scope cannot be accepted.", tone: toneAlert})
-	}
-	sec.lines = append(sec.lines, line{}, line{text: "Any method, path and protocol on these hosts. Request-level blocks are dropped.", tone: toneDim})
-	return sec
-}
-
 // Bound output before forming a Cartesian product. A small request may name
 // thousands of hosts and paths, or repeat a long protocol constraint per row.
 // The compact fallback renders each original route exactly once.

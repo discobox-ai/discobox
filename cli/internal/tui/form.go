@@ -56,11 +56,10 @@ type formRow struct {
 	// when decides whether the row applies, out of the answers already given. A
 	// nil when is a row that always applies.
 	//
-	// A row that does not apply is still drawn — dim, and stepped over — with
-	// why in place of its value. Taking it off the card would make choosing an
-	// OAuth credential produce four fields nobody knew were coming, and the
-	// point of a form over a run of questions is being able to see what is
-	// being asked before answering any of it.
+	// A row that does not apply is not drawn, and the cursor steps over it.
+	// Drawing it dimmed, with why in place of its value, was meant to show
+	// what an answer would bring, and read instead as fields to fill in that
+	// could not be reached.
 	when func(f *form) bool
 	// locked is a row this form never answers: what a credential already is, on
 	// the card that edits the parts of it that can change.
@@ -70,6 +69,15 @@ type formRow struct {
 	why string
 	// required refuses an empty typed row on submit, saying why.
 	required string
+
+	// open makes a row that is answered on a screen of its own: Enter on it
+	// runs open, and it takes no typing. show is what it draws as its value,
+	// read from the form each time it is drawn.
+	open func() tea.Cmd
+	show func(f *form) string
+	// dim draws show's value quietly, for a value worked out rather than
+	// given.
+	dim func(f *form) bool
 }
 
 // form is the rows and where the cursor is in them.
@@ -124,7 +132,7 @@ func pickRow(key, label string, choices ...choice) formRow {
 }
 
 // answerable is whether a row takes an answer, given the answers above it. A
-// row that does not is drawn all the same; see formRow.when.
+// locked row that does not is still drawn; one whose when says no is hidden.
 func (f *form) answerable(i int) bool {
 	if i < 0 || i >= len(f.rows) {
 		return false
@@ -134,6 +142,13 @@ func (f *form) answerable(i int) bool {
 		return false
 	}
 	return row.when == nil || row.when(f)
+}
+
+// hidden is a row an answer has made irrelevant: not drawn at all. A locked
+// row shows what a credential already is, so it is drawn whatever its when.
+func (f *form) hidden(i int) bool {
+	row := f.rows[i]
+	return !row.locked && row.when != nil && !row.when(f)
 }
 
 // next is the row a move lands on, stepping over the ones that take no answer.
@@ -160,7 +175,7 @@ func (f *form) next(from, delta int) int {
 // out of every other. Only the focused row draws a caret.
 func (f *form) focus() {
 	for i := range f.rows {
-		if len(f.rows[i].choices) > 0 {
+		if len(f.rows[i].choices) > 0 || f.rows[i].open != nil {
 			continue
 		}
 		if i == f.cursor {
@@ -333,6 +348,9 @@ func (f *form) update(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	row := &f.rows[f.cursor]
+	if row.open != nil {
+		return nil
+	}
 	if len(row.choices) > 0 {
 		switch keyName(msg) {
 		case "left", "h":
@@ -353,7 +371,7 @@ func (f *form) update(msg tea.KeyPressMsg) tea.Cmd {
 
 func (f *form) paste(msg tea.PasteMsg) tea.Cmd {
 	row := &f.rows[f.cursor]
-	if len(row.choices) > 0 {
+	if len(row.choices) > 0 || row.open != nil {
 		return nil
 	}
 	var cmd tea.Cmd
@@ -367,8 +385,10 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 	markStart := z.count()
 	focusRow := 0
 	labelW := 0
-	for _, row := range f.rows {
-		labelW = max(labelW, lipgloss.Width(row.label))
+	for i, row := range f.rows {
+		if !f.hidden(i) {
+			labelW = max(labelW, lipgloss.Width(row.label))
+		}
 	}
 	labelW = min(labelW, max(inner/3, 8))
 	valueW := max(inner-labelW-4, 8)
@@ -377,6 +397,9 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 		var b strings.Builder
 		section := ""
 		for i, row := range f.rows {
+			if f.hidden(i) {
+				continue
+			}
 			if row.section != section {
 				section = row.section
 				if b.Len() > 0 {
@@ -408,7 +431,7 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 			// A row that is typed into takes a caret from a press, so the value
 			// column is marked as the field it is. A picker's ‹ › are the cursor
 			// row's own keys and the row mark under them is enough.
-			if f.answerable(i) && len(row.choices) == 0 {
+			if f.answerable(i) && len(row.choices) == 0 && row.open == nil {
 				z.mark(hit{kind: hitInput, idx: i}, dialogPadLeft+labelW+4, y, valueW, 1)
 			}
 			b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
@@ -499,6 +522,17 @@ func (f *form) viewValue(st *styles, i, valueW int) string {
 			}
 		}
 		return st.dimText.Render(truncate(text, valueW))
+	}
+	if row.open != nil {
+		style := st.name
+		if row.dim != nil && row.dim(f) {
+			style = st.dimText
+		}
+		text := style.Render(truncate(row.show(f), max(valueW-2, 4)))
+		if i == f.cursor {
+			text += st.dimText.Render(" ›")
+		}
+		return text
 	}
 	if len(row.choices) > 0 {
 		label := row.choices[row.at].label

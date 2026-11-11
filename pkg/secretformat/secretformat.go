@@ -17,6 +17,7 @@ package secretformat
 import (
 	"crypto/rand"
 	"fmt"
+	"math"
 	"math/big"
 	"regexp"
 	"strconv"
@@ -40,6 +41,47 @@ var charsets = map[string]string{
 // classifyOrder lists charsets from tightest to loosest for inference. The first
 // charset whose alphabet is a superset of a segment's characters is chosen.
 var classifyOrder = []string{"digits", "hex", "HEX", "lower", "upper", "base32", "alnum", "base64url", "base64"}
+
+// charsetOrder is every charset, tightest first, as a person reads the list.
+var charsetOrder = []string{"digits", "hex", "HEX", "lower", "upper", "base32", "alnum", "base62", "base64url", "base64"}
+
+// Charset is one charset a format token may name, and its alphabet.
+type Charset struct {
+	Name, Alphabet string
+}
+
+// Charsets is every charset a token may name, tightest first: what a person
+// writing a format chooses from.
+func Charsets() []Charset {
+	out := make([]Charset, 0, len(charsetOrder))
+	for _, name := range charsetOrder {
+		out = append(out, Charset{Name: name, Alphabet: charsets[name]})
+	}
+	return out
+}
+
+// RandomBits is how many bits of randomness a sentinel minted from t carries:
+// each token's length times log2 of its alphabet's size. Literals carry none.
+func (t *Template) RandomBits() float64 {
+	bits := 0.0
+	for _, p := range t.parts {
+		if p.charset != "" {
+			bits += float64(p.length) * math.Log2(float64(len(charsets[p.charset])))
+		}
+	}
+	return bits
+}
+
+// Literals is the template's literal text, in order.
+func (t *Template) Literals() []string {
+	var out []string
+	for _, p := range t.parts {
+		if p.charset == "" {
+			out = append(out, p.literal)
+		}
+	}
+	return out
+}
 
 var tokenPattern = regexp.MustCompile(`^\{([A-Za-z0-9]+):(\d+)\}`)
 

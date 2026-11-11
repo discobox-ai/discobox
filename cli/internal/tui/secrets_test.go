@@ -218,11 +218,10 @@ func TestANewSecretIsNamedRoutedAndStoredMasked(t *testing.T) {
 	}
 }
 
-// The rows an answer makes irrelevant are not asked — but they stay on the
-// card, saying so. A form whose fields appeared on choosing a kind would be
-// four questions nobody knew were coming, which is the run of dialogs this
-// replaced.
-func TestTheOAuthRowsAreShownBeforeTheyAreAsked(t *testing.T) {
+// The rows an answer makes irrelevant are not drawn: a dimmed row saying why
+// it could not be answered read as a field nobody could reach. Choosing the
+// kind that asks them brings them.
+func TestTheOAuthRowsAppearWhenTheyAreAsked(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
 
@@ -230,9 +229,9 @@ func TestTheOAuthRowsAreShownBeforeTheyAreAsked(t *testing.T) {
 	if rowShown(m, "refresh") {
 		t.Fatal("a token is being asked to renew itself")
 	}
-	for _, want := range []string{"refresh token", "only for an OAuth credential"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("the card does not say what an oauth credential will want (%q):\n%s", want, dialogText(m))
+	for _, hidden := range []string{"refresh token", "only for an OAuth credential"} {
+		if strings.Contains(plainFrame(m), hidden) {
+			t.Fatalf("a token's card draws %q, which only an oauth credential asks:\n%s", hidden, plainFrame(m))
 		}
 	}
 	onRow(t, m, "kind")
@@ -855,8 +854,8 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("enter answered nothing")
 	}
-	if !strings.Contains(dialogText(m), chosen.where()) {
-		t.Fatalf("dialog = %q, want the request under the cursor (%s)", dialogText(m), chosen.where())
+	if !strings.Contains(dialogText(m), credentialName(*chosen)) {
+		t.Fatalf("dialog = %q, want the request under the cursor (%s)", dialogText(m), credentialName(*chosen))
 	}
 }
 

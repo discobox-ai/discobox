@@ -344,13 +344,12 @@ bound is only visible once it has been bound. A form asks everything at
 once, in the same label/value column a card is read as — the thing being built
 looks like the thing it will be when it is read back.
 
-Rows that a given answer makes irrelevant are **dimmed and stepped over, not
-taken away**. Choosing "an OAuth credential" must not produce four fields nobody
-knew were coming, and a card that reflowed under the cursor would be a card that
-moved the row being answered. An unanswerable row says which it is: not yet
-applicable (`only for an OAuth credential`), or not editable at all
-(`unchanged — type to replace it`). One `hint` line under the form carries the
-sentence for the row — or the picker option — under the cursor.
+Rows that a given answer makes irrelevant are **hidden** (`formRow.when`,
+`form.hidden`): not drawn, and stepped over. Drawing them dimmed, with why in
+place of a value, read as fields that could not be reached. A locked row is
+the exception — it shows what a credential already is (`unchanged — type to
+replace it`) — and stays. One `hint` line under the form carries the sentence
+for the row — or the picker option — under the cursor.
 
 A picker is stepped through with ←→, and **Enter lists every option** under the
 row, each with its meaning (`form.listing`): ↑↓ walk the list, Enter or a press
@@ -524,9 +523,9 @@ this machine, without a shell (`refreshcmd`). "For the session" is a permission
 in the window's memory, keyed by server, token, and the exact command
 (`sessionKey`): the poll answers that pair's next asks unprompted
 (`renewBySession`), an edited command asks a person again, and a failure drops
-the permission. A request's "New credential…" is F4's own new-secret form,
-filled from the request (see below); F4's new token picks between entering a
-value and getting it from a command, with how long a value lasts (5m unless
+the permission. A request's "Enter new credential…" is the dialog's own step (see
+below); F4's new token picks between entering a value and getting it from a
+command, with how long a value lasts (5m unless
 chosen; minutes to a day, not a binding's weeks and months), which the edit card
 changes for any token.
 
@@ -570,66 +569,88 @@ and reached for in a hurry, on a screen whose banner is asking you to hurry.
 There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
-**Approval cards collect consent; the server enforces it.** Each credential
-part has a separate form (`credential_approval.go`) for credential, duration,
-scope, and Accept/Deny. Use also chooses addition/replacement and delivery.
-Scope starts at requested routes independently for each part; hosts and anywhere
-show the wider restriction without flattening credential constraints. Route
-rows group by protocol and host and sort by path/method for display only.
-Role descriptions remain attributed to the box. Request JSON opens the original
-request; returning restores the selected choices.
+**A request is answered by a guided dialog, a step to a card; the server
+enforces it** (`credential_request_steps.go`, issue #1017). Every step names
+the box and the credential in one sentence, ctrl+r on any step shows the
+request as the server sent it (`c` there copies it), and Esc goes back one
+step with what was entered kept; from the first, Esc leaves it waiting.
 
-What holds the use part's variable is read with the secrets, when the request
-opens (`heldBy`). One of the box's own bindings there locks the use card's
-credential to its secret, with no new credential offered: the server takes no
-other secret in that variable. One from the harness config or project leaves the
-choice open, but an addition is refused on the card unless it is that secret.
+```mermaid
+flowchart LR
+  C[which credential] -->|saved| S[summary]
+  C -->|Enter new credential…| N[new credential] --> S
+  S -->|Accept| H[how long]
+  S -->|Review…| U[its own use] --> W[its workers] --> H
+  S -->|Deny| X((denied))
+  H -->|chosen| A((stored, approved))
+```
 
-Accepting use locks credential and duration on delegation; denying use leaves
-them editable. These are staged decisions: no server mutation occurs until both
-parts are reviewed. Existing credentials then get a final confirmation, after
-reading their current bindings and grants. `bindingplan` supplies the replacement
-diff and the fate of each held grant, including independent additions. One
-`Approval` commits both parts together, with independent scopes, explicit duration
-(zero is forever), use mode, and eligible raw delivery. Escape abandons staged
-decisions. New credentials use the existing creation form after part review.
+- **Which credential.** Every saved secret is listed: the one the variable
+  already holds first, then those that can answer, then the rest marked ✗,
+  and "Enter new credential…" last. A secret can answer when each of its
+  route lists — its routes and every constraint — covers each requested route
+  (`uncovered`, `secretroute.ProveContained`, which fails closed: a working
+  secret may be marked ✗, never the reverse); one with no routes is sent
+  nowhere and covers nothing. A variable this box's own bindings deliver takes
+  only that secret (`heldBy`), so the others and a new one cannot answer
+  there. Why one cannot is a card of its own when it is chosen, the
+  uncovered routes in the route table under an error-coloured rule — never a
+  description beside every row. The first that can answer is highlighted, or
+  a new credential when none can.
+- **New credential.** Name (the one asked for, or the first free one), then
+  "Paste a value" or "Output of a command" (`gh auth token` its example).
+  The sentinel row shows, dimmed, the format the value would be read as
+  (`secretformat.Describe`), and Enter on it opens a card listing the syntax
+  and every charset (`secretformat.Charsets`) with a live sample. A typed
+  format is held to `checkFormat`: braces balanced and unnested, a known
+  charset and a positive length in each, at least 64 random bits, nothing but
+  the value's own prefix copied from it, and the server's length limit; a
+  value that does not fit it is a warning. A format equal to the one read
+  from the value is not a choice and is not sent. A command runs here only if
+  its format is asked to be seen, and its output is then the first value;
+  otherwise the data source runs it once when the credential is stored. A new
+  credential's routes are the request's hosts: the grant holds the box to the
+  routes it asked for, so the credential stays usable for the next request on
+  those hosts.
+- **Summary.** Each part in a line — the hosts it reaches and how many
+  operations, a row of its route table each — with Accept and Deny answering
+  every part at once, and Review… walking them.
+- **Review.** One card per part the request has, use then delegation, each
+  with its routes (`approvalRouteSection`) and the roles it asked for as the
+  discobox's words (ADR 26-11-02-022 §3). Approve, Deny or Modify…: as
+  requested, any path on its hosts, anywhere the credential may be sent (drawn
+  against every list the credential is held to), or the routes edited in
+  `$EDITOR`, one `secretroute` route a line; an edit that does not parse names
+  the line and offers the editor again on what was saved, or abandoning it.
+  Changed routes are marked, and the roles then say they describe the ask.
+- **How long.** Shown only when a part was approved; every part denied denies
+  the request. It opens on what the box asked for, or an hour; lifetimes over
+  a saved credential's limit are greyed with the reason, and a custom one over
+  it, or text that is not a lifetime, is refused. Above the choices is the
+  whole approval — the credential, each part's answer and scope, an addition
+  or a replacement — and what it replaces in the variable at the lifetime
+  under the cursor (`bindingplan`), with the delegate part's own replacement
+  and any lead's delegation it is held within (ADR 26-11-03-329 §5,
+  26-11-04-616 §4). Choosing one sends.
 
-Duration defaults to the valid whole-second ask or one hour. Presets include
-forever, and custom input uses the same lifetime parser as CLI flags. A
-credential's maximum is shown and an over-limit answer is refused before
-submission; the server rechecks live credential and parent limits.
+A use part asked as an addition stacks only on the secret delivering its
+variable (ADR 26-11-03-329 §4); answered with another, it is granted as a
+replacement shadowing that one, and the summary and last step say so.
+Placeholder delivery is the guided dialog's only one, and the mode is the
+request's: the value itself and the other mode are `discobox secret request
+approve --raw` and `--use-as` (ADR 26-11-11-857). A new credential is held to
+the request's hosts (same ADR).
 
-All approval cards use `approvalDialog` and explicit modal buttons, with mouse
-hit regions for fields, picker choices and buttons. Buttons remain visible on
-compact terminals. Both decisions are disabled until the current upper summary
-has been scrolled to its end. Rendering tracks the full wrapped content;
-changing it resets the gate and scroll. Submission also compares form state with
-the last rendered state so queued input cannot approve unseen choices.
+A new credential is stored, then the request approved with it
+(`sendAnswer`); a refusal after the store says the credential stays. The
+approval carries each part's decision, scope, edited routes
+(`Approval.UseRoutes`, `DelegateRoutes`) and lifetime in one call.
 
-Adoption names both boxes, the parent replaced, authority, and read-only egress
-limits. Trust combines pin and finite duration with the selected certificate's
-full fingerprint. Refresh combines masked manual entry or a saved command with
-once/window permission; it changes the project value, never grant routes or
-lifetimes. API access uses its own inbox card and durable request record;
-Settings remains the direct on/off control. See the server's sandbox and auth
-design docs for request intake and the bounded API role.
-
-**A new credential is the secrets screen's form, filled from the request**
-(`askNewCredentialForm`, `fillFromRequest`, `secretForm`, `secretFromForm`).
-The form opens with the name the request asks for and a route row for each
-route it asks for. A name the project already holds is the first free one
-instead (`freeSecretName`, "github-2"), which the server would otherwise refuse
-the create for. Every field stays editable. Saving stores it and approves the
-request with it for the lifetime chosen (`createAndApprove`: a command is run by
-the data source, and a refusal after the store says what was already done); a
-binding limit shorter than that lifetime is refused on the form, before
-anything is stored. Esc from the form is the request, still waiting. The
-request card has no separate "From a command…" row: the form's source row takes
-one. Escape from the new-credential form returns to the first part card without
-storing a credential. Escape from a part card or final confirmation abandons the
-staged answer and leaves the server request pending. Request JSON returns to the
-same card with all input, including incomplete custom duration text, preserved.
-
+**A step is not answered before it is drawn** (`gateUntilSeen`). Its
+decisions open on its first frame, so a key typed ahead of a step never
+answers it unseen — what keeps a replacement's consequences from being sent
+past — without the scroll-to-the-end gate the other approval cards
+(`approvalDialog`) keep.
 
 ## The attention band
 
@@ -3492,16 +3513,17 @@ the newest one where the busy line goes.
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
 | `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
 | `create.go` | the create card Enter opens: the source list, the settings under it reached by Tab |
-| `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
+| `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, the `/` search over a scrolling body, and keys a card answers whatever has focus (`shortcuts`; a control key where rows are typed into) |
 | `settings.go` | the settings form: `discobox admin box update` as one card over a box's name, harness, egress level and discobox API access |
-| `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
+| `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant hidden |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E or F2: the prompt in `$EDITOR` |
 | `readline.go` | the composer's emacs mode: the word keys, the kill ring, undo, transpose words |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
-| `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
+| `credentials.go` | the credential inbox: the marks, the band's sentence, the raw request, and an answer's outcome |
+| `credential_request_steps.go` | the guided dialog that answers a credential request: which credential, a new one, summary, review, how long, and sending |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
