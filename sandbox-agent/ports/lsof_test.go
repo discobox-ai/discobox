@@ -119,7 +119,7 @@ func TestLsofScannerAsksForTheUIDAndDropsEphemeralUDP(t *testing.T) {
 		},
 		ephemeral: func() portRange { return darwinEphemeralRange },
 	}
-	got, err := scanner.scan(context.Background(), 501)
+	got, _, err := scanner.scan(context.Background(), 501)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestLsofScannerReportsAFailedRun(t *testing.T) {
 		},
 		ephemeral: func() portRange { return darwinEphemeralRange },
 	}
-	if _, err := scanner.scan(context.Background(), 501); err == nil {
+	if _, _, err := scanner.scan(context.Background(), 501); err == nil {
 		t.Fatal("scan = nil error, want lsof's failure")
 	}
 }

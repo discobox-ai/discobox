@@ -1,7 +1,9 @@
 package ports
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +31,7 @@ func TestProbeIdentifiesPlainHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
+	if got := Probe(context.Background(), serverTarget(t, server)).Protocol; got != ProtocolHTTP {
 		t.Fatalf("Probe = %q, want http", got)
 	}
 }
@@ -43,7 +45,7 @@ func TestProbeIdentifiesHTTPSBehindASelfSignedCertificate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTPS {
+	if got := Probe(context.Background(), serverTarget(t, server)).Protocol; got != ProtocolHTTPS {
 		t.Fatalf("Probe = %q, want https", got)
 	}
 }
@@ -67,8 +69,8 @@ func TestProbeReportsTCPForAPortThatSpeaksSomethingElse(t *testing.T) {
 		}
 	}()
 
-	if got := Probe(context.Background(), targetOf(t, listener.Addr().String())); got != ProtocolTCP {
-		t.Fatalf("Probe = %q, want tcp", got)
+	if got := Probe(context.Background(), targetOf(t, listener.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP}) {
+		t.Fatalf("Probe = %+v, want tcp with bytes", got)
 	}
 }
 
@@ -92,8 +94,8 @@ func TestProbeReportsTCPForAPortThatAcceptsAndSaysNothing(t *testing.T) {
 		}
 	}()
 
-	if got := Probe(context.Background(), targetOf(t, listener.Addr().String())); got != ProtocolTCP {
-		t.Fatalf("Probe = %q, want tcp", got)
+	if got := Probe(context.Background(), targetOf(t, listener.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP, Silent: true}) {
+		t.Fatalf("Probe = %+v, want silent tcp", got)
 	}
 }
 
@@ -110,7 +112,7 @@ func TestProbeReportsUnknownWhenNothingIsListening(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := Probe(context.Background(), target); got != ProtocolUnknown {
+	if got := Probe(context.Background(), target).Protocol; got != ProtocolUnknown {
 		t.Fatalf("Probe = %q, want unknown", got)
 	}
 }
@@ -123,7 +125,7 @@ func TestProbeIdentifiesHTTPWhenTheServerHasNoRootRoute(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
+	if got := Probe(context.Background(), serverTarget(t, server)).Protocol; got != ProtocolHTTP {
 		t.Fatalf("Probe = %q, want http", got)
 	}
 }
@@ -141,7 +143,7 @@ func TestProbeIdentifiesHTTPWhenTheServerRefusesHEAD(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
+	if got := Probe(context.Background(), serverTarget(t, server)).Protocol; got != ProtocolHTTP {
 		t.Fatalf("Probe = %q, want http", got)
 	}
 }
@@ -154,7 +156,7 @@ func TestProbeAsksHEADSoNoBodyIsProduced(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
+	if got := Probe(context.Background(), serverTarget(t, server)).Protocol; got != ProtocolHTTP {
 		t.Fatalf("Probe = %q, want http", got)
 	}
 	close(methods)
@@ -192,4 +194,69 @@ func TestMayBeTLSDistinguishesAnHTTPSHintFromAPlaintextAnswer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Bytes rejected during TLS still prove the service was answering.
+func TestProbeTLSAlertIsNotSilent(t *testing.T) {
+	var lc net.ListenConfig
+	l, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			buf := make([]byte, 512)
+			n, _ := c.Read(buf)
+			if n > 0 && buf[0] == 0x16 {
+				_, _ = c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28})
+			}
+			_ = c.Close()
+		}
+	}()
+	if got := Probe(t.Context(), targetOf(t, l.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP}) {
+		t.Fatalf("Probe = %+v, want non-silent TCP", got)
+	}
+}
+
+func TestProbeSuccessfulTLSHandshakeWithoutApplicationReplyIsSilent(t *testing.T) {
+	certServer := httptest.NewTLSServer(http.NotFoundHandler())
+	cert := certServer.TLS.Certificates[0]
+	certServer.Close()
+	var lc net.ListenConfig
+	l, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		// The plaintext attempt receives nothing.
+		_, _ = bufio.NewReader(c).ReadString('\n')
+		_ = c.Close()
+		c, err = l.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.Close() }()
+		tc := tls.Server(c, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
+		if tc.HandshakeContext(t.Context()) != nil {
+			return
+		}
+		// Read a complete HEAD, then close without an application response.
+		_, _ = http.ReadRequest(bufio.NewReader(tc))
+	}()
+	if got := Probe(t.Context(), targetOf(t, l.Addr().String())); got != (ProbeResult{Protocol: ProtocolTCP, Silent: true}) {
+		t.Fatalf("Probe = %+v, want silent TCP after successful TLS handshake", got)
+	}
+	<-done
 }

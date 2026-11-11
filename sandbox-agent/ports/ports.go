@@ -7,8 +7,10 @@
 // Discovery is a read of the platform's socket table filtered by uid —
 // sock_diag and procfs on Linux, lsof on darwin, behind Scanner — cheap enough to repeat on a short
 // interval. Classification is not: the only way to learn what a socket speaks
-// is to connect to it and write a request at it, so a socket is probed once and
-// the answer is cached for its lifetime. That is why this is a standing watcher
+// is to connect to it and write a request at it. Undeclared ephemeral TCP
+// ports are listed without probing; other sockets cache their answer for their
+// lifetime, with one repeat after a silent TCP answer (ADR 26-11-11-176).
+// That is why this is a standing watcher
 // with a snapshot rather than a computation the status handler runs — everything
 // else in that response is computed fresh per request.
 //
@@ -134,7 +136,7 @@ type Config struct {
 	// HTTP is.
 	Declared func() ([]Declaration, error)
 	// Probe defaults to probing the target for real. Tests replace it.
-	Probe  func(context.Context, netip.AddrPort) Protocol
+	Probe  func(context.Context, netip.AddrPort) ProbeResult
 	Logger *slog.Logger
 }
 
@@ -203,7 +205,7 @@ type Watcher struct {
 	scanner  Scanner
 	interval time.Duration
 	declared func() ([]Declaration, error)
-	probe    func(context.Context, netip.AddrPort) Protocol
+	probe    func(context.Context, netip.AddrPort) ProbeResult
 	logger   *slog.Logger
 
 	mu       sync.Mutex
@@ -217,11 +219,16 @@ type Watcher struct {
 // portState is what the watcher remembers about one port between ticks. The
 // socket key is what makes the cached protocol safe to keep: it changes whenever
 // the socket behind the port is replaced, which is the only event that can
-// change the answer.
+// change the answer. Probe results remain separate from listing policy so a
+// declaration or ephemeral-range change takes effect without replacing it.
 type portState struct {
 	firstSeenAt time.Time
 	socketKey   string
 	protocol    Protocol
+	// probeResult is kept apart from a stated protocol or an ephemeral skip.
+	probeResult ProbeResult
+	silentAt    time.Time
+	repeated    bool
 	addresses   []string
 	target      netip.AddrPort
 	declared    bool
@@ -307,12 +314,12 @@ func (w *Watcher) Snapshot() []Port {
 }
 
 func (w *Watcher) tick(ctx context.Context) {
-	listeners, err := w.scanner.scan(ctx, w.uid)
+	listeners, ephemeral, err := w.scanner.scan(ctx, w.uid)
 	if err != nil {
 		w.logger.Debug("sandbox agent listening port scan failed", "error", err)
 		return
 	}
-	pending := w.observe(listeners, w.declaredPorts(), time.Now().UTC())
+	pending := w.observe(listeners, w.declaredPorts(), ephemeral, time.Now().UTC())
 	// The snapshot is published before the probes run so a port shows up in the
 	// tick it appeared in, carrying "unknown" until its probe answers, rather
 	// than being withheld for as long as a slow server takes to reply.
@@ -350,7 +357,7 @@ func (w *Watcher) declaredPorts() []Declaration {
 // also observed is an ordinary observed port that happens to be declared — it
 // has real binds and a real socket identity to key its probe cache on, and only
 // a port nothing visible is listening on is carried by its declaration alone.
-func (w *Watcher) observe(listeners []listener, declared []Declaration, now time.Time) []endpoint {
+func (w *Watcher) observe(listeners []listener, declared []Declaration, ephemeral portRange, now time.Time) []endpoint {
 	grouped := map[endpoint][]listener{}
 	for _, entry := range listeners {
 		key := endpoint{network: entry.Network, port: entry.Port}
@@ -387,23 +394,35 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 		if previous, ok := w.state[key]; ok {
 			state.firstSeenAt = previous.firstSeenAt
 			if previous.socketKey == state.socketKey {
-				state.protocol = previous.protocol
+				state.probeResult = previous.probeResult
+				state.silentAt = previous.silentAt
+				state.repeated = previous.repeated
 			}
 		}
-		// A stated protocol outranks anything carried forward, and is what
-		// keeps the port out of the probe queue below. It is re-applied on
-		// every tick rather than only when the port is new, so a declaration
-		// edited while the sandbox is up takes effect the same way its port
-		// number does.
-		if declaration, ok := declaredSet[key]; ok {
+		declaration, isDeclared := declaredSet[key]
+		if isDeclared {
 			state.serviceID = declaration.ServiceID
 			state.serviceName = declaration.ServiceName
-			if declaration.stated() {
-				state.protocol = declaration.Protocol
-			}
 		}
-		if state.protocol == ProtocolUnknown {
-			pending = append(pending, key)
+		switch {
+		case key.network == networkUDP:
+			state.protocol = ProtocolUDP
+		case isDeclared && declaration.stated():
+			state.protocol = declaration.Protocol
+		case !isDeclared && ephemeral.contains(key.port):
+			// Re-decided every scan; never cached as a probe's TCP answer.
+			state.protocol = ProtocolTCP
+		default:
+			state.protocol = state.probeResult.Protocol
+			if state.protocol == "" {
+				state.protocol = ProtocolUnknown
+			}
+			if state.protocol == ProtocolUnknown {
+				pending = append(pending, key)
+			} else if state.probeResult.Silent && !state.repeated && now.Sub(state.silentAt) >= 3*time.Second {
+				state.repeated = true
+				pending = append(pending, key)
+			}
 		}
 		next[key] = state
 	}
@@ -412,7 +431,6 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 		fold(key, &portState{
 			firstSeenAt: now,
 			socketKey:   socketKey(entries),
-			protocol:    initialProtocol(key),
 			addresses:   addressStrings(entries),
 			target:      netip.AddrPortFrom(probeAddr(entries), uint16(key.port)),
 			declared:    isDeclared,
@@ -425,7 +443,6 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 		fold(key, &portState{
 			firstSeenAt: now,
 			socketKey:   declaredSocketKey,
-			protocol:    initialProtocol(key),
 			target:      netip.AddrPortFrom(declaredProbeAddr, uint16(key.port)),
 			declared:    true,
 		})
@@ -443,16 +460,6 @@ func (w *Watcher) excluded(key endpoint) bool {
 	}
 	_, skip := w.exclude[key.port]
 	return skip
-}
-
-// initialProtocol is what a port is reported as before anything is learned
-// about it: unknown, which queues a probe, for TCP; udp, which does not, for
-// UDP — there is nothing a probe could learn (ADR 0109 §2).
-func initialProtocol(key endpoint) Protocol {
-	if key.network == networkUDP {
-		return ProtocolUDP
-	}
-	return ProtocolUnknown
 }
 
 // declaredProbeAddr is where a port with no observed bind is probed. There is
@@ -497,14 +504,18 @@ type probeTarget struct {
 // record stores a probe result only if the socket it describes is still the one
 // on that port: a server that restarted while its old socket was being probed
 // must not inherit the old answer.
-func (w *Watcher) record(key endpoint, target probeTarget, protocol Protocol) {
+func (w *Watcher) record(key endpoint, target probeTarget, result ProbeResult) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	state, ok := w.state[key]
 	if !ok || state.socketKey != target.socketKey {
 		return
 	}
-	state.protocol = protocol
+	state.protocol = result.Protocol
+	state.probeResult = result
+	if result.Silent && state.silentAt.IsZero() {
+		state.silentAt = time.Now().UTC()
+	}
 }
 
 func (w *Watcher) publish() {

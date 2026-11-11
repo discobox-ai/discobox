@@ -19,8 +19,9 @@ const (
 	ProtocolHTTP Protocol = "http"
 	// ProtocolHTTPS means the same, inside a TLS session.
 	ProtocolHTTPS Protocol = "https"
-	// ProtocolTCP means the port was reached and speaks something that is not
-	// HTTP: a database, an SSH daemon, an HTTP/2-only server. Forwardable as
+	// ProtocolTCP means a TCP listener not classified as HTTP: either unprobed
+	// in the ephemeral range, or reached and speaking something else (a
+	// database, an SSH daemon, an HTTP/2-only server). Forwardable as
 	// raw bytes, not as a web endpoint.
 	ProtocolTCP Protocol = "tcp"
 	// ProtocolUDP means the port is a bound UDP socket (ADR 0109). It is known
@@ -54,6 +55,14 @@ var httpReplyPrefix = []byte("HTTP/")
 // not on its own proof that the port is not TLS.
 const httpBadRequest = 400
 
+// ProbeResult includes whether a reached TCP listener sent no bytes at all,
+// including failed TLS handshake bytes. A successful handshake alone is not
+// an application reply. Only a silent result earns one repeat.
+type ProbeResult struct {
+	Protocol Protocol
+	Silent   bool
+}
+
 // Probe classifies a listening port by connecting to it and asking it a
 // question only an HTTP server answers. There is no declaration to read
 // instead: a port number implies nothing about what is behind it, so the wire
@@ -66,26 +75,27 @@ const httpBadRequest = 400
 // answers 405 or 501, which is still an HTTP status line and still classifies.
 //
 // It writes an HTTP request line at whatever is listening, which a non-HTTP
-// service will log as a malformed request. That happens once per socket, not
-// once per poll, which is the whole reason results are cached.
-func Probe(ctx context.Context, target netip.AddrPort) Protocol {
-	reply, reached := probeOnce(ctx, target, nil)
+// service may log as a malformed request. The watcher caches this answer,
+// with one repeat after a silent TCP answer, rather than probing every poll.
+func Probe(ctx context.Context, target netip.AddrPort) ProbeResult {
+	reply, reached, received := probeOnce(ctx, target, nil)
 	if !reached {
-		return ProtocolUnknown
+		return ProbeResult{Protocol: ProtocolUnknown}
 	}
 	plaintext := ProtocolTCP
 	if bytes.HasPrefix(reply, httpReplyPrefix) {
 		plaintext = ProtocolHTTP
 	}
 	if !mayBeTLS(reply, plaintext) {
-		return plaintext
+		return ProbeResult{Protocol: plaintext}
 	}
-	if tlsReply, reached := probeOnce(ctx, target, tlsProbeConfig()); reached && bytes.HasPrefix(tlsReply, httpReplyPrefix) {
-		return ProtocolHTTPS
+	tlsReply, tlsReached, tlsReceived := probeOnce(ctx, target, tlsProbeConfig())
+	if tlsReached && bytes.HasPrefix(tlsReply, httpReplyPrefix) {
+		return ProbeResult{Protocol: ProtocolHTTPS}
 	}
-	// The handshake settled it: whatever the plaintext exchange suggested
-	// stands, including an HTTP server that really does answer HEAD / with 400.
-	return plaintext
+	// Application bytes or a failed handshake with bytes (such as an alert)
+	// rule out the silent startup race. A successful handshake alone does not.
+	return ProbeResult{Protocol: plaintext, Silent: plaintext == ProtocolTCP && !received && !tlsReceived}
 }
 
 // mayBeTLS reports whether the plaintext exchange left it open that this port
@@ -136,30 +146,42 @@ func tlsProbeConfig() *tls.Config {
 // probeOnce runs one request/response exchange. reached distinguishes "the port
 // is not answering" (unknown, retry later) from "the port answered something",
 // including answering nothing at all after accepting the connection.
-func probeOnce(ctx context.Context, target netip.AddrPort, tlsConfig *tls.Config) (reply []byte, reached bool) {
+func probeOnce(ctx context.Context, target netip.AddrPort, tlsConfig *tls.Config) (reply []byte, reached bool, received bool) {
 	dialCtx, cancel := context.WithTimeout(ctx, probeDialTimeout)
 	defer cancel()
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(dialCtx, "tcp", target.String())
 	if err != nil {
-		return nil, false
+		return nil, false, false
 	}
 	defer func() { _ = conn.Close() }()
+	meter := &probeConn{Conn: conn}
+	conn = meter
+	handshakeComplete := false
+	defer func() {
+		if handshakeComplete {
+			// A successful handshake proves TLS, not that the application is ready.
+			received = len(reply) > 0
+		} else {
+			received = meter.received
+		}
+	}()
 	_ = conn.SetDeadline(time.Now().Add(probeIOTimeout))
 
 	if tlsConfig != nil {
 		tlsConn := tls.Client(conn, tlsConfig)
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			return nil, false
+			return nil, false, false
 		}
 		conn = tlsConn
+		handshakeComplete = true
 	}
 	if _, err := conn.Write(probeRequest(target)); err != nil {
 		// It accepted the connection and then would not take a request. That is
 		// an answer — it is not HTTP — not a failure to reach it.
-		return nil, true
+		return nil, true, false
 	}
-	return readReply(conn), true
+	return readReply(conn), true, false
 }
 
 // readReply reads until the first line is complete, which is as far as
@@ -184,4 +206,17 @@ func probeRequest(target netip.AddrPort) []byte {
 		"User-Agent: discobox-sandbox-agent (port probe)\r\n" +
 		"Accept: */*\r\n" +
 		"Connection: close\r\n\r\n")
+}
+
+// probeConn counts wire bytes even when TLS rejects the peer before an HTTP
+// reply can be read.
+type probeConn struct {
+	net.Conn
+	received bool
+}
+
+func (c *probeConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.received = c.received || n > 0
+	return n, err
 }

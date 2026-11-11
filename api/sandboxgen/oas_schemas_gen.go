@@ -3998,10 +3998,14 @@ type SandboxAgentListeningPort struct {
 	// declares, or both. A TCP port and a UDP port with the same number are two entries, told apart by
 	// protocol.
 	Port int64 `json:"port"`
-	// What the port turned out to speak, established by probing it once when it
-	// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
-	// HTTP/2-only server); unknown means not classified yet or unreachable when
-	// probed, and is retried. udp is a bound UDP socket, which is never probed;
+	// What the port speaks, stated by a service declaration or established by a
+	// probe. Undeclared TCP ports in the kernel's ephemeral range are listed as
+	// tcp without probing; the range's low end is floored at the platform default
+	// (32768 on Linux, 49152 on macOS). Other TCP ports are probed when first seen,
+	// with one repeat at least three seconds after a silent tcp answer. tcp also
+	// means reached and not HTTP (a database, an SSH daemon, an HTTP/2-only server);
+	// unknown means not classified yet or unreachable when probed, and is retried. udp is a bound UDP
+	// socket, which is never probed;
 	// it is the only value that is not a TCP port, so it is also what says which
 	// transport a forward of this port has to carry.
 	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
@@ -4086,10 +4090,14 @@ func (s *SandboxAgentListeningPort) SetServiceName(val OptString) {
 	s.ServiceName = val
 }
 
-// What the port turned out to speak, established by probing it once when it
-// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
-// HTTP/2-only server); unknown means not classified yet or unreachable when
-// probed, and is retried. udp is a bound UDP socket, which is never probed;
+// What the port speaks, stated by a service declaration or established by a
+// probe. Undeclared TCP ports in the kernel's ephemeral range are listed as
+// tcp without probing; the range's low end is floored at the platform default
+// (32768 on Linux, 49152 on macOS). Other TCP ports are probed when first seen,
+// with one repeat at least three seconds after a silent tcp answer. tcp also
+// means reached and not HTTP (a database, an SSH daemon, an HTTP/2-only server);
+// unknown means not classified yet or unreachable when probed, and is retried. udp is a bound UDP
+// socket, which is never probed;
 // it is the only value that is not a TCP port, so it is also what says which
 // transport a forward of this port has to carry.
 type SandboxAgentListeningPortProtocol string

@@ -6,7 +6,9 @@ import (
 	"testing"
 )
 
-func httpProbe(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP }
+func httpProbe(context.Context, netip.AddrPort) ProbeResult {
+	return ProbeResult{Protocol: ProtocolHTTP}
+}
 
 // A port appearing moves the snapshot's version, which is what wakes a status
 // wait held on it (ADR 26-11-03-815 §2).

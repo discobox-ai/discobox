@@ -92,7 +92,7 @@ func TestScanListenersReadsBothTablesAndToleratesAMissingOne(t *testing.T) {
 
 	// No net/tcp6: a kernel built without IPv6 has none, and that is not an
 	// error -- it reports the sockets it can see.
-	got, err := Procfs{Root: root}.scan(context.Background(), 1000)
+	got, _, err := Procfs{Root: root}.scan(context.Background(), 1000)
 	if err != nil {
 		t.Fatalf("scan error = %v, want nil with net/tcp6 absent", err)
 	}
@@ -102,7 +102,7 @@ func TestScanListenersReadsBothTablesAndToleratesAMissingOne(t *testing.T) {
 }
 
 func TestScanListenersReportsNothingWithoutProcfs(t *testing.T) {
-	got, err := Procfs{Root: filepath.Join(t.TempDir(), "absent")}.scan(context.Background(), 1000)
+	got, _, err := Procfs{Root: filepath.Join(t.TempDir(), "absent")}.scan(context.Background(), 1000)
 	if err != nil {
 		t.Fatalf("scan error = %v, want nil on a platform with no procfs", err)
 	}
@@ -159,7 +159,7 @@ func TestScanListenersSkipsUDPSocketsInTheEphemeralRange(t *testing.T) {
 		// 45000 again, as a TCP listener: the range says nothing about those.
 		"   0: 0100007F:AFC8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 51004 1 0000 100 0 0 10 0\n")
 
-	got, err := Procfs{Root: root}.scan(context.Background(), 1000)
+	got, _, err := Procfs{Root: root}.scan(context.Background(), 1000)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}

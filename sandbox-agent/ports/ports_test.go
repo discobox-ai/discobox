@@ -69,16 +69,16 @@ func (p *recordingProbe) lastTarget(port int) netip.AddrPort {
 	return p.targets[port]
 }
 
-func (p *recordingProbe) probe(_ context.Context, target netip.AddrPort) Protocol {
+func (p *recordingProbe) probe(_ context.Context, target netip.AddrPort) ProbeResult {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	port := int(target.Port())
 	p.calls[port]++
 	p.targets[port] = target
 	if answer, ok := p.answers[port]; ok {
-		return answer
+		return ProbeResult{Protocol: answer}
 	}
-	return ProtocolTCP
+	return ProbeResult{Protocol: ProtocolTCP}
 }
 
 func (p *recordingProbe) callCount(port int) int {
@@ -205,9 +205,9 @@ func TestWatcherGroupsOneWildcardPortAcrossFamilies(t *testing.T) {
 	write("tcp6", row(0, "00000000000000000000000000000000", "1F90", 1000, 41002))
 
 	var probed netip.AddrPort
-	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: root}, Probe: func(_ context.Context, target netip.AddrPort) Protocol {
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: root}, Probe: func(_ context.Context, target netip.AddrPort) ProbeResult {
 		probed = target
-		return ProtocolHTTP
+		return ProbeResult{Protocol: ProtocolHTTP}
 	}})
 	watcher.tick(context.Background())
 
@@ -235,7 +235,7 @@ func TestWatcherIgnoresOtherUsersAndExcludedPorts(t *testing.T) {
 		UID:             1000,
 		ExcludeTCPPorts: []int{3003},
 		Scanner:         Procfs{Root: fixture.root},
-		Probe:           func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP },
+		Probe:           func(context.Context, netip.AddrPort) ProbeResult { return ProbeResult{Protocol: ProtocolHTTP} },
 	})
 	watcher.tick(context.Background())
 
@@ -248,7 +248,7 @@ func TestWatcherIgnoresOtherUsersAndExcludedPorts(t *testing.T) {
 func TestWatcherDropsPortsThatStopListening(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
-	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP }})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: func(context.Context, netip.AddrPort) ProbeResult { return ProbeResult{Protocol: ProtocolHTTP} }})
 	watcher.tick(context.Background())
 
 	fixture.write()
@@ -262,9 +262,9 @@ func TestWatcherPublishesANewPortBeforeItsProbeAnswers(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
 	release := make(chan struct{})
-	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: func(context.Context, netip.AddrPort) Protocol {
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: func(context.Context, netip.AddrPort) ProbeResult {
 		<-release
-		return ProtocolHTTP
+		return ProbeResult{Protocol: ProtocolHTTP}
 	}})
 
 	done := make(chan struct{})
@@ -677,5 +677,141 @@ func TestTheExcludedPortIsExcludedForTCPOnly(t *testing.T) {
 	snapshot := watcher.Snapshot()
 	if len(snapshot) != 1 || snapshot[0].Protocol != ProtocolUDP || snapshot[0].ServiceID != "game" {
 		t.Fatalf("snapshot = %+v, want only the declared, observed udp 3003", snapshot)
+	}
+}
+
+// The skip is an observation policy, never a cached probe result.
+func TestEphemeralTCPPolicyChanges(t *testing.T) {
+	for _, change := range []string{"declaration", "range", "stated removed"} {
+		t.Run(change, func(t *testing.T) {
+			f := newProcFixture(t)
+			f.write(row(0, "0100007F", "9C40", 1000, 123)) // 40000
+			probe := newRecordingProbe(map[int]Protocol{40000: ProtocolHTTP})
+			var declarations []Declaration
+			w := New(Config{UID: 1000, Scanner: Procfs{Root: f.root}, Probe: probe.probe, Declared: func() ([]Declaration, error) { return declarations, nil }})
+			w.tick(context.Background())
+			if got := w.Snapshot(); len(got) != 1 || got[0].Protocol != ProtocolTCP || probe.callCount(40000) != 0 {
+				t.Fatalf("first scan: %+v, probes %d", got, probe.callCount(40000))
+			}
+			w.tick(context.Background())
+			if probe.callCount(40000) != 0 {
+				t.Fatal("ephemeral listener was probed")
+			}
+			switch change {
+			case "declaration":
+				declarations = []Declaration{{Port: 40000}}
+			case "range":
+				dir := filepath.Join(f.root, "sys/net/ipv4")
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "ip_local_port_range"), []byte("45000 60000"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "stated removed":
+				declarations = []Declaration{{Port: 40000, Protocol: ProtocolHTTPS}}
+				w.tick(context.Background())
+				if probe.callCount(40000) != 0 {
+					t.Fatal("stated protocol probed")
+				}
+				declarations = []Declaration{{Port: 40000}}
+			}
+			w.tick(context.Background())
+			if got := w.Snapshot()[0]; got.Protocol != ProtocolHTTP || probe.callCount(40000) != 1 {
+				t.Fatalf("after change: %+v, probes %d", got, probe.callCount(40000))
+			}
+			// Returning to the skip policy takes effect even with a cached HTTP answer.
+			declarations = nil
+			if change == "range" {
+				if err := os.Remove(filepath.Join(f.root, "sys/net/ipv4/ip_local_port_range")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			w.tick(context.Background())
+			if got := w.Snapshot()[0]; got.Protocol != ProtocolTCP || probe.callCount(40000) != 1 {
+				t.Fatalf("skip restored: %+v", got)
+			}
+		})
+	}
+}
+
+func TestSilentTCPRepeat(t *testing.T) {
+	for _, declared := range []bool{false, true} {
+		for _, silent := range []bool{false, true} {
+			t.Run(strconv.FormatBool(declared)+"/"+strconv.FormatBool(silent), func(t *testing.T) {
+				w := New(Config{})
+				key := endpoint{network: networkTCP, port: 8080}
+				listeners := []listener{{Network: networkTCP, Addr: netip.MustParseAddr("127.0.0.1"), Port: 8080, Socket: 1}}
+				var declarations []Declaration
+				if declared {
+					listeners = nil
+					declarations = []Declaration{{Port: 8080}}
+				}
+				now := time.Now().UTC()
+				observe := func(at time.Time) []endpoint { return w.observe(listeners, declarations, defaultEphemeralRange, at) }
+				if len(observe(now)) != 1 {
+					t.Fatal("initial probe missing")
+				}
+				target := probeTarget{socketKey: w.state[key].socketKey}
+				w.record(key, target, ProbeResult{Protocol: ProtocolTCP, Silent: silent})
+				completed := w.state[key].silentAt
+				if !silent {
+					completed = now
+				}
+				if len(observe(completed.Add(3*time.Second-time.Nanosecond))) != 0 {
+					t.Fatal("early repeat")
+				}
+				got := observe(completed.Add(3 * time.Second))
+				if (len(got) == 1) != silent {
+					t.Fatalf("repeat: %v, silent %v", got, silent)
+				}
+				if silent {
+					w.record(key, target, ProbeResult{Protocol: ProtocolTCP, Silent: true})
+					if len(observe(completed.Add(time.Hour))) != 0 {
+						t.Fatal("third probe")
+					}
+				}
+				// A replacement socket (or a declaration removed and re-added) starts over.
+				if declared {
+					declarations = nil
+					observe(now)
+					declarations = []Declaration{{Port: 8080}}
+				} else {
+					listeners[0].Socket = 2
+				}
+				if len(observe(now)) != 1 {
+					t.Fatal("replacement not probed")
+				}
+				target.socketKey = w.state[key].socketKey
+				w.record(key, target, ProbeResult{Protocol: ProtocolTCP, Silent: true})
+				if len(observe(w.state[key].silentAt.Add(3*time.Second))) != 1 {
+					t.Fatal("replacement did not earn repeat")
+				}
+			})
+		}
+	}
+}
+
+func TestTCPRangeFloorDoesNotChangeUDP(t *testing.T) {
+	f := newProcFixture(t)
+	f.write(row(0, "0100007F", "1F90", 1000, 1))
+	dir := filepath.Join(f.root, "sys/net/ipv4")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ip_local_port_range"), []byte("1024 65535"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
+	w := New(Config{UID: 1000, Scanner: Procfs{Root: f.root}, Probe: probe.probe})
+	w.tick(context.Background())
+	if probe.callCount(8080) != 1 || w.Snapshot()[0].Protocol != ProtocolHTTP {
+		t.Fatal("widened range hid dev server")
+	}
+	for _, floor := range []int{32768, 49152} {
+		r := (portRange{1024, 65535}).tcpRange(floor)
+		if r.contains(8080) || !r.contains(floor) {
+			t.Fatalf("floor %d: %+v", floor, r)
+		}
 	}
 }

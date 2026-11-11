@@ -79,11 +79,12 @@ Global review expectations:
   the server refusing its own platform, the layout holding another digest
   than the manifest named, until a pass succeeded. Name the output by its content and remove a
   superseded one only after the manifest replacing it is out.
-- A test server that counts what reaches it must ignore the sandbox-agent's
-  port probe (`User-Agent: discobox-sandbox-agent (port probe)`). Every port
-  that starts listening is asked `HEAD /` once, and this repository is worked
-  on inside a sandbox, so an unguarded counter is a flake that only fires
-  there. See `sandbox-agent/ports/probe.go`.
+- A test server on a fixed port that counts what reaches it must ignore the
+  sandbox-agent's port probe (`User-Agent: discobox-sandbox-agent (port probe)`).
+  It is asked `HEAD /` once, or twice if it sends no bytes within a second
+  and still listens three seconds later. Undeclared listeners in the ephemeral
+  range are listed without a probe. This repository is worked on inside a
+  sandbox, so an unguarded fixed-port counter is a flake that only fires there. See `sandbox-agent/ports/probe.go`.
 - No file may carry a build constraint that excludes darwin, linux, and
   windows together (`!darwin && !linux && !windows`). gopls opens such a file
   in an `aix/ppc64` view, the first port its list has left, and type-checks

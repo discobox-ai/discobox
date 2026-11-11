@@ -46,12 +46,12 @@ func lsofArgs(uid int64) []string {
 	}
 }
 
-func (s lsofScanner) scan(ctx context.Context, uid int64) ([]listener, error) {
+func (s lsofScanner) scan(ctx context.Context, uid int64) ([]listener, portRange, error) {
+	ephemeral := s.ephemeral()
 	out, err := s.run(ctx, lsofArgs(uid))
 	if err != nil {
-		return nil, err
+		return nil, ephemeral.tcpRange(darwinEphemeralRange.low), err
 	}
-	ephemeral := s.ephemeral()
 	var listeners []listener
 	for _, entry := range parseLsof(string(out)) {
 		if entry.Network == networkUDP && ephemeral.contains(entry.Port) {
@@ -59,7 +59,7 @@ func (s lsofScanner) scan(ctx context.Context, uid int64) ([]listener, error) {
 		}
 		listeners = append(listeners, entry)
 	}
-	return listeners, nil
+	return listeners, ephemeral.tcpRange(darwinEphemeralRange.low), nil
 }
 
 // lsofFile is one file set of lsof's field output: the fields between one f
