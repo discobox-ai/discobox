@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -67,18 +66,6 @@ type secretsLoadedMsg struct {
 	// secrets: a variable a secret already holds is answered with that one.
 	held []HeldGrant
 	err  error
-}
-
-// standingLoadedMsg carries the bindings of the chosen secret the asking
-// discobox already holds itself: what an approved part would replace (ADR
-// 26-11-02-022 §5), read once the secret is chosen.
-type standingLoadedMsg struct {
-	wait     *dialog
-	parents  []SecretBinding
-	approval approval
-	standing []SecretBinding
-	held     []HeldGrant
-	err      error
 }
 
 // credentialAnsweredMsg reports an approval or a denial coming back. ttl is
@@ -231,7 +218,7 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
 	}
-	return m.approvalPart(newApproval(req, secrets, held), req.Use == nil && req.Delegate != nil)
+	return m.askWhichCredential(req, secrets, held)
 }
 
 // heldBy is the secret the discobox's own bindings deliver in the use part's
@@ -288,9 +275,10 @@ func (m *Model) showRawRequest(req CredentialRequest, back func() tea.Cmd) tea.C
 	}
 	d := actionsDialog("Raw request", "", []action{{key: "back", press: "enter", label: "Back to the request", enabled: true}},
 		func(string) tea.Cmd { return back() })
+	d.shortcuts = map[string]func() tea.Cmd{"c": func() tea.Cmd { return m.copyText(req.Raw, "copied the request") }}
 	d.titleRight = req.ID
 	d.sections = []section{{label: "as the server sent it", lines: lines}}
-	d.keys = []hint{pressing("enter or esc goes back", "esc")}
+	d.keys = []hint{pressing("enter or esc goes back", "esc"), pressing("c copies", "c")}
 	d.onCancel = back
 	m.dialog = d
 	return nil
@@ -323,75 +311,6 @@ func lifetimeChoices(asked time.Duration) []time.Duration {
 		}
 	}
 	return slices.Insert(slices.Clone(lifetime.Presets), at, asked)
-}
-
-// bindingSection is what the lifetime is being chosen for, so the card asking
-// "how long" says how long *what*: the credential, what answers it, and where
-// it may be sent.
-func bindingSection(a approval) section {
-	answered := a.secret.Name
-	if a.fresh {
-		answered = "a new credential, filled in on the next card"
-	}
-	fields := []field{
-		{label: "credential", value: credentialName(a.req), tone: toneAccent},
-		{label: "answered with", value: answered},
-	}
-	if a.req.Delegate != nil {
-		fields = append(fields, field{label: "purpose", value: partsPurpose(a.req), tone: toneAccent})
-	}
-	if where := a.req.whereRows(); where != "" {
-		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
-	}
-	for _, kind := range []struct {
-		name     string
-		answer   string
-		delegate bool
-	}{{"use", a.use, false}, {"delegate", a.delegate, true}} {
-		if kind.answer == "" {
-			continue
-		}
-		if kind.answer == PartDeny {
-			fields = append(fields, field{label: kind.name + " part", value: "denied — what the discobox holds of it stays as it is", tone: toneDim})
-			continue
-		}
-		asked := a.grantedRoutes(kind.delegate)
-		scope := a.useScope
-		if kind.delegate {
-			scope = a.delegateScope
-		}
-		if scope == "" {
-			scope = "routes"
-		}
-		summary := "Requested routes"
-		switch scope {
-		case "hosts":
-			summary = "Requested hosts · Any method and path on these hosts; any protocol\n" + routeRows(asked)
-		case "anywhere":
-			summary = "Anywhere · No grant restriction"
-		}
-		fields = append(fields, field{label: kind.name + " scope", value: summary + "\nStill limited by credential scope", tone: toneAccent})
-		fields = append(fields, replacedFields(a.standing, kind.delegate, a.req.EnvVar, a.usePlanned(), asked, a.secret.Routes)...)
-	}
-	return section{label: "the binding", fields: fields}
-}
-
-// usePlanned is how the use part is planned on the cards: as it will be
-// granted, empty when it is denied or not asked.
-func (a approval) usePlanned() bindingplan.As {
-	if a.use != PartApprove {
-		return ""
-	}
-	return a.useAs
-}
-
-// partsPurpose says what a request with a delegate part asks, said the same
-// way on the request and on the binding.
-func partsPurpose(req CredentialRequest) string {
-	if req.asksBoth() {
-		return "use it, and " + delegationPurpose
-	}
-	return delegationPurpose
 }
 
 // replacedFields is what an approved part would do to the asking discobox's
@@ -538,94 +457,6 @@ func rawDeliveryText(delivery string) string {
 	return "the value itself, " + where + " — refused off its routes, but the discobox can send it anywhere"
 }
 
-func (a approval) grantedRoutes(delegate bool) []secretroute.Route {
-	part, scope := a.req.Use, a.useScope
-	if delegate {
-		part, scope = a.req.Delegate, a.delegateScope
-	}
-	var routes []secretroute.Route
-	if part != nil {
-		routes = part.Routes
-	} else {
-		routes = a.req.routes()
-	}
-	if scope == "anywhere" {
-		return nil
-	}
-	if scope == "hosts" {
-		hosts := secretroute.OpenRouteHosts(routes)
-		return []secretroute.Route{{Hosts: hosts}}
-	}
-	return routes
-}
-
-// heldSection is what applies in the use part's variable now, grant by
-// grant with its lifetime, then the routes asked that none of them names,
-// compared as written (ADR 26-11-03-329 §5), and what replacing would do to
-// each.
-func heldSection(a approval) section {
-	variable := variableOf(a.req)
-	s := section{label: "holds in " + variable + " now"}
-	if len(a.held) == 0 {
-		s.fields = append(s.fields, field{label: "nothing", value: "an addition is the first grant there", tone: toneDim})
-	}
-	// What a replacement does to each grant is bindingplan's rule, the one
-	// the server applies; a lifetime of forever cuts nothing short.
-	var until time.Time
-	if a.ttl > 0 {
-		until = time.Now().Add(a.ttl)
-	}
-	planned := make([]bindingplan.Held, 0, len(a.held))
-	for _, grant := range a.held {
-		planned = append(planned, bindingplan.Held{ID: grant.BindingID, Adds: grant.Adds, Own: grant.From == BindingSandbox, Expires: grant.Expires})
-	}
-	fates := map[string]bindingplan.HeldFate{}
-	for _, step := range bindingplan.Replacing(planned, until) {
-		fates[step.Held.ID] = step.Fate
-	}
-	var named [][]string
-	for _, grant := range a.held {
-		what := "binding"
-		if grant.Adds {
-			what = "addition"
-		}
-		value := strings.Join(formatRoutes(grant.Routes), "; ") + " · no expiry"
-		if !grant.Expires.IsZero() {
-			value = strings.Join(formatRoutes(grant.Routes), "; ") + " · until " + grant.Expires.Local().Format("Jan 2 15:04")
-		}
-		switch grant.From {
-		case BindingHarnessConfig:
-			value += " · from its harness config"
-		case BindingProject:
-			value += " · from its project"
-		}
-		s.fields = append(s.fields, field{label: what, value: value})
-		named = append(named, formatRoutes(grant.Routes))
-		var fate string
-		switch fates[grant.BindingID] {
-		case bindingplan.Goes:
-			fate = "goes"
-		case bindingplan.Shadowed:
-			fate = "is shadowed for " + lifetime.Label(a.ttl)
-		case bindingplan.Shortened:
-			fate = "lasts only " + lifetime.Label(a.ttl)
-		}
-		if fate != "" {
-			s.fields = append(s.fields, field{label: "", value: "if replaced, it " + fate, tone: toneAlert})
-		}
-	}
-	var asked []secretroute.Route
-	if a.req.Use != nil {
-		asked = a.req.Use.Routes
-	}
-	if fresh := bindingplan.NewRoutes(formatRoutes(asked), named); len(fresh) == 0 {
-		s.fields = append(s.fields, field{label: "new routes", value: "none, as written", tone: toneDim})
-	} else {
-		s.fields = append(s.fields, field{label: "new routes", value: strings.Join(fresh, "; ") + " (as written)", tone: toneAccent})
-	}
-	return s
-}
-
 // variableOf is the variable a request's use part names, or a stand-in.
 func variableOf(req CredentialRequest) string {
 	if req.EnvVar != "" {
@@ -713,275 +544,6 @@ func secretsForRequest(secrets []Secret, req CredentialRequest) []Secret {
 		return out[i].Name == req.Name && out[j].Name != req.Name
 	})
 	return out
-}
-
-// secretDetail says what a secret is and where it may be sent. A credential
-// that caps how long its bindings may last says so here, beside the row.
-func secretDetail(secret Secret) string {
-	where := "sent nowhere"
-	if len(secret.Routes) > 0 {
-		where = routesText(secret.Routes)
-	}
-	detail := secretKind(secret) + " · " + where
-	if secret.MaxTTL > 0 {
-		detail += " · at most " + lifetime.Label(secret.MaxTTL)
-	}
-	return detail
-}
-
-// secretKind is what a secret is, said the way that matters when choosing it:
-// a token got from a command is named by the command, which is how its value
-// is kept current (ADR 26-09-25-122).
-func secretKind(secret Secret) string {
-	if len(secret.RefreshCommand) > 0 {
-		return "from " + refreshcmd.Join(secret.RefreshCommand)
-	}
-	return secret.Type
-}
-
-// askNewCredentialForm stores a credential the project does not have yet and
-// answers the request with it: the secrets screen's form (secretForm), filled
-// from the request (fillFromRequest), every field still the person's to
-// change. It comes after the lifetime, so the token typed into it is never
-// held by a card that can be gone back to: Esc here is the request, still
-// waiting.
-func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
-	return m.newCredentialForm(a, section{label: "approves the request", fields: []field{
-		{label: "credential", value: credentialName(a.req), tone: toneAccent},
-		{label: "bound for", value: lifetime.Label(a.ttl), tone: toneAccent},
-	}}, "enter stores and approves", func(f *form, secret NewSecret) tea.Cmd {
-		// A limit shorter than the binding this approval is making is one the
-		// server would refuse the binding for, after the secret was stored.
-		if limit := time.Duration(secret.MaxTTLSeconds) * time.Second; limit > 0 && (a.ttl <= 0 || a.ttl > limit) {
-			f.err = "the binding limit is shorter than the " + lifetime.Label(a.ttl) + " this request is being approved for"
-			return nil
-		}
-		return m.createAndApprove(a, secret)
-	}, func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets, a.held) })
-}
-
-// newCredentialForm is the new-secret form filled from a request, with what
-// storing it then does. about says so above the form, and back is where Esc
-// goes, nothing stored.
-func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
-	f := secretForm(nil, a.req.routes())
-	fillFromRequest(f, a.req, a.secrets)
-	d := formDialog("New credential", f, func(f *form) tea.Cmd {
-		secret, ok := secretFromForm(f)
-		if !ok {
-			return nil
-		}
-		return then(f, secret)
-	})
-	d.sections = []section{about}
-	// Esc second: a key line is cut from its tail, and the way back — the
-	// request still waiting — is the one thing it must always say.
-	d.keys = []hint{pressing(store, "enter"), pressing("esc back, nothing stored", "esc"), says("↑↓ moves"), says("←→ chooses")}
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
-// fillFromRequest fills the new-secret form from what a request asks for:
-// named as the request asks; the routes it asks for are the form's own rows
-// (newCredentialForm). A name the project already holds is the first free one
-// instead, which the server would otherwise refuse the create for.
-func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) {
-	f.set("name", freeSecretName(secrets, credentialName(req)))
-}
-
-// createAndApprove stores the new credential and answers with it, for the
-// lifetime chosen. A secret stored from a command is run for its first value
-// by the data source. A refusal after the secret was stored says so: the
-// secret stays, and the request still waits.
-func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
-	req, ttl := a.req, a.ttl
-	status := "storing the credential…"
-	if secret.RefreshCommand != nil {
-		status = "running " + refreshcmd.Join(secret.RefreshCommand) + "…"
-	}
-	m.dialog = statusDialog("Credential request", status)
-	return func() tea.Msg {
-		stored, err := m.ds.CreateSecret(m.ctx, req.Server, secret)
-		if err != nil {
-			return credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
-		}
-		err = m.ds.ApproveCredentialRequest(m.ctx, req.Server, Approval{
-			RequestID:     req.ID,
-			SecretID:      stored.ID,
-			TTLSeconds:    lifetime.Seconds(ttl),
-			Use:           a.use,
-			Delegate:      a.delegate,
-			UseScope:      a.useScope,
-			DelegateScope: a.delegateScope,
-			UseAs:         string(a.usePlanned()),
-		})
-		msg := credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
-		if err != nil {
-			msg.applied = []string{"the token was stored as the project secret " + stored.Name}
-		}
-		return msg
-	}
-}
-
-// approval is what answering a request will do, gathered one step at a time:
-// the secret chosen, and how long the binding it makes lasts.
-//
-// It is carried whole, and copied rather than changed at each step, because
-// every step can be gone back from: the dialog before one is rebuilt from the
-// approval as it stood when that dialog was asked, and has to find it that way.
-type approval struct {
-	req     CredentialRequest
-	secrets []Secret
-	secret  Secret
-	// fresh is a new credential rather than a secret the project holds:
-	// secret is empty, and the new-secret form is filled in after the
-	// lifetime.
-	fresh bool
-	ttl   time.Duration
-	// raw is the delivery the person chose for the value itself, empty for a
-	// sentinel (ADR 26-10-27-840 §2).
-	raw string
-	// use and delegate are each part's answer, PartApprove or PartDeny, empty
-	// for a part the request does not have. A request with one part is
-	// approved by choosing a secret; one with both is answered part by part
-	// on separate cards; partsChosen marks the staged first decision.
-	use, delegate           string
-	useScope, delegateScope string
-	partsChosen             bool
-	// standing is the asking discobox's own bindings of the chosen secret:
-	// what an approved part replaces.
-	standing []SecretBinding
-	parents  []SecretBinding
-	// held is what applies in the use part's variable now, from whichever
-	// level: what an addition stacks on (ADR 26-11-03-329 §5).
-	held []HeldGrant
-	// useAs is how an approved use part is granted, as the request asked
-	// until the person chooses a mode on the use card.
-	useAs bindingplan.As
-}
-
-// newApproval is an answer to req, its parts approved until asked otherwise.
-// held is what applies in the use part's variable now.
-func newApproval(req CredentialRequest, secrets []Secret, held []HeldGrant) approval {
-	a := approval{req: req, secrets: secrets, held: held, useAs: bindingplan.Replace}
-	if req.Use != nil || req.Delegate == nil {
-		a.use = PartApprove
-	}
-	if req.Use != nil && req.Use.Add {
-		a.useAs = bindingplan.Add
-	}
-	if req.Delegate != nil {
-		a.delegate = PartApprove
-	}
-	return a
-}
-
-// canAdd reports whether the use part can be granted as an addition with
-// the secret chosen: an addition stacks on what delivers the variable, so
-// it has to be that secret (ADR 26-11-03-329 §4).
-func (a approval) canAdd() bool {
-	holder, _ := heldBy(a.held)
-	return holder.SecretID == "" || (!a.fresh && holder.SecretID == a.secret.ID)
-}
-
-// chooseSecret reads live standing grants before the final confirmation.
-func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
-	if holder, _ := heldBy(a.held); holder.SecretID == secretID {
-		a.secret = heldSecret(a.secrets, holder)
-	}
-	for _, secret := range a.secrets {
-		if secret.ID == secretID {
-			a.secret = secret
-		}
-	}
-	if a.req.SandboxID == "" {
-		return m.confirmCredentialApproval(a)
-	}
-	// What the approval would replace is read before it is decided, so the
-	// cards that follow can say it.
-	wait := statusDialog("Credential request", "reading what the discobox holds of "+a.secret.Name+"…")
-	m.dialog = wait
-	return func() tea.Msg {
-		bindings, err := m.ds.Bindings(m.ctx, a.req.Server, BindingFilter{SecretID: a.secret.ID})
-		var standing []SecretBinding
-		for _, b := range bindings {
-			if b.TargetKind == BindingSandbox && b.TargetID == a.req.SandboxID {
-				standing = append(standing, b)
-			}
-		}
-		var held []HeldGrant
-		if err == nil && a.req.Use != nil && a.req.EnvVar != "" {
-			held, err = m.ds.HeldGrants(m.ctx, a.req.Server, a.req.SandboxID, a.req.EnvVar)
-		}
-		var parents []SecretBinding
-		byID := map[string]SecretBinding{}
-		for _, b := range bindings {
-			byID[b.ID] = b
-		}
-		seen := map[string]bool{}
-		for _, b := range standing {
-			for id := b.ParentID; id != "" && !seen[id]; {
-				seen[id] = true
-				parent, ok := byID[id]
-				if !ok {
-					break
-				}
-				parents = append(parents, parent)
-				id = parent.ParentID
-			}
-		}
-		return standingLoadedMsg{wait: wait, parents: parents, approval: a, standing: standing, held: held, err: err}
-	}
-}
-
-// standingLoaded opens the final confirmation with what the approval replaces.
-func (m *Model) standingLoaded(msg standingLoadedMsg) tea.Cmd {
-	if m.dialog != msg.wait {
-		return nil
-	}
-	if msg.err != nil {
-		m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read what the discobox holds of %s: %v\n\nThe request is still waiting.", msg.approval.secret.Name, msg.err))
-		return nil
-	}
-	a := msg.approval
-	a.standing, a.held, a.parents = msg.standing, msg.held, msg.parents
-	return m.confirmCredentialApproval(a)
-}
-
-// finishApproval makes the binding.
-//
-// The lifetime rides on the approval itself rather than being left out for the
-// server to default: the default is the secret's own ceiling, which most
-// credentials do not have, and a window that stayed quiet about it handed out
-// permanent credentials without ever saying the word.
-func (m *Model) finishApproval(a approval) tea.Cmd {
-	what := "approving for " + lifetime.Label(a.ttl) + "…"
-	sent := Approval{
-		RequestID:     a.req.ID,
-		SecretID:      a.secret.ID,
-		TTLSeconds:    lifetime.Seconds(a.ttl),
-		Raw:           a.raw,
-		Use:           a.use,
-		Delegate:      a.delegate,
-		UseScope:      a.useScope,
-		DelegateScope: a.delegateScope,
-	}
-	if a.use == PartApprove && a.req.Use != nil {
-		// Always said, so the binding made is the one the card showed.
-		sent.UseAs = string(a.useAs)
-		if a.useAs == bindingplan.Add {
-			what = "approving an addition for " + lifetime.Label(a.ttl) + "…"
-		}
-	}
-	if a.raw != "" {
-		what = "approving the value itself for " + lifetime.Label(a.ttl) + "…"
-	}
-	m.dialog = statusDialog("Credential request", what)
-	return func() tea.Msg {
-		err := m.ds.ApproveCredentialRequest(m.ctx, a.req.Server, sent)
-		return credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err}
-	}
 }
 
 func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {

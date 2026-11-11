@@ -210,7 +210,7 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 	if delegate, ok := r.Delegate.Get(); ok {
 		req.Delegate = tuiRequestPart(delegate)
 	}
-	req.Raw = requestJSON(r)
+	req.Raw = requestJSON(&r)
 	return req
 }
 
@@ -250,7 +250,7 @@ func toTUIRefreshRequest(r apimodel.SecretRefreshRequest) tui.CredentialRequest 
 		SandboxID: strings.TrimSpace(r.SandboxId.Or("")),
 		Name:      terminalSafe(strings.TrimSpace(r.SecretName.Or(r.SecretId))),
 		Created:   r.CreatedAt,
-		Raw:       requestJSON(r),
+		Raw:       requestJSON(&r),
 		Refresh:   &tui.RefreshAsk{SecretID: r.SecretId, Cause: string(r.Cause)},
 	}
 }
@@ -288,7 +288,10 @@ func terminalSafeRoute(route secretroute.Route) secretroute.Route {
 
 // requestJSON is a request as the server sent it, for the window to show.
 // Nearly all of it is text a discobox wrote, which a JSON encoder passes
-// through but for C0 controls, so it is written terminal-safe.
+// through but for C0 controls, so it is written terminal-safe. v is a
+// pointer: the generated types encode themselves only through their pointer
+// methods, and a value is encoded field by field, which fails on an unset
+// optional and leaves the window with nothing to show.
 func requestJSON(v any) string {
 	var raw bytes.Buffer
 	if writeTerminalSafeJSON(&raw, v) != nil {
@@ -642,12 +645,17 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// Each part the request has is answered, approve or deny: the server
 	// refuses an answer that leaves one out (ADR 26-11-02-022 §4).
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
-	decide := func(answer, raw, as, scope string) apiclientgen.OptSecretRequestPartDecision {
+	decide := func(answer, raw, as, scope string, routes []secretroute.Route) apiclientgen.OptSecretRequestPartDecision {
 		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(answer)}
 		if answer == tui.PartApprove {
 			part.TtlSeconds = apiclientgen.NewOptInt64(approval.TTLSeconds)
 			if scope != "" {
 				part.Scope = apiclientgen.NewOptSecretRequestPartDecisionScope(apiclientgen.SecretRequestPartDecisionScope(scope))
+			}
+			// Edited routes go with the requested-routes scope, the only one
+			// the server takes them under.
+			if routes != nil {
+				part.Routes = apiroute.Inputs(routes)
 			}
 			if raw != "" {
 				part.Raw = apiclientgen.NewOptSecretRequestPartDecisionRaw(apiclientgen.SecretRequestPartDecisionRaw(raw))
@@ -659,10 +667,10 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 		return apiclientgen.NewOptSecretRequestPartDecision(part)
 	}
 	if approval.Use != "" {
-		body.Use = decide(approval.Use, approval.Raw, approval.UseAs, approval.UseScope)
+		body.Use = decide(approval.Use, approval.Raw, approval.UseAs, approval.UseScope, approval.UseRoutes)
 	}
 	if approval.Delegate != "" {
-		body.Delegate = decide(approval.Delegate, "", "", approval.DelegateScope)
+		body.Delegate = decide(approval.Delegate, "", "", approval.DelegateScope, approval.DelegateRoutes)
 	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,

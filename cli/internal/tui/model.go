@@ -1202,9 +1202,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		return m.askAboutCredential(req, msg.secrets, msg.held)
 
-	case standingLoadedMsg:
-		return m.standingLoaded(msg)
-
 	case credentialAnsweredMsg:
 		return m.credentialAnswered(msg)
 
@@ -1567,6 +1564,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case editorDoneMsg:
 		m.promptEdited(msg)
 		return nil
+
+	case routesEditedMsg:
+		return m.routesEdited(msg)
+
+	case thenMsg:
+		return msg.then()
 
 	case shimmerTickMsg:
 		return m.advanceShimmer(msg)

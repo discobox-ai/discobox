@@ -1,6 +1,7 @@
 package secretformat
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -252,5 +253,37 @@ func TestAJWTsLaterSegmentsAreNeverLiterals(t *testing.T) {
 	}
 	if got := Describe("a..b"); got != "{hex:1}..{hex:1}" {
 		t.Fatalf("Describe with an empty segment = %q", got)
+	}
+}
+
+// Every charset a token may name is offered, each with the alphabet Parse
+// accepts it by.
+func TestCharsetsAreEveryCharsetTokensName(t *testing.T) {
+	got := Charsets()
+	if len(got) != len(charsets) {
+		t.Fatalf("Charsets() = %d, want all %d", len(got), len(charsets))
+	}
+	for _, c := range got {
+		if charsets[c.Name] != c.Alphabet {
+			t.Errorf("%s alphabet = %q, want %q", c.Name, c.Alphabet, charsets[c.Name])
+		}
+		if _, err := Parse("{" + c.Name + ":4}"); err != nil {
+			t.Errorf("{%s:4} does not parse: %v", c.Name, err)
+		}
+	}
+}
+
+// A template's randomness is its tokens' alone, and its literals are kept in
+// order.
+func TestRandomBitsAndLiterals(t *testing.T) {
+	tmpl, err := Parse("ghp_{hex:4}.{digits:2}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bits := tmpl.RandomBits(); math.Abs(bits-(4*4+2*math.Log2(10))) > 1e-9 {
+		t.Errorf("RandomBits = %v", bits)
+	}
+	if got := strings.Join(tmpl.Literals(), "|"); got != "ghp_|." {
+		t.Errorf("Literals = %q", got)
 	}
 }

@@ -316,8 +316,8 @@
   line that shows both says it twice, once from a poll that lags the stream.
   Name a box without its program's words where the msg goes beside it
   (`recordTitle`).
-- **What the approval card says a binding becomes follows the server's rule,
-  fate by fate.** The routes a replaced binding gains are shown on whichever
+- **What the last step of a request says a binding becomes follows the
+  server's rule, fate by fate.** The routes a replaced binding gains are shown on whichever
   binding `bindingplan` keeps (`plan.Keep`: an `Updated` one, or the
   delegation of a `Split`), never on one fate alone, and "the same routes" is
   said only when the two lists are equal. A summary narrower than the rule
@@ -384,9 +384,20 @@
   without the hold, or records it without showing it, loses the one
   explanation the project gets.
 
-- Scope addition-preview promises to the addition action. The add-or-replace
-  dialog offers both outcomes; an unqualified footer saying the rest stays
-  unchanged misstates replacement, which clears the existing use grants.
+- An addition is promised only when it is granted as one. A use part asked
+  as an addition with a secret other than the one delivering its variable is
+  granted as a replacement (`requestAnswer.useAs`); saying "replaces nothing"
+  there misstates it, since a replacement clears the existing use grants.
+
+- **Every step of the request dialog holds its decisions until it is drawn**
+  (`gateUntilSeen`). A step built without it can be answered by a key typed
+  ahead of it — Enter, Enter on the summary sent a lifetime nobody saw, past
+  the replacement it listed.
+
+- A card a step goes back to is the same card, so its focus is where it was
+  left. Put the focus back on its first decision when coming back from a side
+  card (`modifyPart`'s back): left on Modify…, the next Enter reopened Modify
+  and its editor instead of approving.
 
 - A form submitting asynchronous work installs its wait dialog synchronously
   before returning the command. An intermediate submit message leaves a gap

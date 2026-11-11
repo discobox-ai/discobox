@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -43,24 +42,6 @@ func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 	}
 	return newTestModel(t, ds), ds
-}
-
-// grantFor answers the lifetime step — the second of every approval — with one
-// of its presets.
-func grantFor(t *testing.T, m *Model, ttl time.Duration) {
-	t.Helper()
-	m.dialog.form.choose("duration", strconv.FormatInt(lifetime.Seconds(ttl), 10))
-	answerApproval(t, m, "accept")
-	if m.dialog != nil && m.dialog.title == "Allow credential delegation?" {
-		answerApproval(t, m, "accept")
-	}
-	if m.dialog != nil && m.dialog.title == "Confirm credential access" {
-		answerApproval(t, m, "accept")
-	}
-}
-
-func onRequestCard(m *Model) bool {
-	return m.dialog != nil && m.dialog.kind == dlgForm && strings.HasPrefix(m.dialog.title, "Allow credential")
 }
 
 func TestARowWithAWaitingRequestIsMarked(t *testing.T) {
@@ -113,31 +94,26 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 	m, _ := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil {
-		t.Fatal("the key on a marked row opened nothing")
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
 	}
 	body := dialogText(m)
-	for _, want := range []string{"github", "GH_TOKEN", "api.github.com", "open a PR"} {
+	for _, want := range []string{"github", "GH_TOKEN", "open a PR"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dialog body = %q, want it to carry %q", body, want)
 		}
 	}
-	// Every secret can be chosen. Greying one out can leave the only sensible
-	// answer unpickable while offering an unrelated one; what a binding costs
-	// is said in the row and asked about on the way through.
+	// Every secret is listed and can be chosen: one that cannot answer is
+	// marked, and choosing it says why rather than leaving it unpickable.
+	var keys []string
 	for _, item := range m.dialog.items {
-		if strings.HasPrefix(item.key, "secret:") && !item.enabled {
-			t.Fatalf("%q cannot be chosen; every secret is an answer somebody may mean", item.label)
+		if !item.enabled {
+			t.Fatalf("%q cannot be chosen", item.label)
 		}
+		keys = append(keys, item.key)
 	}
-	var openai choice
-	for _, item := range m.dialog.form.rows[0].choices {
-		if item.key == "sec_openai" {
-			openai = item
-		}
-	}
-	if !strings.Contains(openai.hint, "api.openai.com") {
-		t.Fatalf("detail = %q, want it to say what it is bound to", openai.hint)
+	if strings.Join(keys, ",") != "sec_gh,sec_openai,new" {
+		t.Fatalf("rows = %v, want every secret and a new credential", keys)
 	}
 }
 
@@ -149,16 +125,20 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	req := waitingRequest()
 	req.Delegate, req.Use = &RequestPart{Routes: req.routes()}, nil
 	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Routes: req.routes()}}
 	m := newTestModel(t, ds)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+	toSummary(t, m, "sec_gh")
+	text := plainFrame(m)
+	if !strings.Contains(text, "delegated to its workers") || strings.Contains(text, "used by this box") {
+		t.Fatalf("summary = %q, want the delegation alone", text)
 	}
-	for _, want := range []string{"delegation grants no use", "the task asks me to open a PR"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("card = %q, want it to carry %q", dialogText(m), want)
-		}
+	answerApproval(t, m, "review")
+	if !strings.Contains(plainFrame(m), "could not use it itself") {
+		t.Fatalf("card = %q, want it to say the box cannot use it", plainFrame(m))
+	}
+	if !onStep(m, "its workers") {
+		t.Fatalf("dialog = %s, want the delegate part with no use part before it", describe(m.dialog))
 	}
 }
 
@@ -172,33 +152,27 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 	ds.projectSecrets = []Secret{
 		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 		{ID: "sec_loose", Name: "anywhere token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"*"}}}},
-		{ID: "sec_gh", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}},
+		{ID: "sec_gh", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
 	}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil {
-		t.Fatal("no dialog")
-	}
 	var order []string
-	for _, item := range m.dialog.form.rows[0].choices {
-		if item.key != "new" {
-			order = append(order, item.key)
-		}
+	for _, item := range m.dialog.items {
+		order = append(order, item.key)
 	}
-	if len(order) != 3 || order[0] != "sec_gh" {
-		t.Fatalf("order = %v, want the secret named github first and every secret offered", order)
+	if strings.Join(order, ",") != "sec_gh,sec_loose,sec_openai,new" {
+		t.Fatalf("order = %v, want those that can answer first, the one named github first among them", order)
 	}
 }
 
-// A secret bound to the host being asked for goes straight on to the lifetime:
-// there is nothing about the binding to ask.
+// A secret bound to the host being asked for is approved from the summary,
+// with how long the last thing asked.
 func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	m.dialog.form.choose("credential", "sec_gh")
+	toSummary(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
@@ -210,11 +184,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil {
-		t.Fatal("no dialog")
-	}
-	m.dialog.form.choose("credential", "sec_gh")
+	toSummary(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
@@ -239,19 +209,12 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 // forever. So it is a step of its own, after the secret, and it has to be
 // answered.
 
-// Forever is offered, and says what it means rather than leaving the word to
-// do it alone.
+// Forever is offered, and sends the zero that means it never expires.
 func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	m.dialog.form.choose("credential", "sec_gh")
-	for _, item := range m.dialog.items {
-		if item.label == "forever" && !strings.Contains(item.detail, "never expires") {
-			t.Fatalf("forever = %q, want it to say it never expires", item.detail)
-		}
-	}
+	toSummary(t, m, "sec_gh")
 	grantFor(t, m, lifetime.Forever)
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 0 {
 		t.Fatalf("approvals = %#v, want the zero that means it never expires", ds.approvals)
@@ -288,8 +251,7 @@ func TestTheApprovalSaysHowLongItGrantedFor(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	m.dialog.form.choose("credential", "sec_gh")
+	toSummary(t, m, "sec_gh")
 	grantFor(t, m, lifetime.Day)
 
 	if !strings.Contains(strings.Join(frame(m), "\n"), "approved github for 1 day") {
@@ -301,7 +263,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	toSummary(t, m, "sec_gh")
 	answerApproval(t, m, "deny")
 
 	if len(ds.denials) != 1 || ds.denials[0] != "sreq_1" {
@@ -367,8 +329,8 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key(credentialsLeaderKey)
-		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgForm })
-		if !strings.Contains(dialogText(m), "api.github.com") {
+		d.wait("the question", func() bool { return onRequestCard(m) })
+		if !strings.Contains(dialogText(m), "the task asks me to open a PR") {
 			t.Fatalf("dialog = %q, want the request the banner is about", dialogText(m))
 		}
 	})
@@ -442,8 +404,8 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 		}
 		clickWindow(d, x, span.rows[1])
 		// The secrets are read first, so the status dialog gives way to the question.
-		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgForm })
-		if !strings.Contains(dialogText(m), "api.github.com") {
+		d.wait("the question", func() bool { return onRequestCard(m) })
+		if !strings.Contains(dialogText(m), "the task asks me to open a PR") {
 			t.Fatalf("dialog = %q, want the request the banner was about", dialogText(m))
 		}
 		// The press belongs to the banner: it must not also have started a
@@ -521,8 +483,7 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	ds.approveErr = errTestRefused
 	ds.mu.Unlock()
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	m.dialog.form.choose("credential", "sec_gh")
+	toSummary(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if m.dialog == nil {
@@ -552,8 +513,7 @@ func TestAFailedApprovalThatChangedNothingSaysNothingOfChanges(t *testing.T) {
 	ds.approveErr = errTestRefused
 	ds.mu.Unlock()
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	m.dialog.form.choose("credential", "sec_gh")
+	toSummary(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if strings.Contains(dialogText(m), "already done") {
@@ -583,7 +543,7 @@ func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 		t.Errorf("the card is %d rows in a window of %d", len(lines), m.height)
 	}
 	onScreen := strings.Join(lines[:min(len(lines), m.height)], "\n")
-	for _, answer := range []string{"Accept", "Deny"} {
+	for _, answer := range []string{"Enter new credential…"} {
 		if !strings.Contains(onScreen, answer) {
 			t.Errorf("%s is not on screen", answer)
 		}
@@ -618,7 +578,7 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	if !seenLast {
 		t.Errorf("the wheel did not reach the end of the card:\n%s", text)
 	}
-	if !strings.Contains(text, "Deny") {
+	if !strings.Contains(text, "Enter new credential…") {
 		t.Errorf("the answers left the card as it scrolled:\n%s", text)
 	}
 }
@@ -797,73 +757,5 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// A variable the discobox already holds a secret in is answered with that
-// secret alone: the server refuses any other there, as an addition or a
-// replacement, so the use card's Credential row is locked to it, with no new
-// credential offered.
-func TestAVariableHeldBySecretIsAnsweredWithIt(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_openai", SecretName: "OpenAI key", From: BindingSandbox}}
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil || m.dialog.form == nil {
-		t.Fatalf("dialog = %s, want the use card", describe(m.dialog))
-	}
-	row := m.dialog.form.rows[0]
-	if row.key != "credential" || !row.locked || len(row.choices) != 1 || row.choices[0].key != "sec_openai" {
-		t.Fatalf("credential row = %#v, want it locked to the secret holding the variable", row)
-	}
-	if text := plainFrame(m); !strings.Contains(text, "GH_TOKEN already holds OpenAI key in this box") {
-		t.Fatalf("card = %q, want it to say the variable already holds the secret", text)
-	}
-	answerApproval(t, m, "accept")
-	answerApproval(t, m, "accept")
-	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_openai" {
-		t.Fatalf("approvals = %#v, want one with the secret holding the variable", ds.approvals)
-	}
-}
-
-// A variable delivered from the harness config or project may be answered
-// with another secret, as a replacement shadowing it; an addition stacks only
-// on the secret delivering it, so one with another secret is refused on the
-// card, before anything is sent, and granted once made a replacement.
-func TestAnAdditionWithAnotherSecretIsRefusedOnTheCard(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.Use.Add = true
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{
-		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
-		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
-	}
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_openai", SecretName: "OpenAI key", From: "project"}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil || m.dialog.form == nil {
-		t.Fatalf("dialog = %s, want the use card", describe(m.dialog))
-	}
-	f := m.dialog.form
-	if f.rows[0].locked || len(f.rows[0].choices) != 3 {
-		t.Fatalf("credential row = %#v, want every secret and a new credential offered", f.rows[0])
-	}
-	f.choose("credential", "sec_gh")
-	if f.chosen("as") != "add" {
-		t.Fatalf("grant as = %q, want the addition asked for", f.chosen("as"))
-	}
-	answerApproval(t, m, "accept")
-	if !strings.Contains(m.dialog.form.err, "GH_TOKEN holds OpenAI key; an addition stacks only on that credential") || len(ds.approvals) != 0 {
-		t.Fatalf("form error = %q, approvals = %#v; want the addition refused on the card", m.dialog.form.err, ds.approvals)
-	}
-	m.dialog.form.choose("as", "replace")
-	answerApproval(t, m, "accept")
-	answerApproval(t, m, "accept")
-	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_gh" || ds.approvals[0].UseAs != "replace" {
-		t.Fatalf("approvals = %#v, want a replacement with the chosen secret", ds.approvals)
 	}
 }

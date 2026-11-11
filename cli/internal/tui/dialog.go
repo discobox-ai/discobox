@@ -89,7 +89,10 @@ type dialog struct {
 	formActions  []action
 	formActionAt int
 	// Approval decisions remain disabled until the current summary has been shown through its end.
-	requireEnd       bool
+	requireEnd bool
+	// requireSeen holds decisions only until the card has been drawn once
+	// (gateUntilSeen).
+	requireSeen      bool
 	readEnd          bool
 	readContent      string
 	reviewState      string
@@ -144,6 +147,12 @@ type dialog struct {
 	// whoever built the menu.
 	altKey string
 	alt    func(key string) tea.Cmd
+
+	// shortcuts are keys the whole card answers, whatever has focus. On a
+	// card with typed rows make it a control key, so the rows never take it
+	// as text. A shortcut never closes the card: one that opens something in
+	// its place sets the dialog itself, and is expected to bring the card back.
+	shortcuts map[string]func() tea.Cmd
 
 	// The "/" search over a body too long to read down. query is what has been
 	// typed, match is which of the lines holding it the body is on, and typing
@@ -327,6 +336,10 @@ type section struct {
 	label  string
 	fields []field
 	lines  []line
+	// labelTone paints the label on its rule, for a section that is the
+	// point of its card (what a credential does not cover). The plain tone
+	// leaves it dim, as every other rule.
+	labelTone tone
 }
 
 func errorDialog(title, body string) *dialog {
@@ -448,6 +461,9 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		return d.cancel(), true
 	}
+	if run, ok := d.shortcuts[keyName(msg)]; ok && !d.typing {
+		return run(), false
+	}
 	// The page keys move a body longer than its window on every kind of card.
 	// They are the only keys that do on a card with answers, whose arrows walk
 	// the answers instead, so they are taken before the card's own.
@@ -509,6 +525,9 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		case "down", "j":
 			d.cursor = d.nextEnabled(min(d.cursor+1, len(d.items)-1), 1)
 		case "enter":
+			if d.decisionsBlocked {
+				return nil, false
+			}
 			if d.cursor < len(d.items) && d.items[d.cursor].enabled && d.action != nil {
 				it := d.items[d.cursor]
 				return d.action(it.key), !it.stays
@@ -526,6 +545,13 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 
 	case dlgForm:
+		// A row answered on a screen of its own opens it on Enter.
+		onRows := len(d.formActions) == 0 || d.formActionAt < 0
+		if keyName(msg) == "enter" && !d.form.listing && onRows {
+			if row := d.form.rows[d.form.cursor]; row.open != nil && d.form.answerable(d.form.cursor) {
+				return row.open(), false
+			}
+		}
 		if len(d.formActions) > 0 && !d.form.listing {
 			key := keyName(msg)
 			if len(d.form.rows) == 0 && d.formActionAt >= 0 {
@@ -936,6 +962,9 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		maxBody = max(avail-foot-1, dialogMinRows)
 	}
 	d.page = maxBody
+	if d.requireSeen {
+		d.decisionsBlocked = false
+	}
 	if d.requireEnd {
 		content := strings.Join(lines, "\n")
 		if content != d.readContent {
@@ -1285,7 +1314,11 @@ func (d *dialog) sectionLines(st *styles, room int) []string {
 			out = append(out, "")
 		}
 		if sec.label != "" {
-			out = append(out, sectionRule(st, sec.label, room))
+			rule := sectionRule(st, sec.label, room)
+			if sec.labelTone != tonePlain {
+				rule = toneRule(st, sec.label, room, sec.labelTone)
+			}
+			out = append(out, rule)
 		}
 		for _, f := range sec.fields {
 			label := padANSI(st.dimText.Render(truncate(f.label, labelW)), labelW) + "  "
@@ -1353,6 +1386,16 @@ func answerRule(st *styles, label string, room int) string {
 		tail += strings.Repeat("─", room-w)
 	}
 	return st.dimText.Render(head) + st.dialogTitle.Render(truncate(label, max(room-4, 4))) + st.dimText.Render(tail)
+}
+
+// toneRule is a section rule whose label is painted in t: answerRule's shape
+// in another tone.
+func toneRule(st *styles, label string, room int, t tone) string {
+	head, tail := "── ", " "
+	if w := lipgloss.Width(head + label + tail); w < room {
+		tail += strings.Repeat("─", room-w)
+	}
+	return st.dimText.Render(head) + t.style(st).Render(truncate(label, max(room-4, 4))) + st.dimText.Render(tail)
 }
 
 // viewItems draws the menu rows: the key that runs each one, the label, and

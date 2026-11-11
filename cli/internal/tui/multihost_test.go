@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -42,25 +40,26 @@ func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
 	}
 }
 
-// A card lists a request's routes one to a row, each whole on its own row,
-// rather than as one "; "-joined line wrapped wherever the card runs out.
+// A part's card lists its routes one to a row, method and path each whole on
+// its own row, rather than as one "; "-joined line wrapped wherever the card
+// runs out.
 func TestACardListsEachRouteOnItsOwnRow(t *testing.T) {
-	req := CredentialRequest{Name: "github", Use: &RequestPart{Routes: []secretroute.Route{
+	m := newTestModel(t, newFakeSource())
+	req := CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", Use: &RequestPart{Routes: []secretroute.Route{
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/**"}, Methods: []string{"GET"}},
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/pulls"}, Methods: []string{"POST"}},
 	}}}
-	d := &dialog{sections: []section{bindingSection(approval{req: req, secret: Secret{Name: "github"}})}}
-	rows := d.sectionLines(newStyles(false), 120)
-	for _, route := range req.routes() {
-		want := secretroute.Format(route)
+	m.askPart(req, requestAnswer{credential: "github"}, false, &partChoice{scope: "routes"}, nil, nil)
+	rows := strings.Split(plainFrame(m), "\n")
+	for _, want := range [][2]string{{"GET", "/repos/discobox-ai/discobox/**"}, {"POST", "/repos/discobox-ai/discobox/pulls"}} {
 		found := false
 		for _, row := range rows {
-			if strings.HasSuffix(strings.TrimRight(ansi.Strip(row), " "), want) {
+			if strings.Contains(row, want[0]) && strings.Contains(row, want[1]) {
 				found = true
 			}
 		}
 		if !found {
-			t.Errorf("no row ends with %q; card:\n%s", want, strings.Join(rows, "\n"))
+			t.Errorf("no row holds %s %s; card:\n%s", want[0], want[1], strings.Join(rows, "\n"))
 		}
 	}
 }
