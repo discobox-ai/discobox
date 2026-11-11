@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
@@ -266,30 +268,71 @@ func TestServerCapsConnectionsPerSandbox(t *testing.T) {
 // handshake — no certificate at all — are bounded too.
 func TestServerCapsUnauthenticatedConnectionsPerSource(t *testing.T) {
 	c := newCerts(t, "sbx_a")
-	addr := startServer(t, c.server, startUpstream(t))
-	var dialer net.Dialer
-	for range maxConnsPerSource {
-		conn, err := dialer.DialContext(t.Context(), "tcp", addr)
-		if err != nil {
-			t.Fatal(err)
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		listener := &pipeListener{connections: make(chan net.Conn), closed: make(chan struct{})}
+		server := New(nil, "", nil)
+		go server.Serve(ctx, tls.NewListener(listener, c.server))
+		connect := func() net.Conn {
+			client, accepted := net.Pipe()
+			t.Cleanup(func() { _ = client.Close() })
+			listener.connections <- accepted
+			return client
 		}
-		t.Cleanup(func() { _ = conn.Close() })
-	}
-	// The raw connections are accepted in order behind this one's dial; an
-	// over-cap one is closed at once, so its first read ends rather than
-	// waiting out the handshake deadline.
-	over, err := dialer.DialContext(t.Context(), "tcp", addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = over.Close() }()
-	_ = over.SetDeadline(time.Now().Add(queryTimeout / 2))
-	// Either EOF or a TCP reset/abort proves refusal; a timeout does not.
-	var readErr net.Error
-	if n, err := over.Read(make([]byte, 1)); n != 0 || err == nil || (errors.As(err, &readErr) && readErr.Timeout()) {
-		t.Fatalf("connection over the source cap: read = %d, %v, want a closed connection", n, err)
+		for range maxConnsPerSource {
+			connect()
+		}
+		// Wait until every accepted connection is blocked in its handshake.
+		// Pipes all have the same source (the zero Addr), so they share a cap.
+		// Fake time does not advance while this goroutine can still run.
+		synctest.Wait()
+		server.mu.Lock()
+		held := server.total
+		server.mu.Unlock()
+		if held != maxConnsPerSource {
+			t.Fatalf("held connections = %d, want %d", held, maxConnsPerSource)
+		}
+		over := connect()
+		synctest.Wait()
+		// A broken cap must fail before the held handshakes expire and free
+		// their slots. This is fake time, independent of runner load.
+		if err := over.SetReadDeadline(time.Now().Add(queryTimeout / 2)); err != nil {
+			// net.Pipe reports ErrClosedPipe when the peer already closed.
+			if !errors.Is(err, io.ErrClosedPipe) {
+				t.Fatal(err)
+			}
+		}
+		var readErr net.Error
+		if n, err := over.Read(make([]byte, 1)); n != 0 || err == nil || (errors.As(err, &readErr) && readErr.Timeout()) {
+			t.Fatalf("connection over the source cap: read = %d, %v, want a closed connection", n, err)
+		}
+	})
+}
+
+// pipeListener keeps accept and TLS handshakes inside synctest's fake clock;
+// real network I/O would leave the test dependent on wall-clock scheduling.
+type pipeListener struct {
+	connections chan net.Conn
+	closed      chan struct{}
+	once        sync.Once
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.connections:
+		return conn, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
 	}
 }
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return &net.TCPAddr{} }
 
 // The pool's tunnel listener splices every sandbox behind the edge from an
 // address of its own, which is not capped as one source; any other loopback
