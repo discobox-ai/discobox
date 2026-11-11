@@ -1,6 +1,7 @@
 # 0046 — Listening ports are discovered by a standing poller and probed for HTTP
 
 - **Status**: Accepted (§1's procfs discovery and scan interval on Linux narrowed by [26-11-03-815](26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md))
+- §2 and its Consequences narrowed by [26-11-11-176](26-11-11-176-an-ephemeral-tcp-port-is-listed-as-tcp-without-a-probe-and-a-silent-port-is-probed-once-more.md).
 - **Date**: 2026-08-16
 - **Relates to**: [ADR 0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md),
   whose status payload this extends, and
