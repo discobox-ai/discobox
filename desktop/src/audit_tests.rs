@@ -201,10 +201,17 @@ fn an_empty_timeline_says_what_the_core_says() {
     let mut rt = runtime(State::new());
     key(&mut rt, Key::Enter);
     let sandbox = rt.state.live.clone().unwrap();
+    // PTY startup output shares this inbox and can arrive before the audit snapshots.
+    for chunk in [b"shell".as_slice(), b" startup", b"\r\n"] {
+        rt.state.inbox.push(Event::Data(0, chunk.to_vec()));
+    }
     audit::open(&mut rt.state, &sandbox);
     // The mock answers as the bridge does: what it says before a read, then the read's records.
-    let mut events = rt.state.inbox.drain().into_iter();
-    let Some(Event::Audit(sub, first)) = events.next() else { panic!("no first snapshot") };
+    let sub = rt.state.audit.as_ref().unwrap().sub;
+    let first = rt.state.inbox.drain().into_iter().find_map(|event| match event {
+        Event::Audit(id, first) if id == sub => Some(first),
+        _ => None,
+    }).expect("no first snapshot");
     rt.state.inbox.push(Event::Audit(sub, first));
     settle(&mut rt);
     let v = rt.state.audit.as_ref().unwrap();
