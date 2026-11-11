@@ -1082,6 +1082,12 @@ tasks:
     # test:all and runs identically on Linux, macOS, and Windows.
     cmds:
       - task: test:all
+      - task: test:secret-generations
+
+  test:secret-generations:
+    desc: Stress secret replacement notifications and persisted generations on every CI platform
+    cmds:
+      - go test ./server/internal/model ./server/internal/resources/secrets -run 'TestValueWrittenAdvancesGeneration|TestReplacingAValueMarksItsHolders' -count=50
 
   check:darwin:
     desc: Lint the packages darwin builds from other files than Linux, and type-check the whole tree for darwin

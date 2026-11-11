@@ -1767,7 +1767,12 @@ func (s *Secret) Renewable() bool {
 
 // ValueWritten records that a new value was written at now. expiresAt is the
 // value's own expiry, or nil to go stale TTL after now.
+// The stamp advances by at least one persisted microsecond, even when the
+// clock repeats or moves backwards, so every write has a new generation.
 func (s *Secret) ValueWritten(now time.Time, expiresAt *time.Time) {
+	if previous := s.ValueWrittenAt(); !previous.IsZero() && now.UnixMicro() <= previous.UnixMicro() {
+		now = previous.Truncate(time.Microsecond).Add(time.Microsecond)
+	}
 	s.ValueUpdatedAt = &now
 	s.ValueExpiresAt = expiresAt
 }
