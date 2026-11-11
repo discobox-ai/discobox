@@ -5,7 +5,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 const autostopConfirmPath = "/api/projects/project-1/sandboxes/sandbox-1/autostop/confirm"
@@ -76,5 +79,45 @@ func TestAutostopResumedIsThePoolsAlone(t *testing.T) {
 		if resp := serve(tok); resp.Code != http.StatusForbidden && resp.Code != http.StatusUnauthorized {
 			t.Errorf("resumed with %s = %d, want refused", name, resp.Code)
 		}
+	}
+}
+
+// Router construction and confirmation must use the supplied paths rather
+// than the host's power marker and sleep requests.
+func TestAutostopConfirmUsesConfiguredPaths(t *testing.T) {
+	var marker, sleepDir string
+	router, _, poolToken := runtimeConfigRouterWithPoolConfig(t, func(cfg *Config) {
+		marker = cfg.Autostop.ControlPlaneMarker
+		sleepDir = cfg.Autostop.SleepDir
+		if err := os.WriteFile(marker, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("router did not clear configured power marker: %v", err)
+	}
+	token := poolToken("worker-1", ScopeAutostopConfirm)
+	if resp := serveAutostopConfirm(t, router, token); resp.Code != http.StatusConflict {
+		t.Fatalf("without sleep request = %d, want 409", resp.Code)
+	}
+	if err := os.MkdirAll(sleepDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	request := filepath.Join(sleepDir, "agent")
+	if err := os.WriteFile(request, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-3 * time.Minute)
+	if err := os.Chtimes(request, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if resp := serveAutostopConfirm(t, router, token); resp.Code != http.StatusOK {
+		t.Fatalf("with sleep request = %d %s, want 200", resp.Code, resp.Body.String())
+	}
+	if _, err := os.Stat(request); !os.IsNotExist(err) {
+		t.Fatalf("confirmation did not consume configured sleep request: %v", err)
+	}
+	if resp := serveAutostopConfirm(t, router, token); resp.Code != http.StatusConflict {
+		t.Fatalf("after consumption = %d, want 409", resp.Code)
 	}
 }

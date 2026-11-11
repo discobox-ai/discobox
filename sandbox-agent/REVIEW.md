@@ -1,5 +1,9 @@
 # Sandbox Agent Review Notes
 
+- Give every test policy and router temporary autostop paths, including both
+  marker files, sleep requests, leases and wakes. Host power state can change
+  confirmation results, and router construction updates the power marker.
+
 - Count DNS fixture connections only after successful mTLS authentication.
   Port discovery opens plaintext and unauthenticated TLS connections to every
   listening TCP socket; counting accepts inflates reuse and admission checks.

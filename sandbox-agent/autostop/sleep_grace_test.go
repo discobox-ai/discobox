@@ -97,7 +97,7 @@ func TestSleepRefreshCancellationAndRestart(t *testing.T) {
 	p.primaryStatus = read
 	path := writeRequest(t, p.sleepDir, "agent", epoch)
 	c.Set(epoch.Add(30 * time.Second))
-	restarted := New(Config{Execs: p.execs, PrimaryStatus: read, SleepDir: p.sleepDir, LeaseDir: p.leaseDir, Now: c.Now})
+	restarted := New(Config{Execs: p.execs, PrimaryStatus: read, SleepDir: p.sleepDir, LeaseDir: p.leaseDir, WakeDir: p.wakeDir, ControlPlaneMarker: p.controlPlaneMarker, HandoverMarker: p.handoverMarker, Now: c.Now})
 	if !restarted.Evaluate(c.Now()).Sleep.IsZero() {
 		t.Fatal("restart bypassed working")
 	}
