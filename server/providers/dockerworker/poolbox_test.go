@@ -66,7 +66,7 @@ func infoDaemon(t *testing.T) *httptest.Server {
 func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	daemon := infoDaemon(t)
 	// Exercise the sandbox-agent's automatic port probe deterministically.
-	probe, err := http.NewRequest(http.MethodHead, daemon.URL+"/", nil)
+	probe, err := http.NewRequestWithContext(t.Context(), http.MethodHead, daemon.URL+"/", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
