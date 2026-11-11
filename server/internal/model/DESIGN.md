@@ -391,3 +391,11 @@ stored failure but displays running, qualified by the same blocking provisioning
 rule (ADR 26-11-07-519). Repair-in-flight still wins; archive/delete intent and
 non-running power never earn this exception. Events carry optional `errorMessage`
 as part of their whole snapshot; its absence clears a previous warning.
+
+## Secret value generations
+
+`Secret.ValueWritten` advances the value timestamp by at least one persisted
+microsecond from `ValueWrittenAt` (including legacy rows using `CreatedAt`).
+A repeated or backwards clock must still change `ValueGeneration`, so a
+replacement invalidates cached values and older rejection reports. The value's
+explicit expiry is kept as supplied; renewals in place do not call this method.
