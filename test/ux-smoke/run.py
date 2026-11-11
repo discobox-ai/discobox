@@ -421,6 +421,7 @@ def purge_box(box):
 def cleanup(failed):
     started = time.monotonic()
     errors = []
+    diagnostic_errors = []
     # Discover only IDs in this run's private database, including bootstrap failures.
     db = ARTIFACTS / "db.sqlite"
     if db.exists():
@@ -434,20 +435,27 @@ def cleanup(failed):
         try:
             (ARTIFACTS / (box + "-screen.json")).write_text(cli("capture", box, "--scrollback", "100"))
         except Exception as exc:
-            errors.append(str(exc))
+            diagnostic_errors.append(f"screen {box}: {exc}")
     for pool in POOLS:
         try:
             ids = command(["docker", "ps", "-aq", "--filter", "label=discobox.pool_id=" + pool]).split()
-            for container in ids:
+        except Exception as exc:
+            diagnostic_errors.append(f"containers in pool {pool}: {exc}")
+            continue
+        for container in ids:
+            try:
                 logs = command(["docker", "logs", "--tail", "300", container])
                 (ARTIFACTS / (container + ".log")).write_text(logs)
+            except Exception as exc:
+                diagnostic_errors.append(f"logs {container}: {exc}")
+            try:
                 running = command(["docker", "inspect", container, "--format", "{{.State.Running}}"]).strip()
                 if running == "true":
                     # systemd images keep the agent's output in the journal.
                     journal = command(["docker", "exec", container, "journalctl", "--no-pager", "-n", "300"])
                     (ARTIFACTS / (container + "-journal.log")).write_text(journal)
-        except Exception as exc:
-            errors.append(str(exc))
+            except Exception as exc:
+                diagnostic_errors.append(f"journal {container}: {exc}")
     for box in reversed(BOXES):
         try:
             purge_box(box)
@@ -493,7 +501,7 @@ def cleanup(failed):
                 try:
                     command(args, limit=20)
                 except Exception as exc:
-                    errors.append(str(exc))
+                    diagnostic_errors.append(f"builder diagnostics {args}: {exc}")
         try:
             command(["docker", "buildx", "rm", BUILDER], limit=60)
         except Exception as exc:
@@ -506,6 +514,9 @@ def cleanup(failed):
     # OCI archives and compiled binaries are build inputs, not diagnostics.
     for name in ("pool.tar", "agent.tar", "platform.tar", "harness.tar", "discobox", "discobox-server"):
         (ARTIFACTS / name).unlink(missing_ok=True)
+    if diagnostic_errors:
+        (ARTIFACTS / "diagnostic-errors.log").write_text("\n".join(diagnostic_errors))
+        print("WARNING: diagnostic collection incomplete: " + "; ".join(diagnostic_errors), flush=True)
     if errors:
         (ARTIFACTS / "cleanup-errors.log").write_text("\n".join(errors))
         if not failed:
