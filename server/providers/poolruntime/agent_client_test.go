@@ -9,6 +9,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
+	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -63,7 +64,7 @@ func TestPoolCreateRequestForwardsSourceDataKeys(t *testing.T) {
 		SourceDataKey:               primaryKey,
 		SourceCodeReferences:        model.SourceCodeReferences{"library": {Kind: "git"}},
 		SourceCodeReferenceDataKeys: map[string]string{"library": refKey},
-	}, false, false)
+	}, false, false, false)
 
 	gotPrimary, ok := request.Config.Source.Get()
 	if !ok || gotPrimary.DataKey.Or("") != primaryKey {
@@ -84,7 +85,7 @@ func TestPoolCreateRequestForwardsSourceSlugs(t *testing.T) {
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		Source:               &primary,
 		SourceCodeReferences: model.SourceCodeReferences{"/home/user/src/hooks": {Kind: "git", Slug: &refSlug}},
-	}, false, false)
+	}, false, false, false)
 
 	gotPrimary, ok := request.Config.Source.Get()
 	if !ok || gotPrimary.Slug.Or("") != primarySlug {
@@ -126,7 +127,7 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 			{Path: "run.sh", Content: []byte("x"), Executable: true},
 			{Path: "a.md", Content: []byte("y")},
 		}}},
-	}, false, false)
+	}, false, false, false)
 	foo, ok := request.Config.Skills.Or(nil)["foo"]
 	if !ok || foo.Skill != "# foo" || len(foo.Files) != 2 {
 		t.Fatalf("skills = %#v, want foo with its two files", request.Config.Skills)
@@ -134,7 +135,7 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 	if !foo.Files[0].Executable.Or(false) || foo.Files[1].Executable.Set || string(foo.Files[1].Content) != "y" {
 		t.Fatalf("files = %#v", foo.Files)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false); request.Config.Skills.Set {
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false); request.Config.Skills.Set {
 		t.Fatal("skills set for a sandbox created without any")
 	}
 }
@@ -144,7 +145,7 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 	restricted := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		Egress: egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}},
-	}, false, false)
+	}, false, false, false)
 	got, ok := restricted.Egress.Get()
 	if !ok || !got.DenyByDefault.Or(false) {
 		t.Fatalf("restricted policy = %+v, set %v", got, ok)
@@ -153,7 +154,7 @@ func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 		t.Fatalf("allow = %v", allow)
 	}
 
-	open := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false)
+	open := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false)
 	got, ok = open.Egress.Get()
 	if !ok || got.DenyByDefault.Or(true) {
 		t.Fatalf("unrestricted policy = %+v, set %v; want it sent, unrestricted", got, ok)
@@ -165,11 +166,11 @@ func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 func TestPoolCreateRequestCarriesFeatures(t *testing.T) {
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		Features: map[string]sandboxconfig.Feature{"brew": {Enabled: false}},
-	}, false, false)
+	}, false, false, false)
 	if got := request.Config.Features.Or(nil); len(got) != 1 || got["brew"].Enabled {
 		t.Fatalf("features = %#v", request.Config.Features)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false); request.Config.Features.Set {
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false); request.Config.Features.Set {
 		t.Fatal("features set for a sandbox created without any")
 	}
 }
@@ -184,7 +185,7 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Delivery: sandbox.Delivery{
 		Agent:   sandbox.BundlePin{Name: "discobox-agent", Digest: agent},
 		Bundles: []sandbox.BundlePin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-codex", Digest: harness}},
-	}}, false, false)
+	}}, false, false, false)
 	pins, ok := request.Bundles.Get()
 	if !ok || len(pins) != 2 || pins[0].Name != "discobox-platform" || pins[0].Digest != platform || pins[1].Name != "discobox-harness-codex" || pins[1].Digest != harness {
 		t.Fatalf("bundles = %+v", pins)
@@ -192,7 +193,7 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 	if got, ok := request.Agent.Get(); !ok || got.Name != "discobox-agent" || got.Digest != agent {
 		t.Fatalf("agent = %+v", request.Agent)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false); request.Bundles.IsSet() || request.Agent.IsSet() {
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false); request.Bundles.IsSet() || request.Agent.IsSet() {
 		t.Fatalf("bundles = %+v, agent %+v for a sandbox pinned to none", request.Bundles, request.Agent)
 	}
 }
@@ -201,13 +202,13 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 // is one: a create with none sends a pool that predates raw bindings nothing
 // it would refuse (ADR 26-10-27-840).
 func TestPoolCreateRequestCarriesRawSecretsOnlyWhenThereAreAny(t *testing.T) {
-	none := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Sentinels: []string{"s-1"}}, false, false)
+	none := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Sentinels: []string{"s-1"}}, false, false, false)
 	if none.RawSecrets.IsSet() {
 		t.Fatalf("raw secrets sent with none: %#v", none.RawSecrets)
 	}
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		RawSecrets: map[string]sandbox.RawSecret{"raw-1": {EnvName: "AWS_SECRET_ACCESS_KEY", Delivery: sandboxconfig.RawDeliveryFile}},
-	}, false, false)
+	}, false, false, false)
 	raw, ok := request.RawSecrets.Get()
 	if !ok || raw["raw-1"].EnvName != "AWS_SECRET_ACCESS_KEY" || string(raw["raw-1"].Delivery) != sandboxconfig.RawDeliveryFile {
 		t.Fatalf("raw secrets = %#v, want the handle's delivery", raw)
@@ -230,7 +231,7 @@ func TestAPoolFromBeforeGrantsIsNeverSentAnAddition(t *testing.T) {
 		Sentinels:      []string{"BASE", "ALONE"},
 		SentinelGrants: map[string][]secretroute.Grant{"BASE": {plain, added}, "ALONE": {added}},
 	}
-	old := poolCreateRequestFromOptions("sandbox-1", opts, false, false)
+	old := poolCreateRequestFromOptions("sandbox-1", opts, false, false, false)
 	if old.SentinelGrants.IsSet() {
 		t.Fatal("an agent from before grants was sent sentinelGrants")
 	}
@@ -241,7 +242,7 @@ func TestAPoolFromBeforeGrantsIsNeverSentAnAddition(t *testing.T) {
 	if got := routes["ALONE"]; len(got) != 1 || len(got[0]) != 0 {
 		t.Fatalf("ALONE = %+v, want one empty list, sent nowhere", got)
 	}
-	current := poolCreateRequestFromOptions("sandbox-1", opts, true, false)
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, false, false)
 	grants, _ := current.SentinelGrants.Get()
 	if current.SentinelRoutes.IsSet() || len(grants["BASE"]) != 2 || !grants["BASE"][1].ExpiresAt.IsSet() {
 		t.Fatalf("grants = %+v, want both, the addition with its expiry", grants)
@@ -255,12 +256,48 @@ func TestPoolCreateRequestCarriesGenerationsOnlyToAnAgentThatTakesThem(t *testin
 		Sentinels:           []string{"SENT"},
 		SentinelGenerations: map[string]string{"SENT": "g1"},
 	}
-	if old := poolCreateRequestFromOptions("sandbox-1", opts, true, false); old.SentinelGenerations.IsSet() {
+	if old := poolCreateRequestFromOptions("sandbox-1", opts, true, false, false); old.SentinelGenerations.IsSet() {
 		t.Fatal("an agent from before generations was sent sentinelGenerations")
 	}
-	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true)
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, false)
 	generations, ok := current.SentinelGenerations.Get()
 	if !ok || generations["SENT"] != "g1" {
 		t.Fatalf("generations = %v, want SENT's", generations)
+	}
+}
+
+// A route with a body block is sent only to an agent that declared it takes
+// one (#1012): any other refuses a field it does not know, whole, and swaps
+// nothing in a body, so it is sent the rest of the list without it.
+func TestPoolCreateRequestCarriesBodyPlacesOnlyToAnAgentThatTakesThem(t *testing.T) {
+	headers := secretroute.Route{Hosts: []string{"app.boxd.sh"}}
+	body := secretroute.Route{Hosts: []string{"app.boxd.sh"}, Methods: []string{"POST"}, Paths: []string{"/api/v1/auth/token"}, Body: &secretroute.Body{Places: []string{"/api_key"}}}
+	opts := sandbox.CreateOptions{
+		Sentinels:      []string{"SENT", "ONLY"},
+		SentinelGrants: map[string][]secretroute.Grant{"SENT": {{Lists: [][]secretroute.Route{{headers, body}}}}, "ONLY": {{Lists: [][]secretroute.Route{{body}}}}},
+	}
+	for _, holdsGrants := range []bool{false, true} {
+		old := poolCreateRequestFromOptions("sandbox-1", opts, holdsGrants, true, false)
+		lists := map[string][][]poolclient.SentinelRoute{}
+		if holdsGrants {
+			grants, _ := old.SentinelGrants.Get()
+			for sentinel, held := range grants {
+				lists[sentinel] = held[0].Lists
+			}
+		} else {
+			lists, _ = old.SentinelRoutes.Get()
+		}
+		if got := lists["SENT"]; len(got) != 1 || len(got[0]) != 1 || got[0][0].Body.IsSet() {
+			t.Fatalf("grants %v: SENT = %+v, want its header route alone", holdsGrants, got)
+		}
+		if got := lists["ONLY"]; len(got) != 1 || len(got[0]) != 0 {
+			t.Fatalf("grants %v: ONLY = %+v, want one empty list, sent nowhere", holdsGrants, got)
+		}
+	}
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, true)
+	grants, _ := current.SentinelGrants.Get()
+	sent := grants["SENT"][0].Lists[0]
+	if len(sent) != 2 || !sent[1].Body.IsSet() || sent[1].Body.Value.Places[0] != "/api_key" {
+		t.Fatalf("SENT = %+v, want both routes, the body place carried", sent)
 	}
 }

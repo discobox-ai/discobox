@@ -290,7 +290,12 @@ type StatusRequest struct {
 	// value generation as sentinelGenerations, and drops a value its proxy
 	// holds of another (#1022). Always true from an agent that has them; one
 	// from before sends none.
-	SentinelGenerations   bool    `json:"sentinelGenerations"`
+	SentinelGenerations bool `json:"sentinelGenerations"`
+	// SentinelBodyPlaces declares that this agent takes a sentinel route's
+	// body block, and its proxy swaps a sentinel at the body places it names
+	// (#1012). Always true from an agent that has them; one from before sends
+	// none, and is sent no route with one, which its decoder would refuse.
+	SentinelBodyPlaces    bool    `json:"sentinelBodyPlaces"`
 	Ready                 bool    `json:"ready"`
 	Schedulable           bool    `json:"schedulable"`
 	Degraded              bool    `json:"degraded"`

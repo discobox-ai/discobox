@@ -98,7 +98,11 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	// 26-11-03-329 §3).
 	var pool *model.Pool
 	err = s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		reported, sentinelsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, input.SentinelGrants.Or(false), input.SentinelGenerations.Or(false), input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
+		reported, sentinelsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, store.AgentSentinels{
+			Grants:      input.SentinelGrants.Or(false),
+			Generations: input.SentinelGenerations.Or(false),
+			BodyPlaces:  input.SentinelBodyPlaces.Or(false),
+		}, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 		if err != nil {
 			return err
 		}

@@ -269,6 +269,7 @@ type SecretRequestPart = apigen.SecretRequestPart
 type SecretRequestPartDecision = apigen.SecretRequestPartDecision
 type SecretRequestPolicy = apigen.SecretRequestPolicy
 type SecretRoute = apigen.SecretRoute
+type SecretRouteBody = apigen.SecretRouteBody
 type SecretRouteGraphQL = apigen.SecretRouteGraphQL
 type SecretRouteInput = apigen.SecretRouteInput
 type SecretRouteMCP = apigen.SecretRouteMCP

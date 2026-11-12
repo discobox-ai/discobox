@@ -234,12 +234,11 @@ func (s *Store) EnrollPool(ctx context.Context, poolID, publicKey string) (*mode
 // the heartbeat — the service layer marks an offline pool dirty when its agent
 // reports back in, which is what makes that reconcile prompt.
 //
-// holdsGrants is whether the agent declared it holds sentinels to grants
-// (ADR 26-11-03-329 §3), and holdsGenerations whether it takes their value
-// generations (#1022); sentinelsChanged reports that either differs from what
-// was recorded, which the caller, holding the transaction, acts on: the
-// agent's sandboxes are sent their sentinels again in the shape it takes.
-func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, holdsGrants, holdsGenerations, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (pool *model.Pool, sentinelsChanged bool, err error) {
+// takes is what the agent declared of how it takes its sandboxes' sentinels;
+// sentinelsChanged reports that it differs from what was recorded, which the
+// caller, holding the transaction, acts on: the agent's sandboxes are sent
+// their sentinels again in the shape it takes.
+func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, takes AgentSentinels, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (pool *model.Pool, sentinelsChanged bool, err error) {
 	if availableCPUVCPUs < 0 {
 		availableCPUVCPUs = 0
 	}
@@ -260,9 +259,11 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		// Declared on every report, so an agent rolled back to one from
 		// before grants is sent route lists again from its next report, and
 		// one upgraded in place is sent its grants from its first.
-		sentinelsChanged = stored.SentinelGrants != holdsGrants || stored.SentinelGenerations != holdsGenerations
-		stored.SentinelGrants = holdsGrants
-		stored.SentinelGenerations = holdsGenerations
+		sentinelsChanged = stored.SentinelGrants != takes.Grants || stored.SentinelGenerations != takes.Generations ||
+			stored.SentinelBodyPlaces != takes.BodyPlaces
+		stored.SentinelGrants = takes.Grants
+		stored.SentinelGenerations = takes.Generations
+		stored.SentinelBodyPlaces = takes.BodyPlaces
 		stored.Ready = ready
 		// A pool whose agent does not declare the OS the pool names takes no
 		// sandbox until it does (ADR 26-11-11-963 §1).
@@ -286,6 +287,19 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		return nil, false, err
 	}
 	return &stored, sentinelsChanged, nil
+}
+
+// AgentSentinels is what a pool's agent declares, on every status report, of
+// how it takes its sandboxes' sentinels. An agent from before a field
+// declares it false, and is sent nothing in the shape it names.
+type AgentSentinels struct {
+	// Grants: it holds a sentinel to grants (ADR 26-11-03-329 §3).
+	Grants bool
+	// Generations: it takes each sentinel's value generation (#1022).
+	Generations bool
+	// BodyPlaces: it takes a route's body block, and its proxy swaps a
+	// sentinel at the places it names (#1012).
+	BodyPlaces bool
 }
 
 // RecordPoolProvisionProgress stores what a provider driver is doing to bring a

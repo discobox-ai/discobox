@@ -59,6 +59,7 @@ type SandboxUpdateConfig = poolagentapi.SandboxUpdateConfig
 type SandboxUser = poolagentapi.SandboxUser
 type SentinelGrant = poolagentapi.SentinelGrant
 type SentinelRoute = poolagentapi.SentinelRoute
+type SentinelRouteBody = poolagentapi.SentinelRouteBody
 type SentinelRouteGraphQL = poolagentapi.SentinelRouteGraphQL
 type SentinelRouteMCP = poolagentapi.SentinelRouteMCP
 type SourceDelivery = poolagentapi.SourceDelivery

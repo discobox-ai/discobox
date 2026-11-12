@@ -7,6 +7,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // A sandbox runs on its pool's platform, and its harness rules none out: a
@@ -33,7 +34,7 @@ func TestCreateTakesThePoolsPlatform(t *testing.T) {
 		t.Fatalf("platform = %q before the pool declared one, want none", created.Platform)
 	}
 	for _, hosts := range []platform.Platform{{OS: "linux", Arch: "riscv64"}, platform.Pool()} {
-		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", hosts, platform.OCI, false, false, true, true, false, 1, 1, 1, nil); err != nil {
+		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", hosts, platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
 			t.Fatal(err)
 		}
 		if err := create("on-" + hosts.Arch); err != nil {
@@ -62,10 +63,10 @@ func TestCreateTakesThePoolsImageKind(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, false, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.VM("boxd"), false, false, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.VM("boxd"), store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, pool := range []string{"pool-boxd", "pool-1"} {

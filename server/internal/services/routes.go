@@ -24,6 +24,9 @@ func SecretRoutesToModel(in []serverapi.SecretRouteInput) []model.SecretRoute {
 		if block, ok := route.Mcp.Get(); ok {
 			next.MCP = &secretroute.MCP{Tools: block.Tools}
 		}
+		if block, ok := route.Body.Get(); ok {
+			next.Body = &secretroute.Body{Places: block.Places}
+		}
 		out = append(out, next)
 	}
 	return out
@@ -46,6 +49,9 @@ func SecretRoutesFromModel(in []model.SecretRoute) []serverapi.SecretRoute {
 		}
 		if route.MCP != nil {
 			api.Mcp = serverapi.NewOptSecretRouteMCP(serverapi.SecretRouteMCP{Tools: route.MCP.Tools})
+		}
+		if route.Body != nil {
+			api.Body = serverapi.NewOptSecretRouteBody(serverapi.SecretRouteBody{Places: route.Body.Places})
 		}
 		if route.Blocked {
 			api.Blocked = serverapi.NewOptBool(true)

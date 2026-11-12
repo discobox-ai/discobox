@@ -1657,6 +1657,9 @@ func sentinelRoute(in workerapimodel.SentinelRoute) secretroute.Route {
 	if mcp, ok := in.Mcp.Get(); ok {
 		route.MCP = &secretroute.MCP{Tools: mcp.Tools}
 	}
+	if body, ok := in.Body.Get(); ok {
+		route.Body = &secretroute.Body{Places: body.Places}
+	}
 	return route
 }
 

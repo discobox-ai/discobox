@@ -4476,6 +4476,52 @@ func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
 	return d
 }
 
+// NewOptSentinelRouteBody returns new OptSentinelRouteBody with value set to v.
+func NewOptSentinelRouteBody(v SentinelRouteBody) OptSentinelRouteBody {
+	return OptSentinelRouteBody{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSentinelRouteBody is optional SentinelRouteBody.
+type OptSentinelRouteBody struct {
+	Value SentinelRouteBody
+	Set   bool
+}
+
+// IsSet returns true if OptSentinelRouteBody was set.
+func (o OptSentinelRouteBody) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSentinelRouteBody) Reset() {
+	var v SentinelRouteBody
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSentinelRouteBody) SetTo(v SentinelRouteBody) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSentinelRouteBody) Get() (v SentinelRouteBody, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSentinelRouteBody) Or(d SentinelRouteBody) SentinelRouteBody {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSentinelRouteGraphQL returns new OptSentinelRouteGraphQL with value set to v.
 func NewOptSentinelRouteGraphQL(v SentinelRouteGraphQL) OptSentinelRouteGraphQL {
 	return OptSentinelRouteGraphQL{
@@ -7892,6 +7938,7 @@ type SentinelRoute struct {
 	// Refuse every request this route is the most specific route for; a more specific route of the same
 	// list still answers for what it covers (ADR 26-10-27-880 §4).
 	Blocked OptBool                 `json:"blocked"`
+	Body    OptSentinelRouteBody    `json:"body"`
 	Graphql OptSentinelRouteGraphQL `json:"graphql"`
 	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
 	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
@@ -7918,6 +7965,11 @@ type SentinelRoute struct {
 // GetBlocked returns the value of Blocked.
 func (s *SentinelRoute) GetBlocked() OptBool {
 	return s.Blocked
+}
+
+// GetBody returns the value of Body.
+func (s *SentinelRoute) GetBody() OptSentinelRouteBody {
+	return s.Body
 }
 
 // GetGraphql returns the value of Graphql.
@@ -7950,6 +8002,11 @@ func (s *SentinelRoute) SetBlocked(val OptBool) {
 	s.Blocked = val
 }
 
+// SetBody sets the value of Body.
+func (s *SentinelRoute) SetBody(val OptSentinelRouteBody) {
+	s.Body = val
+}
+
 // SetGraphql sets the value of Graphql.
 func (s *SentinelRoute) SetGraphql(val OptSentinelRouteGraphQL) {
 	s.Graphql = val
@@ -7973,6 +8030,34 @@ func (s *SentinelRoute) SetMethods(val []string) {
 // SetPaths sets the value of Paths.
 func (s *SentinelRoute) SetPaths(val []string) {
 	s.Paths = val
+}
+
+// Narrows a route to places in a JSON request body: the credential is carried there and swapped
+// there, as the whole of the JSON string at one of places, and nowhere else in the request. A route
+// with a body block allows the credential at the places it names and nowhere else, not in the
+// headers or query; a route without one allows it in the headers or query and at no body place. A
+// blocked body route refuses the credential at its places; a blocked route without a body block
+// refuses it in the body as well. The proxy reads the body only for a request a route names places
+// for whose Content-Type says JSON (/json or +json); any other body is sent unread, with nothing in
+// it swapped. A JSON body it cannot read for them is refused, unsent: too large, of undeclared
+// length, holding the credential under a Content-Encoding, or not JSON with each member named once.
+// The request is recorded as sent, with the placeholder, and the answer to it is recorded without
+// its body.
+// Ref: #/components/schemas/SentinelRouteBody
+type SentinelRouteBody struct {
+	// JSON pointers (RFC 6901) into the request body, each starting with / and naming one member or
+	// array element, such as /api_key. At least one; no spaces, = or ,/.
+	Places []string `json:"places"`
+}
+
+// GetPlaces returns the value of Places.
+func (s *SentinelRouteBody) GetPlaces() []string {
+	return s.Places
+}
+
+// SetPlaces sets the value of Places.
+func (s *SentinelRouteBody) SetPlaces(val []string) {
+	s.Places = val
 }
 
 // Narrows a route to GraphQL requests by their parsed documents (ADR 26-10-27-880 §4): the body's,

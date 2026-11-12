@@ -862,6 +862,33 @@ func TestAReportThatAnAgentTakesGenerationsResendsItsSentinels(t *testing.T) {
 	}
 }
 
+// An agent that now takes a route's body block is recorded as taking it, and
+// sent its sandboxes' sentinels again, its body routes with them (#1012).
+func TestAReportThatAnAgentTakesBodyPlacesResendsItsSentinels(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(places bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(true), SentinelGenerations: serverapi.NewOptBool(true),
+			SentinelBodyPlaces: serverapi.NewOptBool(places),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	marked := len(recorded.sentinels)
+	report(true)
+	report(true)
+	if len(recorded.sentinels) != marked+1 {
+		t.Fatalf("marked %v, want pool-a's sentinels once more, when its agent first declared body places", recorded.sentinels)
+	}
+	if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || !pool.SentinelBodyPlaces {
+		t.Fatalf("pool = %+v, %v; want it recorded as taking body places", pool, err)
+	}
+}
+
 func TestStartAuthorizationUsesCurrentEpochAndPoolOwnership(t *testing.T) {
 	svc, _ := newAgentServiceTestFixture(t)
 	principal := auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"}

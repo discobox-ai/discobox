@@ -6065,6 +6065,39 @@ func (s *OptSandboxUser) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SentinelRouteBody as json.
+func (o OptSentinelRouteBody) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SentinelRouteBody from json.
+func (o *OptSentinelRouteBody) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSentinelRouteBody to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSentinelRouteBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSentinelRouteBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SentinelRouteGraphQL as json.
 func (o OptSentinelRouteGraphQL) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -13688,6 +13721,12 @@ func (s *SentinelRoute) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Body.Set {
+			e.FieldStart("body")
+			s.Body.Encode(e)
+		}
+	}
+	{
 		if s.Graphql.Set {
 			e.FieldStart("graphql")
 			s.Graphql.Encode(e)
@@ -13729,13 +13768,14 @@ func (s *SentinelRoute) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSentinelRoute = [6]string{
+var jsonFieldsNameOfSentinelRoute = [7]string{
 	0: "blocked",
-	1: "graphql",
-	2: "hosts",
-	3: "mcp",
-	4: "methods",
-	5: "paths",
+	1: "body",
+	2: "graphql",
+	3: "hosts",
+	4: "mcp",
+	5: "methods",
+	6: "paths",
 }
 
 // Decode decodes SentinelRoute from json.
@@ -13757,6 +13797,16 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"blocked\"")
 			}
+		case "body":
+			if err := func() error {
+				s.Body.Reset()
+				if err := s.Body.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"body\"")
+			}
 		case "graphql":
 			if err := func() error {
 				s.Graphql.Reset()
@@ -13768,7 +13818,7 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"graphql\"")
 			}
 		case "hosts":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				s.Hosts = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -13845,7 +13895,7 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000100,
+		0b00001000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -13887,6 +13937,114 @@ func (s *SentinelRoute) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SentinelRoute) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SentinelRouteBody) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SentinelRouteBody) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("places")
+		e.ArrStart()
+		for _, elem := range s.Places {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfSentinelRouteBody = [1]string{
+	0: "places",
+}
+
+// Decode decodes SentinelRouteBody from json.
+func (s *SentinelRouteBody) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SentinelRouteBody to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "places":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				s.Places = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Places = append(s.Places, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"places\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SentinelRouteBody")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSentinelRouteBody) {
+					name = jsonFieldsNameOfSentinelRouteBody[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SentinelRouteBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SentinelRouteBody) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
