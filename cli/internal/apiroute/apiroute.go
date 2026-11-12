@@ -24,6 +24,9 @@ func Input(route secretroute.Route) apimodel.SecretRouteInput {
 	if route.MCP != nil {
 		in.Mcp = apiclientgen.NewOptSecretRouteMCP(apimodel.SecretRouteMCP{Tools: route.MCP.Tools})
 	}
+	if route.Body != nil {
+		in.Body = apiclientgen.NewOptSecretRouteBody(apimodel.SecretRouteBody{Places: route.Body.Places})
+	}
 	if route.Blocked {
 		in.Blocked = apiclientgen.NewOptBool(true)
 	}
@@ -53,6 +56,9 @@ func Route(route apimodel.SecretRoute) secretroute.Route {
 	}
 	if mcp, ok := route.Mcp.Get(); ok {
 		out.MCP = &secretroute.MCP{Tools: mcp.Tools}
+	}
+	if body, ok := route.Body.Get(); ok {
+		out.Body = &secretroute.Body{Places: body.Places}
 	}
 	return out
 }

@@ -431,7 +431,7 @@ sentinel; --delegate makes it a binding to give on, and --use=false one only
 given on. --route narrows the
 secret's routes for this binding; left out, it goes where the secret's go.
 
-A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked],
+A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked],
 one per --route:
 
   METHODS   upper-case methods joined by commas (GET,HEAD); left out, any
@@ -447,6 +447,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -455,6 +460,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.
@@ -476,7 +482,7 @@ discobox admin binding create --secret SECRET --target-kind KIND [--target ID] [
 | --policy | FILE |  | A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file |
 | --policy-arg | NAME=VALUE |  | An argument NAME=VALUE for the preceding --policy; repeat for more |
 | --raw | delivery |  | Hand over the value itself: env, or file for a file whose path is in the variable; left out, a sentinel |
-| --route | stringArray | [] | A route narrowing the secret's, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]; one per flag, repeat for more |
+| --route | stringArray | [] | A route narrowing the secret's, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]; one per flag, repeat for more |
 | --secret | string |  | The secret, by name or ID |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --target | string |  | The harness config or discobox, by name or ID; omitted for the project |
@@ -581,7 +587,7 @@ Aliases: delete, remove.
 Change a secret binding by ID. --route replaces its routes, and --clear-route
 removes them, so it goes where its secret's go.
 
-A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked],
+A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked],
 one per --route:
 
   METHODS   upper-case methods joined by commas (GET,HEAD); left out, any
@@ -597,6 +603,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -605,6 +616,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.
@@ -627,7 +639,7 @@ discobox admin binding update BINDING_ID [--route ROUTE]... [--clear-route] [--f
 | --policy | FILE |  | A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file |
 | --policy-arg | NAME=VALUE |  | An argument NAME=VALUE for the preceding --policy; repeat for more |
 | --raw | delivery |  | Hand over the value itself (env, or file), or a sentinel again (none) |
-| --route | stringArray | [] | Replace its routes with these, each [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]; one per flag, repeat for more |
+| --route | stringArray | [] | Replace its routes with these, each [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]; one per flag, repeat for more |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 | --use | bool | false | Whether it is delivered to use; --use=false stops that, keeping the delegation Value when passed without an argument: true. |
@@ -5090,7 +5102,7 @@ well, it uses the secret too; without, it is delivered nothing itself.
 For one discobox and one variable, the narrowest binding wins: a discobox's own
 over its harness config's, and that over the project's.
 
-A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked],
+A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked],
 one per --route:
 
   METHODS   upper-case methods joined by commas (GET,HEAD); left out, any
@@ -5106,6 +5118,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -5114,6 +5131,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.
@@ -5146,7 +5164,7 @@ Examples:
 | --policy-arg | NAME=VALUE |  | An argument NAME=VALUE for the preceding --policy; repeat for more |
 | --project-wide | bool | false | The project to bind it to: every discobox of it Value when passed without an argument: true. |
 | --raw | delivery |  | Hand over the value itself: env (in the variable) or file (a file whose path is in it); left out, a sentinel |
-| --route | stringArray | [] | Where it may be sent for this binding, narrowing the secret's routes, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]; one per flag, repeat for more |
+| --route | stringArray | [] | Where it may be sent for this binding, narrowing the secret's routes, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]; one per flag, repeat for more |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
@@ -5208,7 +5226,7 @@ A sentinel stands in for the secret inside a discobox, shaped like the value so
 a client that checks a key's prefix accepts it. --format sets that shape when
 reading it from the value gets it wrong, and is kept when the value changes.
 
-A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked],
+A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked],
 one per --route:
 
   METHODS   upper-case methods joined by commas (GET,HEAD); left out, any
@@ -5224,6 +5242,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -5232,6 +5255,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.
@@ -5257,7 +5281,7 @@ discobox secret create --name NAME --type TYPE [flags]
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --refresh-command | string |  | Command that prints a new value on this machine, such as 'gh auth token'; run without a shell, and offered to whoever renews the token ("" removes it) |
 | --refresh-token | string |  | OAuth refresh token, spent server-side to renew the access token |
-| --route | stringArray | [] | Where the secret may be sent, whoever holds it, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked], or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable) |
+| --route | stringArray | [] | Where the secret may be sent, whoever holds it, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked], or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable) |
 | --scope | stringArray | [] | What the grant may do, as the authorization server returned it (repeatable) |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --subscription-type | string |  | The plan or account kind the grant belongs to |
@@ -5397,7 +5421,7 @@ variable, file the path of a file in memory holding it. It is yours to choose
 --allow-raw), and only the use part takes it. The discobox can then send the
 value anywhere; its pool only refuses a request carrying it off its routes.
 
-A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked],
+A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked],
 one per --route:
 
   METHODS   upper-case methods joined by commas (GET,HEAD); left out, any
@@ -5413,6 +5437,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -5421,6 +5450,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.
@@ -5441,7 +5471,7 @@ discobox secret request approve REQUEST_ID [flags]
 | --help, -h | bool | false | help for approve Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --raw | delivery |  | Use part only: grant the value itself, env (in the variable) or file (a file whose path is in it); left out, a sentinel |
-| --route | stringArray | [] | Where the use part may send it, narrowing the secret's routes, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]; one per flag, repeat for more (default the routes the part named) |
+| --route | stringArray | [] | Where the use part may send it, narrowing the secret's routes, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]; one per flag, repeat for more (default the routes the part named) |
 | --secret | string |  | The secret that answers the request, by name or ID |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
@@ -5582,7 +5612,7 @@ Update a secret: its name, value, renewal, sentinel format, binding limit
 or routes. --route replaces every route the secret has; --clear-route leaves
 it none, so it is sent nowhere.
 
-A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked],
+A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked],
 one per --route:
 
   METHODS   upper-case methods joined by commas (GET,HEAD); left out, any
@@ -5598,6 +5628,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -5606,6 +5641,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.
@@ -5632,7 +5668,7 @@ discobox secret update SECRET [flags]
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --refresh-command | string |  | Command that prints a new value on this machine, such as 'gh auth token'; run without a shell, and offered to whoever renews the token ("" removes it) |
 | --refresh-token | string |  | OAuth refresh token, spent server-side to renew the access token |
-| --route | stringArray | [] | Where the secret may be sent, whoever holds it, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked], or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable); replaces the secret's routes |
+| --route | stringArray | [] | Where the secret may be sent, whoever holds it, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked], or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable); replaces the secret's routes |
 | --scope | stringArray | [] | What the grant may do, as the authorization server returned it (repeatable) |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --subscription-type | string |  | The plan or account kind the grant belongs to |

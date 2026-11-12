@@ -21,6 +21,11 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
+  body=     places in a JSON request body, JSON pointers joined by ,/
+            (body=/api_key). The credential goes there, as the whole string
+            at one of them, and nowhere else: not in the headers, and not
+            elsewhere in the body. A route without body= allows it in the
+            headers and query, and at no body place
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -29,6 +34,7 @@ one per --route:
   'GET api.github.com/repos/*/*/pulls/**'
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
+  'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.`

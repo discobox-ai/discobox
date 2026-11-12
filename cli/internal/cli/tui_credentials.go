@@ -267,7 +267,7 @@ func tuiRoutes(routes []apimodel.SecretRoute) []secretroute.Route {
 }
 
 // terminalSafeRoute is route with every word in it escaped: hosts, methods,
-// paths, and the GraphQL fields and MCP tools it names.
+// paths, the GraphQL fields and MCP tools, and the body places it names.
 func terminalSafeRoute(route secretroute.Route) secretroute.Route {
 	safe := func(words []string) []string {
 		var out []string
@@ -282,6 +282,9 @@ func terminalSafeRoute(route secretroute.Route) secretroute.Route {
 	}
 	if route.MCP != nil {
 		route.MCP = &secretroute.MCP{Tools: safe(route.MCP.Tools)}
+	}
+	if route.Body != nil {
+		route.Body = &secretroute.Body{Places: safe(route.Body.Places)}
 	}
 	return route
 }

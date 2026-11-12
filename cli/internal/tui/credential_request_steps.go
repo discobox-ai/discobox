@@ -735,7 +735,7 @@ type routesEditedMsg struct {
 func routesForEditor(routes []secretroute.Route, step, credential string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# The routes %s is approved for (%s), one to a line:\n", credential, step)
-	b.WriteString("#   [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]\n")
+	b.WriteString("#   " + secretroute.Syntax + "\n")
 	b.WriteString("# as `discobox secret create --route` takes them. Lines starting with #\n")
 	b.WriteString("# are ignored. Save and quit to use them; save it empty to change nothing.\n\n")
 	for _, r := range routes {
@@ -1229,7 +1229,7 @@ func routePieces(r secretroute.Route) []secretroute.Route {
 func routesSection(label string, routes []secretroute.Route) section {
 	var hosts []string
 	for _, r := range routes {
-		if r.Blocked || len(r.Methods) > 0 || len(r.Paths) > 0 || r.GraphQL != nil || r.MCP != nil {
+		if r.Blocked || len(r.Methods) > 0 || len(r.Paths) > 0 || r.GraphQL != nil || r.MCP != nil || r.Body != nil {
 			return approvalRouteSection(label, &RequestPart{Routes: routes})
 		}
 		hosts = append(hosts, r.Hosts...)

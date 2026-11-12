@@ -111,11 +111,11 @@ func (r Role) Notes() []string {
 
 // Summary is what routes grant, worked out from them alone: the hosts, the
 // methods (or any method), the path patterns with every wildcard marked (or
-// any path), and the GraphQL operations and MCP tools. On a REST API the path
+// any path), the GraphQL operations and MCP tools, and the body places. On a REST API the path
 // is the scope, so it is never left out. Blocked routes are counted, not
 // summarized: they take away, and the full list says what.
 func Summary(routes []secretroute.Route) string {
-	var hosts, methods, paths, graphql, mcp []string
+	var hosts, methods, paths, graphql, mcp, places []string
 	anyMethod, anyPath, blocked := false, false, 0
 	add := func(list *[]string, values ...string) {
 		for _, value := range values {
@@ -156,6 +156,9 @@ func Summary(routes []secretroute.Route) string {
 			}
 			add(&mcp, route.MCP.Tools...)
 		}
+		if route.Body != nil {
+			add(&places, route.Body.Places...)
+		}
 	}
 	if len(hosts) == 0 {
 		if blocked > 0 {
@@ -183,6 +186,9 @@ func Summary(routes []secretroute.Route) string {
 	}
 	if len(mcp) > 0 {
 		parts = append(parts, "mcp "+strings.Join(mcp, ","))
+	}
+	if len(places) > 0 {
+		parts = append(parts, "body places "+strings.Join(places, ","))
 	}
 	if blocked > 0 {
 		parts = append(parts, fmt.Sprintf("%d blocked", blocked))

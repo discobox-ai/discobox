@@ -96,7 +96,7 @@ discobox-access request \
   anywhere else is refused by the egress (§6). A route is
 
   ```
-  [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]
+  [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]
   ```
 
   - `METHODS`: upper-case, joined by commas (`GET`, `GET,HEAD`). Left out,
@@ -121,6 +121,13 @@ discobox-access request \
     held to that repository.
   - `mcp=TOOLS`: the MCP tools a `tools/call` may name (`search*` for a
     prefix, `*` for any); the protocol's own methods pass.
+  - `body=PLACES`: for an API that takes its key in a JSON request body,
+    the JSON pointers it goes at, joined by `,/`, such as
+    `POST app.boxd.sh/api/v1/auth/token body=/api_key`. Put the variable's
+    value there as the whole JSON string; it is swapped there and nowhere
+    else. Send it with `Content-Type: application/json` (plain `curl -d`
+    sends a form type, and a body that is not JSON is never swapped in), a
+    `Content-Length` and no compression, or it is refused.
   - `=blocked` at the end carves a route out of a wider one.
 
   A route that does not parse is refused by the service as `invalid`, with

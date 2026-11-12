@@ -199,7 +199,7 @@ string
 ([ADR 26-10-27-880](adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §4):
 
 ```
-[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]
+[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]
 ```
 
 - `METHODS`, optional: upper-case methods joined by commas (`GET`,
@@ -218,6 +218,14 @@ string
 - `mcp=TOOLS`: the MCP tools a `tools/call` may name, each optionally ending
   in `*`; the protocol's own methods (`initialize`, `ping`, `tools/list`,
   notifications) pass.
+- `body=PLACES`: places in a JSON request body, JSON pointers joined by `,/`
+  (`body=/api_key`), for an API that takes its credential in the body. The
+  credential is sent there, as the whole JSON string at one of them, and
+  nowhere else: a route with `body=` allows it at no header, and a route
+  without one allows it at no body place. Only a body sent with a JSON
+  Content-Type is read for its places; any other is sent as it is. A JSON
+  body that cannot be read for them (too large, chunked, compressed, or not
+  valid JSON) is refused.
 - `=blocked` at the end marks a carve-out: the route refuses what it is the
   most specific route for.
 
