@@ -1,15 +1,17 @@
 # 26-11-12-355 — A machine sandbox's resolver is the DNS stub, and its bridges resolve the pool against the provider's
 
-- **Status**: Proposed (would extend [0148](0148-a-sandbox-resolves-names-through-its-pool-over-mtls.md)
+- **Status**: Accepted (extends [0148](0148-a-sandbox-resolves-names-through-its-pool-over-mtls.md)
   §2, which gives the stub to every sandbox container as its DNS server, to a
-  machine sandbox, which has no container runtime to configure it; would narrow
+  machine sandbox, which has no container runtime to configure it; narrows
   [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §9's "the DNS stub sits beside the provider's resolver" for a sandbox whose
-  pool asks for it; would narrow
+  pool asks for it; narrows
   [26-10-29-481](26-10-29-481-a-machine-sandbox-and-its-pool-reach-each-other-at-their-private-urls-over-tls-the-pools-ca-issues.md)
   §2's "resolve through the provider at each dial" to the provider's resolver
   the sandbox recorded, still at each dial)
 - **Date**: 2026-11-12
+
+Accepted by the owner by merging #1062, 2026-11-12.
 - **Relates to**:
   [26-10-15-760](26-10-15-760-nested-docker-containers-resolve-through-the-sandboxs-stub.md)
   (the nested daemon names the same stub);
