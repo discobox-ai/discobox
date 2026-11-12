@@ -44,6 +44,7 @@ const (
 	ReadSandboxFileOperation                    OperationName = "ReadSandboxFile"
 	ReconsiderSandboxHarnessConfigOperation     OperationName = "ReconsiderSandboxHarnessConfig"
 	RemoveSandboxFileOperation                  OperationName = "RemoveSandboxFile"
+	ReprovisionSandboxOperation                 OperationName = "ReprovisionSandbox"
 	RestartSandboxServiceOperation              OperationName = "RestartSandboxService"
 	ResumeSandboxAutostopOperation              OperationName = "ResumeSandboxAutostop"
 	SendSandboxExecInputOperation               OperationName = "SendSandboxExecInput"

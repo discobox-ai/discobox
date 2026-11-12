@@ -158,6 +158,12 @@
   repository declarations or retrying services already attempted. Recheck a
   builtin's owner after its wait: discovery can precede the plan marking its
   feature off, and that declaration must then stay hidden and never launch.
+  A reprovision is a run that can make a feature ready too: after each one,
+  start the declarations provisioning refused *this boot*, and the image's
+  this boot has not launched (`StartReprovisioned`) — never one that ran or a
+  person stopped, and never a repository declaration added mid-session. Decide
+  it from this boot's own record, not the exec record: that outlives a
+  reboot, so a service that ran before may have been refused this time.
 - **Every terminal launch waits for provisioning, not only the primary's,
   and a terminal that needs no launch does not.** `terminal.Service.awaitProvisioned` is called by
   `Create`, the primary's launch, and `Revive` — an attach by a terminal's own
@@ -666,10 +672,10 @@ user waits on every single start.
   keeps every sandbox up forever.
 - **The status wait holds only on the current version.** `GET .../status/wait`
   answers at once unless the caller named the version it has now — one
-  opaque token joining the port snapshot's signal and the harness capture's
-  (`statuswait.Wait`, ADR 26-11-09-062); the hold is the agent's
-  (`statuswait.Hold`), never a parameter. A change to either must move the
-  version, and a tick or rescan that changed nothing must not, or the pool
+  opaque token joining the port snapshot's signal, the harness capture's and
+  provisioning's (`statuswait.Wait`, ADR 26-11-09-062, ADR 26-11-11-560 §6);
+  the hold is the agent's (`statuswait.Hold`), never a parameter. A change to
+  any must move the version, and a tick or rescan that changed nothing must not, or the pool
   re-pushes the same status twice a second.
 - **Moving the version is not free.** Each move the pool sees is a status
   computation here (git status for every source) and a control-plane write;

@@ -824,3 +824,57 @@ func TestProvisioningWaitRechecksBuiltinOwner(t *testing.T) {
 		})
 	}
 }
+
+// A service a failed feature kept down this boot is started once a
+// reprovision makes the feature ready, even one an earlier boot ran; one that
+// ran this boot, or that a person stopped, is left as it is, and a declaration added after boot is still not autostarted
+// (ADR 26-11-11-560; sandbox-agent/REVIEW.md, discovering provisioned image
+// services).
+func TestStartReprovisionedStartsWhatAFailedFeatureKeptDown(t *testing.T) {
+	manager, units, root := newTestManager(t)
+	writeService(t, root, "api.sh", "#!/bin/sh\n#---\n# name: API\n# features: [docker]\n#---\ntrue\n", 0o755)
+	writeService(t, root, "web.sh", apiScript, 0o755)
+	// An earlier boot ran api: its exec record outlives that boot, so it
+	// cannot be what says api was kept down this one.
+	if _, err := manager.Start(context.Background(), "api"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Stop(context.Background(), "api"); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("docker failed (log: /logs/docker)")
+	manager.awaitFeatures = func(_ context.Context, features []string) error {
+		if slices.Contains(features, "docker") {
+			return failure
+		}
+		return nil
+	}
+	if err := manager.EnsureStarted(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if api, err := manager.Get("api"); err != nil || api.Status == StatusRunning {
+		t.Fatalf("api at boot: %+v, %v", api, err)
+	}
+	if _, err := manager.Stop(context.Background(), "web"); err != nil {
+		t.Fatal(err)
+	}
+	writeService(t, root, "late.sh", apiScript, 0o755)
+	starts := len(units.Starts)
+
+	manager.awaitFeatures = func(context.Context, []string) error { return nil }
+	if err := manager.StartReprovisioned(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if api, err := manager.Get("api"); err != nil || api.Status != StatusRunning {
+		t.Fatalf("api after reprovisioning: %+v, %v", api, err)
+	}
+	if web, err := manager.Get("web"); err != nil || web.Status == StatusRunning {
+		t.Fatalf("a stopped service was started again: %+v, %v", web, err)
+	}
+	if late, err := manager.Get("late"); err != nil || late.ExecID != "" {
+		t.Fatalf("a declaration added after boot was autostarted: %+v, %v", late, err)
+	}
+	if got := len(units.Starts) - starts; got != 1 {
+		t.Fatalf("%d launches, want only api's", got)
+	}
+}

@@ -167,6 +167,12 @@ func (h *Handler) RestartSandboxService(context.Context, serverapi.RestartSandbo
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// ReprovisionSandbox is forwarded to the sandbox's agent by the reverse proxy
+// (ADR 26-11-11-560 §5), which answers it.
+func (h *Handler) ReprovisionSandbox(context.Context, serverapi.ReprovisionSandboxParams) (serverapi.ReprovisionSandboxRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) SendSandboxExecInput(context.Context, *serverapi.SandboxExecInputBody, serverapi.SendSandboxExecInputParams) (serverapi.SendSandboxExecInputRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

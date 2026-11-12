@@ -73,6 +73,10 @@ jq '.features | map_values({state, how, step, log, reason, error})' /run/discobo
   the feature's log; read it when one failed.
 - Wait for one with `discobox-provision wait docker` (any number of names). It
   exits non-zero if one failed or is off, and says why.
+- **One failed** (a download hit a network blip, say): read its log, then run
+  `discobox-provision retry`. It runs every failed feature again in this box,
+  without restarting anything, waits, and exits non-zero naming any that
+  failed again.
 - A command of a feature still installing is a placeholder: run it and it says
   so on stderr, waits, then runs the real one. You need not wait first.
 - **`off` was the project's choice**, in its `.discobox/settings.json`
@@ -558,7 +562,7 @@ may run commands and login shells (`discobox exec`), copy files both ways
 `send-key`, and `wait --until finished --until blocked`, which counts from
 what you last sent) and read their logs (`admin terminal logs`); start, stop, and restart them (`discobox
 start`, `stop`, `restart`); repair and upgrade them (`admin box repair`,
-`upgrade`); archive them once their work is done (`discobox rm`), which keeps
+`upgrade`), and run their failed provisioning again (`admin box reprovision`); archive them once their work is done (`discobox rm`), which keeps
 their data for the project's retention so a person can still bring one back;
 list, start, stop, and restart their services and read their logs
 (`admin service`); reach their ports over HTTP, at

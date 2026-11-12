@@ -11892,7 +11892,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait:
         get:
-            description: Answers with the version of what wakes the pool, the sandbox's listening ports and its harness configuration capture. A call without `after`, or with an `after` that is not the current version, is answered at once; a call naming the current version is held until either changes or the agent's hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a newly bound port, or a harness sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR 26-11-09-062).
+            description: Answers with the version of what wakes the pool, the sandbox's listening ports, its harness configuration capture, and the state of its provisioning and of each feature in it. A call without `after`, or with an `after` that is not the current version, is answered at once; a call naming the current version is held until either changes or the agent's hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a newly bound port, or a harness sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR 26-11-09-062).
             operationId: wait-sandbox-agent-status
             parameters:
                 - description: Project that owns the sandbox.
@@ -11925,7 +11925,41 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
-            summary: Wait for the sandbox's ports or harness configuration to change.
+            summary: Wait for the sandbox's ports, harness configuration or provisioning to change.
+            tags:
+                - Sandbox Status
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision:
+        post:
+            description: Runs the sandbox's provisioning again for every feature that failed, and the features that failed because they require one, in the running sandbox. Nothing else about the sandbox changes - no rebuild, no new container or machine, no restart of it or of anything running in it - and a feature that is ready or off runs nothing. A failed feature the sandbox waits for before it launches anything makes it wait again, so a terminal launched meanwhile waits for the outcome. The run goes on whether or not the caller stays; follow it in the sandbox's reported provisioning, where each feature it runs moves to provisioning and then to ready, or to failed with its new error. When nothing failed, nothing runs. When a run is already in progress, this joins it. Conflicts when the sandbox is not running, which this never starts (its next start provisions anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure of the sandbox itself.
+            operationId: reprovision-sandbox
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentProvisionStatus'
+                    description: The sandbox's provisioning as it stands once the run has started or been joined.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Run a sandbox's failed provisioning again, in place.
             tags:
                 - Sandbox Status
             x-sandbox-agent: true

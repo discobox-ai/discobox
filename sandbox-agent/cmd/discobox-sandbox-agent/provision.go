@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +34,7 @@ import (
 // runs in it (ADR 26-10-24-953 §§2, 4).
 //
 //	discobox-provision wait FEATURE...           block until each is ready
+//	discobox-provision retry                     run what failed again, and wait for it
 //	discobox-provision run FEATURE COMMAND ARG... a placeholder: wait, then exec
 //	discobox-provision identity --key PATH       the box's public key, made on demand
 //	discobox-provision apply [--wait]             provision the box its maker placed
@@ -39,7 +42,7 @@ func runProvisionCommand(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	usage := func() int {
-		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--wait]")
+		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision retry\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--wait]")
 		return 2
 	}
 	if len(args) == 0 {
@@ -72,6 +75,11 @@ func runProvisionCommand(args []string) int {
 			return usage()
 		}
 		return provisionWait(ctx, flags.Args())
+	case "retry":
+		if len(args) != 1 {
+			return usage()
+		}
+		return provisionRetry(ctx, provision.RetryDir, provisionspec.StatusPath)
 	case "run":
 		if len(args) < 3 {
 			return usage()
@@ -280,6 +288,45 @@ func provisionWait(ctx context.Context, features []string) int {
 			fmt.Fprintln(os.Stderr, "discobox-provision:", err)
 			code = 1
 		}
+	}
+	return code
+}
+
+// provisionRetry is a reprovision asked from inside the box (ADR
+// 26-11-11-560 §5): the agent runs every failed feature again, and this
+// waits for the run as `wait` does. It fails naming each feature still
+// failed once the run is done.
+func provisionRetry(ctx context.Context, dir, statusPath string) int {
+	if err := provision.RequestRetry(ctx, dir); err != nil {
+		fmt.Fprintln(os.Stderr, "discobox-provision:", err)
+		return 1
+	}
+	status, err := provision.Wait(ctx, statusPath, nil, func(status provisionspec.Status, _ []string) {
+		var pending []string
+		for name, feature := range status.Features {
+			if !feature.State.Done() {
+				pending = append(pending, name)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "discobox-provision: provisioning %s\n", provision.Describe(status, pending))
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "discobox-provision:", err)
+		return 1
+	}
+	code := 0
+	if !status.Ready && status.Error != "" {
+		fmt.Fprintln(os.Stderr, "discobox-provision: provisioning failed:", status.Error)
+		code = 1
+	}
+	for _, name := range slices.Sorted(maps.Keys(status.Features)) {
+		if err := provision.Problem(status, name); err != nil && status.Features[name].State == provisionspec.StateFailed {
+			fmt.Fprintln(os.Stderr, "discobox-provision:", err)
+			code = 1
+		}
+	}
+	if code == 0 {
+		fmt.Fprintln(os.Stderr, "discobox-provision: every feature is provisioned")
 	}
 	return code
 }

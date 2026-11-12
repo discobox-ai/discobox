@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/sandbox-agent/statuswait"
 )
 
 // Tracker is what a run reports as it goes, and the box's provision.json
@@ -25,7 +26,8 @@ type Tracker struct {
 
 	mu     sync.Mutex
 	status provisionspec.Status
-	// readied is closed once readiness is decided, either way.
+	// readied is closed once readiness is decided, either way. A reprovision
+	// that reopens readiness replaces it (Rerun).
 	readied chan struct{}
 	// changed wakes feature waiters after each status update.
 	changed chan struct{}
@@ -33,17 +35,35 @@ type Tracker struct {
 	readyDecided bool
 	// running is whether a run is still provisioning.
 	running bool
+	// changes moves when the document's state, its readiness or a feature's
+	// state does, never a step within a feature (ADR 26-11-11-560 §6).
+	changes statuswait.Signal
+	// rerunning is whether the run in progress is a reprovision's, and
+	// reprovisioned is closed, and replaced, when it ends.
+	rerunning     bool
+	reprovisioned chan struct{}
 }
 
 // NewTracker is a tracker writing path, or nothing when path is empty. Its
 // document is pending until a run starts.
 func NewTracker(path string) *Tracker {
 	return &Tracker{
-		path:    path,
-		status:  provisionspec.Status{State: provisionspec.StatePending, Features: map[string]provisionspec.FeatureStatus{}},
-		readied: make(chan struct{}),
-		changed: make(chan struct{}),
+		path:          path,
+		status:        provisionspec.Status{State: provisionspec.StatePending, Features: map[string]provisionspec.FeatureStatus{}},
+		readied:       make(chan struct{}),
+		changed:       make(chan struct{}),
+		reprovisioned: make(chan struct{}),
 	}
+}
+
+// Reprovisioned is closed when the next reprovision's run ends, either way:
+// what waits on it — the declared services a failed feature kept down — then
+// looks again. Take it before looking, so a run that ends meanwhile is not
+// missed.
+func (t *Tracker) Reprovisioned() <-chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.reprovisioned
 }
 
 // SetLogger sets where a failed write of the document is logged.
@@ -55,6 +75,10 @@ func (t *Tracker) SetLogger(logger *slog.Logger) {
 func (t *Tracker) Status() provisionspec.Status {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.statusLocked()
+}
+
+func (t *Tracker) statusLocked() provisionspec.Status {
 	status := t.status
 	status.Features = maps.Clone(t.status.Features)
 	return status
@@ -62,18 +86,82 @@ func (t *Tracker) Status() provisionspec.Status {
 
 // AwaitReady blocks until readiness is decided, and is the error that failed
 // it, if one did.
+// A reprovision that reopens readiness while it waits is joined: it waits for
+// the decision that run makes (ADR 26-11-11-560 §4).
 func (t *Tracker) AwaitReady(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.readied:
+	for {
+		t.mu.Lock()
+		readied := t.readied
+		t.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-readied:
+		}
+		t.mu.Lock()
+		decided, ready, reason := t.readyDecided, t.status.Ready, t.status.Error
+		t.mu.Unlock()
+		switch {
+		case !decided:
+			continue
+		case !ready:
+			return errors.New(reason)
+		}
+		return nil
 	}
+}
+
+// Changes is the signal that moves when the document's state, its readiness
+// or a feature's state does: what the agent's status wait holds the pool on
+// (ADR 26-11-11-560 §6). A nil tracker's never moves.
+func (t *Tracker) Changes() *statuswait.Signal {
+	if t == nil {
+		return nil
+	}
+	return &t.changes
+}
+
+// Rerun starts a reprovision (ADR 26-11-11-560 §§2–4) and reports whether
+// it did, with the document as it then stands. Nothing starts while a run is
+// in progress, which the caller joins, nor when nothing failed.
+//
+// Started, every failed feature is pending again, and readiness is reopened
+// when one of them blocks it or it failed. The caller then runs the
+// features that are not ready (Options.Retry). A run that failed with no
+// failed feature to name — it had no plan, or what failed it was no
+// feature's — has every feature left as it was, and the caller runs the
+// boot's path whole: it is told so by the document's readiness having been
+// reopened with no feature pending.
+func (t *Tracker) Rerun() (provisionspec.Status, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.status.Ready {
-		return errors.New(t.status.Error)
+	if t.running || !t.status.State.Done() {
+		return t.statusLocked(), false
 	}
-	return nil
+	var failed []string
+	reopen := !t.status.Ready
+	for name, feature := range t.status.Features {
+		if feature.State == provisionspec.StateFailed {
+			failed = append(failed, name)
+			reopen = reopen || !feature.Async
+		}
+	}
+	if len(failed) == 0 && t.status.Ready {
+		return t.statusLocked(), false
+	}
+	t.updateLocked(func(status *provisionspec.Status) {
+		t.running, t.rerunning = true, true
+		for _, name := range failed {
+			feature := status.Features[name]
+			status.Features[name] = provisionspec.FeatureStatus{State: provisionspec.StatePending, Async: feature.Async, Log: feature.Log}
+		}
+		if reopen {
+			t.readyDecided = false
+			status.Ready, status.Error = false, ""
+			t.readied = make(chan struct{})
+		}
+	})
+	return t.statusLocked(), true
 }
 
 // AwaitFeatures waits for the named features to finish provisioning. An empty
@@ -135,11 +223,17 @@ func (t *Tracker) Write() {
 }
 
 // start reports every feature a run plans: off with its reason, or pending.
+// A feature a reprovision found ready keeps its line as it is.
 func (t *Tracker) start(plans []*featurePlan) {
 	t.update(func(status *provisionspec.Status) {
 		t.running = true
+		previous := status.Features
 		status.Features = map[string]provisionspec.FeatureStatus{}
 		for _, plan := range plans {
+			if plan.satisfied {
+				status.Features[plan.feature.Name] = previous[plan.feature.Name]
+				continue
+			}
 			feature := provisionspec.FeatureStatus{State: provisionspec.StatePending, Async: !plan.blocking}
 			if plan.off != "" {
 				feature = provisionspec.FeatureStatus{State: provisionspec.StateOff, Reason: plan.off}
@@ -197,40 +291,79 @@ func (t *Tracker) finish(plan *featurePlan) {
 
 // ready decides readiness: reached, or failed by err.
 func (t *Tracker) ready(err error) {
-	t.update(func(status *provisionspec.Status) {
-		if t.readyDecided {
-			return
-		}
-		t.readyDecided = true
-		status.Ready = err == nil
-		if err != nil {
-			status.Error = err.Error()
-		}
-		close(t.readied)
-	})
+	t.update(func(status *provisionspec.Status) { t.readyLocked(status, err) })
+}
+
+func (t *Tracker) readyLocked(status *provisionspec.Status, err error) {
+	if t.readyDecided {
+		return
+	}
+	t.readyDecided = true
+	status.Ready = err == nil
+	if err != nil {
+		status.Error = err.Error()
+	}
+	close(t.readied)
 }
 
 // Fail reports a run that could not start, which fails readiness: one whose
-// plan could not be read, or whose bundles could not be fetched.
+// plan could not be read, or whose bundles could not be fetched. A feature a
+// reprovision had made pending again fails with it. It is one change, so a
+// reprovision asked meanwhile sees the run either in progress or over, never
+// failed but still running.
 func (t *Tracker) Fail(err error) {
-	t.ready(err)
-	t.finished()
+	t.update(func(status *provisionspec.Status) {
+		for name, feature := range status.Features {
+			if !feature.State.Done() {
+				status.Features[name] = provisionspec.FeatureStatus{State: provisionspec.StateFailed, Async: feature.Async, Log: feature.Log, Error: err.Error()}
+			}
+		}
+		t.readyLocked(status, err)
+		t.finishedLocked()
+	})
 }
 
 // finished reports the run over.
 func (t *Tracker) finished() {
-	t.update(func(*provisionspec.Status) { t.running = false })
+	t.update(func(*provisionspec.Status) { t.finishedLocked() })
+}
+
+func (t *Tracker) finishedLocked() {
+	t.running = false
+	if t.rerunning {
+		t.rerunning = false
+		close(t.reprovisioned)
+		t.reprovisioned = make(chan struct{})
+	}
 }
 
 func (t *Tracker) update(change func(*provisionspec.Status)) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.updateLocked(change)
+}
+
+func (t *Tracker) updateLocked(change func(*provisionspec.Status)) {
+	state, ready := t.status.State, t.status.Ready
+	features := make(map[string]provisionspec.State, len(t.status.Features))
+	for name, feature := range t.status.Features {
+		features[name] = feature.State
+	}
 	change(&t.status)
 	t.status.State = t.state()
 	t.status.UpdatedAt = time.Now().UTC()
 	close(t.changed)
 	t.changed = make(chan struct{})
 	t.writeLocked()
+	moved := state != t.status.State || ready != t.status.Ready || len(features) != len(t.status.Features)
+	for name, feature := range t.status.Features {
+		if previous, ok := features[name]; !ok || previous != feature.State {
+			moved = true
+		}
+	}
+	if moved {
+		t.changes.Changed()
+	}
 }
 
 // state is the document's own state, from its features and readiness.

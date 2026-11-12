@@ -47,7 +47,7 @@ func Apply(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []s
 		tracker.Fail(err)
 		return err
 	}
-	opts.Background, opts.Snapshot = options.Background, options.Snapshot
+	opts.Background, opts.Snapshot, opts.Retry = options.Background, options.Snapshot, options.Retry
 	off := maps.Clone(options.Off)
 	if off == nil {
 		off = map[string]string{}
@@ -77,7 +77,8 @@ func Apply(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []s
 	if wireOnly {
 		return runner.Wire(ctx, loaded, opts)
 	}
-	if runner.Booted {
+	// A reprovision runs the boot's plan again, which is already published.
+	if runner.Booted && !opts.Retry {
 		if err := publishConfigurationPlan(loaded, opts); err != nil {
 			tracker.Fail(err)
 			return err

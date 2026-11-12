@@ -112,6 +112,11 @@ type Options struct {
 	// step after them and every feature requiring theirs, so nothing runs
 	// before what it was written to follow.
 	Snapshot bool
+	// Retry is a reprovision (ADR 26-11-11-560 §2), after Tracker.Rerun: a
+	// feature the Tracker reports ready is satisfied, and nothing of it runs
+	// — no step, no check, no restart, no placeholder — and every other
+	// feature runs as at boot. It is never part of a configuration plan.
+	Retry bool `yaml:"-"`
 }
 
 // featurePlan is what a run does with one feature.
@@ -147,9 +152,12 @@ type featurePlan struct {
 	configured bool
 	// failed is why the feature failed.
 	failed error
-	done   chan struct{}
-	out    io.Writer
-	logs   *os.File
+	// satisfied is a feature a reprovision found ready (Options.Retry): it
+	// is done before the run starts, and the run does nothing of it.
+	satisfied bool
+	done      chan struct{}
+	out       io.Writer
+	logs      *os.File
 }
 
 // blocks reports whether the feature's step at index waits for readiness.
@@ -218,7 +226,7 @@ func (r *Runner) Provision(ctx context.Context, features []provisionspec.Feature
 
 	// What readiness waits for, in requires order.
 	for _, plan := range plans {
-		if plan.off != "" || plan.failed != nil || !plan.has(plan.blockingSteps(opts)) {
+		if plan.off != "" || plan.satisfied || plan.failed != nil || !plan.has(plan.blockingSteps(opts)) {
 			continue
 		}
 		if !r.requiredFailed(plan, byName) {
@@ -232,7 +240,7 @@ func (r *Runner) Provision(ctx context.Context, features []provisionspec.Feature
 	// done, is done now, so provision.json says so from readiness on. In
 	// requires order, a feature's requirements were decided before it.
 	for _, plan := range plans {
-		if plan.off != "" || plan.failed != nil || plan.has(plan.backgroundSteps(opts)) {
+		if plan.off != "" || plan.satisfied || plan.failed != nil || plan.has(plan.backgroundSteps(opts)) {
 			continue
 		}
 		if slices.ContainsFunc(plan.feature.Spec.Requires, func(name string) bool { return !isDone(byName[name]) }) {
@@ -329,6 +337,9 @@ func (r *Runner) begin(ctx context.Context, features []provisionspec.Feature, op
 // later reaches no running session.
 func (r *Runner) wire(ctx context.Context, plans []*featurePlan, opts Options, record func([]Outcome, error)) error {
 	for _, plan := range plans {
+		if plan.satisfied {
+			continue
+		}
 		for _, name := range plan.feature.Spec.Personalities {
 			target := r.path(filepath.Join("/usr/local/bin", name))
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -541,6 +552,10 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 	for _, feature := range ordered {
 		byName[feature.Name] = feature
 	}
+	var previous map[string]provisionspec.FeatureStatus
+	if opts.Retry {
+		previous = r.tracker().Status().Features
+	}
 	// A feature that is not async blocks readiness (ADR 26-10-24-953 §1):
 	// what blocks is each feature's own say, never which bundle it came in.
 	// It runs its steps in order up to the first one marked async, and what
@@ -614,7 +629,10 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 				plan.deferredFrom = 0
 			}
 		}
-		if feature.Spec.Adopt != nil && !r.installedHere(feature) {
+		if previous[feature.Name].State == provisionspec.StateReady {
+			plan.satisfied = true
+		}
+		if feature.Spec.Adopt != nil && !plan.satisfied && !r.installedHere(feature) {
 			version, commands, err := r.usable(ctx, feature)
 			if err != nil {
 				r.logger().Info("provision: not adopted", "feature", feature.Name, "reason", err)
@@ -643,6 +661,9 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 		return nil, err
 	}
 	for _, plan := range plans {
+		if plan.satisfied && plan.off == "" {
+			close(plan.done)
+		}
 		if plan.off != "" {
 			// Opting out never uninstalls: it skips the feature's wiring,
 			// so the env it put on every login shell goes.

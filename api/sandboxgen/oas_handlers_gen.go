@@ -6447,6 +6447,174 @@ func (s *Server) handleRemoveSandboxFileRequest(args [2]string, argsEscaped bool
 	}
 }
 
+// handleReprovisionSandboxRequest handles reprovision-sandbox operation.
+//
+// Runs the sandbox's provisioning again for every feature that failed, and the features that failed
+// because they require one, in the running sandbox. Nothing else about the sandbox changes - no
+// rebuild, no new container or machine, no restart of it or of anything running in it - and a
+// feature that is ready or off runs nothing. A failed feature the sandbox waits for before it
+// launches anything makes it wait again, so a terminal launched meanwhile waits for the outcome. The
+// run goes on whether or not the caller stays; follow it in the sandbox's reported provisioning,
+// where each feature it runs moves to provisioning and then to ready, or to failed with its new
+// error. When nothing failed, nothing runs. When a run is already in progress, this joins it.
+// Conflicts when the sandbox is not running, which this never starts (its next start provisions
+// anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
+// of the sandbox itself.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+func (s *Server) handleReprovisionSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("reprovision-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/reprovision"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ReprovisionSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ReprovisionSandboxOperation,
+			ID:   "reprovision-sandbox",
+		}
+	)
+	params, err := decodeReprovisionSandboxParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response *SandboxAgentProvisionStatus
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ReprovisionSandboxOperation,
+			OperationSummary: "Run a sandbox's failed provisioning again, in place.",
+			OperationID:      "reprovision-sandbox",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "sandboxId",
+					In:   "path",
+				}: params.SandboxId,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = ReprovisionSandboxParams
+			Response = *SandboxAgentProvisionStatus
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackReprovisionSandboxParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ReprovisionSandbox(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ReprovisionSandbox(ctx, params)
+	}
+	if err != nil {
+		if errRes, ok := errors.Into[*ErrorResponseStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
+		return
+	}
+
+	if err := encodeReprovisionSandboxResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleRestartSandboxServiceRequest handles restart-sandbox-service operation.
 //
 // Stops the service if it is running and starts it again under the same exec ID. A service that is
@@ -8116,12 +8284,13 @@ func (s *Server) handleUpdateSandboxAgentMetaRequest(args [2]string, argsEscaped
 
 // handleWaitSandboxAgentStatusRequest handles wait-sandbox-agent-status operation.
 //
-// Answers with the version of what wakes the pool, the sandbox's listening ports and its harness
-// configuration capture. A call without `after`, or with an `after` that is not the current version,
-// is answered at once; a call naming the current version is held until either changes or the agent's
-// hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a
-// newly bound port, or a harness sign-in to save, is reported at once rather than at the next status
-// poll (ADR 26-11-03-815, ADR 26-11-09-062).
+// Answers with the version of what wakes the pool, the sandbox's listening ports, its harness
+// configuration capture, and the state of its provisioning and of each feature in it. A call without
+// `after`, or with an `after` that is not the current version, is answered at once; a call naming
+// the current version is held until either changes or the agent's hold (25 seconds) passes, and then
+// answered with the version as it is. The pool waits here so a newly bound port, or a harness
+// sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR
+// 26-11-09-062).
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
 func (s *Server) handleWaitSandboxAgentStatusRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -8213,7 +8382,7 @@ func (s *Server) handleWaitSandboxAgentStatusRequest(args [2]string, argsEscaped
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    WaitSandboxAgentStatusOperation,
-			OperationSummary: "Wait for the sandbox's ports or harness configuration to change.",
+			OperationSummary: "Wait for the sandbox's ports, harness configuration or provisioning to change.",
 			OperationID:      "wait-sandbox-agent-status",
 			Body:             nil,
 			RawBody:          rawBody,

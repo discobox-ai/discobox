@@ -210,7 +210,7 @@ func run(name string, args []string) int {
 	}
 	tracker := provision.NewTracker(statusPath)
 	go func() {
-		if err := provisionBox(ctx, tracker, runtimeConfig, configPath, cfg.Features); err != nil && !errors.Is(err, context.Canceled) {
+		if err := provisionBox(ctx, tracker, runtimeConfig, configPath, cfg.Features, false); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("provision", "error", err)
 		}
 	}()
@@ -218,6 +218,17 @@ func run(name string, args []string) int {
 	serverConfig.RuntimeConfig = runtimeConfig
 	serverConfig.Provision = tracker
 	serverConfig.ClearCaches = func() ([]string, error) { return boot.ClearCaches(configPath) }
+	// What failed to provision can be run again in place, from the API or
+	// from inside the box (ADR 26-11-11-560 §5). Only a Linux box provisions.
+	if runtime.GOOS == "linux" {
+		reprovision := &reprovisioner{ctx: ctx, tracker: tracker, runtimeConfig: runtimeConfig, configPath: configPath, features: cfg.Features}
+		serverConfig.Reprovision = reprovision.Reprovision
+		go func() {
+			if err := provision.WatchRetries(ctx, provision.RetryDir, func() { reprovision.Reprovision() }); err != nil {
+				slog.Warn("reprovision requests from inside the box are unavailable", "dir", provision.RetryDir, "error", err)
+			}
+		}()
+	}
 	// Its pool serves its sandboxes' agents over TLS, with the keypair it
 	// placed and renews in the runtime-config document, or plain HTTP, as the
 	// bootstrap says (ADR 26-10-29-481 §3).

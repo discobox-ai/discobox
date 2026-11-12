@@ -54,6 +54,7 @@ runs, unless it has no features to provision.
 | The agent, every boot | `Apply(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
 | `boot.Wire` / `boot.Provision` | `Apply(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
 | `discobox-sandbox-agent snapshot` | `Apply` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
+| A reprovision: the agent's API route or `discobox-provision retry` | `Tracker.Rerun`, then `Apply` with `Retry` → `Runner.Provision` | The features not ready, as at boot ([Reprovision](#reprovision)) |
 | `discobox-provision apply`, on a pool | `Apply` → `Runner.Provision` | Every feature of the pool's bundles, every step blocking, nothing off and no placeholders: nothing runs on a pool but what its bundles lay ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §2) |
 
 At boot the trees are the box's pins' bundles, in the pins' order
@@ -219,7 +220,35 @@ named features or, by default, the full run, including async features. Status
 updates wake feature waiters without polling. A required feature's failure or
 explicit opt-out prevents launch; the default ignores opt-outs. Each feature's
 steps write to
-`/var/log/discobox/provision/<feature>.log`.
+`/var/log/discobox/provision/<feature>.log`. `Tracker.Changes` moves when the
+document's state, its readiness or a feature's state does, never a step, and
+is what the agent's status wait holds the pool on.
+
+## Reprovision
+
+A second run of the box's own plan, in the agent's process, on its tracker
+([ADR 26-11-11-560](../../docs/adr/26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)).
+Nothing about the box changes; it is not a repair.
+
+- **Start.** `Tracker.Rerun` starts one only when no run is in progress (a
+  caller then joins it) and something failed: every failed feature is
+  `pending` again, and readiness is reopened when one blocks it or it failed.
+  A run that failed naming no feature (no plan, no bundles) reopens readiness
+  with nothing pending; the agent then runs the boot's path whole.
+- **Scope.** `Options.Retry`: a feature the tracker reports ready is
+  `satisfied` — done before the run starts, with no wiring, step, check,
+  restart or placeholder — and its line is kept. Off stays off. The rest
+  plan and run as at boot, records skipping what a half-run left applied.
+- **Readiness.** Reopened, it is decided again by the run, and `AwaitReady`
+  joins it. A run of async features only leaves it as it was.
+- **Asked in the box.** `discobox-provision retry` writes a file in `RetryDir`
+  (sticky, writable by all), which the agent takes once it has started or
+  joined the run (`WatchRetries`), then waits on `provision.json`.
+- **A run that cannot start** (`Fail`) fails every feature it made pending, so
+  nothing waits forever.
+- **After it.** `Tracker.Reprovisioned` fires when its run ends, and the
+  agent then starts the declared services a failed feature kept down, or the
+  run installed (`services.Manager.StartReprovisioned`).
 
 ## Placeholders
 

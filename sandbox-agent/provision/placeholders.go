@@ -35,7 +35,7 @@ func (r *Runner) writePlaceholders(plans []*featurePlan, opts Options) error {
 	}
 	written := false
 	for _, plan := range plans {
-		if !opts.Background || plan.off != "" || plan.adopted || plan.failed != nil {
+		if !opts.Background || plan.off != "" || plan.satisfied || plan.adopted || plan.failed != nil {
 			continue
 		}
 		for _, command := range plan.feature.Spec.Commands {
