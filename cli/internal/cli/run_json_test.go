@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -179,14 +180,16 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 		stdin string
 		want  string
 	}{
-		"a run flag beside it": {[]string{"run", "--from-json", "-p", "x"}, `{}`, "put --prompt in it"},
-		"a word beside it":     {[]string{"run", "--from-json", "fix"}, `{}`, `"prompt"`},
-		"an unknown field":     {[]string{"run", "--from-json"}, `{"promt": "x"}`, `unknown field "promt"`},
-		"two requests":         {[]string{"run", "--from-json"}, `{} {}`, "more than one request"},
-		"a well-known ID":      {[]string{"run", "--from-json"}, `{"bindings": [{"id": "com.github.api"}]}`, `unknown field "id"`},
-		"no secret":            {[]string{"run", "--from-json"}, `{"bindings": [{"envVar": "T"}]}`, `"secret"`},
-		"a variable twice":     {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T"}, {"secret": "npm", "envVar": "T"}]}`, "already bound"},
-		"a delegation's var":   {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T", "delegate": true}]}`, "names no envVar"},
+		"a run flag beside it":   {[]string{"run", "--from-json", "-p", "x"}, `{}`, "put --prompt in it"},
+		"a word beside it":       {[]string{"run", "--from-json", "fix"}, `{}`, `"prompt"`},
+		"an unknown field":       {[]string{"run", "--from-json"}, `{"promt": "x"}`, `unknown field "promt"`},
+		"two requests":           {[]string{"run", "--from-json"}, `{} {}`, "more than one request"},
+		"a well-known ID":        {[]string{"run", "--from-json"}, `{"bindings": [{"id": "com.github.api"}]}`, `unknown field "id"`},
+		"no secret":              {[]string{"run", "--from-json"}, `{"bindings": [{"envVar": "T"}]}`, `"secret"`},
+		"a variable twice":       {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T"}, {"secret": "npm", "envVar": "T"}]}`, "already bound"},
+		"a delegation's var":     {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T", "delegate": true}]}`, "names no envVar"},
+		"an invalid tag":         {[]string{"run", "--from-json"}, `{"noSource": true, "tags": {"bad key": "x"}}`, "whitespace"},
+		"an invalid description": {[]string{"run", "--from-json"}, `{"noSource": true, "description": "a\u0007b"}`, "control characters"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()
@@ -194,6 +197,68 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 			cmd.SetErr(&bytes.Buffer{})
 			cmd.SetIn(strings.NewReader(tc.stdin))
 			cmd.SetArgs(append([]string{"--server", "http://127.0.0.1:1", "--project", "project-1"}, tc.args...))
+			err := cmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to say %s", err, tc.want)
+			}
+		})
+	}
+}
+
+// `run --tag` and `--description`, and --from-json's "tags" and
+// "description", go with the create, so the discobox has them from its first
+// state rather than from a second command.
+func TestRunTagsAndDescribesTheDiscobox(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args  []string
+		stdin string
+	}{
+		"flags": {args: []string{"run", "-d", "--no-source", "--tag", "repo=a/b", "--tag", "wip", "--description", "deliver 700", "-p", "go"}},
+		"json":  {args: []string{"run", "--from-json"}, stdin: `{"noSource": true, "prompt": "go", "tags": {"repo": "a/b", "wip": ""}, "description": "deliver 700"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setHome(t, t.TempDir())
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			t.Chdir(newRunSourceTestRepo(t))
+			var posted map[string]any
+			server := runJSONServer(t, &posted)
+
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(strings.NewReader(tc.stdin))
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, tc.args...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute run: %v", err)
+			}
+			config, _ := posted["config"].(map[string]any)
+			want := map[string]any{"repo": "a/b", "wip": ""}
+			if tags, _ := config["tags"].(map[string]any); !reflect.DeepEqual(tags, want) {
+				t.Fatalf("config.tags = %#v, want %#v", config["tags"], want)
+			}
+			if config["description"] != "deliver 700" {
+				t.Fatalf("config.description = %#v, want the description", config["description"])
+			}
+		})
+	}
+}
+
+// A tag `discobox tag` would refuse is refused by run before anything is
+// created: the server named here answers nothing.
+func TestRunRefusesABadTagBeforeCreating(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"a key twice":       {[]string{"--tag", "job=a", "--tag", "job=b"}, "more than once"},
+		"a bad key":         {[]string{"--tag", "a,b"}, `--tag: tag "a,b"`},
+		"a bad description": {[]string{"--description", "a\x07b"}, "control characters"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs(append([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "run", "-d", "--no-source"}, tc.args...))
 			err := cmd.Execute()
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want it to say %s", err, tc.want)

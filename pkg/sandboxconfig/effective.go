@@ -26,9 +26,11 @@ type Config struct {
 	ModelReasoningLevel string   `json:"modelReasoningLevel,omitempty"`
 	ModelServiceTier    string   `json:"modelServiceTier,omitempty"`
 	Prompt              []string `json:"prompt,omitempty"`
-	// Description seeds the sandbox's meta file when it has none (ADR 0136).
-	Description string `json:"description,omitempty"`
-	User        User   `json:"user"`
+	// Description and Tags seed the sandbox's meta file when it has none
+	// (ADR 0136).
+	Description string            `json:"description,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
+	User        User              `json:"user"`
 	// Git is authorship, not run identity (ADR 0042 §1). Single-writer: no
 	// image or project layer contributes to it.
 	Git GitIdentity `json:"git"`
@@ -98,6 +100,7 @@ func Effective(doc Document) (Config, Provenance) {
 		ModelServiceTier:    doc.Runtime.ModelServiceTier,
 		Prompt:              cloneStrings(doc.Runtime.Prompt),
 		Description:         doc.Runtime.Description,
+		Tags:                maps.Clone(doc.Runtime.Tags),
 		User:                doc.Runtime.User,
 		Git:                 doc.Runtime.Git,
 		Skills:              doc.Runtime.Skills.clone(),

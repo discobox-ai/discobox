@@ -105,20 +105,11 @@ func tagChange(set, removed []string, describe *string) (*apimodel.UpdateSandbox
 	if len(set) == 0 && len(removed) == 0 && describe == nil {
 		return nil, errors.New("nothing to change: give a KEY[=VALUE] to set, --rm KEY, or --description")
 	}
-	change := sandboxmeta.Change{Description: describe, RemoveTags: removed}
-	if len(set) > 0 {
-		change.SetTags = make(map[string]string, len(set))
+	setTags, err := sandboxmeta.ParseTags(set)
+	if err != nil {
+		return nil, err
 	}
-	for _, text := range set {
-		key, value, err := sandboxmeta.ParseTag(text)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := change.SetTags[key]; ok {
-			return nil, fmt.Errorf("tag %q is set more than once", key)
-		}
-		change.SetTags[key] = value
-	}
+	change := sandboxmeta.Change{Description: describe, SetTags: setTags, RemoveTags: removed}
 	for _, key := range removed {
 		if err := sandboxmeta.ValidateKey(key); err != nil {
 			return nil, fmt.Errorf("--rm %q: %w", key, err)

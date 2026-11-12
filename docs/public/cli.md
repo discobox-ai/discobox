@@ -4994,6 +4994,14 @@ binds only what it may delegate, and delegates nothing.
 acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
+--tag KEY=VALUE tags the new discobox, and --tag KEY gives it a plain label
+with no value; repeat it for more. --description TEXT describes it. Both are
+recorded with the discobox when it is created, so "discobox ls" shows them,
+and "discobox events" its tags, from its first state, and they are in its
+~/.discobox/meta.json before its harness starts. They are checked as
+"discobox tag" checks them, and a bad one creates nothing. From then on they
+are the discobox's own, changed with "discobox tag" or from inside it.
+
 --from-json reads the whole request from stdin as one JSON object instead,
 creates the discobox without attaching, and prints it as JSON. It is for a
 caller that would rather not quote a prompt through a shell — an agent in a
@@ -5010,6 +5018,8 @@ its flag does. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "tags": {"ticket": "ENG-12", "wip": ""},
+    "description": "Fix the failing tests in pkg/foo",
     "env": ["MODE=test"],
     "secrets": ["OPENAI_API_KEY=sk-...@api.openai.com"],
     "include": ["../foo"],
@@ -5045,6 +5055,7 @@ Examples:
   discobox run --pool mac-mini . 'fix the failing tests'
   discobox run -d --bind github:GH_TOKEN . 'fix issue 42'
   discobox run -d --bind npm-token --delegate github . 'fan out the issues'
+  discobox run -d --tag ticket=ENG-12 --tag wip --description 'Fix the flaky test' . 'fix the flaky test'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -5059,6 +5070,7 @@ Examples:
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --declared-sources | bool | true | Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one Value when passed without an argument: true. |
 | --delegate | stringArray | [] | Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give |
+| --description | string |  | Describe the new discobox from its creation, as "discobox tag --description" would afterwards |
 | --detach, -d | bool | false | Create the discobox and print it without attaching to its terminal Value when passed without an argument: true. |
 | --discobox-api | bool | false | Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself Value when passed without an argument: true. |
 | --env, -e | stringArray | [] | Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable |
@@ -5078,6 +5090,7 @@ Examples:
 | --secret, -s | stringArray | [] | A secret to store and bind as KEY: KEY reads $KEY from this shell, KEY=@FILE reads a file, KEY=VALUE takes the value itself (it then sits in shell history and the process list); add @HOST to send it to HOST alone, else it is sent anywhere. A value or path holding an @ ends with one. Repeat for more. A stored secret is bound with --bind |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --skills | stringArray | [] | Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under ~/.discobox/skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's run.skills |
+| --tag | stringArray | [] | Tag the new discobox from its creation, as KEY=VALUE, or KEY for a plain label; repeat for more. The same tags "discobox tag" sets and "discobox ls --tag" lists by |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 | --user-skills | bool | false | Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills. Defaults to client.yaml's run.userSkills Value when passed without an argument: true. |
 

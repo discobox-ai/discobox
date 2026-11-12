@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -1385,6 +1386,9 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 		doc.Runtime.ModelServiceTier = optString(config.ModelServiceTier)
 		doc.Runtime.Prompt = append([]string{}, config.Prompt...)
 		doc.Runtime.Description = optString(config.Description)
+		if tags, ok := config.Tags.Get(); ok && len(tags) > 0 {
+			doc.Runtime.Tags = maps.Clone(map[string]string(tags))
+		}
 		if env, ok := config.Env.Get(); ok {
 			doc.Runtime.Env = map[string]string(env)
 		}

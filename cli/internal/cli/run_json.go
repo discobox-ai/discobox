@@ -25,10 +25,14 @@ type runJSONRequest struct {
 	Harness  string           `json:"harness"`
 	Bindings []runJSONBinding `json:"bindings"`
 	// DiscoboxAPI is --discobox-api.
-	DiscoboxAPI bool     `json:"discoboxApi"`
-	Env         []string `json:"env"`
-	Secrets     []string `json:"secrets"`
-	Include     []string `json:"include"`
+	DiscoboxAPI bool `json:"discoboxApi"`
+	// Tags and Description are --tag and --description: tags as an object,
+	// key to value, with "" for a plain label.
+	Tags        map[string]string `json:"tags"`
+	Description string            `json:"description"`
+	Env         []string          `json:"env"`
+	Secrets     []string          `json:"secrets"`
+	Include     []string          `json:"include"`
 	// Skills and UserSkills are --skills and --user-skills. Left out, each
 	// takes what client.yaml says; "skills": [] is none.
 	Skills     *[]string `json:"skills"`
@@ -89,6 +93,8 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	}
 	opts.bindings = bindings
 	opts.discoboxAPI = req.DiscoboxAPI
+	opts.prompt.Tags = req.Tags
+	opts.prompt.Description = req.Description
 	if req.Prompt != "" {
 		opts.promptFlag = []string{req.Prompt}
 	}

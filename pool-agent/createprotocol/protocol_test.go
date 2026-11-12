@@ -3,6 +3,7 @@ package createprotocol
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -157,7 +158,11 @@ func TestDiscoveryRefusesInvalidRevisions(t *testing.T) {
 		name, answer string
 		incompatible bool
 	}{
-		{"future", `{"createRevision":2}`, true}, {"missing", `{}`, false}, {"malformed", `no`, false},
+		{"future", fmt.Sprintf(`{"createRevision":%d}`, Revision+1), true},
+		// An agent from before the last contract change, whose strict decoder
+		// would refuse what this server sends.
+		{"past", fmt.Sprintf(`{"createRevision":%d}`, Revision-1), true},
+		{"missing", `{}`, false}, {"malformed", `no`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

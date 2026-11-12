@@ -287,3 +287,22 @@ func TestTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTags(t *testing.T) {
+	got, err := ParseTags([]string{"repo=a/b", "wip", "note=x=y"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"repo": "a/b", "wip": "", "note": "x=y"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ParseTags() = %v, want %v", got, want)
+	}
+	if got, err := ParseTags(nil); got != nil || err != nil {
+		t.Fatalf("ParseTags(nil) = %v, %v; want nil, nil", got, err)
+	}
+	if _, err := ParseTags([]string{"job=a", "job=b"}); err == nil || !strings.Contains(err.Error(), "more than once") {
+		t.Fatalf("ParseTags() of a key given twice = %v, want a refusal", err)
+	}
+	if _, err := ParseTags([]string{"bad key"}); err == nil {
+		t.Fatal("ParseTags() accepted a key with whitespace")
+	}
+}

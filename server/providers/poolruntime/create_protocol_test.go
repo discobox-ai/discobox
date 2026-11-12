@@ -62,7 +62,7 @@ func TestCreateDiscoveryFailuresNeverSendCreate(t *testing.T) {
 		retry    bool
 	}{
 		{"legacy", 404, "", true}, {"not ready", 503, "", true}, {"unauthenticated", 401, "", false}, {"unauthorized", 403, "", false},
-		{"future revision", 101, `{"createRevision":2}`, true}, {"malformed", 101, `{}`, false},
+		{"future revision", 101, fmt.Sprintf(`{"createRevision":%d}`, createprotocol.Revision+1), true}, {"malformed", 101, `{}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var creates atomic.Int32

@@ -49,8 +49,10 @@ type RuntimeLayer struct {
 	// Description is the one the sandbox was created with. It is a seed, not
 	// the sandbox's description: the sandbox agent writes it into the meta
 	// file only when there is no meta file yet, and from then on that file is
-	// the description (ADR 0136).
+	// the description (ADR 0136). Tags are the tags it was created with, a
+	// seed on the same terms.
 	Description string            `json:"description,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
 	User        User              `json:"user"`
 	Git         GitIdentity       `json:"git"`
 	Env         map[string]string `json:"env,omitempty"`

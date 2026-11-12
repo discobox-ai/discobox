@@ -123,13 +123,13 @@ func TestUpdateRefusesToReplaceAnInvalidFile(t *testing.T) {
 func TestSeedWritesOnlyWhenThereIsNoFile(t *testing.T) {
 	home := t.TempDir()
 	file := New(home, Owner{})
-	if err := file.Seed(""); err != nil {
+	if err := file.Seed(sandboxmeta.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(file.Path()); !os.IsNotExist(err) {
 		t.Fatal("an empty seed wrote a file")
 	}
-	if err := file.Seed("created to fix the reaper"); err != nil {
+	if err := file.Seed(sandboxmeta.Meta{Description: "created to fix the reaper"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _, err := file.Read()
@@ -140,11 +140,47 @@ func TestSeedWritesOnlyWhenThereIsNoFile(t *testing.T) {
 	if _, _, err := file.Update(sandboxmeta.Change{Description: &cleared}); err != nil {
 		t.Fatal(err)
 	}
-	if err := file.Seed("created to fix the reaper"); err != nil {
+	if err := file.Seed(sandboxmeta.Meta{Description: "created to fix the reaper"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _, _ := file.Read(); got.Description != "" {
 		t.Fatalf("Seed() overwrote a description the sandbox cleared: %q", got.Description)
+	}
+}
+
+// Tags the sandbox was created with seed the file with its description, and
+// on the same terms: a tag removed inside the sandbox stays removed through
+// every later seed, as a restart or re-create would give it.
+func TestSeedWritesTagsWithTheDescription(t *testing.T) {
+	home := t.TempDir()
+	file := New(home, Owner{})
+	seed := sandboxmeta.Meta{Description: "deliver 700", Tags: map[string]string{"repo": "a/b", "wip": ""}}
+	if err := file.Seed(seed); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := file.Read()
+	if err != nil || got.Description != "deliver 700" || len(got.Tags) != 2 || got.Tags["repo"] != "a/b" {
+		t.Fatalf("Read() after Seed() = %+v, %v", got, err)
+	}
+	if _, ok := got.Tags["wip"]; !ok {
+		t.Fatalf("Seed() dropped the plain label: %+v", got.Tags)
+	}
+	if _, _, err := file.Update(sandboxmeta.Change{RemoveTags: []string{"wip"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Seed(seed); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := file.Read(); len(got.Tags) != 1 {
+		t.Fatalf("Seed() restored a tag the sandbox removed: %+v", got.Tags)
+	}
+
+	tagsOnly := New(t.TempDir(), Owner{})
+	if err := tagsOnly.Seed(sandboxmeta.Meta{Tags: map[string]string{"job": "deliver"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := tagsOnly.Read(); err != nil || got.Tags["job"] != "deliver" || got.Description != "" {
+		t.Fatalf("Read() after a tags-only Seed() = %+v, %v", got, err)
 	}
 }
 

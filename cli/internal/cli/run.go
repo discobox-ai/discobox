@@ -15,6 +15,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -50,6 +51,9 @@ type runCommandOptions struct {
 	delegate    []string
 	bindings    []apimodel.SandboxBindingInput
 	discoboxAPI bool
+	// tags are --tag as given, KEY or KEY=VALUE, which prompt.Tags is parsed
+	// from; a --from-json request gives prompt.Tags itself.
+	tags []string
 	// pool is --pool as given: the pool the discobox is placed on, by ID,
 	// short ID, or name. Empty is the project's default pool.
 	pool string
@@ -236,6 +240,14 @@ binds only what it may delegate, and delegates nothing.
 acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
+--tag KEY=VALUE tags the new discobox, and --tag KEY gives it a plain label
+with no value; repeat it for more. --description TEXT describes it. Both are
+recorded with the discobox when it is created, so "discobox ls" shows them,
+and "discobox events" its tags, from its first state, and they are in its
+~/.discobox/meta.json before its harness starts. They are checked as
+"discobox tag" checks them, and a bad one creates nothing. From then on they
+are the discobox's own, changed with "discobox tag" or from inside it.
+
 --from-json reads the whole request from stdin as one JSON object instead,
 creates the discobox without attaching, and prints it as JSON. It is for a
 caller that would rather not quote a prompt through a shell — an agent in a
@@ -252,6 +264,8 @@ its flag does. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "tags": {"ticket": "ENG-12", "wip": ""},
+    "description": "Fix the failing tests in pkg/foo",
     "env": ["MODE=test"],
     "secrets": ["OPENAI_API_KEY=sk-...@api.openai.com"],
     "include": ["../foo"],
@@ -277,6 +291,7 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
   discobox run --pool mac-mini . 'fix the failing tests'
   discobox run -d --bind github:GH_TOKEN . 'fix issue 42'
   discobox run -d --bind npm-token --delegate github . 'fan out the issues'
+  discobox run -d --tag ticket=ENG-12 --tag wip --description 'Fix the flaky test' . 'fix the flaky test'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -313,6 +328,9 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 			return err
 		}
 		opts.bindings = bindings
+		if opts.prompt.Tags, err = sandboxmeta.ParseTags(opts.tags); err != nil {
+			return fmt.Errorf("--tag: %w", err)
+		}
 		if opts.flags.Changed("user-skills") {
 			opts.userSkills = &opts.userSkillsFlag
 		}
@@ -491,6 +509,8 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVar(&opts.includeDirty, "include-dirty", false, "Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says")
 	flags.StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; or SECRET[:VAR],policy=FILE,NAME=VALUE (repeat policy=FILE to merge files, arguments follow each file). Repeat for more. A discobox creating one binds only what it may delegate")
 	flags.StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
+	flags.StringArrayVar(&opts.tags, "tag", nil, "Tag the new discobox from its creation, as KEY=VALUE, or KEY for a plain label; repeat for more. The same tags \"discobox tag\" sets and \"discobox ls --tag\" lists by")
+	flags.StringVar(&opts.prompt.Description, "description", "", "Describe the new discobox from its creation, as \"discobox tag --description\" would afterwards")
 	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
@@ -763,6 +783,8 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Bind:                opts.bind,
 		Delegate:            opts.delegate,
 		DiscoboxAPI:         opts.discoboxAPI,
+		Description:         opts.prompt.Description,
+		Tags:                opts.prompt.Tags,
 		Include:             opts.prompt.Include,
 		SkillDirs:           opts.skillDirs,
 		UserSkills:          opts.userSkills,

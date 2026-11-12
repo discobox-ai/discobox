@@ -301,3 +301,23 @@ func TestPoolCreateRequestCarriesBodyPlacesOnlyToAnAgentThatTakesThem(t *testing
 		t.Fatalf("SENT = %+v, want both routes, the body place carried", sent)
 	}
 }
+
+// The tags a sandbox was created with go to its pool beside its
+// description, as the seed for its meta file.
+func TestPoolCreateRequestForwardsTheMetaSeed(t *testing.T) {
+	description := "deliver 700"
+	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		Description: &description,
+		Tags:        map[string]string{"repo": "a/b", "wip": ""},
+	}, false, false, false)
+	tags, ok := request.Config.Tags.Get()
+	if !ok || len(tags) != 2 || tags["repo"] != "a/b" {
+		t.Fatalf("tags = %v, want both", tags)
+	}
+	if request.Config.Description.Or("") != description {
+		t.Fatalf("description = %q, want %q", request.Config.Description.Or(""), description)
+	}
+	if untagged := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false); untagged.Config.Tags.Set {
+		t.Fatalf("an untagged sandbox sent tags %v", untagged.Config.Tags.Value)
+	}
+}

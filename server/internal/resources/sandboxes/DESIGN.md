@@ -933,8 +933,13 @@ clients generated while the schema still required it. `UpdateSandboxMeta` carrie
 a change to the sandbox agent (`PATCH .../meta`, as `exec:write`) and records
 what it answers; the status report (pools) records what the file holds. Either
 write lands only when newer, and both are observed columns `UpdateSandbox`
-omits. Until the first report the description is the create-time one, which
-the reconciler also hands the pool as the seed for the file. `ListSandboxes`
+omits. A create's description and tags are checked as a meta change is and
+written to the row unobserved, so its first listing carries both and its
+created event the tags (an event carries no description, ADR 26-10-29-316
+§1); until the first report they are the create-time ones, which the
+reconciler also hands the pool as the seed for the file. The sandbox agent
+seeds the file only when it has none, so a later edit inside the box survives
+every restart and re-create. `ListSandboxes`
 filters on the recorded tags in Go. Export writes the copy into the spec and
 import restores it unobserved; the file itself travels in the tree.
 

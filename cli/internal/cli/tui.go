@@ -1234,6 +1234,9 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		// or to leave the declared ones out. See tui.WithRun.
 		Include:             req.Include,
 		SkipDeclaredSources: req.SkipDeclaredSources,
+		// Likewise --description and --tag, which the panel has no row for.
+		Description: req.Description,
+		Tags:        req.Tags,
 	}
 	// A Skills or User skills row left alone is nil, so what client.yaml says
 	// stands; one that was set, or `discobox run`'s own flags, replace it.

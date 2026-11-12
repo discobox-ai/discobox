@@ -348,6 +348,27 @@ func ParseTag(text string) (key, value string, err error) {
 	return key, value, nil
 }
 
+// ParseTags reads tags as ParseTag reads each, into one set. A key given twice
+// is refused, because the texts do not say which value they mean. No texts is
+// a nil set.
+func ParseTags(texts []string) (map[string]string, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	tags := make(map[string]string, len(texts))
+	for _, text := range texts {
+		key, value, err := ParseTag(text)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := tags[key]; ok {
+			return nil, fmt.Errorf("tag %q is set more than once", key)
+		}
+		tags[key] = value
+	}
+	return tags, nil
+}
+
 // FormatTags is TagStrings joined with commas: the form one listing column
 // holds.
 func FormatTags(tags map[string]string) string {

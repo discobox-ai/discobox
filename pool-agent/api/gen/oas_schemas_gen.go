@@ -4292,6 +4292,52 @@ func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeRefere
 	return d
 }
 
+// NewOptSandboxConfigTags returns new OptSandboxConfigTags with value set to v.
+func NewOptSandboxConfigTags(v SandboxConfigTags) OptSandboxConfigTags {
+	return OptSandboxConfigTags{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigTags is optional SandboxConfigTags.
+type OptSandboxConfigTags struct {
+	Value SandboxConfigTags
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigTags was set.
+func (o OptSandboxConfigTags) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigTags) Reset() {
+	var v SandboxConfigTags
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigTags) SetTo(v SandboxConfigTags) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigTags) Get() (v SandboxConfigTags, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigTags) Or(d SandboxConfigTags) SandboxConfigTags {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxGitIdentity returns new OptSandboxGitIdentity with value set to v.
 func NewOptSandboxGitIdentity(v SandboxGitIdentity) OptSandboxGitIdentity {
 	return OptSandboxGitIdentity{
@@ -7402,14 +7448,17 @@ func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	HarnessConfigId     OptString              `json:"harnessConfigId"`
-	Model               OptString              `json:"model"`
-	ModelReasoningLevel OptString              `json:"modelReasoningLevel"`
-	ModelServiceTier    OptString              `json:"modelServiceTier"`
-	Description         OptString              `json:"description"`
-	Env                 OptSandboxConfigEnv    `json:"env"`
-	Git                 OptSandboxGitIdentity  `json:"git"`
-	Skills              OptSandboxConfigSkills `json:"skills"`
+	HarnessConfigId     OptString `json:"harnessConfigId"`
+	Model               OptString `json:"model"`
+	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
+	ModelServiceTier    OptString `json:"modelServiceTier"`
+	// The sandbox's first description, which seeds its meta file when it has none.
+	Description OptString           `json:"description"`
+	Env         OptSandboxConfigEnv `json:"env"`
+	// The sandbox's first tags, which seed its meta file with the description when it has none.
+	Tags   OptSandboxConfigTags   `json:"tags"`
+	Git    OptSandboxGitIdentity  `json:"git"`
+	Skills OptSandboxConfigSkills `json:"skills"`
 	// Directories of skills sources whose skills the sandbox links into the harness's skill directories
 	// on its first launch, in order (ADR 26-10-14-294). Each names a sourceCodeReferences key.
 	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
@@ -7461,6 +7510,11 @@ func (s *SandboxConfig) GetDescription() OptString {
 // GetEnv returns the value of Env.
 func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 	return s.Env
+}
+
+// GetTags returns the value of Tags.
+func (s *SandboxConfig) GetTags() OptSandboxConfigTags {
+	return s.Tags
 }
 
 // GetGit returns the value of Git.
@@ -7546,6 +7600,11 @@ func (s *SandboxConfig) SetDescription(val OptString) {
 // SetEnv sets the value of Env.
 func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 	s.Env = val
+}
+
+// SetTags sets the value of Tags.
+func (s *SandboxConfig) SetTags(val OptSandboxConfigTags) {
+	s.Tags = val
 }
 
 // SetGit sets the value of Git.
@@ -7644,6 +7703,18 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 	m := *s
 	if m == nil {
 		m = map[string]GitSource{}
+		*s = m
+	}
+	return m
+}
+
+// The sandbox's first tags, which seed its meta file with the description when it has none.
+type SandboxConfigTags map[string]string
+
+func (s *SandboxConfigTags) init() SandboxConfigTags {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
 		*s = m
 	}
 	return m
