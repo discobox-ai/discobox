@@ -567,3 +567,21 @@ func readToEnd(t *testing.T, r io.Reader) string {
 		return ""
 	}
 }
+
+// A held driver is told by what disco-vm reports, never by its name (ADR
+// 26-11-11-963 §1), and only its pool machine is fenced (§6).
+func TestHeldIsWhatTheDriverReports(t *testing.T) {
+	for name, tc := range map[string]struct {
+		caps machine.Capabilities
+		held bool
+	}{
+		"libkrun":  {machine.Capabilities{Ports: true, Keys: machine.KeyCapabilities{Mode: machine.KeysNone}}, true},
+		"boxd":     {machine.Capabilities{Isolation: true, Keys: machine.KeyCapabilities{Mode: machine.KeysIssue}}, false},
+		"fake":     {machine.Capabilities{Ports: true, Keys: machine.KeyCapabilities{Mode: machine.KeysIssue}}, false},
+		"no ports": {machine.Capabilities{Keys: machine.KeyCapabilities{Mode: machine.KeysNone}}, false},
+	} {
+		if got := held(tc.caps); got != tc.held {
+			t.Errorf("%s: held is %v, want %v", name, got, tc.held)
+		}
+	}
+}

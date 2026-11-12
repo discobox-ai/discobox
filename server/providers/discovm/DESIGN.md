@@ -196,6 +196,14 @@ interactive, and local host consoles remain refused.
 
 ## The Pool's Box
 
+On a held driver (`held`: the driver lists `Capabilities.Ports` and issues no
+key, as vz and libkrun do; ADR 26-11-11-963 §1), `placement` asks for the
+network fence (`BoxPlacement.Fence`), which `ProvisionBox` runs before
+anything else ([../DESIGN.md](../DESIGN.md)): such a machine's network device
+is shared with the host and the driver's other guests, and every way into it
+is vsock (963 §6). boxd's machine is not fenced so: its fence is the pool's
+network (963 Deferred), and its placement fingerprint is unchanged.
+
 A remote driver's pool machine is made the pool's box as a Docker pool's
 container is, with `poolruntime.ProvisionBox` over the machine's guest
 operations (ADR 26-10-24-953 §2), every feature of the pool bundle applied:
