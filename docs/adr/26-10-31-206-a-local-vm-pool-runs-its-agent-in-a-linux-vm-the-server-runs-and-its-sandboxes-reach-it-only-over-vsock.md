@@ -40,6 +40,7 @@
   `PrivateURL` is empty cannot carry a machine pool", §2's two endpoint
   forms and the bootstrap's answer for the pool's name, and §4's fence
   through `CreateOptions.Egress`.
+- **Superseded in part by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — all but §1's fence step, Linux base contract and posture bullet, §3's sandbox with no network device and agents listening where `Service.Listen` says, §4, and its Deferred tun device or system proxy, hcs and Docker-pool entries; its narrowings of 481, 767 and 345 lapse with it
 - **Date**: 2026-10-31
 - **Issue**: #418, part of #42. Its sibling is discobox-ai/vm#27 (Linux
   guests in disco-vm), decided beside this one.

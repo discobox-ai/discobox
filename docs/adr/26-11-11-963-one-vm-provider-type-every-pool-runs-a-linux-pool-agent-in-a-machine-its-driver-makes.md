@@ -1,7 +1,7 @@
 # 26-11-11-963 — One vm provider type: every pool runs a Linux pool agent in a machine its driver makes
 
-- **Status**: Proposed. On acceptance it supersedes, and each superseded ADR's
-  status line says so:
+- **Status**: Accepted. It supersedes, and each superseded ADR's status line
+  says so:
   - [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md):
     - §1's "Where the pool agent runs, and which agent it is, is the
       driver's" and its two bullets;
@@ -75,6 +75,7 @@
   - [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)'s
     Deferred "macOS and Windows", for macOS (§9).
 - **Date**: 2026-11-11
+- Accepted by the owner by merging #1003, 2026-11-11
 - **Issue**: #42
 - **Relates to**:
   - [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)

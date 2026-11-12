@@ -6,6 +6,7 @@
   §3's pool `apply` as a client of them;
   §1's HTTP upgrade narrowed to a binary WebSocket by
   [26-10-31-152](26-10-31-152-the-control-plane-channel-is-a-websocket.md))
+- **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — §§1 and 4 widen from a remote driver to every `vm` pool, and §6's server-to-agent hop
 - **Date**: 2026-10-30
 - **Relates to**:
   [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §5 (nothing

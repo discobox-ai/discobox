@@ -5,6 +5,7 @@
   and the agent's TLS is a pool's setting, on unless the pool disables it;
   narrows [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)
   §2's one URL the pool reaches a machine sandbox's agent at)
+- **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — §1's three hops at two URLs and its private-URL requirement, §2's endpoints derived from the private URL, and §4's fence and scheduling rule
 - **Date**: 2026-10-29
 - **Relates to**:
   [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)

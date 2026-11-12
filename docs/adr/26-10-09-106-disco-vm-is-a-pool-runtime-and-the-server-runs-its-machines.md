@@ -33,6 +33,7 @@
   every byte (not for a pool of several platforms, which stays refused); and
   its Consequence of a Docker-free composition on darwin. In their place, a
   local pool's agent runs in a Linux pool VM the server runs
+- **Superseded in part, on every driver, by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — the parts its Status lists (§1's split of where the pool agent runs, §2's engine in the server alone and local machine lifetime, §3's `vz` bullet, §4's count of vz guests, §5's local 0144 lines and macOS build spec, its rejection of "The pool agent embeds the engine", its Deferred local machines outliving their server, and the matching Consequences): every `vm` pool runs a Linux pool agent in a pool machine its driver makes
 - **Date**: 2026-10-09
 - **Amended**: 2026-10-12, §§1 and 5, the Consequences, one rejected
   alternative and the Status line (which no longer narrows 0144 §3), before

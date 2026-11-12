@@ -2,6 +2,7 @@
 
 - **Status**: Accepted (decided by the maintainer on 2026-10-27, delivering
   #127)
+- **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — for a pool machine's network fenced first
 - **Date**: 2026-10-27
 - **Supersedes**:
   [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)

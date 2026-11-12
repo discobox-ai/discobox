@@ -4,6 +4,7 @@
   superseded by [26-10-27-767](26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md);
   §§2–4's pool `apply` fetching its bundles from the asset routes superseded by
   [26-10-30-875](26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md))
+- **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — §2, for a pool machine's network fenced first
 - **Date**: 2026-10-24
 - **Supersedes**:
   [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
