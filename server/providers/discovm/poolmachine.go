@@ -418,7 +418,18 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
 	}
-	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy, Outbound: pool.Outbound}, nil
+	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy, Outbound: pool.Outbound, Fence: held(h.engine.Driver.Capabilities())}, nil
+}
+
+// held reports whether a driver's machines are held by this server's engine
+// under shims, on this host (vz, libkrun, hcs), which disco-vm says by what
+// the driver reports, never by its name (ADR 26-11-11-963 §1): its guests'
+// ports are reached through the shim, and it issues no key. Such a pool
+// machine's network device is shared with the host and the driver's other
+// guests, so it is fenced before anything of the pool is placed (§6). boxd's
+// pool machine is not: its fence is the pool's network (963 Deferred).
+func held(caps machine.Capabilities) bool {
+	return caps.Ports && caps.Keys.Mode == machine.KeysNone
 }
 
 // agentListenURL is where the pool agent listens in its machine: where the

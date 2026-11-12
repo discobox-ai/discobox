@@ -72,7 +72,10 @@ func PlacementFingerprint(placement BoxPlacement) (string, error) {
 		Bootstrap poolagent.Bootstrap   `json:"bootstrap"`
 		Env       map[string]string     `json:"env"`
 		Outbound  pooloutbound.Resolved `json:"outbound"`
-	}{placement.Bootstrap, placement.Env, placement.Outbound})
+		// Fence is left out unless set, so a box that is not fenced keeps
+		// the fingerprint it was placed with.
+		Fence bool `json:"fence,omitempty"`
+	}{placement.Bootstrap, placement.Env, placement.Outbound, placement.Fence})
 	if err != nil {
 		return "", err
 	}
@@ -160,6 +163,9 @@ type BoxPlacement struct {
 	Bootstrap poolagent.Bootstrap
 	Box       sandbox.PoolBox
 	Env       map[string]string
+	// Fence fences the box's network before anything of the pool is placed
+	// (FenceBox): a held driver's pool machine's (ADR 26-11-11-963 §6).
+	Fence bool
 }
 
 // provisionTimeout bounds one provisioning of a pool's box: placing the pool
@@ -167,7 +173,9 @@ type BoxPlacement struct {
 const provisionTimeout = 15 * time.Minute
 
 // ProvisionBox makes the running box guest a pool's box, or makes it so
-// again: it places the agent and pins, enrolls the key the box makes or
+// again: it fences the box's network first when the placement asks
+// (FenceBox), and fails before placing anything else when that does not
+// hold; it places the agent and pins, enrolls the key the box makes or
 // already holds, places the bootstrap and the agent's environment with every
 // blob of the pool's bundles (applyTree), and applies those bundles, which
 // the box fetches nothing for (ADR 26-10-30-875 §5). What else the agent
@@ -189,6 +197,11 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 
 	ctx, cancel := context.WithTimeout(ctx, provisionTimeout)
 	defer cancel()
+	if placement.Fence {
+		if err := FenceBox(ctx, guest); err != nil {
+			return BoxRecord{}, err
+		}
+	}
 	bootstrap, box := placement.Bootstrap, placement.Box
 	agentDir, err := os.MkdirTemp("", "discobox-pool-agent-")
 	if err != nil {

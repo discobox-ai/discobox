@@ -160,3 +160,13 @@
 - A containerd image load exposes no incremental extraction counters after
   archive transfer. Record its fixed executor deadline before waiting for
   that silent response; phase heartbeat ticks are display only.
+
+- A fenced pool box (`BoxPlacement.Fence`, a held driver's pool machine) gets
+  nothing placed or run before `FenceBox` reads its rule set back: not the
+  agent, not a key, not a unit. Why: a pool listener started before the fence
+  is reachable from the host and the driver's other guests (ADR 26-11-11-963
+  §6). The fence's rule set is compared with what `nft` lists, as text: one
+  rule per device (a set's elements list in no fixed order), and any change to
+  it is run against the base's `nft` (`TestFenceRulesListBackFromNft`, and
+  `TestFenceBoxOnALibkrunPoolMachine` on KVM). It replaces its own table
+  alone, never the ruleset, which holds BuildKit's CNI rules.

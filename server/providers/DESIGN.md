@@ -291,7 +291,17 @@ reconciles every pool.
 Both pool providers make the box with `poolruntime.ProvisionBox`
 (`poolruntime/box.go`), through `pool-agent/provisioner`, over the box as a
 `machine.Guest` — the Docker engine's container (`dockerworker/poolbox.go`),
-or the `vm` provider's machine: it places the agent, runs
+or the `vm` provider's machine. For a held driver's pool machine (vz,
+libkrun: `BoxPlacement.Fence`) its first step is the network fence
+(`FenceBox`, `poolruntime/fence.go`; ADR 26-11-11-963 §6): it learns the
+machine's network devices (each with a `device` link), places
+`/etc/nftables.conf` — a table of its own, `inet discobox_fence`, admitting on
+each device only replies and IPv6 neighbour discovery — and a prefix drop-in
+holding every `discobox-*.service` to `nftables.service`, which the base
+loads before `network-pre.target` on every boot; loads it and reads it back
+as written. A fence that does not read back, or a base without `nft` or the
+enabled unit, fails the box with nothing else placed. Docker and boxd pools
+are not fenced this way (963 Deferred). Then it places the agent, runs
 `discobox-provision identity` and enrolls the public key it prints
 (`PoolMaker.Enroll`), places the bootstrap and the agent's environment
 (`bundle.BootstrapFile`, `bundle.EnvironmentFile`) together with every manifest
