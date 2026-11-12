@@ -157,14 +157,17 @@ func usage(w io.Writer) {
       matched whole, * is one segment and ** (last only) the rest; left out,
       any path. graphql= names the GraphQL operations allowed (query,
       mutation, subscription, or *) and optionally :FIELDS, the root fields
-      they select; mcp= the MCP tools a tools/call may name. =blocked carves
-      a route out of a wider one. For example:
+      they select; mcp= the MCP tools a tools/call may name. body= names
+      places in a JSON request body, JSON pointers joined by ,/: the
+      credential is sent there, as the whole string at one of them, and
+      nowhere else. =blocked carves a route out of a wider one. For example:
 
         --route 'GET api.github.com/repos/acme/web/**'
         --route 'api.github.com/graphql graphql=query'
         --route 'POST api.github.com/repos/acme/web/pulls'
         --route 'api.github.com/graphql graphql=mutation:markPullRequestReadyForReview'
         --route 'github.com/acme/web.git/**,/acme/web/**'
+        --route 'POST app.boxd.sh/api/v1/auth/token body=/api_key'
 
       --hosts HOST[,HOST...] is shorthand for one route to each exact host,
       any method and path.

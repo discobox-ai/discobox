@@ -582,7 +582,7 @@ func (r *routeList) Set(value string) error {
 // routeSyntax is a route's typed form, a copy of secretroute.Syntax: this
 // module cannot import secretroute (ADR 0031), so the CLI's conventions test
 // checks that this file holds secretroute.Syntax verbatim.
-const routeSyntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]"
+const routeSyntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]"
 
 // hostList is --hosts: comma-separated, repeatable, or both, with empties
 // dropped, so --hosts a,b and --hosts a --hosts b ask for the same thing.

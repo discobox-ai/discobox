@@ -164,7 +164,7 @@ func ParseRoutes(value string) ([]apimodel.SecretRouteInput, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(route.Methods) > 0 || len(route.Paths) > 0 || route.GraphQL != nil || route.MCP != nil {
+		if len(route.Methods) > 0 || len(route.Paths) > 0 || route.GraphQL != nil || route.MCP != nil || route.Body != nil {
 			return nil, fmt.Errorf("route %q: a route here is a host, `*.suffix` or `*`, optionally =blocked; bind one with methods, paths or a protocol with `discobox secret bind --route`", strings.TrimSpace(text))
 		}
 		out = append(out, apiroute.Input(route))

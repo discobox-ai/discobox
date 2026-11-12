@@ -377,7 +377,7 @@ every binding standing on it along with it. The value rows say
 **A secret's routes are one row each** (`secretRouteRows`), straight under
 its name and kind, with one empty row after them for another. Each is typed as
 the CLI's `--route` takes it,
-`[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, a host
+`[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]`, a host
 exact and `*.h` the hosts beneath h, `*` any host (ADR 26-10-27-880 §4,
 ADR 26-10-27-939), through `secretroute.Parse`, and shown through
 `secretroute.Format`; the window holds routes as `secretroute.Route`, with no

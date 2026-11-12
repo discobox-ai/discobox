@@ -198,7 +198,7 @@ const (
 //
 // Hosts and Routes name destinations. A host is shorthand for one route to
 // that exact host and no host beneath it (ADR 26-10-02-393). A route is the
-// typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`
+// typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]`
 // (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or
 // `api.github.com/graphql graphql=query`; the protocol carries it as written
 // and the implementation reads it. Policies name credential policy files

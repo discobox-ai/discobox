@@ -1294,7 +1294,7 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
   `@ROUTE,…` stays a list, being one argument, so each route in it is
   hosts-only.
 - **A route is typed one way** (ADR 26-10-27-880 §4):
-  `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, read
+  `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]`, read
   by `secretroute.Parse` and printed by `secretroute.Format`, so a route reads
   back as it was typed. A host is exact; `*.h` is the hosts beneath h and `*`
   any host (ADR 26-10-27-939). A comma belongs to the route — between its

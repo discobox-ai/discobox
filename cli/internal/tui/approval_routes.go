@@ -40,6 +40,11 @@ func approvalRouteCells(routes []secretroute.Route) []approvalRouteRow {
 			if base.names == "" {
 				base.names = "*"
 			}
+		case route.Body != nil:
+			// The exact places the credential is swapped at: an approval
+			// shows every one, since each is somewhere it goes.
+			base.protocol = 3
+			base.names = strings.Join(route.Body.Places, ",")
 		}
 		paths := route.Paths
 		if len(paths) == 0 {
@@ -91,7 +96,7 @@ func approvalRouteSection(label string, part *RequestPart) section {
 		return sec
 	}
 	rows := approvalRouteCells(part.Routes)
-	protocols := []string{"HTTP", "GraphQL", "MCP"}
+	protocols := []string{"HTTP", "GraphQL", "MCP", "HTTP body"}
 	for start := 0; start < len(rows); {
 		end := start + 1
 		for end < len(rows) && rows[end].protocol == rows[start].protocol && rows[end].host == rows[start].host {
@@ -104,7 +109,7 @@ func approvalRouteSection(label string, part *RequestPart) section {
 		}
 		sec.lines = append(sec.lines, line{text: protocols[protocol] + " " + group[0].host, tone: toneAccent})
 
-		showMethod := protocol == 0 || slices.ContainsFunc(group, func(r approvalRouteRow) bool { return r.method != "*" })
+		showMethod := protocol == 0 || protocol == 3 || slices.ContainsFunc(group, func(r approvalRouteRow) bool { return r.method != "*" })
 		showEffect := slices.ContainsFunc(group, func(r approvalRouteRow) bool { return r.blocked })
 		headers := []string{}
 		if showEffect {
@@ -119,6 +124,8 @@ func approvalRouteSection(label string, part *RequestPart) section {
 			headers = append(headers, "OPERATION", "FIELDS")
 		case 2:
 			headers = append(headers, "TOOLS")
+		case 3:
+			headers = append(headers, "BODY PLACES")
 		}
 		table := [][]string{headers}
 		for _, row := range group {
@@ -137,7 +144,7 @@ func approvalRouteSection(label string, part *RequestPart) section {
 			switch protocol {
 			case 1:
 				cells = append(cells, row.operation, row.names)
-			case 2:
+			case 2, 3:
 				cells = append(cells, row.names)
 			}
 			table = append(table, cells)
@@ -203,6 +210,9 @@ func approvalTableFits(routes []secretroute.Route) bool {
 		}
 		if r.MCP != nil {
 			names += joined(r.MCP.Tools)
+		}
+		if r.Body != nil {
+			names += joined(r.Body.Places)
 		}
 		count := hosts
 		if count > rowsLeft/paths {
