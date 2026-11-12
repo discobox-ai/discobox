@@ -152,9 +152,10 @@ var (
 	// resource samples, files. It starts a stopped sandbox, answers at once, and
 	// repairs nothing.
 	SandboxRead = SandboxUse{Kind: sandbox.UseRead}
-	// SandboxInspect reads what the sandbox's last inventory also answers:
-	// its execs, services and tools. It never starts a sandbox; the pool
-	// agent waits out a boot under way and refuses one that is not running.
+	// SandboxInspect never starts a sandbox; the pool agent waits out a boot
+	// under way and refuses one that is not running. It reads what the
+	// sandbox's last inventory also answers — its execs, services and tools —
+	// and runs its failed provisioning again (ADR 26-11-11-560 §5).
 	SandboxInspect = SandboxUse{Kind: sandbox.UseInspect}
 	// SandboxObserve reads what a running sandbox is doing and never starts
 	// one: the pool agent refuses it for a sandbox that is not running.

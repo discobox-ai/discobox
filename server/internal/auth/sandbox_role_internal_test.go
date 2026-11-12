@@ -162,8 +162,8 @@ func TestSandboxRoleDrivesTheTerminalsOfTheDiscoboxesItCreated(t *testing.T) {
 	})
 }
 
-// A discobox starts, stops, restarts, repairs and upgrades the discoboxes it
-// created (ADR 26-10-02-478).
+// A discobox starts, stops, restarts, repairs, upgrades and reprovisions the
+// discoboxes it created (ADR 26-10-02-478, ADR 26-11-11-560 §5).
 func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
 		{"start its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/start", http.StatusOK},
@@ -171,6 +171,9 @@ func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 		{"restart its worker", roleLead, http.MethodPost, "/projects/proj-1/sandboxes/sbx-worker/restart", http.StatusOK},
 		{"repair its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/repair", http.StatusOK},
 		{"upgrade its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/upgrade", http.StatusOK},
+		{"reprovision its worker", roleLead, http.MethodPost, "/api/projects/default/sandboxes/sbx-worker/reprovision", http.StatusOK},
+		{"reprovision a person's discobox", roleLead, http.MethodPost, "/api/projects/default/sandboxes/sbx-persons/reprovision", http.StatusForbidden},
+		{"reprovision its creator", roleWorker, http.MethodPost, "/api/projects/default/sandboxes/sbx-lead/reprovision", http.StatusForbidden},
 		{"start a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/start", http.StatusForbidden},
 		{"stop its creator", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-lead/stop", http.StatusForbidden},
 		{"stop itself", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-worker/stop", http.StatusForbidden},

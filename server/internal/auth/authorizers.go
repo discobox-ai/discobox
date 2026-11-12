@@ -197,6 +197,9 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes/*/restart", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/repair", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/upgrade", names: withinCaller},
+	// Running a discobox's failed provisioning again, in place (ADR
+	// 26-11-11-560 §5). It applies only bundles the discobox is pinned to.
+	{method: http.MethodPost, path: "sandboxes/*/reprovision", names: withinCaller},
 	// Archiving a discobox, which keeps its data for the project's retention
 	// (ADR 26-11-03-724 §1). Purge, which destroys the data at once, and
 	// unarchive, how a person takes an archive back, stay a person's and are

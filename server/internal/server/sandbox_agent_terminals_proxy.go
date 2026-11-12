@@ -30,9 +30,9 @@ import (
 //     audit data. Reading these must not start what an idle stop put down
 //     (ADR 0108, ADR 0137 §2), and what polls them wants an answer now.
 //   - inspect: listing execs, services or tools, and reading one exec or
-//     service. It starts nothing either, and waits out a boot something else
-//     began: a client that has just created or started a sandbox reads it
-//     next.
+//     service; and running the sandbox's failed provisioning again. It starts
+//     nothing either, and waits out a boot something else began: a client
+//     that has just created or started a sandbox reads it next.
 //   - read: the reads with no last value — logs, events, resource samples,
 //     and a file's stat, a directory's listing and a file's content
 //     (ADR 26-10-22-499 §3). They start a stopped sandbox and repair nothing.
@@ -40,6 +40,12 @@ import (
 //     creating, starting, attaching to, typing into or deleting an exec,
 //     starting, stopping or restarting a service, and writing, creating,
 //     removing, moving or copying a file.
+//
+// Reprovisioning acts in the sandbox but is not an action: it is held to a
+// running sandbox, never starting one, since a stopped sandbox's next start
+// provisions anyway (ADR 26-11-11-560 §5). It is an inspect the inventory
+// cannot answer, so when the pool agent refuses it as not running, the
+// answer is a conflict.
 //
 // The inspects and the screen are the reads a sandbox's last inventory
 // answers while it is not running (sandboxInventoryRead, ADR 26-10-11-657 §4).
@@ -79,6 +85,7 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 		{http.MethodPost, "/services/{serviceId}/start", action("service start")},
 		{http.MethodPost, "/services/{serviceId}/stop", action("service stop")},
 		{http.MethodPost, "/services/{serviceId}/restart", action("service restart")},
+		{http.MethodPost, "/reprovision", inspect},
 		{http.MethodGet, "/files/archive", read},
 		{http.MethodPut, "/files/archive", action("file import")},
 		{http.MethodPost, "/files/metadata", action("file metadata")},
@@ -115,14 +122,26 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 		// (ADR 26-10-11-657 §4): its pool agent refuses it for a sandbox that
 		// is not running, and that refusal is answered from the inventory
 		// below. So is a stopped sandbox whose pool cannot be asked at all.
+		// Any other inspect is refused the same way, and answered with a
+		// conflict: it acts only in a running sandbox (ADR 26-11-11-560 §5).
 		acquire := service.AcquireSandboxHTTPClient
-		inventoryRead, storedRead := sandboxInventoryRead(r)
-		if storedRead {
+		var notRunning func(http.ResponseWriter, *http.Request)
+		if inventoryRead, storedRead := sandboxInventoryRead(r); storedRead {
+			notRunning = func(w http.ResponseWriter, r *http.Request) {
+				serveSandboxInventoryRead(w, r, service, projectID, sandboxID, scopes, inventoryRead)
+			}
+		} else if use.Kind == sandbox.UseInspect {
+			notRunning = func(w http.ResponseWriter, _ *http.Request) {
+				writeSandboxAgentProxyError(w, http.StatusConflict, fmt.Sprintf(
+					"discobox %s is not running, and this acts only in a running discobox without starting one", sandboxID))
+			}
+		}
+		if notRunning != nil {
 			acquire = service.AcquireRunningSandboxHTTPClient
 		}
 		lease, sandboxModel, err := acquire(r.Context(), projectID, sandboxID, scopes, use)
-		if storedRead && errors.Is(err, sandbox.ErrNotRunning) {
-			serveSandboxInventoryRead(w, r, service, projectID, sandboxID, scopes, inventoryRead)
+		if notRunning != nil && errors.Is(err, sandbox.ErrNotRunning) {
+			notRunning(w, r)
 			return
 		}
 		if err != nil {
@@ -145,7 +164,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 			return
 		}
 		proxy := sandboxPoolReverseProxy(target, lease)
-		if storedRead {
+		if notRunning != nil {
 			// The pool agent found the sandbox not running — stopped, or not
 			// yet done starting — and refused rather than start it, saying
 			// so in a header.
@@ -158,7 +177,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 			poolErrorHandler := proxy.ErrorHandler
 			proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 				if errors.Is(err, errSandboxNotRunning) {
-					serveSandboxInventoryRead(w, r, service, projectID, sandboxID, scopes, inventoryRead)
+					notRunning(w, r)
 					return
 				}
 				poolErrorHandler(w, r, err)
@@ -178,7 +197,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 	})
 }
 
-var errSandboxNotRunning = errors.New("the pool agent refused a read of a sandbox that is not running")
+var errSandboxNotRunning = errors.New("the pool agent refused a request into a sandbox that is not running")
 
 // sandboxInventoryRead reports which of the reads a sandbox's inventory
 // answers this request is, if any: listing execs, services or tools, reading
@@ -240,11 +259,17 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	// the path: an exec or a service named "files" is not one. Its scopes are
 	// its own, so a role may read a discobox's files and run nothing in it
 	// (ADR 26-10-22-499 §3).
-	if pattern := chi.RouteContext(r.Context()).RoutePattern(); strings.Contains(pattern, "/sandboxes/{sandboxId}/files/") {
+	pattern := chi.RouteContext(r.Context()).RoutePattern()
+	if strings.Contains(pattern, "/sandboxes/{sandboxId}/files/") {
 		if r.Method == http.MethodGet {
 			return []string{poolagentauth.ScopeFilesRead}
 		}
 		return []string{poolagentauth.ScopeFilesWrite}
+	}
+	// Running the box's provisioning again acts in it as starting an exec
+	// does (ADR 26-11-11-560 §5).
+	if strings.HasSuffix(pattern, "/sandboxes/{sandboxId}/reprovision") {
+		return []string{poolagentauth.ScopeExecWrite}
 	}
 	// The events of every exec, read across them: the exec event trail.
 	if strings.HasSuffix(r.URL.Path, "/exec-events") {
