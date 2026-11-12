@@ -4660,7 +4660,7 @@ components:
                     description: Model service tier the harness should use
                     type: string
                 description:
-                    description: The sandbox's first description. It seeds the meta file inside the sandbox, which holds the description from then on; read the current one from the sandbox's meta.
+                    description: The sandbox's first description, checked as a meta change's is. It seeds the meta file inside the sandbox before its harness starts, and that file holds the description from then on; read the current one from the sandbox's meta.
                     type: string
                 env:
                     additionalProperties:
@@ -4706,6 +4706,11 @@ components:
                     additionalProperties:
                         $ref: '#/components/schemas/GitSource'
                     description: Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
+                    type: object
+                tags:
+                    additionalProperties:
+                        type: string
+                    description: The sandbox's first tags, key to value, an empty value for a tag with no value, checked as a meta change's are. They are recorded with the sandbox from its creation and seed the meta file inside it before its harness starts, as the description does; that file holds the tags from then on.
                     type: object
                 user:
                     $ref: '#/components/schemas/SandboxUser'

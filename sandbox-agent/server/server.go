@@ -21,6 +21,7 @@ import (
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
@@ -71,8 +72,10 @@ type Config struct {
 	DatabasePath    string
 	Env             map[string]string
 	Prompt          []string
-	// Description seeds the meta file when the sandbox has none (ADR 0136).
+	// Description and Tags seed the meta file when the sandbox has none
+	// (ADR 0136).
 	Description string
+	Tags        map[string]string
 	Resources   config.ResourceConfig
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime
 	// config, and nothing else (ADR 26-10-08-127 §3). Empty accepts none.
@@ -142,6 +145,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Env:                   cfg.Env,
 		Prompt:                cfg.Prompt,
 		Description:           cfg.Description,
+		Tags:                  cfg.Tags,
 		Resources:             cfg.Resources,
 		PoolPublicKey:         cfg.PoolPublicKey,
 		AwaitsRuntimeConfig:   cfg.AwaitsRuntimeConfig,
@@ -349,8 +353,8 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		// to be diagnosed. Its status then says why it reports no meta.
 		slog.Default().Warn("sandbox agent meta disabled", "error", err)
 		metaFile = nil
-	} else if err := metaFile.Seed(cfg.Description); err != nil {
-		slog.Default().Warn("seed sandbox meta description", "path", metaFile.Path(), "error", err)
+	} else if err := metaFile.Seed(sandboxmeta.Meta{Description: cfg.Description, Tags: cfg.Tags}); err != nil {
+		slog.Default().Warn("seed sandbox meta", "path", metaFile.Path(), "error", err)
 	}
 	// git runs with the sandbox's own environment, so a clone takes the route
 	// off the box a user's fetch does, and as whoever owns each checkout; the

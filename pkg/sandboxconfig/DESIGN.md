@@ -36,7 +36,7 @@ control plane's resolved harness config.
   one, ADR 26-10-14-894), the create-time `Features` (the repository's
   features as its client read them from `.discobox/settings.json`, which the
   box's provisioning turns off by name; ADR 26-10-16-423 §4), the create-time
-  `Description` (only a seed for the
+  `Description` and `Tags` (only a seed for the
   sandbox's meta file, ADR 0136), and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
   sandbox-agent's runc wrapper. `Files` is the harness config's saved-file

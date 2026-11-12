@@ -537,8 +537,9 @@ guessed at. `discobox admin box purge` destroys one and its data.
 `discobox start`, `stop`, and `restart` take boxes the same way.
 `discobox tag BOX KEY[=VALUE]... [--rm KEY]...` sets and removes a box's tags
 from outside it (starting it if it is stopped), and `discobox ls --tag KEY`
-lists by them. `discobox rename BOX [NAME]` names a box the same way, and with
-no NAME clears the name.
+lists by them. `discobox run --tag KEY[=VALUE] --description TEXT` sets them
+when the box is made instead, so it never runs untagged. `discobox rename BOX
+[NAME]` names a box the same way, and with no NAME clears the name.
 
 Do not invent flags for them. Name the command and say to check `--help`.
 

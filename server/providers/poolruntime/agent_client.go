@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"net/url"
@@ -932,6 +933,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, 
 	}
 	if opts.Description != nil {
 		config.Description = poolclient.NewOptString(*opts.Description)
+	}
+	if len(opts.Tags) > 0 {
+		config.Tags = poolclient.NewOptSandboxConfigTags(poolclient.SandboxConfigTags(maps.Clone(opts.Tags)))
 	}
 	if opts.HarnessConfigID != nil {
 		config.HarnessConfigId = poolclient.NewOptString(*opts.HarnessConfigID)

@@ -40,9 +40,10 @@ type Config struct {
 	DatabasePath string            `json:"databasePath"`
 	Env          map[string]string `json:"env,omitempty"`
 	Prompt       []string          `json:"prompt,omitempty"`
-	// Description is the one the sandbox was created with, which seeds its
-	// meta file when it has none (ADR 0136).
-	Description string `json:"description,omitempty"`
+	// Description and Tags are the ones the sandbox was created with, which
+	// seed its meta file when it has none (ADR 0136).
+	Description string            `json:"description,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
 	// Harness is the sandbox's one resolved harness. A zero-value Harness
 	// (empty ID) means the sandbox has no harness configured.
 	Harness Harness                `json:"harness"`
@@ -187,6 +188,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		Env:                   effective.Env,
 		Prompt:                cloneCommand(effective.Prompt),
 		Description:           effective.Description,
+		Tags:                  effective.Tags,
 		Volumes:               effective.Volumes,
 		Sources:               effective.Sources,
 		Skills:                effective.Skills,

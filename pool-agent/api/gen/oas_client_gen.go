@@ -58,7 +58,7 @@ type Invoker interface {
 	// PoolDiscoverCreateProtocol invokes pool-discover-create-protocol operation.
 	//
 	// Opens the discobox-create.v1 WebSocket. Its first text message is a stable JSON envelope with
-	// integer createRevision (currently 1). Subsequent binary messages carry HTTP/1.1 create requests
+	// integer createRevision (currently 2). Subsequent binary messages carry HTTP/1.1 create requests
 	// and responses on this agent instance only. Reconnect requires fresh discovery. Unknown envelope
 	// members must be ignored.
 	//
@@ -848,7 +848,7 @@ func (c *Client) sendPoolDeleteSandbox(ctx context.Context, params PoolDeleteSan
 // PoolDiscoverCreateProtocol invokes pool-discover-create-protocol operation.
 //
 // Opens the discobox-create.v1 WebSocket. Its first text message is a stable JSON envelope with
-// integer createRevision (currently 1). Subsequent binary messages carry HTTP/1.1 create requests
+// integer createRevision (currently 2). Subsequent binary messages carry HTTP/1.1 create requests
 // and responses on this agent instance only. Reconnect requires fresh discovery. Unknown envelope
 // members must be ignored.
 //

@@ -156,6 +156,16 @@ func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot strin
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
 	config := input.Config
+	// The description and tags the sandbox is created with are its meta
+	// file's first content, so they are checked as a meta change is, before
+	// anything is created (ADR 0136).
+	tags := map[string]string(config.Tags.Or(nil))
+	if err := (sandboxmeta.Meta{Description: config.Description.Or(""), Tags: tags}).Validate(); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	if len(tags) == 0 {
+		tags = nil
+	}
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
@@ -315,6 +325,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Platform:           sandboxPlatform,
 		Name:               config.Name,
 		Description:        services.OptStringPtr(config.Description),
+		// Recorded from the start, so the first listing and the created event
+		// carry them. Left unobserved, which the sandbox's first report of its
+		// meta file replaces.
+		Tags: tags,
 		SandboxManifest: model.SandboxManifest{
 			HarnessConfigID:       &harnessConfigID,
 			Model:                 services.OptStringPtr(config.Model),

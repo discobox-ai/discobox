@@ -23801,6 +23801,40 @@ func (s *OptSandboxCreateConfigSourceCodeReferences) UnmarshalJSON(data []byte) 
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxCreateConfigTags as json.
+func (o OptSandboxCreateConfigTags) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxCreateConfigTags from json.
+func (o *OptSandboxCreateConfigTags) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxCreateConfigTags to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxCreateConfigTags)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxCreateConfigTags) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxCreateConfigTags) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxCredentialPolicyArgs as json.
 func (o OptSandboxCredentialPolicyArgs) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -42758,6 +42792,12 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Tags.Set {
+			e.FieldStart("tags")
+			s.Tags.Encode(e)
+		}
+	}
+	{
 		if s.User.Set {
 			e.FieldStart("user")
 			s.User.Encode(e)
@@ -42765,7 +42805,7 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [17]string{
+var jsonFieldsNameOfSandboxCreateConfig = [18]string{
 	0:  "egress",
 	1:  "harnessConfigId",
 	2:  "model",
@@ -42782,7 +42822,8 @@ var jsonFieldsNameOfSandboxCreateConfig = [17]string{
 	13: "secrets",
 	14: "source",
 	15: "sourceCodeReferences",
-	16: "user",
+	16: "tags",
+	17: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -42978,6 +43019,16 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
+			}
+		case "tags":
+			if err := func() error {
+				s.Tags.Reset()
+				if err := s.Tags.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tags\"")
 			}
 		case "user":
 			if err := func() error {
@@ -43261,6 +43312,62 @@ func (s SandboxCreateConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxCreateConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxCreateConfigTags) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxCreateConfigTags) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes SandboxCreateConfigTags from json.
+func (s *SandboxCreateConfigTags) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxCreateConfigTags to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxCreateConfigTags")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxCreateConfigTags) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxCreateConfigTags) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

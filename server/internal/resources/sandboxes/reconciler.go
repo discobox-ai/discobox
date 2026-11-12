@@ -632,6 +632,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.Platform = sb.Platform
 	opts.Name = sb.Name
 	opts.Description = sb.Description
+	opts.Tags = sb.Tags
 	opts.HarnessConfigID = sb.HarnessConfigID
 	opts.HarnessChangeID = sb.HarnessChangeID
 	opts.Model = sb.Model

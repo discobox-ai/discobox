@@ -86,12 +86,14 @@ func (f *File) Update(change sandboxmeta.Change) (sandboxmeta.Meta, time.Time, e
 	return next, f.now().UTC(), nil
 }
 
-// Seed writes the description the sandbox was created with, when there is no
-// meta file yet and there is one to write. Once the file exists it is the
-// description, whatever the sandbox was created with: emptying it is how the
-// description is cleared, and deleting it is how it is reseeded.
-func (f *File) Seed(description string) error {
-	if description == "" {
+// Seed writes the description and tags the sandbox was created with, when
+// there is no meta file yet and there is something to write. Once the file
+// exists it is the description and the tags, whatever the sandbox was created
+// with: emptying or removing them is how they are cleared, and deleting the
+// file is how it is reseeded. Only Description and Tags are seeded; the name
+// is a person's or the agent's to give.
+func (f *File) Seed(seed sandboxmeta.Meta) error {
+	if seed.Description == "" && len(seed.Tags) == 0 {
 		return nil
 	}
 	f.mu.Lock()
@@ -102,7 +104,7 @@ func (f *File) Seed(description string) error {
 		// seed's to replace.
 		return nil
 	}
-	seeded, err := sandboxmeta.Apply(sandboxmeta.Meta{}, sandboxmeta.Change{Description: &description})
+	seeded, err := sandboxmeta.Apply(sandboxmeta.Meta{}, sandboxmeta.Change{Description: &seed.Description, SetTags: seed.Tags})
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidChange, err)
 	}

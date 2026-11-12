@@ -2,6 +2,7 @@ package sandboxruntime
 
 import (
 	"context"
+	"maps"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1046,4 +1047,26 @@ func idOf(v *int64) int64 {
 func testDockerRuntime(r *DockerSandboxRuntime) *DockerSandboxRuntime {
 	r.boxes = r
 	return r
+}
+
+// The tags a sandbox was created with reach its document beside its
+// description, which the sandbox agent seeds its meta file from, and the
+// effective config the agent reads keeps them.
+func TestBuildSandboxDocumentCarriesTheMetaSeed(t *testing.T) {
+	config := workerapimodel.SandboxConfig{
+		Description: workerclient.NewOptString("deliver 700"),
+		Tags:        workerclient.NewOptSandboxConfigTags(workerclient.SandboxConfigTags{"repo": "a/b", "wip": ""}),
+	}
+	doc, err := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"repo": "a/b", "wip": ""}
+	if doc.Runtime.Description != "deliver 700" || !maps.Equal(doc.Runtime.Tags, want) {
+		t.Fatalf("runtime seed = %q, %v; want the description and %v", doc.Runtime.Description, doc.Runtime.Tags, want)
+	}
+	effective, _ := sandboxconfig.Effective(doc)
+	if effective.Description != "deliver 700" || !maps.Equal(effective.Tags, want) {
+		t.Fatalf("effective seed = %q, %v; want the description and %v", effective.Description, effective.Tags, want)
+	}
 }

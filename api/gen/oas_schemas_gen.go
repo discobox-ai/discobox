@@ -15260,6 +15260,52 @@ func (o OptSandboxCreateConfigSourceCodeReferences) Or(d SandboxCreateConfigSour
 	return d
 }
 
+// NewOptSandboxCreateConfigTags returns new OptSandboxCreateConfigTags with value set to v.
+func NewOptSandboxCreateConfigTags(v SandboxCreateConfigTags) OptSandboxCreateConfigTags {
+	return OptSandboxCreateConfigTags{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfigTags is optional SandboxCreateConfigTags.
+type OptSandboxCreateConfigTags struct {
+	Value SandboxCreateConfigTags
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfigTags was set.
+func (o OptSandboxCreateConfigTags) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfigTags) Reset() {
+	var v SandboxCreateConfigTags
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfigTags) SetTo(v SandboxCreateConfigTags) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfigTags) Get() (v SandboxCreateConfigTags, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfigTags) Or(d SandboxCreateConfigTags) SandboxCreateConfigTags {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxCredentialPolicyArgs returns new OptSandboxCredentialPolicyArgs with value set to v.
 func NewOptSandboxCredentialPolicyArgs(v SandboxCredentialPolicyArgs) OptSandboxCredentialPolicyArgs {
 	return OptSandboxCredentialPolicyArgs{
@@ -26750,8 +26796,9 @@ type SandboxCreateConfig struct {
 	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
 	// Model service tier the harness should use.
 	ModelServiceTier OptString `json:"modelServiceTier"`
-	// The sandbox's first description. It seeds the meta file inside the sandbox, which holds the
-	// description from then on; read the current one from the sandbox's meta.
+	// The sandbox's first description, checked as a meta change's is. It seeds the meta file inside the
+	// sandbox before its harness starts, and that file holds the description from then on; read the
+	// current one from the sandbox's meta.
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxCreateConfigEnv `json:"env"`
@@ -26784,6 +26831,10 @@ type SandboxCreateConfig struct {
 	// Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a
 	// skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
 	SourceCodeReferences OptSandboxCreateConfigSourceCodeReferences `json:"sourceCodeReferences"`
+	// The sandbox's first tags, key to value, an empty value for a tag with no value, checked as a meta
+	// change's are. They are recorded with the sandbox from its creation and seed the meta file inside
+	// it before its harness starts, as the description does; that file holds the tags from then on.
+	Tags OptSandboxCreateConfigTags `json:"tags"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
 }
@@ -26866,6 +26917,11 @@ func (s *SandboxCreateConfig) GetSource() OptGitSource {
 // GetSourceCodeReferences returns the value of SourceCodeReferences.
 func (s *SandboxCreateConfig) GetSourceCodeReferences() OptSandboxCreateConfigSourceCodeReferences {
 	return s.SourceCodeReferences
+}
+
+// GetTags returns the value of Tags.
+func (s *SandboxCreateConfig) GetTags() OptSandboxCreateConfigTags {
+	return s.Tags
 }
 
 // GetUser returns the value of User.
@@ -26953,6 +27009,11 @@ func (s *SandboxCreateConfig) SetSourceCodeReferences(val OptSandboxCreateConfig
 	s.SourceCodeReferences = val
 }
 
+// SetTags sets the value of Tags.
+func (s *SandboxCreateConfig) SetTags(val OptSandboxCreateConfigTags) {
+	s.Tags = val
+}
+
 // SetUser sets the value of User.
 func (s *SandboxCreateConfig) SetUser(val OptSandboxUser) {
 	s.User = val
@@ -27007,6 +27068,20 @@ func (s *SandboxCreateConfigSourceCodeReferences) init() SandboxCreateConfigSour
 	m := *s
 	if m == nil {
 		m = map[string]GitSource{}
+		*s = m
+	}
+	return m
+}
+
+// The sandbox's first tags, key to value, an empty value for a tag with no value, checked as a meta
+// change's are. They are recorded with the sandbox from its creation and seed the meta file inside
+// it before its harness starts, as the description does; that file holds the tags from then on.
+type SandboxCreateConfigTags map[string]string
+
+func (s *SandboxCreateConfigTags) init() SandboxCreateConfigTags {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
 		*s = m
 	}
 	return m

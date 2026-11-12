@@ -5932,6 +5932,40 @@ func (s *OptSandboxConfigSourceCodeReferences) UnmarshalJSON(data []byte) error 
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxConfigTags as json.
+func (o OptSandboxConfigTags) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxConfigTags from json.
+func (o *OptSandboxConfigTags) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxConfigTags to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxConfigTags)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxConfigTags) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxConfigTags) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxGitIdentity as json.
 func (o OptSandboxGitIdentity) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -12199,6 +12233,12 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Tags.Set {
+			e.FieldStart("tags")
+			s.Tags.Encode(e)
+		}
+	}
+	{
 		if s.Git.Set {
 			e.FieldStart("git")
 			s.Git.Encode(e)
@@ -12274,24 +12314,25 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [17]string{
+var jsonFieldsNameOfSandboxConfig = [18]string{
 	0:  "harnessConfigId",
 	1:  "model",
 	2:  "modelReasoningLevel",
 	3:  "modelServiceTier",
 	4:  "description",
 	5:  "env",
-	6:  "git",
-	7:  "skills",
-	8:  "skillsSources",
-	9:  "features",
-	10: "start",
-	11: "specFingerprint",
-	12: "name",
-	13: "prompt",
-	14: "source",
-	15: "sourceCodeReferences",
-	16: "user",
+	6:  "tags",
+	7:  "git",
+	8:  "skills",
+	9:  "skillsSources",
+	10: "features",
+	11: "start",
+	12: "specFingerprint",
+	13: "name",
+	14: "prompt",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -12361,6 +12402,16 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"env\"")
+			}
+		case "tags":
+			if err := func() error {
+				s.Tags.Reset()
+				if err := s.Tags.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tags\"")
 			}
 		case "git":
 			if err := func() error {
@@ -12726,6 +12777,62 @@ func (s SandboxConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxConfigTags) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxConfigTags) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes SandboxConfigTags from json.
+func (s *SandboxConfigTags) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxConfigTags to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxConfigTags")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxConfigTags) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxConfigTags) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

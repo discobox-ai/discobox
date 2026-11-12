@@ -1280,6 +1280,13 @@ type RunRequest struct {
 	Delegate    []string
 	DiscoboxAPI bool
 
+	// Description and Tags are `--description` and `--tag`: the discobox's
+	// first description and tags, recorded with it at create. Like Bind, the
+	// window offers no way to name them and carries them from `discobox
+	// run`'s own request (WithRun).
+	Description string
+	Tags        map[string]string
+
 	// SkillDirs and UserSkills are `--skills` and `--user-skills`, from the run
 	// options' rows of those names or `discobox run`'s own request; nil for
 	// one not given, which the create takes from the client's configuration

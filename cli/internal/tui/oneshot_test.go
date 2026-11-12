@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -417,14 +418,16 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		req := RunRequest{
-			Prompt:     []string{"fix", "the", "tests"},
-			Harness:    "codex",
-			UserSkills: new(true),
-			SkillDirs:  []string{"./team-skills"},
-			Include:    []string{"/src/obot"},
-			Env:        []string{"A=1"},
-			Bind:       []string{"github:GH_TOKEN"},
-			Pool:       "pool-a",
+			Prompt:      []string{"fix", "the", "tests"},
+			Harness:     "codex",
+			UserSkills:  new(true),
+			SkillDirs:   []string{"./team-skills"},
+			Include:     []string{"/src/obot"},
+			Env:         []string{"A=1"},
+			Bind:        []string{"github:GH_TOKEN"},
+			Pool:        "pool-a",
+			Description: "deliver 700",
+			Tags:        map[string]string{"repo": "a/b", "wip": ""},
 		}
 		d, m := openRunWith(t, ds, req, true)
 		d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
@@ -454,6 +457,9 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 		}
 		if !slices.Equal(run.Prompt, req.Prompt) || !slices.Equal(run.Bind, req.Bind) || run.Pool != "pool-a" {
 			t.Fatalf("run = %+v, want the prompt, bindings and pool as given", run)
+		}
+		if run.Description != req.Description || !maps.Equal(run.Tags, req.Tags) {
+			t.Fatalf("run = %+v, want the description and tags as given", run)
 		}
 	})
 }

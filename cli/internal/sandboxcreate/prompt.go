@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/randomname"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
@@ -63,6 +65,11 @@ type PromptOptions struct {
 	Prompt             []string
 	Env                []string
 	Secret             []string
+	// Description and Tags are the discobox's first description and tags,
+	// recorded with it at create and seeded into its meta file (--description
+	// and --tag). Tags are as sandboxmeta.ParseTags reads them.
+	Description string
+	Tags        map[string]string
 	// SkillDirs and UserSkills are --skills and --user-skills: directories of
 	// skills read into the request, and whether ~/.claude/skills and
 	// ~/.agents/skills are read first (ReadSkills).
@@ -126,6 +133,12 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 	default:
 		return PromptOptions{}, fmt.Errorf("include dirty: invalid value %q: want true, false, or auto", opts.IncludeDirty)
 	}
+	// Checked as `discobox tag` checks a change, so a bad tag or description
+	// is refused before anything is resolved or created. The server checks
+	// them again.
+	if err := (sandboxmeta.Meta{Description: opts.Description, Tags: opts.Tags}).Validate(); err != nil {
+		return PromptOptions{}, err
+	}
 	return opts, nil
 }
 
@@ -151,6 +164,12 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	if strings.TrimSpace(opts.Harness) != "" {
 		body.SetHarnessName(optionalString(opts.Harness))
+	}
+	if opts.Description != "" {
+		body.Config.SetDescription(apiclientgen.NewOptString(opts.Description))
+	}
+	if len(opts.Tags) > 0 {
+		body.Config.SetTags(apiclientgen.NewOptSandboxCreateConfigTags(apiclientgen.SandboxCreateConfigTags(maps.Clone(opts.Tags))))
 	}
 	env, secrets, err := EnvAndSecretsFromOptions(opts.Env, opts.Secret)
 	if err != nil {

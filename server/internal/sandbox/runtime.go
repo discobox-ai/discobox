@@ -258,8 +258,11 @@ type CreateOptions struct {
 	// Update.
 	Gateways []gateway.Route
 
-	Name                 string
-	Description          *string
+	Name        string
+	Description *string
+	// Tags seed the sandbox's meta file with Description when it has none
+	// (ADR 0136): the tags it was created with, or its last reported ones.
+	Tags                 map[string]string
 	HarnessConfigID      *string
 	Model                *string
 	ModelServiceTier     *string
