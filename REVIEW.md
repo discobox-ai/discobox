@@ -191,3 +191,8 @@ Global review expectations:
   it, and a shutdown test can otherwise stop the developer's real server.
 - Empty local IPC shorthand must not recursively resolve an address override
   that is itself shorthand. Parse that default once and reject a missing path.
+
+- Watcher rebuilds use a fresh output on the same filesystem as the live
+  executable, then rename after signing. Do not build directly over the live
+  path: Go may copy in place, and a truncated file retaining its build ID can
+  be accepted unchanged on retry.

@@ -504,3 +504,16 @@ The agent layer also places Docker and containerd's required configuration
 prerequisite before boot. Its configuration entry point shares the sandbox
 provisioner's selected inputs, step records and lock; it never waits on feature
 completion or starts a daemon. See [sandbox provisioning](sandbox-agent/provision/DESIGN.md#daemon-configuration).
+
+## Development executable publication
+
+The server and CLI watchnbuild loops share `scripts/dev-build.sh`. Each pass
+builds into a fresh directory under `build/`, signs the server there on macOS,
+and renames completed executables into their live paths on the same filesystem.
+A failed build or signature leaves the previous executables available; retries
+use fresh outputs so a damaged live file's build ID cannot suppress rebuilding.
+The CLI and server are published individually, not as an atomic pair. POSIX
+publication is one rename. Windows retains a running executable at a unique
+sibling backup path before installing its replacement; this leaves a brief gap
+at the live path. Installation failure restores the backup. Backups that remain
+locked are removed by a later build after their processes exit.
