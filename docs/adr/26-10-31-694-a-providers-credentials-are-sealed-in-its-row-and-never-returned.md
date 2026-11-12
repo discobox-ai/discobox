@@ -1,6 +1,6 @@
 # 26-10-31-694 — A provider's credentials are sealed in its row and never returned
 
-Status: Accepted
+Status: Accepted (§2's "a field the body leaves out keeps its sealed value" narrowed by [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md) §4: a write that changes a `Privileged` driver field carries every secret field)
 Date: 2026-10-31
 
 ## Context
