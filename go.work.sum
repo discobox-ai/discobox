@@ -774,6 +774,8 @@ github.com/dimchansky/utfbom v1.1.1/go.mod h1:SxdoEBH5qIqFocHMyGOXVAybYJdr71b1Q/
 github.com/discobox-ai/repostd v0.0.0-20261015052039-ed20cf47eac2/go.mod h1:PzfYl7jMRBycDGFY0ZQBUk4lGX4zVwHLmGiKyU6huVQ=
 github.com/discobox-ai/repostd v0.0.0-20261023211838-c2d203d5c80c/go.mod h1:6dn2TrPebi+2d94zaLmV3fxWv3yfDyChPWjbubGo3NI=
 github.com/discobox-ai/repostd v0.0.0-20261102231632-b363c9e4ee3a/go.mod h1:6dn2TrPebi+2d94zaLmV3fxWv3yfDyChPWjbubGo3NI=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006 h1:H9VCaA1RSLC6jU+prh6J+9LvYzacoC+0h7FzLgou8sg=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
 github.com/discobox-ai/watchnbuild v0.1.1-0.20260919045642-dfdfac09bda9/go.mod h1:3+mUY6tTtXYWY5x1EbQY3AEVGyPDNHeOqwOSMF65AW8=
 github.com/discobox-ai/x v0.0.0-20260821223655-c8f7674a2726/go.mod h1:KnanKt8LsIyBe99CJrv9v53BlDDM6WinmsLt6fLKlLE=
 github.com/dlclark/regexp2 v1.11.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=

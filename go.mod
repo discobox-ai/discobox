@@ -394,4 +394,4 @@ replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v
 // proxy's TestHTTPProxyUpgradeEarlyClientBytes is what says whether it is safe.
 replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
 
-replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4
+replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006

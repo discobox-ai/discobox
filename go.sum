@@ -241,8 +241,8 @@ github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0 h1:/XxXIQZ5zO/IiT6fBEp2
 github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0/go.mod h1:aWZAwCslRneFsiAz9FE3IG+WUyH5QrWoYKUAmagNElQ=
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0 h1:gIxKszXdZ1v0TCwgLOGFJxSEoYYTVNA3hQiYRWQxdhU=
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0/go.mod h1:mLpdkgTL7Jvpc14B/kT5d/pxhjtngOrfczfCt7oPaLA=
-github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4 h1:YtkB9JJlFU0mtgxCkK98Ck98u9BkD/cX9rcCzber6gk=
-github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006 h1:H9VCaA1RSLC6jU+prh6J+9LvYzacoC+0h7FzLgou8sg=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
 github.com/discobox-ai/watchnbuild v0.1.1-0.20261025003757-d5a5be30398e h1:K5+Hk77oPvOXlQqdeoZZHFQRQOOwN9JdtAWB1QDG8Mk=
 github.com/discobox-ai/watchnbuild v0.1.1-0.20261025003757-d5a5be30398e/go.mod h1:XiNme2RRgMrmNde9AMnHOklhnPiUItBxdfAaiYMhZgM=
 github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906 h1:EwLFWyk7Xr5nauNLUpQr6dmIjlBa2SVTM1WiQqwIe/A=

@@ -34,4 +34,4 @@ replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v
 
 replace github.com/charmbracelet/x/vt => github.com/discobox-ai/charm-x/vt v0.0.0-20261009234112-360d701e4806
 
-replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4
+replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006

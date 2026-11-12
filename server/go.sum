@@ -306,8 +306,8 @@ github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0 h1:/XxXIQZ5zO/IiT6fBEp2
 github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0/go.mod h1:aWZAwCslRneFsiAz9FE3IG+WUyH5QrWoYKUAmagNElQ=
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0 h1:gIxKszXdZ1v0TCwgLOGFJxSEoYYTVNA3hQiYRWQxdhU=
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0/go.mod h1:mLpdkgTL7Jvpc14B/kT5d/pxhjtngOrfczfCt7oPaLA=
-github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4 h1:YtkB9JJlFU0mtgxCkK98Ck98u9BkD/cX9rcCzber6gk=
-github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006 h1:H9VCaA1RSLC6jU+prh6J+9LvYzacoC+0h7FzLgou8sg=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
 github.com/discobox-ai/vm v0.0.0-20261104203249-5682ac6ab2a2 h1:RQBvvJq6DzkyYzCFvlzycUgQl8qLmnr5mwZE8KOYopU=
 github.com/discobox-ai/vm v0.0.0-20261104203249-5682ac6ab2a2/go.mod h1:uiogUqSfCw89KHN9ilnuJbDJ8Wik7lNF22MBLKZdYw8=
 github.com/discobox-ai/vz/v3 v3.7.2-0.20260922054351-c8cee82c6395 h1:V89HfWnhexidYsgHFgS12POHuRVGPqLD6dz/V5OrFtw=

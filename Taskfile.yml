@@ -790,6 +790,11 @@ tasks:
     cmds:
       - cd cli && DISCOBOX_TERMINAL_LATENCY_E2E=1 go test ./internal/cli -run TerminalLatency -count=1 -v
 
+  bench:pty:
+    desc: Measure the sandbox agent's retained terminal screen under scrolling output
+    cmds:
+      - cd sandbox-agent && go test ./shimruntime -run '^$' -bench BenchmarkScreenOutput -benchmem
+
   test:all:
     desc: Run root and nested module tests
     cmds:

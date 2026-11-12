@@ -34,8 +34,8 @@ github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255 h1:d0Z
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/discobox-ai/charm-x/vt v0.0.0-20261009234112-360d701e4806 h1:sKW0Bb+wbD2QIxadbc5wEnOvsLKH4C1mxq453lcN2lA=
 github.com/discobox-ai/charm-x/vt v0.0.0-20261009234112-360d701e4806/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
-github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4 h1:YtkB9JJlFU0mtgxCkK98Ck98u9BkD/cX9rcCzber6gk=
-github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006 h1:H9VCaA1RSLC6jU+prh6J+9LvYzacoC+0h7FzLgou8sg=
+github.com/discobox-ai/ultraviolet v0.0.0-20261112223830-b866ec646006/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
 github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906 h1:EwLFWyk7Xr5nauNLUpQr6dmIjlBa2SVTM1WiQqwIe/A=
 github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
