@@ -546,7 +546,7 @@ func TestADarwinPoolKeepsItsPlatformWhenItsAgentReportsLinux(t *testing.T) {
 	}
 	report := func(hosts platform.Platform) *model.Pool {
 		t.Helper()
-		reported, _, err := s.UpdatePoolStatus(ctx, "pool-1", hosts, platform.VM("vz"), false, false, true, true, false, 1, 1<<30, 1<<30, nil)
+		reported, _, err := s.UpdatePoolStatus(ctx, "pool-1", hosts, platform.VM("vz"), store.AgentSentinels{}, true, true, false, 1, 1<<30, 1<<30, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -597,7 +597,7 @@ func TestAPoolThatNamesNoOSTakesItsAgentsPlatform(t *testing.T) {
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
 	darwin := platform.Platform{OS: platform.Darwin, Arch: "arm64"}
-	reported, _, err := s.UpdatePoolStatus(ctx, "pool-1", darwin, platform.OCI, false, false, true, true, false, 1, 1, 1, nil)
+	reported, _, err := s.UpdatePoolStatus(ctx, "pool-1", darwin, platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
