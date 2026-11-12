@@ -911,8 +911,8 @@ d admin pool create krunpool --provider <prov_id>
   base image (`docker run --rm --user 0 -v $S:/v:ro --entrypoint /bin/sh
   discobox-sandbox-base:dev-… /v/run.sh`). The script installs a `0600`
   bootstrap file and runs the binary with `DISCOBOX_POOL_BOOTSTRAP_FILE`. A
-  machine bootstrap needs `runtime: machine`, a `driver`, a `machineProject`
-  and `publicUrl`/`privateUrl`; `machineProject` and the URLs are file-only,
+  machine bootstrap needs `runtime: machine`, a `driver`, a `machinePool`
+  and `publicUrl`/`privateUrl`; `machinePool` and the URLs are file-only,
   while `runtime` and `driver` may also come from `DISCOBOX_POOL_RUNTIME` and
   `DISCOBOX_POOL_DRIVER`, which override the file.
   The agent stops at `pool identity key … is not there`, since nothing
@@ -1311,10 +1311,19 @@ agent's published port, or the pool never registers.
   `deliverProviderKey` pool's machine hold it too. Verify on the fake driver
   instead. A live boxd run is the user's call alone: it takes a key of a
   throwaway boxd org, which the user revokes, with that org's machines,
-  when the run ends, and say so in the report. Read it into the config with
-  `jq --rawfile`, never on a command line (`/proc/<pid>/cmdline` is
-  readable). An API key cannot issue keys, so such a run drives only the
-  blocked and `deliverProviderKey` paths.
+  when the run ends, and say so in the report.
+- The live run's recipe is `scripts/live-run.sh`: `go tool task
+  live-run:build`, then `go tool task live-run DRIVER=boxd`, run once in a
+  one-off box under `docs/tasks/947-remote-drivers-boxd-and-archil.md`'s
+  Credentials rules, never in a worker's box. The script takes the key from
+  the raw binding's variable (`BOXD_API_KEY`) through jq's environment,
+  never on a command line. In a box, verify a change to it with
+  `go tool task live-run DRIVER=boxd DRY_RUN=1`, which calls nothing and
+  reads no key, and `go test ./test/liverun`, which runs it against
+  stand-in `discobox`, `disco-vm` and `curl` commands. A stand-in's answer
+  is copied from what the real component sends (the proxy refuses a denied
+  CONNECT by closing it, and a plain-HTTP request with 403 "blocked by
+  proxy"), never written from what the script expects.
 - On an isolated server (above) with `controlPlaneUrl` a host boxd cannot
   reach, a pool gets as far as its agent's first call to the control plane:
   the machine is made, keyed, placed, enrolled and provisioned (`provision
@@ -1322,15 +1331,8 @@ agent's published port, or the pool never registers.
   shows (`admin pool
   console <pool>` with `script -qec`, files under `/etc/discobox/pool-agent`).
   What boxd holds is read with a scratch `go run` (from `server/`) of
-  `boxd.New(machine.Config{Project: "prov-…", Keys: …}).Instances`, which
+  `boxd.New(machine.Config{Pool: "prov-…", Keys: …}).Instances`, which
   shows each machine's `Isolated` and `Networks`, and that delete left none.
-- After `admin provider update`, a pool's reconcile can fail every pass with
-  `a reconciler cannot mark its own resource dirty`: a pre-existing server
-  bug, not a quirk of the loop. `poolruntime.Provider.Initialize` schedules
-  every pool of the provider, and the provider's first resolve after the
-  update runs inside one pool's own reconcile, which the engine refuses as
-  a self-mark. A server restart resolves the provider at startup instead;
-  report it rather than work around it unremarked.
 - Do not create a `vm` provider with `{"driver":"boxd"}` in the dev loop
   without a working `apiKey` in its configuration: its pool fails naming
   `apiKey`, and so does deleting it, since the stateless engine asks boxd

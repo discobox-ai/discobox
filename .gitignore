@@ -98,3 +98,5 @@ wnb-*-failed.txt
 
 # Compiled Go test binaries (go test -c).
 *.test
+# The live run's evidence (scripts/live-run.sh).
+/live-run-*/

@@ -620,6 +620,31 @@ tasks:
     cmds:
       - task: dev:docker-image-watch
 
+  live-run:build:
+    desc: "Build what the live run calls: the CLI, and disco-vm at the version the server links"
+    # The first step in the one-off box, before its egress is narrowed and the
+    # key handed over (docs/tasks/947, Credentials). live-run builds nothing,
+    # so nothing is built or fetched once the key is there. disco-vm is built
+    # from the server module, so it is the driver code the server runs, and
+    # lists what that code made.
+    cmds:
+      - task: build:cli
+      - mkdir -p build
+      - cd server && CGO_ENABLED=0 go build -o ../build/disco-vm{{.EXE}} github.com/discobox-ai/vm/cmd/disco-vm
+
+  live-run:
+    desc: "The one live run on a remote driver, end to end, then cleanup and a report (usage: go tool task live-run DRIVER=boxd [DRY_RUN=1] -- --egress-narrowed yes|no)"
+    # scripts/live-run.sh says what it checks and the rules it runs under. Its
+    # dry run touches nothing and needs no key. It runs what live-run:build
+    # built beforehand, and builds nothing itself.
+    requires:
+      vars: [DRIVER]
+    preconditions:
+      - sh: test -x ./build/discobox{{.EXE}} && test -x ./build/disco-vm{{.EXE}}
+        msg: "run go tool task live-run:build first, before the key is handed over"
+    cmds:
+      - DISCOBOX=./build/discobox{{.EXE}} DISCO_VM=./build/disco-vm{{.EXE}} scripts/live-run.sh --driver {{.DRIVER}} {{if .DRY_RUN}}--dry-run{{end}} {{.CLI_ARGS}}
+
   secret-dump:
     desc: "Dev tool: print a stored secret's cleartext value (usage: go tool task secret-dump -- <secret-id>)"
     cmds:
