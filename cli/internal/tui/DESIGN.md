@@ -635,21 +635,28 @@ flowchart LR
   whole approval — the credential, each part's answer and scope, an addition
   or a replacement — and what it replaces in the variable at the lifetime
   under the cursor (`bindingplan`), with the delegate part's own replacement
-  and any lead's delegation it is held within (ADR 26-11-03-329 §5,
+  and its approved route tables (ADR 26-11-03-329 §5,
   26-11-04-616 §4). Choosing one sends.
 
 A use part asked as an addition stacks only on the secret delivering its
 variable (ADR 26-11-03-329 §4); answered with another, it is granted as a
 replacement shadowing that one, and the summary and last step say so.
-Placeholder delivery is the guided dialog's only one, and the mode is the
-request's: the value itself and the other mode are `discobox secret request
-approve --raw` and `--use-as` (ADR 26-11-11-857). A new credential is held to
+The summary and use-part card offer an independent add/replace choice, marked
+edited when it differs from the ask. A person's approval has no parent; any
+standing use binding under a lead's delegation disables replacement and
+defaults to addition. Add is unavailable for a different secret in the
+variable. Placeholder delivery is the guided dialog's only one; raw delivery
+is `discobox secret request approve --raw` (ADR 26-11-11-857). A new credential is held to
 the request's hosts (same ADR).
 
 A new credential is stored, then the request approved with it
 (`sendAnswer`); a refusal after the store says the credential stays. The
 approval carries each part's decision, scope, edited routes
 (`Approval.UseRoutes`, `DelegateRoutes`) and lifetime in one call.
+
+While a read-to-end hold is active, ↓, Tab and j scroll the content; reaching
+the end returns navigation to the decisions. A scroll position and “more below”
+marker expose content below the fold, including on the custom-lifetime form.
 
 **An approval card longer than its window is read to its end before it is
 answered** (`approvalDialog`, `requireEnd`): its decisions open only once

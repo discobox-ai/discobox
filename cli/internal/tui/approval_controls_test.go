@@ -262,3 +262,49 @@ func TestTheNewCredentialFormFitsACompactWindow(t *testing.T) {
 		t.Fatalf("dialog = %s, want the summary", describe(m.dialog))
 	}
 }
+
+func TestReadToEndNavigationFocusesContent(t *testing.T) {
+	for _, key := range []string{"down", "tab", "j"} {
+		for _, kind := range []string{"actions", "approval", "custom"} {
+			t.Run(kind+"/"+key, func(t *testing.T) {
+				m := newTestModel(t, newFakeSource())
+				send(t, m, sizeMsg(80, 24))
+				called := false
+				var d *dialog
+				switch kind {
+				case "actions":
+					d = actionsDialog("Read", "", []action{{key: "send", label: "Send", enabled: true}}, func(string) tea.Cmd { called = true; return nil })
+				case "approval":
+					d = approvalDialog("Read", newForm(), func(*form) tea.Cmd { called = true; return nil })
+				case "custom":
+					d = formDialog("Read", newForm(textRow("ttl", "For", "", "1h")), func(*form) tea.Cmd { called = true; return nil })
+				}
+				d.requireEnd, d.decisionsBlocked = true, true
+				d.sections = []section{{lines: []line{{text: strings.Repeat("Read these permissions. ", 100)}}}}
+				m.dialog = d
+				if !strings.Contains(plainFrame(m), "more below") {
+					t.Fatal("no continuation marker")
+				}
+				cursor, action := d.cursor, d.formActionAt
+				d.update(keyPress("enter"))
+				if called {
+					t.Fatal("unread content sent")
+				}
+				for i := 0; d.decisionsBlocked && i < 2000; i++ {
+					d.update(keyPress(key))
+					plainFrame(m)
+					if d.cursor != cursor || d.formActionAt != action {
+						t.Fatal("reading moved a decision")
+					}
+				}
+				if d.decisionsBlocked {
+					t.Fatal("ordinary keys did not reach the end")
+				}
+				d.update(keyPress("enter"))
+				if !called {
+					t.Fatal("decision did not regain focus")
+				}
+			})
+		}
+	}
+}

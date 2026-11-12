@@ -339,6 +339,7 @@ func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
 	pickItem(t, m, "custom")
 	for _, typed := range []string{"fortnight", "2d"} {
 		m.dialog.form.set("ttl", typed)
+		readRequestEnd(t, m, "down")
 		send(t, m, keyPress("enter"))
 		if len(ds.approvals) != 0 || m.dialog.form.err == "" {
 			t.Fatalf("%q was taken: err=%q approvals=%v", typed, m.dialog.form.err, ds.approvals)
@@ -348,7 +349,7 @@ func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
 		t.Fatalf("err = %q, want the limit", m.dialog.form.err)
 	}
 	m.dialog.form.set("ttl", "12h")
-	plainFrame(m)
+	readRequestEnd(t, m, "tab")
 	send(t, m, keyPress("enter"))
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 12*3600 {
 		t.Fatalf("approvals = %#v, want twelve hours", ds.approvals)
@@ -786,5 +787,100 @@ func TestANewCredentialsGapIsOfWhatIsApproved(t *testing.T) {
 	ans.useChoice = partChoice{scope: "edited", routes: []secretroute.Route{{Hosts: []string{"uploads.github.com"}}}}
 	if got := text(answerSections(req, ans, time.Hour, true)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
 		t.Fatalf("a host added by an edit is not listed as a gap:\n%s", got)
+	}
+}
+
+// Navigate the read-to-end hold through the same ordinary keys as the UI.
+func readRequestEnd(t *testing.T, m *Model, key string) {
+	t.Helper()
+	plainFrame(m)
+	for i := 0; m.dialog.decisionsBlocked && i < 2000; i++ {
+		send(t, m, keyPress(key))
+		plainFrame(m)
+	}
+	if m.dialog.decisionsBlocked {
+		t.Fatal("could not read to the end")
+	}
+}
+
+func TestRequestAdditionBesideDelegatedBase(t *testing.T) {
+	m, ds := sourceWithRequest(t)
+	req := waitingRequest()
+	base := SecretBinding{ID: "bind_base", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: req.SandboxID, Use: true, EnvVar: req.EnvVar, ParentID: "bind_lead"}
+	ds.projectBindings = []SecretBinding{base}
+	ds.heldGrants = []HeldGrant{{BindingID: base.ID, SecretID: base.SecretID, SecretName: "GitHub token", From: BindingSandbox}}
+	toSummary(t, m, "sec_gh")
+	text := plainFrame(m)
+	for _, want := range []string{"asked for", "Answering with", "addition", "edited from the ask"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q: %s", want, text)
+		}
+	}
+	answerApproval(t, m, "use-as")
+	if !strings.Contains(m.dialog.body, "a person's approval cannot replace it") {
+		t.Fatal("full replacement explanation missing")
+	}
+	for _, item := range m.dialog.items {
+		if item.key == "replace" && (item.enabled || !strings.Contains(item.why, base.ID) || !strings.Contains(item.why, base.ParentID)) {
+			t.Fatalf("replacement offered: %+v", item)
+		}
+	}
+	pickItem(t, m, "add")
+	answerApproval(t, m, "accept")
+	readRequestEnd(t, m, "j")
+	text = plainFrame(m)
+	if strings.Contains(text, "this replaces") || strings.Contains(text, "held within") {
+		t.Fatalf("misleading preview: %s", text)
+	}
+	pickItem(t, m, "3600")
+	if len(ds.approvals) != 1 || ds.approvals[0].UseAs != "add" {
+		t.Fatalf("approvals: %+v", ds.approvals)
+	}
+	if ds.projectBindings[0].ParentID != base.ParentID {
+		t.Fatal("standing binding changed")
+	}
+}
+
+func TestRequestUseModeCanBeChangedOnSummaryAndPart(t *testing.T) {
+	for _, review := range []bool{false, true} {
+		t.Run(strconv.FormatBool(review), func(t *testing.T) {
+			m, ds := sourceWithRequest(t)
+			toSummary(t, m, "sec_gh")
+			if review {
+				answerApproval(t, m, "review")
+			}
+			answerApproval(t, m, "use-as")
+			pickItem(t, m, "add")
+			if !strings.Contains(plainFrame(m), "edited from the ask") {
+				t.Fatal("changed mode not marked edited")
+			}
+			answerApproval(t, m, "accept")
+			readRequestEnd(t, m, "down")
+			pickItem(t, m, "3600")
+			if len(ds.approvals) != 1 || ds.approvals[0].UseAs != "add" {
+				t.Fatalf("approvals: %+v", ds.approvals)
+			}
+		})
+	}
+}
+
+func TestCancellingUseModeReturnsToFirstDecision(t *testing.T) {
+	for _, review := range []bool{false, true} {
+		t.Run(strconv.FormatBool(review), func(t *testing.T) {
+			m, _ := sourceWithRequest(t)
+			toSummary(t, m, "sec_gh")
+			if review {
+				answerApproval(t, m, "review")
+			}
+			answerApproval(t, m, "use-as")
+			send(t, m, keyPress("esc"))
+			if m.dialog.formActionAt != 0 {
+				t.Fatal("mode chooser retained focus")
+			}
+			answerApproval(t, m, "accept")
+			if !onStep(m, "how long") {
+				t.Fatal("Enter reopened mode chooser")
+			}
+		})
 	}
 }
