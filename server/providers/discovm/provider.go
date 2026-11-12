@@ -17,9 +17,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/discobox-ai/vm/pkg/machine"
 
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -83,6 +85,31 @@ func Validate(data json.RawMessage) error {
 		return err
 	}
 	return validateFor(cfg, isLocal(driver))
+}
+
+// ValidatePoolOS reports whether a pool on a provider configured with data may
+// name os for its sandboxes: whether its driver boots that OS, as disco-vm
+// reports it, never by the driver's name (ADR 26-11-11-963 §1). Linux on
+// every driver that boots it, darwin on vz; hcs boots neither, and its pools
+// are refused until the Windows work 963 §13 defers.
+func ValidatePoolOS(data json.RawMessage, os string) error {
+	cfg, err := Decode(data)
+	if err != nil {
+		return err
+	}
+	driver, err := newDriver(cfg.Driver, localPool, "", nil)
+	if err != nil {
+		return err
+	}
+	return bootsOS(cfg.Driver, driver.Capabilities(), os)
+}
+
+// bootsOS is whether a driver whose capabilities are caps boots os.
+func bootsOS(driver string, caps machine.Capabilities, os string) error {
+	if slices.Contains(caps.GuestOS, machine.OS(os)) {
+		return nil
+	}
+	return fmt.Errorf("the %s driver does not boot %s sandboxes", driver, os)
 }
 
 // validateFor checks what a driver of the kind needs: a remote driver its key,

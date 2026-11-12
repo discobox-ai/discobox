@@ -2425,6 +2425,12 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 		e.Str(s.ProviderInstanceId)
 	}
 	{
+		if s.SandboxOs.Set {
+			e.FieldStart("sandboxOs")
+			s.SandboxOs.Encode(e)
+		}
+	}
+	{
 		if s.StorageBytes.Set {
 			e.FieldStart("storageBytes")
 			s.StorageBytes.Encode(e)
@@ -2432,7 +2438,7 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreatePoolBody = [8]string{
+var jsonFieldsNameOfCreatePoolBody = [9]string{
 	0: "proxy",
 	1: "$schema",
 	2: "disableAgentEndpointTls",
@@ -2440,7 +2446,8 @@ var jsonFieldsNameOfCreatePoolBody = [8]string{
 	4: "memoryBytes",
 	5: "name",
 	6: "providerInstanceId",
-	7: "storageBytes",
+	7: "sandboxOs",
+	8: "storageBytes",
 }
 
 // Decode decodes CreatePoolBody from json.
@@ -2448,7 +2455,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreatePoolBody to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -2526,6 +2533,16 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
+		case "sandboxOs":
+			if err := func() error {
+				s.SandboxOs.Reset()
+				if err := s.SandboxOs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sandboxOs\"")
+			}
 		case "storageBytes":
 			if err := func() error {
 				s.StorageBytes.Reset()
@@ -2545,8 +2562,9 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b01100000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2588,6 +2606,46 @@ func (s *CreatePoolBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreatePoolBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CreatePoolBodySandboxOs as json.
+func (s CreatePoolBodySandboxOs) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes CreatePoolBodySandboxOs from json.
+func (s *CreatePoolBodySandboxOs) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreatePoolBodySandboxOs to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch CreatePoolBodySandboxOs(v) {
+	case CreatePoolBodySandboxOsLinux:
+		*s = CreatePoolBodySandboxOsLinux
+	case CreatePoolBodySandboxOsDarwin:
+		*s = CreatePoolBodySandboxOsDarwin
+	default:
+		*s = CreatePoolBodySandboxOs(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s CreatePoolBodySandboxOs) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreatePoolBodySandboxOs) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -19832,6 +19890,39 @@ func (s *OptCloneProgressStage) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CreatePoolBodySandboxOs as json.
+func (o OptCreatePoolBodySandboxOs) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes CreatePoolBodySandboxOs from json.
+func (o *OptCreatePoolBodySandboxOs) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptCreatePoolBodySandboxOs to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptCreatePoolBodySandboxOs) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptCreatePoolBodySandboxOs) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateSandboxExecRequestEnv as json.
 func (o OptCreateSandboxExecRequestEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -22807,6 +22898,39 @@ func (s OptPoolSandboxCloneProgress) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptPoolSandboxCloneProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolSandboxOs as json.
+func (o OptPoolSandboxOs) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes PoolSandboxOs from json.
+func (o *OptPoolSandboxOs) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolSandboxOs to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolSandboxOs) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolSandboxOs) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -26152,6 +26276,12 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		e.Str(s.ProviderInstanceId)
 	}
 	{
+		if s.SandboxOs.Set {
+			e.FieldStart("sandboxOs")
+			s.SandboxOs.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("storageBytes")
 		e.Int64(s.StorageBytes)
 	}
@@ -26285,7 +26415,7 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [41]string{
+var jsonFieldsNameOfPool = [42]string{
 	0:  "proxy",
 	1:  "outbound",
 	2:  "egress",
@@ -26301,32 +26431,33 @@ var jsonFieldsNameOfPool = [41]string{
 	12: "projectId",
 	13: "providerInstance",
 	14: "providerInstanceId",
-	15: "storageBytes",
-	16: "health",
-	17: "ready",
-	18: "schedulable",
-	19: "degraded",
-	20: "hostCredential",
-	21: "provisionProgress",
-	22: "provisionProgressAt",
-	23: "availableCpuVcpus",
-	24: "availableMemoryBytes",
-	25: "availableStorageBytes",
-	26: "conditions",
-	27: "resources",
-	28: "resourcesReportedAt",
-	29: "desiredState",
-	30: "state",
-	31: "stateChangedAt",
-	32: "generation",
-	33: "observedGeneration",
-	34: "errorMessage",
-	35: "keyType",
-	36: "publicKey",
-	37: "registeredAt",
-	38: "lastSeenAt",
-	39: "revokedAt",
-	40: "updatedAt",
+	15: "sandboxOs",
+	16: "storageBytes",
+	17: "health",
+	18: "ready",
+	19: "schedulable",
+	20: "degraded",
+	21: "hostCredential",
+	22: "provisionProgress",
+	23: "provisionProgressAt",
+	24: "availableCpuVcpus",
+	25: "availableMemoryBytes",
+	26: "availableStorageBytes",
+	27: "conditions",
+	28: "resources",
+	29: "resourcesReportedAt",
+	30: "desiredState",
+	31: "state",
+	32: "stateChangedAt",
+	33: "generation",
+	34: "observedGeneration",
+	35: "errorMessage",
+	36: "keyType",
+	37: "publicKey",
+	38: "registeredAt",
+	39: "lastSeenAt",
+	40: "revokedAt",
+	41: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -26503,8 +26634,18 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
+		case "sandboxOs":
+			if err := func() error {
+				s.SandboxOs.Reset()
+				if err := s.SandboxOs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sandboxOs\"")
+			}
 		case "storageBytes":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -26526,7 +26667,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"health\"")
 			}
 		case "ready":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -26538,7 +26679,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -26550,7 +26691,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
 		case "degraded":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -26592,7 +26733,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"provisionProgressAt\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -26604,7 +26745,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -26616,7 +26757,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -26659,7 +26800,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourcesReportedAt\"")
 			}
 		case "desiredState":
-			requiredBitSet[3] |= 1 << 5
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -26669,7 +26810,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "state":
-			requiredBitSet[3] |= 1 << 6
+			requiredBitSet[3] |= 1 << 7
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -26689,7 +26830,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
 			}
 		case "generation":
-			requiredBitSet[4] |= 1 << 0
+			requiredBitSet[4] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -26701,7 +26842,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[4] |= 1 << 1
+			requiredBitSet[4] |= 1 << 2
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -26773,7 +26914,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[5] |= 1 << 0
+			requiredBitSet[5] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -26795,11 +26936,11 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [6]uint8{
 		0b11100000,
-		0b11010110,
-		0b10001110,
-		0b01100011,
-		0b00000011,
-		0b00000001,
+		0b01010110,
+		0b00011101,
+		0b11000111,
+		0b00000110,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -29216,6 +29357,46 @@ func (s *PoolSandboxCloneProgress) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxCloneProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolSandboxOs as json.
+func (s PoolSandboxOs) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes PoolSandboxOs from json.
+func (s *PoolSandboxOs) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxOs to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch PoolSandboxOs(v) {
+	case PoolSandboxOsLinux:
+		*s = PoolSandboxOsLinux
+	case PoolSandboxOsDarwin:
+		*s = PoolSandboxOsDarwin
+	default:
+		*s = PoolSandboxOs(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxOs) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxOs) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -3939,6 +3939,12 @@ components:
                 providerInstanceId:
                     description: Backing sandbox provider instance ID. Immutable after create.
                     type: string
+                sandboxOs:
+                    description: The operating system the pool's sandboxes run, named when the pool was created and never changed. The pool's platform is this OS on its agent's architecture, and a report of another OS is not recorded; the pool takes no sandboxes until its agent reports it. Absent on a pool made before pools named one, which hosts linux.
+                    enum:
+                        - linux
+                        - darwin
+                    type: string
                 storageBytes:
                     description: Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset.
                     format: int64
@@ -4177,6 +4183,12 @@ components:
                     type: string
                 providerInstanceId:
                     description: Backing sandbox provider instance ID. Immutable after create.
+                    type: string
+                sandboxOs:
+                    description: The operating system the pool's sandboxes run. linux, the default, on every provider; darwin only on a VM provider whose driver boots macOS. It cannot change after the pool is created.
+                    enum:
+                        - linux
+                        - darwin
                     type: string
                 storageBytes:
                     description: Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset.

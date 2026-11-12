@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -109,6 +110,14 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	})
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
+	}
+	// A pool that names its sandboxes' OS takes no sandbox while its agent
+	// declares another (store.recordPoolPlatform, ADR 26-11-11-963 §1). Say
+	// why, since nothing else on the pool does: an agent from before the
+	// upgrade, or a provider-override bundle's, keeps declaring its own.
+	if pool.SandboxOS != "" && hosts.OS != pool.SandboxOS {
+		slog.WarnContext(ctx, "pool agent declares another platform than the OS its pool names; the pool takes no sandboxes until it declares that OS",
+			"poolId", pool.ID, "sandboxOs", pool.SandboxOS, "declared", hosts.String())
 	}
 	// A heartbeat from a pool recorded `offline` is the observation that the
 	// host is back, and one from a pool still `registering` that its agent

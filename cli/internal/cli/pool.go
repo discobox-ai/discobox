@@ -19,6 +19,8 @@ type poolOptions struct {
 	// disableAgentEndpointTLS has the pool reach its sandboxes' agents over
 	// plain HTTP rather than TLS (ADR 26-10-29-481 §3).
 	disableAgentEndpointTLS bool
+	// sandboxOS is the OS a new pool's sandboxes run (ADR 26-11-11-963 §1).
+	sandboxOS string
 }
 
 func (a *App) newPoolCommand() *cobra.Command {
@@ -125,6 +127,9 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 		if cmd.Flags().Changed("disable-agent-endpoint-tls") {
 			body.SetDisableAgentEndpointTls(apiclientgen.NewOptBool(opts.disableAgentEndpointTLS))
 		}
+		if cmd.Flags().Changed("sandbox-os") {
+			body.SetSandboxOs(apiclientgen.NewOptCreatePoolBodySandboxOs(apiclientgen.CreatePoolBodySandboxOs(opts.sandboxOS)))
+		}
 		poolRes, err := client.CreatePool(cmd.Context(), body, apiclientgen.CreatePoolParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -138,6 +143,8 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "Backing provider instance, by name or ID (required)")
 	_ = cmd.MarkFlagRequired("provider")
 	_ = cmd.RegisterFlagCompletionFunc("provider", a.completeProviders)
+	cmd.Flags().StringVar(&opts.sandboxOS, "sandbox-os", "linux", "The OS the pool's discoboxes run: linux, or darwin on a VM provider whose driver boots macOS. It cannot change after the pool is created")
+	_ = cmd.RegisterFlagCompletionFunc("sandbox-os", cobra.FixedCompletions([]string{"linux", "darwin"}, cobra.ShellCompDirectiveNoFileComp))
 	addPoolAttributeFlags(cmd, &opts)
 	return cmd
 }

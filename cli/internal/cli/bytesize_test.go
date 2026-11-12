@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -95,6 +96,40 @@ func TestPoolUpdateSendsTheAgentTLSSettingOnlyWhenGiven(t *testing.T) {
 		server.Close()
 		if got, ok := sent["disableAgentEndpointTls"]; got != tc.want || ok != (tc.want != nil) {
 			t.Errorf("%v: disableAgentEndpointTls = %v (sent %v), want %v", tc.args, got, ok, tc.want)
+		}
+	}
+}
+
+// A pool create names its discoboxes' OS only when the flag is given, and the
+// server's default, linux, applies otherwise; pool get shows it, linux for a
+// pool that named none.
+func TestPoolCreateSendsTheSandboxOSOnlyWhenGiven(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want any
+	}{
+		{},
+		{args: []string{"--sandbox-os", "darwin"}, want: "darwin"},
+	} {
+		var sent map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/pools" {
+				http.NotFound(w, r)
+				return
+			}
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			_, _ = io.WriteString(w, poolWithResources)
+		}))
+		out := runCLI(t, server.URL, append([]string{"admin", "pool", "create", "mac", "--provider", "prov_dfzx0123456789ab"}, tc.args...)...)
+		server.Close()
+		if got, ok := sent["sandboxOs"]; got != tc.want || ok != (tc.want != nil) {
+			t.Errorf("%v: sandboxOs = %v (sent %v), want %v", tc.args, got, ok, tc.want)
+		}
+		if !strings.Contains(out, "SANDBOX OS") || !strings.Contains(out, "linux") {
+			t.Errorf("%v: pool shown without its sandbox OS:\n%s", tc.args, out)
 		}
 	}
 }

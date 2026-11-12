@@ -117,6 +117,13 @@ type Bootstrap struct {
 	// plain HTTP rather than TLS its CA issues, the pool's own setting (ADR
 	// 26-10-29-481 §3). The pool tells each sandbox in its bootstrap.
 	DisableAgentEndpointTLS bool `json:"disableAgentEndpointTls,omitempty"`
+	// SandboxOS is the operating system the pool's sandboxes run, which the
+	// pool named when it was created and its provider writes here (ADR
+	// 26-11-11-963 §1) unless it is linux. The agent declares it, with its
+	// own architecture, as the platform the pool hosts. Empty is linux, or a
+	// bootstrap from a server before pools named one: the agent declares its
+	// own platform, which is linux.
+	SandboxOS string `json:"sandboxOs,omitempty"`
 }
 
 // ControlPlaneChannelSocket is where a pool reached over a control-plane
@@ -163,6 +170,16 @@ func (b Bootstrap) Validate() error {
 	if listen := strings.TrimSpace(b.AgentListenURL); listen != "" {
 		if _, err := wire.Parse(listen); err != nil {
 			return fmt.Errorf("agent listen URL: %w", err)
+		}
+	}
+	if b.SandboxOS != "" {
+		sandboxOS, err := platform.ParseSandboxOS(b.SandboxOS)
+		if err != nil || sandboxOS != b.SandboxOS {
+			return fmt.Errorf("sandbox OS %q is neither %s nor %s", b.SandboxOS, platform.Linux, platform.Darwin)
+		}
+		// A container shares its pool agent's Linux kernel.
+		if sandboxOS != platform.Linux && b.EffectiveRuntime() != RuntimeMachine {
+			return fmt.Errorf("the %s runtime runs only %s sandboxes, not %s", b.EffectiveRuntime(), platform.Linux, sandboxOS)
 		}
 	}
 	switch b.EffectiveRuntime() {
@@ -240,12 +257,18 @@ type SandboxAgentStatusClient interface {
 	ReportSandboxInventories(ctx context.Context, req SandboxInventoryReportRequest) (*SandboxInventoryReportResponse, error)
 }
 
-// hostedPlatform is the one platform this pool hosts, which its agent declares
-// at registration and on every status report (ADR 0145 §1). A pool's sandboxes
-// are containers on the agent's own kernel and architecture, so it is the
-// agent's own platform.
-func hostedPlatform() platform.Platform {
-	return platform.Current()
+// HostedPlatform is the one platform this pool hosts, which its agent declares
+// at registration and on every status report (ADR 0145 §1): the OS the pool
+// names for its sandboxes, on the agent's own architecture, which on every
+// driver is its sandboxes' too (ADR 26-11-11-963 §1). A bootstrap that names
+// no OS is a linux pool's, or from a server before pools named one: either
+// way its sandboxes are on the agent's own platform, which is linux.
+func (b Bootstrap) HostedPlatform() platform.Platform {
+	current := platform.Current()
+	if b.SandboxOS == "" {
+		return current
+	}
+	return platform.Platform{OS: b.SandboxOS, Arch: current.Arch}
 }
 
 // StatusRequest updates pool scheduling status using a signed pool assertion.

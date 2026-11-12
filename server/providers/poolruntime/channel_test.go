@@ -178,6 +178,29 @@ func TestAPoolsBootstrapSaysWhetherItIsReachedOverAChannel(t *testing.T) {
 	}
 }
 
+// A pool's bootstrap names the OS the pool named for its sandboxes, which its
+// agent declares (ADR 26-11-11-963 §1), unless it is linux: an agent declares
+// linux for a bootstrap that names none, and one from before the field
+// refuses a bootstrap that names it.
+func TestAPoolsBootstrapNamesItsSandboxOS(t *testing.T) {
+	project := &model.Project{ID: "project-1"}
+	for os, want := range map[string]string{"": "", "linux": "", "darwin": "darwin"} {
+		pool := activePool("pool-1")
+		pool.SandboxOS = os
+		maker, err := newPoolMaker(&fakePoolManager{pool: pool}, project, pool, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bootstrap, err := maker.Bootstrap(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bootstrap.SandboxOS != want {
+			t.Fatalf("a pool naming %q: bootstrap names %q, want %q", os, bootstrap.SandboxOS, want)
+		}
+	}
+}
+
 // shortTempDir is a temporary directory short enough to hold a Unix socket:
 // t.TempDir's path, under a CI runner's temporary root, can pass the ~100
 // bytes a socket path is limited to, and bind fails with "invalid argument".

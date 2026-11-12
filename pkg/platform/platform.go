@@ -38,15 +38,39 @@ func Current() Platform {
 	return Platform{OS: runtime.GOOS, Arch: runtime.GOARCH}
 }
 
-// Pool is the platform a pool on this machine hosts: Linux, whatever this
-// machine runs, on this machine's architecture. Every provider that runs a pool
-// on this machine — docker, libkrun, vz, wslc — puts it on a Linux kernel of the
-// host's architecture. A pool elsewhere — a cloud VM, a remote Docker host —
-// may be another architecture, and declares its own: this is never assumed of
-// a pool, a sandbox, or an archive. It is only the platform whose image a
-// harness's labels are read from when its image publishes it.
+// Pool is the platform of a linux pool on this machine: Linux, whatever this
+// machine runs, on this machine's architecture. Every container provider that
+// runs a pool on this machine — docker, libkrun, vz, wslc — puts it on a Linux
+// kernel of the host's architecture; a vm pool may name another OS for its
+// sandboxes, darwin on vz, and declares it (ADR 26-11-11-963 §1). A pool
+// elsewhere — a cloud VM, a remote Docker host — may be another architecture,
+// and declares its own: this is never assumed of a pool, a sandbox, or an
+// archive. It is only the platform whose image a harness's labels are read
+// from when its image publishes it.
 func Pool() Platform {
-	return Platform{OS: "linux", Arch: runtime.GOARCH}
+	return Platform{OS: Linux, Arch: runtime.GOARCH}
+}
+
+// Linux and Darwin are the operating systems a pool may name for its
+// sandboxes when it is created (ADR 26-11-11-963 §1): Linux, the default,
+// wherever the provider boots it, Darwin only where the provider's driver
+// boots it.
+const (
+	Linux  = "linux"
+	Darwin = "darwin"
+)
+
+// ParseSandboxOS reads the operating system a pool names for its sandboxes.
+// The empty string is Linux, the default.
+func ParseSandboxOS(s string) (string, error) {
+	switch s = strings.TrimSpace(s); s {
+	case "", Linux:
+		return Linux, nil
+	case Darwin:
+		return Darwin, nil
+	default:
+		return "", fmt.Errorf("sandbox OS %q is neither %s nor %s", s, Linux, Darwin)
+	}
 }
 
 // Parse reads an `os/arch` platform. The empty string is the zero platform.

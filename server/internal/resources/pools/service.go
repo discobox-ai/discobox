@@ -7,6 +7,7 @@ package pools
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -84,6 +86,10 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 	if err := s.checkPoolSize(provider, sizeOf(input)); err != nil {
 		return nil, err
 	}
+	sandboxOS, err := s.checkSandboxOS(provider, input.SandboxOs)
+	if err != nil {
+		return nil, err
+	}
 	pool := &model.Pool{
 		ProjectID: projectID,
 		PoolManifest: model.PoolManifest{
@@ -95,6 +101,7 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 			// TLS to its sandboxes' agents unless the pool opts out (ADR
 			// 26-10-29-481 §3).
 			DisableAgentEndpointTLS: input.DisableAgentEndpointTls.Or(false),
+			SandboxOS:               sandboxOS,
 		},
 	}
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
@@ -118,6 +125,29 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 		return nil, err
 	}
 	return s.GetPool(ctx, projectID, pool.ID)
+}
+
+// checkSandboxOS is the OS a new pool's sandboxes run: the one the body
+// names, or linux, which the provider instance must boot (ADR 26-11-11-963
+// §1). It is stored named, even when it is the default, so the pool's agent
+// is held to it from its first report.
+func (s *Service) checkSandboxOS(provider *model.SandboxProviderInstance, named services.OptCreatePoolBodySandboxOs) (string, error) {
+	sandboxOS, err := platform.ParseSandboxOS(string(named.Or("")))
+	if err != nil {
+		return "", apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	if s.providers == nil {
+		// No provider declares anything here: linux only, as for a type that
+		// registers no validator.
+		if sandboxOS != platform.Linux {
+			return "", apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("pool on provider instance %q: the %s provider runs only %s sandboxes", provider.Name, provider.Type, platform.Linux))
+		}
+		return sandboxOS, nil
+	}
+	if err := s.providers.ValidatePoolOS(provider.Type, json.RawMessage(provider.Config), sandboxOS); err != nil {
+		return "", apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("pool on provider instance %q: %v", provider.Name, err))
+	}
+	return sandboxOS, nil
 }
 
 func (s *Service) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {

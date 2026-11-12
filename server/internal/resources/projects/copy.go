@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -207,6 +209,9 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 			StorageBytes:       serverapi.NewOptInt64(sourcePool.StorageBytes),
 			// A copy reaches its sandboxes' agents as the pool it copies does.
 			DisableAgentEndpointTls: serverapi.NewOptBool(sourcePool.DisableAgentEndpointTLS),
+			// A copy's sandboxes run the OS the pool's do; one from before
+			// pools named theirs is linux, which the copy names.
+			SandboxOs: serverapi.NewOptCreatePoolBodySandboxOs(serverapi.CreatePoolBodySandboxOs(cmp.Or(sourcePool.SandboxOS, platform.Linux))),
 		})
 		if err != nil {
 			return fmt.Errorf("%s: %w", sourcePool.Name, err)

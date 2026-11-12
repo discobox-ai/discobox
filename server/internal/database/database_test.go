@@ -1724,6 +1724,56 @@ func TestMigrateKeepsExistingPoolsOnPlainAgentEndpoints(t *testing.T) {
 	}
 }
 
+// A pool made before pools named their sandboxes' OS gets the column empty,
+// which is linux and leaves its platform its agent's to declare, and nothing
+// else about it changes (ADR 26-11-11-963 §1).
+func TestMigrateLeavesExistingPoolsNamingNoSandboxOS(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "vm"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	arm := platform.Platform{OS: platform.Linux, Arch: "arm64"}
+	old := model.Pool{ID: "pool-old", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "old", CPUVCPUs: 2}, Platform: arm, Schedulable: true}
+	if err := db.Write.Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The schema that row was written under: no sandbox OS.
+	if err := db.Write.Exec("ALTER TABLE pools DROP COLUMN sandbox_os").Error; err != nil {
+		t.Fatalf("drop pools.sandbox_os: %v", err)
+	}
+	var before model.Pool
+	if err := db.Write.Omit("sandbox_os").First(&before, "id = ?", old.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var after model.Pool
+	if err := db.Write.First(&after, "id = ?", old.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.SandboxOS != "" {
+		t.Errorf("sandbox OS = %q, want none named", after.SandboxOS)
+	}
+	before.UpdatedAt, after.UpdatedAt = time.Time{}, time.Time{}
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("pool changed by the migration:\nbefore %+v\nafter  %+v", before, after)
+	}
+}
+
 // A read DSN is a lagging replica only for Postgres: SQLite ignores it, so
 // CurrentRead stays on the read pool there rather than queueing on the one
 // write connection.

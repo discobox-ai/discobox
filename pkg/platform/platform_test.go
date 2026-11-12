@@ -99,3 +99,17 @@ func TestPlaceRefusesAnotherPlatform(t *testing.T) {
 		t.Fatal("an undeclared sandbox platform was placed")
 	}
 }
+
+func TestParseSandboxOSDefaultsToLinux(t *testing.T) {
+	for in, want := range map[string]string{"": Linux, " ": Linux, "linux": Linux, "darwin": Darwin} {
+		got, err := ParseSandboxOS(in)
+		if err != nil || got != want {
+			t.Fatalf("ParseSandboxOS(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"windows", "Linux", "linux/amd64"} {
+		if _, err := ParseSandboxOS(in); err == nil {
+			t.Fatalf("ParseSandboxOS(%q) accepted it", in)
+		}
+	}
+}

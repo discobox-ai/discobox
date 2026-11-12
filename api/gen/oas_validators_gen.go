@@ -711,10 +711,39 @@ func (s *CreatePoolBody) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.SandboxOs.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "sandboxOs",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s CreatePoolBodySandboxOs) Validate() error {
+	switch s {
+	case "linux":
+		return nil
+	case "darwin":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *CreateProjectBody) Validate() error {
@@ -4422,6 +4451,24 @@ func (s *Pool) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.SandboxOs.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "sandboxOs",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Health.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -4841,6 +4888,17 @@ func (s *PoolSandboxCloneProgress) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s PoolSandboxOs) Validate() error {
+	switch s {
+	case "linux":
+		return nil
+	case "darwin":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *PoolSandboxProgress) Validate() error {

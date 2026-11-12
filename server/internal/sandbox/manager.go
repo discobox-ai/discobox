@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -31,6 +32,11 @@ type ProviderFactory func(ctx context.Context, instance *model.SandboxProviderIn
 // ProviderConfigValidator validates persisted provider-instance configuration.
 type ProviderConfigValidator func(config json.RawMessage) error
 
+// PoolOSValidator reports whether a pool on a provider instance of its type,
+// configured with config, may name os for its sandboxes (ADR 26-11-11-963
+// §1). os is never empty: the caller has read the pool's default.
+type PoolOSValidator func(config json.RawMessage, os string) error
+
 // ProviderSecrets opens the sealed half of a provider instance's config: the
 // fields its definition types secret, by key (ADR 26-10-31-694 §1). The store
 // is the one implementation, since only it holds the sealer.
@@ -45,6 +51,7 @@ type ProviderManager struct {
 	defs       map[string]ProviderDefinition
 	factories  map[string]ProviderFactory
 	validators map[string]ProviderConfigValidator
+	poolOSes   map[string]PoolOSValidator
 	cache      map[string]cachedProvider
 	// building holds one lock per provider instance, taken across building
 	// it, so concurrent first resolves of an instance build it once.
@@ -67,6 +74,7 @@ func NewProviderManager(secrets ProviderSecrets) *ProviderManager {
 		defs:       make(map[string]ProviderDefinition),
 		factories:  make(map[string]ProviderFactory),
 		validators: make(map[string]ProviderConfigValidator),
+		poolOSes:   make(map[string]PoolOSValidator),
 		cache:      make(map[string]cachedProvider),
 		building:   make(map[string]*sync.Mutex),
 		defaultID:  PlatformDefaultProvider(),
@@ -105,6 +113,19 @@ func (m *ProviderManager) RegisterProviderConfigValidator(providerType string, v
 		return
 	}
 	m.validators[providerType] = validator
+}
+
+// RegisterPoolOSValidator registers what decides the OS a pool on a provider
+// type may name for its sandboxes. A type that registers none hosts only
+// linux, as every pool agent's own sandboxes are.
+func (m *ProviderManager) RegisterPoolOSValidator(providerType string, validator PoolOSValidator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if validator == nil {
+		delete(m.poolOSes, providerType)
+		return
+	}
+	m.poolOSes[providerType] = validator
 }
 
 // RegisterProviderDefinition registers provider metadata without an implementation.
@@ -241,6 +262,22 @@ func (m *ProviderManager) ValidateProviderConfig(providerType string, config jso
 		return nil
 	}
 	return validator(config)
+}
+
+// ValidatePoolOS reports whether a pool on a provider instance of the type,
+// configured with config, may name os for its sandboxes: the type's validator
+// decides, and a type with none takes only linux.
+func (m *ProviderManager) ValidatePoolOS(providerType string, config json.RawMessage, os string) error {
+	m.mu.RLock()
+	validator := m.poolOSes[providerType]
+	m.mu.RUnlock()
+	if validator != nil {
+		return validator(config, os)
+	}
+	if os != platform.Linux {
+		return fmt.Errorf("the %s provider runs only %s sandboxes", providerType, platform.Linux)
+	}
+	return nil
 }
 
 // ResolveForSandbox returns the provider for a sandbox record. Provider

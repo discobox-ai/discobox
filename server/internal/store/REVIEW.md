@@ -30,3 +30,14 @@
 - Lock a delegation before enumerating its children for a cascade or expiry.
   A handoff holds that row through insert; enumerating first can miss the new
   child after waiting to delete its parent, leaving its pool uninformed.
+
+- A pool's agent report of its platform is a check, not the source, for a pool
+  that names its sandboxes' OS (`SandboxOS`, ADR 26-11-11-963 §1):
+  `recordPoolPlatform` records only a declaration of that OS, and
+  `UpdatePoolStatus` writes `schedulable` false until the agent makes one.
+  Never let a heartbeat, a registration or any other writer overwrite
+  `platform` with another OS, or set `schedulable` without that check: an
+  agent left over from before an upgrade, or one a provider-override bundle
+  brings, still reports its own platform, and recording it would turn a darwin
+  pool into a linux one and place sandboxes by the wrong platform. Nor does
+  `UpdatePool` write `sandbox_os`: it is immutable after create.

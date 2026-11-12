@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"gorm.io/gorm"
@@ -186,6 +187,9 @@ func (s *Service) ensureDefaultPool(ctx context.Context, appStore *store.Store, 
 		PoolManifest: model.PoolManifest{
 			Name:               "Default",
 			ProviderInstanceID: defaultProvider.ID,
+			// Every built-in provider's sandboxes run linux, and a pool made
+			// now names the OS its agent is held to (ADR 26-11-11-963 §1).
+			SandboxOS: platform.Linux,
 		},
 	}
 	if s.poolControlPlane != nil {

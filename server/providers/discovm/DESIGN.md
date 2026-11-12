@@ -101,6 +101,13 @@ it.
 `driver` is `Immutable`: it cannot change while the provider has pools,
 because only the driver that made a pool's host can remove it.
 
+A pool names the OS its sandboxes run when it is created (ADR 26-11-11-963
+§1). `ValidatePoolOS`, registered as the type's `PoolOSValidator`, takes the
+OSes the driver's `Capabilities().GuestOS` reports, never the driver's name:
+linux on every driver that boots it, darwin on vz. hcs reports only windows,
+so a pool on it is refused, linux included, until the Windows work ADR
+26-11-11-963 §13 defers.
+
 Where a pool's agent runs follows from whether the driver's provider is this
 host's disk — the driver is a `*local.Driver` (`newPoolHost`, `isLocal`) —
 as ADR 26-10-09-106 §1 places it:

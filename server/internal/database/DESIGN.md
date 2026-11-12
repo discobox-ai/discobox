@@ -166,6 +166,11 @@ sandbox's platform is never corrected once written. A pool's are declared by
 its agent's next report, and a sandbox takes its pool's when it is next
 placed. Until then an empty value rules nothing out.
 
+`pools.sandbox_os` (ADR 26-11-11-963 §1) is added by `AutoMigrate` empty and
+not backfilled: empty is linux, which every pool from before it is, and leaves
+its platform its agent's to declare as before. Writing `linux` into it would
+hold an existing pool's agent to a check it was never made under.
+
 The pools' image kind column (ADR 26-10-09-106 §4) is backfilled where there
 is nothing to guess: every pool from before kinds is OCI. Its default is empty
 — a pool created since is not known to run OCI images until its agent says —
