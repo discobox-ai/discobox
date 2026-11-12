@@ -222,9 +222,8 @@ func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
 	// account database -- the fixture's, where dev is uid 1000 with gid 2000,
 	// never the machine's own. That is /etc/passwd in the guest; on Windows the
 	// same lookup goes to the account SIDs, where dev with uid 1000 is nobody.
-	if runtime.GOOS == "windows" {
-		t.Skip("completing a gid reads the guest's passwd database; the sandbox is Linux")
-	}
+	// A darwin or Windows sandbox has one account and no uid to name.
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}
 	uid := int64(1000)
