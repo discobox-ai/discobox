@@ -19,3 +19,8 @@
 - **A notification only opens what it is about.** Pressing one opens the
   request's card, which still asks for Accept; a press never answers a
   request, and docs that say "answers" misstate it.
+
+- Give a text field inside `rune::auto_grow` `.w_full()`, and grow its wrapper
+  in the surrounding row. `.grow(1.0)` on the field acts vertically inside
+  the scroll column and collapses its viewport to one line, clipping a
+  multi-line prompt even as the outer box grows.

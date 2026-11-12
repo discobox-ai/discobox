@@ -330,3 +330,52 @@ fn the_cards_sources_are_chosen_by_number() {
     let f = rt.state.sheets.form().unwrap();
     assert_eq!(f.chosen[f.at()], second.key, "2 did not choose the second source");
 }
+
+// A prompt of several lines is drawn whole, a draft brought back and lines typed with
+// Shift+Return alike: the composer is as tall as its lines (up to the eight it grows to), and so
+// is the field drawing them, not one line of it.
+#[test]
+fn a_multi_line_prompt_shows_every_line() {
+    let line = theme::UI.lh(20.0).line_px();
+    let lines = |rt: &mut Runtime<State>| {
+        for _ in 0..90 {
+            rt.frame(1.0 / 60.0);
+        }
+        let find = |key: &str| rt.elements().into_iter().find(|e| e.key.as_deref() == Some(key)).unwrap();
+        let (field, viewport) = (find("composer"), find("scroll"));
+        ((viewport.rect[3] / line).round() as usize, (field.rect[3] / line).round() as usize, viewport.rect, field.rect)
+    };
+    let (mut rt, _) = runtime("one\ntwo");
+    let (boxed, drawn, vr, fr) = lines(&mut rt);
+    assert_eq!((boxed, drawn), (2, 2), "a two-line draft: box {vr:?}, field {fr:?}");
+
+    let (mut rt, _) = runtime("");
+    compose(&mut rt, "one");
+    press(&mut rt, Key::Enter, Mods { shift: true, ..bare() });
+    compose(&mut rt, "two");
+    let (boxed, drawn, vr, fr) = lines(&mut rt);
+    assert_eq!((boxed, drawn), (2, 2), "two typed lines: box {vr:?}, field {fr:?}");
+}
+
+// Growth stops at eight rows, but editing past the cap still scrolls the last line into view.
+#[test]
+fn a_long_prompt_caps_at_eight_lines_and_scrolls_to_the_caret() {
+    let (mut rt, _) = runtime("");
+    compose(&mut rt, "line 1");
+    for n in 2..=10 {
+        press(&mut rt, Key::Enter, Mods { shift: true, ..bare() });
+        compose(&mut rt, &format!("line {n}"));
+    }
+    for _ in 0..90 {
+        rt.frame(1.0 / 60.0);
+    }
+    let find = |key: &str| rt.elements().into_iter().find(|e| e.key.as_deref() == Some(key)).unwrap();
+    let (field, viewport) = (find("composer"), find("scroll"));
+    let line = theme::UI.lh(20.0).line_px();
+    assert!((viewport.rect[3] - 8.0 * line).abs() < 0.1, "eight visible lines: {:?}", viewport.rect);
+    assert!((field.rect[3] - 10.0 * line).abs() < 0.1, "all ten lines retained: {:?}", field.rect);
+    let caret = field.caret.expect("the focused composer's caret");
+    assert!(caret[1] >= viewport.rect[1] - 0.1 && caret[1] + caret[3] <= viewport.rect[1] + viewport.rect[3] + 0.1,
+        "caret {caret:?} inside {:?}", viewport.rect);
+    assert!(field.rect[1] < viewport.rect[1] - line, "the field scrolled: {:?} inside {:?}", field.rect, viewport.rect);
+}

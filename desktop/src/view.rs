@@ -777,7 +777,7 @@ fn home(s: &State) -> El {
 /// nothing to do. Under it, what the create would be made with (the core's summary of the run
 /// options), lit where somebody chose it, and the run options to change it.
 fn composer(s: &State) -> El {
-    let field = text_input(&s.composer, theme::UI.lh(20.0)).key("composer").grow(1.0).color(theme::text())
+    let field = text_input(&s.composer, theme::UI.lh(20.0)).key("composer").w_full().color(theme::text())
         .placeholder("What should the new discobox do?", theme::dim())
         .on_edit(|s: &mut State| &mut s.composer)
         .on_input_change(|s: &mut State, _| s.composer_changed())
