@@ -47,7 +47,9 @@ func (p Paths) OS() string { return p.os }
 // it, or a host path mirrored to it, means the same thing whichever platform
 // the sandbox is. On macOS the root volume is read-only, so the template makes
 // /workspace a synthetic firmlink onto its data volume (synthetic.conf); that
-// is the template's job, not a reason for the path to differ.
+// is the template's job, not a reason for the path to differ. It makes /run
+// the same way, for the sandbox agent's /run/discobox: without it the agent's
+// launch daemon cannot start (sandbox-agent/DESIGN.md, A macOS Sandbox).
 const (
 	posixWorkingRoot   = "/workspace"
 	windowsWorkingRoot = `C:\workspace`

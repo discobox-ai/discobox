@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The sandbox agent on a macOS guest: discobox-sandbox-agent.service's
+  counterpart. launchd has no path units, so it starts the agent at boot and
+  the agent waits for its bootstrap, /etc/discobox/sandbox.json, which the
+  backend places through the running guest (ADR 26-10-09-143 §1). The script
+  is the service's ExecStartPre lines, then the agent: launchd has no
+  pre-start step of its own. Restarted when it fails; a clean exit (SIGTERM
+  at shutdown) is left alone. /run and /workspace are the template's, made
+  on the data volume through synthetic.conf: macOS's sealed system volume has
+  neither, and the paths do not differ by platform.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.discobox.sandbox-agent</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>rm -f /run/discobox/provision.json /run/discobox/configuration-plan.yaml &amp;&amp; install -d -m 0700 /run/discobox/agent-terminals &amp;&amp; install -d -m 0755 /var/lib/discobox /workspace &amp;&amp; exec /opt/discobox/current/features/core/discobox-sandbox-agent --config /etc/discobox/sandbox.json</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>2</integer>
+	<key>StandardOutPath</key>
+	<string>/private/var/log/discobox-sandbox-agent.log</string>
+	<key>StandardErrorPath</key>
+	<string>/private/var/log/discobox-sandbox-agent.log</string>
+</dict>
+</plist>

@@ -41,8 +41,9 @@ func SocketPath(runtimeDir string) string {
 		runtimeDir = "/run/discobox/harness-terminals"
 	}
 	// path, not filepath: this names a location inside the sandbox, which is
-	// always Linux, and the sandbox-agent is built for the host that runs the
-	// tests as well as the guest that runs the binary.
+	// POSIX (Linux or macOS), and the sandbox-agent is built for the host that
+	// runs the tests, Windows included, as well as the guest that runs the
+	// binary.
 	return path.Join(path.Dir(path.Clean(runtimeDir)), "harness-hooks", "hooks.sock")
 }
 
