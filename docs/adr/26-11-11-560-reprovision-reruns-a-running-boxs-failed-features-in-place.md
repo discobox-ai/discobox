@@ -1,7 +1,8 @@
 # 26-11-11-560 — Reprovision runs a running box's failed features again, in place
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-11
+  Accepted by the owner by merging #1026, 2026-11-12.
 - **Narrows**: [26-11-09-062](26-11-09-062-a-harness-change-wakes-the-pool-like-a-port.md)
   §2, "Nothing else wakes the pool": a feature's provisioning state moving
   wakes it too (§6).
