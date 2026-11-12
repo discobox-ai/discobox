@@ -1,6 +1,6 @@
 # 26-10-29-481 — A machine sandbox and its pool reach each other at their private URLs, over TLS the pool's CA issues, and the sandbox reaches nothing else
 
-- **Status**: Accepted (§§2–3 amended 2026-10-30, before anything shipped
+- **Status**: Accepted (§§2–3 amended 2026-10-30, before anything shippe; §2's provider resolution narrowed to a persistent record by [26-11-12-355](26-11-12-355-a-machine-sandboxs-resolver-is-the-dns-stub-and-its-bridges-resolve-the-pool-against-the-providers.md))
   against it: a sandbox reaches its pool by a name discobox resolves itself,
   and the agent's TLS is a pool's setting, on unless the pool disables it;
   narrows [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)
