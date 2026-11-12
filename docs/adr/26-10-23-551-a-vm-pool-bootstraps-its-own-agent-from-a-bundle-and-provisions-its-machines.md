@@ -6,6 +6,7 @@
   bundle of nothing a machine pool cannot use, and §4's no sandbox build on
   the pool's machine, superseded by
   [26-10-27-767](26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md))
+- **Superseded in part by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — every "for a remote driver" and "nothing of a local one", §3's machine seam for a local driver, §4's "No key" reason and §5's "macOS (vz) stays as 106 has it": its pool machine is every `vm` pool's
 - **Date**: 2026-10-23
 - **Supersedes**, for a remote driver (boxd now, disco-vm's
   `docker` driver and others later), and nothing of a local one (vz, hcs):

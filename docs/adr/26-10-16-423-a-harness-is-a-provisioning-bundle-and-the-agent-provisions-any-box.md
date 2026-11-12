@@ -42,6 +42,7 @@
 - **§8 superseded in part by**: [26-11-03-986](26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md)
   — the build that powers itself off and leaves its result in
   `SnapshotDir`; the taker runs the build as an exec and commits it
+- **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — its Deferred "macOS and Windows", for macOS
 - **Date**: 2026-10-16
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
