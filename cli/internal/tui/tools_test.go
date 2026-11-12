@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -11,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/discobox-ai/discobox/pkg/tools"
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // openTool opens the workspace and runs one tool from the picker, waiting until
@@ -180,6 +182,58 @@ func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
 			t.Errorf("the tool window should wear its buttons:\n%s", frame)
 		}
 	})
+}
+
+// Aim at the rendered output, not paneOrigin: a tool belongs to the shells
+// column but its window is drawn over both columns (#696).
+func TestToolWindowForwardsMouseAtItsDrawnOrigin(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{narrowConsole, wideConsole} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ds := newFakeSource(testSandboxes()...)
+				d, m := openToolAt(t, ds, "d", width)
+				p := m.showingTool()
+				term := ds.execTerm(p.execID)
+				term.send("\x1b[?1003h\x1b[?1006h")
+				d.wait("mouse reporting", func() bool { return p.term.MouseMode() == termpane.MouseAllMotion })
+
+				for i, state := range []string{"window", "minimized", "reopened"} {
+					switch state {
+					case "minimized":
+						d.key("ctrl+a")
+						d.key(paneDetachAlt)
+					case "reopened":
+						d.key("ctrl+a")
+						d.key(toolsKey)
+						waitPicker(d, m)
+						d.key("d")
+						d.wait("tool window", func() bool { return m.showingTool() == p })
+					}
+					cols := term.size()[0]
+					right := cols - 5
+					leftText, rightText := fmt.Sprintf("LEFT%d", i), fmt.Sprintf("RIGHT%d", i)
+					term.send(fmt.Sprintf("\x1b[2J\x1b[H%s\x1b[2;%dH%s", leftText, right, rightText))
+					d.wait("tool output", func() bool { return strings.Contains(frameText(m), rightText) })
+					for _, target := range []struct {
+						text string
+						x, y int
+					}{{leftText, 1, 1}, {rightText, right, 2}} {
+						x, y := at(t, m, target.text)
+						before := term.typed("")
+						d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+						d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+						d.dispatch(tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
+						want := fmt.Sprintf("\x1b[<0;%d;%dM\x1b[<0;%d;%dm\x1b[<65;%d;%dM",
+							target.x, target.y, target.x, target.y, target.x, target.y)
+						if got := strings.TrimPrefix(term.typed(before+want), before); got != want {
+							t.Fatalf("%s %s: input = %q, want %q", state, target.text, got, want)
+						}
+					}
+				}
+			})
+		})
+	}
 }
 
 // Minimizing puts the window away and leaves the session running: nothing is
