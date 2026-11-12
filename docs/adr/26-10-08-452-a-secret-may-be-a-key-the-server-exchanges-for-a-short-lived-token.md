@@ -1,6 +1,6 @@
 # 26-10-08-452 — A secret may be a key the server exchanges for a short-lived token
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-11-12-957](26-11-12-957-the-exchange-secret-type-is-removed-and-a-stored-one-becomes-a-token-sent-nowhere.md)
 - **Date**: 2026-10-08
 - **Relates to**: [ADR 0011](0011-oauth-secrets-refresh-server-side-on-resolve.md)
   (an OAuth access token is renewed on resolve);

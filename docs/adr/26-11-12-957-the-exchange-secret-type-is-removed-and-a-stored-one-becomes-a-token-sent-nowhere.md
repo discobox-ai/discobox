@@ -1,10 +1,16 @@
 # 26-11-12-957 — The exchange secret type is removed, and a stored one becomes a token sent nowhere
 
-- **Status**: Proposed. On acceptance it supersedes
+- **Status**: Accepted (§2 amended before implementation landed: the data
+  step runs at startup once the keyring is ready, not in `Migrate`, since it
+  opens and seals the value again and `Migrate` runs before there is a
+  keyring; `Migrate` drops `exchange_recipe` first). Supersedes
   [26-10-08-452](26-10-08-452-a-secret-may-be-a-key-the-server-exchanges-for-a-short-lived-token.md)
   in full, including its rejected alternative "swap the key into the request
-  body", and 452's status line says so.
+  body".
 - **Date**: 2026-11-12
+
+  Accepted by the owner by merging #1068, 2026-11-12.
+
 - **Issue**: [#1066](https://github.com/discobox-ai/discobox/issues/1066)
 - **Relates to**:
   - #1012, HTTP body places: a route names a JSON pointer in a request body
@@ -78,9 +84,12 @@ two types.
 
 ### 2. A stored exchange secret becomes a `token` secret sent nowhere
 
-A data step in `Migrate`, with the retirement (the `database/REVIEW.md` rule
-on a retired enum value), rewrites every row with `type = 'exchange'`, in one
-transaction per secret:
+A data step, with the retirement (the `database/REVIEW.md` rule on a retired
+enum value), rewrites every row with `type = 'exchange'`, in one transaction
+per secret. It runs at startup, after the keyring is ready and before anything
+is served or resolves a secret: it opens the sealed value and seals the new
+one, and `Migrate` runs before there is a keyring. It reads only the type and
+the value, so `Migrate` drops `exchange_recipe` from `secrets` first.
 
 - **Its type becomes `token`.**
 - **Its value keeps what a person stored, and nothing the server made.**
@@ -104,8 +113,8 @@ transaction per secret:
 Its plain bindings, grants and delegations stay. They resolve nothing
 while the secret has no routes, and work again once a person gives it one.
 
-Then `exchange_recipe` is dropped from `secrets`. A log line per migrated
-secret names its project and secret and says it now has no routes.
+A log line per migrated secret names its project and secret and says it now
+has no routes.
 
 ### 3. Nothing is widened by the migration
 
