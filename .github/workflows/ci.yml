@@ -105,6 +105,18 @@ jobs:
         with:
           target: ci:darwin
 
+  # The sandbox agent's tests, on the platform a macOS sandbox's agent runs
+  # on. A job of its own so it runs beside ci:darwin's release build rather
+  # than after it.
+  darwin-test:
+    runs-on: depot-macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:test:darwin
+
   # Nix does not run on Windows, so the task action sets up plain Go here
   # instead (ADR 0066 §4). Compiling for Windows is covered by the cross
   # type-check in ci:check; this job exists because the named-pipe transport,

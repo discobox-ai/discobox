@@ -811,6 +811,19 @@ tasks:
     cmds:
       - go vet {{.WORKSPACE_PACKAGES}}
 
+  check:darwin-cross:
+    desc: Type-check the whole tree, tests included, for darwin/arm64 without cgo
+    # A darwin sandbox's agent is pure Go, so Linux can type-check its darwin
+    # files, and every package's tests, on every change; the macOS runner's
+    # check:darwin adds the cgo half and lint. The vz provider's cgo files
+    # drop out here, as they do from any CGO_ENABLED=0 build.
+    env:
+      GOOS: darwin
+      GOARCH: arm64
+      CGO_ENABLED: "0"
+    cmds:
+      - go vet {{.WORKSPACE_PACKAGES}}
+
   # The hooks tool lives in discobox-ai/hooks and is consumed here as a Go
   # tool, so there is nothing to build first and nothing pinned by hand: the
   # module graph pins it. It reads .discobox/hooks, which stays in this
@@ -1085,7 +1098,7 @@ tasks:
       - scripts/go-mod-download.sh
 
   ci:check:
-    desc: "The static half of CI on Linux: every lint pass, dead code, shellcheck, and the windows/amd64 cross type-check"
+    desc: "The static half of CI on Linux: every lint pass, dead code, shellcheck, and the windows/amd64 and darwin/arm64 cross type-checks"
     # Modules are downloaded once, with retries, and the steps that load
     # packages run after it with GOPROXY=off: a module the download missed
     # fails as a missing module, not as a network error mid-lint. GOPROXY is
@@ -1093,7 +1106,7 @@ tasks:
     # variable the caller already exports win over a Taskfile's `env:`.
     cmds:
       - task: ci:mod-download
-      - GOPROXY=off go tool task check check:deadcode check:windows check:dockerfile-deps
+      - GOPROXY=off go tool task check check:deadcode check:windows check:darwin-cross check:dockerfile-deps
       - task: check:dockerfiles
       - task: check:shell
 
@@ -1137,6 +1150,19 @@ tasks:
     cmds:
       - scripts/lint-darwin.sh ./build/tools/{{.LINT_BIN}}
       - go vet {{.WORKSPACE_PACKAGES}}
+
+  ci:test:darwin:
+    desc: Run the sandbox agent's tests on darwin, where a macOS sandbox's agent runs (changes the machine, with sudo)
+    platforms: [darwin]
+    # A macOS guest runs the sandbox agent, so its tests run natively here:
+    # the darwin observation, supervision and run-identity seams, its launch
+    # daemon, and the agent booted end to end as that daemon starts it, which
+    # needs the /run a template makes (scripts/darwin-sandbox-dirs.sh).
+    env:
+      DISCOBOX_DARWIN_BOOT_TEST: "1"
+    cmds:
+      - scripts/darwin-sandbox-dirs.sh
+      - go test ./sandbox-agent/... ./pkg/agentlayer/...
 
   ci:darwin:
     desc: "The macOS half of CI: darwin's own static checks plus the native, signed release build"

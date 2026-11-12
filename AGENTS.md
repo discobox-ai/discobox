@@ -105,7 +105,7 @@ go tool task build      # build all binaries and local Docker images
 What CI runs, and what to run before pushing something build-related:
 
 ```bash
-go tool task ci:check   # check, dead code, shellcheck, the windows/amd64 cross type-check, and Dockerfile COPY paths
+go tool task ci:check   # check, dead code, shellcheck, the windows/amd64 and darwin/arm64 cross type-checks, and Dockerfile COPY paths
 go tool task ci:test    # every module's tests, the way CI runs them
 go tool task verify     # fmt, go.mod, generated files, and Mermaid are current
 ```
