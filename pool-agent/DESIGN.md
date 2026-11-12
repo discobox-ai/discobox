@@ -2580,3 +2580,11 @@ agent and builder read the resolved environment; the proxy reads the committed
 fallback. Additional upstream trust augments system roots, independently of the
 inner pool's own MITM and mTLS CAs. Internal control/sandbox transports remain
 explicitly proxy-free.
+
+### Machine sandbox system resolver
+
+A machine hop, direct or through an edge, sets `PoolEndpoints.DNSSystemResolver`
+in each sandbox's bootstrap. A Docker hop leaves it unset, since Docker configures
+DNS at create. The sandbox's stub owns best-effort resolver takeover and a durable
+provider resolver record so its bridges can still resolve the pool independently
+(ADR 26-11-12-355); see [sandbox-agent](../sandbox-agent/DESIGN.md#machine-system-dns).

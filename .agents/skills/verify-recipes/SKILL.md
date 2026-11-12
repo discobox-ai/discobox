@@ -184,6 +184,27 @@ resolution (busybox `nslookup` prints no addresses for single-label names;
 - `sudo systemctl restart discobox-proxy-bridge.service` re-runs the stub's
   claim; the rule must stay single.
 
+## Machine resolver takeover without a provider key
+
+Exercise `proxy-bridge --dns` in a dedicated privileged container of the sandbox
+base image, with the built sandbox-agent mounted in and a `bridge.json` naming a
+fixture pool over mTLS. Put that pool on a Docker network under a provider-host
+alias so `127.0.0.11` resolves it. Inside only this fixture container, unmount
+Docker's `/etc/resolv.conf` bind and replace it with a regular file naming
+`127.0.0.11`; Docker's normal bind mount cannot be replaced by rename and tests
+the provider-wins path instead. Set `dnsSystemResolver: true` in the egress
+bridge config. Confirm `getent` uses the stub's answers, the provider host itself
+gets SERVFAIL through the stub, and proxy requests still connect to the pool.
+
+Restart the bridge while the file still names the stub, rename a provider file
+over it, and repeat enough rewrites to hit the three-writes-per-minute limit.
+After yielding, another provider nameserver change must update
+`/var/lib/discobox/provider-resolver.json` without changing `resolv.conf`.
+With the flag disabled, restart and confirm the original file or symlink is
+restored. Preserve bridge logs before deleting the fixture containers and network.
+This proves the bridge behavior; the real provider's rewrite source and whether
+takeover holds belong to the separate live provider session.
+
 # Verifying the pool proxy (`proxy/`)
 
 The dev pool's container runs it as `discobox-pool-agent proxy`, built from

@@ -831,3 +831,9 @@ user waits on every single start.
   metadata so healthy kegs stay in an overlay's lower layer. Preserve owners,
   never follow symlinks, and exclude formula service data under `var` except
   `var/homebrew`: a database can require private ownership and modes.
+
+## Provider resolver takeover
+
+- After yielding `resolv.conf` to its provider, keep observing and persisting
+  provider DNS changes. Bridges continue using the saved resolver independently
+  of the stub; stopping that watcher strands them after a DHCP renewal.

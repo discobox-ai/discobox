@@ -28,11 +28,12 @@ type File struct {
 	CredentialsURL string `json:"credentialsUrl,omitempty"`
 	// DNSServer and DNSListenAddress are the pool's DNS server and where the
 	// sandbox's stub listens (ADR 0148), which only the egress bridge names.
-	DNSServer        string `json:"dnsServer,omitempty"`
-	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
-	MTLSCAPath       string `json:"mtlsCaPath"`
-	ClientCertPath   string `json:"clientCertPath"`
-	ClientKeyPath    string `json:"clientKeyPath"`
+	DNSSystemResolver bool   `json:"dnsSystemResolver,omitempty"`
+	DNSServer         string `json:"dnsServer,omitempty"`
+	DNSListenAddress  string `json:"dnsListenAddress,omitempty"`
+	MTLSCAPath        string `json:"mtlsCaPath"`
+	ClientCertPath    string `json:"clientCertPath"`
+	ClientKeyPath     string `json:"clientKeyPath"`
 }
 
 // LoadFile reads the bridge config at path.

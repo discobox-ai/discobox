@@ -449,6 +449,7 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 			}
 			if pool.DNS != "" {
 				egress.DNSServer = pool.DNS
+				egress.DNSSystemResolver = pool.DNSSystemResolver
 				egress.DNSListenAddress = sandboxconfig.SandboxDNSListenAddress
 			}
 			bridges := map[string]bridge.File{

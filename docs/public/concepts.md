@@ -100,6 +100,15 @@ server you will modify for their names, required values and descriptions.
 Secrets are supplied separately from provider config. Never put a token in
 a documentation snapshot or a catalog fixture.
 
+### DNS on machine providers
+
+Discobox tries to make `169.254.53.53`, its local DNS stub, the system resolver
+inside a machine box. The stub carries lookups through the pool. If the provider
+locks `/etc/resolv.conf` or repeatedly replaces it, Discobox leaves the provider's
+resolver in place and logs the limit. Proxy traffic continues to work; programs
+that resolve names themselves depend on the provider's DNS in that case. The
+stub remains available to programs that query its address directly.
+
 ## Lifecycle and storage
 
 Running, starting, stopped, archived and error states appear in the console.

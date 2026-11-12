@@ -68,6 +68,7 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 		// provider at each dial, so an address that moves is followed (§2).
 		endpoints := proxyagent.PoolEndpoints("")
 		endpoints.Address = private.Hostname()
+		endpoints.DNSSystemResolver = true
 		return poolHop{endpoints: endpoints, egress: &machine.Egress{}, agentTLS: agentTLS, form: hopDirect}, nil
 	}
 	// No path between the driver's machines but the public URL, an edge: the
@@ -80,8 +81,10 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 	if err := proxyagent.ValidateTunnelURL(tunnelURL); err != nil {
 		return poolHop{}, err
 	}
+	endpoints := proxyagent.PoolEndpoints(tunnelURL)
+	endpoints.DNSSystemResolver = true
 	return poolHop{
-		endpoints: proxyagent.PoolEndpoints(tunnelURL),
+		endpoints: endpoints,
 		tunnelURL: tunnelURL,
 		egress:    &machine.Egress{Allow: []string{public.Hostname()}},
 		form:      hopEdge,
