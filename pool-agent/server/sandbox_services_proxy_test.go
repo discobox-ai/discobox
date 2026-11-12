@@ -25,6 +25,8 @@ func TestSandboxServiceProxyForwardsEveryRoute(t *testing.T) {
 		{"start", http.MethodPost, "/services/api/start", "/api/projects/project-1/sandboxes/sandbox-1/services/api/start", ScopeExecWrite},
 		{"stop", http.MethodPost, "/services/api/stop", "/api/projects/project-1/sandboxes/sandbox-1/services/api/stop", ScopeExecWrite},
 		{"restart", http.MethodPost, "/services/api/restart", "/api/projects/project-1/sandboxes/sandbox-1/services/api/restart", ScopeExecWrite},
+		{"reprovision", http.MethodPost, "/reprovision", "/api/projects/project-1/sandboxes/sandbox-1/reprovision", ScopeExecWrite},
+		{"a service named reprovision", http.MethodGet, "/services/reprovision", "/api/projects/project-1/sandboxes/sandbox-1/services/reprovision", ScopeExecRead},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			router, sign := newServiceProxyRouter(t, tc.want)
@@ -54,6 +56,7 @@ func TestSandboxServiceProxyRequiresExecScopes(t *testing.T) {
 	}{
 		{"list without exec:read", http.MethodGet, "/services", ScopeSandboxHTTP},
 		{"start with only exec:read", http.MethodPost, "/services/api/start", ScopeExecRead},
+		{"reprovision with only exec:read", http.MethodPost, "/reprovision", ScopeExecRead},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			router, sign := newServiceProxyRouter(t, "")

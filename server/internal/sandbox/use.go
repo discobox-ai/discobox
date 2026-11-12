@@ -14,11 +14,13 @@ const (
 	// value: a transcript, an event stream, resource samples, a file. It
 	// starts a stopped sandbox and never repairs one.
 	UseRead Use = "read"
-	// UseInspect reads what a running sandbox holds that its last inventory
-	// also answers: its execs, services and tools (ADR 26-10-11-657 §4). It
-	// never starts a sandbox. The pool agent waits out a boot something else
-	// began and refuses it for a sandbox that is not running, and the control
-	// plane answers that refusal from the inventory.
+	// UseInspect never starts a sandbox: the pool agent waits out a boot
+	// something else began and refuses it for a sandbox that is not running.
+	// It is a read of what a running sandbox holds that its last inventory
+	// also answers — its execs, services and tools (ADR 26-10-11-657 §4) —
+	// whose refusal the control plane answers from the inventory; and
+	// running the sandbox's failed provisioning again, which acts only in a
+	// running sandbox and is answered with a conflict (ADR 26-11-11-560 §5).
 	UseInspect Use = "inspect"
 	// UseObserve reads what a running sandbox is doing, and is refused at once
 	// for one that is not running, booting included: starting it would undo

@@ -262,7 +262,7 @@ that mark.
 | --- | --- | --- | --- | --- |
 | action | exec attach, create, input, start, delete; service start, stop, restart; HTTP, tcp and udp; ssh; the worktree's git; save harness configuration; meta write | the pool is asked to start it before the lease is handed out | waited for | repaired, once |
 | read | exec logs, events, resources; service logs; a source's origin, and what the pool's cache holds of it | started by the pool agent when the request arrives | answered at once | answered at once |
-| inspect | exec list and get; service list and get; tools | never started: the pool agent waits out a boot under way and refuses it otherwise, and the refusal is answered from the sandbox's last inventory ([below](#a-sandbox-that-is-not-running-is-read-from-its-inventory)) | answered at once | answered at once |
+| inspect | exec list and get; service list and get; tools; reprovision | never started: the pool agent waits out a boot under way and refuses it otherwise, and the refusal is answered from the sandbox's last inventory ([below](#a-sandbox-that-is-not-running-is-read-from-its-inventory)), or for reprovision, which acts only in a running sandbox, with a 409 ([ADR 26-11-11-560](../../../../docs/adr/26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md) §5) | answered at once | answered at once |
 | observe | terminal screen, exec wait, exec-events, harness-hooks | refused by the pool agent, a boot under way included; the screen is answered from the inventory | answered at once | answered at once |
 
 A sandbox principal may acquire exec and files scopes only for a current direct

@@ -112,11 +112,11 @@ Current proxy routes:
   is an action: the server has the pool start a stopped sandbox before it
   forwards.
 - `/api/projects/{projectId}/sandboxes/{sandboxId}/execs...`, `.../services...`,
-  `.../harness-hooks` and `.../exec-events` forward their path suffix to the pool-agent sandbox
+  `.../harness-hooks`, `.../exec-events` and `.../reprovision` forward their path suffix to the pool-agent sandbox
   route, which reaches the sandbox-agent exec API. The pool agent and sandbox
   agent own serving that API; the server owns project authorization, scope
   selection, lease/token injection, and naming what each request is for
-  (`registerSandboxAgentTerminalRoutes`): an action, a read, or an observe. That is
+  (`registerSandboxAgentTerminalRoutes`): an action, a read, an inspect, or an observe. That is
   the one table of which route starts a stopped sandbox, waits for one still
   coming up, or may repair one; see
   [What a request is for](internal/resources/sandboxes/DESIGN.md#what-a-request-is-for).
@@ -276,7 +276,8 @@ HTTP is method- and service-specific. The sandbox HTTP port proxy requests only
 rather than accepting the broader sandbox read/write scopes. The exec proxy
 requests `exec:read` for reads (execs, services, harness hooks, a terminal's
 screen, and a terminal wait, a POST only for its body) and `exec:write` for
-create, delete, start, stop, restart, and terminal input; attach requests both,
+create, delete, start, stop, restart, terminal input, and reprovision (running
+the sandbox's failed provisioning again, ADR 26-11-11-560); attach requests both,
 because attach streams carry input, resize, and signal frames. The files API
 (stat, list, read, write, mkdir, remove, move, copy under `.../files/`, ADR
 26-10-22-499) is forwarded on the same path with scopes of its own:
@@ -300,6 +301,11 @@ selected config, including in cached status sessions; historical `harnessId`,
 unknown fields and timestamps stay as posted (ADR 26-10-24-650 §4).
 A live answer has no `observedAt`. A sandbox that
 has posted nothing is a 409.
+
+Reprovision is an inspect too, so it never starts a sandbox either, but it
+acts and has nothing to answer from an inventory: the same refusal, or a
+stopped sandbox on a pool that cannot be asked, is a 409 saying the sandbox is
+not running (ADR 26-11-11-560 §5).
 
 ```mermaid
 sequenceDiagram

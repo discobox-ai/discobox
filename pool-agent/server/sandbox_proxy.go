@@ -65,6 +65,12 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/stop", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/restart", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 
+	// Running the sandbox's failed provisioning again, in place (ADR
+	// 26-11-11-560 §5). It acts in the sandbox, gated as starting an exec is,
+	// but never starts one: there is no run to do in a stopped sandbox, whose
+	// next start provisions anyway. The control plane marks it so.
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/reprovision", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+
 	// The files API (ADR 26-10-22-499). The control plane marks a stat, a
 	// listing or a read with the read use, which starts a stopped sandbox and
 	// repairs nothing, and every write with the action use.
@@ -227,6 +233,12 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 		}
 		return ""
 	}
+	if reprovisionRoute(r.URL.EscapedPath()) {
+		if r.Method == http.MethodPost {
+			return ScopeExecWrite
+		}
+		return ""
+	}
 	if strings.Contains(r.URL.Path, "/services") {
 		switch r.Method {
 		case http.MethodGet:
@@ -264,6 +276,13 @@ func filesRoute(path string) (string, bool) {
 		return "", false
 	}
 	return segments[8], true
+}
+
+// reprovisionRoute reports whether path is the reprovision route, by its
+// whole route: an exec or a service named "reprovision" is not it.
+func reprovisionRoute(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 8 && segments[0] == "api" && segments[1] == "project" && segments[3] == "pool" && segments[5] == "sandboxes" && segments[7] == "reprovision"
 }
 
 func parsePort(value string) (int, bool) {
