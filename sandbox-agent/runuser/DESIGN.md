@@ -33,6 +33,8 @@ u, err := runuser.Resolve(runuser.Layers{
 | `Groups([]string) []uint32` | Supplementary GIDs for a credential: unknown names dropped, duplicates collapsed. |
 | `LookupGroupID(string) (uint32, bool)` | One entry — a name or a numeric GID — to a GID. |
 | `LoginShell(string) (string, bool, error)` | The passwd shell field, which `os/user` does not expose; a missing entry is `false`, not an error. |
+| `LookupAccount(string) (Account, error)` | The account a root agent drops to (`--drop-to-account`), by name: its ids and its group set, primary first and cut to what `setgroups` takes (16 on macOS). Root is refused. Not for an exec's identity, which is `Resolve`'s. |
+| `Become(Account) error` | Makes the whole process that account: groups, gid, uid, in that order. None on Windows. |
 
 ## The platform seam
 
@@ -48,9 +50,12 @@ asks which one it got:
 
 Off Linux a sandbox has one account and no POSIX ids
 ([ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
-The agent runs as that account and every exec inherits it, so nothing switches
+The agent runs as that account and every exec inherits it, so no exec switches
 users and the resolution has exactly one answer — ADR 0025's contract, where
-the sandbox resolves its own identity, with nothing left to choose:
+the sandbox resolves its own identity, with nothing left to choose. Where an
+init starts the agent as root (macOS's launch daemon), the agent becomes the
+account before it resolves anything (`LookupAccount`, `Become`, below), so the
+image layer is the account all the same:
 
 - The image layer is the agent's own account (`os/user.Current`, a Windows
   `DOMAIN\` prefix dropped).

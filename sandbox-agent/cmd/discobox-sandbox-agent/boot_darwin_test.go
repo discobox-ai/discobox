@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -75,7 +74,9 @@ func TestTheAgentBootsServesAndAttachesOnDarwin(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	agent := exec.CommandContext(ctx, os.Args[0], "--config", configPath) //nolint:gosec // G204: this test binary, run as the agent.
+	// --drop-to-account, as the launch daemon passes it: unprivileged here, the
+	// agent already is the bootstrap's account, and keeps running as it.
+	agent := exec.CommandContext(ctx, os.Args[0], "--config", configPath, "--"+dropToAccountFlag) //nolint:gosec // G204: this test binary, run as the agent.
 	var logs syncBuffer
 	agent.Stdout, agent.Stderr = &logs, &logs
 	if err := agent.Start(); err != nil {
@@ -208,7 +209,7 @@ const (
 
 // placeBootstrap writes the sandbox's bootstrap as a backend places it: whole,
 // by a rename, with the agent paths the pool's bootstrap names. The sandbox's
-// user is this process's, which the agent runs as, and its working root the
+// account is this process's, which the agent runs as, and its working root the
 // test's own: /workspace is the template's too, and one a test can make.
 func placeBootstrap(t *testing.T, path, dir, addr, publicKey string) {
 	t.Helper()
@@ -216,8 +217,6 @@ func placeBootstrap(t *testing.T, path, dir, addr, publicKey string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	uid, _ := strconv.Atoi(current.Uid)
-	gid, _ := strconv.Atoi(current.Gid)
 	work := filepath.Join(dir, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
@@ -231,7 +230,9 @@ func placeBootstrap(t *testing.T, path, dir, addr, publicKey string) {
 			"poolId":     "pool_darwin0000001",
 			"publicKeys": map[string]string{sandboxconfig.ControlPlanePublicKeyName: publicKey},
 		},
-		"user": map[string]any{"name": current.Username, "uid": uid, "gid": gid, "homeDirectory": current.HomeDir},
+		// A darwin sandbox has one account, the agent's, named and nothing
+		// more: no uid, gid or home (ADR 0145 §5).
+		"user": map[string]any{"name": current.Username},
 		"agentRuntime": map[string]any{
 			"listenAddress": addr,
 			"workingRoot":   work,
