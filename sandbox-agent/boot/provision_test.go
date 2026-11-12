@@ -61,8 +61,10 @@ func TestAMachineIsProvisionedAndItsSourcesMounted(t *testing.T) {
 			skel = true
 		}
 	}
-	if !skel {
-		t.Fatalf("runs = %v, want the home seeded from /etc/skel", git.runs)
+	// The skeleton is the host's own /etc/skel, which macOS has none of:
+	// seedHome leaves a home it cannot seed as it is.
+	if want := dirExists("/etc/skel"); skel != want {
+		t.Fatalf("runs = %v, want the home seeded from /etc/skel: %v", git.runs, want)
 	}
 }
 
