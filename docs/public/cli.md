@@ -919,6 +919,38 @@ discobox admin box repair DISCOBOX_ID [flags]
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
+## discobox admin box reprovision
+
+~~~~text
+Run the provisioning of every feature that failed in a running discobox
+again, in place, and follow it until it is done.
+
+Nothing else about the discobox changes: it is not rebuilt or restarted, and
+nothing running in it is stopped. A feature that is ready or turned off is left
+as it is; a feature that failed because one it requires failed runs again with
+it. When a run is already in progress, this follows that run instead of
+starting another. A discobox that is not running is refused: its next start
+provisions it anyway.
+
+It exits non-zero when a feature it ran failed again, naming each with its
+error and its log in the discobox. Unlike "discobox admin box repair", nothing
+is rebuilt. Inside a discobox, "discobox-provision retry" does the same.
+~~~~
+
+```text
+discobox admin box reprovision DISCOBOX_ID [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for reprovision Value when passed without an argument: true. |
+| --no-wait | bool | false | Return once the run has started, without following it Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
 ## discobox admin box resources
 
 ~~~~text

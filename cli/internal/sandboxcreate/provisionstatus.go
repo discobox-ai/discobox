@@ -113,16 +113,32 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 	return "preparing the discobox"
 }
 
+// RecordedProvision is the provisioning a discobox's agent last reported
+// (`runtime.agentStatus.provision`, its provision.json, ADR 26-10-16-423 §6),
+// and false when it reported none. It is the one reader of that record:
+// every string in it was written by the box, and is escaped where printed.
+func RecordedProvision(runtime apimodel.SandboxRuntime) (provisionspec.Status, bool) {
+	agent, ok := runtime.AgentStatus.Get()
+	if !ok {
+		return provisionspec.Status{}, false
+	}
+	raw, ok := agent["provision"]
+	if !ok {
+		return provisionspec.Status{}, false
+	}
+	var status provisionspec.Status
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return provisionspec.Status{}, false
+	}
+	return status, true
+}
+
 // agentPreparation describes the readiness gate from the agent's own report.
 // Pending precedes the feature plan, while the agent loads its pinned bundles.
 // Async features do not delay a harness, and must not appear to hold attach up.
 func agentPreparation(runtime apimodel.SandboxRuntime) Step {
-	agent, ok := runtime.AgentStatus.Get()
+	status, ok := RecordedProvision(runtime)
 	if !ok {
-		return ""
-	}
-	var status provisionspec.Status
-	if err := json.Unmarshal(agent["provision"], &status); err != nil {
 		return ""
 	}
 	if status.Ready {

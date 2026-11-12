@@ -1405,6 +1405,14 @@ its `provision.json`, ADR 26-10-16-423 §6), read the same way
 ones that failed, and nothing once all are ready. Under the console's cursor
 it takes the name's place, after an error and a blocked agent's text.
 
+`discobox admin box reprovision` runs a running box's failed features again
+in place (`reprovision.go`, [ADR 26-11-11-560](../docs/adr/26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)).
+It follows the run in that same recorded document, as a provisioning wait
+does (ADR 0060): a record older than the agent's answer is the one before the
+run and is passed over; the features the run provisions are each one seen not
+done; it fails naming each that failed again. The console offers no
+reprovision.
+
 ## Following State Changes (`discobox events`)
 
 `discobox events [DISCOBOX]` prints the project's sandbox events as they
