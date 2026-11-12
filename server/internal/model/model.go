@@ -647,6 +647,16 @@ type PoolManifest struct {
 	// the pool's agent is told it in its bootstrap, so a change places the
 	// pool's host again.
 	DisableAgentEndpointTLS bool `gorm:"column:disable_agent_endpoint_tls;not null;default:false" json:"disableAgentEndpointTls" doc:"Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues. Off for a pool made now; on for every pool made before TLS was the default. A change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container when it is replaced."`
+	// SandboxOS is the operating system the pool's sandboxes run, which the
+	// pool names when it is created and never changes (ADR 26-11-11-963 §1):
+	// linux by default, darwin only where the provider's driver boots it. The
+	// provider writes it into the pool's bootstrap (but for linux, which an
+	// agent given none declares), and its agent declares it, with its own
+	// architecture, as the platform the pool hosts; a report of another OS is
+	// not recorded (recordPoolPlatform). Empty is a
+	// pool made before pools named one: it hosts linux, and its platform is
+	// still whatever its agent declares.
+	SandboxOS string `gorm:"column:sandbox_os;not null;type:text;default:''" json:"sandboxOs,omitempty" enum:"linux,darwin" doc:"The operating system the pool's sandboxes run: linux, or darwin on a VM driver that boots macOS. Named when the pool is created and immutable. Absent on a pool made before pools named one, which hosts linux."`
 }
 
 // PoolHostCredential is a credential of its provider's that a pool's host

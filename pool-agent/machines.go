@@ -90,7 +90,7 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 		PoolEndpoints:         hop.endpoints,
 		AgentTLS:              hop.agentTLS,
 		IdentityKey:           identityKey,
-		Platform:              hostedPlatform(),
+		Platform:              bootstrap.HostedPlatform(),
 		AgentLayers:           assets,
 	})
 }

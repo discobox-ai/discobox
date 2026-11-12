@@ -139,9 +139,13 @@ From then on, the pool host reports scheduling status every 30s
 (`/api/pools/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
 booleans for control-plane scheduling, with available CPU, memory, and storage
 measured per report. Every report also declares the one
-platform the pool hosts (`hostedPlatform`, ADR 0145 §1): a pool's sandboxes are
-containers on the agent's own kernel and architecture, so it is the agent's
-own. Repeating it on every report is how the control plane learns what a
+platform the pool hosts (`Bootstrap.HostedPlatform`, ADR 0145 §1): the OS
+the pool names for its sandboxes, which its provider writes into the bootstrap
+(`sandboxOs`), on the agent's own architecture, which on every driver is its
+sandboxes' too (ADR 26-11-11-963 §1). A bootstrap that names none is from a
+server before pools named one, and the agent declares its own platform. The
+control plane holds a pool that names an OS to it: a report of another is not
+recorded. Repeating it on every report is how the control plane learns what a
 pool from before platforms hosts. Beside it, it declares the kind of image the pool
 runs (`poolStatus.imageKind`, ADR 26-10-09-106 §4): `oci` for a Docker pool,
 whose sandboxes are containers, and `vm/<driver>` for a machine pool, which

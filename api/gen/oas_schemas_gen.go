@@ -1235,6 +1235,9 @@ type CreatePoolBody struct {
 	Name string `json:"name"`
 	// Backing sandbox provider instance ID. Immutable after create.
 	ProviderInstanceId string `json:"providerInstanceId"`
+	// The operating system the pool's sandboxes run. linux, the default, on every provider; darwin only
+	// on a VM provider whose driver boots macOS. It cannot change after the pool is created.
+	SandboxOs OptCreatePoolBodySandboxOs `json:"sandboxOs"`
 	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
 	// zero is unset.
 	StorageBytes OptInt64 `json:"storageBytes"`
@@ -1273,6 +1276,11 @@ func (s *CreatePoolBody) GetName() string {
 // GetProviderInstanceId returns the value of ProviderInstanceId.
 func (s *CreatePoolBody) GetProviderInstanceId() string {
 	return s.ProviderInstanceId
+}
+
+// GetSandboxOs returns the value of SandboxOs.
+func (s *CreatePoolBody) GetSandboxOs() OptCreatePoolBodySandboxOs {
+	return s.SandboxOs
 }
 
 // GetStorageBytes returns the value of StorageBytes.
@@ -1315,9 +1323,57 @@ func (s *CreatePoolBody) SetProviderInstanceId(val string) {
 	s.ProviderInstanceId = val
 }
 
+// SetSandboxOs sets the value of SandboxOs.
+func (s *CreatePoolBody) SetSandboxOs(val OptCreatePoolBodySandboxOs) {
+	s.SandboxOs = val
+}
+
 // SetStorageBytes sets the value of StorageBytes.
 func (s *CreatePoolBody) SetStorageBytes(val OptInt64) {
 	s.StorageBytes = val
+}
+
+// The operating system the pool's sandboxes run. linux, the default, on every provider; darwin only
+// on a VM provider whose driver boots macOS. It cannot change after the pool is created.
+type CreatePoolBodySandboxOs string
+
+const (
+	CreatePoolBodySandboxOsLinux  CreatePoolBodySandboxOs = "linux"
+	CreatePoolBodySandboxOsDarwin CreatePoolBodySandboxOs = "darwin"
+)
+
+// AllValues returns all CreatePoolBodySandboxOs values.
+func (CreatePoolBodySandboxOs) AllValues() []CreatePoolBodySandboxOs {
+	return []CreatePoolBodySandboxOs{
+		CreatePoolBodySandboxOsLinux,
+		CreatePoolBodySandboxOsDarwin,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreatePoolBodySandboxOs) MarshalText() ([]byte, error) {
+	switch s {
+	case CreatePoolBodySandboxOsLinux:
+		return []byte(s), nil
+	case CreatePoolBodySandboxOsDarwin:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreatePoolBodySandboxOs) UnmarshalText(data []byte) error {
+	switch CreatePoolBodySandboxOs(data) {
+	case CreatePoolBodySandboxOsLinux:
+		*s = CreatePoolBodySandboxOsLinux
+		return nil
+	case CreatePoolBodySandboxOsDarwin:
+		*s = CreatePoolBodySandboxOsDarwin
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/CreateProjectBody
@@ -9735,6 +9791,52 @@ func (o OptCloneProgressStage) Or(d CloneProgressStage) CloneProgressStage {
 	return d
 }
 
+// NewOptCreatePoolBodySandboxOs returns new OptCreatePoolBodySandboxOs with value set to v.
+func NewOptCreatePoolBodySandboxOs(v CreatePoolBodySandboxOs) OptCreatePoolBodySandboxOs {
+	return OptCreatePoolBodySandboxOs{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreatePoolBodySandboxOs is optional CreatePoolBodySandboxOs.
+type OptCreatePoolBodySandboxOs struct {
+	Value CreatePoolBodySandboxOs
+	Set   bool
+}
+
+// IsSet returns true if OptCreatePoolBodySandboxOs was set.
+func (o OptCreatePoolBodySandboxOs) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreatePoolBodySandboxOs) Reset() {
+	var v CreatePoolBodySandboxOs
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreatePoolBodySandboxOs) SetTo(v CreatePoolBodySandboxOs) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreatePoolBodySandboxOs) Get() (v CreatePoolBodySandboxOs, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreatePoolBodySandboxOs) Or(d CreatePoolBodySandboxOs) CreatePoolBodySandboxOs {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptCreateSandboxExecRequestEnv returns new OptCreateSandboxExecRequestEnv with value set to v.
 func NewOptCreateSandboxExecRequestEnv(v CreateSandboxExecRequestEnv) OptCreateSandboxExecRequestEnv {
 	return OptCreateSandboxExecRequestEnv{
@@ -13909,6 +14011,52 @@ func (o OptPoolSandboxCloneProgress) Get() (v PoolSandboxCloneProgress, ok bool)
 
 // Or returns value if set, or given parameter if does not.
 func (o OptPoolSandboxCloneProgress) Or(d PoolSandboxCloneProgress) PoolSandboxCloneProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolSandboxOs returns new OptPoolSandboxOs with value set to v.
+func NewOptPoolSandboxOs(v PoolSandboxOs) OptPoolSandboxOs {
+	return OptPoolSandboxOs{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxOs is optional PoolSandboxOs.
+type OptPoolSandboxOs struct {
+	Value PoolSandboxOs
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxOs was set.
+func (o OptPoolSandboxOs) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxOs) Reset() {
+	var v PoolSandboxOs
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxOs) SetTo(v PoolSandboxOs) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxOs) Get() (v PoolSandboxOs, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxOs) Or(d PoolSandboxOs) PoolSandboxOs {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18251,6 +18399,11 @@ type Pool struct {
 	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
 	// Backing sandbox provider instance ID. Immutable after create.
 	ProviderInstanceId string `json:"providerInstanceId"`
+	// The operating system the pool's sandboxes run, named when the pool was created and never changed.
+	// The pool's platform is this OS on its agent's architecture, and a report of another OS is not
+	// recorded; the pool takes no sandboxes until its agent reports it. Absent on a pool made before
+	// pools named one, which hosts linux.
+	SandboxOs OptPoolSandboxOs `json:"sandboxOs"`
 	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
 	// zero is unset.
 	StorageBytes int64 `json:"storageBytes"`
@@ -18386,6 +18539,11 @@ func (s *Pool) GetProviderInstance() OptSandboxProviderInstance {
 // GetProviderInstanceId returns the value of ProviderInstanceId.
 func (s *Pool) GetProviderInstanceId() string {
 	return s.ProviderInstanceId
+}
+
+// GetSandboxOs returns the value of SandboxOs.
+func (s *Pool) GetSandboxOs() OptPoolSandboxOs {
+	return s.SandboxOs
 }
 
 // GetStorageBytes returns the value of StorageBytes.
@@ -18591,6 +18749,11 @@ func (s *Pool) SetProviderInstance(val OptSandboxProviderInstance) {
 // SetProviderInstanceId sets the value of ProviderInstanceId.
 func (s *Pool) SetProviderInstanceId(val string) {
 	s.ProviderInstanceId = val
+}
+
+// SetSandboxOs sets the value of SandboxOs.
+func (s *Pool) SetSandboxOs(val OptPoolSandboxOs) {
+	s.SandboxOs = val
 }
 
 // SetStorageBytes sets the value of StorageBytes.
@@ -19877,6 +20040,51 @@ func (s *PoolSandboxCloneProgress) SetObjectsTotal(val OptInt64) {
 // SetBytes sets the value of Bytes.
 func (s *PoolSandboxCloneProgress) SetBytes(val OptInt64) {
 	s.Bytes = val
+}
+
+// The operating system the pool's sandboxes run, named when the pool was created and never changed.
+// The pool's platform is this OS on its agent's architecture, and a report of another OS is not
+// recorded; the pool takes no sandboxes until its agent reports it. Absent on a pool made before
+// pools named one, which hosts linux.
+type PoolSandboxOs string
+
+const (
+	PoolSandboxOsLinux  PoolSandboxOs = "linux"
+	PoolSandboxOsDarwin PoolSandboxOs = "darwin"
+)
+
+// AllValues returns all PoolSandboxOs values.
+func (PoolSandboxOs) AllValues() []PoolSandboxOs {
+	return []PoolSandboxOs{
+		PoolSandboxOsLinux,
+		PoolSandboxOsDarwin,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolSandboxOs) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolSandboxOsLinux:
+		return []byte(s), nil
+	case PoolSandboxOsDarwin:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolSandboxOs) UnmarshalText(data []byte) error {
+	switch PoolSandboxOs(data) {
+	case PoolSandboxOsLinux:
+		*s = PoolSandboxOsLinux
+		return nil
+	case PoolSandboxOsDarwin:
+		*s = PoolSandboxOsDarwin
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Progress on one sandbox that is being provisioned. It is deliberately not a

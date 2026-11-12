@@ -358,6 +358,27 @@ func TestValidateWhatADriverNeeds(t *testing.T) {
 	}
 }
 
+// A pool names the OS its driver boots, as disco-vm reports it: linux on
+// boxd, which refuses darwin, and darwin on a driver that reports it, which is
+// vz's report, without a vz in this build (ADR 26-11-11-963 §1).
+func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
+	if err := ValidatePoolOS(json.RawMessage(`{"driver":"boxd"}`), "linux"); err != nil {
+		t.Fatalf("a linux pool on boxd: %v", err)
+	}
+	if err := ValidatePoolOS(json.RawMessage(`{"driver":"boxd"}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
+		t.Fatalf("a darwin pool on boxd = %v, want refused", err)
+	}
+	if err := ValidatePoolOS(json.RawMessage(`{"driver":"hyperv"}`), "linux"); err == nil {
+		t.Fatal("a pool on a driver this build lacks was accepted")
+	}
+	vz := machine.Capabilities{GuestOS: []machine.OS{machine.Darwin, machine.Linux}}
+	for _, os := range []string{"linux", "darwin"} {
+		if err := bootsOS("vz", vz, os); err != nil {
+			t.Fatalf("a %s pool on a driver that boots darwin and linux: %v", os, err)
+		}
+	}
+}
+
 // The factory the server registers builds a pool-backed provider over the
 // runtime, whose shims are this binary.
 func TestFactoryBuildsAPoolProvider(t *testing.T) {

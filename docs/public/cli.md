@@ -2287,6 +2287,7 @@ discobox admin pool create NAME [flags]
 | --memory | size |  | Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default) |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --provider | string |  | Backing provider instance, by name or ID (required) |
+| --sandbox-os | string | linux | The OS the pool's discoboxes run: linux, or darwin on a VM provider whose driver boots macOS. It cannot change after the pool is created |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --storage | size |  | Storage for the pool, such as 100g; no provider accepts it today (0 = unset) |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |

@@ -23,6 +23,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/controlplane"
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
@@ -178,6 +179,40 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 				t.Fatalf("validate = %v, want an error naming %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// A bootstrap names the OS its pool's sandboxes run, which the agent declares
+// on its own architecture; one that names none is from an older server, and
+// the agent declares its own platform (ADR 26-11-11-963 §1). A container pool
+// runs only linux.
+func TestBootstrapNamesTheHostedOS(t *testing.T) {
+	machine := poolagent.Bootstrap{
+		ControlPlaneURL: "http://control.example", PoolID: "pool-1",
+		Runtime: poolagent.RuntimeMachine, Driver: "boxd", MachinePool: "pool-1",
+		PublicURL: "https://pool-1.boxd.sh", PrivateURL: "http://pool-1.boxd:7302",
+	}
+	if got := machine.HostedPlatform(); got != platform.Current() {
+		t.Fatalf("a bootstrap naming no OS hosts %q, want the agent's own %q", got, platform.Current())
+	}
+	machine.SandboxOS = platform.Darwin
+	if err := machine.Validate(); err != nil {
+		t.Fatalf("a darwin machine pool: %v", err)
+	}
+	if got, want := machine.HostedPlatform(), (platform.Platform{OS: platform.Darwin, Arch: runtime.GOARCH}); got != want {
+		t.Fatalf("a darwin pool hosts %q, want %q", got, want)
+	}
+	machine.SandboxOS = "windows"
+	if err := machine.Validate(); err == nil || !strings.Contains(err.Error(), "windows") {
+		t.Fatalf("validate of a windows pool = %v, want it refused", err)
+	}
+	docker := poolagent.Bootstrap{ControlPlaneURL: "http://control.example", PoolID: "pool-1", SandboxOS: platform.Linux}
+	if err := docker.Validate(); err != nil {
+		t.Fatalf("a linux docker pool: %v", err)
+	}
+	docker.SandboxOS = platform.Darwin
+	if err := docker.Validate(); err == nil || !strings.Contains(err.Error(), "darwin") {
+		t.Fatalf("validate of a darwin docker pool = %v, want it refused", err)
 	}
 }
 

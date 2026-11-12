@@ -44,6 +44,7 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterProviderDefinition(discovm.ProviderType, discovm.Definition())
 	manager.RegisterFactory(discovm.ProviderType, discovm.FactoryWithPoolManager(poolManager, options.ControlPlaneStreams))
 	manager.RegisterProviderConfigValidator(discovm.ProviderType, discovm.Validate)
+	manager.RegisterPoolOSValidator(discovm.ProviderType, discovm.ValidatePoolOS)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
 	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)

@@ -590,3 +590,13 @@ answer is seen): after that its disk is the sandbox's work.
   returns Winsock's WSAECONNREFUSED, which does not match its POSIX
   compatibility ECONNREFUSED constant. Keep the real listener-replacement
   test running on Windows; synthetic POSIX errors alone missed this mismatch.
+
+## Bootstrap fields reach older agents
+
+An agent reads its bootstrap file with `DisallowUnknownFields`, so a field a
+server adds to `Bootstrap` makes an agent from before it refuse to start. Such
+an agent still meets a new server: a provider's pinned or override agent
+bundle, or the previous release's. A server writes a new field only when it
+means something the older agent could not do anyway, and leaves it out
+otherwise: `sandboxOs` is written only for a pool whose sandboxes are not
+linux, since an agent that is given none declares linux (#1010).

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -65,6 +66,15 @@ func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) 
 		// How the pool reaches its sandboxes' agents, which the agent tells
 		// each sandbox (ADR 26-10-29-481 §3).
 		DisableAgentEndpointTLS: m.pool.DisableAgentEndpointTLS,
+	}
+	// The OS the pool named for its sandboxes, which its agent declares on
+	// its own architecture (ADR 26-11-11-963 §1). Linux is left unnamed: the
+	// agent's own OS is linux, which it declares when the bootstrap names
+	// none, and an agent from before the field refuses a bootstrap that names
+	// it (its decoder disallows unknown fields), so naming linux would stop
+	// every new pool's older agent from starting at all.
+	if m.pool.SandboxOS != platform.Linux {
+		bootstrap.SandboxOS = m.pool.SandboxOS
 	}
 	// A pool the control plane opens a channel to reaches it at the socket its
 	// agent serves the channel at, which no provider overrides.

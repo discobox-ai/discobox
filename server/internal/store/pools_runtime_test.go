@@ -520,3 +520,88 @@ func TestAnAgentThatDeclaresNoImageKindRunsOCI(t *testing.T) {
 		t.Fatalf("reported no kind: image kind = %q, want oci", pool.ImageKind)
 	}
 }
+
+// A pool that names its sandboxes' OS holds its agent to it (ADR
+// 26-11-11-963 §1): a darwin pool whose agent reports linux, or nothing at
+// all, keeps its platform and takes no sandbox until the agent declares
+// darwin, and an agent that reports linux after it has does not turn it back.
+func TestADarwinPoolKeepsItsPlatformWhenItsAgentReportsLinux(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-0")
+	if err := s.CreatePool(ctx, &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: "prov-pool-0", SandboxOS: platform.Darwin}}); err != nil {
+		t.Fatal(err)
+	}
+	// The OS is immutable: an update of the pool's settings leaves it.
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SandboxOS = platform.Linux
+	if err := s.UpdatePool(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if pool, err = s.GetPool(ctx, "project-1", "pool-1"); err != nil || pool.SandboxOS != platform.Darwin {
+		t.Fatalf("sandbox OS after an update = %q, %v; want darwin kept", pool.SandboxOS, err)
+	}
+	report := func(hosts platform.Platform) *model.Pool {
+		t.Helper()
+		reported, _, err := s.UpdatePoolStatus(ctx, "pool-1", hosts, platform.VM("vz"), false, false, true, true, false, 1, 1<<30, 1<<30, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reported
+	}
+	placeable := func() error {
+		t.Helper()
+		_, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"})
+		return err
+	}
+
+	linux := platform.Platform{OS: platform.Linux, Arch: "arm64"}
+	for _, hosts := range []platform.Platform{linux, {}} {
+		reported := report(hosts)
+		if !reported.Platform.IsZero() || reported.Schedulable {
+			t.Fatalf("after a report of %q: platform %q, schedulable %v; want none recorded and not schedulable", hosts, reported.Platform, reported.Schedulable)
+		}
+	}
+	reported := report(linux)
+	reported.SetState(model.PoolStateActive)
+	if err := s.UpdatePoolWithGeneration(ctx, reported, reported.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if err := placeable(); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("placement on a darwin pool whose agent reports linux = %v, want not schedulable", err)
+	}
+
+	darwin := platform.Platform{OS: platform.Darwin, Arch: "arm64"}
+	if reported := report(darwin); reported.Platform != darwin || !reported.Schedulable {
+		t.Fatalf("after a report of darwin: platform %q, schedulable %v", reported.Platform, reported.Schedulable)
+	}
+	if err := placeable(); err != nil {
+		t.Fatalf("placement once the agent declares darwin: %v", err)
+	}
+
+	if reported := report(linux); reported.Platform != darwin || reported.Schedulable {
+		t.Fatalf("after linux again: platform %q, schedulable %v; want darwin kept and not schedulable", reported.Platform, reported.Schedulable)
+	}
+	if err := placeable(); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("placement once the agent reports linux again = %v, want not schedulable", err)
+	}
+}
+
+// A pool made before pools named their OS still takes what its agent
+// declares: the column a migration adds is empty on it.
+func TestAPoolThatNamesNoOSTakesItsAgentsPlatform(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	darwin := platform.Platform{OS: platform.Darwin, Arch: "arm64"}
+	reported, _, err := s.UpdatePoolStatus(ctx, "pool-1", darwin, platform.OCI, false, false, true, true, false, 1, 1, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reported.SandboxOS != "" || reported.Platform != darwin || !reported.Schedulable {
+		t.Fatalf("pool = os %q, platform %q, schedulable %v", reported.SandboxOS, reported.Platform, reported.Schedulable)
+	}
+}

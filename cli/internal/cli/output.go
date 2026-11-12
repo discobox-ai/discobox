@@ -387,6 +387,8 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "CPU\t%s\n", formatPoolCPU(pool.CpuVcpus))
 	fmt.Fprintf(tw, "MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
 	fmt.Fprintf(tw, "STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
+	// A pool made before pools named their OS hosts linux.
+	fmt.Fprintf(tw, "SANDBOX OS\t%s\n", pool.SandboxOs.Or(apiclientgen.PoolSandboxOsLinux))
 	fmt.Fprintf(tw, "STATE\t%s\n", pool.State)
 	fmt.Fprintf(tw, "HEALTH\t%s\n", pool.Health.Or("unknown"))
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)

@@ -255,7 +255,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&stored, "id = ?", poolID).Error; err != nil {
 			return mapNotFound(err)
 		}
-		recordPoolPlatform(&stored, hosts)
+		declaresNamed := recordPoolPlatform(&stored, hosts)
 		recordPoolImageKind(&stored, runs)
 		// Declared on every report, so an agent rolled back to one from
 		// before grants is sent route lists again from its next report, and
@@ -264,7 +264,9 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		stored.SentinelGrants = holdsGrants
 		stored.SentinelGenerations = holdsGenerations
 		stored.Ready = ready
-		stored.Schedulable = schedulable
+		// A pool whose agent does not declare the OS the pool names takes no
+		// sandbox until it does (ADR 26-11-11-963 §1).
+		stored.Schedulable = schedulable && declaresNamed
 		stored.Degraded = degraded
 		stored.AvailableCPUVCPUs = availableCPUVCPUs
 		stored.AvailableMemoryBytes = availableMemoryBytes
@@ -337,22 +339,40 @@ func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resource
 }
 
 // recordPoolPlatform records the platform a pool's agent declared, inside the
-// registration or heartbeat that carried it (ADR 0145 §1).
+// registration or heartbeat that carried it (ADR 0145 §1), and reports whether
+// the pool may schedule on it.
 //
-// An agent from before platforms declares none (hosts is zero), and is still a
-// pool that schedules sandboxes — a provider may fall back to the previous
-// release's agent image, and a pool's agent is replaced only after the server
-// upgrades. Such a pool keeps whatever was recorded for it, which may be
-// nothing: no guess is written, because a pool may be any architecture, and a
-// guess written onto a sandbox placed there is never corrected.
+// A pool that names its sandboxes' OS (SandboxOS, ADR 26-11-11-963 §1) holds
+// its agent to it: the report is a check, not the source. A declaration of
+// that OS is recorded; any other — another OS, or none at all from an agent
+// from before platforms — is not, and the pool schedules nothing on it, so
+// neither an agent left over from before an upgrade nor a provider-override
+// bundle's turns a darwin pool into a linux one.
+//
+// A pool made before pools named their OS (SandboxOS empty) takes what its
+// agent declares, as before. An agent from before platforms declares none
+// (hosts is zero), and is still a pool that schedules sandboxes — a provider
+// may fall back to the previous release's agent image, and a pool's agent is
+// replaced only after the server upgrades. Such a pool keeps whatever was
+// recorded for it, which may be nothing: no guess is written, because a pool
+// may be any architecture, and a guess written onto a sandbox placed there is
+// never corrected.
 //
 // The pool's sandboxes are not touched: a sandbox takes its platform when it
 // is placed (SchedulablePoolForSandbox), which is the one place its platform
 // is checked against its pool's.
-func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) {
+func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) bool {
+	if pool.SandboxOS != "" {
+		if hosts.IsZero() || hosts.OS != pool.SandboxOS {
+			return false
+		}
+		pool.Platform = hosts
+		return true
+	}
 	if !hosts.IsZero() {
 		pool.Platform = hosts
 	}
+	return true
 }
 
 // recordPoolImageKind records the kind of image a pool's agent declared it runs,

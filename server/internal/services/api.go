@@ -74,6 +74,7 @@ type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
 type OptInt64 = serverapi.OptInt64
+type OptCreatePoolBodySandboxOs = serverapi.OptCreatePoolBodySandboxOs
 type OptSandboxUser = serverapi.OptSandboxUser
 type OptSandboxGitIdentity = serverapi.OptSandboxGitIdentity
 type OptSandboxCreateConfigSkills = serverapi.OptSandboxCreateConfigSkills
