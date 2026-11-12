@@ -80,3 +80,14 @@
   `pathContained` splits paths per candidate pair, so one long segmented grant
   against hundreds of parent routes otherwise allocates nearly a gigabyte while
   the handoff transaction holds its locks.
+
+- **A route grants one kind of use: a body block its body places, any other
+  route the headers and query.** A credential is decided per use
+  (`Request.At`), and an open route is a candidate only for its own kind, so
+  `*` grants no body place and a body route no header. A blocked route
+  without a body block refuses every use, so a carve-out cannot be stepped
+  around by moving the credential into the body. Every use of a sentinel in
+  one request must pass in the same grant (`DecideGrants` over `At`): two
+  grants, each allowing one use, allow neither together. Any new kind of
+  place follows the same split.
+

@@ -1,8 +1,12 @@
 package secretroute
 
 import (
+	"slices"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/hostscope"
 )
 
 // Grant is one binding's say over a credential (ADR 26-11-03-329 §3): the
@@ -56,6 +60,42 @@ func DecideGrants(grants []Grant, now time.Time, req Request) (allowed bool, rea
 		return false, "this credential's grants have expired"
 	}
 	return false, first
+}
+
+// BodyPlaces are the body places some open route of a grant live at now
+// names for req: its host and path match, and its methods, when it has any,
+// list req's request-line method. It is what tells the proxy a request's body
+// may carry a credential worth reading it for, and nothing more: what is
+// found there is decided by DecideGrants, which reads every method the
+// request names. Sorted and deduplicated; none for most requests.
+func BodyPlaces(grants []Grant, now time.Time, req Request) []string {
+	var out []string
+	host := hostscope.Normalize(req.Host)
+	method := strings.ToUpper(req.Method)
+	paths := RequestPaths(req.URL)
+	for _, grant := range grants {
+		if !grant.Live(now) {
+			continue
+		}
+		for _, routes := range grant.Lists {
+			for _, route := range routes {
+				if route.Blocked || route.Body == nil {
+					continue
+				}
+				if _, ok := hostScore(route.Hosts, host); !ok {
+					continue
+				}
+				if len(route.Methods) > 0 && !slices.Contains(route.Methods, method) {
+					continue
+				}
+				if !slices.ContainsFunc(paths, func(p string) bool { _, ok := pathScore(route.Paths, p); return ok }) {
+					continue
+				}
+				out = append(out, route.Body.Places...)
+			}
+		}
+	}
+	return sortedSet(out)
 }
 
 // GrantsAllowingHost are the grants live at now that allow some request to
