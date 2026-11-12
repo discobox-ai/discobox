@@ -19,21 +19,10 @@ watch:
 debounce: 1s
 
 build:
-  # Nothing removes the old binaries first: go build replaces its output
-  # atomically, so it works over a running binary, and it leaves the previous
-  # binary in place when compilation fails rather than leaving you with none.
-  # sign is a no-op off macOS. On macOS it is mandatory on every rebuild of the
-  # server: an unsigned binary has no virtualization entitlement and creates no
-  # VM (ADR 0066 §5). Only the server, which is the process that creates one
-  # again now that the CLI runs it as a child (ADR 0099) — and the CLI is built
-  # here beside it, which is what `discobox admin server` resolves with nothing
-  # configured.
-  command: >-
-    EXE=$(go env GOEXE) &&
-    cd cli && go build -o ../build/discobox$EXE ./cmd/discobox &&
-    cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server$EXE ./cmd/discobox-server &&
-    cd .. &&
-    go tool task sign SIGN_BINARY=build/discobox-server$EXE
+  # Build at fresh sibling paths, sign the staged server on macOS, then
+  # rename into place. Failed or interrupted builds preserve the live binaries;
+  # retries rebuild even when a damaged live output still has a valid build ID.
+  command: scripts/dev-build.sh server
   grace: 2s
 
 run:

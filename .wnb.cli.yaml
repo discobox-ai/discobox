@@ -17,13 +17,10 @@ watch:
 debounce: 1s
 
 build:
-  # Nothing removes build/discobox first: go build replaces the output atomically
-  # and leaves the old binary in place when compilation fails. Nothing signs it
-  # either: the CLI runs the server as a separate process (ADR 0099), so it
-  # creates no VM and needs no virtualization entitlement.
-  command: >-
-    EXE=$(go env GOEXE) &&
-    cd cli && go build -o ../build/discobox$EXE ./cmd/discobox
+  # Build at fresh sibling paths, sign the staged server on macOS, then
+  # rename into place. Failed or interrupted builds preserve the live binaries;
+  # retries rebuild even when a damaged live output still has a valid build ID.
+  command: scripts/dev-build.sh cli
   grace: 2s
 
 # no run: — build-only.
