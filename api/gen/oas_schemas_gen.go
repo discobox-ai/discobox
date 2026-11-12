@@ -3378,6 +3378,7 @@ func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()            {}
 func (*ErrorResponseStatusCode) readSandboxFileRes()                    {}
 func (*ErrorResponseStatusCode) reconsiderSandboxHarnessConfigRes()     {}
 func (*ErrorResponseStatusCode) removeSandboxFileRes()                  {}
+func (*ErrorResponseStatusCode) reprovisionSandboxRes()                 {}
 func (*ErrorResponseStatusCode) restartSandboxServiceRes()              {}
 func (*ErrorResponseStatusCode) resumeSandboxAutostopRes()              {}
 func (*ErrorResponseStatusCode) sendSandboxExecInputRes()               {}
@@ -24836,6 +24837,8 @@ func (s *SandboxAgentProvisionStatus) SetUpdatedAt(val time.Time) {
 func (s *SandboxAgentProvisionStatus) SetFeatures(val SandboxAgentProvisionStatusFeatures) {
 	s.Features = val
 }
+
+func (*SandboxAgentProvisionStatus) reprovisionSandboxRes() {}
 
 // Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
 type SandboxAgentProvisionStatusFeatures map[string]SandboxAgentProvisionFeature

@@ -152,6 +152,7 @@ const (
 	ReportSandboxAgentStatusOperation              OperationName = "ReportSandboxAgentStatus"
 	ReportSandboxInventoriesOperation              OperationName = "ReportSandboxInventories"
 	ReportSandboxSecretRejectionOperation          OperationName = "ReportSandboxSecretRejection"
+	ReprovisionSandboxOperation                    OperationName = "ReprovisionSandbox"
 	ResetHarnessConfigOperation                    OperationName = "ResetHarnessConfig"
 	ResolveGatewayHeadersOperation                 OperationName = "ResolveGatewayHeaders"
 	ResolvePoolAssetOperation                      OperationName = "ResolvePoolAsset"

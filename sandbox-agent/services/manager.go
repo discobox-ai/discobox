@@ -104,6 +104,14 @@ type Manager struct {
 	// one of which any later stop can find.
 	mu        sync.Mutex
 	lifecycle map[string]*sync.Mutex
+	// booted is the declarations EnsureStarted launched this boot, and
+	// refused is those of them provisioning refused this boot, because a
+	// feature they need failed: what a reprovision may start
+	// (StartReprovisioned). Guarded by mu. An exec record cannot say this:
+	// it outlives the boot, so a service that ran before may have been
+	// refused this time.
+	booted  map[string]bool
+	refused map[string]bool
 }
 
 var ErrNotFound = errors.New("service not found")
@@ -126,6 +134,8 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		builtinDir:    builtinDir,
 		featureOff:    cfg.FeatureOff,
 		lifecycle:     map[string]*sync.Mutex{},
+		booted:        map[string]bool{},
+		refused:       map[string]bool{},
 	}, nil
 }
 
@@ -256,9 +266,13 @@ func (m *Manager) Start(ctx context.Context, id string) (Service, error) {
 	unlock()
 	if m.awaitFeatures != nil {
 		if err := m.awaitFeatures(ctx, def.Features); err != nil {
+			if ctx.Err() == nil {
+				m.setRefused(def.ID, true)
+			}
 			return Service{}, err
 		}
 	}
+	m.setRefused(def.ID, false)
 	// Discovery can precede the provisioning plan deciding this owner off.
 	if def.Builtin && def.Feature != "" && m.featureOff != nil && m.featureOff(def.Feature) {
 		return Service{}, ErrNotFound
@@ -374,6 +388,9 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 			logger.Warn("skipping sandbox service declaration", "service", def.ID, "file", def.FileName, "problem", def.Problem)
 			return
 		}
+		m.mu.Lock()
+		m.booted[def.ID] = true
+		m.mu.Unlock()
 		launches.Go(func() {
 			if _, err := m.Start(ctx, def.ID); err != nil && ctx.Err() == nil {
 				logger.Error("start sandbox service", "service", def.ID, "error", err)
@@ -409,6 +426,55 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 	}
 
 	return err
+}
+
+// StartReprovisioned starts what a reprovision may have made startable
+// (ADR 26-11-11-560): every autostart declaration provisioning refused this
+// boot, because a feature it needs failed, and every image declaration this
+// boot has not launched, which the run may have installed. A service that
+// ran this boot, and one a person stopped, is left as it is, and a
+// repository declaration added mid-session is still not autostarted.
+func (m *Manager) StartReprovisioned(ctx context.Context, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	defs, err := m.discover()
+	if err != nil {
+		return err
+	}
+	var launches sync.WaitGroup
+	for _, def := range defs {
+		if def.Start == StartNever || !def.Runnable() {
+			continue
+		}
+		m.mu.Lock()
+		start := m.refused[def.ID] || def.Builtin && !m.booted[def.ID]
+		if start {
+			m.booted[def.ID] = true
+		}
+		m.mu.Unlock()
+		if !start {
+			continue
+		}
+		launches.Go(func() {
+			if _, err := m.Start(ctx, def.ID); err != nil && ctx.Err() == nil {
+				logger.Error("start sandbox service after reprovisioning", "service", def.ID, "error", err)
+			}
+		})
+	}
+	launches.Wait()
+	return ctx.Err()
+}
+
+// setRefused records whether provisioning refused a service this boot.
+func (m *Manager) setRefused(id string, refused bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if refused {
+		m.refused[id] = true
+	} else {
+		delete(m.refused, id)
+	}
 }
 
 // startLocked creates or relaunches the service's exec. The caller holds the

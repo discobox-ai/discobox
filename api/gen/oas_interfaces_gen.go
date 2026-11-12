@@ -585,6 +585,10 @@ type ReportSandboxSecretRejectionRes interface {
 	reportSandboxSecretRejectionRes()
 }
 
+type ReprovisionSandboxRes interface {
+	reprovisionSandboxRes()
+}
+
 type ResetHarnessConfigRes interface {
 	resetHarnessConfigRes()
 }

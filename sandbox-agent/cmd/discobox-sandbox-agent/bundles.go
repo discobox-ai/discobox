@@ -49,8 +49,11 @@ var bundleRetryWait = 2 * time.Second
 // the trees they make. One with no pins, whose agent is not delivered to it —
 // a template with no image, on its own platform — provisions the trees it
 // has, if any.
-func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig *intake.Intake, configPath string, features map[string]sandboxconfig.Feature) error {
-	if runtime.GOOS == "linux" {
+//
+// retry is a reprovision's run (ADR 26-11-11-560 §2): the box's bundles are
+// in its store already, and only the features not ready run.
+func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig *intake.Intake, configPath string, features map[string]sandboxconfig.Feature, retry bool) error {
+	if runtime.GOOS == "linux" && !retry {
 		fetched, err := fetchBundles(ctx, runtimeConfig)
 		if err == nil && fetched {
 			// The account was made before the trees were here.
@@ -68,7 +71,7 @@ func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig
 		tracker.Fail(err)
 		return err
 	}
-	return provision.Apply(ctx, slog.Default(), tracker, trees, features, provision.Options{Background: true}, false)
+	return provision.Apply(ctx, slog.Default(), tracker, trees, features, provision.Options{Background: true, Retry: retry}, false)
 }
 
 // fetchBundles applies the pins in agentlayer.PinsFile, when the pool placed

@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	sandboxtools "github.com/discobox-ai/discobox/pkg/tools"
@@ -115,6 +116,11 @@ type Config struct {
 	// returns them (boot.ClearCaches). nil answers the cache-clear route that
 	// the agent clears nothing.
 	ClearCaches func() ([]string, error)
+	// Reprovision runs the box's failed features again, in place, and is
+	// the document once that run has started or been joined
+	// (ADR 26-11-11-560 §§1, 5). nil, as on a box with no provisioning,
+	// answers the reprovision route with a conflict.
+	Reprovision func() provisionspec.Status
 	// TLS is the keypair the agent serves its API over TLS alone with, as its
 	// pool reaches it (ADR 26-10-29-481 §3). nil serves plain HTTP alone.
 	TLS *agenttls.Keypair
@@ -382,6 +388,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		provision:         cfg.Provision,
 		files:             fileService,
 		clearCaches:       cfg.ClearCaches,
+		reprovision:       cfg.Reprovision,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
@@ -709,6 +716,9 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// cannot hold up the agent answering.
 	if built.services != nil {
 		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
+		if cfg.Provision != nil {
+			go startReprovisionedServices(ctx, logger, cfg.Provision, built.services)
+		}
 	}
 	// The monitors an agent enabled resume with the box (ADR 26-10-31-073
 	// §5), once the working tree a monitor runs in is there and the whole
@@ -857,6 +867,27 @@ func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(
 	case err == nil, errors.Is(err, context.Canceled):
 	default:
 		logger.Error("start sandbox services", "error", err)
+	}
+}
+
+// startReprovisionedServices starts, after each reprovision's run, the
+// declared services a failed feature kept down at boot, or that the run
+// installed (ADR 26-11-11-560; sandbox-agent/REVIEW.md, discovering
+// provisioned image services).
+func startReprovisionedServices(ctx context.Context, logger *slog.Logger, tracker *provision.Tracker, manager *services.Manager) {
+	// The next run's signal is taken before the services are started for
+	// this one, so a run that ends meanwhile is not missed.
+	next := tracker.Reprovisioned()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-next:
+		}
+		next = tracker.Reprovisioned()
+		if err := manager.StartReprovisioned(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("start sandbox services after reprovisioning", "error", err)
+		}
 	}
 }
 

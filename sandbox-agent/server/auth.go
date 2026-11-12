@@ -297,6 +297,14 @@ func cacheClearRoute(path string) bool {
 	return len(segments) == 7 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "cache" && segments[6] == "clear"
 }
 
+// reprovisionRoute is the reprovision route, told by its whole route like
+// the cache-clear route, so an exec or a service named "reprovision" is not
+// it. Its scope is exec:write.
+func reprovisionRoute(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 6 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "reprovision"
+}
+
 // routedPath is the path as ogen's router reads it: escapes decoded but an
 // escaped slash's, so `cache/%63lear` is `cache/clear`, as the generated
 // router dispatches it. A route the generated router serves is told by this,
@@ -371,6 +379,11 @@ func requiredRequestScope(r *http.Request) string {
 	}
 	if r.Method == http.MethodPost && cacheClearRoute(routedPath(r)) {
 		return ScopeCacheClear
+	}
+	// Running the box's provisioning again acts in it as starting an exec
+	// does, and is gated the same way (ADR 26-11-11-560 §5).
+	if r.Method == http.MethodPost && reprovisionRoute(routedPath(r)) {
+		return ScopeExecWrite
 	}
 	// The status route reports git/session/connection telemetry and nothing
 	// else, so it is gated on its own narrow scope rather than exec:read.

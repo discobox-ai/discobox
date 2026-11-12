@@ -311,6 +311,22 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
 	RemoveSandboxFile(ctx context.Context, request *SandboxFileRemoveRequest, params RemoveSandboxFileParams) error
+	// ReprovisionSandbox invokes reprovision-sandbox operation.
+	//
+	// Runs the sandbox's provisioning again for every feature that failed, and the features that failed
+	// because they require one, in the running sandbox. Nothing else about the sandbox changes - no
+	// rebuild, no new container or machine, no restart of it or of anything running in it - and a
+	// feature that is ready or off runs nothing. A failed feature the sandbox waits for before it
+	// launches anything makes it wait again, so a terminal launched meanwhile waits for the outcome. The
+	// run goes on whether or not the caller stays; follow it in the sandbox's reported provisioning,
+	// where each feature it runs moves to provisioning and then to ready, or to failed with its new
+	// error. When nothing failed, nothing runs. When a run is already in progress, this joins it.
+	// Conflicts when the sandbox is not running, which this never starts (its next start provisions
+	// anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
+	// of the sandbox itself.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+	ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (*SandboxAgentProvisionStatus, error)
 	// RestartSandboxService invokes restart-sandbox-service operation.
 	//
 	// Stops the service if it is running and starts it again under the same exec ID. A service that is
@@ -387,12 +403,13 @@ type Invoker interface {
 	UpdateSandboxAgentMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (*SandboxAgentMeta, error)
 	// WaitSandboxAgentStatus invokes wait-sandbox-agent-status operation.
 	//
-	// Answers with the version of what wakes the pool, the sandbox's listening ports and its harness
-	// configuration capture. A call without `after`, or with an `after` that is not the current version,
-	// is answered at once; a call naming the current version is held until either changes or the agent's
-	// hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a
-	// newly bound port, or a harness sign-in to save, is reported at once rather than at the next status
-	// poll (ADR 26-11-03-815, ADR 26-11-09-062).
+	// Answers with the version of what wakes the pool, the sandbox's listening ports, its harness
+	// configuration capture, and the state of its provisioning and of each feature in it. A call without
+	// `after`, or with an `after` that is not the current version, is answered at once; a call naming
+	// the current version is held until either changes or the agent's hold (25 seconds) passes, and then
+	// answered with the version as it is. The pool waits here so a newly bound port, or a harness
+	// sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR
+	// 26-11-09-062).
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
 	WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (*SandboxAgentStatusWaitResponse, error)
@@ -5525,6 +5542,128 @@ func (c *Client) sendRemoveSandboxFile(ctx context.Context, request *SandboxFile
 	return result, nil
 }
 
+// ReprovisionSandbox invokes reprovision-sandbox operation.
+//
+// Runs the sandbox's provisioning again for every feature that failed, and the features that failed
+// because they require one, in the running sandbox. Nothing else about the sandbox changes - no
+// rebuild, no new container or machine, no restart of it or of anything running in it - and a
+// feature that is ready or off runs nothing. A failed feature the sandbox waits for before it
+// launches anything makes it wait again, so a terminal launched meanwhile waits for the outcome. The
+// run goes on whether or not the caller stays; follow it in the sandbox's reported provisioning,
+// where each feature it runs moves to provisioning and then to ready, or to failed with its new
+// error. When nothing failed, nothing runs. When a run is already in progress, this joins it.
+// Conflicts when the sandbox is not running, which this never starts (its next start provisions
+// anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
+// of the sandbox itself.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+func (c *Client) ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (*SandboxAgentProvisionStatus, error) {
+	res, err := c.sendReprovisionSandbox(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (res *SandboxAgentProvisionStatus, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("reprovision-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/reprovision"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ReprovisionSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/reprovision"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeReprovisionSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // RestartSandboxService invokes restart-sandbox-service operation.
 //
 // Stops the service if it is running and starts it again under the same exec ID. A service that is
@@ -6802,12 +6941,13 @@ func (c *Client) sendUpdateSandboxAgentMeta(ctx context.Context, request *Update
 
 // WaitSandboxAgentStatus invokes wait-sandbox-agent-status operation.
 //
-// Answers with the version of what wakes the pool, the sandbox's listening ports and its harness
-// configuration capture. A call without `after`, or with an `after` that is not the current version,
-// is answered at once; a call naming the current version is held until either changes or the agent's
-// hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a
-// newly bound port, or a harness sign-in to save, is reported at once rather than at the next status
-// poll (ADR 26-11-03-815, ADR 26-11-09-062).
+// Answers with the version of what wakes the pool, the sandbox's listening ports, its harness
+// configuration capture, and the state of its provisioning and of each feature in it. A call without
+// `after`, or with an `after` that is not the current version, is answered at once; a call naming
+// the current version is held until either changes or the agent's hold (25 seconds) passes, and then
+// answered with the version as it is. The pool waits here so a newly bound port, or a harness
+// sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR
+// 26-11-09-062).
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
 func (c *Client) WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (*SandboxAgentStatusWaitResponse, error) {

@@ -68,6 +68,8 @@ type handler struct {
 	files *files.Service
 	// clearCaches empties the sandbox's caches (Config.ClearCaches).
 	clearCaches func() ([]string, error)
+	// reprovision runs the failed features again (Config.Reprovision).
+	reprovision func() provisionspec.Status
 	// runtimeConfigMu makes applying a delivered document and setting the
 	// idle timeout it carries one step (PutSandboxRuntimeConfig).
 	runtimeConfigMu sync.Mutex
@@ -576,13 +578,14 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 }
 
 // WaitSandboxAgentStatus answers with the version of what wakes the pool — the
-// listening ports and the harness configuration capture — holding a caller
-// that names the current one until either changes (ADR 26-11-03-815 §2, ADR
-// 26-11-09-062). The hold is the agent's to bound, and the request's context
+// listening ports, the harness configuration capture, and the state of the
+// box's provisioning and its features — holding a caller that names the
+// current one until any changes (ADR 26-11-03-815 §2, ADR 26-11-09-062, ADR
+// 26-11-11-560 §6). The hold is the agent's to bound, and the request's context
 // ends it early when the pool hangs up. The field keeps its ports name so a
 // pool and agent upgraded apart still read each other.
 func (h *handler) WaitSandboxAgentStatus(ctx context.Context, params sandboxapi.WaitSandboxAgentStatusParams) (*sandboxapi.SandboxAgentStatusWaitResponse, error) {
-	version := statuswait.Wait(ctx, params.After.Or(""), statuswait.Hold, h.ports.Changes(), h.terminals.HarnessConfigChangeSignal())
+	version := statuswait.Wait(ctx, params.After.Or(""), statuswait.Hold, h.ports.Changes(), h.terminals.HarnessConfigChangeSignal(), h.provision.Changes())
 	return &sandboxapi.SandboxAgentStatusWaitResponse{PortsVersion: version}, nil
 }
 
@@ -786,6 +789,18 @@ func (h *handler) ClearSandboxCache(context.Context, sandboxapi.ClearSandboxCach
 		return nil, err
 	}
 	return &sandboxapi.SandboxCacheClearance{Paths: paths}, nil
+}
+
+// ReprovisionSandbox runs the box's failed features again, in this running
+// box (ADR 26-11-11-560 §§1, 5), and answers the document once the run has
+// started, or been joined when one was in progress. The run is the agent's:
+// it goes on whether or not the caller stays.
+func (h *handler) ReprovisionSandbox(context.Context, sandboxapi.ReprovisionSandboxParams) (*sandboxapi.SandboxAgentProvisionStatus, error) {
+	if h.reprovision == nil {
+		return nil, statusError{status: http.StatusConflict, message: "this sandbox has no provisioning to run again"}
+	}
+	status := sandboxAgentProvisionStatus(h.reprovision())
+	return &status, nil
 }
 
 // ResumeSandboxAutostop is the pool telling the sandbox it thawed it from a

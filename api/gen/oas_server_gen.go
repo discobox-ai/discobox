@@ -961,6 +961,22 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-secret-rejections
 	ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
+	// ReprovisionSandbox implements reprovision-sandbox operation.
+	//
+	// Runs the sandbox's provisioning again for every feature that failed, and the features that failed
+	// because they require one, in the running sandbox. Nothing else about the sandbox changes - no
+	// rebuild, no new container or machine, no restart of it or of anything running in it - and a
+	// feature that is ready or off runs nothing. A failed feature the sandbox waits for before it
+	// launches anything makes it wait again, so a terminal launched meanwhile waits for the outcome. The
+	// run goes on whether or not the caller stays; follow it in the sandbox's reported provisioning,
+	// where each feature it runs moves to provisioning and then to ready, or to failed with its new
+	// error. When nothing failed, nothing runs. When a run is already in progress, this joins it.
+	// Conflicts when the sandbox is not running, which this never starts (its next start provisions
+	// anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
+	// of the sandbox itself.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+	ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (ReprovisionSandboxRes, error)
 	// ResetHarnessConfig implements reset-harness-config operation.
 	//
 	// Return the harness config to its bundle's defaults: remove the files saved from discoboxes'
@@ -1238,12 +1254,13 @@ type Handler interface {
 	UpgradeSandbox(ctx context.Context, req *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error)
 	// WaitSandboxAgentStatus implements wait-sandbox-agent-status operation.
 	//
-	// Answers with the version of what wakes the pool, the sandbox's listening ports and its harness
-	// configuration capture. A call without `after`, or with an `after` that is not the current version,
-	// is answered at once; a call naming the current version is held until either changes or the agent's
-	// hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a
-	// newly bound port, or a harness sign-in to save, is reported at once rather than at the next status
-	// poll (ADR 26-11-03-815, ADR 26-11-09-062).
+	// Answers with the version of what wakes the pool, the sandbox's listening ports, its harness
+	// configuration capture, and the state of its provisioning and of each feature in it. A call without
+	// `after`, or with an `after` that is not the current version, is answered at once; a call naming
+	// the current version is held until either changes or the agent's hold (25 seconds) passes, and then
+	// answered with the version as it is. The pool waits here so a newly bound port, or a harness
+	// sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR
+	// 26-11-09-062).
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
 	WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (WaitSandboxAgentStatusRes, error)
