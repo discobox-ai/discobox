@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -286,9 +287,17 @@ func TestARetryRequestIsTakenAfterTheRunStarts(t *testing.T) {
 	go func() {
 		watching <- WatchRetries(ctx, dir, func() { started <- struct{}{} })
 	}()
+	// Anyone in the box may ask, and none may take another's request away:
+	// the directory is sticky and writable by all. That is a POSIX mode,
+	// which Windows can neither hold nor report (os.Chmod there sets only
+	// the read-only bit), so there the directory is waited for alone; taking
+	// a request is the same there.
 	waitFor(t, func() bool {
 		info, err := os.Stat(dir)
-		return err == nil && info.Mode()&os.ModeSticky != 0 && info.Mode().Perm() == 0o777
+		if err != nil {
+			return false
+		}
+		return runtime.GOOS == "windows" || info.Mode()&os.ModeSticky != 0 && info.Mode().Perm() == 0o777
 	})
 	if err := RequestRetry(ctx, dir); err != nil {
 		t.Fatal(err)
