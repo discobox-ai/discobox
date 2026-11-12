@@ -74,6 +74,7 @@
   - 345 §2's "Only TCP is taken", for the pool agent too;
   - [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)'s
     Deferred "macOS and Windows", for macOS (§9).
+- **Narrowed by**: [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md) — its `vm` provider and pool read as each per-driver provider type; no build links a held driver that carries a pool, so its held-driver work waits on 080's Deferred
 - **Date**: 2026-11-11
 - Accepted by the owner by merging #1003, 2026-11-11
 - **Issue**: #42

@@ -1,6 +1,7 @@
 # 26-10-15-629 — The VM provider and its image kind are spelled `vm`
 
 - **Status**: Accepted
+- **Superseded in part by**: [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md) — §1's provider type and catalog name `vm`: each linked disco-vm driver is a provider type of its own name. The rest of §1, the image kind `vm/<driver>` (§2) and the state root under `discobox/vm/<driver>` stand
 - **Date**: 2026-10-15
 - **Supersedes**, in part:
   [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)

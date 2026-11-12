@@ -1,7 +1,7 @@
 # 26-11-11-080 — Each disco-vm driver is a provider type of its own name, configured by its own fields
 
-- **Status**: Proposed. On acceptance it supersedes, and each superseded ADR's
-  status line says so:
+- **Status**: Accepted. It supersedes, and each superseded ADR's status line
+  says so:
   - [26-10-15-629](26-10-15-629-the-vm-provider-and-its-image-kind-are-spelled-vm.md)
     §1's provider type and catalog name `vm`. The rest of §1 stands for
     discobox's own strings (§2). Its image kind `vm/<driver>` (§2) and its
@@ -23,7 +23,7 @@
     "issued, in-machine, or a sentinel for the provider's".
 - **Narrows**:
   - 26-11-11-963, "One vm provider type: every pool runs a Linux pool agent
-    in a machine its driver makes" (Proposed in #1003), if it is accepted:
+    in a machine its driver makes" (accepted in #1003):
     - its "`vm` provider" and "`vm` pool" read as every provider type of §1
       below, and its one pool shape is theirs;
     - no build links a held driver that carries a pool: vz and libkrun are
@@ -43,6 +43,8 @@
     §2's "a field the body leaves out keeps its sealed value", for a write
     that changes a `Privileged` field (§4).
 - **Date**: 2026-11-11; §9 amended 2026-11-13 (#1092), while Proposed
+- **Accepted**: by the owner merging #1007, 2026-11-12. disco-vm's debts
+  (Consequences) are met by its ADR 26-11-12-461 (vm#88).
 - **Issue**: #1006
 - **Relates to**:
   - [0003](0003-promote-pool-to-a-first-class-primitive.md), one provider
