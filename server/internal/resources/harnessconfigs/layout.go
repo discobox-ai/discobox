@@ -1,6 +1,7 @@
 package harnessconfigs
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -24,7 +25,7 @@ const maxLayoutDocument = 4 << 20
 //
 // A layout whose index lists another manifest than the one the development
 // manifest recorded is refused rather than pinned to content nothing recorded.
-func inspectLayoutBundle(bundle devimage.Bundle, admit func(labels map[string]string) error, verified *verifiedBundles) (bundleInspection, error) {
+func inspectLayoutBundle(ctx context.Context, bundle devimage.Bundle, admit func(labels map[string]string) error, verified *verifiedBundles) (bundleInspection, error) {
 	if err := bundle.Check(); err != nil {
 		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundle.Reference, err)
 	}
@@ -41,7 +42,7 @@ func inspectLayoutBundle(bundle devimage.Bundle, admit func(labels map[string]st
 	if err := admitBundle(read.Labels, admit); err != nil {
 		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundle.Reference, err)
 	}
-	return read, verifyBundle(bundle.Reference, digest, func() ([]v1.Layer, error) {
+	return read, verifyBundle(ctx, bundle.Reference, digest, func() ([]v1.Layer, error) {
 		return layoutLayers(bundle.Layout, manifest.Layers)
 	}, verified)
 }

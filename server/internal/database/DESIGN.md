@@ -285,3 +285,5 @@ Credential approval scope adds per-part scope and JSON grant columns in place.
 After splitting legacy requests into parts, approved parts with no recorded
 scope become `legacy-unknown`; no historic consent is inferred from mutable
 bindings. The backfill is idempotent and preserves pending requests and grants.
+
+`VerifiedBundle` is an additive table in `model.AllModels()`. Existing databases start with an empty verification cache; no harness config or other existing data is rewritten.

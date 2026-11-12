@@ -400,3 +400,5 @@ microsecond from `ValueWrittenAt` (including legacy rows using `CreatedAt`).
 A repeated or backwards clock must still change `ValueGeneration`, so a
 replacement invalidates cached values and older rejection reports. The value's
 explicit expiry is kept as supplied; renewals in place do not call this method.
+
+`VerifiedBundle` holds successful whiteout checks keyed by immutable image digest, shared across projects and server restarts. It is internal cache state, not an API resource.

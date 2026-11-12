@@ -41,7 +41,7 @@ type Service struct {
 
 // NewService builds the service.
 func NewService(store *store.Store, harnesses harnessdefs.References, requireBuiltInImages bool) *Service {
-	verified := &verifiedBundles{}
+	verified := &verifiedBundles{store: store}
 	return &Service{
 		store:                store,
 		inspector:            defaultImageInspector{verified: verified},

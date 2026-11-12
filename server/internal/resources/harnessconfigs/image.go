@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -63,35 +64,45 @@ type defaultImageInspector struct {
 	verified *verifiedBundles
 }
 
-// verifiedBundles is the digests whose layers were found to carry no
-// whiteout. The verdict is the content's, which its digest names, so it never
-// goes stale: a bundle's layers are read in full — the platform bundle's are
-// the agent's binaries — once per digest while the server runs, not on every
-// seeding pass, which each project's ensure runs.
+// verifiedBundles remembers successful whiteout checks in memory and in the
+// application database. Only immutable image digests identify a verdict.
 type verifiedBundles struct {
 	mu      sync.Mutex
 	digests map[string]bool
+	store   *store.Store
 }
 
-func (v *verifiedBundles) has(digest string) bool {
+func (v *verifiedBundles) has(ctx context.Context, digest string) (bool, error) {
 	if v == nil {
-		return false
+		return false, nil
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return v.digests[digest]
+	if v.digests[digest] {
+		return true, nil
+	}
+	if v.store == nil {
+		return false, nil
+	}
+	return v.store.HasVerifiedBundle(ctx, digest)
 }
 
-func (v *verifiedBundles) add(digest string) {
+func (v *verifiedBundles) add(ctx context.Context, digest string) error {
 	if v == nil {
-		return
+		return nil
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if v.store != nil {
+		if err := v.store.RecordVerifiedBundle(ctx, digest); err != nil {
+			return err
+		}
+	}
 	if v.digests == nil {
 		v.digests = map[string]bool{}
 	}
 	v.digests[digest] = true
+	return nil
 }
 
 func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
@@ -130,7 +141,13 @@ func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef stri
 		return bundleInspection{}, fmt.Errorf("bundle %q: %w", bundleRef, err)
 	}
 	digest := descriptor.Digest.String()
-	if err := verifyBundle(bundleRef, digest, image.Layers, d.verified); err != nil {
+	// An index names several platforms: remember the selected image's verdict,
+	// while keeping the published index digest as the bundle pin.
+	imageDigest, err := image.Digest()
+	if err != nil {
+		return bundleInspection{}, fmt.Errorf("read bundle image digest %q: %w", bundleRef, err)
+	}
+	if err := verifyBundle(ctx, bundleRef, imageDigest.String(), image.Layers, d.verified); err != nil {
 		return bundleInspection{}, err
 	}
 	return bundleInspection{Digest: digest, Labels: config.Config.Labels}, nil
@@ -154,15 +171,18 @@ func admitBundle(labels map[string]string, admit func(labels map[string]string) 
 
 // verifyBundle refuses a bundle when a layer carries a whiteout, reading its
 // layers only when its digest has not been read before.
-func verifyBundle(bundleRef, digest string, layers func() ([]v1.Layer, error), verified *verifiedBundles) error {
-	if verified.has(digest) {
+func verifyBundle(ctx context.Context, bundleRef, digest string, layers func() ([]v1.Layer, error), verified *verifiedBundles) error {
+	found, err := verified.has(ctx, digest)
+	if err != nil {
+		return fmt.Errorf("read bundle verification: %w", err)
+	}
+	if found {
 		return nil
 	}
 	if err := refuseWhiteouts(layers); err != nil {
 		return fmt.Errorf("bundle %q: %w", bundleRef, err)
 	}
-	verified.add(digest)
-	return nil
+	return verified.add(ctx, digest)
 }
 
 // refuseWhiteouts refuses a bundle any of whose layers carries a whiteout, the
@@ -301,7 +321,14 @@ func inspectLocalBundle(ctx context.Context, bundleRef string, admit func(labels
 	if err := admitBundle(read.Labels, admit); err != nil {
 		return bundleInspection{}, true, fmt.Errorf("bundle %q: %w", bundleRef, err)
 	}
-	if verified.has(read.Digest) {
+	// The daemon's image ID identifies the selected platform, unlike a
+	// RepoDigest that may name a multi-platform index.
+	verificationDigest := inspected.ID
+	found, err := verified.has(ctx, verificationDigest)
+	if err != nil {
+		return bundleInspection{}, true, fmt.Errorf("read bundle verification: %w", err)
+	}
+	if found {
 		return read, true, nil
 	}
 	image, cleanup, err := saveLocalImage(ctx, client, bundleRef, ocispec.Platform{OS: inspected.Os, Architecture: inspected.Architecture})
@@ -309,7 +336,7 @@ func inspectLocalBundle(ctx context.Context, bundleRef string, admit func(labels
 		return bundleInspection{}, true, fmt.Errorf("save bundle %q: %w", bundleRef, err)
 	}
 	defer cleanup()
-	return read, true, verifyBundle(bundleRef, read.Digest, image.Layers, verified)
+	return read, true, verifyBundle(ctx, bundleRef, verificationDigest, image.Layers, verified)
 }
 
 // saveLocalImage saves ref from the daemon to a file, read as a docker save
@@ -477,7 +504,7 @@ func newDevImageInspector(bundles *devbundles.Set, fallback imageInspector, veri
 func (d devImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
 	bundleRef = strings.TrimSpace(bundleRef)
 	if bundle, ok := d.bundles.Layout(bundleRef); ok {
-		return inspectLayoutBundle(bundle, admit, d.verified)
+		return inspectLayoutBundle(ctx, bundle, admit, d.verified)
 	}
 	bundle, ok := d.bundles.Unbuilt(bundleRef)
 	if !ok {

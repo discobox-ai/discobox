@@ -286,7 +286,7 @@ func TestInspectBundleReadsALayerOncePerDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectBundle() error = %v", err)
 	}
-	if !inspector.verified.has(first.Digest) {
+	if found, err := inspector.verified.has(context.Background(), first.Digest); err != nil || !found {
 		t.Fatalf("digest %s not recorded as read", first.Digest)
 	}
 	// Another digest is read for itself, whatever was read before.

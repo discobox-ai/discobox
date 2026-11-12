@@ -106,7 +106,7 @@ func TestResolveReadsBundlesFromTheirLayouts(t *testing.T) {
 // beneath holds is refused.
 func TestInspectLayoutBundleRefusesAWhiteout(t *testing.T) {
 	bundle := exportBundle(t, codexBundle, map[string]string{}, []string{"features/acme/install.sh"}, []string{"features/acme/.wh.install.sh"})
-	_, err := inspectLayoutBundle(bundle, admitAny, &verifiedBundles{})
+	_, err := inspectLayoutBundle(context.Background(), bundle, admitAny, &verifiedBundles{})
 	if err == nil || !strings.Contains(err.Error(), "whiteout") {
 		t.Fatalf("err = %v, want the whiteout refused", err)
 	}
@@ -120,13 +120,13 @@ func TestInspectLayoutBundleRefusesALayoutRebuiltSince(t *testing.T) {
 	if err := os.Rename(rebuilt.Layout, bundle.Layout); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := inspectLayoutBundle(bundle, admitAny, &verifiedBundles{}); err == nil || !strings.Contains(err.Error(), "not the") {
+	if _, err := inspectLayoutBundle(context.Background(), bundle, admitAny, &verifiedBundles{}); err == nil || !strings.Contains(err.Error(), "not the") {
 		t.Fatalf("err = %v, want the rebuilt layout refused", err)
 	}
 	if err := os.Remove(bundle.Layout); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := inspectLayoutBundle(bundle, admitAny, &verifiedBundles{}); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := inspectLayoutBundle(context.Background(), bundle, admitAny, &verifiedBundles{}); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("err = %v, want a missing layout reported as one", err)
 	}
 }

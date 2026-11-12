@@ -392,3 +392,5 @@ never creates a document for a legacy row.
 Enrollment and heartbeat writers read locked rows; manifest/lifecycle writers
 omit evidence. Control-plane bootstrap reads use the primary so stale replica
 observations cannot extend or revive an attempt.
+
+`HasVerifiedBundle` and `RecordVerifiedBundle` persist successful bundle whiteout checks. Inserts are idempotent; failures and partial checks never create a verdict.

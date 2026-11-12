@@ -2279,6 +2279,12 @@ type SandboxSuspendReceipt struct {
 	RequestID string `gorm:"primaryKey"`
 }
 
+// VerifiedBundle records a successful whiteout check of one immutable image.
+// The index digest of a multi-platform bundle is not a verification key.
+type VerifiedBundle struct {
+	Digest string `gorm:"primaryKey"`
+}
+
 // AllModels returns all persisted model types.
 func AllModels() []any {
 	return []any{
@@ -2286,6 +2292,7 @@ func AllModels() []any {
 		&Project{},
 		&ProjectMember{},
 		&ServerState{},
+		&VerifiedBundle{},
 		&EncryptionKey{},
 		&SandboxAccessIssuerKey{},
 		&HarnessConfig{},
