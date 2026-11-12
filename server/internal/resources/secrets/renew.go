@@ -12,13 +12,11 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
-// This file is renewal for the two types that hold a short-lived token: an
-// OAuth access token renewed by its refresh token (ADR 0011), and an exchange
-// secret's token renewed from the fields it stores (ADR 26-10-08-452). Both
-// keep the token in SecretValue.Token and its expiry in AccessTokenExpiresAt,
-// and from there everything here is the same: when to renew, one renewal at a
-// time, how the renewed value is kept, and what a forced renewal settled. How
-// the request is made is the type's own (oauth.go, exchange.go).
+// This file is renewal for the one type that holds a short-lived token: an
+// OAuth access token renewed by its refresh token (ADR 0011), kept in
+// SecretValue.Token with its expiry in AccessTokenExpiresAt. It decides when
+// to renew, keeps to one renewal at a time, stores the renewed value, and
+// says what a forced renewal settled. The request itself is oauth.go's.
 
 // tokenRenewSkew is how far ahead of the token's expiry a resolve will
 // proactively renew it, so an outbound request never carries a token that
@@ -68,18 +66,12 @@ func upstreamAnswer(status string, body []byte) string {
 // renews reports whether a secret of this type holds a token the server
 // renews.
 func renews(secretType string) bool {
-	return secretType == model.SecretTypeOAuth || secretType == model.SecretTypeExchange
+	return secretType == model.SecretTypeOAuth
 }
 
 // canRenew reports whether a value carries what its type needs to renew.
 func canRenew(secretType string, val *model.SecretValue) bool {
-	switch secretType {
-	case model.SecretTypeOAuth:
-		return oauthRenewable(val)
-	case model.SecretTypeExchange:
-		return val != nil && len(val.Exchange) > 0
-	}
-	return false
+	return secretType == model.SecretTypeOAuth && oauthRenewable(val)
 }
 
 // tokenExpiry returns the token's expiry, or the zero time when unknown.
@@ -144,8 +136,7 @@ func (s *Service) ensureFresh(ctx context.Context, secret *model.Secret, val *mo
 // (a concurrent process may have just renewed it), performs the upstream
 // renewal, and persists the renewed credential with an updated_at guard. On a
 // guard conflict it re-reads and returns the winner's value rather than
-// renewing again: an OAuth refresh token it holds is already spent, and an
-// exchange's winner is as good as its own.
+// renewing again: an OAuth refresh token it holds is already spent.
 // force skips the freshness check: a credential the upstream has just refused
 // is stale whatever its stated expiry says, which is the whole of what a 401
 // tells us that a clock cannot (ADR 0132 §3).
@@ -169,15 +160,7 @@ func (s *Service) renewLocked(ctx context.Context, projectID, secretID string, f
 		return val, nil
 	}
 
-	var renewed *model.SecretValue
-	switch secret.Type {
-	case model.SecretTypeOAuth:
-		renewed, err = refreshOAuthToken(ctx, val)
-	case model.SecretTypeExchange:
-		renewed, err = exchangeToken(ctx, secret, val)
-	default:
-		return val, nil
-	}
+	renewed, err := refreshOAuthToken(ctx, val)
 	if err != nil {
 		return nil, err
 	}
@@ -235,8 +218,7 @@ const (
 	// was just refused. Nothing renewed, whatever it said.
 	renewalUnchanged
 	// renewalRefused: the endpoint refused to renew — an OAuth refresh token
-	// spent, revoked, or belonging to a session somebody ended elsewhere, or an
-	// exchange's stored key revoked. This is the one that needs a person.
+	// spent, revoked, or belonging to a session somebody ended elsewhere. This is the one that needs a person.
 	renewalRefused
 	// renewalImpossible: there is nothing to renew with.
 	renewalImpossible

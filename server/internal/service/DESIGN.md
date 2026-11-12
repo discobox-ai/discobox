@@ -95,7 +95,11 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
 2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`. This
    runs before any worker or HTTP listener can use old readiness; pool
    identity and lifecycle survive.
-3. Brings stored secrets' formats up to date (`Store.RefreshSecretFormats`),
+3. Converts every secret of the retired `exchange` type into a token secret
+   sent nowhere (`secrets.Service.RetireExchangeSecrets`, ADR 26-11-12-957
+   §2): its value is sealed, so this waits for the keyring rather than
+   running in the database migration. Then it brings stored secrets' formats
+   up to date (`Store.RefreshSecretFormats`),
    before anything mints a sentinel, and seals the credentials an older
    server kept in a provider's config in the clear
    (`Store.SealProviderCredentials`, ADR 26-10-31-694 §4), before anything

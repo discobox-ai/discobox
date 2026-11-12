@@ -5235,19 +5235,6 @@ discobox secret bound [DISCOBOX] [--harness HARNESS | --project-wide] [flags]
 ~~~~text
 Create a secret.
 
-An exchange credential (--type exchange) is fields such as an API key that
-the server trades for a short-lived token, by a recipe given with
---exchange-recipe (JSON, or @path): where to POST, which fields, the body built
-from them as {name}, and where the token is in the answer. The fields are given
-with --field, a value of - reading stdin:
-
-  discobox secret create --name boxd --type exchange --route boxd.sh \
-    --exchange-recipe '{"url":"https://app.boxd.sh/api/v1/auth/token","fields":["api_key"],"body":{"api_key":"{api_key}"},"tokenPath":"token","expiresAtPath":"expires_at"}' \
-    --field api_key=- < key
-
-The server exchanges it at once, refusing a key the provider refuses, and a
-discobox is only ever handed the short-lived token.
-
 Every secret says where it may be sent, with --route, '*' for anywhere. A
 secret with no routes is sent nowhere.
 
@@ -5305,8 +5292,6 @@ discobox secret create --name NAME --type TYPE [flags]
 | --client-id | string |  | OAuth client the grant belongs to |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
-| --exchange-recipe | string |  | How an exchange credential's fields are traded for a token: recipe JSON or @path (url, fields, body, header, form, tokenPath, expiresAtPath, expiresInPath). On update, given only with --field |
-| --field | stringArray | [] | An exchange credential's field as NAME=VALUE, such as api_key=bxd_...; a VALUE of - reads it from stdin (repeatable) |
 | --format | string |  | Shape of the sentinels that stand in for this secret: literal text with {charset:length} tokens, such as 'sk-ant-oat01-{base64url:95}'. Charsets: digits, hex, HEX, lower, upper, alnum, base62, base32, base64url, base64. Default: read from the value |
 | --help, -h | bool | false | help for create Value when passed without an argument: true. |
 | --max-binding-ttl | duration |  | Longest a binding of this secret may last: 1h, 3d, 2w, 1mo, or forever (default 1h) |
@@ -5321,7 +5306,7 @@ discobox secret create --name NAME --type TYPE [flags]
 | --token | string |  | The credential itself, or an OAuth access token |
 | --token-url | string |  | Where the refresh token is exchanged for a new access token |
 | --ttl | duration |  | How long a value is good for before a new one is asked for: 5m, 1h, or forever (default 5m with --refresh-command) |
-| --type | string |  | Secret type: token, oauth, or exchange (default token) |
+| --type | string |  | Secret type: token or oauth (default token) |
 | --value-json | string |  | Secret value JSON or @path |
 
 ## discobox secret get
@@ -5692,8 +5677,6 @@ discobox secret update SECRET [flags]
 | --client-id | string |  | OAuth client the grant belongs to |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
-| --exchange-recipe | string |  | How an exchange credential's fields are traded for a token: recipe JSON or @path (url, fields, body, header, form, tokenPath, expiresAtPath, expiresInPath). On update, given only with --field |
-| --field | stringArray | [] | An exchange credential's field as NAME=VALUE, such as api_key=bxd_...; a VALUE of - reads it from stdin (repeatable) |
 | --format | string |  | Shape of the sentinels that stand in for this secret: literal text with {charset:length} tokens, such as 'sk-ant-oat01-{base64url:95}'. Charsets: digits, hex, HEX, lower, upper, alnum, base62, base32, base64url, base64. Default: read from the value; "" goes back to that. A running discobox keeps the sentinel already in its environment |
 | --help, -h | bool | false | help for update Value when passed without an argument: true. |
 | --max-binding-ttl | duration |  | Longest a binding of this secret may last: 1h, 3d, 2w, 1mo, or forever (omit to leave it as it is) |

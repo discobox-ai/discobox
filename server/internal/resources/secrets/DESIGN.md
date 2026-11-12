@@ -345,10 +345,9 @@ model in the handlers over this resource's `ListSecretRequests` and
 `ListTrustRequests`: one call per server per beat, each item answered on its
 own resource's routes.
 
-## Three types, all doing work
+## Two types, both doing work
 
-A secret is a **token**, an **oauth** credential, or an **exchange** credential,
-and nothing else.
+A secret is a **token** or an **oauth** credential, and nothing else.
 
 `token` is one opaque string, not named after an HTTP scheme: the proxy swaps
 the value into whatever header the sandbox put it in — `x-api-key`,
@@ -356,10 +355,9 @@ the value into whatever header the sandbox put it in — `x-api-key`,
 requirement nothing enforces. `oauth` is a token that rotates, and the
 distinction is load-bearing: `ensureFresh` refreshes a near-expired access
 token on resolve and the resolution's expiry is capped by the token's own
-(ADR 0011). `exchange` is fields a person stores, such as an API key, that the
-server trades for a short-lived token (ADR 26-10-08-452; see
-[Exchange](#exchange)). All three swap identically, because the current token
-of each lives in the same field.
+(ADR 0011). Both swap identically, because the current token of each lives in
+the same field. The server never trades a stored key for a token itself (see
+[A retired exchange secret](#a-retired-exchange-secret)).
 
 There is no username/password or private-key type: cleartext leaves only
 through `ResolveSandboxSecret`, which emits `Value.Token`, so such a credential
@@ -496,8 +494,6 @@ with routes of its own, and a child is held to its parent's too.
 - **A change reaches running discoboxes level-triggered.** `UpdateSecret`
   marks every discobox holding the secret in the same transaction
   (`MarkSecretHoldersDirtyTx`), and so does `DeleteSecret`.
-- **An exchange recipe's URL is held to the routes** (`checkRecipe`): a key is
-  never sent to a host its token could not be.
 
 ## A secret's binding limit is a ceiling
 
@@ -643,46 +639,28 @@ capture and never guessed at refresh time: a refresh token rotates on use, so a
 request retried in the other encoding may be spending a token the first attempt
 already spent. See ADR 0127 §3.
 
-## Exchange
+- **A refresh follows no redirect** (`tokenHTTPClient`): a 307 or 308 would
+  re-send the refresh token to whatever the Location names.
+- **A 429 is not a refusal** (`refusedStatus`): it says nothing about the
+  credential.
 
-An exchange credential's renewal is OAuth's with a different request
-(ADR 26-10-08-452). `renew.go` owns what the two share: renewal on resolve
-within `tokenRenewSkew`, one renewal per secret at a time (`renewing`), the
-`revision` guard, the resolution's expiry capped by the token's own, the
-token on hand served when a renewal fails, and `forceRenew` on a rejection.
-`oauth.go` makes OAuth's refresh request; `exchange.go` makes the exchange, by
-the recipe `recipe.go` reads.
+## A retired exchange secret
 
-- **The recipe is the secret's** (`Secret.ExchangeRecipe`, a column, shown on
-  read as `exchange.recipe`): the https endpoint, the body and headers built
-  from the stored fields, and where the token and its expiry are in the
-  answer. The fields themselves are sealed in the value.
-- **A key goes only where its token may go** (`checkRecipe`): the URL's host
-  is one the secret's routes allow, which an exchange secret must have, at
-  create and whenever its recipe, value or routes change.
-  `tokenHTTPClient` follows no redirect, since a 307 would re-send the key to
-  whatever it names.
-- **An exchange never reaches an internal address** (`internalAddress`):
-  loopback, private, CGNAT, link-local, unspecified, multicast. The recipe's
-  host is resolved and refused at create and at every exchange, and
-  `exchangeClient` checks the address the direct dial connects to, so a name
-  that resolves inward the second time is still refused; a dial to the
-  configured proxy is left alone. A recipe is somebody's to write, and the
-  server's own network position is not theirs.
-- **A recipe changes only with the key** (`UpdateSecret`), so a stored key is
-  never pointed at a new endpoint, and only a person gives one
-  (`exchangeRecipe` refuses a sandbox principal).
-- **Stored fields are exchanged before they are stored** (`firstExchange`), on
-  create and on a replaced value: a key the endpoint refuses is a 400 to the
-  person storing it, and the sentinel takes the token's shape, not the key's.
-- **Nothing is spent by an exchange**, unlike a refresh token, so one may be
-  repeated; the singleflight still keeps concurrent resolves to one exchange.
-  A token whose lifetime neither the answer nor the token states is trusted
-  for `exchangeUnknownLifetime`, not renewed on every resolve.
-- **A 429 is not a refusal**, for an exchange or an OAuth refresh
-  (`refusedStatus`): it says nothing about the credential.
-- **A refused exchange is `refresh-failed`**: the key is dead and a person
-  replaces it. A refused token whose exchange then succeeds is recovered.
+There was a third type, `exchange`: fields the server traded at a recipe's
+endpoint for a short-lived token. It is gone (ADR 26-11-12-957), so the server
+never sends a request built from a person's template to a URL they wrote from
+its own network position. A row stored with it is converted at startup by
+`RetireExchangeSecrets`, before anything is served: its value is sealed, so
+it waits for the keyring, which the database migration runs before.
+
+- **The key a person stored is kept**, and nothing the server made: one
+  stored field is the token; more are the fields as a JSON object. A value
+  that cannot be opened or read is dropped, and the row converted with an
+  empty token: one unreadable credential never stops the server starting.
+- **It is sent nowhere**: routes none, `allowRaw` cleared with its raw
+  bindings, no value lifetime, rejections of the old value retracted, holders
+  marked. Keeping the routes would send the key itself wherever the token
+  went, from every bound sandbox. Plain bindings and route constraints stay.
 
 The approval inbox also composes the sandbox service's adoption requests
 (ADR 26-11-03-970). Their lifecycle belongs to sandboxes, not credentials.

@@ -46,6 +46,22 @@ func (s *Store) sealSecretForWrite(ctx context.Context, secret *model.Secret) (*
 
 // OpenSecretValue decrypts a secret's value and deserializes it.
 func (s *Store) OpenSecretValue(ctx context.Context, secret *model.Secret) (*model.SecretValue, error) {
+	plaintext, err := s.OpenSecretPlaintext(ctx, secret)
+	if err != nil || plaintext == nil {
+		return nil, err
+	}
+	var val model.SecretValue
+	if err := json.Unmarshal(plaintext, &val); err != nil {
+		return nil, fmt.Errorf("unmarshal secret value: %w", err)
+	}
+	return &val, nil
+}
+
+// OpenSecretPlaintext decrypts a secret's value without reading it as a
+// SecretValue: for a caller that needs a field the model no longer has, such
+// as the startup step that converts a retired secret type. Nil when the
+// secret has no value.
+func (s *Store) OpenSecretPlaintext(ctx context.Context, secret *model.Secret) ([]byte, error) {
 	if secret == nil || len(secret.EncryptedValue) == 0 {
 		return nil, nil
 	}
@@ -54,11 +70,19 @@ func (s *Store) OpenSecretValue(ctx context.Context, secret *model.Secret) (*mod
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret value: %w", err)
 	}
-	var val model.SecretValue
-	if err := json.Unmarshal(plaintext, &val); err != nil {
-		return nil, fmt.Errorf("unmarshal secret value: %w", err)
+	return plaintext, nil
+}
+
+// SecretsOfType lists every secret of a type, in every project, anonymous ones
+// included, oldest first: for a startup step that rewrites a type.
+func (s *Store) SecretsOfType(ctx context.Context, secretType string) ([]model.Secret, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return &val, nil
+	var out []model.Secret
+	err = write.Where("type = ?", secretType).Order("created_at ASC").Find(&out).Error
+	return out, err
 }
 
 // valueFormat is the shape of secret's value, or fallback when there is no

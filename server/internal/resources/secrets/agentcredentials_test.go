@@ -511,6 +511,15 @@ func createRoutedSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.
 	return secret
 }
 
+// hostRoutes is a secret's routes as a create gives them: the one host, or
+// none for an empty one.
+func hostRoutes(host string) serverapi.OptNilSecretRouteInputArray {
+	if host == "" {
+		return serverapi.OptNilSecretRouteInputArray{}
+	}
+	return serverapi.NewOptNilSecretRouteInputArray([]serverapi.SecretRouteInput{{Hosts: []string{host}}})
+}
+
 // mustBindAs stores a binding in project-1 as a person made it.
 func mustBindAs(t *testing.T, st *store.Store, binding *model.SecretBinding) *model.SecretBinding {
 	t.Helper()

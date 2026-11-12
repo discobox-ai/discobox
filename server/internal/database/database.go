@@ -196,6 +196,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropPoolImageStaging(write); err != nil {
 		return err
 	}
+	if err := dropExchangeRecipeColumn(write); err != nil {
+		return err
+	}
 	if err := renameSandboxEgressReconcile(write); err != nil {
 		return err
 	}
@@ -871,6 +874,17 @@ func dropProjectEvents(db *gorm.DB) error {
 		return nil
 	}
 	return db.Migrator().DropTable("project_events")
+}
+
+// dropExchangeRecipeColumn removes secrets.exchange_recipe, the recipe an
+// exchange secret was traded by: the server makes no exchange any more (ADR
+// 26-11-12-957 §1). The rows that carried one keep type 'exchange' until the
+// secrets service converts them at startup (secrets.Service.
+// RetireExchangeSecrets): their value is sealed, and this runs before there is
+// a keyring to open it with. The conversion reads only the type and the
+// value, never the recipe, so the column goes first.
+func dropExchangeRecipeColumn(db *gorm.DB) error {
+	return dropRetiredColumn(db, &model.Secret{}, "secrets", "exchange_recipe")
 }
 
 // dropRetiredColumn removes a column that is no longer part of a model.

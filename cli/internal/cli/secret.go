@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 	"time"
@@ -60,13 +59,6 @@ type secretValueOptions struct {
 	scopes           []string
 	expiresAt        int64
 	subscriptionType string
-	// fields are an exchange credential's NAME=VALUE pairs, a VALUE of -
-	// read from stdin, which is where they are read from. recipe is how they
-	// are exchanged, JSON or @path; it is not part of the value, and is sent
-	// beside it.
-	fields []string
-	stdin  io.Reader
-	recipe string
 }
 
 func (a *App) newSecretCommand() *cobra.Command {
@@ -143,19 +135,6 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 	var renewal secretRenewalOptions
 	cmd := &cobra.Command{Use: "create --name NAME --type TYPE", Short: "Create a secret", Long: `Create a secret.
 
-An exchange credential (--type exchange) is fields such as an API key that
-the server trades for a short-lived token, by a recipe given with
---exchange-recipe (JSON, or @path): where to POST, which fields, the body built
-from them as {name}, and where the token is in the answer. The fields are given
-with --field, a value of - reading stdin:
-
-  discobox secret create --name boxd --type exchange --route boxd.sh \
-    --exchange-recipe '{"url":"https://app.boxd.sh/api/v1/auth/token","fields":["api_key"],"body":{"api_key":"{api_key}"},"tokenPath":"token","expiresAtPath":"expires_at"}' \
-    --field api_key=- < key
-
-The server exchanges it at once, refusing a key the provider refuses, and a
-discobox is only ever handed the short-lived token.
-
 Every secret says where it may be sent, with --route, '*' for anywhere. A
 secret with no routes is sent nowhere.
 
@@ -176,7 +155,6 @@ reading it from the value gets it wrong, and is kept when the value changes.
 		if err != nil {
 			return err
 		}
-		value.stdin = cmd.InOrStdin()
 		body, err := createSecretBody(cmd.Flags(), name, secretType, ttl, value)
 		if err != nil {
 			return err
@@ -213,7 +191,7 @@ reading it from the value gets it wrong, and is kept when the value changes.
 		return a.writeSecret(cmd, secret)
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
-	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: token, oauth, or exchange (default token)")
+	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: token or oauth (default token)")
 	cmd.Flags().Var(ttl, "max-binding-ttl", maxBindingTTLCreateFlagUsage)
 	cmd.Flags().Bool("allow-raw", false, allowRawFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage)
@@ -245,7 +223,6 @@ it none, so it is sent nowhere.
 		if err != nil {
 			return err
 		}
-		value.stdin = cmd.InOrStdin()
 		body, err := updateSecretBody(cmd.Flags(), name, ttl, value)
 		if err != nil {
 			return err
@@ -838,8 +815,6 @@ func addSecretValueFlags(flags *pflag.FlagSet, opts *secretValueOptions) {
 	flags.StringArrayVar(&opts.scopes, "scope", nil, "What the grant may do, as the authorization server returned it (repeatable)")
 	flags.Int64Var(&opts.expiresAt, "access-token-expires-at", 0, "When the access token goes stale, unix milliseconds")
 	flags.StringVar(&opts.subscriptionType, "subscription-type", "", "The plan or account kind the grant belongs to")
-	flags.StringArrayVar(&opts.fields, "field", nil, "An exchange credential's field as NAME=VALUE, such as api_key=bxd_...; a VALUE of - reads it from stdin (repeatable)")
-	flags.StringVar(&opts.recipe, "exchange-recipe", "", "How an exchange credential's fields are traded for a token: recipe JSON or @path (url, fields, body, header, form, tokenPath, expiresAtPath, expiresInPath). On update, given only with --field")
 }
 
 // The lifetime flags, said once. A binding's lifetime and a secret's ceiling
@@ -875,11 +850,6 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType string, ttl *lifeti
 		Name:  strings.TrimSpace(name),
 		Type:  typed,
 		Value: value,
-	}
-	if recipe, ok, err := exchangeRecipeFlag(valueOpts.recipe); err != nil {
-		return nil, err
-	} else if ok {
-		body.SetExchange(apiclientgen.NewOptExchangeRecipe(recipe))
 	}
 	if seconds, given := ttl.Seconds(); given {
 		body.SetMaxBindingTTLSeconds(apiclientgen.NewOptInt64(seconds))
@@ -952,33 +922,12 @@ func updateSecretBody(flags *pflag.FlagSet, name string, ttl *lifetime.Flag, val
 		}
 		body.SetValue(apiclientgen.NewOptSecretValue(value))
 	}
-	if recipe, ok, err := exchangeRecipeFlag(valueOpts.recipe); err != nil {
-		return nil, err
-	} else if ok {
-		body.SetExchange(apiclientgen.NewOptExchangeRecipe(recipe))
-	}
 	if routes, ok, err := secretRoutesFlags(flags); err != nil {
 		return nil, err
 	} else if ok {
 		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(routes))
 	}
 	return body, nil
-}
-
-// exchangeRecipeFlag reads --exchange-recipe: JSON, or @path to a file of it.
-func exchangeRecipeFlag(flag string) (apiclientgen.ExchangeRecipe, bool, error) {
-	raw, err := rawJSON(flag)
-	if err != nil {
-		return apiclientgen.ExchangeRecipe{}, false, fmt.Errorf("--exchange-recipe: %w", err)
-	}
-	if raw == nil {
-		return apiclientgen.ExchangeRecipe{}, false, nil
-	}
-	var recipe apiclientgen.ExchangeRecipe
-	if err := recipe.UnmarshalJSON(raw); err != nil {
-		return apiclientgen.ExchangeRecipe{}, false, fmt.Errorf("--exchange-recipe is not a recipe: %w", err)
-	}
-	return recipe, true, nil
 }
 
 func secretValueFromOptions(flags *pflag.FlagSet, opts secretValueOptions) (apimodel.SecretValue, error) {
@@ -1018,21 +967,6 @@ func secretValueFromOptions(flags *pflag.FlagSet, opts secretValueOptions) (apim
 	if flags.Changed("subscription-type") {
 		value.SetSubscriptionType(apiclientgen.NewOptString(opts.subscriptionType))
 	}
-	if flags.Changed("field") {
-		fields := apiclientgen.SecretValueExchange{}
-		for _, pair := range opts.fields {
-			name, given, ok := strings.Cut(pair, "=")
-			if name = strings.TrimSpace(name); !ok || name == "" {
-				return apimodel.SecretValue{}, fmt.Errorf("--field %q is not NAME=VALUE", pair)
-			}
-			entered, err := enteredValue("--field "+name, given, opts.stdin)
-			if err != nil {
-				return apimodel.SecretValue{}, err
-			}
-			fields[name] = entered
-		}
-		value.SetExchange(apiclientgen.NewOptSecretValueExchange(fields))
-	}
 	return value, nil
 }
 
@@ -1041,7 +975,7 @@ func secretValueFlagsChanged(flags *pflag.FlagSet) bool {
 }
 
 func secretValueFlagsWithoutJSONChanged(flags *pflag.FlagSet) bool {
-	for _, name := range []string{"token", "refresh-token", "token-url", "client-id", "scope", "access-token-expires-at", "subscription-type", "field"} {
+	for _, name := range []string{"token", "refresh-token", "token-url", "client-id", "scope", "access-token-expires-at", "subscription-type"} {
 		if flags.Changed(name) {
 			return true
 		}
@@ -1055,10 +989,8 @@ func createSecretBodyType(value string) (apiclientgen.CreateSecretBodyType, erro
 		return apiclientgen.CreateSecretBodyTypeToken, nil
 	case "oauth":
 		return apiclientgen.CreateSecretBodyTypeOAuth, nil
-	case "exchange":
-		return apiclientgen.CreateSecretBodyTypeExchange, nil
 	default:
-		return "", fmt.Errorf("secret type must be token, oauth, or exchange")
+		return "", fmt.Errorf("secret type must be token or oauth")
 	}
 }
 

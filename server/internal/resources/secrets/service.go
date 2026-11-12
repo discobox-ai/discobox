@@ -34,8 +34,7 @@ const defaultMaxBindingTTLSeconds = 3600
 
 type Service struct {
 	store *store.Store
-	// renewing collapses concurrent resolves of the same OAuth or exchange
-	// secret onto a single upstream renewal, so a rotating refresh token is
+	// renewing collapses concurrent resolves of the same OAuth secret onto a single upstream renewal, so a rotating refresh token is
 	// spent once.
 	renewing singleflight.Group
 	// renewals is when a rejection last forced a renewal of each credential,
@@ -115,7 +114,6 @@ func (s *Service) ListSecrets(ctx context.Context, projectID string) ([]model.Se
 	}
 	for i := range secrets {
 		s.describeOAuth(ctx, &secrets[i])
-		s.describeExchange(ctx, &secrets[i])
 		describeStaleness(&secrets[i])
 		withholdRenewalFromSandbox(ctx, &secrets[i])
 	}
@@ -201,20 +199,9 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 		EncryptedValue: valueBytes,
 	}
 	sec.ValueWritten(time.Now().UTC(), nil)
-	// Routes first: a recipe is held to them. A secret with none is sent
-	// nowhere (ADR 26-10-27-880 §1); `*` is how a person says anywhere.
+	// A secret with no routes is sent nowhere (ADR 26-10-27-880 §1); `*` is how a person says anywhere.
 	if routes, ok := input.Routes.Get(); ok {
 		if _, err := replaceRoutes(sec, routes); err != nil {
-			return nil, err
-		}
-	}
-	if sec.ExchangeRecipe, err = exchangeRecipe(ctx, secretType, sec.Routes, input.Exchange); err != nil {
-		return nil, err
-	}
-	if sec.Type == model.SecretTypeExchange {
-		// Exchanged before it is stored, so a key the endpoint refuses is
-		// never stored (ADR 26-10-08-452 §3).
-		if sec.EncryptedValue, err = firstExchange(ctx, sec, input.Value); err != nil {
 			return nil, err
 		}
 	}
@@ -235,7 +222,6 @@ func (s *Service) GetSecret(ctx context.Context, projectID, secretID string) (*m
 		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	s.describeOAuth(ctx, sec)
-	s.describeExchange(ctx, sec)
 	describeStaleness(sec)
 	withholdRenewalFromSandbox(ctx, sec)
 	return sec, nil
@@ -287,32 +273,10 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			return nil, err
 		}
 	}
-	// A recipe says where a stored key is sent, so it changes only with the
-	// key beside it: pointing a stored key at a new endpoint would hand it to
-	// whoever runs that endpoint. A new binding is held to the recipe too.
-	recipe, err := exchangeRecipe(ctx, sec.Type, sec.Routes, input.Exchange)
-	switch {
-	case err != nil:
-		return nil, err
-	case recipe != nil && !input.Value.IsSet():
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			"a new exchange recipe is given with the value it exchanges: the stored fields are not sent anywhere new")
-	case recipe != nil:
-		sec.ExchangeRecipe = recipe
-	case sec.ExchangeRecipe != nil && routesChanged:
-		if err := checkRecipe(sec.ExchangeRecipe, sec.Routes); err != nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
-		}
-	}
 	if valueVal, ok := input.Value.Get(); ok {
 		valueBytes, err := marshalSecretValue(valueVal)
 		if err != nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
-		}
-		if sec.Type == model.SecretTypeExchange {
-			if valueBytes, err = firstExchange(ctx, sec, valueVal); err != nil {
-				return nil, err
-			}
 		}
 		sec.EncryptedValue = valueBytes
 	}
@@ -1310,7 +1274,7 @@ func checkOAuthValue(secretType string, val apigen.SecretValue) error {
 }
 
 func validSecretType(t string) bool {
-	return t == model.SecretTypeToken || t == model.SecretTypeOAuth || t == model.SecretTypeExchange
+	return t == model.SecretTypeToken || t == model.SecretTypeOAuth
 }
 
 // isGenerationConflict reports whether err is the store's optimistic-concurrency
