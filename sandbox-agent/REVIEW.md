@@ -466,8 +466,9 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   `wireSources` and `ensureHomeTarget` create a skills source's target under
   the user's home (ADR 26-11-01-692), and a link the user plants on the way
   can steer where root makes a directory. A machine's `wireMachineSources`,
-  and `wireMachineBoot`'s `wireVolumes`, do the same in the data volume the
-  user writes, at every boot and onto a fresh root too. That crosses nothing
+  and `wireMachineBoot`'s `wireVolumes`, do the same in the data root the
+  user writes, at every boot and onto a fresh root too, and `moveIn` renames
+  what a path held into a directory there. That crosses nothing
   only because boot gives the sandbox user passwordless sudo. A change that
   offers a box without it must make all of them refuse links race-free first
   (`os.Root`, or `openat` with `O_NOFOLLOW` per component). Why: security
@@ -522,6 +523,20 @@ user waits on every single start.
   parent's. Write it the way `provision/records.go` writes a record (temp
   file synced, renamed, directory synced): boot refuses a record it cannot
   read rather than guess, so an empty one left by a crash fails every boot.
+- **A machine's path is bound, never overlaid, and what it held is moved in
+  first** (`moveIn`, ADR 26-11-02-023 §2). A boxd machine's `/var/lib/docker`
+  and `/var/lib/containerd` always hold content by its first mount, and
+  Docker's `overlay2` and containerd's snapshotter refuse a data root on
+  overlayfs; a bind over content not moved hides it. Move an entry at a time
+  and record the layout only after the last, so a boot cut short resumes; a
+  copy across filesystems goes through names of its own (`finishCopy`),
+  never `mv`, whose cut-short copy is a partial entry every later boot
+  refuses;
+  refuse a name the volume has rather than overwrite it; and keep a layout
+  already recorded, a data-volume machine's overlay among them. Parents go
+  first (`sortVolumesByDepth`), so a cache path in the home moves out of the
+  home's volume at its own turn; a path that is its volume directory
+  already, reached through a parent's bind, moves nothing.
 - **A test of guest-path code hands it slash paths**
   (`filepath.ToSlash(t.TempDir())`, joined with `path`). `boot` splits
   paths with `path`, which finds no directory in a `filepath.Join` result on

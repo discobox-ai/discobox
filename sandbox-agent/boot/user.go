@@ -618,6 +618,9 @@ type booter struct {
 	// statusPath is the box's provision.json, which says which features are
 	// off; empty turns none off.
 	statusPath string
+	// bind bind-mounts a declared path or a machine's source from its
+	// volume directory (bindMount).
+	bind func(source, target string) error
 }
 
 // off reports whether provisioning turned feature off, so a boot step that
@@ -628,7 +631,9 @@ func (b *booter) off(feature string) bool {
 
 func newBooter() *booter {
 	ctx := context.Background()
-	b := &booter{statusPath: provisionspec.StatusPath}
+	b := &booter{statusPath: provisionspec.StatusPath, bind: func(source, target string) error {
+		return bindMount(source, target, false)
+	}}
 	b.wireFeatures = func(logger *slog.Logger, features map[string]sandboxconfig.Feature) {
 		// Not fatal: what failed is in provision.json, and the agent's run
 		// tries again and fails readiness if it still fails.

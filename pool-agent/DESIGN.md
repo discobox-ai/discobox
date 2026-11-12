@@ -974,10 +974,12 @@ flowchart LR
     newroot -->|yes| upgrade["upgradeMachine:\nengine.Upgrade, keeping\nits data and cache volumes"]
     newroot -->|no| start["startLocked: engine.Start"]
     upgrade --> start
-    start --> place["place: sandbox.json,\nagentlayer.Archive, then\ndiscobox-provision apply"]
-    place -->|"placed before with something else"| restart["restart the machine"]
-    restart --> place
-    place --> boot["finishBoot: wait at the URL,\ndeliver runtime config"]
+    start --> place{"place: sandbox.json,\nagentlayer.Archive"}
+    place -->|"placed as before"| apply["discobox-provision apply"]
+    place -->|"never placed in this instance,\nor placed before with something else:\nnothing applied or recorded"| restart["restart the machine"]
+    restart --> again["place again: nothing applied\n(its agent starts at boot), recorded"]
+    apply --> boot["finishBoot: wait at the URL,\ndeliver runtime config"]
+    again --> boot
 ```
 
 - **One machine per sandbox**, named by its ID in disco-vm's spelling
@@ -990,11 +992,24 @@ flowchart LR
   otherwise — made before the fence, or by hand — is refused rather than run
   (`fenced`).
 - **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
-  when the pool's record does not say it is there, the units and the pins, then
-  runs `discobox-provision apply` through the provisioner. A machine keeps its
+  when the pool's record does not say it is there, the units
+  (`agentlayer.MachineUnits`: the agent's, and the drop-in that runs
+  `discobox-wire.service` on a machine) and the pins, then runs
+  `discobox-provision apply` through the provisioner. A machine keeps its
   disk, and its agent starts at boot from what was placed before, so when what
   is placed moved — pins, the agent, or the bootstrap — the machine is
   restarted onto it: a moved pin restarts, never rebuilds (ADR 26-10-24-953 §1).
+  **A placement the machine restarts onto** — the first in an instance (the
+  pool's record names none in it, a new root's included), or one whose
+  agent, pins or bootstrap moved — applies nothing and records nothing: the
+  machine's provider's dockerd and containerd already run on the paths its
+  volumes are mounted onto, which only the unit may mount, at a boot before
+  them ([ADR 26-11-02-023](../docs/adr/26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
+  §3). After the restart the agent starts from its own units, as a
+  container's does, and the placement is made again, applying nothing, and
+  recorded; a pool agent gone in between leaves the old record, so the next
+  start restarts the machine again. A first placement is one more guest boot
+  in a create.
 - **The agent listens where the driver's service says**
   (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into
   sandbox.json as the agent's listen address, since the driver gives an
@@ -1010,19 +1025,21 @@ flowchart LR
   from the driver's base, has a data volume at `/.discobox/data` and a cache
   volume at `/.discobox/cache` where the driver attaches them (a snapshot's
   own VM has neither: a committed VM holds no volume)
-  (`Capabilities.Volumes`). Of the drivers linked here, boxd attaches
-  neither, so every machine of a boxd pool has its data on its disk and is
-  rebuilt in place; disco-vm's fake and docker drivers attach both. The cache
+  (`Capabilities.Volumes`); where it attaches neither, the sandbox agent
+  makes both as directories of the machine's disk, so every machine has the
+  one layout (ADR 26-11-02-023 §1). Of the drivers linked here, boxd
+  attaches neither, so every machine of a boxd pool has its data on its disk
+  and is rebuilt in place; disco-vm's fake and docker drivers attach both. The cache
   is the machine's own, under a key of its name that nothing saves, since no
   machine shares a cache.
-- **The data contract.** What a machine with a data volume keeps across a
-  new root is what a container keeps across a rebuild: its declared volumes
-  (the platform's home, a harness's paths), wired from its data and cache
-  volumes as `volumeDir` lays them out, and its sources, each kept at its
-  target's own path on the data volume. The sandbox agent makes those mounts
-  at every boot (`discobox-wire.service`, and its own start where that
-  could not; [sandbox-agent `boot`](../sandbox-agent/DESIGN.md)), and says
-  so on the volume (`sandboxconfig.MachineDataWiredFile`: the sandbox's ID
+- **The data contract.** What a machine keeps across a new root, or on its
+  disk across a restart, is what a container keeps across a rebuild: its
+  declared volumes (the platform's home, a harness's paths), mounted from its
+  data and cache roots as `volumeDir` lays them out, and its sources, each
+  kept at its target's own path on the data root. The sandbox agent makes
+  those mounts at every boot (`discobox-wire.service`, and its own start
+  where that did not run; [sandbox-agent `boot`](../sandbox-agent/DESIGN.md)),
+  and, where the data root is a data volume, says so on the volume (`sandboxconfig.MachineDataWiredFile`: the sandbox's ID
   and a random token of this start, kept in the start's own `/run`,
   `sandboxconfig.MachineWiredFile`). The pool reads both, as bounded file
   copies, after every start into `machine.json` (`dataOnVolume`,

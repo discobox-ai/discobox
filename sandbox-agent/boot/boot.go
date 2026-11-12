@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -19,34 +18,38 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 )
 
-// Wire is a pool container's boot: discobox-wire.service runs it from the
-// container's own systemd, before local-fs.target and so before every unit
-// that uses a wired path (ADR 26-10-10-767). It provisions the sandbox user from
-// the bootstrap's own `user`, binds the config volume onto /etc/discobox and the
-// secrets volume onto /run/discobox/secrets, wires the image-declared volumes
-// and the sources from the primary volumes the pool agent mounted (ADR 0007),
-// writes the units bound to the sandbox user, and reloads the manager so they
-// are read.
+// Wire is a sandbox's boot: discobox-wire.service runs it from the box's own
+// systemd, before local-fs.target and so before every unit that uses a wired
+// path (ADR 26-10-10-767). In a pool's container it provisions the sandbox user
+// from the bootstrap's own `user`, binds the config volume onto /etc/discobox
+// and the secrets volume onto /run/discobox/secrets, wires the image-declared
+// volumes and the sources from the primary volumes the pool agent mounted (ADR
+// 0007), writes the units bound to the sandbox user, and reloads the manager so
+// they are read. On a machine, which has no config volume, the unit runs where
+// its pool placed the bootstrap (its machine drop-in), and mounts the
+// machine's volumes and sources from its own data and cache roots
+// (provisionMachine, ADR 26-11-02-023).
 //
-// It runs on every boot, unlike Provision: a container's mounts do not survive
-// a restart, nor its account a rebuild. Provision runs only on a machine whose
-// disk persists across its stops, and keeps its record there; Wire has no such
-// disk under it.
+// It runs on every boot: a container's mounts do not survive a restart, nor
+// its account a rebuild, and a machine's mounts do not survive a restart
+// either. A machine's account and seeding do, and are made once per sandbox
+// (provisionMachine keeps its record on the disk).
 //
-// An error fails the unit, and the unit's failure ends the container: a sandbox
-// whose wiring failed would write its state into the image layer.
+// An error fails the unit, and the unit's failure ends the container, or
+// powers the machine off: a sandbox whose wiring failed would write its state
+// into the image layer, or onto the bare paths of a machine's disk.
 func Wire(logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if !dirExists(configMountPath) {
-		// A machine with a data volume of its own: its mounts are made again
-		// at every boot, here before anything uses them. A failure is not
-		// the unit's: the agent's start wires again, and fails if it cannot.
-		if err := newBooter().wireMachineBoot(logger, path.Join(etcDiscobox, manifestName)); err != nil {
-			logger.Warn("wire a machine's data volume at boot; the agent's start tries again", "error", err)
+		// A machine: its mounts are made here, before anything uses them, at
+		// every boot. A failure fails the unit, which powers the machine off
+		// (ADR 26-11-02-023 §3).
+		if runtime.GOOS != "linux" {
+			return nil
 		}
-		return nil
+		return newBooter().provisionMachine(logger, machineManifestPath, true)
 	}
 	// Both volumes and sources come from this one read of the config volume's
 	// copy, before it is bound onto /etc/discobox (ADR 0012 §6).
@@ -68,18 +71,13 @@ func Wire(logger *slog.Logger) error {
 	return b.reloadUserUnits(logger, id)
 }
 
-// Provision is Wire's provisioning for a sandbox with no config volume to wire:
-// a VM guest boots its own init, and the agent is one of its services,
-// started once the bootstrap at path has been placed through the running guest
-// (ADR 26-10-09-143 §1). It sets up what applies outside a container -- the
-// sandbox user and its groups, the working root, the home skeleton,
-// ~/.gitconfig, direnv config and the units bound to the sandbox user. A
-// machine with no data volume wires nothing, and its sources arrive through
-// the intake onto its disk. A machine with one (machineDataVolume) keeps its
-// declared volumes and its sources on it, as a container keeps them on its
-// primary volumes (ADR 0126 §2: its PID-1 flow wires them in that same
-// environment), so a new root keeps them (disco-vm ADR 26-11-03-782); those
-// mounts are made at every boot (wireMachineBoot).
+// Provision is the agent's start on a machine, which has no config volume: a
+// VM guest boots its own init, and the agent is one of its services, started
+// once the bootstrap at path has been placed through the running guest (ADR
+// 26-10-09-143 §1). Wire has normally provisioned the machine at this boot
+// already (provisionMachine), and then this does nothing; it provisions where
+// the unit did not run -- an agent layer placed by a pool that places no
+// machine drop-in -- the same way, from the agent's start.
 //
 // Where Wire ran, it has already done all of this, and Provision does nothing.
 // The config volume is what says so: only a pool's container has one, and Wire
@@ -94,7 +92,7 @@ func Provision(logger *slog.Logger, path string) error {
 	if dirExists(configMountPath) || runtime.GOOS != "linux" {
 		return nil
 	}
-	return newBooter().provisionOnce(logger, path)
+	return newBooter().provisionMachine(logger, path, false)
 }
 
 // JoinFeatureGroups wires the features of the box's bundle trees and joins
@@ -125,15 +123,25 @@ func JoinFeatureGroups(logger *slog.Logger, path string) error {
 	return b.ensureAdditionalGroups(id, bootstrap.SandboxGroups())
 }
 
-// provisionOnce is Provision past its two guards.
+// provisionMachine provisions a Linux machine for the bootstrap at path, or,
+// on a disk already provisioned for it, makes this start's mounts. atBoot is
+// Wire's call, from discobox-wire.service before sysinit.target; otherwise it
+// is the agent's start.
 //
-// It runs once per sandbox, not on every start. The agent's start is not a
-// boot: a restart after a crash finds the sandbox user's processes running,
-// and re-running account changes and re-seeding under them is a second boot
-// they did not ask for. The box's provisioning records (provision.Records)
-// keep whose sandbox this disk was provisioned for, on the disk itself, so a
-// stopped and restarted machine is not provisioned again either.
-func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
+// Every machine mounts its declared volumes and its sources from
+// /.discobox/data and /.discobox/cache: its driver's volumes where it
+// attached them, directories on its own disk where it did not (ADR
+// 26-11-02-023 §1). What the machine already has at a path is moved into its
+// volume and bound (wireVolume, §2).
+//
+// The account and the seeding run once per sandbox, not on every start. The
+// agent's start is not a boot: a restart after a crash finds the sandbox
+// user's processes running, and re-running account changes and re-seeding
+// under them is a second boot they did not ask for. The box's provisioning
+// records (provision.Records) keep whose sandbox this disk was provisioned
+// for, on the disk itself, so a stopped and restarted machine is only mounted
+// again (wireMachineBoot).
+func (b *booter) provisionMachine(logger *slog.Logger, path string, atBoot bool) error {
 	bootstrap, err := loadEffectiveConfig(path)
 	if err != nil {
 		return err
@@ -142,57 +150,57 @@ func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 		return fmt.Errorf("bootstrap %s names no sandbox", path)
 	}
 	records := provision.Records{Dir: recordsDir}
-	if records.Sandbox() == bootstrap.SandboxID {
-		return b.wireMachineBoot(logger, path)
-	}
-	// A disk provisioned before the records were kept says so with the
-	// marker that preceded them; it is carried into the records once.
-	if provisionedFor(legacyProvisionedPath) == bootstrap.SandboxID {
+	if records.Sandbox() != bootstrap.SandboxID && provisionedFor(legacyProvisionedPath) == bootstrap.SandboxID {
+		// A disk provisioned before the records were kept says so with the
+		// marker that preceded them; it is carried into the records once.
 		if err := records.RecordSandbox(bootstrap.SandboxID); err != nil {
 			return err
 		}
 		if err := removeLegacyMarker(legacyProvisionedPath); err != nil {
 			return err
 		}
-		return b.wireMachineBoot(logger, path)
 	}
 	id, err := bootstrapIdentity(bootstrap)
 	if err != nil {
 		return err
 	}
-	mode := wireNone
-	if machineDataVolume() {
-		mode = wireMachine
+	if records.Sandbox() == bootstrap.SandboxID {
+		return b.wireMachineBoot(logger, bootstrap, id)
 	}
-	if err := b.provision(logger, id, &bootstrap, mode); err != nil {
+	if err := ensureMachineRoots(); err != nil {
 		return err
 	}
-	if mode == wireMachine {
-		if err := markMachineWired(bootstrap.SandboxID); err != nil {
-			return err
-		}
+	if err := b.provision(logger, id, &bootstrap, wireMachine); err != nil {
+		return err
 	}
-	// The agent's start is long after boot, unlike Wire's: the session bus's
-	// socket has been listening since then, owned by root, so it is recreated
-	// for the sandbox user. Nothing has connected to it yet: every client is a
-	// process the agent starts. The proxy-trust environment the daemons read is
-	// rendered from the bootstrap, so it was skipped at this boot and is
-	// rendered now. Every later boot finds the drop-ins and the bootstrap on
-	// disk and needs none of this. Both units belong to features a box may not
-	// have (the session bus is the desktop's), so each is touched only where
-	// its file is installed: systemctl fails on a unit it cannot find.
+	if err := markMachineWired(bootstrap.SandboxID); err != nil {
+		return err
+	}
 	if dirExists("/run/systemd/system") {
 		if err := b.reloadUserUnits(logger, id); err != nil {
 			return err
 		}
-		if fileExists("/etc/systemd/system/discobox-session-bus.socket") {
-			if err := b.run("systemctl", "try-restart", "discobox-session-bus.socket"); err != nil {
-				return err
+		// At the agent's start, long after boot, the session bus's socket has
+		// been listening since then, owned by root, so it is recreated for
+		// the sandbox user; nothing has connected to it yet: every client is a
+		// process the agent starts. The proxy-trust environment the daemons
+		// read is rendered from the bootstrap, so it was skipped at this boot
+		// and is rendered now. At boot, before sysinit.target, both start
+		// after this and need neither, and starting a unit ordered after it
+		// from here would wait on itself. Both units belong to features a box
+		// may not have (the session bus is the desktop's), so each is touched
+		// only where its file is installed: systemctl fails on a unit it
+		// cannot find.
+		if !atBoot {
+			if fileExists("/etc/systemd/system/discobox-session-bus.socket") {
+				if err := b.run("systemctl", "try-restart", "discobox-session-bus.socket"); err != nil {
+					return err
+				}
 			}
-		}
-		if fileExists("/etc/systemd/system/discobox-render-proxy-env.service") {
-			if err := b.run("systemctl", "start", "discobox-render-proxy-env.service"); err != nil {
-				return err
+			if fileExists("/etc/systemd/system/discobox-render-proxy-env.service") {
+				if err := b.run("systemctl", "start", "discobox-render-proxy-env.service"); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -285,9 +293,8 @@ func (b *booter) reloadUserUnits(logger *slog.Logger, id identity) error {
 // provision does the user setup and what the bootstrap declares for the user:
 // groups, the working root, ~/.gitconfig, direnv config and desktop
 // launchers. mode says what the declared volumes and the sources are wired
-// from: nothing (a machine with no data volume), the primary volumes the pool
-// agent mounted (a pool's container, which also binds its config volume), or
-// a machine's own data and cache volumes.
+// from: the primary volumes the pool agent mounted (a pool's container, which
+// also binds its config volume), or a machine's own data and cache roots.
 func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, mode wireMode) error {
 	// A skills source's target may be home-relative (ADR 26-11-01-692 §3):
 	// expanded here against the home boot resolved, so the direnv whitelist
@@ -316,16 +323,14 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err := b.seedWorkingRoot(bootstrap.WorkingRoot(sandboxPaths), id); err != nil {
 		return fmt.Errorf("seed working root: %w", err)
 	}
-	if mode != wireNone {
-		volumes, err := loadResolvedVolumes(id, bootstrap.Volumes)
-		if err != nil {
-			return fmt.Errorf("resolve volumes: %w", err)
-		}
-		if err := b.wireVolumes(volumes, id); err != nil {
-			return err
-		}
-		logger.Info("wired sandbox volumes", "count", len(volumes))
+	volumes, err := loadResolvedVolumes(id, bootstrap.Volumes)
+	if err != nil {
+		return fmt.Errorf("resolve volumes: %w", err)
 	}
+	if err := b.wireVolumes(volumes, id, mode); err != nil {
+		return err
+	}
+	logger.Info("wired sandbox volumes", "count", len(volumes))
 	// Seed the home directory after the home volume (if any) is mounted, so the
 	// skeleton lands on the persistent volume rather than the image layer.
 	if err := b.seedHome(id); err != nil {
@@ -351,17 +356,12 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 			return fmt.Errorf("seed desktop launchers: %w", err)
 		}
 	}
-	switch mode {
-	case wireNone:
-		return nil
-	case wireMachine:
+	if mode == wireMachine {
 		if err := b.wireMachineSources(bootstrap.Sources, id); err != nil {
 			return err
 		}
-	default:
-		if err := b.wireSources(bootstrap.Sources, id); err != nil {
-			return err
-		}
+	} else if err := b.wireSources(bootstrap.Sources, id); err != nil {
+		return err
 	}
 	if len(bootstrap.Sources) > 0 {
 		logger.Info("wired sandbox sources", "count", len(bootstrap.Sources))
@@ -373,14 +373,11 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 type wireMode int
 
 const (
-	// wireNone wires nothing: a machine with no data volume, whose disk is
-	// all it has.
-	wireNone wireMode = iota
 	// wireContainer wires from the primary volumes the pool agent mounted
 	// into its container (Wire).
-	wireContainer
-	// wireMachine wires from the machine's own data and cache volumes
-	// (machineDataVolume).
+	wireContainer wireMode = iota
+	// wireMachine wires from the machine's own data and cache roots: its
+	// driver's volumes, or directories on its disk (ensureMachineRoots).
 	wireMachine
 )
 
@@ -393,7 +390,9 @@ var machineWiredPath = sandboxconfig.MachineWiredFile
 // machineDataVolume reports whether this box is a machine whose driver
 // mounted a data volume of its own at /.discobox/data (disco-vm ADR
 // 26-11-03-782): a pool's container has a config volume, and a machine without
-// a data volume has nothing mounted there. A variable so a test says which.
+// a data volume has a directory of its disk there (ensureMachineRoots). Only
+// a data volume is recorded as keeping the sandbox's data
+// (markMachineWired). A variable so a test says which.
 var machineDataVolume = func() bool {
 	if dirExists(configMountPath) || runtime.GOOS != "linux" {
 		return false
@@ -402,20 +401,24 @@ var machineDataVolume = func() bool {
 	return err == nil && slices.Contains(mounts, dataMountPath)
 }
 
-// markMachineWired records that this start wired the machine's data volume:
-// a random token in /run (sandboxconfig.MachineWiredFile), which a second
-// wiring in the same start reads as done, and on the volume that the
-// sandbox's data is kept there, naming the token
-// (sandboxconfig.MachineDataWiredFile), which the pool reads before it gives
-// the machine a new root.
+// markMachineWired records that this start mounted the machine's volumes: a
+// random token in /run (sandboxconfig.MachineWiredFile), which a second
+// mount in the same start reads as done, and, where the data root is a data
+// volume, on the volume that the sandbox's data is kept there, naming the
+// token (sandboxconfig.MachineDataWiredFile), which the pool reads before it
+// gives the machine a new root. Roots on the machine's own disk say nothing
+// on it: that machine's disk is all it has, and the pool rebuilds it in place
+// (ADR 26-11-02-023 §1).
 func markMachineWired(sandboxID string) error {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return err
 	}
 	token := hex.EncodeToString(raw[:])
-	if err := os.WriteFile(machineDataWiredFile, []byte(sandboxID+" "+token+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
-		return err
+	if machineDataVolume() {
+		if err := os.WriteFile(machineDataWiredFile, []byte(sandboxID+" "+token+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
+			return err
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(machineWiredPath), 0o755); err != nil {
 		return err
@@ -427,25 +430,27 @@ func markMachineWired(sandboxID string) error {
 // test does not write the machine's own.
 var machineDataWiredFile = sandboxconfig.MachineDataWiredFile
 
-// wireMachineBoot makes a machine's mounts onto its own data and cache
-// volumes again, once per boot: its declared volumes and its sources, as the
-// first provisioning of this disk made them (provision, wireMachine). A
-// machine with no data volume, one wired already this boot, and a disk not
-// yet provisioned for the bootstrap at manifest (whose provisioning wires it) are
-// left alone.
-func (b *booter) wireMachineBoot(logger *slog.Logger, manifest string) error {
-	if !machineDataVolume() || fileExists(machineWiredPath) {
+// ensureMachineRoots makes /.discobox/data and /.discobox/cache on a machine
+// whose driver attached no volumes there; on one that did they are the
+// volumes' mount points already.
+func ensureMachineRoots() error {
+	for _, root := range []string{dataMountPath, cacheMountPath} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// wireMachineBoot makes a machine's mounts from its own data and cache roots
+// again, once per start: its declared volumes and its sources, as the first
+// provisioning of this disk made them. A start that mounted them already
+// (sandboxconfig.MachineWiredFile) is left alone.
+func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Config, id identity) error {
+	if fileExists(machineWiredPath) {
 		return nil
 	}
-	bootstrap, err := loadEffectiveConfig(manifest)
-	if err != nil {
-		return err
-	}
-	if bootstrap.SandboxID == "" || (provision.Records{Dir: recordsDir}).Sandbox() != bootstrap.SandboxID {
-		return nil
-	}
-	id, err := bootstrapIdentity(bootstrap)
-	if err != nil {
+	if err := ensureMachineRoots(); err != nil {
 		return err
 	}
 	expanded := bootstrap.ExpandHome(sandboxPaths, id.home)
@@ -453,12 +458,12 @@ func (b *booter) wireMachineBoot(logger *slog.Logger, manifest string) error {
 	if err != nil {
 		return fmt.Errorf("resolve volumes: %w", err)
 	}
-	if err := b.wireVolumes(volumes, id); err != nil {
+	if err := b.wireVolumes(volumes, id, wireMachine); err != nil {
 		return err
 	}
 	if err := b.wireMachineSources(expanded.Sources, id); err != nil {
 		return err
 	}
-	logger.Info("wired a machine's data volume", "volumes", len(volumes), "sources", len(expanded.Sources))
+	logger.Info("mounted a machine's volumes", "volumes", len(volumes), "sources", len(expanded.Sources))
 	return markMachineWired(bootstrap.SandboxID)
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -663,8 +664,10 @@ func TestStatesFollowTheDocument(t *testing.T) {
 	if !h.c.pass(context.Background()) {
 		t.Fatal("a failed source is not retried")
 	}
-	if state := h.state(t, "a"); state.State != StateFailed || !strings.Contains(state.Error, "source target") {
-		t.Fatalf("state = %+v, want failed on the missing target", state)
+	// It says what a missing target means rather than a bare stat error
+	// (#1030).
+	if state := h.state(t, "a"); state.State != StateFailed || !strings.Contains(state.Error, "source target") || (runtime.GOOS == "linux" && !strings.Contains(state.Error, "sources did not come up")) {
+		t.Fatalf("state = %+v, want failed on the missing target, saying what it means", state)
 	}
 	if state := h.state(t, "b"); state.State != StateWaiting {
 		t.Fatalf("a source with no origin = %+v, want waiting", state)

@@ -176,7 +176,7 @@ func (r *MachineSandboxRuntime) powerTarget(ctx context.Context, sandboxID strin
 
 // startLocked boots the sandbox's machine, places what its agent boots on and
 // starts the agent, restarting the machine when it had booted on something
-// else, then waits for the agent and delivers its runtime-config document
+// else or on nothing placed, then waits for the agent and delivers its runtime-config document
 // (finishBoot). The caller holds the sandbox's power lock.
 func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID string) error {
 	if err := r.harnessStartAllowed(sandboxID); err != nil {
@@ -273,14 +273,15 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		}
 	}
 	r.observe(sandboxID, StatusRunning)
-	moved, err := r.place(ctx, sandboxID, inst, record)
+	moved, err := r.place(ctx, sandboxID, inst, record, false)
 	if err != nil {
 		return fail(err)
 	}
 	if moved {
-		// Its agent started at boot on what was placed before: restarted, it
-		// boots on what was placed now, as a container placed before its
-		// start does.
+		// Its agent started at boot on what was placed before, or nothing
+		// started, it never having been placed: restarted, it boots on what
+		// was placed now, its volumes wired before anything else starts, as
+		// a container placed before its start does (ADR 26-11-02-023 §3).
 		slog.InfoContext(ctx, "restarting a sandbox machine onto what was placed in it", "sandboxId", sandboxID)
 		if err := r.engine.Stop(ctx, inst, machineStopTimeout); err != nil && r.engine.State(ctx, inst) != engine.Stopped {
 			return fail(fmt.Errorf("restart sandbox %s's machine: %w", sandboxID, err))
@@ -290,7 +291,7 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			return fail(fmt.Errorf("restart sandbox %s's machine: %w", sandboxID, err))
 		}
 		r.urls.Delete(sandboxID)
-		if _, err := r.place(ctx, sandboxID, inst, record); err != nil {
+		if _, err := r.place(ctx, sandboxID, inst, record, true); err != nil {
 			return fail(err)
 		}
 	}

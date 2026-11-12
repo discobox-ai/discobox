@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,15 +14,18 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
 
-// A sandbox with nothing to wire (a VM guest, ADR 26-10-09-143 §1) is provisioned
-// from its bootstrap alone: the working root, the home skeleton, the git
-// identity and the direnv whitelist are all seeded for its user, and nothing is
-// wired -- it has no primary volumes to wire from, and its sources arrive
-// through the intake rather than as binds.
-func TestProvisionWithoutWiringSeedsWhatTheBootstrapDeclares(t *testing.T) {
+// A machine is provisioned from its bootstrap alone: the working root, the
+// home skeleton, the git identity and the direnv whitelist are all seeded for
+// its user, and each source's target is made and bound from the target's own
+// path on the machine's data root, so the intake's clone has somewhere to
+// land. A machine with no data volume made no target outside the home, and a
+// box with more than one source failed to clone into the missing directories
+// (#1030).
+func TestAMachineIsProvisionedAndItsSourcesMounted(t *testing.T) {
 	id := selfIdentity(t)
 	b, git := newFakeGitBooter(nil)
 	root := t.TempDir()
+	binds := useMachineRoots(t, b)
 	workingRoot := filepath.Join(root, "workspace")
 	source := filepath.Join(root, "workspace", "repo")
 	bootstrap := sandboxconfig.Config{
@@ -29,7 +34,7 @@ func TestProvisionWithoutWiringSeedsWhatTheBootstrapDeclares(t *testing.T) {
 		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
 	}
 
-	if err := b.provision(slog.Default(), id, &bootstrap, wireNone); err != nil {
+	if err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 
@@ -43,10 +48,11 @@ func TestProvisionWithoutWiringSeedsWhatTheBootstrapDeclares(t *testing.T) {
 	if !ok || !strings.Contains(direnv, `"`+source+`"`) {
 		t.Fatalf("direnv.toml = %q (written %v), want the source target whitelisted", direnv, ok)
 	}
-	// wireSources would have created the target to bind onto; the intake's
-	// clone is what fills it here.
-	if _, err := os.Stat(source); !os.IsNotExist(err) {
-		t.Fatalf("source target %s exists (%v); nothing should have been wired", source, err)
+	if info, err := os.Stat(source); err != nil || !info.IsDir() {
+		t.Fatalf("source target %s was not made: %v", source, err)
+	}
+	if want := machineSourceDir(source) + " -> " + source; !slices.Contains(*binds, want) {
+		t.Fatalf("binds = %v, want %s", *binds, want)
 	}
 	skel := false
 	for _, run := range git.runs {
@@ -104,7 +110,8 @@ func TestProvisionRunsOncePerSandbox(t *testing.T) {
 			return nil
 		},
 	}
-	if err := b.provisionOnce(slog.Default(), bootstrap); err != nil {
+	useMachineRoots(t, b)
+	if err := b.provisionMachine(slog.Default(), bootstrap, false); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if got := records.Sandbox(); got != "sbx_1" {
@@ -127,7 +134,8 @@ func TestProvisionCarriesTheLegacyMarkerIntoTheRecords(t *testing.T) {
 			return nil
 		},
 	}
-	if err := b.provisionOnce(slog.Default(), bootstrap); err != nil {
+	useMachineRoots(t, b)
+	if err := b.provisionMachine(slog.Default(), bootstrap, false); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if got := (provision.Records{Dir: recordsDir}).Sandbox(); got != "sbx_1" {
@@ -161,6 +169,7 @@ func writeBootstrap(t *testing.T, dir, sandboxID string) string {
 func TestProvisionWiresFeaturesFirstAndSkipsWhatIsOff(t *testing.T) {
 	id := selfIdentity(t)
 	b, git := newFakeGitBooter(nil)
+	useMachineRoots(t, b)
 	root := t.TempDir()
 	b.statusPath = filepath.Join(root, "provision.json")
 	status := `{"state":"provisioning","ready":false,"updatedAt":"2026-10-20T00:00:00Z","features":{"direnv":{"state":"off","reason":"turned off"}}}`
@@ -178,7 +187,7 @@ func TestProvisionWiresFeaturesFirstAndSkipsWhatIsOff(t *testing.T) {
 		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
 		Features:     map[string]sandboxconfig.Feature{"direnv": {Enabled: false}},
 	}
-	if err := b.provision(slog.Default(), id, &bootstrap, wireNone); err != nil {
+	if err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if runsBefore != 0 || len(wired) != 1 || wired["direnv"].Enabled {
@@ -195,12 +204,13 @@ func TestProvisionWiresFeaturesFirstAndSkipsWhatIsOff(t *testing.T) {
 func TestProvisionExpandsAHomeRelativeSourceTarget(t *testing.T) {
 	id := selfIdentity(t)
 	b, _ := newFakeGitBooter(nil)
+	useMachineRoots(t, b)
 	root := t.TempDir()
 	bootstrap := sandboxconfig.Config{
 		AgentRuntime: sandboxconfig.AgentRuntime{WorkingRoot: filepath.Join(root, "workspace")},
 		Sources:      []sandboxconfig.Source{{Slug: "tools", Target: "~/.discobox/skill-sources/tools"}},
 	}
-	if err := b.provision(slog.Default(), id, &bootstrap, wireNone); err != nil {
+	if err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	want := filepath.Join(id.home, ".discobox", "skill-sources", "tools")
@@ -211,4 +221,30 @@ func TestProvisionExpandsAHomeRelativeSourceTarget(t *testing.T) {
 	if bootstrap.Sources[0].Target != "~/.discobox/skill-sources/tools" {
 		t.Fatalf("provision rewrote the bootstrap it was given: %q", bootstrap.Sources[0].Target)
 	}
+}
+
+// useMachineRoots points a machine's data and cache roots, and the records of
+// its mounts, at a test's own directory, and has b record its binds rather
+// than make them: "source -> target".
+func useMachineRoots(t *testing.T, b *booter) *[]string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("a machine is provisioned as its Linux guest's user, by POSIX ids")
+	}
+	dir := t.TempDir()
+	savedData, savedCache := dataMountPath, cacheMountPath
+	savedWired, savedDataWired, savedVolume := machineWiredPath, machineDataWiredFile, machineDataVolume
+	t.Cleanup(func() {
+		dataMountPath, cacheMountPath = savedData, savedCache
+		machineWiredPath, machineDataWiredFile, machineDataVolume = savedWired, savedDataWired, savedVolume
+	})
+	dataMountPath, cacheMountPath = filepath.Join(dir, "data"), filepath.Join(dir, "cache")
+	machineWiredPath, machineDataWiredFile = filepath.Join(dir, "run", "machine-wired"), filepath.Join(dir, "data-wired")
+	machineDataVolume = func() bool { return false }
+	binds := &[]string{}
+	b.bind = func(source, target string) error {
+		*binds = append(*binds, source+" -> "+target)
+		return nil
+	}
+	return binds
 }

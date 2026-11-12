@@ -241,6 +241,66 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	}
 }
 
+// A machine boots before anything is placed in it, its provider's services
+// with it, so its first placement starts nothing and restarts it: the wiring
+// runs at that boot, before those services and the agent (ADR 26-11-02-023
+// §3). It is placed the wire unit's machine drop-in. A start after that
+// places and starts the agent at the boot it has, with no restart.
+func TestAMachinesFirstPlacementRestartsItBeforeAnythingRuns(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+		t.Fatalf("create = %v, want %v: a restart before anything is applied", got, want)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := r.engine.Guest(ctx, inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf := readMachineFile(t, guest, "/etc/systemd/system/discobox-wire.service.d/discobox-machine.conf"); !strings.Contains(conf, "ConditionPathExists=/etc/discobox/sandbox.json") {
+		t.Fatalf("the wire unit's machine drop-in:\n%s", conf)
+	}
+
+	if err := r.StopSandbox(ctx, "sbx_9", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_9", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "apply"}; !slices.Equal(got, want) {
+		t.Fatalf("start = %v, want %v", got, want)
+	}
+
+	// A machine placed before with another agent -- one provisioned before
+	// its volumes were mounted, given the agent that mounts them -- starts
+	// nothing on the running machine either: that agent would mount them
+	// under the provider's services already running on those paths.
+	placed, ok, err := r.readPlaced("sbx_9")
+	if err != nil || !ok {
+		t.Fatalf("placement record: %v %v", ok, err)
+	}
+	placed.Layer = "sha256:an-older-agent"
+	if err := r.writePlaced("sbx_9", placed); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StopSandbox(ctx, "sbx_9", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_9", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+		t.Fatalf("start onto a new agent = %v, want %v: a restart before anything is applied", got, want)
+	}
+}
+
 // A create whose answer was lost made the machine already: the next one finds
 // it by name rather than making a second.
 func TestMachineCreateFindsALostCreatesMachineByName(t *testing.T) {
@@ -760,6 +820,27 @@ type agentDriver struct {
 	// pool agent going away, or by the provider, fails.
 	upgradeFailures int
 	upgrades        int
+	mu              sync.Mutex
+	// events is each machine's boots and applies, in order.
+	events map[string][]string
+}
+
+func (d *agentDriver) record(name, event string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.events == nil {
+		d.events = map[string][]string{}
+	}
+	d.events[name] = append(d.events[name], event)
+}
+
+// takeEvents is what happened to the machine name since it was last asked.
+func (d *agentDriver) takeEvents(name string) []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	events := d.events[name]
+	delete(d.events, name)
+	return events
 }
 
 // Service owns a bound endpoint for the fixture's lifetime. disco-vm's fake
@@ -804,7 +885,49 @@ func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts mac
 	if err := m.CopyTo(ctx, "/run/discobox", fileTree(nil, "machine-wired", "")); err != nil {
 		return nil, err
 	}
-	return &agentMachine{Machine: m, driver: d, inst: inst}, nil
+	d.record(inst.Name, "boot")
+	am := &agentMachine{Machine: m, driver: d, inst: inst}
+	// A machine its agent was placed in, with the link that has systemd start
+	// it, starts it at boot, as its units do.
+	if err := am.bootAgent(ctx); err != nil {
+		return nil, err
+	}
+	return am, nil
+}
+
+// bootAgent starts the agent a boot finds placed with its start link.
+func (m *agentMachine) bootAgent(ctx context.Context) error {
+	var link string
+	for _, unit := range agentlayer.Units {
+		if unit.Name == agentlayer.AgentStartUnit {
+			link, _ = unit.Link()
+		}
+	}
+	// The link is absolute, to the unit in the guest's /etc: test -e would
+	// follow it out of the fake guest's root to the host's, so a host with
+	// no such unit would never start the agent. That the link is there is
+	// what has systemd start it.
+	process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", `test -L "$DISCO_VM_GUEST_ROOT` + link + `" || exit 0; ` + m.agentCheck()}})
+	if err != nil {
+		return err
+	}
+	var bootstrap strings.Builder
+	if code, err := process.Wait(&bootstrap, io.Discard); err != nil || code != 0 || bootstrap.Len() == 0 {
+		return err
+	}
+	return m.startAgent(bootstrap.String())
+}
+
+// agentCheck is a script that prints the bootstrap of a machine whose agent
+// and bootstrap are placed, and fails where they are not.
+func (m *agentMachine) agentCheck() string {
+	check := `root="$DISCO_VM_GUEST_ROOT"; test -x "$root` + agentlayer.AgentPath + `" && test -f "$root/etc/discobox/sandbox.json" && cat "$root/etc/discobox/sandbox.json"`
+	if m.driver.agents.sealedNeverAnswers() {
+		// An agent that never comes up in a box made from a snapshot: it
+		// starts, and nothing answers.
+		check = `if test -e "$DISCO_VM_GUEST_ROOT` + agentlayer.SealedFile + `"; then exit 0; fi; ` + check
+	}
+	return check
 }
 
 func (d *agentDriver) Attach(ctx context.Context, inst machine.Instance) (machine.Machine, error) {
@@ -828,13 +951,8 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 	if !slices.Equal(req.Argv, []string{agentlayer.AgentPath, "provision", "apply"}) {
 		return m.Machine.Exec(ctx, req)
 	}
-	check := `root="$DISCO_VM_GUEST_ROOT"; test -x "$root` + agentlayer.AgentPath + `" && test -f "$root/etc/discobox/sandbox.json" && cat "$root/etc/discobox/sandbox.json"`
-	if m.driver.agents.sealedNeverAnswers() {
-		// An agent that never comes up in a box made from a snapshot: apply
-		// succeeds, and nothing answers.
-		check = `if test -e "$DISCO_VM_GUEST_ROOT` + agentlayer.SealedFile + `"; then exit 0; fi; ` + check
-	}
-	process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", check}})
+	m.driver.record(m.inst.Name, "apply")
+	process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", m.agentCheck()}})
 	if err != nil {
 		return nil, err
 	}
@@ -868,27 +986,33 @@ func (p *applyProcess) Wait(_, stderr io.Writer) (int, error) {
 		// Applied, and no agent comes up (sealedBroken).
 		return 0, nil
 	}
-	var cfg sandboxconfig.Config
-	if err := json.Unmarshal([]byte(bootstrap.String()), &cfg); err != nil {
-		return 1, err
-	}
-	// The agent's provisioning wires a data volume and says so on it.
-	if !p.machine.driver.rootData && p.machine.inst.Data != nil {
-		// As the agent does: a token of this start in /run, and the line
-		// naming it on the volume.
-		token := fmt.Sprintf("start-%d", time.Now().UnixNano())
-		if err := p.machine.CopyTo(context.Background(), "/run/discobox", fileTree(nil, "machine-wired", token+"\n")); err != nil {
-			return 1, err
-		}
-		line := cfg.SandboxID + " " + token + "\n"
-		if err := p.machine.CopyTo(context.Background(), "/.discobox/data", fileTree(nil, ".discobox-wired", line)); err != nil {
-			return 1, err
-		}
-	}
-	if err := p.machine.driver.agents.start(p.machine.inst.Name, cfg); err != nil {
+	if err := p.machine.startAgent(bootstrap.String()); err != nil {
 		return 1, err
 	}
 	return 0, nil
+}
+
+// startAgent starts the machine's agent on the bootstrap it read, as its
+// units do: apply's start, or the boot of a machine its agent was placed in.
+func (m *agentMachine) startAgent(bootstrap string) error {
+	var cfg sandboxconfig.Config
+	if err := json.Unmarshal([]byte(bootstrap), &cfg); err != nil {
+		return err
+	}
+	// The agent's provisioning wires a data volume and says so on it.
+	if !m.driver.rootData && m.inst.Data != nil {
+		// As the agent does: a token of this start in /run, and the line
+		// naming it on the volume.
+		token := fmt.Sprintf("start-%d", time.Now().UnixNano())
+		if err := m.CopyTo(context.Background(), "/run/discobox", fileTree(nil, "machine-wired", token+"\n")); err != nil {
+			return err
+		}
+		line := cfg.SandboxID + " " + token + "\n"
+		if err := m.CopyTo(context.Background(), "/.discobox/data", fileTree(nil, ".discobox-wired", line)); err != nil {
+			return err
+		}
+	}
+	return m.driver.agents.start(m.inst.Name, cfg)
 }
 
 // fakeMachineAgents are the sandbox agents of a test's machines, by machine

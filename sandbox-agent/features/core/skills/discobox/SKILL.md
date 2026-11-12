@@ -408,6 +408,11 @@ echo 'check CI' > ~/.discobox/wake/.ci && touch -d '+45 min' ~/.discobox/wake/.c
 | `/nix/var/nix/profiles`, `/nix/var/nix/gcroots`, `/nix/var/nix/daemon-socket` | carved back out of the shared store; this box's own — your profile and roots, and the socket of this box's own `nix-daemon` |
 | `/home/linuxbrew/.linuxbrew` (what `brew install` puts there) | this box's own; the image's own tree shows through underneath it |
 
+Each path is backed by `/.discobox/data` (this box's own) or `/.discobox/cache`
+(the cache rows), container or machine alike. In a machine pool (one VM per
+box) nothing is shared: the cache rows are this box's own too, on its own
+disk or cache volume, and the pool's clear-cache empties them in place.
+
 None of your *work* outlives the box except the commits pushed to a remote —
 though the pool keeps what the cache rows hold, and the proxy keeps its record
 of what you sent. Deleting under a cache path reaches every box that shares that

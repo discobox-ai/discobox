@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/sandbox-agent/provision"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // A machine has a data volume of its own only where its driver mounted one at
@@ -54,45 +54,57 @@ func TestMachineSourceDirMirrorsTheTarget(t *testing.T) {
 	}
 }
 
-// A boot's wiring of a machine's data volume is left alone where there is no
-// volume, where this boot wired it already, and on a disk not yet provisioned
-// for the bootstrap, whose provisioning wires it: none of them mounts
-// anything, and none fails.
-func TestWireMachineBootLeavesAlone(t *testing.T) {
+// A start that mounted the machine's volumes already is left alone: a
+// second mount in one start would stack its mounts.
+func TestWireMachineBootOncePerStart(t *testing.T) {
 	dir := t.TempDir()
 	useRecords(t, dir)
-	savedVolume, savedWired, savedData := machineDataVolume, machineWiredPath, machineDataWiredFile
-	t.Cleanup(func() { machineDataVolume, machineWiredPath, machineDataWiredFile = savedVolume, savedWired, savedData })
+	savedWired := machineWiredPath
+	t.Cleanup(func() { machineWiredPath = savedWired })
 	machineWiredPath = filepath.Join(dir, "run", "machine-wired")
-	machineDataWiredFile = filepath.Join(dir, "data-wired")
-	bootstrap := writeBootstrap(t, dir, "sbx_1")
+	if err := os.MkdirAll(filepath.Dir(machineWiredPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(machineWiredPath, []byte("token\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	b, git := newFakeGitBooter(nil)
-
-	machineDataVolume = func() bool { return false }
-	if err := b.wireMachineBoot(slog.Default(), bootstrap); err != nil {
-		t.Fatalf("no data volume: %v", err)
-	}
-	machineDataVolume = func() bool { return true }
-	if err := b.wireMachineBoot(slog.Default(), bootstrap); err != nil {
-		t.Fatalf("a disk not provisioned yet: %v", err)
-	}
-	if err := (provision.Records{Dir: recordsDir}).RecordSandbox("sbx_1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := markMachineWired("sbx_1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.wireMachineBoot(slog.Default(), bootstrap); err != nil {
-		t.Fatalf("wired already this boot: %v", err)
+	if err := b.wireMachineBoot(slog.Default(), sandboxconfig.Config{SandboxID: "sbx_1"}, identity{}); err != nil {
+		t.Fatalf("mounted already this start: %v", err)
 	}
 	if len(git.runs) != 0 {
 		t.Fatalf("runs = %v, want nothing done", git.runs)
 	}
-	token, err := os.ReadFile(machineWiredPath)
-	if err != nil || len(strings.TrimSpace(string(token))) != 32 {
-		t.Fatalf("this start's token = %q, %v; want a random one", token, err)
-	}
-	if data, err := os.ReadFile(machineDataWiredFile); err != nil || string(data) != "sbx_1 "+string(token) {
-		t.Fatalf("the data volume's record = %q, %v; want the sandbox's ID and this start's token %q", data, err, token)
+}
+
+// Every start that mounts keeps a random token of itself in /run; only a
+// machine whose data root is its driver's volume says on it that the
+// sandbox's data is kept there, naming that token. Roots on the machine's own
+// disk say nothing, so the pool never gives that machine a new root (ADR
+// 26-11-02-023 §1).
+func TestOnlyADataVolumeIsRecordedAsKeepingTheData(t *testing.T) {
+	for name, volume := range map[string]bool{"a data volume": true, "roots on the disk": false} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			savedVolume, savedWired, savedData := machineDataVolume, machineWiredPath, machineDataWiredFile
+			t.Cleanup(func() { machineDataVolume, machineWiredPath, machineDataWiredFile = savedVolume, savedWired, savedData })
+			machineDataVolume = func() bool { return volume }
+			machineWiredPath = filepath.Join(dir, "run", "machine-wired")
+			machineDataWiredFile = filepath.Join(dir, "data-wired")
+			if err := markMachineWired("sbx_1"); err != nil {
+				t.Fatal(err)
+			}
+			token, err := os.ReadFile(machineWiredPath)
+			if err != nil || len(strings.TrimSpace(string(token))) != 32 {
+				t.Fatalf("this start's token = %q, %v; want a random one", token, err)
+			}
+			data, err := os.ReadFile(machineDataWiredFile)
+			if volume && (err != nil || string(data) != "sbx_1 "+string(token)) {
+				t.Fatalf("the data volume's record = %q, %v; want the sandbox's ID and this start's token %q", data, err, token)
+			}
+			if !volume && !os.IsNotExist(err) {
+				t.Fatalf("roots on the disk recorded %q (%v); want nothing", data, err)
+			}
+		})
 	}
 }

@@ -22,10 +22,17 @@ import (
 // sandbox's platform is the one this agent was built for (ADR 0145 §6).
 var sandboxPaths = sandboxpath.For(platform.Current())
 
+// The data and cache roots: the pool agent mounts these primary volumes at
+// fixed paths in a container, and a machine has them as its driver's volumes
+// or directories on its disk. Variables so a test does not mount the
+// machine's own.
+var (
+	dataMountPath  = "/.discobox/data"
+	cacheMountPath = "/.discobox/cache"
+)
+
 const (
 	// The pool agent mounts these primary volumes at fixed paths.
-	dataMountPath    = "/.discobox/data"
-	cacheMountPath   = "/.discobox/cache"
 	configMountPath  = "/.discobox/config"
 	sourcesMountPath = "/.discobox/sources"
 	secretsMountPath = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
@@ -124,3 +131,8 @@ func sortVolumesByDepth(volumes []harness.ResolvedVolume) {
 func pathDepth(p string) int {
 	return strings.Count(path.Clean(p), "/")
 }
+
+// machineManifestPath is where a machine's pool places the bootstrap, which
+// has no config volume to carry it. A variable so a test does not read the
+// machine's own.
+var machineManifestPath = path.Join(etcDiscobox, manifestName)

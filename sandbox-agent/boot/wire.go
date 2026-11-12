@@ -2,11 +2,16 @@ package boot
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -55,17 +60,17 @@ func wireSecrets() error {
 // uid rather than the volume's declared owner: what makes sharing a cache
 // directory safe is who ends up writing in it, which is a claim the image makes
 // in its scope rather than something derivable from who owns the mountpoint.
-func (b *booter) wireVolumes(volumes []harness.ResolvedVolume, id identity) error {
+func (b *booter) wireVolumes(volumes []harness.ResolvedVolume, id identity, mode wireMode) error {
 	sortVolumesByDepth(volumes)
 	for _, v := range volumes {
-		if err := b.wireVolume(v, id); err != nil {
+		if err := b.wireVolume(v, id, mode); err != nil {
 			return fmt.Errorf("wire volume %s: %w", v.Path, err)
 		}
 	}
 	return nil
 }
 
-func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
+func (b *booter) wireVolume(v harness.ResolvedVolume, id identity, mode wireMode) error {
 	dir := volumeDir(v, id.uid)
 	// A path nested in home -- ~/go/pkg/mod -- invents ~/go and ~/go/pkg on
 	// home's own volume, and applyOwnership below speaks only for the
@@ -74,13 +79,22 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
 	if err := mkdirAllOwned(v.Path, id.home, id.uid, id.gid); err != nil {
 		return err
 	}
-	nonEmpty, err := dirNonEmpty(v.Path)
-	if err != nil {
-		return err
-	}
-	layout, err := decideLayout(v.Kind, dir, layoutRecordPath(v), nonEmpty)
-	if err != nil {
-		return err
+	var layout volumeLayout
+	if mode == wireMachine {
+		// A machine's path is bound, with what the machine had there moved
+		// in first (ADR 26-11-02-023 §2).
+		var err error
+		if layout, err = b.moveIn(v.Path, dir, layoutRecordPath(v)); err != nil {
+			return err
+		}
+	} else {
+		nonEmpty, err := dirNonEmpty(v.Path)
+		if err != nil {
+			return err
+		}
+		if layout, err = decideLayout(v.Kind, dir, layoutRecordPath(v), nonEmpty); err != nil {
+			return err
+		}
 	}
 	if layout == layoutOverlay {
 		upper, work := overlayDirs(dir)
@@ -111,7 +125,7 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if err := bindMount(dir, v.Path, false); err != nil {
+	if err := b.bind(dir, v.Path); err != nil {
 		return err
 	}
 	return applyOwnership(v.Path, v)
@@ -240,21 +254,34 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 }
 
 // wireMachineSources bind-mounts each source's target from the machine's own
-// data volume, where its tree is kept as the volume keeps a declared path's
+// data root, where its tree is kept as the root keeps a declared path's
 // (machineSourceDir), owned as wireSources owns a container's. The sandbox
-// clones into it through the intake, as it would onto its disk, and a new
-// root keeps it.
+// clones into it through the intake, and a new root keeps it where the data
+// root is a data volume.
 func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity) error {
+	// Parents first, as the volumes go: a target nested in another's is then
+	// the outer one's own directory, already on the data root, and moves
+	// nothing (moveIn).
+	sources = slices.Clone(sources)
+	slices.SortStableFunc(sources, func(a, b sandboxconfig.Source) int {
+		return pathDepth(a.Target) - pathDepth(b.Target)
+	})
 	for _, s := range sources {
 		uid, gid := sourceOwner(s, id)
 		src := machineSourceDir(s.Target)
 		if err := mkdirAllOwned(src, dataMountPath, uid, gid); err != nil {
-			return fmt.Errorf("create source %s on the data volume: %w", s.Slug, err)
+			return fmt.Errorf("create source %s on the data root: %w", s.Slug, err)
 		}
 		if err := mkdirAllOwned(s.Target, "/", uid, gid); err != nil {
 			return fmt.Errorf("create source target %s: %w", s.Target, err)
 		}
-		if err := bindMount(src, s.Target, false); err != nil {
+		// A checkout the machine already has at the target -- one cloned
+		// onto its disk before its sources were mounted -- is moved in
+		// rather than hidden under the bind.
+		if _, err := b.moveIn(s.Target, src, sourceRecordPath(s.Target)); err != nil {
+			return fmt.Errorf("source %s: %w", s.Slug, err)
+		}
+		if err := b.bind(src, s.Target); err != nil {
 			return fmt.Errorf("wire source %s: %w", s.Slug, err)
 		}
 		if err := os.Chown(s.Target, uid, gid); err != nil {
@@ -269,6 +296,124 @@ func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity)
 // keeps a declared data path (volumeDir).
 func machineSourceDir(target string) string {
 	return path.Join(dataMountPath, strings.TrimPrefix(path.Clean(target), "/"))
+}
+
+// sourceRecordPath is where the data root records that a source's target was
+// moved in (moveIn), beside the declared volumes' layouts and apart from
+// them, since a source's target may be a declared path too.
+func sourceRecordPath(target string) string {
+	return path.Join(dataMountPath, layoutsDir, url.PathEscape("source:"+path.Clean(target)))
+}
+
+// moveIn readies a machine's path to be bound from volDir, its directory on the
+// machine's data or cache root, and says how it is mounted. A layout already
+// recorded for it is kept: a data-volume machine wired before ADR 26-11-02-023
+// keeps an overlay it chose then. Otherwise everything the machine already
+// has at target is moved into volDir, an entry at a time (a rename, or a copy
+// across filesystems that a cut short boot finishes, finishCopy), so a boot
+// cut short leaves the rest for the next one;
+// a name volDir already has is refused rather than overwritten; and the
+// layout is recorded as a bind only once all of it has moved. A machine's disk
+// is its own, so there is no lower layer to keep, and Docker's overlay2 and
+// containerd's snapshotter refuse a data root on overlayfs (§2).
+//
+// A target that is volDir already -- a path inside another volume's
+// directory, reached through that volume's bind -- has nothing to move.
+func (b *booter) moveIn(target, volDir, record string) (volumeLayout, error) {
+	layout, ok, err := readLayout(record)
+	if err != nil || ok {
+		return layout, err
+	}
+	if err := os.MkdirAll(volDir, 0o755); err != nil {
+		return "", err
+	}
+	same, err := sameDir(target, volDir)
+	if err != nil {
+		return "", err
+	}
+	if !same {
+		if err := adoptDirIdentity(target, volDir); err != nil {
+			return "", err
+		}
+		entries, err := os.ReadDir(target)
+		if err != nil {
+			return "", err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if moving, ok := strings.CutPrefix(name, movingPrefix); ok {
+				// A copy a boot was cut short in.
+				if err := b.finishCopy(target, volDir, moving); err != nil {
+					return "", err
+				}
+				continue
+			}
+			from, to := filepath.Join(target, name), filepath.Join(volDir, name)
+			if _, err := os.Lstat(to); err == nil {
+				return "", fmt.Errorf("move %s into its volume: %s is there already", from, to)
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				return "", err
+			}
+			err := os.Rename(from, to)
+			if errors.Is(err, syscall.EXDEV) {
+				// Across filesystems -- a data-volume machine's -- a move is
+				// a copy, which a boot can be cut short in: the entry is set
+				// aside under a name of its own first, so every state a cut
+				// leaves says how far it got (finishCopy).
+				if err = os.Rename(from, filepath.Join(target, movingPrefix+name)); err == nil {
+					err = b.finishCopy(target, volDir, name)
+				}
+			}
+			if err != nil {
+				return "", fmt.Errorf("move %s into its volume: %w", from, err)
+			}
+		}
+	}
+	if err := writeLayout(record, layoutBind); err != nil {
+		return "", err
+	}
+	return layoutBind, nil
+}
+
+// movingPrefix names an entry moveIn is copying across filesystems: set aside
+// in its path under it, and copied into its volume under it before the copy
+// is renamed to the entry's own name.
+const movingPrefix = ".discobox-moving-"
+
+// finishCopy copies the entry name, set aside in target, into volDir: to a
+// name of its own there, renamed to name once whole, and only then is the
+// aside removed. A boot cut short before the rename leaves an aside and maybe
+// part of a copy, which is copied again; one cut short after it leaves the
+// aside alone beside a whole copy, which is removed.
+func (b *booter) finishCopy(target, volDir, name string) error {
+	aside, partial, to := filepath.Join(target, movingPrefix+name), filepath.Join(volDir, movingPrefix+name), filepath.Join(volDir, name)
+	if _, err := os.Lstat(to); errors.Is(err, fs.ErrNotExist) {
+		if err := os.RemoveAll(partial); err != nil {
+			return err
+		}
+		if err := b.run("cp", "-a", "--no-target-directory", "--", aside, partial); err != nil {
+			return fmt.Errorf("copy %s into its volume: %w", aside, err)
+		}
+		if err := os.Rename(partial, to); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return os.RemoveAll(aside)
+}
+
+// sameDir reports whether a and b are one directory.
+func sameDir(a, b string) (bool, error) {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false, err
+	}
+	bi, err := os.Stat(b)
+	if err != nil {
+		return false, err
+	}
+	return os.SameFile(ai, bi), nil
 }
 
 // loadEffectiveConfig reads the sandbox's effective config from the bootstrap
