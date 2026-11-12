@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 22; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 23; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -209,6 +209,23 @@ is counted while it is up and sent again with its ID and its `count`
 shows, and drops one already answered. Each question and form has its own ID, so one command waits on
 its answer while others run. What is submitted to a form is kept in order
 (`mailbox`): the pipe's reader never waits on a command, and drops nothing.
+
+- **The keys answers are pressed by are the core's**: a question carries
+  `presses` (`console.Question.Presses`: y and n, a letter its asker gave a
+  choice, or each choice's place), so the app answers a question by the same
+  keys the TUI does without deriving them; a form picker's choices each carry
+  their `press` (`console.PickerPress`), which the desktop's sheets take.
+- **Text written in the app goes on in the editor** (`write`): the composer's
+  prompt or a comment, put in a file of its own under a text format's
+  extension (`console.EditExtension`, as every edit's copy), opened through
+  `edit` as any file is (its command the write's ID), read back once `saved`
+  and answered by a result of the write's ID with its `text` (an editor's
+  last newline dropped), canceled when given up. The file goes either way.
+- **What the window opens on** is the CLI's to say (`NewServer`'s start):
+  the welcome's `Session.start`, a registry command and a box's key, which
+  `discobox desktop BOX`, `--new` and `--harnesses` set. The key is made from
+  the server `selectSandbox` found the box on, under the name the window
+  lists it by, never looked up again by ID.
 
 ## Links
 

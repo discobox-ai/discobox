@@ -14,10 +14,11 @@
 //! The tab follows its issue while its workspace is on screen and lets go of it when parked, as
 //! the workspace's own polls do. Its keys are its own, as the TUI's tab's are: `c` writes a
 //! comment, `x` closes or reopens, `m` merges, `f` shows the files changed, `o` opens the page,
-//! `r` reads it again; the page keys scroll. In the comment field Return is a new line, ⌘↩
+//! `y` copies its link, `r` reads it again; the page keys scroll, and the arrows (`j` and `k`)
+//! a line at a time, on from wherever the wheel or the page keys left it. In the comment field Return is a new line, ⌘↩
 //! (Ctrl+Enter elsewhere) posts and Esc steps out keeping what was written.
 
-use rune::{Color, El, Key, KeyEvent, ScrollSpec, TextEdit, Tx, col, el, row, spacer, text, text_input};
+use rune::{Color, El, Key, KeyEvent, Live, ScrollPos, ScrollSpec, TextEdit, Tx, col, el, row, spacer, text, text_input};
 use rune_kit::markdown::Markdown;
 
 use crate::wire::{
@@ -47,6 +48,9 @@ pub struct IssueTab {
     /// The head of the pull request the person was shown: what a subscription made again —
     /// the workspace back on screen — still says a push since against (`IssueQuery.shown`).
     pub shown: String,
+    /// How far its page is scrolled, as its scroll last reported it: where a line key scrolls
+    /// on from.
+    pub offset: Live<f32>,
 }
 
 /// How a timeline's event rows lay out: the time, then who.
@@ -62,7 +66,7 @@ pub fn pane(stream: u32, pull: bool, label: &str) -> Pane {
     let mut composer = TextEdit::new("");
     composer.focused = false;
     let mut p = Pane::new(stream, exec);
-    p.issue = Some(IssueTab { pull, sub: 0, issue: None, error: None, composer, composing: false, posting: false, changing: false, shown: String::new() });
+    p.issue = Some(IssueTab { pull, sub: 0, issue: None, error: None, composer, composing: false, posting: false, changing: false, shown: String::new(), offset: Live::new(0.0) });
     p
 }
 
@@ -308,6 +312,19 @@ fn open_page(s: &mut State, stream: u32, tx: &mut Tx) {
     open_link(s, &url, tx);
 }
 
+/// The issue's page address to the clipboard, as the TUI's `y` copies it.
+fn copy_link(s: &mut State, stream: u32, tx: &mut Tx) {
+    let Some(url) = tab(s, stream).and_then(|t| t.issue.as_ref()).map(|i| i.url.clone()) else { return };
+    s.message = Some(format!("copied {url}"));
+    tx.copy(url);
+}
+
+/// Scrolls the page `by` lines on from where it is scrolled to; its scroll keeps it in bounds.
+fn line(s: &State, stream: u32, by: f32, tx: &mut Tx) {
+    let Some(t) = tab(s, stream) else { return };
+    tx.scroll_to_y(format!("issue-{stream}"), (t.offset.get() + by * crate::reader::LINE).max(0.0));
+}
+
 /// A key on the focused issue tab, while its comment field does not have it: its own keys, as
 /// the TUI's are; false for one it leaves to the window.
 pub fn key(s: &mut State, stream: u32, ev: &KeyEvent, tx: &mut Tx) -> bool {
@@ -321,12 +338,17 @@ pub fn key(s: &mut State, stream: u32, ev: &KeyEvent, tx: &mut Tx) -> bool {
         Key::Text(t) if t == " " => tx.scroll_page(scroll, 1),
         Key::Home => tx.scroll_to_y(scroll, 0.0),
         Key::End => tx.scroll_to_bottom(scroll),
+        Key::Up => line(s, stream, -1.0, tx),
+        Key::Down => line(s, stream, 1.0, tx),
         Key::Text(t) => match t.as_str() {
+            "k" => line(s, stream, -1.0, tx),
+            "j" => line(s, stream, 1.0, tx),
             "c" => compose(s, stream),
             "x" => change_state(s, stream),
             "m" => merge(s, stream),
             "f" if tab(s, stream).is_some_and(|t| t.pull) => run_on(s, "files", box_of(s, stream).into_iter().collect(), tx),
             "o" => open_page(s, stream, tx),
+            "y" => copy_link(s, stream, tx),
             "r" => read_again(s, stream),
             _ => return false,
         },
@@ -632,7 +654,10 @@ pub fn view(s: &State, p: &Pane) -> El {
         page = page.child(t("the timeline goes on — open it on GitHub for the rest", theme::warn()).mt(8.0));
     }
     // The page scrolls inside what the field and the bar leave it, clipped there.
-    let scroll = page.scroll(ScrollSpec { stick_bottom: false }).grow(1.0).min_h(0.0).clip_rounded(0.0);
+    let offset = tb.offset.clone();
+    let scroll = page.scroll(ScrollSpec { stick_bottom: false }).on_scroll_offset(move |at: ScrollPos| {
+        offset.set(at.offset[1]);
+    }).grow(1.0).min_h(0.0).clip_rounded(0.0);
     col().w_full().h_full().min_h(0.0).child(scroll).child(actions(s, p, tb, issue))
 }
 
@@ -661,13 +686,18 @@ fn actions(_s: &State, p: &Pane, tb: &IssueTab, issue: &Issue) -> El {
     }
     bar = bar
         .child(button(format!("page-{stream}"), "Open on GitHub", "o", true).on_press_tx(move |s: &mut State, tx: &mut Tx| open_page(s, stream, tx)))
+        .child(button(format!("copy-link-{stream}"), "Copy link", "y", true).on_press_tx(move |s: &mut State, tx: &mut Tx| copy_link(s, stream, tx)))
         .child(button(format!("read-{stream}"), "Read again", "r", true).on_press(move |s: &mut State| read_again(s, stream)));
     let mut out = col().w_full().gap(6.0).pb(6.0);
     if tb.composing {
         let field = text_input(&tb.composer, theme::UI.lh(20.0)).key(format!("comment-field-{stream}")).grow(1.0).color(theme::text())
             .placeholder("Leave a comment — Markdown", theme::dim())
             .on_edit(move |s: &mut State| &mut s.pane_mut(stream).and_then(|p| p.issue.as_mut()).expect("the comment's tab").composer)
-            .on_input_key(move |s: &mut State, ev: &KeyEvent, _tx: &mut Tx| {
+            .on_input_key(move |s: &mut State, ev: &KeyEvent, tx: &mut Tx| {
+                if crate::keys::is_gesture(s, "edit in editor", ev, tx) {
+                    s.write_in_editor(crate::Writing::Comment(stream));
+                    return true;
+                }
                 match ev.key {
                     // Posting is a chord nobody types by accident: what it does is public.
                     Key::Enter if ev.mods.cmd || ev.mods.ctrl => post(s, stream),

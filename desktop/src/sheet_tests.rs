@@ -211,7 +211,7 @@ fn a_finished_command_takes_its_sheet() {
 fn a_dismissed_yes_or_no_is_no() {
     let sent = |choices: Vec<Choice>| {
         let question = Question { id: 3, command: 1, title: "Upgrade".into(), choices, ..Default::default() };
-        serde_json::to_value(dismissal(&Sheet::Question(QuestionSheet { question, picked: 0 })).message()).unwrap()
+        serde_json::to_value(dismissal(&Sheet::Question(QuestionSheet { question, picked: 0, since: None, settled: false, held: false })).message()).unwrap()
     };
     assert_eq!(sent(vec![])["answer"], serde_json::json!({"question": 3, "key": "no"}));
     let pick = vec![Choice { key: "a".into(), label: "a".into(), hint: String::new(), ..Default::default() }];
@@ -255,4 +255,110 @@ fn a_question_sent_again_is_updated_in_place() {
     rt.state.inbox.push(Event::Question(q("7.0 MiB in 4 files")));
     settle(&mut rt);
     assert!(!rt.state.sheets.is_open(), "a count that crossed the answer asked again");
+}
+
+/// Lets a question that has come up stand long enough to take a typed answer.
+fn stand(rt: &mut Runtime<State>) {
+    settle(rt);
+    rt.frame(rt.state.spec.answer_quiet);
+    settle(rt);
+}
+
+// A question is answered by the key the core gives each answer, as the TUI's is (#958): purge's
+// yes or no by y and n, a pick of one by its place; one the question offers with why it cannot
+// be chosen is pressed by nothing. A key typed the moment it comes up, meant for what was in
+// front a moment before, answers nothing.
+#[test]
+fn a_question_is_answered_by_its_keys() {
+    let mut rt = runtime();
+    let old = key_named(&rt, "old experiment");
+    // Typing goes on as the question comes up.
+    rt.key(KeyEvent { key: Key::Down, mods: bare() });
+    rt.frame(1.0 / 60.0);
+    run_on(&mut rt.state, "purge", vec![old.clone()], &mut Tx::default());
+    rt.frame(1.0 / 60.0);
+    let y = || KeyEvent { key: Key::Text("y".into()), mods: bare() };
+    rt.key(y());
+    rt.frame(1.0 / 60.0);
+    assert!(rt.state.sheets.is_open() && rt.state.box_by_id(&old).is_some(), "a key typed as the question came up answered it");
+    // Typing that runs on into the question, past the time it has been up, keeps it waiting. (A
+    // key is taken on the frame after it is sent, so the keys come a step and a bit apart.)
+    let quiet = rt.state.spec.answer_quiet;
+    for _ in 0..6 {
+        rt.frame(quiet * 0.3);
+        rt.key(y());
+    }
+    settle(&mut rt);
+    assert!(rt.state.sheets.is_open() && rt.state.box_by_id(&old).is_some(), "a run of typing answered the question");
+    assert_eq!(rt.state.sheets.question().unwrap().question.presses.get("yes").map(String::as_str), Some("y"));
+    stand(&mut rt);
+    typed(&mut rt, "n");
+    assert!(!rt.state.sheets.is_open() && rt.state.box_by_id(&old).is_some(), "n did not answer no");
+    run_on(&mut rt.state, "purge", vec![old.clone()], &mut Tx::default());
+    stand(&mut rt);
+    typed(&mut rt, "Y");
+    assert!(!rt.state.sheets.is_open() && rt.state.box_by_id(&old).is_none(), "Y did not answer yes");
+
+    // The theme's question offers the palette drawn now shut: its key chooses nothing. (Picking
+    // one would repaint every window the tests draw; the harnesses page's reset takes a pick of
+    // one by its key, `harness_tests`.)
+    run_command(&mut rt.state, "theme", &mut Tx::default());
+    stand(&mut rt);
+    let q = rt.state.sheets.question().expect("the theme question").question.clone();
+    let shut = q.choices.iter().find(|c| !c.why.is_empty()).expect("the palette drawn now, offered shut");
+    typed(&mut rt, &q.presses[&shut.key]);
+    assert!(rt.state.sheets.is_open(), "the key of an answer that cannot be chosen chose it");
+    press(&mut rt, Key::Escape, bare());
+}
+
+// Typing begun just after a question comes up holds it too, by someone who has not looked up
+// yet; an arrow does not, so one before the answer never does; an answer pressed too soon is
+// held, which the sheet says, and taken once pressed again after a pause.
+#[test]
+fn typing_under_a_question_holds_it_and_arrows_do_not() {
+    let mut rt = runtime();
+    let old = key_named(&rt, "old experiment");
+    run_on(&mut rt.state, "purge", vec![old.clone()], &mut Tx::default());
+    rt.frame(1.0 / 60.0);
+    let quiet = rt.state.spec.answer_quiet;
+    let k = |key: Key| KeyEvent { key, mods: bare() };
+    rt.frame(quiet * 0.2);
+    rt.key(k(Key::Text("x".into())));
+    for _ in 0..5 {
+        rt.frame(quiet * 0.3);
+        rt.key(k(Key::Text("y".into())));
+    }
+    rt.frame(1.0 / 60.0);
+    assert!(rt.state.sheets.is_open() && rt.state.box_by_id(&old).is_some(), "typing begun under the question answered it");
+    assert!(rt.find("sheet-held").is_some(), "the sheet does not say a key was held");
+    rt.frame(quiet * 1.2);
+    rt.key(k(Key::Down));
+    rt.frame(quiet * 0.1);
+    rt.key(k(Key::Up));
+    rt.frame(quiet * 0.1);
+    rt.key(k(Key::Text("y".into())));
+    settle(&mut rt);
+    assert!(!rt.state.sheets.is_open() && rt.state.box_by_id(&old).is_none(), "y after a pause and the arrows did not answer");
+}
+
+// A form's picker takes a choice by the key the core gives it, its place, while the picker has
+// the keys; a typed field's are its text.
+#[test]
+fn a_picker_takes_a_choice_by_its_number() {
+    let mut rt = runtime();
+    run_command(&mut rt.state, "settings", &mut Tx::default());
+    settle(&mut rt);
+    typed(&mut rt, "2");
+    assert!(rt.state.sheets.form().unwrap().edits[0].text.ends_with('2'), "a number did not type into the name");
+    press(&mut rt, Key::Tab, bare());
+    assert_eq!(at(&rt), "deny");
+    let f = rt.state.sheets.form().unwrap();
+    let deny = f.fields.iter().position(|x| x.key == "deny").unwrap();
+    let (first, second) = (f.fields[deny].choices[0].clone(), f.fields[deny].choices[1].clone());
+    assert_eq!((first.press.as_str(), second.press.as_str()), ("1", "2"));
+    typed(&mut rt, "2");
+    assert_eq!(rt.state.sheets.form().unwrap().chosen[deny], second.key, "2 did not choose the second");
+    typed(&mut rt, "1");
+    assert_eq!(rt.state.sheets.form().unwrap().chosen[deny], first.key);
+    assert!(rt.state.sheets.is_open(), "a choice submitted the form");
 }

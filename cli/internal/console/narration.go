@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // A running command's channel back to the console (ADR 26-11-07-876 §1,
@@ -54,6 +56,76 @@ const (
 	AnswerYes = "yes"
 	AnswerNo  = "no"
 )
+
+// Presses is the key each answer is pressed by, by the answer's key: a yes
+// or no's y and n; a choice its asker gave a key of its own (Choice.Press)
+// that key; a pick of one between a yes and a no in words of their own
+// (every choice's Means set) the same y and n on each; any other its first
+// nine choices by their place (PickerPress). Every console answers a question
+// by these, so a key answers the same question the same way in both: the
+// keys are the question's, as its words are, not a console's binding. A
+// choice that cannot be chosen (Why) keeps its key, and pressing it takes
+// nothing.
+func (q Question) Presses() map[string]string {
+	yesNo := map[string]string{AnswerYes: "y", AnswerNo: "n"}
+	if len(q.Choices) == 0 {
+		return yesNo
+	}
+	means := !slices.ContainsFunc(q.Choices, func(c Choice) bool { return c.Means == "" })
+	out := map[string]string{}
+	for i, c := range q.Choices {
+		press := PickerPress(i)
+		switch {
+		case c.Press != "":
+			press = c.Press
+		case means:
+			press = yesNo[c.Means]
+		}
+		if press != "" {
+			out[c.Key] = press
+		}
+	}
+	return out
+}
+
+// AnswerQuiet is how long a question has to have been up, and the keys to
+// have been still, before a key types an answer to it (Presses). A question
+// can come up under a person typing — a create's git credential question
+// follows the Return that sent the prompt, and its first answer, a digit,
+// lends this machine's credentials — and a key typed for what was in front a
+// moment before is not an answer. The arrows, Enter and Esc are not held:
+// none of them answers a question by itself.
+const AnswerQuiet = 500 * time.Millisecond
+
+// AnswerSettled is whether a question has settled, given how long it has been
+// up and how long ago the last key that types came: both at least
+// AnswerQuiet. Every key types but the ones that only move — the arrows, Tab,
+// Home, End and the page keys — before the question and under it alike: a
+// person who has not looked up yet types on into it, and what they type can
+// be an answer's key. A console asks it whenever it can (each key, before
+// noting that key; each frame it draws) and, once it holds, keeps the
+// question settled. So an arrow before the answer never holds it, and an
+// answer pressed too soon is pressed again after a pause, which the card says
+// (AnswerHeld). The owner chose this over taking a key after any pause, which
+// let typing begun under the question answer it.
+func AnswerSettled(up, sinceKey time.Duration) bool {
+	return up >= AnswerQuiet && sinceKey >= AnswerQuiet
+}
+
+// AnswerHeld is what a question's card says once a key that would have
+// answered it was held back because it had not settled.
+const AnswerHeld = "a key typed as this came up is not taken as an answer: pause, then press it"
+
+// PickerPress is the key a list of choices is pressed by at place i: 1 to 9
+// for the first nine, none after. A question's pick of one answers to it in
+// both consoles, and so does a form's picker on the desktop, whose forms are
+// the core's (the TUI draws its own cards).
+func PickerPress(i int) string {
+	if i < 0 || i >= 9 {
+		return ""
+	}
+	return strconv.Itoa(i + 1)
+}
 
 // ErrNoFrontend is the answer to a question nobody can be asked: a command
 // started with no narration, or a frontend that cannot ask it.

@@ -329,6 +329,10 @@ type Model struct {
 	// — a fake that jumps an hour a press, for two presses that mean two
 	// gestures, also means every read it takes is late.
 	now func() time.Time
+	// lastKey is when the last key that types reached the window: a
+	// question's typed answer waits for the typing to have paused
+	// (console.AnswerSettled).
+	lastKey time.Time
 
 	// hoverX and hoverY are where the pointer is resting, so a control can be
 	// drawn as live before it is pressed. Off the window until it has moved
@@ -931,7 +935,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		msg = shifted
 	}
+	// A core question's typed answer waits for it to settle: the key that
+	// typed before this one is when the typing was last busy
+	// (console.AnswerSettled).
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		now := m.now()
+		// Once settled it stays so.
+		if d := m.dialog; d != nil && d.question && !d.settled {
+			d.settled = !d.asked.IsZero() && console.AnswerSettled(now.Sub(d.asked), now.Sub(m.lastKey))
+		}
+		// A key that only moves is no typing.
+		if !movesOnly(key) {
+			m.lastKey = now
+		}
+	}
 	cmd := m.update(msg)
+	// A core question is up from the first message that leaves it in front.
+	if d := m.dialog; d != nil && d.question && d.asked.IsZero() {
+		d.asked = m.now()
+	}
 	// The new discobox card is modal: nothing walks off its composer.
 	if m.newOpen && m.focus == focusList {
 		m.listFront = false
@@ -2073,6 +2095,9 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	}
+	if editorKey(msg) {
+		return editPrompt(m.ctx, m.prompt.Value())
+	}
 	switch keyName(msg) {
 	case "up":
 		// Up is a line motion first, and only walks out of the field from the
@@ -2117,10 +2142,6 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 	case "shift+tab":
 		m.opts.Opts[console.OptHarness].Cycle(1)
 		return nil
-
-	case "alt+e", "f2":
-		// Alt-E, and F2 for the terminals where Option is not Meta.
-		return editPrompt(m.ctx, m.prompt.Value())
 
 	case "enter":
 		return m.run()
@@ -4144,7 +4165,7 @@ func (m *Model) hints() []hint {
 			out,
 			keyed("Shift-Tab", "shift+tab", "harness"),
 			bareHint("options", "options"),
-			keyed("Alt-E", "alt+e", "editor"),
+			keyed(editorLabel, editorChords[0], "editor"),
 			says("Shift/Ctrl-Enter newline"),
 			keyed("Ctrl-D", "ctrl+d", "quit"),
 		}
@@ -4384,7 +4405,7 @@ func (m *Model) helpText() string {
 			"                   the server where there are several, and",
 			"                   additional sources",
 			"    Shift-Enter    newline. Ctrl-Enter, Alt-Enter and Ctrl-J too",
-			"    Alt-E or F2    edit the prompt in $EDITOR",
+			fmt.Sprintf("    %-15s%s", editorLabel+" or "+keyLabel(editorChords[1]), "edit the prompt in $EDITOR"),
 			"    Tab            to the discobox list",
 			"    Shift-Tab      switch the harness",
 			"    Ctrl-D         quit, when the prompt is empty",
@@ -4589,7 +4610,7 @@ func (m *Model) helpText() string {
 			"                   with, as a tab on the right — a plain click on the",
 			"                   header's issue #N does the same, Ctrl-click opens",
 			"                   the page. ↑ ↓ scroll, c writes a comment (Ctrl-S",
-			"                   posts it, Alt-E edits it in $EDITOR), x closes or",
+			"                   posts it, " + editorLabel + " edits it in $EDITOR), x closes or",
 			"                   reopens the issue, o opens the page, r reads it",
 			"                   again, q closes the tab",
 			"    " + leader + " " + pullKey + "       the pull request it is tagged pr=N with, the same",

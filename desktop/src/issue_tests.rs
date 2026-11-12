@@ -276,3 +276,56 @@ fn a_files_changed_starting_is_not_started_again() {
     assert_eq!(rt.state.message.as_deref(), Some("discobox-review is still starting in the box…"));
     assert!(rt.state.live_ws().unwrap().panes.iter().all(|p| p.exec.kind != TabKind::Files));
 }
+
+// The tab's own keys as the TUI's (#958): y copies its page's address, and the arrows (and j
+// and k) scroll it a line at a time, on from wherever the page keys left it.
+#[test]
+fn y_copies_the_link_and_the_arrows_scroll_a_line() {
+    let (mut rt, stream) = opened("issue");
+    key(&mut rt, Key::Text("y".into()));
+    let url = shown(&rt, stream).url.clone();
+    assert_eq!(rt.state.message, Some(format!("copied {url}")));
+    // A timeline longer than the window, so there is a page to scroll.
+    rt.update(|s, _| {
+        let issue = s.pane_mut(stream).unwrap().issue.as_mut().unwrap().issue.as_mut().unwrap();
+        let first = issue.timeline[0].clone();
+        issue.timeline.extend(std::iter::repeat_n(first, 120));
+    });
+    settle(&mut rt);
+    let at = |rt: &Runtime<State>| issue::tab(&rt.state, stream).unwrap().offset.get();
+    let line = crate::reader::LINE;
+    key(&mut rt, Key::Down);
+    key(&mut rt, Key::Text("j".into()));
+    assert_eq!(at(&rt), 2.0 * line, "Down and j did not scroll two lines");
+    key(&mut rt, Key::Text("k".into()));
+    assert_eq!(at(&rt), line);
+    key(&mut rt, Key::PageDown);
+    let paged = at(&rt);
+    key(&mut rt, Key::Up);
+    assert_eq!(at(&rt), paged - line, "Up after Page Down went from the line keys' own place");
+    key(&mut rt, Key::Home);
+    assert_eq!(at(&rt), 0.0);
+}
+
+// A comment goes on in the person's editor on the edit in editor gesture, as the TUI's Alt-E;
+// what they save takes the field's place.
+#[test]
+fn a_comment_goes_on_in_the_editor() {
+    let (mut rt, stream) = opened("issue");
+    key(&mut rt, Key::Text("c".into()));
+    rt.update(|s, _| {
+        let t = s.pane_mut(stream).unwrap().issue.as_mut().unwrap();
+        t.composer = rune::TextEdit::new("LGTM");
+        t.composer.focused = true;
+    });
+    settle(&mut rt);
+    let mods = if cfg!(target_os = "macos") { Mods { cmd: true, ..Mods::default() } } else { Mods { ctrl: true, shift: true, cmd: true, ..Mods::default() } };
+    rt.key(KeyEvent { key: Key::Command('e'), mods });
+    settle(&mut rt);
+    let Some(crate::sheet::Sheet::Edit(e)) = rt.state.sheets.queue.first() else { panic!("no edit sheet") };
+    assert_eq!(e.edit.title, "Writing the comment");
+    assert_eq!(std::fs::read_to_string(&e.edit.path).unwrap(), "LGTM");
+    std::fs::write(&e.edit.path, "LGTM, once the tests pass\n").unwrap();
+    key(&mut rt, Key::Enter);
+    assert_eq!(issue::tab(&rt.state, stream).unwrap().composer.text, "LGTM, once the tests pass");
+}

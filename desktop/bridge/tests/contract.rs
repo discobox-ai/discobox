@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
     Answer, Appearance, Args, AuditPart, AuditQuery, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, Push, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
-    StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, IssueAct, IssueItemKind, IssueQuery, IssueTone,
+    StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, Write, IssueAct, IssueItemKind, IssueQuery, IssueTone,
 };
 use discobox_bridge::{Client, Incoming};
 
@@ -201,6 +201,12 @@ fn the_welcome_carries_the_spec_and_the_session() {
         ("home", "proj", "/src", "main")
     );
     assert_eq!(session.appearance, Appearance::Dark, "the welcome lost the theme the last window was picked to draw in");
+    assert!(session.start.is_none(), "a window asked for nothing opens on {:?}", session.start);
+
+    // `discobox desktop BOX` opens the window on that box's workspace, named by its key.
+    let cli = Cli::start("start");
+    let start = cli.welcome.session.as_ref().and_then(|s| s.start.clone()).expect("what the window opens on");
+    assert_eq!((start.command.as_str(), start.r#box.as_str()), ("attach", "home/b1"));
 }
 
 // The theme command asks the core's question, opening on a change from the palette drawn now, and
@@ -365,6 +371,10 @@ fn forms_take_drafts_refusals_and_answers() {
     assert_eq!(form.command, id);
     let name = form.fields.iter().find(|f| f.key == "name").expect("a name field");
     assert!(name.required && name.applies && name.value == "b1", "{name:?}");
+    // A picker's choices carry the keys the core gives them, their places.
+    let picker = form.fields.iter().find(|f| f.choices.len() > 1).expect("a picker");
+    let presses: Vec<_> = picker.choices.iter().map(|c| c.press.as_str()).collect();
+    assert_eq!(&presses[..2], ["1", "2"], "{picker:?}");
 
     cli.submit(form.id, &[("name", " ")], true, false);
     assert_eq!(cli.expect(Type::Form).form.unwrap().id, form.id);
@@ -384,6 +394,31 @@ fn forms_take_drafts_refusals_and_answers() {
     assert_eq!(cli.result(id).status, Status::Canceled);
 }
 
+// Text written in the app goes on in the editor: a write is answered with an edit of a file
+// that holds it, under a text extension, and once saved with what the file holds; one given up
+// is canceled.
+#[test]
+fn a_write_goes_on_in_the_editor() {
+    let mut cli = Cli::start("default");
+    let write = |cli: &mut Cli, id: u64| {
+        cli.send(Message { r#type: Type::Write, write: Some(Write { id, text: "fix the reaper".into(), what: "the prompt".into() }), ..Default::default() });
+        let edit = cli.expect(Type::Edit).edit.unwrap();
+        assert_eq!((edit.command, edit.title.as_str()), (id, "Writing the prompt"));
+        assert!(edit.path.ends_with(".txt"), "{}", edit.path);
+        assert_eq!(std::fs::read_to_string(&edit.path).unwrap(), "fix the reaper");
+        std::fs::write(&edit.path, "fix the reaper and its tests\n").unwrap();
+        edit
+    };
+    let edit = write(&mut cli, 900);
+    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: edit.id, ..Default::default() }), ..Default::default() });
+    let r = cli.result(900);
+    assert_eq!((r.status, r.text.as_str()), (Status::Done, "fix the reaper and its tests"));
+    let edit = write(&mut cli, 901);
+    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: edit.id, canceled: true, ..Default::default() }), ..Default::default() });
+    let r = cli.result(901);
+    assert_eq!((r.status, r.text.as_str()), (Status::Canceled, ""));
+}
+
 // A running command's report arrives as progress and its question as a question; a key answers
 // it, and a declined question cancels what asked it.
 #[test]
@@ -396,6 +431,8 @@ fn progress_and_questions_reach_the_app() {
     assert_eq!((q.command, q.title.as_str()), (id, "Git credentials"));
     let keys: Vec<_> = q.choices.iter().map(|c| c.key.as_str()).collect();
     assert_eq!(keys, ["once", "never"]);
+    // The keys its answers are pressed by are the core's.
+    assert_eq!((q.presses["once"].as_str(), q.presses["never"].as_str()), ("1", "2"));
     cli.answer(q.id, "once", false);
     let r = cli.result(id);
     assert_eq!((r.status, r.note.as_str()), (Status::Done, "chose once"));
@@ -403,6 +440,7 @@ fn progress_and_questions_reach_the_app() {
     let id = cli.command("purge", &["b2"], Context::default(), Args::default());
     let q = cli.expect(Type::Question).question.unwrap();
     assert!(q.default_no && q.choices.is_empty() && q.body.contains("b2"), "{q:?}");
+    assert_eq!((q.presses["yes"].as_str(), q.presses["no"].as_str()), ("y", "n"));
     cli.answer(q.id, "", true);
     assert_eq!(cli.result(id).status, Status::Canceled);
 }

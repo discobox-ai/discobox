@@ -280,3 +280,53 @@ fn provisioning_ends_when_the_primary_attaches() {
     let ws = rt.state.live_ws().unwrap();
     assert_eq!((ws.step.as_str(), ws.provisioning_sub), ("", 0), "provisioning outlived the primary's attach");
 }
+
+/// The platform's primary modifier: ⌘ on macOS, Ctrl+Shift elsewhere.
+fn primary() -> Mods {
+    if cfg!(target_os = "macos") { Mods { cmd: true, ..Mods::default() } } else { Mods { ctrl: true, shift: true, cmd: true, ..Mods::default() } }
+}
+
+// The composer's prompt goes on in the person's editor on the edit in editor gesture, as the
+// TUI's Alt-E does (#958): what they save takes its place, and is kept for the next window; an
+// edit given up leaves the prompt as it was.
+#[test]
+fn the_prompt_goes_on_in_the_editor() {
+    let (mut rt, record) = runtime("");
+    compose(&mut rt, "fix the reaper");
+    press(&mut rt, Key::Command('e'), primary());
+    assert_eq!(record.lock().unwrap().writes.iter().map(|w| (w.text.as_str(), w.what.as_str())).collect::<Vec<_>>(), [("fix the reaper", "the prompt")]);
+    let Some(crate::sheet::Sheet::Edit(e)) = rt.state.sheets.queue.first() else { panic!("no edit sheet") };
+    assert_eq!(e.edit.title, "Writing the prompt");
+    let path = e.edit.path.clone();
+    std::fs::write(&path, "fix the reaper\nand its tests\n").unwrap();
+    press(&mut rt, Key::Enter, bare());
+    assert!(!rt.state.sheets.is_open());
+    assert_eq!(rt.state.composer.text, "fix the reaper\nand its tests");
+    assert_eq!(rt.state.composer.focus, rt.state.composer.text.len(), "the caret is not at the end of what was saved");
+    for _ in 0..120 {
+        rt.frame(1.0 / 10.0);
+    }
+    assert_eq!(record.lock().unwrap().drafts.last().map(String::as_str), Some("fix the reaper\nand its tests"), "the saved prompt was not kept");
+
+    press(&mut rt, Key::Command('e'), primary());
+    let Some(crate::sheet::Sheet::Edit(e)) = rt.state.sheets.queue.first() else { panic!("no edit sheet") };
+    std::fs::write(&e.edit.path, "never mind").unwrap();
+    press(&mut rt, Key::Escape, bare());
+    assert!(!rt.state.sheets.is_open());
+    assert_eq!(rt.state.composer.text, "fix the reaper\nand its tests", "an edit given up changed the prompt");
+}
+
+// The create card's sources are chosen by their numbers, as every picker's choices are, and
+// Enter creates from the one chosen.
+#[test]
+fn the_cards_sources_are_chosen_by_number() {
+    let (mut rt, _) = runtime("");
+    run_command(&mut rt.state, "new", &mut Tx::default());
+    settle(&mut rt);
+    let f = rt.state.sheets.form().expect("the create card");
+    assert_eq!(f.fields[f.at()].key, "source", "the card does not open on its source");
+    let second = f.fields[f.at()].choices.get(1).cloned().expect("a second source");
+    press(&mut rt, Key::Text("2".into()), bare());
+    let f = rt.state.sheets.form().unwrap();
+    assert_eq!(f.chosen[f.at()], second.key, "2 did not choose the second source");
+}

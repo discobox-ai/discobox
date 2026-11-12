@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/cli/internal/console/bridge"
 	"github.com/discobox-ai/discobox/pkg/desktopstage"
 	"github.com/discobox-ai/discobox/pkg/serverstage"
 )
@@ -256,5 +257,67 @@ func TestDesktopPrintManifest(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, pinned) {
 		t.Fatalf("printed %+v, want %+v", got, pinned)
+	}
+}
+
+// What the window opens on: the create card for --new and the harnesses page
+// for --harnesses, as run and configure open the TUI; nothing beyond the list
+// with neither. A discobox and a page together, or both pages, are refused
+// before anything runs.
+func TestDesktopOpening(t *testing.T) {
+	a := &App{}
+	for _, c := range []struct {
+		newBox, harnesses bool
+		want              *bridge.Start
+	}{
+		{false, false, nil},
+		{true, false, &bridge.Start{Command: "new"}},
+		{false, true, &bridge.Start{Command: "harnesses"}},
+	} {
+		opening, err := a.desktopOpening(nil, nil, c.newBox, c.harnesses)
+		if got := opening.start(&apiDataSource{}); err != nil || !reflect.DeepEqual(got, c.want) {
+			t.Errorf("--new=%v --harnesses=%v: %+v, %v; want %+v", c.newBox, c.harnesses, got, err, c.want)
+		}
+	}
+	if _, err := a.desktopOpening(nil, []string{"sbx_01hq"}, true, false); err == nil {
+		t.Error("a discobox and --new were both taken")
+	}
+	for _, args := range [][]string{{"desktop", "--new", "--harnesses"}, {"desktop", "one", "two"}} {
+		root := NewRootCommand()
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs(args)
+		if err := root.Execute(); err == nil {
+			t.Errorf("%v ran", args)
+		}
+	}
+}
+
+// A discobox the window opens on is named by its key: the name the window
+// lists the server selectSandbox found it on under, and its ID, so two
+// servers listing one ID open the one that was asked for. One server lists
+// its boxes under no name; a server the window does not list names none of
+// its keys.
+func TestDesktopOpeningNamesTheBoxsServer(t *testing.T) {
+	home, work, elsewhere := &App{}, &App{}, &App{}
+	many := &apiDataSource{servers: []*tuiServer{
+		{server: &server{name: "home", primary: true, app: home}},
+		{server: &server{name: "work", app: work}},
+	}}
+	for _, c := range []struct {
+		ds   *apiDataSource
+		app  *App
+		want string
+	}{
+		{many, work, "work/sbx_1"},
+		{many, home, "home/sbx_1"},
+		{many, elsewhere, "sbx_1"},
+		{&apiDataSource{}, home, "sbx_1"},
+	} {
+		got := (&desktopOpening{command: "attach", app: c.app, sandboxID: "sbx_1"}).start(c.ds)
+		if got == nil || *got != (bridge.Start{Command: "attach", Box: c.want}) {
+			t.Errorf("start %+v, want the box %q", got, c.want)
+		}
 	}
 }

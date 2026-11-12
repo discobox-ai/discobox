@@ -204,7 +204,9 @@ func TestYesOrNoIsAnswered(t *testing.T) {
 			feed, _ := m.narrate()
 			msg, keys, errs := asked(t, feed, console.Question{Title: "Sure?", DefaultNo: true})
 			m.narrated(msg)
-			m.updateKey(keyPress(how))
+			key := keyPress(how)
+			readFirst(m, key)
+			m.Update(key)
 			select {
 			case key := <-keys:
 				if err := <-errs; key != want || err != nil {
@@ -318,4 +320,92 @@ func TestACreatesConsentOnceSentIsDeclinedWhenStale(t *testing.T) {
 	if key, err := <-keys, <-errs; key != "" || !errors.Is(err, context.Canceled) {
 		t.Fatalf("answered %q, %v; want it declined", key, err)
 	}
+}
+
+// A key typed the moment a question comes up — typing carried on from what
+// was in front a moment before — answers nothing, and nor does the run of
+// typing it is part of; once the run pauses for console.AnswerQuiet the
+// question has settled and the same key answers it (console.AnswerSettled).
+func TestATypedAnswerWaitsForTheQuestionToSettle(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	clock := time.Unix(1_000_000, 0)
+	m.now = func() time.Time { return clock }
+	press := func(after time.Duration) {
+		clock = clock.Add(after)
+		m.Update(keyPress("1"))
+	}
+	// Typing in the prompt as the question comes up.
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	press(0)
+	feed, _ := m.narrate()
+	msg, keys, errs := asked(t, feed, gitQuestion)
+	m.narrated(msg)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	for range 4 {
+		press(console.AnswerQuiet / 2)
+	}
+	select {
+	case key := <-keys:
+		t.Fatalf("typing carried into the question answered it: %q", key)
+	default:
+	}
+	if m.dialog == nil {
+		t.Fatal("the question went")
+	}
+	press(console.AnswerQuiet)
+	select {
+	case key := <-keys:
+		if err := <-errs; err != nil || key == "" {
+			t.Fatalf("1 once it had settled = %q, %v", key, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("1 did not answer the settled question")
+	}
+	feed.Close()
+}
+
+// Typing begun just after a question comes up — by someone who has not looked
+// up yet, the question having come a moment after their last key — holds it
+// too; an arrow does not, so one before the answer never does; and an answer
+// pressed too soon is held, which the card says, and taken once pressed again
+// after a pause (console.AnswerSettled).
+func TestTypingUnderAQuestionHoldsItAndArrowsDoNot(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	clock := time.Unix(1_000_000, 0)
+	m.now = func() time.Time { return clock }
+	key := func(after time.Duration, k string) {
+		clock = clock.Add(after)
+		m.Update(keyPress(k))
+	}
+	feed, _ := m.narrate()
+	msg, keys, errs := asked(t, feed, gitQuestion)
+	m.narrated(msg)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	q := console.AnswerQuiet
+	// Typing that starts under the question, past the time it has been up.
+	key(q/5, "x")
+	for range 4 {
+		key(q*3/5, "1")
+	}
+	select {
+	case key := <-keys:
+		t.Fatalf("typing begun under the question answered it: %q", key)
+	default:
+	}
+	if !strings.Contains(m.View().Content, console.AnswerHeld[:20]) {
+		t.Error("the card does not say a key was held")
+	}
+	// A pause, an arrow, then the answer.
+	key(q, "down")
+	key(q/10, "up")
+	key(q/10, "1")
+	select {
+	case key := <-keys:
+		if err := <-errs; err != nil || key == "" {
+			t.Fatalf("1 after a pause and an arrow = %q, %v", key, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("1 after a pause and an arrow did not answer")
+	}
+	feed.Close()
 }

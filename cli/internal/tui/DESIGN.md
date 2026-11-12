@@ -3247,10 +3247,16 @@ harness a project with no default runs, then what of the working tree it
 carries, in that order, each followed by what its answer means. `Model.create`
 runs it on the create's narration, and its questions arrive as any running
 command's do (`ask`, `questionDialog`), so the window asks them in the order
-the desktop app does and decides none of what follows them. What is the
-window's is the drawing: a pick of one between a yes and a no (each choice's
-`Means`, the working tree's questions) is two descriptive rows pressed `y` and
-`n`; any other pick's first nine choices are pressed by their place, 1 to 9; a question naming a directory to count (`Question.Measure`) has the
+the desktop app does and decides none of what follows them. The keys its
+answers are pressed by are the core's too (`Question.Presses`: `y` and `n`, a
+letter its asker gave a choice, or a choice's place, 1 to 9), so both consoles
+answer a question by the same keys, and as the desktop does, a typed answer
+waits for the question to settle (`console.AnswerSettled`, worked out in
+`Model.Update` from `Model.lastKey`, which every key moves but one that only
+moves the cursor, `movesOnly`; a key held back is said on the card,
+`console.AnswerHeld`; a click on an answer is not held). What is the window's is the drawing: a
+pick of one between a yes and a no (each choice's `Means`, the working tree's
+questions) is two descriptive rows; a question naming a directory to count (`Question.Measure`) has the
 count written into it as it climbs (`measureFor`, `directorySized`). Leaving a
 question the create treats as turning it down ends it with
 `console.ErrTurnedDown` and nothing made: the launcher goes back to its list,

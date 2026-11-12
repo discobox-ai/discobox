@@ -509,14 +509,11 @@ func (m *Model) askIssueState(p *pane) tea.Cmd {
 	}
 	// The core's question as every question is drawn (questionDialog): a
 	// yes or no left is answered no, which changes nothing.
-	d := questionDialog(q, closePresses, act)
+	d := questionDialog(q, act)
 	d.over = p
 	m.dialog = d
 	return nil
 }
-
-// closePresses are the keys a close's answers are pressed with.
-var closePresses = map[string]string{console.CloseCompleted: "c", console.CloseNotPlanned: "n"}
 
 // setIssueState sends a close or a reopen, as the answer to the question
 // asked of issue says (console.ChangeIssueState).
@@ -552,14 +549,7 @@ func (m *Model) issueStateSet(msg issueStateMsg) tea.Cmd {
 // out and keeps what was written.
 func (m *Model) composeKey(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 	v := p.issue
-	switch keyName(msg) {
-	case issuePostKey:
-		return m.postComment(p)
-	case "esc":
-		v.composing = false
-		v.composer.Blur()
-		return nil
-	case "alt+e", "f2":
+	if editorKey(msg) {
 		if v.posting {
 			// What comes back from the editor replaces the field, and the
 			// post landing clears it: one of them would lose the other.
@@ -569,6 +559,14 @@ func (m *Model) composeKey(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 		return editText(m.ctx, v.composer.Value(), "comment", func(path string, err error) tea.Msg {
 			return issueEditedMsg{id: id, path: path, err: err}
 		})
+	}
+	switch keyName(msg) {
+	case issuePostKey:
+		return m.postComment(p)
+	case "esc":
+		v.composing = false
+		v.composer.Blur()
+		return nil
 	}
 	if v.posting {
 		// The text on its way to GitHub is the text on screen until it
@@ -620,7 +618,7 @@ func issueHints(v *issuePane) []hint {
 		return []hint{
 			keyed("Ctrl-S", issuePostKey, "post"),
 			says("Enter newline"),
-			keyed("Alt-E", "alt+e", "editor"),
+			keyed(editorLabel, editorChords[0], "editor"),
 			keyed("Esc", "esc", "stop writing"),
 		}
 	}

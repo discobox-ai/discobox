@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,18 @@ const (
 // dialog is the single modal layer. Everything that is not the list or the
 // prompt — the action menu, a confirmation, the help — is one of these.
 type dialog struct {
+	// question is a core question's card (questionDialog), whose typed
+	// answers wait for it to settle: asked is when it was first shown, and
+	// settled whether it has (console.AnswerSettled), which the Model works out
+	// before handing a key over and which, once true, stays true.
+	question bool
+	asked    time.Time
+	settled  bool
+	// held is whether a key that would have answered it was held back
+	// because it had not settled, which the card then says
+	// (console.AnswerHeld).
+	held bool
+
 	choiceDescriptions []string
 	descriptionCursor  int
 	kind               dialogKind
@@ -418,6 +431,27 @@ func (d *dialog) nextEnabled(from, delta int) int {
 }
 
 // update handles a key press, returning a command and whether to close.
+// typedAnswer is whether a key that types an answer may answer this card: any
+// card but a core question's, and that one once it has settled. One held back
+// is noted, for the card to say so.
+func (d *dialog) typedAnswer() bool {
+	if d.question && !d.settled {
+		d.held = true
+		return false
+	}
+	return true
+}
+
+// movesOnly is a key that only moves — an arrow, Tab, Home, End, a page key
+// — which is no typing a question waits on (console.AnswerSettled).
+func movesOnly(msg tea.KeyPressMsg) bool {
+	switch keyName(msg) {
+	case "up", "down", "left", "right", "tab", "shift+tab", "home", "end", "pgup", "pgdown":
+		return true
+	}
+	return false
+}
+
 func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if keyName(msg) == "esc" {
 		// While the search line is open Esc belongs to it: the way out of a
@@ -466,11 +500,19 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			return nil, true
 		case "y":
+			if !d.typedAnswer() {
+				return nil, false
+			}
 			if d.action != nil {
 				return d.action("yes"), true
 			}
 			return nil, true
-		case "n", "q":
+		case "n":
+			if !d.typedAnswer() {
+				return nil, false
+			}
+			return d.cancel(), true
+		case "q":
 			return d.cancel(), true
 		}
 		return nil, false
@@ -506,7 +548,7 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		default:
 			for _, it := range d.items {
-				if it.press != "" && it.press == keyName(msg) && it.enabled && d.action != nil {
+				if it.press != "" && it.press == keyName(msg) && it.enabled && d.action != nil && d.typedAnswer() {
 					return d.action(it.key), !it.stays
 				}
 			}
@@ -1015,6 +1057,13 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 	if d.emphasis != "" {
 		b.WriteString("\n")
 		b.WriteString(st.dialogTitle.Render(truncate(d.emphasis, inner)))
+		b.WriteString("\n")
+	}
+	// A key held back because the question had not settled is said, so the
+	// person knows to press it again.
+	if d.held && !d.settled {
+		b.WriteString("\n")
+		b.WriteString(st.dimText.Render(truncate(console.AnswerHeld, inner)))
 		b.WriteString("\n")
 	}
 

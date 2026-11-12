@@ -55,8 +55,11 @@ import (
 // command (Args.Explain); 20, a workspace's automatic push (the push
 // topic); 21, the window's title for the box on screen (Header.Title); 22,
 // the window's theme: the appearance it opens on (Session.Appearance), and
-// the theme command's answer (Result.Appearance).
-const Protocol = 22
+// the theme command's answer (Result.Appearance); 23, the keys a question's
+// answers and a form's picker are pressed by (Question.Presses,
+// Choice.Press), text written in the person's editor (Write, Result.Text),
+// and what the window opens on (Session.Start).
+const Protocol = 23
 
 // Type names a message.
 type Type string
@@ -94,6 +97,10 @@ const (
 	// TypeSaved is the app's word that it was saved (app).
 	TypeEdit  Type = "edit"
 	TypeSaved Type = "saved"
+	// TypeWrite is text being written in the app (the composer's prompt, a
+	// comment) for the person to go on writing in their editor; a result
+	// answers it with what they saved (app).
+	TypeWrite Type = "write"
 	// TypeUpload is images pasted or dropped on a box's session (app).
 	TypeUpload Type = "upload"
 	// TypeOpen attaches a stream the app allocated to a session, and
@@ -130,6 +137,7 @@ type Message struct {
 	Progress    *Progress    `json:"progress,omitempty"`
 	Edit        *Edit        `json:"edit,omitempty"`
 	Saved       *Saved       `json:"saved,omitempty"`
+	Write       *Write       `json:"write,omitempty"`
 	Upload      *Upload      `json:"upload,omitempty"`
 	Open        *Open        `json:"open,omitempty"`
 	Close       *Close       `json:"close,omitempty"`
@@ -167,6 +175,19 @@ type Session struct {
 	// Appearance is the palette the last window on this machine was picked
 	// to draw in, which this one opens on.
 	Appearance console.Appearance `json:"appearance"`
+	// Start is what the window opens on, when the CLI was asked for more
+	// than the list: a box's workspace, the create card, or the harnesses
+	// page.
+	Start *Start `json:"start,omitempty"`
+}
+
+// Start is the registry command the window runs as it opens, the way
+// `discobox attach`, `run` and `configure` open the TUI: attach on Box (a
+// box's key, its server's name and its ID, run once the listing holds it),
+// or new or harnesses with none.
+type Start struct {
+	Command string `json:"command"`
+	Box     string `json:"box,omitempty"`
 }
 
 // Follow is a link pressed in a pane: a program's (OSC 8) or text the app
@@ -1253,6 +1274,8 @@ type Result struct {
 	// Appearance is the palette the theme command was answered with, for the
 	// window to draw in from now on.
 	Appearance console.Appearance `json:"appearance,omitempty"`
+	// Text is what a write's editor saved.
+	Text string `json:"text,omitempty"`
 }
 
 // Tool is one of a box's tools as the tools menu lists it: what it is called
@@ -1533,6 +1556,10 @@ type Choice struct {
 	// Why is why an answer a question offers cannot be chosen: shown, never
 	// taken.
 	Why string `json:"why,omitempty"`
+	// Press is the key a form's picker takes this choice by, while the
+	// picker has the keys (console.PickerPress); a question's are its
+	// Presses.
+	Press string `json:"press,omitempty"`
 }
 
 // Submit fills a form. Answers are the fields the person changed, by key;
@@ -1569,15 +1596,19 @@ type FieldError struct {
 // (console.Question.Measure, console.DirectoryTotal.Said), drawn under the
 // body: the question is sent again, with the same ID, each time it changes,
 // and the app updates the question it is showing rather than asking another.
+// Presses is the key each answer is pressed by, by its key ("yes" and "no"
+// for a yes or no): the core's (console.Question.Presses), the same keys the
+// TUI answers it by.
 type Question struct {
-	ID        uint64   `json:"id"`
-	Command   uint64   `json:"command"`
-	Title     string   `json:"title"`
-	Subject   string   `json:"subject,omitempty"`
-	Body      string   `json:"body"`
-	Choices   []Choice `json:"choices"`
-	DefaultNo bool     `json:"defaultNo,omitempty"`
-	Count     string   `json:"count,omitempty"`
+	ID        uint64            `json:"id"`
+	Command   uint64            `json:"command"`
+	Title     string            `json:"title"`
+	Subject   string            `json:"subject,omitempty"`
+	Body      string            `json:"body"`
+	Choices   []Choice          `json:"choices"`
+	Presses   map[string]string `json:"presses"`
+	DefaultNo bool              `json:"defaultNo,omitempty"`
+	Count     string            `json:"count,omitempty"`
 }
 
 // Answer answers a question, exactly once: Key, or Declined when it cannot be
@@ -1613,6 +1644,18 @@ type Saved struct {
 	Edit     uint64 `json:"edit"`
 	Canceled bool   `json:"canceled,omitempty"`
 	Error    string `json:"error,omitempty"`
+}
+
+// Write is text the person is writing in the app, to go on writing in their
+// editor. The CLI puts it in a file under a text format's extension
+// (console.EditExtension), sends edit for it, and once saved answers a result of the same ID: StatusDone with what
+// the file holds then (Result.Text), StatusCanceled when the edit was given
+// up, or StatusFailed with why. What is the text's name as the edit's title
+// says it: "the prompt", "the comment".
+type Write struct {
+	ID   uint64 `json:"id"`
+	Text string `json:"text"`
+	What string `json:"what"`
 }
 
 // Upload is images for one of a box's sessions: an image pasted from the

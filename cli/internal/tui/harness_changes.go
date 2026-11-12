@@ -160,9 +160,6 @@ func (m *Model) viewHarnessChangesBanner(width int) string {
 // checked again on every listing, so a box that captured a change while
 // something else was up is explained once that is gone.
 
-// explainPresses are the explainer's answers by the letters that press them.
-var explainPresses = map[string]string{console.ExplainReview: "r", console.ExplainLater: "n"}
-
 // explainHarnessChangesIfOwed opens the explainer when the project owes it, a
 // listed box has a change to save, and nothing else has the screen. The
 // project is marked once it is answered, whichever way, Esc included.
@@ -180,7 +177,7 @@ func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
 		return nil
 	}
 	m.explainHarnessChanges = false
-	d := questionDialog(console.HarnessChangesExplainer(box), explainPresses, func(key string) tea.Cmd {
+	d := questionDialog(console.HarnessChangesExplainer(box), func(key string) tea.Cmd {
 		if key == console.ExplainReview {
 			return tea.Batch(m.openHarnessChanges(box), m.markHarnessChangesExplained())
 		}

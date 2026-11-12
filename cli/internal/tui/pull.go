@@ -172,11 +172,6 @@ type pullMergedMsg struct {
 	err  error
 }
 
-// mergePresses are the keys the ways to merge are pressed with. None of them
-// is the key that asks (pullMergeKey): a second press of that one, or its
-// repeat, would otherwise be an answer.
-var mergePresses = map[string]string{"squash": "s", "merge": "c", "rebase": "r"}
-
 // askMerge is m on a pull request: the core's question of which way to merge
 // it (console.Issue.MergeQuestion), of the ways the repository allows, and
 // refused where GitHub could not merge it either. The commit merged is the
@@ -195,7 +190,7 @@ func (m *Model) askMerge(p *pane) tea.Cmd {
 		return status("%v", err)
 	}
 	issue := *v.issue
-	d := questionDialog(q, mergePresses, func(key string) tea.Cmd {
+	d := questionDialog(q, func(key string) tea.Cmd {
 		if _, ok := issue.MergeMethod(key); !ok {
 			return nil
 		}

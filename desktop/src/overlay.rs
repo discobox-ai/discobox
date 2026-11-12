@@ -9,10 +9,10 @@
 //! shortcut. The filter is the core's choices for the list, each with what it would list, drawn
 //! in the window on every platform: a native menu has no room for the counts.
 
-use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
+use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, ScrollSpec, Tx, col, el, icon, row, spacer, text, text_input};
 
 use crate::wire::{ChoiceGroup, Entry, HarnessAction, Menu as DesktopMenu, PaletteRow, SpecTarget};
-use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, row_id, run_command, run_on, secrets, theme, tools, view};
+use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, reader, row_id, run_command, run_on, secrets, theme, tools, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
@@ -196,16 +196,34 @@ pub fn menu_bar(s: &State) -> El {
 // ---------------------------------------------------------------------------------------------
 // The help
 
+/// What the help lists, in the order it draws it: each command by its menu, with its label and
+/// its shortcut, or what reaches it instead. The help's find and copy read it (`reader`).
+pub fn help_lines(s: &State) -> Vec<(String, String, String)> {
+    let mut out = vec![];
+    for &menu in &s.spec.menus {
+        for c in s.spec.commands.iter().filter(|c| c.bindings.desktop.menu == Some(menu)) {
+            let lacks = lacking(&s.spec, &c.id).is_some();
+            let key = keys::shortcut_of(s, &c.id).unwrap_or_else(|| if lacks { "not yet" } else { "menu, palette" }.into());
+            out.push((menu.as_str().to_string(), c.label.clone(), key));
+        }
+    }
+    out
+}
+
 /// Every command by its menu: what it does, and its shortcut, or that the palette and the menu
-/// reach it; one the app does not answer yet says so.
+/// reach it; one the app does not answer yet says so. Found through, copied and scrolled as any
+/// read-only card is (`reader`).
 pub fn help_view(s: &State) -> Option<El> {
     if !s.help {
         return None;
     }
+    let lines = help_lines(s);
+    let pieces: Vec<String> = lines.iter().map(|(_, label, _)| label.clone()).collect();
     let mut columns = row().w_full().gap(24.0).items_start();
     let mut column = col().gap(2.0).w(300.0);
     let mut height = 0;
     let per_column = s.spec.commands.len().div_ceil(3) + s.spec.menus.len();
+    let mut i = 0;
     for &menu in &s.spec.menus {
         let commands: Vec<_> = s.spec.commands.iter().filter(|c| c.bindings.desktop.menu == Some(menu)).collect();
         if height > 0 && height + commands.len() > per_column {
@@ -217,14 +235,16 @@ pub fn help_view(s: &State) -> Option<El> {
         column = column.child(text(menu.as_str()).font(theme::UI_BOLD).color(theme::gold()).pt(if height > commands.len() + 1 { 8.0 } else { 0.0 }));
         for c in commands {
             let lacks = lacking(&s.spec, &c.id).is_some();
+            let label = text(c.label.clone()).font(theme::UI).color(if lacks { theme::dim() } else { theme::text() }).truncate().shrink();
             let mut line = row().key(format!("help-{}", c.id)).w_full().h(22.0).gap(8.0).center_y()
-                .child(text(c.label.clone()).font(theme::UI).color(if lacks { theme::dim() } else { theme::text() }).truncate().shrink())
+                .child(reader::lit(s, &pieces, i, label))
                 .child(spacer());
             line = match keys::shortcut_of(s, &c.id) {
                 Some(k) => line.child(view::keycap(k)),
-                None => line.child(text(if lacks { "not yet" } else { "menu, palette" }).font(theme::UI_SMALL).color(theme::dim())),
+                None => line.child(text(lines[i].2.clone()).font(theme::UI_SMALL).color(theme::dim())),
             };
             column = column.child(line.help(c.detail.clone()));
+            i += 1;
         }
     }
     columns = columns.child(column);
@@ -235,7 +255,8 @@ pub fn help_view(s: &State) -> Option<El> {
     let panel = col().key("help").padding(18.0).gap(12.0).radius(theme::r_card())
         .fill(theme::raised()).border(theme::stroke_focus(), theme::mark()).shadow(16.0, 48.0, Color::BLACK.alpha(0.55))
         .child(row().w_full().center_y().child(text("Commands").font(theme::UI_BOLD).color(theme::text())).child(spacer()).child(close))
-        .child(columns);
+        .child(reader::follow_scroll(s, col().key("help-body").w_full().max_h(640.0).min_h(0.0).child(columns).scroll(ScrollSpec { stick_bottom: false })))
+        .child(reader::foot(s, &pieces));
     Some(el().w_full().h_full().absolute(0.0, 0.0).fill(theme::bg().alpha(0.6))
         .on_press(|s: &mut State| s.help = false)
         .child(row().w_full().pt(60.0).items_start().child(spacer()).child(panel.on_press(|_: &mut State| {})).child(spacer())))

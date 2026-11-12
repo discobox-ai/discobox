@@ -5,15 +5,15 @@
 //! top edge, icon buttons with tooltips, keycaps, rounded selections, the mark as vector art,
 //! and spring motion. Nothing here types out the TUI's brackets, box drawing or blocks.
 
-use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
+use rune::{Color, Cx, Drag, El, Icon, KeyEvent, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
 
 use crate::wire::{Box as Sandbox, GitTone, Link, NoticeKind, Row, TabKind};
 use crate::theme::{self, CELL_H};
 use crate::paste::{self, DropOver};
-use crate::{Focus, MenuKind, Pane, Side, State, Workspace, audit, harnesses, icons, issue, keys, mark, overlay, run_command, run_on, secrets, sheet};
+use crate::{Focus, MenuKind, Pane, Side, State, Workspace, Writing, audit, harnesses, icons, issue, keys, mark, overlay, run_command, run_on, secrets, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
-const ROW_H: f32 = 26.0;
+pub const ROW_H: f32 = 26.0;
 /// A tab chip's height; half of it rides above the frame's top edge.
 const CHIP_H: f32 = 22.0;
 
@@ -181,7 +181,11 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     if r.depth > 0 {
         row_el = row_el.child(branches(r));
     }
-    row_el = row_el.child(text(name).font(if on || live { theme::UI_BOLD } else { theme::UI }).color(if remark.is_some() { theme::warn() } else { theme::text() }).truncate().shrink());
+    // A long name is cut, and said whole on its tooltip: the TUI's scroll left and right read
+    // along it instead.
+    let whole = name.clone();
+    row_el = row_el.child(text(name).font(if on || live { theme::UI_BOLD } else { theme::UI }).color(if remark.is_some() { theme::warn() } else { theme::text() }).truncate().shrink()
+        .help(whole));
     // A remark a command answers offers that command, by its own name and this app's key.
     if let Some(m) = remark.filter(|m| !m.command.is_empty()) {
         let (cmd, verb) = (m.command.clone(), if m.verb.is_empty() { m.command.clone() } else { m.verb.clone() });
@@ -357,6 +361,7 @@ fn brand_line() -> El {
 fn sidebar(s: &State) -> El {
     let focused = s.focus == Focus::List;
     let body = col().w_full().h_full().gap(6.0).min_h(0.0)
+        .on_layout(|s: &mut State, r: [f32; 4]| s.list_h = r[3])
         .child(list_block(s, false))
         .child(spacer())
         .child(row().w_full().center().child(mark::view(72.0)))
@@ -758,6 +763,7 @@ fn home(s: &State) -> El {
         .child(spacer())
         .child(t(if s.bridged { "" } else { "mock data" }, theme::warn()).font(theme::UI_SMALL));
     let body = col().w_full().h_full().gap(10.0).px(8.0).min_h(0.0)
+        .on_layout(|s: &mut State, r: [f32; 4]| s.list_h = r[3])
         .child(header)
         .child(list_block(s, true))
         .child(spacer())
@@ -775,6 +781,13 @@ fn composer(s: &State) -> El {
         .placeholder("What should the new discobox do?", theme::dim())
         .on_edit(|s: &mut State| &mut s.composer)
         .on_input_change(|s: &mut State, _| s.composer_changed())
+        .on_input_key(|s: &mut State, ev: &KeyEvent, tx: &mut Tx| {
+            let editor = keys::is_gesture(s, "edit in editor", ev, tx);
+            if editor {
+                s.write_in_editor(Writing::Composer);
+            }
+            editor
+        })
         .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "new", tx));
     let mut summary = row().key("composer-summary").w_full().gap(6.0).center_y().min_w(0.0).flex_wrap();
     for (i, c) in s.summary.iter().enumerate() {

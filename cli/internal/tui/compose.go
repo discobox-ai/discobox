@@ -68,6 +68,9 @@ func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if editorKey(msg) {
+			return m, editPrompt(m.ctx, m.text.Value())
+		}
 		switch keyName(msg) {
 		case "esc":
 			if m.text.Value() != "" {
@@ -84,8 +87,6 @@ func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.submitted = m.text.Value()
 			m.done = true
 			return m, tea.Quit
-		case "alt+e", "f2":
-			return m, editPrompt(m.ctx, m.text.Value())
 		case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
 			// Modified Enter writes a newline, as in the console's prompt.
 			// Remapped terminals send Shift-Enter as Alt-Enter, and legacy
@@ -135,7 +136,9 @@ func (m *promptComposer) footer() string {
 	if m.discard {
 		b.WriteString("Discard this prompt? y discard · n/Esc keep editing")
 	} else {
-		b.WriteString("Enter submit · Shift-Enter newline · Esc cancel · Alt-E editor")
+		b.WriteString("Enter submit · Shift-Enter newline · Esc cancel · ")
+		b.WriteString(editorLabel)
+		b.WriteString(" editor")
 	}
 	if m.status != "" {
 		b.WriteString("\n")

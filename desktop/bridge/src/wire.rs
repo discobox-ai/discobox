@@ -14,10 +14,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 22;
+pub const PROTOCOL: i64 = 23;
 
 /// The console spec's shape (Spec.version) this side reads.
-pub const SPEC_VERSION: i64 = 7;
+pub const SPEC_VERSION: i64 = 8;
 
 /// The largest frame payload either side accepts: a larger one ends the bridge, since the two sides
 /// no longer agree where a frame starts.
@@ -99,6 +99,9 @@ pub struct Message {
     pub saved: Option<Saved>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write: Option<Write>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upload: Option<Upload>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,6 +181,11 @@ pub enum Type {
     #[serde(rename = "saved")]
     Saved,
 
+    /// TypeWrite is text being written in the app (the composer's prompt, a comment) for the person
+    /// to go on writing in their editor; a result answers it with what they saved (app).
+    #[serde(rename = "write")]
+    Write,
+
     /// TypeUpload is images pasted or dropped on a box's session (app).
     #[serde(rename = "upload")]
     Upload,
@@ -224,6 +232,7 @@ impl Type {
             Type::Progress => "progress",
             Type::Edit => "edit",
             Type::Saved => "saved",
+            Type::Write => "write",
             Type::Upload => "upload",
             Type::Open => "open",
             Type::Close => "close",
@@ -288,6 +297,16 @@ pub struct Spec {
     /// explainer may come up over it (ExplainerScreen.Free).
     #[serde(rename = "promptQuiet")]
     pub prompt_quiet: f64,
+
+    /// AnswerQuiet is AnswerQuiet in seconds: how long a question is up, and the keys still, before
+    /// a key types an answer to it (AnswerSettled).
+    #[serde(rename = "answerQuiet")]
+    pub answer_quiet: f64,
+
+    /// AnswerHeld is what a question's card says once a key that would have answered it was held
+    /// back (console.AnswerHeld).
+    #[serde(rename = "answerHeld")]
+    pub answer_held: String,
 }
 
 /// SpecColor is one color token: its dark and light values as #rrggbb, and the xterm-256 index the
@@ -462,6 +481,11 @@ pub struct Session {
     /// Appearance is the palette the last window on this machine was picked to draw in, which this
     /// one opens on.
     pub appearance: Appearance,
+
+    /// Start is what the window opens on, when the CLI was asked for more than the list: a box's
+    /// workspace, the create card, or the harnesses page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<Start>,
 }
 
 /// Appearance is the palette a window that draws its own picks (the desktop app): the system's,
@@ -492,6 +516,17 @@ impl Appearance {
             Appearance::Light => "light",
         }
     }
+}
+
+/// Start is the registry command the window runs as it opens, the way `discobox attach`, `run` and
+/// `configure` open the TUI: attach on Box (a box's key, its server's name and its ID, run once the
+/// listing holds it), or new or harnesses with none.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Start {
+    pub command: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#box: String,
 }
 
 /// Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the
@@ -2539,6 +2574,10 @@ pub struct Result {
     /// from now on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
+
+    /// Text is what a write's editor saved.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub text: String,
 }
 
 /// Status is how a command ended.
@@ -3106,6 +3145,11 @@ pub struct Choice {
     /// Why is why an answer a question offers cannot be chosen: shown, never taken.
     #[serde(default, skip_serializing_if = "is_default")]
     pub why: String,
+
+    /// Press is the key a form's picker takes this choice by, while the picker has the keys
+    /// (console.PickerPress); a question's are its Presses.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub press: String,
 }
 
 /// FormAction is one of a form's ways to submit (console.CardOffer): its key, its label, and
@@ -3204,7 +3248,8 @@ pub struct FieldError {
 /// directory the answer turns on says so far (console.Question.Measure,
 /// console.DirectoryTotal.Said), drawn under the body: the question is sent again, with the same
 /// ID, each time it changes, and the app updates the question it is showing rather than asking
-/// another.
+/// another. Presses is the key each answer is pressed by, by its key ("yes" and "no" for a yes or
+/// no): the core's (console.Question.Presses), the same keys the TUI answers it by.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Question {
     pub id: u64,
@@ -3219,6 +3264,8 @@ pub struct Question {
     pub body: String,
 
     pub choices: Vec<Choice>,
+
+    pub presses: HashMap<String, String>,
 
     #[serde(rename = "defaultNo", default, skip_serializing_if = "is_default")]
     pub default_no: bool,
@@ -3280,6 +3327,20 @@ pub struct Saved {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub error: String,
+}
+
+/// Write is text the person is writing in the app, to go on writing in their editor. The CLI puts
+/// it in a file under a text format's extension (console.EditExtension), sends edit for it, and
+/// once saved answers a result of the same ID: StatusDone with what the file holds then
+/// (Result.Text), StatusCanceled when the edit was given up, or StatusFailed with why. What is the
+/// text's name as the edit's title says it: "the prompt", "the comment".
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Write {
+    pub id: u64,
+
+    pub text: String,
+
+    pub what: String,
 }
 
 /// Upload is images for one of a box's sessions: an image pasted from the clipboard (Name and

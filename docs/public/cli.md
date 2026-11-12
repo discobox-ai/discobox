@@ -4365,17 +4365,33 @@ It is the same console as "discobox console": the discoboxes, and a box's
 terminals beside them. It talks to the server through this command, so
 --server, --token and every configured server work as they do for the
 console.
+
+With DISCOBOX the window opens on that discobox's workspace, as "discobox
+attach" opens the console on it. --new opens it on the card that creates a
+discobox, as "discobox run" does, and --harnesses on the harnesses page, as
+"discobox configure" does.
 ~~~~
 
 ```text
-discobox desktop [flags]
+discobox desktop [DISCOBOX] [flags]
+```
+
+Examples:
+
+```text
+  discobox desktop
+  discobox desktop sbx_01hq
+  discobox desktop --new
+  discobox desktop --harnesses
 ```
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --harnesses | bool | false | open the window on the harnesses page Value when passed without an argument: true. |
 | --help, -h | bool | false | help for desktop Value when passed without an argument: true. |
+| --new | bool | false | open the window on the card that creates a discobox Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --print-manifest | bool | false | print the desktop app this build would download, and exit; a build that pins none says so and exits non-zero Value when passed without an argument: true. |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |

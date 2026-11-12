@@ -3,8 +3,11 @@ package console
 import (
 	"context"
 	"errors"
+	"maps"
 	"os/exec"
+	"strconv"
 	"testing"
+	"time"
 )
 
 // A step the frontend has no room for is dropped, never waited on; what
@@ -175,5 +178,55 @@ func TestEditExtensionIsATextFormats(t *testing.T) {
 		if got := EditExtension(path); got != want {
 			t.Errorf("EditExtension(%q) = %q, want %q", path, got, want)
 		}
+	}
+}
+
+// A typed answer is one only once its question has been up AnswerQuiet and
+// the keys were still that long before it.
+func TestAnswerSettled(t *testing.T) {
+	q := AnswerQuiet
+	for _, c := range []struct {
+		up, sinceKey time.Duration
+		want         bool
+	}{
+		{q, q, true}, {q - 1, q, false}, {q, q - 1, false}, {10 * q, 0, false}, {0, 10 * q, false},
+	} {
+		if got := AnswerSettled(c.up, c.sinceKey); got != c.want {
+			t.Errorf("up %v, %v since the key before: %v, want %v", c.up, c.sinceKey, got, c.want)
+		}
+	}
+}
+
+// A question's answers are pressed the same way in every console: a yes or
+// no by y and n, a choice its asker gave a key by that key, a pick of one
+// between a yes and a no in words of their own by the same y and n, and any
+// other pick by its place, the first nine only.
+func TestQuestionPresses(t *testing.T) {
+	cases := []struct {
+		name string
+		q    Question
+		want map[string]string
+	}{
+		{"yes or no", Question{Title: "Stop?"}, map[string]string{AnswerYes: "y", AnswerNo: "n"}},
+		{"a yes and a no in words", Question{Choices: []Choice{
+			{Key: "copy", Means: AnswerYes}, {Key: "skip", Means: AnswerNo},
+		}}, map[string]string{"copy": "y", "skip": "n"}},
+		{"a pick of one", Question{Choices: []Choice{
+			{Key: "a"}, {Key: "b", Means: AnswerYes}, {Key: "c", Why: "not here"},
+		}}, map[string]string{"a": "1", "b": "2", "c": "3"}},
+		{"keys of its asker's own", Question{Choices: MergeMethods}, map[string]string{"squash": "s", "merge": "c", "rebase": "r"}},
+	}
+	for _, c := range cases {
+		if got := c.q.Presses(); !maps.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+	var many Question
+	for i := range 11 {
+		many.Choices = append(many.Choices, Choice{Key: strconv.Itoa(i)})
+	}
+	got := many.Presses()
+	if len(got) != 9 || got["0"] != "1" || got["8"] != "9" || got["9"] != "" {
+		t.Errorf("past nine: %v", got)
 	}
 }

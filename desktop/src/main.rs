@@ -38,6 +38,7 @@ mod paste;
 #[cfg(test)]
 mod paste_tests;
 mod perf;
+mod reader;
 #[cfg(test)]
 mod request_tests;
 #[cfg(test)]
@@ -331,6 +332,16 @@ enum Pending {
     /// The harness changes explainer, asked for unprompted: its review opened on Review changes,
     /// and nothing said when it is left or was not owed — the status line is not its.
     Explain,
+    /// Text being written gone on with in the person's editor: what they saved takes its place.
+    Write(Writing),
+}
+
+/// Where text handed to the editor was being written: the composer, or the comment field of
+/// the issue tab on a stream.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Writing {
+    Composer,
+    Comment(u32),
 }
 
 /// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
@@ -523,6 +534,9 @@ pub struct State {
     explained: bool,
     /// When a key last went into the composer, which the explainer waits to have gone quiet.
     typed_at: f64,
+    /// When the last key reached the window: a question's typed answer waits for the keys to
+    /// have been still (`sheet::key`).
+    pub key_at: f64,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -533,6 +547,11 @@ pub struct State {
     /// filter hid, until the view revealing it lands.
     point: Option<String>,
     pub find: Option<FindBar>,
+    /// The find and the line through the read-only card in front (`reader`).
+    pub reader: reader::Reader,
+    /// What the window was asked to open on (`discobox desktop BOX`, `--new`, `--harnesses`),
+    /// until it has: run once the listing it needs has landed (`start`).
+    starting: Option<wire::Start>,
     pub bridged: bool,
     pending: HashMap<u64, Pending>,
     /// The listing subscription: the filter is changed by subscribing again under a new one.
@@ -555,6 +574,8 @@ pub struct State {
     drag_home: Option<usize>,
     /// How wide the two columns are together, which a drag of the split divides.
     pub columns_w: f32,
+    /// How tall the list's frame is: how many rows a screen of them is (`list_page`).
+    pub list_h: f32,
     /// What arrived on a stream before its pane was made: a shell's first output can come
     /// before its result.
     early: HashMap<u32, Vec<Event>>,
@@ -607,10 +628,10 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, waiting: Requests::default(), requests_sub: 0, explained: false, typed_at: f64::NEG_INFINITY, recent: vec![], reveal: None, point: None, find: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, waiting: Requests::default(), requests_sub: 0, explained: false, typed_at: f64::NEG_INFINITY, key_at: f64::NEG_INFINITY, recent: vec![], reveal: None, point: None, find: None, reader: reader::Reader::default(), starting: session.start.clone(),
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
-            dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
+            dragging: None, drag_home: None, columns_w: 0.0, list_h: 0.0, early: HashMap::new(),
             composer: TextEdit::new(draft.clone()), summary: vec![], composer_sub: 0, draft: draft.clone(), edited: None, now: 0.0, warned: false, drop_over: None, files_starting: HashMap::new(),
         };
         // The prompt the last window left is back: closing a window is not how one is lost.
@@ -933,6 +954,10 @@ impl State {
 
     /// Moves the cursor (the list's gestures); a range being drawn follows it.
     pub fn move_cursor(&mut self, to: usize) { self.cursor = to.min(self.listing.rows.len().saturating_sub(1)); }
+
+    /// A screen of the list's rows, for the page gestures: the rows its frame holds, less the
+    /// head above them, and at least one.
+    pub fn list_page(&self) -> usize { ((self.list_h / view::ROW_H) as usize).saturating_sub(3).max(1) }
 
     /// Where a command is asked from, for the core's rules: the box whose workspace is on
     /// screen, and whether a pane or the list has the keys. The list is always beside it.
@@ -1978,6 +2003,87 @@ impl State {
         }
     }
 
+    /// Opens the window on what it was asked to, once a listing has landed: a box's workspace
+    /// (the attach command on it, which starts one that is stopped, shown outside the filter when
+    /// the filter hides it), the create card, or the harnesses page. A box is named by its key,
+    /// its server's name and its ID, never its ID alone; it is waited for while a server is
+    /// still being asked, and said to be gone once none is.
+    fn start(&mut self, tx: &mut Tx) {
+        let Some(start) = self.starting.clone().filter(|_| self.loaded) else { return };
+        if start.r#box.is_empty() {
+            self.starting = None;
+            run_command(self, &start.command, tx);
+            return;
+        }
+        let Some(key) = self.boxes.iter().find(|b| b.key == start.r#box).map(|b| b.key.clone()) else {
+            if self.listing.waiting.is_empty() {
+                self.starting = None;
+                self.message = Some(format!("{} is no longer listed", start.r#box));
+            }
+            return;
+        };
+        self.starting = None;
+        if self.row_of(&key).is_none() {
+            self.reveal(&key);
+            self.point = Some(key.clone());
+        }
+        run_on(self, &start.command, vec![key], tx);
+    }
+
+    /// Notes a key reaching the window: a question's typed answer waits for the keys to have
+    /// been still (`sheet::key`, which notes its own).
+    pub fn key_pressed(&mut self) { self.key_at = self.now; }
+
+    /// When the keys were last busy: a key to the window, or typing in a field.
+    pub fn last_key(&self) -> f64 { self.key_at.max(self.typed_at) }
+
+    /// The edit in editor gesture: what is being written goes on in the person's editor (the
+    /// core's `write`, waited on as any edit is), and what they save takes its place, as the
+    /// TUI's Alt-E does. One at a time per field; a comment on its way to GitHub stays as it is.
+    pub fn write_in_editor(&mut self, what: Writing) {
+        if self.pending.values().any(|p| matches!(p, Pending::Write(w) if *w == what)) {
+            self.message = Some("it is open in your editor already".into());
+            return;
+        }
+        let (text, name) = match what {
+            Writing::Composer => (self.composer.text.clone(), "the prompt"),
+            Writing::Comment(stream) => {
+                let Some(t) = self.pane(stream).and_then(|p| p.issue.as_ref()) else { return };
+                if t.posting {
+                    // What comes back from the editor would replace the field, and the post
+                    // landing clears it: one of them would lose the other.
+                    self.message = Some("the comment is still posting".into());
+                    return;
+                }
+                (t.composer.text.clone(), "the comment")
+            }
+        };
+        let id = self.next_id;
+        self.next_id += 1;
+        self.pending.insert(id, Pending::Write(what));
+        self.backend.send(Out::Write(wire::Write { id, text, what: name.into() }));
+    }
+
+    /// What the editor saved, in place of what was being written, the caret at its end.
+    fn written(&mut self, what: Writing, text: String) {
+        let mut edit = TextEdit::new(text);
+        edit.focus = edit.text.len();
+        edit.anchor = edit.focus;
+        match what {
+            Writing::Composer => {
+                edit.focused = self.composer.focused;
+                self.composer = edit;
+                self.composer_changed();
+            }
+            Writing::Comment(stream) => {
+                let Some(t) = self.pane_mut(stream).and_then(|p| p.issue.as_mut()) else { return };
+                edit.focused = t.composer.focused;
+                t.composer = edit;
+            }
+        }
+        self.message = None;
+    }
+
     /// The composer's prompt changed: it is told to the CLI once it has been still a moment.
     pub fn composer_changed(&mut self) {
         self.edited = Some(self.now);
@@ -2209,6 +2315,8 @@ impl State {
             Pending::Create(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
             Pending::Create(_) if r.status == Status::Canceled => self.message = None,
             Pending::Upload(stream, otherwise) => self.uploaded(stream, otherwise, &r),
+            Pending::Write(what) if r.status == Status::Done => self.written(what, r.text.clone()),
+            Pending::Write(_) if r.status == Status::Canceled => self.message = None,
             Pending::Verb(verb, name) => {
                 // A verb that acted on anything is worth letting the marks go for: they were put
                 // there to run this, and leaving them invites running it twice (the TUI's rule).
@@ -2544,11 +2652,17 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
         return true;
     }
     s.save_draft(DRAFT_STILL);
+    // A read-only card taken down or put up in front starts its find again.
+    reader::follow(s);
+    s.sheets.stamp(s.now, s.spec.answer_quiet, s.last_key());
     s.sheets.reveal(tx);
     audit::reveal(s, tx);
     // Checked on every poll: what holds it back (a sheet, a pane with the keys, a prompt) goes
     // without anything arriving.
     s.explain_if_owed();
+    // What the window was asked to open on, once a listing has landed (a mock's lands as the
+    // window is made).
+    s.start(tx);
     let events = s.inbox.drain();
     if events.is_empty() {
         return false;
@@ -2576,6 +2690,10 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
     }
+    s.start(tx);
+    // A question that arrived in this poll is up from now, not from the next poll, which an idle
+    // window may not run until the key that answers it.
+    s.sheets.stamp(s.now, s.spec.answer_quiet, s.last_key());
     s.take_copies(tx);
     tx.set_title(s.window_title());
     // And again once they are taken: the requests snapshot naming the box arrives among them, and

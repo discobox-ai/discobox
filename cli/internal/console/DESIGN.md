@@ -132,7 +132,11 @@ key as the registry spells it; how a terminal reports that key on a layout
   pane keys (copy, paste, find, a screen back or on) are gestures with no TUI
   binding: the TUI's terminal is the one it runs in, which keeps its own.
   `paste image` (Ctrl-V, Alt-V) is a pane gesture both consoles take, with no
-  leader, on a harness terminal (`Tab.TakesImageKeys`).
+  leader, on a harness terminal (`Tab.TakesImageKeys`). The desktop's `find`
+  and `copy` serve its read-only cards too (the help, a harness's config
+  card, an audit record). `edit in editor`
+  (the TUI's Alt-E and F2, the desktop's primary+E) is a field's: the prompt
+  and an issue tab's comment, handed to the person's editor.
 - **An image pasted or dropped on a box's session is the core's to place**:
   which tabs take one (`Tab.TakesImages`) and which take the image keys
   (`TakesImageKeys`), the name it is written under (`PastedImageName`) and how
@@ -684,7 +688,19 @@ flowchart LR
 - **A question is a description** (`Question`): a title, a body, and either
   `Choices` by key with a hint each, or none for a yes or no (`AnswerYes`,
   `DefaultNo` for a destruction nobody can undo). Its asker words it and
-  reads its answer; the frontend draws it. Git's credential question is the
+  reads its answer; the frontend draws it. Which key presses each answer is
+  the question's too, as its words are (`Question.Presses`: y and n, a
+  letter its asker gave a choice in `Choice.Press` — a close's c and n, a
+  merge's s, c and r — a yes and a no in words of their own by y and n, any
+  other pick by its place, `PickerPress`), so both consoles answer by the
+  same keys; they are not per-console bindings (598 §2), because a
+  question's answers are not commands. A typed answer counts only once the
+  question has settled (`AnswerSettled`: up, and the typing paused, a key
+  that only moves being no typing, `AnswerQuiet`, in the spec as
+  `answerQuiet`), in both consoles, and stays settled once it has; a key held
+  back is said on the card (`AnswerHeld`, in the spec as `answerHeld`): a
+  question can come up under someone typing, who may type on into it. A form's picker on the desktop takes
+  `PickerPress` too; the TUI draws its own cards. Git's credential question is the
   CLI's (`cli.gitCredentialQuestion`), in the words `discobox run` uses.
 - **A file to edit is an event too** (`Edit`, `Editing`): a harness's or a
   tool's file on this machine that the frontend opens in its editor (the

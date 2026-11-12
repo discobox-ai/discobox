@@ -112,12 +112,14 @@ fn no_shortcut_is_written_outside_the_spec() {
     let list_key = keys.split("fn list_key").nth(1).unwrap().split("\nfn ").next().unwrap();
     assert!(!list_key.contains("Key::"), "the list matches a key by hand rather than by a gesture");
     // And every gesture the spec binds here is one the app answers: an arm of list_key's match,
-    // or on_key's numbered gesture.
+    // on_key's numbered gesture, or a field's or card's own keys asking for it by name.
     let on_key = keys.split("pub fn on_key").nth(1).unwrap().split("\nfn ").next().unwrap();
+    let asked = [include_str!("view.rs"), include_str!("issue.rs"), include_str!("reader.rs")];
     let rt = runtime();
     for g in rt.state.spec.gestures.iter().filter(|g| !g.bindings.desktop.keys.is_empty()) {
         let answered = list_key.contains(&format!("\"{}\" =>", g.id)) || list_key.contains(&format!("\"{}\" if", g.id))
-            || on_key.contains(&format!("Some((\"{}\"", g.id));
+            || on_key.contains(&format!("Some((\"{}\"", g.id))
+            || asked.iter().any(|src| src.contains(&format!("is_gesture(s, \"{}\"", g.id)));
         assert!(answered, "the gesture {} is bound but not answered", g.id);
     }
 }
@@ -638,4 +640,26 @@ fn named_keys_are_labelled_by_their_names() {
     } else {
         assert_eq!(up, "Shift+PgUp");
     }
+}
+
+// The list's page gestures move its cursor a screen of rows at a time, stopping at its ends
+// (#958): the TUI's PgUp and PgDn, bound on the desktop too.
+#[test]
+fn the_page_keys_move_the_list_a_screen_at_a_time() {
+    let mut rt = runtime();
+    rt.state.focus = Focus::List;
+    let page = rt.state.list_page();
+    let last = rt.state.rows().len() - 1;
+    assert!(page >= 1);
+    rt.key(KeyEvent { key: Key::PageDown, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(rt.state.cursor, page.min(last));
+    rt.key(KeyEvent { key: Key::PageDown, mods: Mods::default() });
+    rt.key(KeyEvent { key: Key::PageDown, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(rt.state.cursor, (3 * page).min(last));
+    rt.state.list_h = 5.0 * view::ROW_H;
+    rt.key(KeyEvent { key: Key::PageUp, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(rt.state.cursor, (3 * page).min(last).saturating_sub(2), "a short list's page is the rows its frame holds");
 }

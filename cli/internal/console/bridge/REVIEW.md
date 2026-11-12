@@ -18,7 +18,9 @@
   names its server even when the box is not in the last listing (`keyServer`):
   a box whose server did not answer is missing from it, and `follow` first
   read a link in such a box's pane on the primary, entering a box of another
-  server.
+  server. What the window opens on (`Session.start`, `discobox desktop BOX`)
+  is a key too, made from the server `selectSandbox` found the box on: its
+  first version sent the ID alone, the fourth time this mistake was made.
 - **The bridge runs the core's rules; it never writes its own.** A command
   goes through `console.Dispatch`; a question, a form, a title or a refusal is
   the core's (`Confirmation`, `UpgradeOffer`, `RenameForm`, `Sandbox.Title`,

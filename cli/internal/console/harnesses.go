@@ -523,8 +523,8 @@ func HarnessChangesExplainer(box Sandbox) Question {
 			"Nothing is shared until you save. Discarding the change, or leaving it, keeps it in this discobox only.\n\n" +
 			"Whenever a discobox has a change to save, its workspace says so above its terminal, and pressing that reviews it.",
 		Choices: []Choice{
-			{Key: ExplainReview, Label: "Review changes", Hint: "see what changed, then save or discard it"},
-			{Key: ExplainLater, Label: "Not now", Hint: "the workspace goes on saying so, to review it later"},
+			{Key: ExplainReview, Label: "Review changes", Hint: "see what changed, then save or discard it", Press: "r"},
+			{Key: ExplainLater, Label: "Not now", Hint: "the workspace goes on saying so, to review it later", Press: "n"},
 		},
 	}
 }

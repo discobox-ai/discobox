@@ -13,7 +13,7 @@
 use rune::{Color, El, Key, KeyEvent, PointerPress, ScrollSpec, Tx, col, el, row, spacer, text};
 
 use crate::wire::{Args, CardRow, Entry, Harness, HarnessAction, HarnessChange, HarnessChanges, Result as CommandResult};
-use crate::{Menu, MenuKind, Pending, State, theme, view};
+use crate::{Menu, MenuKind, Pending, State, reader, theme, view};
 
 /// The harnesses page: the harnesses of the server it was opened for, and the one the keys are on.
 pub struct HarnessPage {
@@ -38,6 +38,31 @@ impl HarnessPage {
 pub struct Card {
     pub title: String,
     pub rows: Vec<CardRow>,
+}
+
+/// The card's pieces for its find (`reader`), in the order `card_view` draws them: each row's
+/// label, each of its value's spans, then each of its file's lines.
+pub fn card_pieces(c: &Card) -> Vec<String> {
+    let mut out = vec![];
+    for r in &c.rows {
+        out.push(r.label.clone());
+        out.extend(r.spans.iter().map(|x| x.text.clone()));
+        out.extend(r.lines.iter().cloned());
+    }
+    out
+}
+
+/// The card as text, for its copy: a row a line, its label and value, its file's lines under it.
+pub fn card_text(c: &Card) -> String {
+    let mut out = vec![c.title.clone()];
+    for r in &c.rows {
+        out.push(format!("{}\t{}", r.label, r.spans.iter().map(|x| x.text.as_str()).collect::<String>()));
+        out.extend(r.lines.iter().map(|l| format!("\t{l}")));
+        if r.more > 0 {
+            out.push(format!("\t… {} more lines", r.more));
+        }
+    }
+    out.join("\n")
 }
 
 /// A box's harness changes under review: what the core read, and the offer the keys are on.
@@ -241,9 +266,10 @@ fn review_choose(s: &mut State, i: usize) {
 
 /// The card's keys and the review's: Esc closes; in the review, Left and Right (and Tab) move
 /// along its choices and Enter takes one.
-pub fn panel_key(s: &mut State, ev: &KeyEvent) -> bool {
+pub fn panel_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.card.is_some() {
-        if matches!(ev.key, Key::Escape | Key::Enter) {
+        // A read-only card's own keys (`reader`); what they leave closes it.
+        if !reader::key(s, ev, tx) && matches!(ev.key, Key::Escape | Key::Enter) {
             s.card = None;
         }
         return true;
@@ -350,16 +376,23 @@ const LABEL_W: f32 = 110.0;
 /// step in under it.
 pub fn card_view(s: &State) -> Option<El> {
     let c = s.card.as_ref()?;
+    let pieces = card_pieces(c);
+    let mut i = 0;
+    let mut piece = |el: El| {
+        i += 1;
+        reader::lit(s, &pieces, i - 1, el)
+    };
     let mut rows = col().w_full().gap(3.0);
     for r in &c.rows {
+        let label = piece(t(r.label.clone(), theme::grey()).w(LABEL_W));
         let mut value = row().grow(1.0).shrink().flex_wrap();
         for span in &r.spans {
-            value = value.child(t(span.text.clone(), crate::secrets::ink(span.tone)));
+            value = value.child(piece(t(span.text.clone(), crate::secrets::ink(span.tone))));
         }
-        rows = rows.child(row().w_full().gap(8.0).items_start().child(t(r.label.clone(), theme::grey()).w(LABEL_W)).child(value));
+        rows = rows.child(row().w_full().gap(8.0).items_start().child(label).child(value));
         let mut lines = col().w_full().pl(LABEL_W + 20.0);
         for l in &r.lines {
-            lines = lines.child(t(l.clone(), theme::dim()).font(theme::UI_SMALL));
+            lines = lines.child(piece(t(l.clone(), theme::dim()).font(theme::UI_SMALL)));
         }
         if r.more > 0 {
             lines = lines.child(t(format!("… {} more lines — its files action opens it in your editor", r.more), theme::dim()).font(theme::UI_SMALL));
@@ -368,7 +401,8 @@ pub fn card_view(s: &State) -> Option<El> {
     }
     let body = col().w_full().gap(12.0).min_h(0.0)
         .child(row().w_full().center_y().child(text(c.title.clone()).font(theme::UI_BOLD).color(theme::text())).child(spacer()).child(hint("escape", "close")))
-        .child(rows.scroll(ScrollSpec { stick_bottom: false }).max_h(600.0));
+        .child(reader::follow_scroll(s, rows.key("harness-card-rows").scroll(ScrollSpec { stick_bottom: false }).max_h(600.0)))
+        .child(reader::foot(s, &pieces));
     Some(panel("harness-card", 760.0, body, |s: &mut State| s.card = None))
 }
 

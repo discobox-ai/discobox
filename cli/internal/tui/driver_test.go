@@ -80,6 +80,7 @@ func (d *driver) key(spec string) {
 // dispatch applies one message and runs whatever it returns.
 func (d *driver) dispatch(msg tea.Msg) {
 	d.t.Helper()
+	readFirst(d.m, msg)
 	_, cmd := d.m.Update(msg)
 	// The runtime draws after every message.
 	d.m.View()

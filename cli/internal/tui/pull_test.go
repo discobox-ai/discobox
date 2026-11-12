@@ -757,9 +757,9 @@ func TestTheMergeKeyTwiceDoesNotMerge(t *testing.T) {
 		if merges != 0 || m.dialog == nil {
 			t.Fatalf("%s twice: %d merges, question up %v; want none and the question still asked", pullMergeKey, merges, m.dialog != nil)
 		}
-		for method, press := range mergePresses {
-			if press == pullMergeKey {
-				t.Errorf("%q is picked with the key that asks", method)
+		for _, method := range console.MergeMethods {
+			if method.Press == pullMergeKey {
+				t.Errorf("%q is picked with the key that asks", method.Key)
 			}
 		}
 	})

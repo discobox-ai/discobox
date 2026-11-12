@@ -21,8 +21,9 @@ import (
 // field on the wire is required (the generated types have no defaults), so an
 // app reading a newer spec than its CLI's would otherwise stop on a missing
 // field rather than on this version. 4 added Dimensions; 5 the desktop's
-// Menus, and a desktop binding's Menu; 6 LinkSchemes; 7 PromptQuiet.
-const SpecVersion = 7
+// Menus, and a desktop binding's Menu; 6 LinkSchemes; 7 PromptQuiet; 8
+// AnswerQuiet and AnswerHeld.
+const SpecVersion = 8
 
 // Glyph is how a state is drawn: its shape, the color token it is drawn in,
 // and the word that stands for it where there is no color. An empty Color is
@@ -105,6 +106,12 @@ type Spec struct {
 	// untyped in before the explainer may come up over it
 	// (ExplainerScreen.Free).
 	PromptQuiet float64 `json:"promptQuiet"`
+	// AnswerQuiet is AnswerQuiet in seconds: how long a question is up, and
+	// the keys still, before a key types an answer to it (AnswerSettled).
+	AnswerQuiet float64 `json:"answerQuiet"`
+	// AnswerHeld is what a question's card says once a key that would have
+	// answered it was held back (console.AnswerHeld).
+	AnswerHeld string `json:"answerHeld"`
 }
 
 // SpecColor is one color token: its dark and light values as #rrggbb, and
@@ -180,6 +187,8 @@ func NewSpec() Spec {
 		Menus:       slices.Clone(Menus),
 		LinkSchemes: slices.Clone(BoxLinkSchemes),
 		PromptQuiet: PromptQuiet.Seconds(),
+		AnswerQuiet: AnswerQuiet.Seconds(),
+		AnswerHeld:  AnswerHeld,
 	}
 	for _, c := range brand.Colors() {
 		spec.Colors[c.Name] = SpecColor{Dark: c.Dark, Light: c.Light, XTerm: c.XTerm}

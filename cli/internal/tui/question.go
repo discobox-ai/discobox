@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"strconv"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -11,52 +10,50 @@ import (
 
 // questionDialog draws a question the core describes (console.Question): a
 // confirm for a yes or no, a menu of its choices otherwise, under its subject.
+// Its typed answers wait for it to settle (console.AnswerSettled, applied by
+// the Model): a key typed for what was in front a moment before is no answer.
 // answer takes the chosen key. A yes or no left any way but yes — n, Esc,
 // Enter where Enter means no — is answered no; leaving a choice is the
 // dialog's onCancel, which the caller sets.
 //
 // A pick of one between a yes and a no in words of their own (each choice's
 // Means: the create's questions about the working tree) is its two rows with
-// what each means beside it, y and n pressing them. Any other pick has each
-// choice's hint under the menu while it is chosen, and its first nine
-// choices are pressed by their place, 1 to 9 — or, for a screen with keys of
-// its own for a question's answers (the issue tab's close and merge), by the
-// key presses gives each choice. A choice the question offers with why it
-// cannot be chosen is shown with why, and never taken.
-func questionDialog(q console.Question, presses map[string]string, answer func(key string) tea.Cmd) *dialog {
+// what each means beside it. Any other pick has each choice's hint under the
+// menu while it is chosen. Each choice is pressed by the key the core gives it
+// (console.Question.Presses: y and n, a key its asker gave it, or its place).
+// A choice the question offers with why it cannot be chosen is shown with why,
+// and never taken.
+func questionDialog(q console.Question, answer func(key string) tea.Cmd) *dialog {
 	title, body := ansi.Strip(q.Title), ansi.Strip(q.Body)
 	if len(q.Choices) == 0 {
 		d := confirmDialog(title, body, func(string) tea.Cmd { return answer(console.AnswerYes) })
+		d.question = true
 		d.defaultNo = q.DefaultNo
 		d.onCancel = func() tea.Cmd { return answer(console.AnswerNo) }
 		return d
 	}
 	items := make([]action, len(q.Choices))
 	hints := make([]string, len(q.Choices))
+	keys := q.Presses()
 	yesNo := true
 	for i, choice := range q.Choices {
 		// One the question offers with why it cannot be chosen is shown so,
 		// and never taken.
-		items[i] = action{key: choice.Key, label: choice.Label, enabled: choice.Why == "", why: choice.Why}
-		if i < 9 {
-			items[i].press = strconv.Itoa(i + 1)
-		}
-		if press, ok := presses[choice.Key]; ok {
-			items[i].press = press
-		}
+		items[i] = action{key: choice.Key, label: choice.Label, enabled: choice.Why == "", why: choice.Why, press: keys[choice.Key]}
 		hints[i] = choice.Hint
 		yesNo = yesNo && choice.Means != ""
 	}
 	if yesNo {
 		for i, choice := range q.Choices {
-			items[i].press = map[string]string{console.AnswerYes: "y", console.AnswerNo: "n"}[choice.Means]
 			items[i].detail = choice.Hint
 		}
 		d := actionsDialog(title, body, items, answer)
+		d.question = true
 		d.subject = q.Subject
 		return d
 	}
 	d := actionsDialog(title, body, items, answer)
+	d.question = true
 	d.subject = q.Subject
 	d.choiceDescriptions = hints
 	d.wrapDetails = true
@@ -78,7 +75,7 @@ func (m *Model) ask(feed narration, asking *console.Asking) tea.Cmd {
 		return nil
 	}
 	previous := m.dialog
-	m.dialog = questionDialog(asking.Question, nil, func(key string) tea.Cmd { asking.Answer(key); return nil })
+	m.dialog = questionDialog(asking.Question, func(key string) tea.Cmd { asking.Answer(key); return nil })
 	if len(asking.Choices) > 0 {
 		// Left unchosen, a pick of one is no answer: the command is told it
 		// was dismissed. Every way the card closes comes here.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -58,6 +59,14 @@ func TestHello(t *testing.T) {
 	}
 	if w.Session.PrimaryServer != "home" || w.Session.Directory != "/src" || w.Session.Branch != "main" {
 		t.Errorf("session %+v", w.Session)
+	}
+
+	if w.Session.Start != nil {
+		t.Errorf("a window asked for nothing opens on %+v", w.Session.Start)
+	}
+	started := dialStarting(t, newFakeCore("home", running("b1")), &Start{Command: "attach", Box: "b1"})
+	if got := started.hello().Session.Start; got == nil || *got != (Start{Command: "attach", Box: "b1"}) {
+		t.Errorf("the window opens on %+v, want b1's workspace", got)
 	}
 
 	old := dial(t, newFakeCore("home", running("b1")))
@@ -133,6 +142,9 @@ func TestVerbNarratesAndAsks(t *testing.T) {
 	if q.Command != id || q.Title != "Git credentials" || len(q.Choices) != 2 {
 		t.Fatalf("question %+v", q)
 	}
+	if want := map[string]string{"once": "1", "never": "2"}; !maps.Equal(q.Presses, want) {
+		t.Errorf("the question's presses %v, want the core's %v", q.Presses, want)
+	}
 	core.setListing(running("b1"))
 	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: "once"}})
 	// The listing's re-read and the verb's result can arrive in either order.
@@ -203,6 +215,16 @@ func TestSettingsForm(t *testing.T) {
 	}
 	if name == nil || name.Value != "first" || !name.Required || !name.Applies {
 		t.Fatalf("name field %+v", name)
+	}
+	// A picker's choices are pressed by their place, as the core says.
+	picker := slices.IndexFunc(form.Fields, func(f Field) bool { return len(f.Choices) > 1 })
+	if picker < 0 {
+		t.Fatal("the settings form has no picker")
+	}
+	for i, c := range form.Fields[picker].Choices {
+		if c.Press != console.PickerPress(i) {
+			t.Errorf("%s's choice %s is pressed by %q, want %q", form.Fields[picker].Key, c.Key, c.Press, console.PickerPress(i))
+		}
 	}
 
 	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{"name": " "}, Draft: true}})
@@ -1720,6 +1742,44 @@ func TestAnEditIsHandedOverAsACopy(t *testing.T) {
 		if got, _ := os.ReadFile(file); string(got) != "after" {
 			t.Fatalf("%s: saved %q, want what the copy held", c.name, got)
 		}
+	}
+}
+
+// Text being written in the app goes on in the person's editor: a file of its
+// own under a text format's extension (Markdown's is not one), handed over as any edit is, read back once
+// saved without the newline an editor ends a file in, and gone after; an
+// edit given up is answered canceled.
+func TestAWriteGoesOnInTheEditor(t *testing.T) {
+	a := dial(t, newFakeCore("home", running("b1")))
+	a.hello()
+	write := func(id uint64, answer Saved, saved string) Result {
+		a.send(Message{Type: TypeWrite, Write: &Write{ID: id, Text: "fix the reaper", What: "the prompt"}})
+		e := a.expect(TypeEdit).Edit
+		if e.Command != id || !strings.HasSuffix(e.Path, ".txt") || e.Title != "Writing the prompt" {
+			t.Fatalf("edit %+v", e)
+		}
+		if got, _ := os.ReadFile(e.Path); string(got) != "fix the reaper" {
+			t.Fatalf("the file holds %q", got)
+		}
+		if err := os.WriteFile(e.Path, []byte(saved), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		answer.Edit = e.ID
+		a.send(Message{Type: TypeSaved, Saved: &answer})
+		r := a.result(id)
+		if _, err := os.Stat(e.Path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("the file %s was left behind: %v", e.Path, err)
+		}
+		return r
+	}
+	if r := write(41, Saved{}, "fix the reaper\nand its tests\n"); r.Status != StatusDone || r.Text != "fix the reaper\nand its tests" {
+		t.Fatalf("saved: %+v", r)
+	}
+	if r := write(42, Saved{Canceled: true}, "never"); r.Status != StatusCanceled || r.Text != "" {
+		t.Fatalf("given up: %+v", r)
+	}
+	if r := write(43, Saved{Error: "no editor"}, "never"); r.Status != StatusFailed || r.Why != "no editor" {
+		t.Fatalf("not opened: %+v", r)
 	}
 }
 

@@ -118,6 +118,14 @@ fn a_reset_asks_first() {
     key(&mut rt, Key::Enter);
     assert_eq!(rt.state.message.as_deref(), Some("reset Claude to its bundle's files alone"));
 
+    // A pick of one is answered by the key the core gives each answer, its place.
+    harnesses::act(&mut rt.state, HarnessAction::Reset, String::new(), (0.0, 0.0));
+    settle(&mut rt);
+    rt.frame(rt.state.spec.answer_quiet);
+    key(&mut rt, Key::Text("1".into()));
+    assert!(!rt.state.sheets.is_open(), "1 did not answer the reset");
+    assert_eq!(rt.state.message.as_deref(), Some("reset Claude to its bundle's defaults, keeping your files"));
+
     // Codex carries no files of yours: a yes or no.
     key(&mut rt, Key::Down);
     harnesses::act(&mut rt.state, HarnessAction::Reset, String::new(), (0.0, 0.0));

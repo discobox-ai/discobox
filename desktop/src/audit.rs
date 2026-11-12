@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use rune::{Color, El, Key, KeyEvent, ScrollSpec, Span, TextEdit, Tx, col, el, icon, rich, row, spacer, text, text_input};
 
 use crate::wire::{Args, Audit, AuditQuery, AuditText, Result as CommandResult, Status, Subscribe, Topic};
-use crate::{Focus, Pending, State, icons, theme, view};
+use crate::{Focus, Pending, State, icons, reader, theme, view};
 
 /// How many rows PageUp and PageDown move.
 const PAGE: usize = 20;
@@ -593,13 +593,27 @@ fn recording_button(label: &str, on: bool, i: usize) -> El {
         })
 }
 
+/// What was read as the panel draws it: the core's text without its last newline, its tabs set
+/// as spaces. Its lines are what its find reads (`reader`).
+pub fn reading_body(text: &str) -> String { text.trim_end_matches('\n').replace('\t', "    ") }
+
 /// What was read, over the window: its title and record, its text as the core printed it, and
-/// the recordings it offers to read.
+/// the recordings it offers to read. It is found through, copied and scrolled as any read-only
+/// card is (`reader`).
 pub fn reading_view(s: &State) -> Option<El> {
     let top = s.audit.as_ref()?.reading.last()?;
     // One element for the whole text, its lines broken where it breaks them: a body is up to the
-    // core's cap, and can be nearly all line breaks.
-    let body = t(top.text.text.trim_end_matches('\n').replace('\t', "    "), theme::text()).font(theme::UI_SMALL).wrap().w_full();
+    // core's cap, and can be nearly all line breaks. Its lines are lit and anchored inside it.
+    let read = reading_body(&top.text.text);
+    let pieces: Vec<String> = read.split('\n').map(str::to_string).collect();
+    let mut offsets = Vec::with_capacity(pieces.len());
+    let mut at = 0;
+    for p in &pieces {
+        offsets.push(at);
+        at += p.len() + 1;
+    }
+    let lit = reader::highlights(s, &pieces, 0..pieces.len(), &offsets);
+    let body = t(read, theme::text()).font(theme::UI_SMALL).wrap().w_full().text_highlights(lit);
     let lines = col().key("audit-text").w_full().padding(10.0).radius(theme::r_row()).fill(theme::sunken()).child(body);
     let mut foot = row().w_full().gap(8.0).center_y()
         .child(hint("escape", if s.audit.as_ref().is_some_and(|v| v.reading.len() > 1) { "back to the record" } else { "close" }));
@@ -616,7 +630,8 @@ pub fn reading_view(s: &State) -> Option<El> {
             .child(text(top.text.title.clone()).font(theme::UI_BOLD).color(theme::text()))
             .child(spacer())
             .child(t(top.text.record.clone(), theme::dim())))
-        .child(lines.scroll(ScrollSpec { stick_bottom: false }).max_h(600.0).min_h(0.0))
+        .child(reader::follow_scroll(s, lines.scroll(ScrollSpec { stick_bottom: false }).max_h(600.0).min_h(0.0)))
+        .child(reader::foot(s, &pieces))
         .child(foot);
     Some(el().w_full().h_full().absolute(0.0, 0.0).fill(theme::bg().alpha(0.6))
         .on_press(|s: &mut State| {

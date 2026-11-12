@@ -308,3 +308,19 @@ Global review expectations:
   moves nowhere, and only an action the keys were moved to (or pressed) is
   taken; its first version opened on Accept, and a doubled Enter ran a part's
   card straight through the review (`desktop/src/sheet.rs`).
+- Nor is a question answered, in either console, by a key typed for what was
+  in front a moment before. A question's own keys (y, n, a choice's number or
+  letter) are taken only once it has been up, and the keys still, the core's
+  `AnswerQuiet` (`console.AnswerSettled`, in the spec as `answerQuiet`): the
+  git credential question a create asks follows Return in the composer, and
+  its first choice, a digit, lends this machine's credentials to the pool.
+  Time it from when the question is first drawn; count every key that types,
+  before it and under it (a field's typing included: someone who has not
+  looked up yet types on into it), but no key that only moves (arrows, Tab,
+  Home, End, page keys); once it has settled keep it so; and say on the card
+  when a key was held (`console.AnswerHeld`), since the person presses it
+  again after a pause. Counting only the typing the question came up under
+  was tried and let typing begun under it answer; counting the arrows shut
+  out an arrow before the answer. The owner chose this rule
+  (`desktop/src/sheet.rs`, `cli/internal/tui/model.go`). A click on an answer
+  is not held.

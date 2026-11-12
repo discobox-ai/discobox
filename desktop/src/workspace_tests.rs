@@ -389,3 +389,40 @@ fn the_window_title_follows_the_box_on_screen() {
     assert!(rt.state.live.is_none(), "detached");
     assert_eq!(window_title(&rt), "discobox", "no box on screen again");
 }
+
+/// The window on the mock, opened on what `discobox desktop` was asked for.
+fn starting(command: &str, sandbox: &str) -> Runtime<State> {
+    let inbox = crate::backend::Inbox::default();
+    let mock = crate::backend::Mock::new(inbox.clone());
+    let start = crate::wire::Start { command: command.into(), r#box: sandbox.into() };
+    let session = crate::wire::Session { start: Some(start), ..Default::default() };
+    let state = State::with((Box::new(mock), crate::backend::bundled_spec(), inbox, false, session));
+    let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
+    rt.poll = Some(poll);
+    rt.on_key = Some(on_key);
+    settle(&mut rt);
+    rt
+}
+
+// `discobox desktop BOX`, `--new` and `--harnesses` open the window on a box's workspace, the
+// create card and the harnesses page, as `attach`, `run` and `configure` open the TUI (#958):
+// once, as the listing lands. A box no longer listed is said to be gone.
+#[test]
+fn the_window_opens_on_what_it_was_asked_for() {
+    let probe = runtime();
+    let running = probe.state.boxes.iter().find(|b| b.running()).expect("a running box").clone();
+    let rt = starting("attach", &running.key);
+    assert_eq!(rt.state.live.as_deref(), Some(running.key.as_str()), "the window did not open on {}", running.name);
+    assert!(rt.state.starting.is_none());
+
+    let rt = starting("new", "");
+    assert_eq!(rt.state.sheets.form().map(|f| f.title.as_str()), Some("New discobox"));
+
+    let rt = starting("harnesses", "");
+    assert!(rt.state.harnesses.is_some(), "the window did not open on the harnesses page");
+
+    // A box named by its ID alone is not the box with that key: the window opens on nothing.
+    let rt = starting("attach", "elsewhere/sbx_gone");
+    assert!(rt.state.live.is_none() && rt.state.starting.is_none());
+    assert_eq!(rt.state.message.as_deref(), Some("elsewhere/sbx_gone is no longer listed"));
+}

@@ -83,12 +83,11 @@ does not do. Each has a way round on the desktop, said in its reason.
 
 | Behaviour | Reason, and the way round | Closed by |
 | --- | --- | --- |
-| The prompt and a comment opened in an external editor (Alt-E, F2) | No editor hand-off from the composer or the comment field; F2 is `rename` on the desktop | #958 |
-| Questions answered by their letter (`y`, `n`, a choice's key); the create card's `1`–`9` and `e`; Shift-Tab on the prompt for the harness; Ctrl-D at an empty prompt | The sheets take the arrows and Enter; the harness is on the create card and in `options`; `primary+q` and `/exit` quit | #958 |
-| Read-only cards (help, a harness's config card, an audit record) searched (`/`, `n`, `N`), copied (`c`) and scrolled; an issue tab's `y` (copy its URL) and line scroll | The help is one grid closed by Esc; an issue tab scrolls by page and the wheel, and `o` opens its page | #958 |
-| Left and Right change the server on the harnesses and secrets pages | Each page is the server the list is narrowed to; `servers` changes it | #958 |
-| The list's `page up`, `page down`, `scroll left` and `scroll right` gestures (bound in the TUI, not on the desktop) | The wheel scrolls the list, and a long name is cut | #958 |
-| `discobox configure`, `discobox run` and `discobox attach BOX` open the console on its harnesses page, a new box or a box's workspace | `discobox desktop` takes no arguments; the palette goes to any of them | #958 |
+| Ctrl-D at an empty prompt quits | End of input is a terminal's idiom; a desktop app quits on its own key (`quit`, primary+Q), and `/exit` in the composer leaves as it does in the TUI | None: by design |
+| Shift-Tab on the prompt changes the harness | Shift-Tab moves the focus back in a desktop app's fields; the harness is on the create card and in `options` | None: by design |
+| Left and Right change the server on the harnesses and secrets pages | A page's Left and Right are its panels' own (a card's offers, a picker); each page is the server the list is narrowed to, and `servers` changes it | None: by design |
+| The list's `scroll left` and `scroll right` gestures read along a long name | A native list cuts a long name and says it whole on the row's tooltip | None: by design |
+| The create card's `1`–`9` create from that source at once, and `e` from the typed one | The card is a sheet, whose pickers choose by number and never submit: a number chooses the source and Enter creates; the typed source is the last choice, `another…` | None: by design |
 | A leader key, and `--leader` | None needed: the desktop's chords reach no program (ADR 26-11-07-598 §2) | None: by design |
 | The focused box's OSC 7501 report passed on to the terminal the console runs in | The desktop is the outermost terminal; it says the report in its header | None: by design |
 
@@ -99,6 +98,7 @@ desktop app's; the TUI reaches each through its keys.
 
 | Behaviour | Reason, and the way round | Closed by |
 | --- | --- | --- |
+| A form's picker takes a choice by its number (`console.PickerPress`) | The desktop's forms are the core's, drawn as sheets; the TUI draws its own cards, whose rows turn with the arrows and Space (its create card's Source row takes 1–9) | None: by design |
 | A request that arrives raises a native notification, and pressing it opens that request's card (`desktop/src/notify.rs`) | A terminal program has no notification service of its own; the TUI's band and the list's mark say it | None: by design |
 | The column divider dragged, a double press halving it; a chip dragged to reorder its column, a double press maximizing it | Pointer layout is the desktop's (ADR 26-11-07-876 §2); the TUI zooms with `maximize` | None: by design |
 | A folder dropped on the composer is the next create's source | A terminal hands a drop over as typed text; the TUI's create card takes a typed source | None: by design |

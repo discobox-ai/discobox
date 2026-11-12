@@ -469,6 +469,12 @@ func (m *Model) openLink(url string) tea.Cmd {
 // in order. A chord is two presses and a click on one is those two presses: the
 // leader is armed by the first exactly as a finger would arm it.
 func (m *Model) pressKeys(keys []string) tea.Cmd {
+	// A click on a question's answer is the person's choice, not a key typed
+	// for what was in front a moment before: it never waits for the question
+	// to settle (console.AnswerSettled).
+	if d := m.dialog; d != nil && d.question {
+		d.settled = true
+	}
 	var cmds []tea.Cmd
 	for _, k := range keys {
 		if k == "" {

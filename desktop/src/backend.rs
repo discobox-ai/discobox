@@ -31,7 +31,7 @@ use crate::wire::{
     Decision, DetailSection, DetailField, DetailLine, SecretWords, Requests, Arrival, Request, RequestKind, Notice, NoticeKind, FormAction, CardAction,
     Audit, AuditPart, AuditRecord, AuditRecording, AuditRun, AuditText,
     Issue, IssueAct, IssueItem, IssueItemKind, IssueMark, IssueRef, IssueState, IssueTone, Label, PullRequest, Merge, Reviewer, Checks, Check,
-    Thread, ThreadComment,
+    Thread, ThreadComment, Write as Writing,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -56,6 +56,9 @@ pub enum Out {
     Follow(Follow),
     /// Images for one of a box's sessions: the clipboard's, or files dropped on its pane.
     Upload(Upload),
+    /// Text being written here (the composer's prompt, a comment), to go on with in the
+    /// person's editor; a result answers it with what they saved.
+    Write(Writing),
 }
 
 impl Out {
@@ -76,6 +79,7 @@ impl Out {
             Out::Draft(prompt) => Message { r#type: Type::Draft, draft: Some(Draft { prompt }), ..Default::default() },
             Out::Follow(f) => Message { r#type: Type::Follow, follow: Some(f), ..Default::default() },
             Out::Upload(u) => Message { r#type: Type::Upload, upload: Some(u), ..Default::default() },
+            Out::Write(w) => Message { r#type: Type::Write, write: Some(w), ..Default::default() },
         }
     }
 }
@@ -418,6 +422,8 @@ pub struct MockRecord {
     pub uploads: Vec<Upload>,
     /// The push subscriptions the app holds, by subscription: the box each pushes.
     pub pushing: HashMap<u32, String>,
+    /// Every write handed to the editor, as sent.
+    pub writes: Vec<Writing>,
 }
 
 /// Where the mock's window runs, which a create is cut from unless told otherwise.
@@ -498,6 +504,8 @@ enum Ask {
     Edit(String, String, std::path::PathBuf),
     /// A tool's file, by the tool's ID and the file's name, written out to edit.
     ToolEdit(String, String, std::path::PathBuf),
+    /// Text written here gone on with in the editor, written out to a file of this machine.
+    Write(std::path::PathBuf),
     /// The create card, for the prompt the composer held.
     Create(String),
     Options,
@@ -1214,7 +1222,7 @@ impl Mock {
                 };
                 self.next_ask += 1;
                 self.asks.insert(id, (c.clone(), Ask::Reset(h.id.clone(), overrides)));
-                self.inbox.push(Event::Question(Question { id, command: c.id, title: "Reset".into(), body, choices, default_no: false, ..Default::default() }));
+                self.inbox.push(Event::Question(pressed(Question { id, command: c.id, title: "Reset".into(), body, choices, default_no: false, ..Default::default() })));
                 None
             }
             HarnessAction::Variant => {
@@ -1224,7 +1232,7 @@ impl Mock {
                 let fields = vec![field("name", "Name", format!("{} (work)", h.name)), field("slug", "Slug", format!("{}-work", h.name.to_lowercase()))];
                 self.next_ask += 1;
                 self.asks.insert(id, (c.clone(), Ask::Variant(h.id.clone())));
-                self.inbox.push(Event::Form(Form { id, command: c.id, title: format!("Create variant of {}", h.name), fields, ..Default::default() }));
+                self.inbox.push(Event::Form(pressed_form(Form { id, command: c.id, title: format!("Create variant of {}", h.name), fields, ..Default::default() })));
                 None
             }
             HarnessAction::Files => {
@@ -1280,12 +1288,12 @@ impl Mock {
         self.next_ask += 1;
         self.asks.insert(id, (c.clone(), Ask::Explain(target)));
         let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), ..Default::default() };
-        self.inbox.push(Event::Question(Question {
+        self.inbox.push(Event::Question(pressed(Question {
             id, command: c.id, title: "Saving harness changes".into(), subject: name,
             body: format!("{harness} in this discobox changed its settings or signed in.\n\nSaving makes those settings, and that login, the shared default for every discobox on {harness} in this project."),
             choices: vec![choice("review", "Review changes", "see what changed, then save or discard it"), choice("later", "Not now", "the workspace goes on saying so, to review it later")],
             ..Default::default()
-        }));
+        })));
         self.send_waiting();
     }
 
@@ -1308,10 +1316,10 @@ impl Mock {
             FormAction { key: CardAction::Accept, label: "Accept".into(), declines: false },
             FormAction { key: CardAction::Deny, label: "Deny".into(), declines: true },
         ];
-        self.inbox.push(Event::Form(Form {
+        self.inbox.push(Event::Form(pressed_form(Form {
             id, command: c.id, title: "Allow credential use?".into(), aside: "1 of 1".into(), card: mock_request_card(&r), actions,
             leave: "leave it waiting".into(), ..Default::default()
-        }));
+        })));
         None
     }
 
@@ -1348,7 +1356,7 @@ impl Mock {
             ];
             self.next_ask += 1;
             self.asks.insert(id, (c.clone(), Ask::Secret(action, String::new(), String::new())));
-            self.inbox.push(Event::Form(Form { id, command: c.id, title: "New secret".into(), fields, ..Default::default() }));
+            self.inbox.push(Event::Form(pressed_form(Form { id, command: c.id, title: "New secret".into(), fields, ..Default::default() })));
             return None;
         }
         let Some(secret) = self.secrets.iter().find(|x| x.id == c.args.secret).cloned() else {
@@ -1362,24 +1370,24 @@ impl Mock {
                 let fields = vec![Field { required: true, ..field("name", "name", &secret.name) }, Field { masked: true, placeholder: "unchanged — type to replace it".into(), ..field("value", "value", "") }];
                 let kind = "the kind is the one thing it cannot be told: a token and an oauth credential renew differently, so that is a new credential rather than an edit";
                 let about = if secret.refused.is_empty() { kind.to_string() } else { format!("{}\n{kind}", secret.refused) };
-                Event::Form(Form { id, command: c.id, title: format!("Edit {}", secret.name), fields, about, ..Default::default() })
+                Event::Form(pressed_form(Form { id, command: c.id, title: format!("Edit {}", secret.name), fields, about, ..Default::default() }))
             }
             SecretAction::Bind => {
                 let choice = |key: &str, label: &str| Choice { key: key.into(), label: label.into(), ..Default::default() };
                 let target = Field { choices: vec![choice("project", "every discobox in this project"), choice("sandbox", "one discobox")], ..field("target", "bound to", "project") };
                 let var = field("envVar", "as variable", &secret.name.to_uppercase().replace('-', "_"));
                 let about = "a binding hands this credential over before anything asks for it".into();
-                Event::Form(Form { id, command: c.id, title: format!("Bind {}", secret.name), fields: vec![target, var], about, ..Default::default() })
+                Event::Form(pressed_form(Form { id, command: c.id, title: format!("Bind {}", secret.name), fields: vec![target, var], about, ..Default::default() }))
             }
             SecretAction::Delete => {
                 let body = format!("Delete {}? Its live bindings ({}) are all taken back, and a discobox holding a sentinel for it keeps a placeholder that now resolves to nothing.", secret.name, secret.bindings.len());
-                Event::Question(Question { id, command: c.id, title: "Delete secret".into(), body, default_no: true, ..Default::default() })
+                Event::Question(pressed(Question { id, command: c.id, title: "Delete secret".into(), body, default_no: true, ..Default::default() }))
             }
             SecretAction::Unbind => {
                 let Some(b) = secret.bindings.iter().find(|b| b.id == c.args.binding) else { return fail("that binding is no longer there".into()) };
                 let target = b.detail.split(" · ").next().unwrap_or_default();
                 let body = format!("Take back the binding of {} to {target} as {}? The credential stops resolving at once, wherever it is being used. The request that produced it stays approved, because it is history.", secret.name, b.label);
-                Event::Question(Question { id, command: c.id, title: "Unbind".into(), body, default_no: true, ..Default::default() })
+                Event::Question(pressed(Question { id, command: c.id, title: "Unbind".into(), body, default_no: true, ..Default::default() }))
             }
             SecretAction::New | SecretAction::Read | SecretAction::Answer => unreachable!(),
         };
@@ -1440,6 +1448,22 @@ impl Mock {
 
     /// An edit finished with, or given up: what was saved is read back, as the core does.
     fn saved(&mut self, v: Saved) {
+        // As the bridge does: what the file holds once saved, without the newline an editor
+        // ends it in.
+        if let Some((c, Ask::Write(file))) = self.asks.get(&v.edit).cloned() {
+            self.asks.remove(&v.edit);
+            let result = match (v.canceled, v.error.is_empty()) {
+                (true, _) => CommandResult { status: Status::Canceled, ..Default::default() },
+                (_, false) => CommandResult { status: Status::Failed, why: v.error.clone(), ..Default::default() },
+                _ => {
+                    let text = std::fs::read_to_string(&file).unwrap_or_default().trim_end_matches('\n').to_string();
+                    CommandResult { status: Status::Done, text, ..Default::default() }
+                }
+            };
+            let _ = std::fs::remove_file(&file);
+            self.inbox.push(Event::Result(CommandResult { id: c.id, ..result }));
+            return;
+        }
         if let Some((c, Ask::ToolEdit(tool, name, file))) = self.asks.get(&v.edit).cloned() {
             self.asks.remove(&v.edit);
             let result = if v.canceled {
@@ -1697,7 +1721,7 @@ impl Mock {
                     ], ..Default::default() },
                 };
                 self.asks.insert(id, (c.clone(), Ask::IssueState(key, pull)));
-                self.inbox.push(Event::Question(Question { id, command: c.id, ..q }));
+                self.inbox.push(Event::Question(pressed(Question { id, command: c.id, ..q })));
                 None
             }
             Some(IssueAct::Merge) => {
@@ -1706,7 +1730,7 @@ impl Mock {
                 };
                 let id = self.next_ask;
                 self.next_ask += 1;
-                let choice = |key: &str, label: &str, hint: &str, why: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), why: why.into() };
+                let choice = |key: &str, label: &str, hint: &str, why: &str| Choice { key: key.into(), label: label.into(), hint: hint.into(), why: why.into(), ..Default::default() };
                 let q = Question {
                     id, command: c.id, title: format!("Merge #{n} into {}", p.base), body: format!("{}\n\nat {}", issue.title, c.args.head),
                     choices: vec![
@@ -1717,7 +1741,7 @@ impl Mock {
                     ..Default::default()
                 };
                 self.asks.insert(id, (c.clone(), Ask::Merge(key)));
-                self.inbox.push(Event::Question(q));
+                self.inbox.push(Event::Question(pressed(q)));
                 None
             }
         }
@@ -1849,7 +1873,7 @@ impl Mock {
             "rename" => {
                 let b = self.sandbox(&target)?;
                 let name = Field { hint: "What should this discobox be called?".into(), placeholder: "name".into(), ..field("name", "name", &b.name) };
-                (Ask::Rename(target), Event::Form(Form { id, command: c.id, title: "Rename".into(), fields: vec![name], ..Default::default() }))
+                (Ask::Rename(target), Event::Form(pressed_form(Form { id, command: c.id, title: "Rename".into(), fields: vec![name], ..Default::default() })))
             }
             "settings" => {
                 let b = self.sandbox(&target)?;
@@ -1872,7 +1896,7 @@ impl Mock {
                 };
                 let name = Field { required: true, hint: "the handle it was created with".into(), ..field("name", "name", &b.name) };
                 let title = format!("Settings · {}", b.name);
-                (Ask::Settings(target), Event::Form(Form { id, command: c.id, title, fields: vec![name, harness, restrict, allow, api], ..Default::default() }))
+                (Ask::Settings(target), Event::Form(pressed_form(Form { id, command: c.id, title, fields: vec![name, harness, restrict, allow, api], ..Default::default() })))
             }
             // The core refuses a purge none of its boxes can take before it asks anything.
             "purge" if !c.targets.iter().any(|t| self.sandbox(t).is_some_and(|b| b.state == State::Archived)) => return None,
@@ -1882,7 +1906,7 @@ impl Mock {
                     many => format!("{} boxes selected", many.len()),
                 };
                 let body = format!("Purge {name}? The disk and everything on it goes, and unarchive cannot bring it back.");
-                (Ask::Purge(c.targets.clone()), Event::Question(Question { id, command: c.id, title: "Purge".into(), body, choices: vec![], default_no: true, ..Default::default() }))
+                (Ask::Purge(c.targets.clone()), Event::Question(pressed(Question { id, command: c.id, title: "Purge".into(), body, choices: vec![], default_no: true, ..Default::default() })))
             }
             // The core's `ThemeQuestion`: every appearance, the one drawn now offered but closed.
             "theme" => {
@@ -1891,12 +1915,12 @@ impl Mock {
                     .map(|(a, label, hint)| Choice { why: if a == self.appearance { "the window is drawn this way now".into() } else { String::new() }, ..choice(a.as_str(), label, hint) })
                     .collect();
                 let body = "Draw the window dark, light, or as the system does.".into();
-                (Ask::Theme, Event::Question(Question { id, command: c.id, title: "Theme".into(), body, choices, ..Default::default() }))
+                (Ask::Theme, Event::Question(pressed(Question { id, command: c.id, title: "Theme".into(), body, choices, ..Default::default() })))
             }
             // A harness's own way out is the window's, as the core's `LeavesWindow` says: no card.
             "new" if matches!(c.args.prompt.trim(), "/exit" | "/quit") => return None,
-            "new" => (Ask::Create(c.args.prompt.clone()), Event::Form(self.run_form(id, c, true, &HashMap::new()))),
-            "options" if c.args.source.is_empty() => (Ask::Options, Event::Form(self.run_form(id, c, false, &HashMap::new()))),
+            "new" => (Ask::Create(c.args.prompt.clone()), Event::Form(pressed_form(self.run_form(id, c, true, &HashMap::new())))),
+            "options" if c.args.source.is_empty() => (Ask::Options, Event::Form(pressed_form(self.run_form(id, c, false, &HashMap::new())))),
             _ => return None,
         };
         Some((ask, event))
@@ -1922,7 +1946,7 @@ impl Mock {
         let get = |k: &str| answers.get(k).or(opening.get(k)).map(|v| v.trim().to_string()).unwrap_or_default();
         let result = match ask {
             Ask::Create(_) | Ask::Options if draft => {
-                self.inbox.push(Event::Form(self.run_form(id, &c, matches!(ask, Ask::Create(_)), answers)));
+                self.inbox.push(Event::Form(pressed_form(self.run_form(id, &c, matches!(ask, Ask::Create(_)), answers))));
                 return;
             }
             Ask::Create(_) if answers.get("source").is_some_and(|v| v == SOURCE_ENTER) && get("source:typed") == "nowhere" => {
@@ -2067,7 +2091,7 @@ impl Mock {
                 self.resend_work(&key, true);
                 done(format!("merged #{n} ({method})"))
             }
-            Ask::Edit(..) | Ask::ToolEdit(..) => return,
+            Ask::Edit(..) | Ask::ToolEdit(..) | Ask::Write(..) => return,
             Ask::Secret(..) if draft => return,
             Ask::Secret(SecretAction::New, ..) if get("name").is_empty() => {
                 let errors = vec![FieldError { field: "name".into(), why: "a secret needs a name".into() }];
@@ -2220,6 +2244,20 @@ impl Backend for Mock {
             Out::Follow(f) => {
                 let r = self.follow(&f);
                 self.inbox.push(Event::Result(CommandResult { id: f.id, ..r }));
+            }
+            // As the bridge does: the text in a file of its own, handed over as any edit is.
+            Out::Write(w) => {
+                let id = self.next_ask;
+                self.next_ask += 1;
+                let file = std::env::temp_dir().join(format!("discobox-mock-write-{}-{id}.txt", std::process::id()));
+                if let Err(e) = std::fs::write(&file, &w.text) {
+                    self.inbox.push(Event::Result(CommandResult { id: w.id, status: Status::Failed, why: e.to_string(), ..Default::default() }));
+                    return;
+                }
+                self.asks.insert(id, (Command { id: w.id, ..Default::default() }, Ask::Write(file.clone())));
+                let title = format!("Writing {}", w.what);
+                self.record.lock().unwrap().writes.push(w.clone());
+                self.inbox.push(Event::Edit(Edit { id, command: w.id, path: file.to_string_lossy().into_owned(), title }));
             }
             Out::Upload(u) => {
                 let r = mock_upload(&u);
@@ -2494,8 +2532,9 @@ mod tests {
         assert_eq!((f.actions[0].key, f.actions[0].declines), (CardAction::Deny, true));
         let Some(Event::FieldErrors(e)) = read(r#"{"type":"fieldErrors","fieldErrors":{"form":8,"errors":[{"field":"name","why":"a discobox needs a configured name"}]}}"#) else { panic!("fieldErrors") };
         assert_eq!((e.form, e.errors[0].field.as_str()), (8, "name"));
-        let Some(Event::Question(q)) = read(r#"{"type":"question","question":{"id":9,"command":4,"title":"Purge","body":"Purge one?","choices":[],"defaultNo":true}}"#) else { panic!("question") };
+        let Some(Event::Question(q)) = read(r#"{"type":"question","question":{"id":9,"command":4,"title":"Purge","body":"Purge one?","choices":[],"presses":{"yes":"y","no":"n"},"defaultNo":true}}"#) else { panic!("question") };
         assert!(q.default_no && q.choices.is_empty());
+        assert_eq!((q.presses["yes"].as_str(), q.presses["no"].as_str()), ("y", "n"));
         let Some(Event::Requests(10, Ok(w))) = read(r#"{"type":"snapshot","snapshot":{"sub":10,"topic":"requests","requests":{"requests":[{"id":"r1","box":"b1","kind":"credential","created":"2026-11-09T12:00:00Z","subject":"github","requester":"agent · b1"}],"rejections":[],"notices":[{"box":"b1","kind":"request","subject":"credential request","call":"click to answer","command":"requests","urgent":true}],"arrived":[{"request":"r1","box":"b1","title":"Credential request","body":"one · github"}],"said":[{"text":"renewed npm"}]}}}"#) else { panic!("requests") };
         assert_eq!((w.notices[0].kind, w.notices[0].urgent, w.arrived[0].request.as_str(), w.said[0].text.as_str()), (NoticeKind::Request, true, "r1", "renewed npm"));
     }
@@ -2524,4 +2563,40 @@ mod tests {
         let open = json(Out::Open { stream: 4, sandbox: "b1".into(), exec: "primary".into(), cols: 80, rows: 24 });
         assert_eq!(open, json!({"type": "open", "open": {"stream": 4, "box": "b1", "exec": "primary", "cols": 80, "rows": 24}}));
     }
+}
+
+/// A question with the keys its answers are pressed by, as the core gives them
+/// (`console.Question.Presses`): y and n for a yes or no, the letters the core's close, merge and
+/// harness changes explainer give their answers (`Choice.Press`), each other choice by its place.
+fn pressed(mut q: Question) -> Question {
+    let letter = |key: &str| match key {
+        "completed" if q.title.starts_with("Close") => Some("c"),
+        "not_planned" if q.title.starts_with("Close") => Some("n"),
+        "squash" => Some("s"),
+        "merge" => Some("c"),
+        "rebase" => Some("r"),
+        "review" if q.title == "Saving harness changes" => Some("r"),
+        "later" if q.title == "Saving harness changes" => Some("n"),
+        _ => None,
+    };
+    q.presses = if q.choices.is_empty() {
+        [("yes", "y"), ("no", "n")].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    } else {
+        q.choices.iter().enumerate().filter_map(|(i, c)| {
+            let press = letter(&c.key).map(str::to_string).or_else(|| (i < 9).then(|| (i + 1).to_string()))?;
+            Some((c.key.clone(), press))
+        }).collect()
+    };
+    q
+}
+
+/// A form with the keys its pickers' choices are pressed by, as the core gives them
+/// (`console.PickerPress`): each by its place, the first nine.
+fn pressed_form(mut f: Form) -> Form {
+    for field in &mut f.fields {
+        for (i, c) in field.choices.iter_mut().enumerate() {
+            c.press = if i < 9 { (i + 1).to_string() } else { String::new() };
+        }
+    }
+    f
 }

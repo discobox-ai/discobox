@@ -28,6 +28,8 @@ type Server struct {
 	ds      console.DataSource
 	w       *Writer
 	streams *streams
+	// start is what the window opens on (Session.Start).
+	start *Start
 
 	// regMu holds the registry, which is the window's palette ranking, still
 	// while a command is ruled on: commands run concurrently.
@@ -122,10 +124,12 @@ type Server struct {
 	auditSubs map[uint32]auditFollower
 }
 
-// NewServer is a bridge serving ds, writing to the app on out.
-func NewServer(ds console.DataSource, out io.Writer) *Server {
+// NewServer is a bridge serving ds, writing to the app on out, whose window
+// opens on start (Session.Start), or the list alone for nil.
+func NewServer(ds console.DataSource, out io.Writer, start *Start) *Server {
 	s := &Server{
 		ds:        ds,
+		start:     start,
 		w:         NewWriter(out),
 		reg:       console.NewRegistry(ds),
 		boxes:     map[string]console.Sandbox{},
@@ -246,7 +250,7 @@ func (s *Server) hello(ctx context.Context, h Hello) bool {
 	s.send(Message{Type: TypeWelcome, Welcome: &Welcome{Protocol: Protocol, Spec: &spec, Session: &Session{
 		PrimaryServer: s.ds.PrimaryServer(), Project: session.Project,
 		Directory: session.Directory, Branch: session.Branch, Host: session.Host, Draft: session.Draft,
-		Appearance: console.ParseAppearance(string(session.Appearance)),
+		Appearance: console.ParseAppearance(string(session.Appearance)), Start: s.start,
 	}}})
 	return true
 }
@@ -299,6 +303,13 @@ func (s *Server) handle(ctx context.Context, m Message) {
 		if ch != nil {
 			ch <- *m.Saved
 		}
+	case m.Type == TypeWrite && m.Write != nil:
+		w := *m.Write
+		go func() {
+			r := s.write(ctx, w)
+			r.ID = w.ID
+			s.send(Message{Type: TypeResult, Result: &r})
+		}()
 	case m.Type == TypeUpload && m.Upload != nil:
 		u := *m.Upload
 		go func() {
@@ -757,7 +768,8 @@ func (s *Server) ask(ctx context.Context, command uint64, q console.Question) (s
 		s.mu.Unlock()
 	}()
 	question := Question{
-		ID: id, Command: command, Title: q.Title, Subject: q.Subject, Body: q.Body, Choices: choices(q.Choices), DefaultNo: q.DefaultNo,
+		ID: id, Command: command, Title: q.Title, Subject: q.Subject, Body: q.Body, Choices: choices(q.Choices), Presses: q.Presses(),
+		DefaultNo: q.DefaultNo,
 	}
 	// A directory the answer turns on is counted while the question is up,
 	// and the question sent again as the count climbs, until it is final or
@@ -837,6 +849,41 @@ func (s *Server) edit(ctx context.Context, command uint64, e *console.Editing) e
 		return err
 	}
 	return os.WriteFile(e.Path, edited, 0o600)
+}
+
+// write is text the person is writing in the app gone on with in their
+// editor: put in a file of its own under the extension every edit's copy
+// takes (console.EditExtension: a prompt and a comment are Markdown, which
+// it makes .txt, since the app opens a file with the handler for its type
+// and Markdown's may be a viewer), opened through the app's edit as any
+// other file, and read back once saved. Nothing of it outlives the
+// write. The edit names the write's ID as its command, which the app waits
+// on as it waits on any command's edit.
+func (s *Server) write(ctx context.Context, w Write) Result {
+	tmp, err := os.CreateTemp("", "discobox-write-*"+console.EditExtension("text.md"))
+	if err != nil {
+		return Result{Status: StatusFailed, Why: err.Error()}
+	}
+	defer os.Remove(tmp.Name())
+	_, err = tmp.WriteString(w.Text)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = s.editAt(ctx, w.ID, tmp.Name(), "Writing "+w.What)
+	}
+	if errors.Is(err, context.Canceled) {
+		return Result{Status: StatusCanceled}
+	}
+	if err != nil {
+		return Result{Status: StatusFailed, Why: err.Error()}
+	}
+	written, err := os.ReadFile(tmp.Name())
+	if err != nil {
+		return Result{Status: StatusFailed, Why: err.Error()}
+	}
+	// An editor ends the file in a newline the field never had.
+	return Result{Status: StatusDone, Text: strings.TrimRight(string(written), "\n")}
 }
 
 // editAt has the app open the file at path, and waits for its saved.
@@ -1015,7 +1062,7 @@ func fields(in []console.Field, answers console.Answers) []Field {
 	out := make([]Field, 0, len(in))
 	for _, f := range in {
 		out = append(out, Field{
-			Key: f.Key, Label: f.Label, Section: f.Section, Hint: f.Hint, Choices: choices(f.Choices),
+			Key: f.Key, Label: f.Label, Section: f.Section, Hint: f.Hint, Choices: pickerChoices(f.Choices),
 			Value: answers[f.Key], Placeholder: f.Placeholder, Suffix: f.Suffix, Masked: f.Masked, Locked: f.Locked,
 			Applies: f.Applies(answers), Why: f.Why, Required: f.Required != "",
 		})
@@ -1027,6 +1074,16 @@ func choices(in []console.Choice) []Choice {
 	out := make([]Choice, 0, len(in))
 	for _, c := range in {
 		out = append(out, Choice{Key: c.Key, Label: c.Label, Hint: c.Hint, Why: c.Why})
+	}
+	return out
+}
+
+// pickerChoices are a form picker's choices, each with the key it is
+// pressed by.
+func pickerChoices(in []console.Choice) []Choice {
+	out := choices(in)
+	for i := range out {
+		out[i].Press = console.PickerPress(i)
 	}
 	return out
 }

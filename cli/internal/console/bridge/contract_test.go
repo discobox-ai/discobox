@@ -147,7 +147,11 @@ func TestContractCore(t *testing.T) {
 		n.Accept(ctx, made)
 		return made, nil
 	}
+	// What the window opens on: the list alone, but for the start scenario.
+	var start *Start
 	switch scenario {
+	case "start":
+		start = &Start{Command: "attach", Box: "home/b1"}
 	case "early":
 		core.gate = make(chan struct{})
 	case "default":
@@ -220,7 +224,7 @@ func TestContractCore(t *testing.T) {
 		return "", nil
 	}
 
-	if err := NewServer(core, out).Serve(context.Background(), os.Stdin); err != nil {
+	if err := NewServer(core, out, start).Serve(context.Background(), os.Stdin); err != nil {
 		t.Fatal(err)
 	}
 }

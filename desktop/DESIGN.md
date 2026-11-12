@@ -167,6 +167,11 @@ language's tokens.
   continue to match the logical key. Logical-only headless events can supply
   the digit directly.
   `no_shortcut_is_written_outside_the_spec` fails on a key matched by hand.
+- **A field asks for its own gestures** (`keys::is_gesture`): the composer's
+  and an issue comment's `edit in editor` (primary+E) are taken in the
+  field's `on_input_key`, before the window sees them. The list's `page up`
+  and `page down` move its cursor a screen of rows (`State::list_page`, from
+  the list frame's height).
 - **Where focus goes is the app's**; which key moves it is the registry's
   (`next pane`, `previous box`, `sidebar`).
 
@@ -182,9 +187,18 @@ too).
   changes (the form returns with what applies recomputed), and submits only
   fields the person changed. A refusal is said under the field it names.
 - **A question** is a yes or no, or a pick of one, answered with the arrows
-  and Enter. A destruction
+  and Enter, or by the key the core gives each answer (`Question.presses`:
+  y and n, a letter its asker gave it, or a choice's place), drawn beside it,
+  once the question has settled (`console.AnswerSettled`: up, and the typing
+  paused, the spec's `answer_quiet`, a key that only moves being no typing; a
+  key typed for what was in front a moment before is not an answer, and the
+  sheet says one was held, the spec's `answer_held`); one offered with why it cannot be chosen
+  is pressed by nothing. A destruction
   (`defaultNo`) opens on No and draws its yes in the error colour, so Enter
   never destroys.
+- **A picker chooses by number** while it has the keys: the core gives each
+  choice its key (`Choice.press`, its place). Choosing never submits: the
+  create card's source is a number, then Enter.
 - **Sheets queue** in arrival order; each goes when its command's result lands,
   or once a submitted form's command goes on (asks, fills another form, reports
   a step).
@@ -192,6 +206,26 @@ too).
   copy under a text extension; the app opens it with the platform's opener by
   type (`open -t`, Notepad, `xdg-open`; never a shell or a name a box chose)
   and waits on a sheet: Done answers `saved`, Esc gives it up.
+
+## Read-only cards
+
+`src/reader.rs`: the help, a harness's config card and an audit record or
+recording read in full are read-only cards, with the TUI's text cards' keys
+as their own: `/` or the find gesture finds as it is typed, `n` and `N` step
+along what it found, `c` or the copy gesture copies the card whole, the
+arrows (`j`, `k`) bring a line to the top, and the page keys, Home and End
+scroll.
+
+- **A card reads as pieces** (`reader::front`): the texts it draws, in the
+  order it draws them. What is found is lit with Rune's text highlights in
+  each piece, the match stepped to keyed `read-found` and centred. An audit
+  body stays one text element, its lines lit inside it.
+- **A line key scrolls a line on from where the card is**: its scroll reports
+  where it is as it moves (`on_scroll_offset`, `reader::follow_scroll`), so
+  the wheel and the page keys move where the next line key starts. An issue
+  tab's arrows do the same.
+- **One reader**, since one card is in front at a time: it starts again
+  whenever the card in front is another (`reader::follow`, every poll).
 
 ## Pages and panels
 
@@ -237,7 +271,9 @@ its actions as the core offers them.
   changed the layout since. A running tool is shown, never started twice. A
   tool on this machine is handed the box.
 - **Issues and pull requests** (`src/issue.rs`): tabs among the shells, drawn
-  from the issue topic with Rune's Markdown in the window's tokens. A link in
+  from the issue topic with Rune's Markdown in the window's tokens. Its keys
+  are its own, the TUI's: `y` copies its link, and the arrows (`j`, `k`)
+  scroll it a line at a time. A link in
   them opens only when it is a web address (`open_link`): strangers write that
   Markdown, and this machine's URL handler opens a `file://` or a custom
   scheme as readily as a page. Comment,
@@ -267,6 +303,21 @@ The core's `console.RunOptions`, held by the bridge.
   `options` is every run option as a sheet.
 - **A folder dropped on the composer** is where the next create is cut from,
   checked by the core as a typed source is.
+- **The prompt goes on in the editor** (`edit in editor`, as an issue's
+  comment does): the app sends `write` with what the field holds, the CLI
+  hands back a text file (`console.EditExtension`) as an `edit` the app opens
+  and waits on, and
+  what was saved takes the field's place (`State::write_in_editor`,
+  `Pending::Write`).
+
+## Opening on a box or a page
+
+`discobox desktop BOX`, `--new` and `--harnesses` open the window as
+`attach`, `run` and `configure` open the TUI: the welcome's `Session.start`
+names the registry command (`attach` on a box's key, `new`, `harnesses`),
+which the window runs once, as the first listing lands (`State::start`). A
+box the filter hides is shown outside it; one no server lists any more is
+said to be gone.
 
 ## Command surfaces
 
@@ -282,7 +333,8 @@ The core's `console.RunOptions`, held by the bridge.
   list (`MENU` in `main.rs`), which the ledger records.
 - **Context menus**: a box's actions from its row, its header or Shift+F10; a
   pane's is the `Session` menu.
-- **Help** (F1) lists every command by its menu, with its shortcut; tooltips
+- **Help** (F1) lists every command by its menu, with its shortcut, a
+  read-only card (found through, copied, scrolled); tooltips
   give each control's command's detail and shortcut.
 
 ## The look
@@ -363,6 +415,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/secrets.rs` | The secrets page, its requests table, and the core's cards as this window draws them |
 | `src/paste.rs` | Images pasted or dropped carried into the box; a folder dropped on the composer |
 | `src/notify.rs` | A request raised as a native notification, and a press on one taken back to the window |
+| `src/reader.rs` | A read-only card's find, copy and line keys: the help, a harness's config card, an audit record |
 | `src/keys.rs` | Shortcuts from the spec (`primary` per platform); keys as xterm bytes |
 | `src/term.rs` | A pane's terminal |
 | `src/theme.rs` | Tokens in both palettes, the pick and the system's appearance that choose one, and its calm spring; the bundled faces; springs |
@@ -391,6 +444,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/audit_tests.rs` | The timeline followed and held, runs, a record and a recording read, the timeline searched |
 | `src/harness_tests.rs` | The harnesses page, its card and actions, a file edited, harness changes reviewed, the explainer asked once on a free screen |
 | `src/identity_tests.rs` | No TUI character art, every colour and length a token, the bundled face measured |
+| `src/reader_tests.rs` | The help, a config card and an audit record found through, stepped along, copied and scrolled |
 | `src/theme_tests.rs` | A theme picked from the keys and kept for the next window; a change of palette, picked or the system's, one calm spring (the motion gate) |
 
 The Go side, its parity scenarios included, runs in every CI job; the app's

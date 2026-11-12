@@ -77,6 +77,14 @@ pub struct FormSheet {
 pub struct QuestionSheet {
     pub question: Question,
     pub picked: usize,
+    /// When it came to the front of the queue (`Sheets::stamp`): its answers' keys are taken
+    /// only once it has settled — been there, and the keys still, the spec's `answer_quiet` (the
+    /// core's `AnswerSettled`, which the TUI applies too) — which, once it has, it stays.
+    pub since: Option<f64>,
+    pub settled: bool,
+    /// Whether a key that would have answered it was held back because it had not settled,
+    /// which the sheet then says (the spec's `answer_held`).
+    pub held: bool,
 }
 
 /// A file a command needs edited, open in the person's editor; or why it could not be opened.
@@ -161,6 +169,18 @@ impl Sheets {
 
     /// Takes away the sheets of a command that has finished: whatever they asked is moot now.
     pub fn finished(&mut self, command: u64) { self.queue.retain(|s| s.command() != command); }
+
+    /// Notes when the question in front came there, once: every poll, so it is the time it was
+    /// first drawn there. And whether it has settled since (`settle`), on every poll as well as
+    /// every key: a pause with no key is what settles it.
+    pub fn stamp(&mut self, now: f64, quiet: f64, last_key: f64) {
+        if let Some(Sheet::Question(q)) = self.queue.first_mut() {
+            if q.since.is_none() {
+                q.since = Some(now);
+            }
+            settle(q, now, quiet, last_key);
+        }
+    }
 
     /// Scrolls the field the keys last moved to into view, once: called each frame.
     pub fn reveal(&mut self, tx: &mut Tx) {
@@ -382,7 +402,7 @@ pub fn take_question(s: &mut State, question: Question) {
     } else {
         question.choices.iter().position(|c| c.why.is_empty()).unwrap_or(0)
     };
-    s.sheets.queue.push(Sheet::Question(QuestionSheet { question, picked }));
+    s.sheets.queue.push(Sheet::Question(QuestionSheet { question, picked, since: None, settled: false, held: false }));
 }
 
 /// A file to edit, from the core: opened in the person's editor at once, and waited on.
@@ -567,11 +587,55 @@ fn choose(s: &mut State, i: usize, key: String, tx: &mut Tx) {
     }
 }
 
+/// Settles a question that has been up, and the keys still, `quiet`; once it has it stays settled,
+/// so a key pressed again, or an arrow before the answer, never shuts a person out.
+fn settle(q: &mut QuestionSheet, now: f64, quiet: f64, last_key: f64) {
+    q.settled = q.settled || q.since.is_some_and(|at| now - at >= quiet) && now - last_key >= quiet;
+}
+
+/// A key that only moves — an arrow, Tab, Home, End, a page key — which is no typing a question
+/// waits on (`console.AnswerSettled`).
+fn moves_only(ev: &KeyEvent) -> bool {
+    matches!(ev.key, Key::Up | Key::Down | Key::Left | Key::Right | Key::Tab | Key::Home | Key::End | Key::PageUp | Key::PageDown)
+}
+
+/// What a key types, when it types one character and no modifier but Shift is down: what a
+/// question's answer or a picker's choice is pressed by is matched against it.
+fn typed(ev: &KeyEvent) -> Option<String> {
+    if ev.mods.ctrl || ev.mods.alt || ev.mods.cmd {
+        return None;
+    }
+    match &ev.key {
+        Key::Text(t) if t.chars().count() == 1 && t != " " => Some(t.to_lowercase()),
+        _ => None,
+    }
+}
+
+/// The answer a key presses on a question, by the core's presses: one the question offers
+/// with why it cannot be chosen is pressed by nothing.
+fn pressed_answer(q: &QuestionSheet, typed: &str) -> Option<String> {
+    let (key, _) = q.question.presses.iter().find(|(_, press)| press.as_str() == typed)?;
+    let open = q.question.choices.is_empty() || q.question.choices.iter().any(|c| &c.key == key && c.why.is_empty());
+    open.then(|| key.clone())
+}
+
 /// The keys while a sheet is up: nothing behind it takes any. A form moves between its fields
-/// with Tab and the arrows, turns a picker with Left, Right and Space, submits with Enter and is
-/// dismissed with Esc; a question moves its pick and answers with Enter, and Esc leaves it
-/// (`dismissal`: a yes or no answered no, a pick of one declined).
+/// with Tab and the arrows, turns a picker with Left, Right and Space, chooses on one by the key
+/// the core gives each choice (its place), submits with Enter and is dismissed with Esc; a
+/// question moves its pick and answers with Enter, or is answered by the key the core gives an
+/// answer (y, n, a letter its asker gave it, a choice's place) once it has settled — up, and the
+/// keys still, the spec's `answer_quiet`: a key typed for what was in front a moment before is no
+/// answer — and Esc leaves it (`dismissal`: a yes or no answered no, a pick of one declined).
 pub fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+    // Whether the question in front has settled is asked before this key is noted: the typing
+    // before it is what it waits on. A key that only moves is no typing (`console.AnswerSettled`).
+    let (now, quiet, last_key) = (s.now, s.spec.answer_quiet, s.last_key());
+    if let Some(q) = s.sheets.question_mut() {
+        settle(q, now, quiet, last_key);
+    }
+    if !moves_only(ev) {
+        s.key_pressed();
+    }
     if ev.key == Key::Escape {
         dismiss(s);
         return true;
@@ -588,12 +652,18 @@ pub fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         if on_picker_now {
             tx.blur();
         }
+        let press = if on_picker { typed(ev) } else { None };
+        let pressed = press.and_then(|p| f.fields.get(at)?.choices.iter().find(|c| c.press == p).map(|c| c.key.clone()));
         match ev.key {
             Key::Enter => enter_form(s),
             Key::Left if on_picker => cycle(s, at, -1),
             Key::Right if on_picker => cycle(s, at, 1),
             Key::Text(ref t) if on_picker && t == " " => cycle(s, at, 1),
-            _ => {}
+            _ => {
+                if let Some(key) = pressed {
+                    choose(s, at, key, tx);
+                }
+            }
         }
         return true;
     }
@@ -617,6 +687,14 @@ pub fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
                 }
             }
         };
+        if let Some(key) = typed(ev).and_then(|t| pressed_answer(q, &t)) {
+            if !q.settled {
+                q.held = true;
+                return true;
+            }
+            answer(s, key);
+            return true;
+        }
         match ev.key {
             Key::Up | Key::Left => step(q, n - 1),
             Key::Down | Key::Right | Key::Tab => step(q, 1),
@@ -701,10 +779,15 @@ fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
         for c in &x.choices {
             let chosen = f.chosen[i] == c.key;
             let key = c.key.clone();
-            choices = choices.child(row().key(format!("sheet-choice-{}-{}", x.key, c.key)).h(24.0).px(10.0).center_y().radius(theme::r_key())
+            let mut chip = row().key(format!("sheet-choice-{}-{}", x.key, c.key)).h(24.0).px(10.0).gap(6.0).center_y().radius(theme::r_key())
                 .fill(if chosen { theme::mark().alpha(0.16) } else { Color::TRANSPARENT })
                 .border(theme::stroke_quiet(), if chosen { theme::mark() } else { theme::line() })
-                .hover(theme::text().alpha(0.06)).cursor(rune::Cursor::Pointer).motion(theme::SNAPPY)
+                .hover(theme::text().alpha(0.06)).cursor(rune::Cursor::Pointer).motion(theme::SNAPPY);
+            // The key that chooses it, while the picker has the keys.
+            if on && !c.press.is_empty() {
+                chip = chip.child(text(c.press.clone()).font(theme::UI_SMALL).color(theme::dim()));
+            }
+            choices = choices.child(chip
                 .child(text(c.label.clone()).font(if chosen { theme::UI_BOLD } else { theme::UI }).color(if chosen { theme::text() } else { theme::grey() }))
                 .on_press_tx(move |s: &mut State, tx: &mut Tx| choose(s, i, key.clone(), tx)));
         }
@@ -816,7 +899,7 @@ fn form_view(f: &FormSheet) -> El {
 /// How tall a form with a card grows before its fields and card scroll inside its sheet.
 const CARD_MAX_H: f32 = 540.0;
 
-fn question_view(q: &QuestionSheet) -> El {
+fn question_view(q: &QuestionSheet, held: &str) -> El {
     let x = &q.question;
     let mut body = col().w_full().gap(12.0).child(text(x.title.clone()).font(theme::UI_BOLD).color(theme::text()));
     // What it is about, on a line of its own: the directory a create would carry.
@@ -831,15 +914,21 @@ fn question_view(q: &QuestionSheet) -> El {
     if !x.count.is_empty() {
         body = body.child(text(x.count.clone()).key("sheet-count").font(theme::UI_BOLD).color(theme::text()).wrap().w_full());
     }
+    // A key held back because the question had not settled is said, so the person knows to
+    // press it again (the core's words).
+    if q.held && !q.settled {
+        body = body.child(text(held.to_string()).key("sheet-held").font(theme::UI_SMALL).color(theme::dim()).wrap().w_full());
+    }
     if x.choices.is_empty() {
         // A yes or no, worded as the core asks it; a destruction (`defaultNo`) is never the
         // default, and its yes is drawn as one.
         let danger = x.default_no;
+        let press = |answer: &str| x.presses.get(answer).map(|p| p.to_uppercase()).unwrap_or_default();
         let buttons = row().w_full().gap(8.0).center_y()
             .child(hint("escape", "no")).child(spacer())
-            .child(button("sheet-no", "No", q.picked == 1, false, true)
+            .child(button("sheet-no", "No", q.picked == 1, false, true).gap(8.0).child(view::keycap(press("no")))
                 .on_press(|s: &mut State| answer(s, "no".into())))
-            .child(button("sheet-yes", "Yes", q.picked == 0, danger, true)
+            .child(button("sheet-yes", "Yes", q.picked == 0, danger, true).gap(8.0).child(view::keycap(press("yes")))
                 .on_press(|s: &mut State| answer(s, "yes".into())));
         return panel("sheet", 480.0, body.child(buttons));
     }
@@ -849,10 +938,16 @@ fn question_view(q: &QuestionSheet) -> El {
         let key = c.key.clone();
         // One the core says cannot be chosen is there to be seen not to be, dimmed with why.
         let open = c.why.is_empty();
+        // The key that answers it, the core's, beside its label.
+        let mut head = row().w_full().gap(8.0).center_y()
+            .child(text(c.label.clone()).font(theme::UI).color(if open { theme::text() } else { theme::dim() }).grow(1.0).shrink());
+        if let Some(press) = x.presses.get(&c.key) {
+            head = head.child(view::keycap(press.to_uppercase()));
+        }
         let mut line = col().key(format!("sheet-choice-{}", c.key)).w_full().px(10.0).py(5.0).gap(2.0).radius(theme::r_row())
             .fill(if on && open { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
             .cursor(if open { rune::Cursor::Pointer } else { rune::Cursor::Default })
-            .child(text(c.label.clone()).font(theme::UI).color(if open { theme::text() } else { theme::dim() }));
+            .child(head);
         let said = if open { &c.hint } else { &c.why };
         if !said.is_empty() {
             line = line.child(text(said.clone()).font(theme::UI_SMALL).color(if open { theme::grey() } else { theme::dim() }).wrap());
@@ -864,7 +959,8 @@ fn question_view(q: &QuestionSheet) -> El {
         list = list.child(line);
     }
     let hints = row().w_full().gap(14.0).center_y()
-        .child(hint("up", "")).child(hint("down", "move")).child(hint("enter", "choose")).child(hint("escape", "cancel"));
+        .child(hint("up", "")).child(hint("down", "move")).child(hint("enter", "choose")).child(hint("escape", "cancel"))
+        .child(text("or press its key").font(theme::UI_SMALL).color(theme::dim()));
     panel("sheet", 520.0, body.child(list).child(hints))
 }
 
@@ -889,7 +985,7 @@ fn edit_view(e: &EditSheet) -> El {
 pub fn view(s: &State) -> Option<El> {
     match s.sheets.queue.first()? {
         Sheet::Form(f) => Some(form_view(f)),
-        Sheet::Question(q) => Some(question_view(q)),
+        Sheet::Question(q) => Some(question_view(q, &s.spec.answer_held)),
         Sheet::Edit(e) => Some(edit_view(e)),
     }
 }

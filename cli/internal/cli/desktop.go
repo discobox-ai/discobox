@@ -43,18 +43,30 @@ func (a *App) newDesktopCommand() *cobra.Command {
 		binary        string
 		printSpec     bool
 		printManifest bool
+		newBox        bool
+		harnesses     bool
 	)
 	cmd := &cobra.Command{
-		Use:   "desktop",
+		Use:   "desktop [DISCOBOX]",
 		Short: "Open the discobox console as a desktop app",
 		Long: `Open the console as a native desktop app.
 
 It is the same console as "discobox console": the discoboxes, and a box's
 terminals beside them. It talks to the server through this command, so
 --server, --token and every configured server work as they do for the
-console.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+console.
+
+With DISCOBOX the window opens on that discobox's workspace, as "discobox
+attach" opens the console on it. --new opens it on the card that creates a
+discobox, as "discobox run" does, and --harnesses on the harnesses page, as
+"discobox configure" does.`,
+		Example: `  discobox desktop
+  discobox desktop sbx_01hq
+  discobox desktop --new
+  discobox desktop --harnesses`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if printSpec {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -72,9 +84,16 @@ console.`,
 				}
 				return writeJSON(cmd.OutOrStdout(), manifest)
 			}
-			return a.runDesktop(cmd, binary)
+			opening, err := a.desktopOpening(cmd, args, newBox, harnesses)
+			if err != nil {
+				return err
+			}
+			return a.runDesktop(cmd, binary, opening)
 		},
 	}
+	cmd.Flags().BoolVar(&newBox, "new", false, "open the window on the card that creates a discobox")
+	cmd.Flags().BoolVar(&harnesses, "harnesses", false, "open the window on the harnesses page")
+	cmd.MarkFlagsMutuallyExclusive("new", "harnesses")
 	cmd.Flags().BoolVar(&printSpec, "print-spec", false, "print the console's UX spec the desktop app is handed, and exit")
 	_ = cmd.Flags().MarkHidden("print-spec")
 	cmd.Flags().BoolVar(&printManifest, "print-manifest", false, "print the desktop app this build would download, and exit; a build that pins none says so and exits non-zero")
@@ -83,7 +102,52 @@ console.`,
 	return cmd
 }
 
-func (a *App) runDesktop(cmd *cobra.Command, binary string) error {
+// desktopOpening is what the window was asked to open on: a registry
+// command, and for attach the discobox selectSandbox found, with the App it
+// returned aimed at the discobox's server (cli/REVIEW.md: a box is acted on
+// through that App, never found again by its ID).
+type desktopOpening struct {
+	command   string
+	app       *App
+	sandboxID string
+}
+
+// desktopOpening reads the command line into what the window opens on: a
+// discobox's workspace, the create card, the harnesses page, or (nil) the
+// list alone. A discobox named is found here, on whichever server has it, so
+// one that is not there fails before the app is fetched or started.
+func (a *App) desktopOpening(cmd *cobra.Command, args []string, newBox, harnesses bool) (*desktopOpening, error) {
+	switch {
+	case len(args) > 0 && (newBox || harnesses):
+		return nil, errors.New("open the window on a discobox, --new or --harnesses, not more than one")
+	case len(args) > 0:
+		app, _, sandboxID, _, err := a.selectSandbox(cmd, args[0])
+		if err != nil {
+			return nil, err
+		}
+		return &desktopOpening{command: "attach", app: app, sandboxID: sandboxID}, nil
+	case newBox:
+		return &desktopOpening{command: "new"}, nil
+	case harnesses:
+		return &desktopOpening{command: "harnesses"}, nil
+	}
+	return nil, nil
+}
+
+// start is the opening as the bridge hands it to the window: a discobox by
+// its key, the name the data source lists its server under and its ID, so it
+// is that box on that server whichever other server lists the same ID.
+func (o *desktopOpening) start(ds *apiDataSource) *bridge.Start {
+	if o == nil {
+		return nil
+	}
+	if o.sandboxID == "" {
+		return &bridge.Start{Command: o.command}
+	}
+	return &bridge.Start{Command: o.command, Box: bridge.Key(ds.serverNameOf(o.app), o.sandboxID)}
+}
+
+func (a *App) runDesktop(cmd *cobra.Command, binary string, opening *desktopOpening) error {
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 	resolver := a.desktopResolver(binary)
@@ -132,7 +196,7 @@ func (a *App) runDesktop(cmd *cobra.Command, binary string) error {
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
-		_ = bridge.NewServer(ds, toChild).Serve(ctx, fromChild)
+		_ = bridge.NewServer(ds, toChild, opening.start(ds)).Serve(ctx, fromChild)
 	}()
 	err = child.Wait()
 	stderr.flush()

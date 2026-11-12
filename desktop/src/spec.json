@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "colors": {
     "brand": {
       "dark": "#9e4aa7",
@@ -1562,7 +1562,9 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [
+            "pageup"
+          ]
         }
       }
     },
@@ -1580,7 +1582,9 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [
+            "pagedown"
+          ]
         }
       }
     },
@@ -1957,7 +1961,7 @@
     },
     {
       "id": "copy",
-      "label": "copy the selection",
+      "label": "copy the selection, or a read-only card",
       "bindings": {
         "tui": {
           "keys": [],
@@ -2014,8 +2018,29 @@
       }
     },
     {
+      "id": "edit in editor",
+      "label": "write it in your editor",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [
+            "alt+e",
+            "f2"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+e"
+          ]
+        }
+      }
+    },
+    {
       "id": "find",
-      "label": "find in the scrollback",
+      "label": "find in the scrollback, or in a read-only card",
       "bindings": {
         "tui": {
           "keys": [],
@@ -2081,5 +2106,7 @@
     "discobox+http",
     "discobox+https"
   ],
-  "promptQuiet": 5
+  "promptQuiet": 5,
+  "answerQuiet": 0.5,
+  "answerHeld": "a key typed as this came up is not taken as an answer: pause, then press it"
 }

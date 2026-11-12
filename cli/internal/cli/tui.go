@@ -304,6 +304,21 @@ func newAPIDataSource(ctx context.Context, a *App, client *apiclientgen.Client, 
 	return ds, nil
 }
 
+// serverNameOf is the name this window lists the server an App is aimed at
+// under (console.Sandbox.Server): none with one server, and otherwise the
+// server's whose App it is, which selectSandbox returns for the server a
+// discobox was found on. One aimed at a server the window does not list (a
+// discobox address naming another) has none: no box of its is listed, so no
+// key the window holds is the one made with it.
+func (d *apiDataSource) serverNameOf(app *App) string {
+	for _, s := range d.servers {
+		if s.app == app {
+			return s.name
+		}
+	}
+	return ""
+}
+
 // registeredName reports whether one of the registered servers goes by name.
 func registeredName(registered []*server, name string) bool {
 	_, ok := serverNamed(registered, name)

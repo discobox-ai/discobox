@@ -1668,10 +1668,28 @@ func newOpeningModel(t *testing.T, ds console.DataSource) *Model {
 func send(t *testing.T, m *Model, msgs ...tea.Msg) *Model {
 	t.Helper()
 	for _, msg := range msgs {
+		readFirst(m, msg)
 		_, cmd := m.Update(msg)
 		drain(t, m, cmd, 0)
 	}
 	return m
+}
+
+// readFirst has a key the tests press reach a core question as a person's
+// does: after the question has been up, and the keys still, for
+// console.AnswerQuiet. A test of a key typed into a question the moment it
+// comes up sends it with m.Update itself.
+func readFirst(m *Model, msg tea.Msg) {
+	if _, ok := msg.(tea.KeyPressMsg); !ok {
+		return
+	}
+	read := m.now().Add(-console.AnswerQuiet)
+	if d := m.dialog; d != nil && d.question {
+		d.asked = read
+	}
+	if m.lastKey.After(read) {
+		m.lastKey = read
+	}
 }
 
 // drainDepth bounds how far a chain of commands is followed. It is a guard

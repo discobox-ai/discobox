@@ -27,6 +27,11 @@ type Choice struct {
 	// Why is why it cannot be chosen, for an answer a question offers that is
 	// not open: shown, so it is seen not to be there, and never taken.
 	Why string
+	// Press is the key a question's answer is pressed by when its asker
+	// gives it one of its own, a letter that says it (a close's c and n, a
+	// merge's s, c and r): every console answers it by that. Empty for one
+	// pressed by the question's rule (Question.Presses).
+	Press string
 }
 
 // Field is one line of a form: a label, and a value either typed or chosen.

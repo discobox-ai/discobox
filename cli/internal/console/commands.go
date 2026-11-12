@@ -866,8 +866,8 @@ func desktopDigits(lead string, from, to int) DesktopBinding {
 var gestures = []Gesture{
 	{ID: "up", Label: "move up", Bindings: Bindings{TUI: tui("up", "k"), Desktop: desktop("up")}},
 	{ID: "down", Label: "move down", Bindings: Bindings{TUI: tui("down", "j"), Desktop: desktop("down")}},
-	{ID: "page up", Label: "a screen up", Bindings: Bindings{TUI: tui("pgup")}},
-	{ID: "page down", Label: "a screen down", Bindings: Bindings{TUI: tui("pgdown")}},
+	{ID: "page up", Label: "a screen up", Bindings: Bindings{TUI: tui("pgup"), Desktop: desktop("pageup")}},
+	{ID: "page down", Label: "a screen down", Bindings: Bindings{TUI: tui("pgdown"), Desktop: desktop("pagedown")}},
 	{ID: "first", Label: "first", Bindings: Bindings{TUI: tui("home", "g"), Desktop: desktop("home")}},
 	{ID: "last", Label: "last", Bindings: Bindings{TUI: tui("end", "G"), Desktop: desktop("end")}},
 	{ID: "scroll left", Label: "read back along a long name", Bindings: Bindings{TUI: tui("left", "h")}},
@@ -884,8 +884,10 @@ var gestures = []Gesture{
 	{ID: "pane", Label: "a pane by its number", Bindings: Bindings{TUI: digits("", 0, 9), Desktop: desktopDigits("primary", 1, 9)}},
 	{ID: "service", Label: "a service by its number", Bindings: Bindings{TUI: digits("S", 1, 9), Desktop: desktopDigits("primary+alt", 1, 9)}},
 	// A pane's own keys on the desktop, which a terminal there answers
-	// itself: the TUI's are the terminal it runs in.
-	{ID: "copy", Label: "copy the selection", Bindings: Bindings{Desktop: desktop("primary+c")}},
+	// itself: the TUI's are the terminal it runs in. Its find and copy are a
+	// read-only card's too (the help, a config card, an audit record), which
+	// the TUI's cards take as their own / and c.
+	{ID: "copy", Label: "copy the selection, or a read-only card", Bindings: Bindings{Desktop: desktop("primary+c")}},
 	{ID: "paste", Label: "paste", Bindings: Bindings{Desktop: desktop("primary+v")}},
 	// The keys the agents bind to pasting an image (Ctrl-V where a terminal's
 	// own paste is another key, Alt-V on Windows), taken from a pane with no
@@ -894,7 +896,13 @@ var gestures = []Gesture{
 	// its path pasted; with none there the key goes to the program.
 	{ID: "paste image", Label: "paste an image for the agent",
 		Bindings: Bindings{TUI: TUIBinding{Chords: []string{"ctrl+v", "alt+v"}}, Desktop: desktop("ctrl+v", "alt+v")}},
-	{ID: "find", Label: "find in the scrollback", Bindings: Bindings{Desktop: desktop("primary+f")}},
+	// A prompt or comment being written handed to the person's editor, and
+	// what it saved taken back: the composer and an issue tab's comment field
+	// in both consoles. Alt-E, and F2 where Option is not Meta, in the TUI; a
+	// key its fields take only there.
+	{ID: "edit in editor", Label: "write it in your editor",
+		Bindings: Bindings{TUI: TUIBinding{Chords: []string{"alt+e", "f2"}}, Desktop: desktop("primary+e")}},
+	{ID: "find", Label: "find in the scrollback, or in a read-only card", Bindings: Bindings{Desktop: desktop("primary+f")}},
 	{ID: "scroll back", Label: "a screen back through the scrollback", Bindings: Bindings{Desktop: desktop("shift+pageup")}},
 	{ID: "scroll on", Label: "a screen on through the scrollback", Bindings: Bindings{Desktop: desktop("shift+pagedown")}},
 }

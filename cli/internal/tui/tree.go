@@ -917,7 +917,7 @@ func (m *Model) viewNewCard() string {
 	if msg := m.statusMessage(inner); msg != "" {
 		parts = append(parts, msg)
 	}
-	parts = append(parts, m.st.dimText.Render(truncate("Enter creates · Shift-Tab harness · "+keyLabel(optionsKey)+" options · Alt-E editor · Esc cancels", inner)))
+	parts = append(parts, m.st.dimText.Render(truncate("Enter creates · Shift-Tab harness · "+keyLabel(optionsKey)+" options · "+editorLabel+" editor · Esc cancels", inner)))
 	return m.st.dialog.Width(dialogWidth(m.width)).Render(strings.Join(parts, "\n"))
 }
 

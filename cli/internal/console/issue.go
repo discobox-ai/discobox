@@ -544,8 +544,8 @@ func (i Issue) StateQuestion() (Question, error) {
 		return Question{Title: "Close " + number + " without merging it?", Body: i.Title}, nil
 	}
 	return Question{Title: "Close " + number, Body: i.Title, Choices: []Choice{
-		{Key: CloseCompleted, Label: "close as completed", Hint: "done, fixed, or answered"},
-		{Key: CloseNotPlanned, Label: "close as not planned", Hint: "won't fix, can't reproduce, duplicate, or stale"},
+		{Key: CloseCompleted, Label: "close as completed", Hint: "done, fixed, or answered", Press: "c"},
+		{Key: CloseNotPlanned, Label: "close as not planned", Hint: "won't fix, can't reproduce, duplicate, or stale", Press: "n"},
 	}}, nil
 }
 
@@ -611,11 +611,13 @@ func CommentBody(body string) (string, error) {
 }
 
 // MergeMethods are the ways to merge as the page offers them, by the key
-// GitHub knows each by.
+// GitHub knows each by, each pressed by a letter that says it. None is m,
+// the key an issue tab asks with in both consoles: a second press of it, or
+// its repeat, would otherwise be an answer.
 var MergeMethods = []Choice{
-	{Key: "squash", Label: "squash and merge", Hint: "its commits become one commit on the base branch"},
-	{Key: "merge", Label: "create a merge commit", Hint: "every commit is kept, joined by a merge commit"},
-	{Key: "rebase", Label: "rebase and merge", Hint: "every commit is replayed onto the base branch"},
+	{Key: "squash", Label: "squash and merge", Hint: "its commits become one commit on the base branch", Press: "s"},
+	{Key: "merge", Label: "create a merge commit", Hint: "every commit is kept, joined by a merge commit", Press: "c"},
+	{Key: "rebase", Label: "rebase and merge", Hint: "every commit is replayed onto the base branch", Press: "r"},
 }
 
 // MergeQuestion is what merging a pull request asks: which way, of the ways

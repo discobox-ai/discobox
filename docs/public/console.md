@@ -135,6 +135,11 @@ start it straight away. The app talks to the server only through the
 configured servers work as they do for `discobox console`. Closing the window
 keeps sessions running.
 
+`discobox desktop DISCOBOX` opens the window on that box's workspace, as
+`discobox attach` does in the terminal; `discobox desktop --new` opens it on
+the card that creates a box, as `discobox run` does, and `discobox desktop
+--harnesses` on the harnesses page, as `discobox configure` does.
+
 The window draws with Vulkan. A machine without a GPU, such as a virtual
 machine, draws it in software on Mesa's Vulkan driver, more slowly; with no
 Vulkan driver at all, `discobox desktop` says so and what to install (on
@@ -165,6 +170,8 @@ focused terminal, so Ctrl-A, Ctrl-C and Ctrl-W reach the program in the pane.
 | primary+Alt+O / primary+Alt+S | The box's tools / services |
 | primary+L / primary+Alt+A | Filter by server / show archived |
 | primary+R | Refresh |
+| Page Up / Page Down | Move a screen of boxes up or down the list |
+| primary+E | In the composer or a comment: write it in your editor |
 | F2 | Rename |
 | primary+Q | Quit, keeping sessions running |
 
@@ -178,7 +185,8 @@ the palette. A command that cannot act says why, in the menu and when run.
 ### The list and new boxes
 
 The composer under the list is what a new box is given to do: Return creates
-it, Shift+Return adds a line. primary+N opens the create card, where the
+it, Shift+Return adds a line, and primary+E opens what you have written in
+your editor: save it there and press Done to take it back. primary+N opens the create card, where the
 source, harness, pool and server are chosen; `run options` sets every option
 for the next create. Drop a folder on the composer to cut the next box from
 it. Unfinished prompts are kept for the next window.
@@ -228,12 +236,22 @@ the row, Shift+F10 opens its actions and Esc leaves. In the audit timeline,
 `/` searches as you type, as the terminal console's does: Enter keeps the
 search and Esc clears it. Questions and forms open
 as a sheet over the window; Tab moves between fields, Enter submits, and Esc
-cancels. A destructive question starts on No.
+cancels. A destructive question starts on No. A question is also answered by
+the key beside each answer, as in the terminal console: `y` and `n`, or a
+choice's number; on a field with choices, a number picks that choice.
+
+The help (F1), a harness's config card and an audit record read in full can
+be searched: `/` (or primary+F) finds as you type, `n` and `N` step through
+what it found, Enter keeps it and Esc lets it go. `c` (or primary+C) copies
+the whole card, and the arrows, `j` and `k`, and Page Up and Page Down scroll
+it.
 
 `issue` and `pull request` open as tabs among the box's shells. In one, `c`
 writes a comment (Ctrl+Enter, or ⌘↩ on macOS, posts it), `x` closes or
 reopens, `m` merges a pull request, `f` shows its files changed, `o` opens
-the page on GitHub, and `r` reads it again.
+the page on GitHub, `y` copies its link, and `r` reads it again. The arrows,
+`j` and `k`, scroll it a line at a time; in the comment
+field primary+E writes the comment in your editor.
 
 A credential request that arrives while the window is open raises a desktop
 notification on Linux; clicking it opens the request.
@@ -245,5 +263,11 @@ notification on Linux; clicking it opens the request.
 - primary+1 to 9 (a tab by its number) and primary+Alt+1 to 9 (a service's
   tab) do not work on Linux yet, because Shift turns the digit into another
   character. Click the tab, or use Ctrl+Tab.
-- The prompt and comments cannot be opened in an external editor, and
-  questions are answered with the arrows and Enter rather than by letter.
+- Ctrl-D at an empty prompt does not quit (primary+Q, or `/exit`, does), and
+  Shift-Tab in the composer does not change the harness: choose it on the
+  create card or in `run options`.
+- On the create card a number chooses a source and Enter creates it; there is
+  no `e` key, since the typed source is the last choice.
+- Left and Right do not change the server on the harnesses and credentials
+  pages; use `servers` (primary+L).
+- A long box name is cut in the list; hover it to read it whole.

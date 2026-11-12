@@ -11,7 +11,7 @@
 use rune::{Key, KeyEvent, PhysicalKeyCode, Shortcut, Tx};
 
 use crate::wire::Spec;
-use crate::{Focus, State, audit, harnesses, issue, overlay, run_command, secrets, sheet};
+use crate::{Focus, State, audit, harnesses, issue, overlay, reader, run_command, secrets, sheet};
 
 pub const MAC: bool = cfg!(target_os = "macos");
 
@@ -102,6 +102,10 @@ fn gesture_for<'a>(s: &'a State, ev: &KeyEvent, tx: &Tx) -> Option<(&'a str, &'a
     })
 }
 
+/// Whether a key press is one of a gesture's bindings: for a field's own keys (the composer's
+/// edit in editor), which its `on_input_key` takes before the window sees them.
+pub fn is_gesture(s: &State, id: &str, ev: &KeyEvent, tx: &Tx) -> bool { gesture_for(s, ev, tx).is_some_and(|(g, _)| g == id) }
+
 /// A shortcut as the platform writes it: `⌘⇧T`, or `Ctrl+Shift+T`.
 pub fn label(binding: &str) -> String {
     let parts: Vec<&str> = binding.split('+').collect();
@@ -165,6 +169,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.sheets.is_open() {
         return sheet::key(s, ev, tx);
     }
+    s.key_pressed();
     if s.menu.is_some() {
         return overlay::menu_key(s, ev, tx);
     }
@@ -177,8 +182,9 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         overlay::palette_key(s, ev, tx);
         return true;
     }
+    // The help is a read-only card: its own keys first (`reader`), then what closes it.
     if s.help {
-        if ev.key == Key::Escape || command_for(s, ev, tx).as_deref() == Some("help") {
+        if !reader::key(s, ev, tx) && (ev.key == Key::Escape || command_for(s, ev, tx).as_deref() == Some("help")) {
             s.help = false;
         }
         return true;
@@ -193,7 +199,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     // A harness's card and a box's harness changes are panels over the window, which keep the
     // keys while they are up; the harnesses page keeps its own, as a screen does.
     if s.card.is_some() || s.review.is_some() {
-        return harnesses::panel_key(s, ev);
+        return harnesses::panel_key(s, ev, tx);
     }
     if s.secret_panel.is_some() {
         return secrets::panel_key(s, ev);
@@ -204,7 +210,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     // What was read of an audit record is a panel over the window too; the audit view keeps its
     // own keys, as a screen does.
     if s.audit.as_ref().is_some_and(|v| !v.reading.is_empty()) {
-        return audit::reading_key(s, ev);
+        return reader::key(s, ev, tx) || audit::reading_key(s, ev);
     }
     // The find gesture over the view searches its timeline, as `/` does.
     if s.audit.is_some() && matches!(gesture_for(s, ev, tx), Some(("find", _))) {
@@ -287,6 +293,9 @@ fn list_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         "down" => s.move_cursor(s.cursor + 1),
         "first" => s.move_cursor(0),
         "last" => s.move_cursor(last),
+        // A screen of rows at a time, as many as the list shows.
+        "page up" => s.move_cursor(s.cursor.saturating_sub(s.list_page())),
+        "page down" => s.move_cursor(s.cursor + s.list_page()),
         "select" => s.toggle_select(),
         "range" => s.toggle_range(),
         "clear selection" => s.clear_selection(),

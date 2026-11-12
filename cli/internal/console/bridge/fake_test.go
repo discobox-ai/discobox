@@ -866,13 +866,20 @@ type app struct {
 	offSchema bool
 }
 
+// dial serves ds to a fake app, its window opening on the list alone.
 func dial(t *testing.T, ds console.DataSource) *app {
+	t.Helper()
+	return dialStarting(t, ds, nil)
+}
+
+// dialStarting serves ds to a fake app whose window opens on start.
+func dialStarting(t *testing.T, ds console.DataSource, start *Start) *app {
 	t.Helper()
 	appIn, srvOut := io.Pipe()
 	srvIn, appOut := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &app{t: t, out: appOut, frames: make(chan Frame, 256), done: make(chan error, 1)}
-	go func() { a.done <- NewServer(ds, srvOut).Serve(ctx, srvIn) }()
+	go func() { a.done <- NewServer(ds, srvOut, start).Serve(ctx, srvIn) }()
 	go func() {
 		defer close(a.frames)
 		for {
