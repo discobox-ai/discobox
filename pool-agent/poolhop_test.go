@@ -49,11 +49,15 @@ func TestPoolHopOfAMachinePoolOnANetworkIsDirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !hop.endpoints.DNSSystemResolver {
+		t.Fatal("machine DNS does not use stub")
+	}
 	if hop.form != hopDirect || hop.tunnelURL != "" || !hop.agentTLS {
 		t.Fatalf("hop = %+v, want a direct one with no tunnel and TLS to its agents", hop)
 	}
 	want := proxyagent.PoolEndpoints("")
 	want.Address = "pool-1.boxd"
+	want.DNSSystemResolver = true
 	if hop.endpoints != want {
 		t.Fatalf("endpoints = %+v, want the pool's name, answered by its provider host", hop.endpoints)
 	}
@@ -71,10 +75,15 @@ func TestPoolHopOfAMachinePoolBehindAnEdgeIsATunnel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !hop.endpoints.DNSSystemResolver {
+		t.Fatal("edge machine DNS does not use stub")
+	}
 	if hop.form != hopEdge || hop.tunnelURL != "wss://pool-1.boxd.sh" || hop.agentTLS {
 		t.Fatalf("hop = %+v, want a tunnel through the edge and plain HTTP to its agents", hop)
 	}
-	if hop.endpoints != proxyagent.PoolEndpoints("wss://pool-1.boxd.sh") {
+	want := proxyagent.PoolEndpoints("wss://pool-1.boxd.sh")
+	want.DNSSystemResolver = true
+	if hop.endpoints != want {
 		t.Fatalf("endpoints = %+v, want the edge's tunnels", hop.endpoints)
 	}
 	if hop.egress == nil || len(hop.egress.Allow) != 1 || hop.egress.Allow[0] != "pool-1.boxd.sh" {

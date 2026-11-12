@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pkg/wstunnel"
@@ -99,7 +101,10 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 		if host, _, err := net.SplitHostPort(endpoint.Host); err == nil {
 			transportHost = host
 		}
-		tunnel = wstunnel.NewClient(endpoint.Raw, nil)
+		tunnel = wstunnel.NewClient(endpoint.Raw, &http.Client{Transport: &http.Transport{
+			DialContext:         providerDialContext(ProviderResolverPath),
+			TLSHandshakeTimeout: 10 * time.Second,
+		}})
 	case "vsock", "unix":
 		if cfg.Address != "" {
 			return nil, fmt.Errorf("pool URL %q names no host; an address answers an https URL's name alone", cfg.URL)
@@ -113,7 +118,9 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 	default:
 		return nil, fmt.Errorf("pool URL %q must be https, vsock, unix, or wss: the pool is reached over mTLS", cfg.URL)
 	}
-	if tunnel == nil {
+	if endpoint.Scheme == "https" {
+		dial = providerDialContext(ProviderResolverPath)
+	} else if tunnel == nil {
 		if dial, err = endpoint.DialContext(); err != nil {
 			return nil, err
 		}

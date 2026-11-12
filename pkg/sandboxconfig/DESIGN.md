@@ -296,3 +296,11 @@ The image owns the registered `SaveBack` definition. Runtime owns the delivered
 `CaptureBaseline`, including configuration and credential revisions. Effective
 configuration carries both as explicit harness fields, independently of diagnostic
 provenance, and records project file paths for exclusion from shared defaults.
+
+## Pool DNS ownership
+
+`PoolEndpoints.DNSSystemResolver` is the pool's request to make its DNS stub
+the system resolver. Machine pools set it for direct and edge hops; Docker
+pools leave it false and supply DNS through their runtime. It requires `DNS`.
+The intake carries it to the egress bridge file; the stub owns takeover and
+restoration, as described in [sandbox-agent](../../sandbox-agent/DESIGN.md#machine-system-dns).

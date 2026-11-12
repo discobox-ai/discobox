@@ -67,6 +67,8 @@ const (
 // Config is the stub's settings, which LoadConfig reads from the egress
 // bridge config (bridge.File).
 type Config struct {
+	// SystemResolver makes the stub the machine resolver after it listens.
+	SystemResolver bool
 	// ListenAddress is where the stub listens: the DNS server the sandbox
 	// container was created with.
 	ListenAddress netip.AddrPort
@@ -86,7 +88,7 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	cfg := Config{Pool: file.Dial(file.DNSServer)}
+	cfg := Config{Pool: file.Dial(file.DNSServer), SystemResolver: file.DNSSystemResolver}
 	if file.DNSListenAddress != "" {
 		if cfg.ListenAddress, err = netip.ParseAddrPort(file.DNSListenAddress); err != nil {
 			return Config{}, fmt.Errorf("%s dnsListenAddress: %w", path, err)
@@ -124,9 +126,8 @@ func (c Config) Dialer() (*bridge.Dialer, error) {
 // sandbox would otherwise have its queries asked of the pool under this
 // sandbox's certificate. Both steps are idempotent across restarts.
 //
-// It never touches the box's resolver: in a container Docker's embedded one
-// forwards here, and on a machine the provider's stays the box's own, with
-// the stub beside it for the nested Docker (ADR 26-10-16-423 §9).
+// Resolver ownership is separate: Run switches a machine to the stub only
+// after it listens, when the pool requests it (ADR 26-11-12-355).
 func ClaimAddress(ctx context.Context, addr netip.Addr) error {
 	bits, iptables := 32, "iptables"
 	if addr.Is6() {
@@ -191,6 +192,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if err != nil {
 		_ = udp.Close()
 		return err
+	}
+	if cfg.SystemResolver {
+		managedCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		manager := systemResolver{path: "/etc/resolv.conf", recordPath: bridge.ProviderResolverPath, stub: cfg.ListenAddress.Addr()}
+		go manager.run(managedCtx, stub.logger)
 	}
 	stub.logger.Info("sandbox dns stub serving", "addr", cfg.ListenAddress, "pool", dialer.URL())
 	stub.Serve(ctx, udp, tcp)

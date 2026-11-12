@@ -292,6 +292,10 @@ func runProxyBridge(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if dns && !cfg.DNSSystemResolver {
+		dnsstub.RestoreSystemResolver(slog.Default())
+	}
+
 	// The sandbox's DNS stub rides the sandbox's own instance (--dns), not the
 	// nested-Docker one, since both reach the pool with this keypair. Its
 	// failing is logged, never fatal: a sandbox that cannot resolve external

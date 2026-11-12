@@ -1135,3 +1135,14 @@ Both `Transport.Proxy` and the scheme-aware `ConnectDial` route through the
 selected upstream or the destination dialer. SOCKS5 connects dial directly.
 Upstream credentials stay private; diagnostics and tunnel metadata omit all
 URL userinfo.
+
+## Machine sandbox resolver
+
+Every `bridge.Dialer` reads `/var/lib/discobox/provider-resolver.json` at each
+TCP connection, for both direct HTTPS and a WSS edge. When present, it resolves
+the transport host directly against that record's nameservers with Go's resolver,
+then verifies TLS using the original name. Absence retains normal system DNS;
+an unreadable or invalid record fails the dial instead of recursing into the
+stub. This also lets sibling bridges reach the pool while the stub is down.
+The record contract lives in `bridge`; its lifecycle belongs to
+[`dnsstub`](../sandbox-agent/DESIGN.md#machine-system-dns).

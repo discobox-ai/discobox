@@ -116,6 +116,9 @@ const (
 // for them is the sandbox's own (SandboxEgressListenAddress and its
 // siblings).
 type PoolEndpoints struct {
+	// DNSSystemResolver asks the DNS stub to replace the machine resolver.
+	// Containers use their runtime DNS configuration instead. Requires DNS.
+	DNSSystemResolver bool `json:"dnsSystemResolver,omitempty"`
 	// Proxy is the pool's egress proxy, which both the sandbox's egress
 	// forwarder and its nested-Docker forwarder reach.
 	Proxy string `json:"proxy"`

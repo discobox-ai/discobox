@@ -29,12 +29,13 @@ var testOwner = Owner{ProjectID: "prj_1", SandboxID: "sbx_1", PoolID: "pool_1"}
 //
 //nolint:gosec // G101: service URLs, not credentials.
 var testPool = &sandboxconfig.PoolEndpoints{
-	Proxy:       "https://pool:17443",
-	Credentials: "https://pool:17444",
-	DNS:         "pool:853",
-	BuildKit:    "https://pool:17445",
-	ServerName:  "pool",
-	Address:     "pool-1.provider.internal",
+	DNSSystemResolver: true,
+	Proxy:             "https://pool:17443",
+	Credentials:       "https://pool:17444",
+	DNS:               "pool:853",
+	BuildKit:          "https://pool:17445",
+	ServerName:        "pool",
+	Address:           "pool-1.provider.internal",
 }
 
 func testConfig(layout Layout, owner Owner) Config {
@@ -237,6 +238,9 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	}
 	// The pool's half from the bootstrap, the sandbox's own listeners, and the
 	// delivered credential where this sandbox keeps it (ADR 26-10-08-127 §4).
+	if !egress.DNSSystemResolver {
+		t.Fatal("system resolver flag lost")
+	}
 	if egress.UpstreamURL != testPool.Proxy || egress.CredentialsURL != testPool.Credentials || egress.DNSServer != testPool.DNS ||
 		egress.ServerName != testPool.ServerName || egress.Address != testPool.Address ||
 		egress.ListenAddress != sandboxconfig.SandboxEgressListenAddress ||
