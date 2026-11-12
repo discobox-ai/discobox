@@ -6,6 +6,9 @@
 - **Narrows**: [26-11-09-062](26-11-09-062-a-harness-change-wakes-the-pool-like-a-port.md)
   §2, "Nothing else wakes the pool": a feature's provisioning state moving
   wakes it too (§6).
+- **Narrows**: [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md)
+  §1, what each use is: an inspect also marks a request that acts in a
+  running box without starting one (§5; amended in implementation).
 - **Relates to**: [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md)
   and [0064](0064-repair-rebuilds-on-the-current-image.md), repair, which this
   is not; [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
@@ -126,7 +129,10 @@ terminal already running is untouched.
 - **API.** `POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision`,
   with no body. The control plane proxies it to the box's agent, as it proxies
   a service restart (`server/internal/server/sandbox_agent_terminals_proxy.go`),
-  as an action use. The agent answers `202` with the document as it stands
+  under the exec write scope. Its use is not an action, which would start a
+  stopped box, but an inspect: it waits out a boot under way and is refused
+  for a box that is not running (amended in implementation, before anything
+  shipped). The agent answers `202` with the document as it stands
   once the run has started or been joined, and the reprovision continues
   whether or not the caller stays. A box that is not running is a `409`:
   there is no agent to run in, and its next start provisions anyway. A
