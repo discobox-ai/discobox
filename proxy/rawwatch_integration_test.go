@@ -332,3 +332,5 @@ func TestRawSecretNotYetHeldHoldsTheRequest(t *testing.T) {
 		t.Fatalf("origin reached %d times, want the request never sent", reached.Load())
 	}
 }
+
+func (routedRawResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }

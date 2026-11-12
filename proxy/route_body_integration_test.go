@@ -436,3 +436,7 @@ func TestHTTPProxyHoldsAMethodOverrideToItsRoutes(t *testing.T) {
 		t.Fatalf("the upstream received %+v, want the plain POST with the credential", seen)
 	}
 }
+
+func (*routeResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+
+func (*narrowingResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }

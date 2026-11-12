@@ -131,6 +131,14 @@ type requestMeta struct {
 	// sentinels still in place. It is what a retry re-swaps from; re-swapping
 	// the outbound headers would look for a sentinel that is no longer there.
 	preSwapHeader http.Header
+	// preSwapBody is the request body as the sandbox sent it, sentinels in
+	// place, when a value was swapped into it at a body place: what the
+	// audit spools in place of the body that was sent.
+	preSwapBody []byte
+	// bodySwapped is a request a value was swapped into at a body place: the
+	// exchange of a credential for whatever the upstream answers, so its
+	// response body is never spooled (ADR 26-11-11-080 §9).
+	bodySwapped bool
 	// retryBody holds the request body when the request is eligible for an
 	// unauthorized retry, which is the only reason it is in memory at all.
 	retryBody []byte
@@ -598,7 +606,7 @@ func (h *httpProxy) setupHandlers() {
 		var store *cache.StreamingPut
 		// A pool host's content is the pool's own, already on its disk: a
 		// cache entry would only store it twice.
-		if matcher := h.cache.Matcher(); meta.poolHost == nil && !meta.raw.carried.Load() && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
+		if matcher := h.cache.Matcher(); meta.poolHost == nil && !meta.bodySwapped && !meta.raw.carried.Load() && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
 			key := matcher.GenerateKey(ctx.Req)
 			meta.cacheKey = key
 			_, cacheSpan := proxyTracer().Start(meta.ctx, "proxy.cache.store.start", trace.WithAttributes(attribute.String("proxy.cache.key", meta.rawSet.Redact(key))))
@@ -617,7 +625,9 @@ func (h *httpProxy) setupHandlers() {
 			bodyRecord *audit.BodyRecord
 			bodySpool  *audit.BodySpool
 		)
-		if store == nil && (meta.poolHost == nil || !meta.poolHost.unspooledBodies) {
+		// Nor is the answer to a body swap: it is the exchange of a key for
+		// whatever credential the upstream hands back (ADR 26-11-11-080 §9).
+		if store == nil && !meta.bodySwapped && (meta.poolHost == nil || !meta.poolHost.unspooledBodies) {
 			var err error
 			bodyRecord, bodySpool, err = h.beginResponseBody(meta)
 			if err != nil {
@@ -679,7 +689,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		RawBindingIDs:        meta.spentRawBindingIDs(),
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
-		ResponseHeaders:      headers,
+		ResponseHeaders:      meta.responseHeaders(headers),
 		ResponseBytes:        responseBytes,
 		RequestBodyFile:      requestBodyFile,
 		RequestBodyFormat:    requestBodyFormat,
@@ -706,12 +716,18 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	_, span := proxyTracer().Start(meta.ctx, "proxy.secret_swap")
 	defer span.End()
 	preSwapHeader := req.Header.Clone()
+	readBody := routeBody(req)
 	matched := swapper.Match(req, client.ID)
-	if len(matched) == 0 {
+	body, refused := h.matchBody(req, meta, client, preURL, preSwapHeader, readBody)
+	if refused != nil {
+		span.SetAttributes(attribute.Bool("proxy.secret_swap.authorized", false))
+		return refused
+	}
+	if len(matched) == 0 && body.Empty() {
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.swapped", false))
 		return nil
 	}
-	if refused := h.authorizeSwap(req, meta, client, preURL, preSwapHeader, matched); refused != nil {
+	if refused := h.authorizeSwap(req, meta, client, preURL, preSwapHeader, matched, body.Places(), readBody); refused != nil {
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.authorized", false))
 		return refused
 	}
@@ -720,16 +736,18 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	if req.URL != nil {
 		preSwapQuery = req.URL.RawQuery
 	}
-	result := swapper.Apply(meta.ctx, req, client.ID)
+	preSwapBody, preSwapLength := req.Body, req.ContentLength
+	result := swapper.Apply(meta.ctx, req, client.ID, body)
 	if len(result.Errors) > 0 {
 		span.SetAttributes(attribute.Int("proxy.secret_swap.errors", len(result.Errors)))
 		// Whatever did resolve went into req, which is never sent now: put
-		// the sentinels back, in the headers and the query, so nothing past
-		// here holds a real value.
+		// the sentinels back, in the headers, the query and the body, so
+		// nothing past here holds a real value.
 		req.Header = preSwapHeader
 		if req.URL != nil {
 			req.URL.RawQuery = preSwapQuery
 		}
+		req.Body, req.ContentLength, req.GetBody = preSwapBody, preSwapLength, nil
 		return h.refuseUnresolved(req, meta, client, preURL, result.Errors)
 	}
 	if !result.Swapped() {
@@ -742,10 +760,17 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	meta.reportSentinels = result.Reportable
 	meta.declaredSentinels = result.Declared
 	meta.generations = result.Generations
-	// A query swap rewrote the URL, so the retry path — which rebuilds a
-	// request from the pre-swap headers — cannot reproduce this request.
-	meta.retryable = len(result.QueryParams) == 0
+	// A query swap rewrote the URL, and a body swap the body, so the retry
+	// path — which rebuilds a request from the pre-swap headers — cannot
+	// reproduce this request.
+	meta.retryable = len(result.QueryParams) == 0 && len(result.BodyPlaces) == 0
 	meta.preSwapHeader = preSwapHeader
+	if len(result.BodyPlaces) > 0 {
+		// The trail keeps the body as the sandbox sent it, with its
+		// sentinels, and none of the answer to it (ADR 26-11-11-080 §9).
+		meta.preSwapBody = body.Raw()
+		meta.bodySwapped = true
+	}
 	if len(result.QueryParams) > 0 {
 		// A swapped value now lives in the outbound URL; audit the pre-swap URL
 		// so the real value is never persisted.
@@ -755,6 +780,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		attribute.Bool("proxy.secret_swap.swapped", true),
 		attribute.Int("proxy.secret_swap.headers", len(result.Headers)),
 		attribute.Int("proxy.secret_swap.query_params", len(result.QueryParams)),
+		attribute.Int("proxy.secret_swap.body_places", len(result.BodyPlaces)),
 		attribute.Bool("proxy.secret_swap.encoded", result.Encoded),
 	)
 	return nil
@@ -825,25 +851,63 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+err.Error())
 }
 
-// authorizeSwap asks whether a request may carry the credentials its sentinels
-// stand for, and answers it here when it may not. What is asked about is the
-// request as the sandbox sent it — nothing has been resolved yet, so it holds
-// sentinels and never a credential. An authorizer that cannot answer refuses:
-// a credential is resolved only for a request something agreed to.
-func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, matched []string) *http.Response {
-	verdict, err := h.swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
-		ClientID:  client.ID,
-		Sentinels: matched,
-		Method:    req.Method,
-		Host:      req.Host,
-		URL:       preURL,
-		Header:    preSwapHeader,
-		Body:      routeBody(req),
+// matchBody finds the client's sentinels at the body places its routes name
+// for req (secrets.Swapper.BodyPlaces), reading the body only when there are
+// any and the request says its body is JSON (a Content-Type naming /json or
+// +json): a place is in a JSON body, and an upload, a form, a stream or an
+// upgrade on the same route is sent unread, with nothing in it swapped. A
+// JSON body whose places cannot be read for a sentinel is refused here, never
+// sent with one: past routeBodyLimit, of undeclared length, in an encoding
+// the proxy cannot decode, holding a sentinel without being JSON a place can
+// be read in, or holding one at a place under a Content-Encoding, which the
+// proxy decodes to read but does not encode again.
+func (h *httpProxy) matchBody(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, readBody func() ([]byte, bool)) (secrets.BodyUses, *http.Response) {
+	places := h.swapper.BodyPlaces(meta.ctx, secrets.BodyPlacesRequest{
+		ClientID: client.ID,
+		Method:   req.Method,
+		Host:     req.Host,
+		URL:      preURL,
 	})
-	if err == nil && verdict.Allow {
-		return nil
+	if len(places) == 0 || !jsonBody(req.Header) || headerContainsToken(req.Header, "Connection", "Upgrade") || req.Header.Get("Upgrade") != "" {
+		return secrets.BodyUses{}, nil
 	}
-	reason := refusalReason(verdict, err)
+	body, ok := readBody()
+	if !ok {
+		return secrets.BodyUses{}, h.refuseRoute(req, meta, client, preURL, preSwapHeader,
+			"a route names places in this request's body, which could not be read (too large, of undeclared length, or in an encoding the proxy cannot decode)")
+	}
+	uses, err := h.swapper.MatchBody(client.ID, body, places)
+	if err != nil {
+		return secrets.BodyUses{}, h.refuseRoute(req, meta, client, preURL, preSwapHeader, err.Error())
+	}
+	if !uses.Empty() && contentEncoded(req.Header) {
+		return secrets.BodyUses{}, h.refuseRoute(req, meta, client, preURL, preSwapHeader,
+			"a credential is swapped at a body place only in a body sent without a Content-Encoding")
+	}
+	return uses, nil
+}
+
+// jsonBody reports whether a request says its body is JSON, the only body a
+// place is read in.
+func jsonBody(header http.Header) bool {
+	return slices.ContainsFunc(header.Values("Content-Type"), func(value string) bool {
+		value = strings.ToLower(value)
+		return strings.Contains(value, "/json") || strings.Contains(value, "+json")
+	})
+}
+
+// contentEncoded reports whether a request body is sent in a coding other
+// than identity.
+func contentEncoded(header http.Header) bool {
+	return slices.ContainsFunc(header.Values("Content-Encoding"), func(coding string) bool {
+		coding = strings.ToLower(strings.TrimSpace(coding))
+		return coding != "" && coding != "identity"
+	})
+}
+
+// refuseRoute answers a request its credentials' routes refuse, with a 403,
+// recorded once as blocked, and never sends it.
+func (h *httpProxy) refuseRoute(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, reason string) *http.Response {
 	status := http.StatusForbidden
 	meta.answered = true
 	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))
@@ -854,6 +918,28 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 		status: status,
 	})
 	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+reason)
+}
+
+// authorizeSwap asks whether a request may carry the credentials its sentinels
+// stand for, and answers it here when it may not. What is asked about is the
+// request as the sandbox sent it — nothing has been resolved yet, so it holds
+// sentinels and never a credential. An authorizer that cannot answer refuses:
+// a credential is resolved only for a request something agreed to.
+func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, matched []string, places []secrets.Place, readBody func() ([]byte, bool)) *http.Response {
+	verdict, err := h.swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
+		ClientID:  client.ID,
+		Sentinels: matched,
+		Places:    places,
+		Method:    req.Method,
+		Host:      req.Host,
+		URL:       preURL,
+		Header:    preSwapHeader,
+		Body:      readBody,
+	})
+	if err == nil && verdict.Allow {
+		return nil
+	}
+	return h.refuseRoute(req, meta, client, preURL, preSwapHeader, refusalReason(verdict, err))
 }
 
 // refusalReason is what a refused request is answered with, whichever way the
@@ -1120,7 +1206,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 
 	swapper.Invalidate(meta.client.ID, req.Host)
 	resolved := h.rebuiltRequest(req, meta)
-	resolvedResult := swapper.Apply(meta.ctx, resolved, meta.client.ID)
+	resolvedResult := swapper.Apply(meta.ctx, resolved, meta.client.ID, secrets.BodyUses{})
 
 	var retryReq *http.Request
 	var source string
@@ -1276,6 +1362,17 @@ func (h *httpProxy) captureRequestBody(req *http.Request, meta *requestMeta) {
 	}
 	meta.requestBodyRecord = record
 	meta.requestBodySpool = spool
+	if meta.preSwapBody != nil {
+		// What is sent carries the credential; what is kept is what the
+		// sandbox sent, whole, so it is written now and the body sent is
+		// never read into the spool.
+		if _, err := spool.Write(meta.preSwapBody); err != nil {
+			meta.requestBodyError = err.Error()
+			recordSpanError(meta.span, err)
+		}
+		meta.closeRequestBodySpool()
+		return
+	}
 	req.Body = &requestBodyStream{source: req.Body, meta: meta}
 }
 
@@ -1374,7 +1471,7 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		RawBindingIDs:        s.meta.spentRawBindingIDs(),
 		RedactRequestHeaders: s.meta.redactRequestHeaders(),
 		RequestHeaders:       s.req.Header,
-		ResponseHeaders:      s.headers,
+		ResponseHeaders:      s.meta.responseHeaders(s.headers),
 		RequestBodyFile:      requestBodyFile,
 		RequestBodyFormat:    requestBodyFormat,
 		RequestBodyBytes:     requestBodyBytes,
@@ -1476,7 +1573,7 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			RawBindingIDs:        s.meta.spentRawBindingIDs(),
 			RedactRequestHeaders: s.meta.redactRequestHeaders(),
 			RequestHeaders:       s.req.Header,
-			ResponseHeaders:      s.headers,
+			ResponseHeaders:      s.meta.responseHeaders(s.headers),
 			ResponseBytes:        s.bytesRead,
 			RequestBodyFile:      requestBodyFile,
 			RequestBodyFormat:    requestBodyFormat,
@@ -1561,6 +1658,31 @@ func (m *requestMeta) redactRequestHeaders() []string {
 	slices.Sort(out)
 	return slices.Compact(out)
 }
+
+// responseHeaders is a response's headers as the audit keeps them. After a
+// body swap the exchange is a key traded for whatever the upstream hands
+// back, and a header may carry it under any name, a Location URL included
+// (ADR 26-11-11-080 §9): every value but those of framingHeaders is redacted,
+// names kept. Any other response is kept as it came, for the audit's own
+// name-based redaction.
+func (m *requestMeta) responseHeaders(headers http.Header) http.Header {
+	if m == nil || !m.bodySwapped || headers == nil {
+		return headers
+	}
+	out := make(http.Header, len(headers))
+	for name, values := range headers {
+		if slices.Contains(framingHeaders, http.CanonicalHeaderKey(name)) {
+			out[name] = values
+			continue
+		}
+		out[name] = []string{"[REDACTED]"}
+	}
+	return out
+}
+
+// framingHeaders are the response headers that say how a body is framed and
+// when, never what it grants: what a body swap's audit row keeps.
+var framingHeaders = []string{"Content-Type", "Content-Length", "Content-Encoding", "Transfer-Encoding", "Date", "Cache-Control", "Vary", "Connection"}
 
 // url returns the URL to record in audit, preferring the pre-swap URL when a
 // secret was swapped into a query parameter.

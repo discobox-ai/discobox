@@ -29,3 +29,10 @@
   specific than the open route it was carved from (a host-wide block loses to
   an open route with a path), it allows what it refused. Test the conversion
   with a request the old block refused under a more specific open route.
+- A field added to a route in SecretsFile is read past by an older agent's
+  `json.Unmarshal`, at the same `secretsDocVersion`, and a version bump does
+  not help, since a reader takes any version from its own up as its own. If
+  dropping the field widens the route (a body block read away leaves an open
+  route for the headers), keep such routes outside the lists an older agent
+  reads (`bodyRoutes`), so it holds the lists without them, never wider.
+

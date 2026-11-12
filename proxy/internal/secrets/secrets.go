@@ -10,8 +10,10 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"slices"
@@ -171,6 +173,11 @@ type AuthorizeRequest struct {
 	// does not consume it: the request is sent with the body it arrived with.
 	// Nil is no body available.
 	Body func() ([]byte, bool)
+	// Places are the client's sentinels found standing alone at body places
+	// (MatchBody), each to be allowed there (secretroute.Request.At). A
+	// sentinel in both Sentinels and Places must be allowed in its headers
+	// and at each of its places.
+	Places []Place
 }
 
 // Verdict is an authorizer's answer. A request it does not allow is never
@@ -208,6 +215,12 @@ type Resolver interface {
 	// the upstream unreachable, or gone quiet after the request went out —
 	// since the request may have been acted on.
 	Gate(ctx context.Context, req GateRequest) (GateAdmission, error)
+	// BodyPlaces names the body places a route of the client's credentials
+	// names for a request, judged on its method, host and path alone: the
+	// only requests whose body the proxy reads for a sentinel to swap
+	// (secretroute.BodyPlaces). It is a hint, never a permission: what is
+	// found there is authorized like any other use.
+	BodyPlaces(ctx context.Context, req BodyPlacesRequest) []string
 	// ResolveRaw returns the value of a client's raw binding by its sentinel
 	// (ADR 26-10-27-840), ErrDenied when the client no longer holds it raw,
 	// or any other error when there is no answer.
@@ -536,10 +549,15 @@ type Result struct {
 	// sentinel: Git sends a username and a password in a single
 	// Authorization: Basic token, and each half resolves on its own.
 	SecretIDs []string
+	// BodyPlaces are the body places a value was substituted at; the request
+	// body was rewritten.
+	BodyPlaces []string
 }
 
 // Swapped reports whether any value in the request was substituted.
-func (r Result) Swapped() bool { return len(r.Headers) > 0 || len(r.QueryParams) > 0 }
+func (r Result) Swapped() bool {
+	return len(r.Headers) > 0 || len(r.QueryParams) > 0 || len(r.BodyPlaces) > 0
+}
 
 // RawValues is every raw value clientID holds now, to hand it over: each
 // asked for again once its refresh is due, one the resolver denies left out.
@@ -576,12 +594,13 @@ func (s *Swapper) Active(clientID string) bool {
 	return s != nil && s.resolver != nil && len(s.settings.Load().sentinels[clientID]) > 0
 }
 
-// Apply swaps any sentinels found in req's headers (and query, when enabled)
-// for their resolved values, scoped to the destination host. Sentinels that
-// cannot be resolved are left in place: a denied one says nothing more, and
-// one that failed transiently, through the retry window, is named in
-// Result.Errors. Apply mutates req.
-func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string) Result {
+// Apply swaps any sentinels found in req's headers (and query, when enabled),
+// and those body found at its body places (MatchBody), for their resolved
+// values, scoped to the destination host. Sentinels that cannot be resolved
+// are left in place: a denied one says nothing more, and one that failed
+// transiently, through the retry window, is named in Result.Errors. Apply
+// mutates req: a body it rewrites is req's body from then on.
+func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string, body BodyUses) Result {
 	if req == nil || !s.Active(clientID) {
 		return Result{}
 	}
@@ -599,6 +618,11 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 	res.Headers, res.QueryParams = eachValue(st, req, func(value string) (string, bool) {
 		return s.swapValue(ctx, st, clientID, at, value, &res)
 	})
+	if swapped, ok := s.applyBody(ctx, st, clientID, at, body, &res); ok {
+		req.Body = io.NopCloser(bytes.NewReader(swapped))
+		req.ContentLength = int64(len(swapped))
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(swapped)), nil }
+	}
 
 	dedupe(&res.Headers)
 	dedupe(&res.QueryParams)

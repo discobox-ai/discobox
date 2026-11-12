@@ -578,10 +578,45 @@ Key properties:
   it is audited once, as blocked, and the response path neither records it
   again nor reads it as the upstream's word on a credential.
 - **Scope is headers, plus query parameters when `Secrets.ScanQuery` is set**
-  (pool-agent leaves it off). Request bodies are not scanned because the
-  request-body audit spool would capture the swapped value. When a value is
-  swapped into a query parameter, the audit records the pre-swap URL so the real
-  value never lands in an audit row.
+  (pool-agent leaves it off), plus the **body places** a route names (below).
+  The rest of a body is never scanned or swapped. When a value is swapped into
+  a query parameter, the audit records the pre-swap URL so the real value never
+  lands in an audit row.
+- **A body place is where a route says a credential goes in a JSON body**
+  (`secretroute.Body`, `internal/secrets/body.go`; #1012, ADR 26-11-11-080
+  §9), for an API that takes its key in the body, such as boxd's token
+  exchange (`POST …/auth/token`, `{"api_key": …}`), which the pool agent's
+  own client sends through its pool's proxy (ADR 26-11-11-080 §9):
+  - The resolver names the places a client's routes give a request
+    (`Resolver.BodyPlaces`, judged on method, host and path alone), and the
+    body is read only when there are some and its Content-Type says JSON —
+    through `routeBody`, the same bounded, once-only read the authorizer
+    uses. Nearly every request names none and is never read for this; an
+    upload, a form, a stream or an upgrade on a body route is sent unread,
+    with nothing in it swapped.
+  - A sentinel counts only written literally as the whole JSON string at one
+    of those places (`MatchBody`); one inside a longer string, in a member
+    name, or anywhere else is sent as written. A body holding none of the
+    client's sentinels is not parsed.
+  - Each `(sentinel, place)` found is authorized beside the header sentinels
+    (`AuthorizeRequest.Places`, `secretroute.Request.At`) before anything is
+    resolved, and one grant must allow every use of a sentinel.
+  - Refused with a 403 and audited once as blocked, never sent: a JSON body
+    the places cannot be read in (past `routeBodyLimit`, of undeclared length, in
+    an encoding not decoded), one holding a sentinel that is not JSON with
+    each member named once (`ErrBodyNotJSON`), and one with a sentinel at a
+    place under a `Content-Encoding`, which is decoded to read and not
+    encoded again.
+  - `Apply` writes each resolved value over its string's bytes as a JSON
+    string and leaves the rest of the body byte for byte; a denial leaves the
+    sentinel as in a header. Such a request is not retried on a 401
+    (`retryable`), since the retry rebuilds from headers alone.
+  - **The audit never holds the credential or what it buys**: the request
+    body is spooled as the client sent it (`preSwapBody`), and the response
+    body of the exchange is never spooled or cached (`bodySwapped`), since it
+    is what the key was exchanged for, and every response header value but
+    those of `framingHeaders` is redacted (`responseHeaders`), since a header
+    may carry what came back under any name.
 - **A sentinel is also matched through base64.** Git's HTTP transport sends a
   credential as `Authorization: Basic base64(user:password)`, so a sentinel
   traveling that way is invisible to a literal scan and the upstream is handed

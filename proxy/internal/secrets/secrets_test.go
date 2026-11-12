@@ -62,7 +62,7 @@ func TestSwapHeaderValue(t *testing.T) {
 	req := newRequest(t, http.MethodGet, "https://api.anthropic.com/v1/messages")
 	req.Header.Set("Authorization", "Bearer sk-ant-oat01-SENTINEL")
 
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	if !res.Swapped() {
 		t.Fatal("expected swap")
 	}
@@ -90,7 +90,7 @@ func TestSwapQueryParam(t *testing.T) {
 	})
 
 	req := newRequest(t, http.MethodGet, "https://example.com/api?key=SENTINELKEY&foo=bar")
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	if !res.Swapped() {
 		t.Fatal("expected swap")
 	}
@@ -112,7 +112,7 @@ func TestQueryNotScannedWhenDisabled(t *testing.T) {
 	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINELKEY"}}})
 
 	req := newRequest(t, http.MethodGet, "https://example.com/api?key=SENTINELKEY")
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	if res.Swapped() {
 		t.Fatal("query should not be scanned when ScanQuery is false")
 	}
@@ -133,7 +133,7 @@ func TestDeniedLeavesSentinelAndCaches(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		req := newRequest(t, http.MethodGet, "https://evil.com/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
-		res := sw.Apply(context.Background(), req, "sandbox-1")
+		res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 		if res.Swapped() {
 			t.Fatal("denied sentinel must not be swapped")
 		}
@@ -155,7 +155,7 @@ func TestPositiveResultCached(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		req := newRequest(t, http.MethodGet, "https://api.example.com/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
-		if res := sw.Apply(context.Background(), req, "sandbox-1"); !res.Swapped() {
+		if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); !res.Swapped() {
 			t.Fatal("expected swap")
 		}
 	}
@@ -173,7 +173,7 @@ func TestCacheKeyedByHost(t *testing.T) {
 	for _, host := range []string{"a.example.com", "b.example.com"} {
 		req := newRequest(t, http.MethodGet, "https://"+host+"/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
-		sw.Apply(context.Background(), req, "sandbox-1")
+		sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	}
 	if calls := resolver.calls.Load(); calls != 2 {
 		t.Fatalf("resolver called %d times, want 2 (distinct hosts)", calls)
@@ -193,7 +193,7 @@ func TestTransientErrorNotCached(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		req := newRequest(t, http.MethodGet, "https://api.example.com/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
-		res := sw.Apply(context.Background(), req, "sandbox-1")
+		res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 		if res.Swapped() {
 			t.Fatal("transient error must not swap")
 		}
@@ -247,7 +247,7 @@ func TestTransientErrorOutlastingTheWindowIsReported(t *testing.T) {
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer SENTINEL")
 	start := time.Now()
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	waited := time.Since(start)
 
 	if res.Swapped() || len(res.Errors) != 1 {
@@ -274,7 +274,7 @@ func TestDenialIsNotRetried(t *testing.T) {
 
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer SENTINEL")
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	if res.Swapped() || len(res.Errors) != 0 {
 		t.Fatalf("Result = %+v, want no swap and no error", res)
 	}
@@ -392,7 +392,7 @@ func TestReconfigureDropsALateAnswerForARemovedSentinel(t *testing.T) {
 		defer close(done)
 		req := newRequest(t, http.MethodGet, "https://api.example.com/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
-		sw.Apply(context.Background(), req, "sandbox-1")
+		sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	}()
 	<-entered
 	sw.Reconfigure(Config{Sentinels: map[string][]string{"sandbox-1": {"OTHER"}}})
@@ -503,7 +503,7 @@ func TestApplyNamesGenerationsAndDeclaredSentinels(t *testing.T) {
 	req := newRequest(t, http.MethodPost, "https://api.example.com/v1/messages")
 	req.Header.Set("Authorization", "Bearer SCOPED")
 	req.Header.Set("X-Other", "OPEN")
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	if want := map[string]string{"SCOPED": "gen-SCOPED", "OPEN": "gen-OPEN"}; !maps.Equal(res.Generations, want) {
 		t.Fatalf("Generations = %v, want %v", res.Generations, want)
 	}
@@ -513,7 +513,7 @@ func TestApplyNamesGenerationsAndDeclaredSentinels(t *testing.T) {
 
 	elsewhere := newRequest(t, http.MethodGet, "https://api.example.com/api/oauth/profile")
 	elsewhere.Header.Set("Authorization", "Bearer SCOPED")
-	if res := sw.Apply(context.Background(), elsewhere, "sandbox-1"); len(res.Declared) != 0 {
+	if res := sw.Apply(context.Background(), elsewhere, "sandbox-1", BodyUses{}); len(res.Declared) != 0 {
 		t.Fatalf("Declared = %v, want none outside the scope", res.Declared)
 	}
 }
@@ -529,7 +529,7 @@ func TestInactiveClientSkipped(t *testing.T) {
 	}
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer SENTINEL")
-	if res := sw.Apply(context.Background(), req, "other"); res.Swapped() {
+	if res := sw.Apply(context.Background(), req, "other", BodyUses{}); res.Swapped() {
 		t.Fatal("must not swap for unknown client")
 	}
 	if resolver.calls.Load() != 0 {
@@ -544,7 +544,7 @@ func TestNilResolverNeverSwaps(t *testing.T) {
 	}
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer SENTINEL")
-	if res := sw.Apply(context.Background(), req, "sandbox-1"); res.Swapped() {
+	if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); res.Swapped() {
 		t.Fatal("nil resolver must not swap")
 	}
 }
@@ -560,7 +560,7 @@ func TestExpiredGrantRefetched(t *testing.T) {
 	apply := func() {
 		req := newRequest(t, http.MethodGet, "https://api.example.com/")
 		req.Header.Set("Authorization", "Bearer SENTINEL")
-		sw.Apply(context.Background(), req, "sandbox-1")
+		sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	}
 	apply()
 	apply()
@@ -580,7 +580,7 @@ func swapAuth(t *testing.T, sw *Swapper, clientID, sentinel string) (string, boo
 	t.Helper()
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer "+sentinel)
-	res := sw.Apply(context.Background(), req, clientID)
+	res := sw.Apply(context.Background(), req, clientID, BodyUses{})
 	return req.Header.Get("Authorization"), res.Swapped()
 }
 
@@ -785,7 +785,7 @@ func TestSwapReportsSecretIDForEverySentinel(t *testing.T) {
 	for i := range 2 {
 		req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 		req.Header.Set("Authorization", basicAuth("SENTINELUSER:SENTINELPASS"))
-		res := sw.Apply(context.Background(), req, "sandbox-1")
+		res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 		if !slices.Equal(res.SecretIDs, []string{"sec_pass", "sec_user"}) {
 			t.Fatalf("request %d: SecretIDs = %v, want both secrets", i, res.SecretIDs)
 		}
@@ -855,7 +855,7 @@ func TestMatchReportsEverythingApplyWouldSwap(t *testing.T) {
 	}
 
 	swapped := build(t)
-	res := sw.Apply(context.Background(), swapped, "sandbox-1")
+	res := sw.Apply(context.Background(), swapped, "sandbox-1", BodyUses{})
 	slices.Sort(res.Sentinels)
 	if !slices.Equal(res.Sentinels, want) {
 		t.Fatalf("Apply() swapped %v, want the same set Match reported", res.Sentinels)
@@ -962,7 +962,7 @@ func TestSwapNamesTheSentinelsARequestAnswersFor(t *testing.T) {
 		req := newRequest(t, http.MethodPost, url)
 		req.Header.Set("Authorization", "Bearer SENTINELSCOPED")
 		req.Header.Set("X-Other", "SENTINELPLAIN")
-		return sw.Apply(context.Background(), req, "sandbox-1")
+		return sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	}
 	for i := range 2 {
 		res := apply("https://api.example.com/v1/other")
@@ -988,7 +988,7 @@ func TestAHungResolveIsBoundedByTheWindow(t *testing.T) {
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer SENTINEL")
 	start := time.Now()
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	waited := time.Since(start)
 
 	if len(res.Errors) != 1 {
@@ -1006,3 +1006,7 @@ func (r *ctxResolver) Resolve(ctx context.Context, _ ResolveRequest) (ResolveRes
 	<-ctx.Done()
 	return ResolveResult{}, ctx.Err()
 }
+
+func (*fakeResolver) BodyPlaces(context.Context, BodyPlacesRequest) []string { return nil }
+
+func (*hostRecordingResolver) BodyPlaces(context.Context, BodyPlacesRequest) []string { return nil }

@@ -724,3 +724,11 @@ func (r *revokingResolver) ResolveRaw(context.Context, secrets.RawRequest) (secr
 func (r *flakyResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
 	return secrets.RawResult{}, secrets.ErrDenied
 }
+
+func (*rotatingResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+
+func (*settableResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+
+func (*revokingResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+
+func (*flakyResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }

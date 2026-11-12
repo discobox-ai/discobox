@@ -36,7 +36,7 @@ func TestSwapBase64BasicAuthPassword(t *testing.T) {
 	req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 	req.Header.Set("Authorization", basicAuth("x-access-token:ghp_SENTINELSENTINELSENTINELSENTINEL"))
 
-	res := sw.Apply(context.Background(), req, "sandbox-1")
+	res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 	if !res.Swapped() {
 		t.Fatal("expected swap")
 	}
@@ -82,7 +82,7 @@ func TestSwapBase64BasicAuthUsernameAndBoth(t *testing.T) {
 			req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 			req.Header.Set("Authorization", basicAuth(tc.userinfo))
 
-			if res := sw.Apply(context.Background(), req, "sandbox-1"); !res.Swapped() {
+			if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); !res.Swapped() {
 				t.Fatal("expected swap")
 			}
 			if got, want := req.Header.Get("Authorization"), basicAuth(tc.want); got != want {
@@ -115,7 +115,7 @@ func TestSwapBase64PreservesEncoding(t *testing.T) {
 			req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 			req.Header.Set("Authorization", "Basic "+tc.encoding.EncodeToString([]byte(payload)))
 
-			if res := sw.Apply(context.Background(), req, "sandbox-1"); !res.Swapped() {
+			if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); !res.Swapped() {
 				t.Fatal("expected swap")
 			}
 			got := req.Header.Get("Authorization")
@@ -138,7 +138,7 @@ func TestSwapBase64QueryParam(t *testing.T) {
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("user:" + sentinel))
 	req := newRequest(t, http.MethodGet, "https://example.com/api?auth="+encoded)
-	if res := sw.Apply(context.Background(), req, "sandbox-1"); !res.Swapped() {
+	if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); !res.Swapped() {
 		t.Fatal("expected swap")
 	}
 	if got, want := req.URL.Query().Get("auth"), base64.StdEncoding.EncodeToString([]byte("user:REAL")); got != want {
@@ -159,7 +159,7 @@ func TestSwapBase64LeavesUnrelatedValuesAlone(t *testing.T) {
 	req.Header.Set("X-Not-Base64", "this is not=base64 at all!!")
 	req.Header.Set("Cookie", "session=bm90LWEtc2VudGluZWwtYXQtYWxs; other=1")
 
-	if res := sw.Apply(context.Background(), req, "sandbox-1"); res.Swapped() {
+	if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); res.Swapped() {
 		t.Fatalf("unexpected swap: %+v", res)
 	}
 	if got := req.Header.Get("Authorization"); got != unrelated {
@@ -182,7 +182,7 @@ func TestSwapBase64DeniedLeavesTokenIntact(t *testing.T) {
 	req := newRequest(t, http.MethodGet, "https://evil.example.com/")
 	req.Header.Set("Authorization", original)
 
-	if res := sw.Apply(context.Background(), req, "sandbox-1"); res.Swapped() {
+	if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); res.Swapped() {
 		t.Fatal("expected no swap on denial")
 	}
 	if got := req.Header.Get("Authorization"); got != original {
@@ -205,7 +205,7 @@ func TestApplyPreviousSwapsBase64(t *testing.T) {
 	apply := func() string {
 		req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 		req.Header.Set("Authorization", basicAuth("x-access-token:"+sentinel))
-		sw.Apply(context.Background(), req, "sandbox-1")
+		sw.Apply(context.Background(), req, "sandbox-1", BodyUses{})
 		return req.Header.Get("Authorization")
 	}
 	apply()
@@ -298,7 +298,7 @@ func TestSwapBase64PaddingWhenTheTokenCarriedNone(t *testing.T) {
 
 	req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 	req.Header.Set("Authorization", original)
-	if res := sw.Apply(context.Background(), req, "sandbox-1"); !res.Swapped() {
+	if res := sw.Apply(context.Background(), req, "sandbox-1", BodyUses{}); !res.Swapped() {
 		t.Fatal("expected swap")
 	}
 

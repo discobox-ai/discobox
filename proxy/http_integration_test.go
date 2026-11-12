@@ -2078,3 +2078,5 @@ type noGatewayHeaders struct{}
 func (noGatewayHeaders) ResolveGatewayHeaders(context.Context, GatewayHeadersRequest) (map[string]string, error) {
 	return nil, nil
 }
+
+func (stubResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
