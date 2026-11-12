@@ -170,6 +170,19 @@ Global review expectations:
   process state, such as a nonce kept only in its shell's memory. Terminal IDs
   survive an in-place relaunch, so an unchanged ID and running status cannot
   distinguish recovery from a replacement program.
+- A live check of a boundary (`scripts/live-run.sh`) passes only on what its
+  probe observed at that boundary. A probe that failed on the checking side
+  (the checking box's own egress or DNS refusing it, a timeout there, no curl
+  in the guest) proves nothing, and is a failure or a check for a person,
+  never a pass: otherwise the run meant to show the boundary holds reports it
+  holding untested. No connection passes only where the probe runs inside
+  the boundary under test, as the guest's probes around its fence do, and
+  then only when the probe shows no connection was made.
+- A test's stand-in for a real component (a stub CLI, a canned probe answer)
+  answers what that component sends, read from its code, never what the code
+  under test expects. The live run's first stand-ins had the proxy answer a
+  denied CONNECT with 403, which it never does (it closes the connection),
+  and so passed a check the real proxy would fail.
 
 - A watcher build deadline stops the whole process tree before cleanup and
   retry. Docker starts buildx as a child, and builder setup is go → task →
