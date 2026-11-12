@@ -51,3 +51,11 @@
   26-11-03-606). Its description says it is trusted with the pool: a base a
   name can be repointed under boots whatever it is repointed to, with the
   pool's keys in it, so an operator names one only their account controls.
+- When the disco-vm pin moves, compare each linked driver's configuration
+  fields (`machine.DefinitionOf`) and anything it read from the environment
+  at the old pin with the new one, and say in the change what a server's
+  driver now runs with. Why: `driverConfig` gives a driver only `carriedEnv`'s
+  fields, so a setting the new pin stops reading, or a field it adds, is
+  silently its default, which no test sees (the move past disco-vm ADR
+  26-11-11-215 dropped boxd's `BOXD_GRPC_ADDR` and `BOXD_TOKEN_URL` until
+  review caught it).

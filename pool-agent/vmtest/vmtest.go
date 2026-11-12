@@ -7,6 +7,7 @@ package vmtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -74,31 +75,39 @@ func runFakeGuest(args []string) error {
 	return (&guest.Server{Version: "test", Root: *root, Fake: *isFake}).Serve(listener)
 }
 
-// runShim makes the fake driver again on the directory and pool it was
-// given, as its owner, and holds the instance it was started for.
+// runShim makes the fake driver again on the directory, pool and
+// configuration it was given, as its owner, and holds the instance it was
+// started for. The configuration must be the one the instance was started
+// with, which the local driver checks.
 func runShim(args []string) error {
-	if len(args) < 2 {
-		return errors.New("usage: <dir> <pool> <shim arguments>")
+	if len(args) < 3 {
+		return errors.New("usage: <dir> <pool> <driver configuration> <shim arguments>")
 	}
-	driver, err := newFakeDriver(args[0], args[1], nil)
+	var config json.RawMessage
+	if args[2] != "" {
+		config = json.RawMessage(args[2])
+	}
+	driver, err := newFakeDriver(args[0], args[1], nil, config)
 	if err != nil {
 		return err
 	}
-	return local.ShimMain(context.Background(), driver, args[2:])
+	return local.ShimMain(context.Background(), driver, args[3:])
 }
 
 // FakeDriver is disco-vm's fake driver for pool, keeping its machines in
 // dir and calling with keys (nil is as the directory's owner), whose base is
 // Base: a test makes a fresh machine from it as a sandbox's or a pool's
-// machine is made from a driver's base. It commits, unless the test set
-// fake.NoCommitEnv before calling it. Its machines' shims are this test
-// binary, whose TestMain calls RunFakeGuestIfInvoked.
-func FakeDriver(t testing.TB, dir, pool string, keys machine.KeySource) machine.Driver {
+// machine is made from a driver's base. config is the fake's own
+// configuration (machine.Config.DriverConfig; nil is its defaults, which
+// commit), such as {"noCommit":true}: the driver reads no environment for
+// it. Its machines' shims are this test binary, whose TestMain calls
+// RunFakeGuestIfInvoked, given the same configuration.
+func FakeDriver(t testing.TB, dir, pool string, keys machine.KeySource, config json.RawMessage) machine.Driver {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("disco-vm's fake guests run POSIX processes here")
 	}
-	driver, err := newFakeDriver(dir, pool, keys)
+	driver, err := newFakeDriver(dir, pool, keys, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,16 +117,19 @@ func FakeDriver(t testing.TB, dir, pool string, keys machine.KeySource) machine.
 // Base is FakeDriver's base.
 const Base = "base"
 
-func newFakeDriver(dir, pool string, keys machine.KeySource) (machine.Driver, error) {
+func newFakeDriver(dir, pool string, keys machine.KeySource, config json.RawMessage) (machine.Driver, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
+	// The fake's configuration holds no secret, so its shim is given it on
+	// its command line.
 	return machine.New("fake", machine.Config{
-		Pool:        pool,
-		Dir:         dir,
-		Base:        Base,
-		ShimCommand: []string{exe, shimSubcommand, dir, pool},
-		Keys:        keys,
+		Pool:         pool,
+		Dir:          dir,
+		Base:         Base,
+		ShimCommand:  []string{exe, shimSubcommand, dir, pool, string(config)},
+		Keys:         keys,
+		DriverConfig: config,
 	})
 }

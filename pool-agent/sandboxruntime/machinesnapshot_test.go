@@ -2,6 +2,7 @@ package sandboxruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
-	"github.com/discobox-ai/vm/pkg/machine/fake"
 
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 
@@ -83,7 +83,7 @@ func guestGreps(t *testing.T, f *machineFixture, sandboxID, text string) bool {
 // nothing of the build left. The next sandbox of the plan is made from it
 // (ADR 26-11-03-986 §§2, 4).
 func TestAMachinePoolMakesTheNextSandboxFromItsPlansSnapshot(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	first := machineSnapshotCreate("sbx_1")
@@ -141,8 +141,7 @@ func TestAMachinePoolMakesTheNextSandboxFromItsPlansSnapshot(t *testing.T) {
 // A driver that does not report Commit gets no snapshot: every sandbox is
 // made fresh, and no build is ever asked for (ADR 26-11-03-986 §2).
 func TestAMachinePoolOnADriverThatDoesNotCommitBuildsNoSnapshot(t *testing.T) {
-	t.Setenv(fake.NoCommitEnv, "1")
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, json.RawMessage(`{"noCommit":true}`))
 	ctx := context.Background()
 	r := f.runtime
 	if r.commits() {
@@ -171,7 +170,7 @@ func TestAMachinePoolOnADriverThatDoesNotCommitBuildsNoSnapshot(t *testing.T) {
 // VM is destroyed, its proxy record and tree removed, and its plan waits
 // before it is built again — on disk, so a restarted agent waits too.
 func TestAFailedMachineSnapshotBuildLeavesNothing(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	f.agents.snapshotFails = true
 	ctx := context.Background()
 	r := f.runtime
@@ -208,7 +207,7 @@ func TestAFailedMachineSnapshotBuildLeavesNothing(t *testing.T) {
 // the rest, a machine whose name only begins like a snapshot's included
 // (ADR 26-11-03-986 §§4, 5).
 func TestTheMachineSnapshotSweepKeepsOnlyRecordedSnapshots(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	req := machineSnapshotCreate("sbx_1")
@@ -283,7 +282,7 @@ func TestTheMachineSnapshotSweepKeepsOnlyRecordedSnapshots(t *testing.T) {
 // snapshot and is made again fresh, in the same create (ADR 26-11-03-986
 // §6).
 func TestASandboxWhoseSnapshotNeverComesUpIsMadeFresh(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	first := machineSnapshotCreate("sbx_1")
@@ -325,7 +324,7 @@ func TestASandboxWhoseSnapshotNeverComesUpIsMadeFresh(t *testing.T) {
 // A cache clear drops every snapshot, record first, and forgets the plans
 // that failed, so the next create is fresh and builds again.
 func TestAMachinePoolsCacheClearDropsItsSnapshots(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	req := machineSnapshotCreate("sbx_1")
@@ -355,7 +354,7 @@ func TestAMachinePoolsCacheClearDropsItsSnapshots(t *testing.T) {
 // ensureInstance reads to fall back to a fresh machine: the engine's own
 // not-found, which it answers before the driver is asked.
 func TestACreateFromAVanishedSnapshotSaysNotFound(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	_, err := f.runtime.engine.Create(context.Background(), engine.CreateOptions{Name: "sbx-9", From: snapshotMachineName(strings.Repeat("a", 64))})
 	if !errors.Is(err, engine.ErrNotFound) {
 		t.Fatalf("create from a missing snapshot = %v, want engine.ErrNotFound", err)
@@ -366,7 +365,7 @@ func TestACreateFromAVanishedSnapshotSaysNotFound(t *testing.T) {
 // unpublishes it, so no create takes it after, and stops, which is not the
 // plan's failure. The sweep destroys the VM once the create lets it go.
 func TestABuildLeavesASnapshotACreateHolds(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	req := machineSnapshotCreate("sbx_1")
@@ -416,7 +415,7 @@ func sweepMachineSnapshots(t *testing.T, r *MachineSandboxRuntime, now time.Time
 // later start whose agent never answers fails, and nothing is made again or
 // dropped (ADR 26-11-03-986 §6).
 func TestAMachineStartedBeforeIsNeverMadeAgainFresh(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	first := machineSnapshotCreate("sbx_1")

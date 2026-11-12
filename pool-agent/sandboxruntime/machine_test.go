@@ -53,17 +53,19 @@ type machineFixture struct {
 	key    ed25519.PrivateKey
 }
 
-func newMachineFixture(t *testing.T) *machineFixture {
+// newMachineFixture is a machine runtime on disco-vm's fake driver, made
+// with config (nil is its defaults).
+func newMachineFixture(t *testing.T, config json.RawMessage) *machineFixture {
 	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
-	owner := vmtest.FakeDriver(t, dir, machineTestPool, nil)
+	owner := vmtest.FakeDriver(t, dir, machineTestPool, nil, config)
 	key, err := owner.IssueKey(ctx, machine.IssueRequest{Name: "pool-1", TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
 	agents := &fakeMachineAgents{servers: map[string]*fakeMachineAgent{}}
-	driver := &agentDriver{Driver: vmtest.FakeDriver(t, dir, machineTestPool, machine.StaticKey(key)), agents: agents}
+	driver := &agentDriver{Driver: vmtest.FakeDriver(t, dir, machineTestPool, machine.StaticKey(key), config), agents: agents}
 	e, err := engine.Open(driver, machineTestPool)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +118,7 @@ func machineCreate(sandboxID string) *workerapimodel.PoolSandboxCreateRequest {
 // create, provision, intake, attach, stop and start, clear-cache and delete,
 // with the engine opened by an issued fake key.
 func TestMachineSandboxLifecycle(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 
@@ -242,7 +244,7 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 // A create whose answer was lost made the machine already: the next one finds
 // it by name rather than making a second.
 func TestMachineCreateFindsALostCreatesMachineByName(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	e := &engine.Engine{Driver: f.owner, Pool: machineTestPool}
 	lost, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-2"})
@@ -268,7 +270,7 @@ func TestMachineCreateFindsALostCreatesMachineByName(t *testing.T) {
 // A spec that moves under a running machine makes it again in place: the
 // same machine, its disk kept, a new bootstrap, and a restart onto it.
 func TestMachineSpecChangeRebuildsInPlace(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	f.driver.noVolumes = true
 	ctx := context.Background()
 	r := f.runtime
@@ -377,7 +379,7 @@ func assertNewRootKeptVolumes(t *testing.T, r *MachineSandboxRuntime, inst machi
 // the same machine, its data and cache volumes kept, what was on its old root
 // gone, and everything placed again on the new one.
 func TestMachineSpecChangeGivesANewRootAndKeepsItsVolumes(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_7")); err != nil {
@@ -430,7 +432,7 @@ func TestMachineSpecChangeGivesANewRootAndKeepsItsVolumes(t *testing.T) {
 // A stopped machine whose spec moves stays stopped, and is given its new
 // root at its next start.
 func TestMachineStoppedSpecChangeGivesANewRootAtItsStart(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_8")); err != nil {
@@ -466,7 +468,7 @@ func TestMachineStoppedSpecChangeGivesANewRootAtItsStart(t *testing.T) {
 // An upgrade cut short fails its start, and the next start finishes it: the
 // pool's record asks for it until the driver has given the root.
 func TestMachineUpgradeCutShortIsFinishedByTheNextStart(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
@@ -501,7 +503,7 @@ func TestMachineUpgradeCutShortIsFinishedByTheNextStart(t *testing.T) {
 // A machine made before its driver attached a data volume keeps its data on
 // its root, so it is made again in place, never given a new root.
 func TestMachineWithoutADataVolumeIsRebuiltInPlace(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	e := &engine.Engine{Driver: f.owner, Pool: machineTestPool}
@@ -543,7 +545,7 @@ func TestMachineWithoutADataVolumeIsRebuiltInPlace(t *testing.T) {
 // place, though it has a data volume: the pool gives a new root only to a
 // machine whose volume says its data is there.
 func TestMachineWhoseAgentKeepsItsDataOnItsRootIsRebuiltInPlace(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	f.driver.rootData = true
 	ctx := context.Background()
 	r := f.runtime
@@ -575,7 +577,7 @@ func TestMachineWhoseAgentKeepsItsDataOnItsRootIsRebuiltInPlace(t *testing.T) {
 // that does not (a pin moved back), is rebuilt in place: the volume's line
 // names a start that is over, and the pool reads it again at every start.
 func TestMachineAgentThatStopsWiringIsRebuiltInPlace(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_12")); err != nil {
@@ -613,7 +615,7 @@ func mustDialer(t *testing.T, r *MachineSandboxRuntime, sandboxID string) Dialer
 // Archiving keeps the machine, stopped, and its unarchiving create starts the
 // same one again.
 func TestMachineArchiveKeepsTheMachine(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	first, err := r.CreateSandbox(ctx, machineCreate("sbx_4"))
@@ -647,7 +649,7 @@ func TestMachineArchiveKeepsTheMachine(t *testing.T) {
 // stops it, rather than reporting it not found and leaving it running. Only a
 // sandbox with neither a tree nor a machine is not found.
 func TestMachineArchiveWithoutItsTreeStopsTheMachine(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_6")); err != nil {
@@ -677,7 +679,7 @@ func TestMachineArchiveWithoutItsTreeStopsTheMachine(t *testing.T) {
 // A machine cannot be frozen, so a suspend is refused, and a machine's tree is
 // its disk, so an export is.
 func TestMachineRefusesWhatItCannotDo(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_5")); err != nil {
 		t.Fatal(err)
@@ -696,7 +698,7 @@ func TestMachineRefusesWhatItCannotDo(t *testing.T) {
 // A driver that cannot isolate a machine is refused for a pool that must
 // (ADR 26-10-23-551 §4).
 func TestMachineRuntimeRefusesADriverThatCannotIsolate(t *testing.T) {
-	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil), machineTestPool)
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil, nil), machineTestPool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1104,7 +1106,7 @@ func (a *fakeMachineAgent) authorized(r *http.Request, scope string) bool {
 // been so for the retention a tree is kept for: a machine of another name in
 // the project is nothing this runtime made.
 func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_kept")); err != nil {
 		t.Fatal(err)
@@ -1144,7 +1146,7 @@ func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 // with nothing placed, every later start would find it running and place
 // nothing.
 func TestMachineStartThatFailsStopsTheMachine(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	f.runtime.agentLayers = &fakeAgentLayers{digest: "sha256:" + strings.Repeat("c", 64), layer: []byte("not a layer")}
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_6")); err == nil {
@@ -1163,7 +1165,7 @@ func TestMachineStartThatFailsStopsTheMachine(t *testing.T) {
 // gone mid-start — is placed when it is next asked to run, not answered as
 // running: the pool's record of what it placed is what says it was.
 func TestMachineRunningWithoutItsPlacementIsPlacedAgain(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_7")); err != nil {
@@ -1238,7 +1240,7 @@ func (d *fencingDriver) Instance(ctx context.Context, name string) (machine.Inst
 // §4).
 func TestMachineCreateFencesTheMachine(t *testing.T) {
 	ctx := context.Background()
-	driver := &fencingDriver{Driver: vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil), fences: map[string]*machine.Egress{}}
+	driver := &fencingDriver{Driver: vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil, nil), fences: map[string]*machine.Egress{}}
 	e, err := engine.Open(driver, machineTestPool)
 	if err != nil {
 		t.Fatal(err)
@@ -1277,7 +1279,7 @@ func TestMachineCreateFencesTheMachine(t *testing.T) {
 // A runtime asked to fence its sandboxes' machines refuses a driver that
 // cannot (ADR 26-10-29-481 §4).
 func TestMachineRuntimeRefusesADriverThatCannotFence(t *testing.T) {
-	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil), machineTestPool)
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil, nil), machineTestPool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1310,7 +1312,7 @@ func TestSameEgressComparesAllowedHostsAsASet(t *testing.T) {
 // on rewrites nothing of a running machine, which takes the setting when its
 // next start places its bootstrap again (ADR 26-10-29-481 §3).
 func TestARunningMachineIsReachedAsItWasMade(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_1")); err != nil {
@@ -1345,7 +1347,7 @@ func TestARunningMachineIsReachedAsItWasMade(t *testing.T) {
 // without the record the route serves an empty repository of the sandbox's
 // own, and its clone waits forever on a source the cache holds.
 func TestMachineStagingRecordsSourceCaches(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	req := machineCreate(deliveryTestSandboxID)
 	req.Config.Source = originTestRequest("/home/dev/project").Config.Source
 	if err := os.MkdirAll(f.runtime.sandboxRoot(deliveryTestSandboxID), 0o755); err != nil {

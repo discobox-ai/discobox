@@ -17,7 +17,9 @@ import (
 // docker driver's machines are made fresh from in TestMachineNewRootOnDocker,
 // against the daemon $DOCKER_HOST names: the variable disco-vm's own docker
 // conformance suite reads. The driver also needs the disco-vm agent built for
-// linux ($DISCO_VM_AGENT), and a rootful daemon on a cgroup v2 host.
+// linux ($DISCO_VM_AGENT), and a rootful daemon on a cgroup v2 host. The
+// driver reads none of these itself: the test builds its configuration from
+// them, as disco-vm's command line does.
 const dockerImageEnv = "DISCO_VM_DOCKER_IMAGE"
 
 // On disco-vm's docker driver, a sandbox's machine is made with a data and a
@@ -31,7 +33,8 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 	if image == "" {
 		t.Skipf("set %s (an image, such as debian:trixie) and %s to run a sandbox's machine on disco-vm's docker driver", dockerImageEnv, docker.AgentEnv)
 	}
-	if os.Getenv(docker.RootEnv) == "" {
+	values := machine.ConfigFromEnv("docker")
+	if values["root"] == "" {
 		// Not t.TempDir: the driver's helper container writes it as the
 		// daemon's root, and only the driver removes what it made there.
 		root, err := os.MkdirTemp("", "sbxrt-docker-")
@@ -39,11 +42,18 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.RemoveAll(root) })
-		t.Setenv(docker.RootEnv, root)
+		values["root"] = root
+	}
+	config, err := machine.ConfigFromValues("docker", values)
+	if err != nil {
+		t.Fatal(err)
 	}
 	ctx := context.Background()
 	pool := "sbxrt-new-root"
-	driver := docker.New(machine.Config{Pool: pool, Base: image})
+	driver, err := docker.New(machine.Config{Pool: pool, Base: image, DriverConfig: config})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := driver.Check(ctx); err != nil {
 		t.Skipf("the docker driver cannot run here: %v", err)
 	}
