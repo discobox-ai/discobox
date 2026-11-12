@@ -1,6 +1,6 @@
 # 26-11-02-023 — Every machine sandbox mounts its volumes from its own data and cache roots
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-02; revised 2026-11-07, before it was accepted, onto the
   data-volume mounting `main` gained meanwhile (acf9ff62)
 - **Amends**:
