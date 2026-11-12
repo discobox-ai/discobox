@@ -250,6 +250,42 @@ flowchart LR
   every lock as unsupported, which the supervisor never reads as a shim that
   ended.
 
+## A macOS Sandbox
+
+The same agent, built for darwin, is a macOS guest's
+([ADR 0145](../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
+It forks no API and no path; what differs is how it starts and what is
+absent.
+
+- **Started by launchd, not PID 1.** Its unit is
+  [`agentlayer.LaunchdUnits`](../pkg/agentlayer/units.go): one launch daemon,
+  `ai.discobox.sandbox-agent`, which runs `discobox-sandbox-agent.service`'s
+  pre-start steps (a test holds the two to the same steps) and then the agent
+  from `/opt/discobox/current`. launchd has no path units, so it starts the
+  agent at boot and the agent waits for `sandbox.json` itself
+  ([ADR 26-10-09-143](../docs/adr/26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md)
+  §1); `KeepAlive` restarts it after a failure and leaves a clean exit. There
+  is no `wire` step and nothing to provision: the guest has one account, the
+  image's (0145 §5).
+- **The paths are Linux's.** `/run/discobox`, `/etc/discobox`,
+  `/var/lib/discobox` and `/workspace` are where the agent, its pool, the
+  in-box skill and the ADRs that fix the keepalive and sleep directories say
+  they are, on every platform. macOS's sealed system volume has no `/run` or
+  `/workspace` and refuses one at its root, so the template makes both on its
+  data volume through `synthetic.conf`, as `sandboxpath` says of the working
+  root: the template's job, not a reason for a path to differ. A directory
+  there is on disk, not in memory, so raw secrets stay refused on darwin
+  (`rawsecrets`' memory check is Linux's alone).
+- **Absent, and declared absent** (0145 §7): nested Docker and `runc`, the
+  desktop, and the nix and Homebrew seeds. Their code builds for darwin and
+  finds no subject; the agent fetches no pinned bundles there.
+- **Tested on darwin.** CI's `darwin-test` job (`ci:test:darwin`) runs this
+  module's tests and `agentlayer`'s on the macOS runner, after
+  `scripts/darwin-sandbox-dirs.sh` gives the runner the template's `/run`,
+  including the agent booted as its launch daemon starts it, at the paths the
+  pool's bootstrap names (`cmd/discobox-sandbox-agent/boot_darwin_test.go`);
+  `ci:check`'s `check:darwin-cross` type-checks every darwin file on Linux.
+
 ## Boundary Rules
 
 - Implement the generated in-sandbox exec, service, harness-hook, and status API subset from `api/sandboxgen`;

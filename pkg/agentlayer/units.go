@@ -68,3 +68,17 @@ var Units = []Unit{
 var MachineUnits = append(slices.Clip(Units),
 	Unit{Name: "discobox-wire-machine.conf", Path: "/etc/systemd/system/discobox-wire.service.d/discobox-machine.conf"},
 )
+
+// LaunchdUnits are the agent's units on a macOS guest: one launch daemon,
+// which launchd loads at boot from where it lies, so nothing links it. It
+// starts the agent at boot, and the agent waits for its bootstrap itself (ADR
+// 26-10-09-143 §1). None of Units has a macOS counterpart: the volumes are not
+// wired, and nested Docker, the desktop and the trust and proxy units' Linux
+// mechanisms are absent there (ADR 0145 §7).
+var LaunchdUnits = []Unit{
+	{Name: LaunchdAgentLabel + ".plist", Path: "/Library/LaunchDaemons/" + LaunchdAgentLabel + ".plist"},
+}
+
+// LaunchdAgentLabel is the agent's launch daemon's label, which launchctl
+// names it by.
+const LaunchdAgentLabel = "ai.discobox.sandbox-agent"
