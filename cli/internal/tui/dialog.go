@@ -461,6 +461,20 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if run, ok := d.shortcuts[keyName(msg)]; ok && !d.typing {
 		return run(), false
 	}
+	// While reading is required, navigation belongs to the content. Once the
+	// end has been seen, the next navigation key moves the decisions instead.
+	if d.requireEnd && d.decisionsBlocked {
+		switch keyName(msg) {
+		case "down", "tab", "j":
+			d.scroll(1)
+			return nil, false
+		case "up", "shift+tab", "k":
+			d.scroll(-1)
+			return nil, false
+		case "enter", "ctrl+s", "left", "right":
+			return nil, false
+		}
+	}
 	// The page keys move a body longer than its window on every kind of card.
 	// They are the only keys that do on a card with answers, whose arrows walk
 	// the answers instead, so they are taken before the card's own.
@@ -517,9 +531,9 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, false
 		}
 		switch key {
-		case "up", "k":
+		case "up", "k", "shift+tab":
 			d.cursor = d.nextEnabled(max(d.cursor-1, 0), -1)
-		case "down", "j":
+		case "down", "j", "tab":
 			d.cursor = d.nextEnabled(min(d.cursor+1, len(d.items)-1), 1)
 		case "enter":
 			if d.decisionsBlocked {
@@ -771,6 +785,9 @@ func (d *dialog) scroll(delta int) {
 // scrollKeys is what moves the body: the arrows on a card that is only read,
 // and the page keys on one whose arrows already move between its answers.
 func (d *dialog) scrollKeys() string {
+	if d.requireEnd && d.decisionsBlocked {
+		return "↓/Tab/j"
+	}
 	if d.kind == dlgText || d.kind == dlgMessage {
 		return "↑/↓"
 	}
@@ -1164,7 +1181,7 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		answer()
 		drawForm := *d.form
 		drawForm.windowCursor = d.form.cursor
-		if len(d.formActions) > 0 && d.formActionAt >= 0 {
+		if (d.requireEnd && d.decisionsBlocked) || (len(d.formActions) > 0 && d.formActionAt >= 0) {
 			drawForm.cursor = -1
 		}
 		b.WriteString(drawForm.view(st, z, row(), inner))
@@ -1483,7 +1500,7 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 			z.markRow(hit{kind: hitDialogItem, idx: i}, y+line, inner+2*dialogPadLeft)
 		}
 		bar, label := " ", st.dimText
-		if i == d.cursor && it.enabled {
+		if i == d.cursor && it.enabled && !d.decisionsBlocked {
 			bar, label = st.key.Render("❯"), st.cursorName
 		} else if it.enabled && z.hovering(0, y, inner+2*dialogPadLeft, rows) {
 			label = st.hover
@@ -1651,7 +1668,15 @@ func (d *dialog) viewBody(st *styles, lines []string, inner, maxBody int, chevro
 	d.overflow = len(lines) > maxBody
 	if d.overflow {
 		b.WriteString("\n")
-		b.WriteString(st.dimText.Render(truncate("  … "+d.scrollKeys()+" to scroll", inner)))
+		marker := "  … " + d.scrollKeys() + " to scroll"
+		if d.requireEnd {
+			position := "end"
+			if end < len(lines) {
+				position = "more below"
+			}
+			marker = fmt.Sprintf("%s · %d/%d · %s to scroll", position, end, len(lines), d.scrollKeys())
+		}
+		b.WriteString(st.dimText.Render(truncate(marker, inner)))
 	}
 	return b.String()
 }

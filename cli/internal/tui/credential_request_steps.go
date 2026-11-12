@@ -146,7 +146,7 @@ type standingReadMsg struct {
 
 // readStanding reads what the asking box holds of a saved secret before
 // anything is decided, so the last step can say what approving replaces:
-// the box's own bindings of it, the delegations they were handed on under,
+// the box's own bindings of it, their parent IDs,
 // and what applies in the variable the use part names. back is step 1.
 func (m *Model) readStanding(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
 	if req.SandboxID == "" {
@@ -163,23 +163,9 @@ func (m *Model) readStanding(req CredentialRequest, ans requestAnswer, back func
 			msg.ans.held, err = ds.HeldGrants(ctx, req.Server, req.SandboxID, req.EnvVar)
 		}
 		msg.err = err
-		byID := map[string]SecretBinding{}
 		for _, b := range bindings {
-			byID[b.ID] = b
 			if b.TargetKind == BindingSandbox && b.TargetID == req.SandboxID {
 				msg.ans.standing = append(msg.ans.standing, b)
-			}
-		}
-		seen := map[string]bool{}
-		for _, b := range msg.ans.standing {
-			for id := b.ParentID; id != "" && !seen[id]; {
-				seen[id] = true
-				parent, ok := byID[id]
-				if !ok {
-					break
-				}
-				msg.ans.parents = append(msg.ans.parents, parent)
-				id = parent.ParentID
 			}
 		}
 		return msg
@@ -457,34 +443,77 @@ type requestAnswer struct {
 	// what an approved part is approved for.
 	use, delegate             string
 	useChoice, delegateChoice partChoice
-	// standing is the asking box's own bindings of a saved secret, parents
-	// the delegations they were handed on under, and held what applies in
+	// standing is the asking box's own bindings of a saved secret, including
+	// the parent IDs a replacement must respect, and held what applies in
 	// the use part's variable now: what approving replaces.
-	standing, parents []SecretBinding
-	held              []HeldGrant
+	standing []SecretBinding
+	held     []HeldGrant
 	// holderID is the secret delivering the use part's variable now, if any.
 	holderID string
 }
 
-// useAs is how an approved use part is granted: as the request asked, except
-// that an addition stacks only on the secret delivering the variable (ADR
-// 26-11-03-329 §4), so asked with another it is granted as a replacement.
+// canAdd follows the server's rule: additions apply only beside the same
+// secret in the variable, or when it holds no secret yet.
+func (ans requestAnswer) canAdd() bool {
+	return ans.holderID == "" || (!ans.fresh && ans.holderID == ans.secret.ID)
+}
+
+// replaceUnavailable names any binding a person's replacement cannot take
+// over. The console answers as a person, with no parent delegation.
+func (ans requestAnswer) replaceUnavailable() string {
+	for _, b := range ans.standing {
+		if b.Use && b.ParentID != "" {
+			return "binding " + b.ID + " is held under its lead's delegation " + b.ParentID + "; a person's approval cannot replace it"
+		}
+	}
+	return ""
+}
+
 func (ans requestAnswer) useAs(req CredentialRequest) bindingplan.As {
-	if req.Use != nil && req.Use.Add && (ans.holderID == "" || (!ans.fresh && ans.holderID == ans.secret.ID)) {
-		return bindingplan.Add
+	if ans.canAdd() {
+		if ans.replaceUnavailable() != "" || ans.useChoice.as == bindingplan.Add || (ans.useChoice.as == "" && req.Use != nil && req.Use.Add) {
+			return bindingplan.Add
+		}
 	}
 	return bindingplan.Replace
 }
 
-// additionNote says how an approved use part asked as an addition is granted.
 func (ans requestAnswer) additionNote(req CredentialRequest) string {
-	if req.Use == nil || !req.Use.Add {
+	if req.Use == nil {
 		return ""
 	}
-	if ans.useAs(req) == bindingplan.Add {
-		return "Its own use is asked as an addition: it goes beside what " + variableOf(req) + " holds and replaces nothing."
+	mode := ans.useAs(req)
+	edited := (mode == bindingplan.Add) != req.Use.Add
+	note := "Its own use is granted as a replacement."
+	if mode == bindingplan.Add {
+		note = "Its own use is granted as an addition: it replaces nothing."
 	}
-	return "Its own use is asked as an addition, but " + variableOf(req) + " holds another credential, so with “" + ans.credential + "” it is granted as a replacement, setting that one aside."
+	if edited {
+		note += " · edited from the ask"
+	}
+	return note
+}
+
+// chooseUseAs restores the independent add/replace choice on the summary
+// and use-part card. Changing routes does not reset it.
+func (m *Model) chooseUseAs(req CredentialRequest, ans requestAnswer, done func(bindingplan.As) tea.Cmd, back func() tea.Cmd) tea.Cmd {
+	why := ans.replaceUnavailable()
+	items := []action{
+		{key: "add", label: "Add beside what it holds · replaces nothing", enabled: ans.canAdd(), why: variableOf(req) + " holds another credential; additions only apply to the same credential"},
+		{key: "replace", label: "Replace its own use bindings", enabled: why == "", why: why},
+	}
+	d := actionsDialog("Approve its own use as", ans.additionNote(req), items, func(key string) tea.Cmd { return done(bindingplan.As(key)) })
+	for i, item := range items {
+		if item.key == string(ans.useAs(req)) {
+			d.cursor = i
+		}
+	}
+	if why != "" {
+		d.body += "\n\nReplace unavailable: " + why + "."
+	}
+	d.onCancel = back
+	m.dialog = d
+	return nil
 }
 
 // approval is the answer as the server takes it. SecretID is filled in by
@@ -516,13 +545,18 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	var d *dialog
 	d = approvalDialog("Credential request", newForm(), func(*form) tea.Cmd {
 		switch d.formActions[d.formActionAt].key {
+		case "use-as":
+			return m.chooseUseAs(req, ans, func(as bindingplan.As) tea.Cmd {
+				ans.useChoice.as = as
+				return m.askSummary(req, ans, back)
+			}, func() tea.Cmd { d.formActionAt = 0; m.dialog = d; return nil })
 		case "review":
 			return m.askParts(req, ans, func() tea.Cmd { m.dialog = d; return nil })
 		case "deny":
 			ans.use, ans.delegate = partAnswer(req.Use, PartDeny), partAnswer(req.Delegate, PartDeny)
 		default:
 			ans.use, ans.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
-			ans.useChoice, ans.delegateChoice = partChoice{scope: "routes"}, partChoice{scope: "routes"}
+			ans.useChoice.scope, ans.delegateChoice.scope = "routes", "routes"
 		}
 		return m.partsAnswered(req, ans)
 	})
@@ -531,8 +565,11 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 		{key: "deny", label: "Deny", enabled: true},
 		{key: "review", label: "Review…", enabled: true},
 	}
+	if req.Use != nil {
+		d.formActions = append(d.formActions, action{key: "use-as", label: "Add or replace…", enabled: true})
+	}
 	d.titleRight = "summary"
-	d.body = m.credentialSentence(req)
+	d.body = m.credentialSentence(req) + " Answering with “" + ans.credential + "”."
 	what := section{label: ans.credential + " would be"}
 	if req.Use != nil {
 		what.fields = append(what.fields, field{label: "used by this box", value: partSummary(req.Use), tone: toneAccent})
@@ -582,7 +619,7 @@ func partSummary(part *RequestPart) string {
 // the step before. Each part keeps what it was changed to, so going back to
 // it shows the change.
 func (m *Model) askParts(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
-	useChoice, delegateChoice := &partChoice{scope: "routes"}, &partChoice{scope: "routes"}
+	useChoice, delegateChoice := &ans.useChoice, &ans.delegateChoice
 	delegate := func(back func() tea.Cmd) tea.Cmd {
 		if req.Delegate == nil {
 			return m.partsAnswered(req, ans)
@@ -608,6 +645,7 @@ func (m *Model) askParts(req CredentialRequest, ans requestAnswer, back func() t
 // with routes). The server takes each as the part decision's scope, the
 // edited routes as its routes override.
 type partChoice struct {
+	as     bindingplan.As
 	scope  string
 	routes []secretroute.Route
 }
@@ -615,6 +653,9 @@ type partChoice struct {
 // askPart is one part's card: what it would let the box do, as asked or as
 // changed, and approve, deny or modify. next takes the decision.
 func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool, choice *partChoice, back func() tea.Cmd, next func(decision string) tea.Cmd) tea.Cmd {
+	if !delegate {
+		ans.useChoice = *choice
+	}
 	part, step, label := req.Use, "its own use", "it may use "+ans.credential+" on"
 	body := "Discobox “" + boxLabel(m, req) + "” would use " + ans.credential + " itself, in " + variableOf(req) + "."
 	if delegate {
@@ -627,6 +668,11 @@ func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool,
 		switch d.formActions[d.formActionAt].key {
 		case "deny":
 			return next(PartDeny)
+		case "use-as":
+			return m.chooseUseAs(req, ans, func(as bindingplan.As) tea.Cmd {
+				choice.as = as
+				return again()
+			}, func() tea.Cmd { d.formActionAt = 0; m.dialog = d; return nil })
 		case "modify":
 			// Back to the card as it was, focus on Approve rather than on the
 			// Modify that left it.
@@ -638,6 +684,10 @@ func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool,
 		{key: "accept", label: "Approve", enabled: true},
 		{key: "deny", label: "Deny", enabled: true},
 		{key: "modify", label: "Modify…", enabled: true},
+	}
+	if !delegate {
+		d.formActions = append(d.formActions, action{key: "use-as", label: "Add or replace…", enabled: true})
+		body += " " + ans.additionNote(req)
 	}
 	d.titleRight = step
 	d.body = body
@@ -923,7 +973,7 @@ func (m *Model) customHowLong(req CredentialRequest, ans requestAnswer, limit st
 
 // answerSections is the whole approval, as the last step shows it above the
 // lifetimes: what answers, each part's answer and what it is approved for,
-// what it replaces and the delegations it is held within. ttl is the
+// what it replaces. The console answers as a person, with no parent. ttl is the
 // lifetime under the cursor, unknown while a custom one is still to be typed.
 func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration, known bool) []section {
 	with := ans.credential
@@ -957,6 +1007,12 @@ func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration,
 		part("its workers", ans.delegate, ans.delegateChoice)
 	}
 	out := []section{sec}
+	if ans.use == PartApprove {
+		out = append(out, choiceSection("approved for its own use", req.Use, ans.useChoice, ans))
+	}
+	if ans.delegate == PartApprove {
+		out = append(out, choiceSection("approved for its workers", req.Delegate, ans.delegateChoice, ans))
+	}
 	// Held to exact hosts, a new credential can leave out routes the request
 	// names on a pattern: approved, they are never sent on. Said as a saved
 	// secret's ✗ says it (uncovered), before it is stored.
@@ -970,17 +1026,7 @@ func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration,
 	if lines := replaces(req, ans, ttl, known); len(lines) > 0 {
 		out = append(out, section{label: "this replaces", labelTone: toneAlert, lines: lines})
 	}
-	if ans.delegate == PartApprove || ans.use == PartApprove {
-		for _, parent := range ans.parents {
-			within := section{label: "held within its lead's delegation " + parent.ID}
-			if len(parent.Routes) == 0 {
-				within.lines = []line{{text: "no route restriction of its own", tone: toneDim}}
-			} else {
-				within.lines = routeRowsLines(parent.Routes)
-			}
-			out = append(out, within)
-		}
-	}
+
 	return out
 }
 
@@ -1087,15 +1133,6 @@ func partRoutes(part *RequestPart, c partChoice) []secretroute.Route {
 		return c.routes
 	}
 	return part.Routes
-}
-
-// routeRowsLines is routes as lines, one to a row.
-func routeRowsLines(routes []secretroute.Route) []line {
-	var out []line
-	for _, text := range formatRoutes(routes) {
-		out = append(out, line{text: text, tone: toneAccent})
-	}
-	return out
 }
 
 // sendAnswer sends it: a new credential is stored first, its value the one
@@ -1268,7 +1305,7 @@ func (m *Model) credentialSentence(req CredentialRequest) string {
 	if v := variableOf(req); v != "" && v != what {
 		what += " (" + v + ")"
 	}
-	return "Discobox “" + boxLabel(m, req) + "” has asked for a credential, " + what + "."
+	return "Discobox “" + boxLabel(m, req) + "” asked for “" + what + "”."
 }
 
 // boxLabel names the asking box as a person named it (recordTitle), never by
