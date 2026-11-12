@@ -1629,9 +1629,9 @@ type CreateSandboxCredentialRequestBody struct {
 	// a route to that exact host and no host beneath it.
 	Hosts []string `json:"hosts"`
 	// Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][
-	// graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.
-	// com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses
-	// the request.
+	// graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]` (ADR 26-10-27-880 §4), such as `GET
+	// api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not
+	// parse refuses the request.
 	Routes []string `json:"routes"`
 	// Credential policy files naming the use part's routes (ADR 26-11-02-022 §2), exclusive with hosts
 	// and routes. The server resolves each document; a request over its limits, or with a document that
@@ -17451,6 +17451,52 @@ func (o OptSecretRequestPolicyArgs) Get() (v SecretRequestPolicyArgs, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretRequestPolicyArgs) Or(d SecretRequestPolicyArgs) SecretRequestPolicyArgs {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRouteBody returns new OptSecretRouteBody with value set to v.
+func NewOptSecretRouteBody(v SecretRouteBody) OptSecretRouteBody {
+	return OptSecretRouteBody{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRouteBody is optional SecretRouteBody.
+type OptSecretRouteBody struct {
+	Value SecretRouteBody
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRouteBody was set.
+func (o OptSecretRouteBody) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRouteBody) Reset() {
+	var v SecretRouteBody
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRouteBody) SetTo(v SecretRouteBody) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRouteBody) Get() (v SecretRouteBody, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRouteBody) Or(d SecretRouteBody) SecretRouteBody {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -35307,6 +35353,7 @@ type SecretRoute struct {
 	// list still answers for what it covers (ADR 26-10-27-880 §4). A route a judge used to read became
 	// one, so removing the judge widened nothing (ADR 26-10-27-880).
 	Blocked OptBool               `json:"blocked"`
+	Body    OptSecretRouteBody    `json:"body"`
 	Graphql OptSecretRouteGraphQL `json:"graphql"`
 	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
 	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
@@ -35333,6 +35380,11 @@ type SecretRoute struct {
 // GetBlocked returns the value of Blocked.
 func (s *SecretRoute) GetBlocked() OptBool {
 	return s.Blocked
+}
+
+// GetBody returns the value of Body.
+func (s *SecretRoute) GetBody() OptSecretRouteBody {
+	return s.Body
 }
 
 // GetGraphql returns the value of Graphql.
@@ -35365,6 +35417,11 @@ func (s *SecretRoute) SetBlocked(val OptBool) {
 	s.Blocked = val
 }
 
+// SetBody sets the value of Body.
+func (s *SecretRoute) SetBody(val OptSecretRouteBody) {
+	s.Body = val
+}
+
 // SetGraphql sets the value of Graphql.
 func (s *SecretRoute) SetGraphql(val OptSecretRouteGraphQL) {
 	s.Graphql = val
@@ -35388,6 +35445,34 @@ func (s *SecretRoute) SetMethods(val []string) {
 // SetPaths sets the value of Paths.
 func (s *SecretRoute) SetPaths(val []string) {
 	s.Paths = val
+}
+
+// Narrows a route to places in a JSON request body: the credential is carried there and swapped
+// there, as the whole of the JSON string at one of places, and nowhere else in the request. A route
+// with a body block allows the credential at the places it names and nowhere else, not in the
+// headers or query; a route without one allows it in the headers or query and at no body place. A
+// blocked body route refuses the credential at its places; a blocked route without a body block
+// refuses it in the body as well. The proxy reads the body only for a request a route names places
+// for whose Content-Type says JSON (/json or +json); any other body is sent unread, with nothing in
+// it swapped. A JSON body it cannot read for them is refused, unsent: too large, of undeclared
+// length, holding the credential under a Content-Encoding, or not JSON with each member named once.
+// The request is recorded as sent, with the placeholder, and the answer to it is recorded without
+// its body.
+// Ref: #/components/schemas/SecretRouteBody
+type SecretRouteBody struct {
+	// JSON pointers (RFC 6901) into the request body, each starting with / and naming one member or
+	// array element, such as /api_key. At least one; no spaces, = or ,/.
+	Places []string `json:"places"`
+}
+
+// GetPlaces returns the value of Places.
+func (s *SecretRouteBody) GetPlaces() []string {
+	return s.Places
+}
+
+// SetPlaces sets the value of Places.
+func (s *SecretRouteBody) SetPlaces(val []string) {
+	s.Places = val
 }
 
 // Narrows a route to GraphQL requests by their parsed documents (ADR 26-10-27-880 §4): the body's,
@@ -35485,6 +35570,7 @@ type SecretRouteInput struct {
 	// Refuse every request this route is the most specific route for; a more specific route of the same
 	// list still answers for what it covers (ADR 26-10-27-880 §4).
 	Blocked OptBool               `json:"blocked"`
+	Body    OptSecretRouteBody    `json:"body"`
 	Graphql OptSecretRouteGraphQL `json:"graphql"`
 	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
 	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
@@ -35511,6 +35597,11 @@ type SecretRouteInput struct {
 // GetBlocked returns the value of Blocked.
 func (s *SecretRouteInput) GetBlocked() OptBool {
 	return s.Blocked
+}
+
+// GetBody returns the value of Body.
+func (s *SecretRouteInput) GetBody() OptSecretRouteBody {
+	return s.Body
 }
 
 // GetGraphql returns the value of Graphql.
@@ -35541,6 +35632,11 @@ func (s *SecretRouteInput) GetPaths() []string {
 // SetBlocked sets the value of Blocked.
 func (s *SecretRouteInput) SetBlocked(val OptBool) {
 	s.Blocked = val
+}
+
+// SetBody sets the value of Body.
+func (s *SecretRouteInput) SetBody(val OptSecretRouteBody) {
+	s.Body = val
 }
 
 // SetGraphql sets the value of Graphql.
@@ -36404,6 +36500,10 @@ type UpdatePoolStatusBody struct {
 	Platform    OptString `json:"platform"`
 	Ready       bool      `json:"ready"`
 	Schedulable bool      `json:"schedulable"`
+	// The agent takes a sentinel route's body block, and its proxy swaps a sentinel at the body places
+	// it names. Declared on every report; an agent from before body places sends none, and is sent no
+	// route with a body block.
+	SentinelBodyPlaces OptBool `json:"sentinelBodyPlaces"`
 	// The agent takes each sentinel's value generation as sentinelGenerations, and its proxy drops a
 	// value it holds of another (#1022). Declared on every report; an agent from before generations
 	// sends none, and is sent none.
@@ -36464,6 +36564,11 @@ func (s *UpdatePoolStatusBody) GetSchedulable() bool {
 	return s.Schedulable
 }
 
+// GetSentinelBodyPlaces returns the value of SentinelBodyPlaces.
+func (s *UpdatePoolStatusBody) GetSentinelBodyPlaces() OptBool {
+	return s.SentinelBodyPlaces
+}
+
 // GetSentinelGenerations returns the value of SentinelGenerations.
 func (s *UpdatePoolStatusBody) GetSentinelGenerations() OptBool {
 	return s.SentinelGenerations
@@ -36522,6 +36627,11 @@ func (s *UpdatePoolStatusBody) SetReady(val bool) {
 // SetSchedulable sets the value of Schedulable.
 func (s *UpdatePoolStatusBody) SetSchedulable(val bool) {
 	s.Schedulable = val
+}
+
+// SetSentinelBodyPlaces sets the value of SentinelBodyPlaces.
+func (s *UpdatePoolStatusBody) SetSentinelBodyPlaces(val OptBool) {
+	s.SentinelBodyPlaces = val
 }
 
 // SetSentinelGenerations sets the value of SentinelGenerations.

@@ -4945,7 +4945,7 @@ components:
                         type: string
                     type: array
                 routes:
-                    description: "Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses the request."
+                    description: "Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses the request."
                     items:
                         type: string
                     type: array
@@ -6496,6 +6496,8 @@ components:
                 blocked:
                     description: Refuse every request this route is the most specific route for; a more specific route of the same list still answers for what it covers (ADR 26-10-27-880 §4)
                     type: boolean
+                body:
+                    $ref: '#/components/schemas/SecretRouteBody'
                 graphql:
                     $ref: '#/components/schemas/SecretRouteGraphQL'
                 hosts:
@@ -6526,6 +6528,8 @@ components:
                 blocked:
                     description: Refuse every request this route is the most specific route for; a more specific route of the same list still answers for what it covers (ADR 26-10-27-880 §4). A route a judge used to read became one, so removing the judge widened nothing (ADR 26-10-27-880)
                     type: boolean
+                body:
+                    $ref: '#/components/schemas/SecretRouteBody'
                 graphql:
                     $ref: '#/components/schemas/SecretRouteGraphQL'
                 hosts:
@@ -6548,6 +6552,19 @@ components:
                     type: array
             required:
                 - hosts
+            type: object
+        SecretRouteBody:
+            additionalProperties: false
+            description: "Narrows a route to places in a JSON request body: the credential is carried there and swapped there, as the whole of the JSON string at one of places, and nowhere else in the request. A route with a body block allows the credential at the places it names and nowhere else, not in the headers or query; a route without one allows it in the headers or query and at no body place. A blocked body route refuses the credential at its places; a blocked route without a body block refuses it in the body as well. The proxy reads the body only for a request a route names places for whose Content-Type says JSON (/json or +json); any other body is sent unread, with nothing in it swapped. A JSON body it cannot read for them is refused, unsent: too large, of undeclared length, holding the credential under a Content-Encoding, or not JSON with each member named once. The request is recorded as sent, with the placeholder, and the answer to it is recorded without its body."
+            properties:
+                places:
+                    description: "JSON pointers (RFC 6901) into the request body, each starting with / and naming one member or array element, such as /api_key. At least one; no spaces, = or ,/."
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+            required:
+                - places
             type: object
         SecretRouteGraphQL:
             additionalProperties: false
@@ -7257,6 +7274,9 @@ components:
                 ready:
                     type: boolean
                 schedulable:
+                    type: boolean
+                sentinelBodyPlaces:
+                    description: "The agent takes a sentinel route's body block, and its proxy swaps a sentinel at the body places it names. Declared on every report; an agent from before body places sends none, and is sent no route with a body block."
                     type: boolean
                 sentinelGenerations:
                     description: "The agent takes each sentinel's value generation as sentinelGenerations, and its proxy drops a value it holds of another (#1022). Declared on every report; an agent from before generations sends none, and is sent none."

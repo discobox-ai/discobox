@@ -608,6 +608,8 @@ components:
                 blocked:
                     description: Refuse every request this route is the most specific route for; a more specific route of the same list still answers for what it covers (ADR 26-10-27-880 §4)
                     type: boolean
+                body:
+                    $ref: '#/components/schemas/SentinelRouteBody'
                 graphql:
                     $ref: '#/components/schemas/SentinelRouteGraphQL'
                 hosts:
@@ -630,6 +632,19 @@ components:
                     type: array
             required:
                 - hosts
+            type: object
+        SentinelRouteBody:
+            additionalProperties: false
+            description: "Narrows a route to places in a JSON request body: the credential is carried there and swapped there, as the whole of the JSON string at one of places, and nowhere else in the request. A route with a body block allows the credential at the places it names and nowhere else, not in the headers or query; a route without one allows it in the headers or query and at no body place. A blocked body route refuses the credential at its places; a blocked route without a body block refuses it in the body as well. The proxy reads the body only for a request a route names places for whose Content-Type says JSON (/json or +json); any other body is sent unread, with nothing in it swapped. A JSON body it cannot read for them is refused, unsent: too large, of undeclared length, holding the credential under a Content-Encoding, or not JSON with each member named once. The request is recorded as sent, with the placeholder, and the answer to it is recorded without its body."
+            properties:
+                places:
+                    description: "JSON pointers (RFC 6901) into the request body, each starting with / and naming one member or array element, such as /api_key. At least one; no spaces, = or ,/."
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+            required:
+                - places
             type: object
         SentinelRouteGraphQL:
             additionalProperties: false

@@ -246,7 +246,7 @@ func TestStaleHeartbeatReadsOffline(t *testing.T) {
 
 	// The agent comes back: a heartbeat refreshes LastSeenAt, and the
 	// reconcile it triggers proves recovery.
-	if _, _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, false, false, true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+	if _, _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
@@ -542,7 +542,7 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 			return err
 		}
 		// An old ready heartbeat can arrive while the image load is in flight.
-		if _, _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, false, false, true, true, false, 0, 0, 0, nil); err != nil {
+		if _, _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentSentinels{}, true, true, false, 0, 0, 0, nil); err != nil {
 			return err
 		}
 		if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); !errors.Is(err, store.ErrNotFound) {

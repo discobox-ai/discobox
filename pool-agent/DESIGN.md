@@ -2069,7 +2069,19 @@ flowchart LR
   blocked. A list never unblocks what another blocks, a grant is decided whole
   and never merged with another, so a blocked route refuses only within its
   own grant, `*` covers every host (ADR 26-10-27-939), and a sentinel with no
-  grants is sent nowhere.
+  grants is sent nowhere. A sentinel the proxy found at body places
+  (`AuthorizeRequest.Places`, #1012) is held to each place as well as to its
+  headers, in one grant (`secretroute.Request.At`). `BodyPlaces` answers which
+  places the sandbox's live grants name for a request, from the routes held
+  here, so the proxy reads a body only for a request a route names places
+  for. The agent declares `sentinelBodyPlaces` on every report, and a control
+  plane sends a route with a body block only to an agent that did: an older
+  one's decoder refuses the field, and it swaps nothing in a body. On disk,
+  where an older agent rolled back onto the file would read past a field it
+  does not know, SecretsFile keeps body routes apart from the lists they
+  belong to (`bodyRoutes`, `secretsFileOf`), so such an agent holds the lists
+  without them, which only narrows, rather than a body route read as an open
+  route for the headers.
 - **Routes are written normalized** (`UpsertSandboxSentinels`,
   `secretroute.Normalize`). One that does not normalize — the control plane
   validates every route, so only a pool of another version meets one — fails

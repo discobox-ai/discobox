@@ -350,6 +350,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			ImageKind:            status.imageKind,
 			SentinelGrants:       true,
 			SentinelGenerations:  true,
+			SentinelBodyPlaces:   true,
 			Ready:                true,
 			Schedulable:          status.schedulable,
 			Degraded:             false,

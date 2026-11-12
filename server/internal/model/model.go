@@ -734,7 +734,14 @@ type Pool struct {
 	// holds of another (#1022), declared on every status report. A pool whose
 	// agent has not declared it is sent none: its decoder refuses a field it
 	// does not know.
-	SentinelGenerations   bool    `gorm:"column:sentinel_generations;not null;default:false" json:"-"`
+	SentinelGenerations bool `gorm:"column:sentinel_generations;not null;default:false" json:"-"`
+	// SentinelBodyPlaces is whether the pool's agent takes a sentinel route's
+	// body block and its proxy swaps a sentinel at the places it names
+	// (#1012), declared on every status report. A pool whose agent has not
+	// declared it is sent no route with one: its decoder refuses a field it
+	// does not know, and it swaps nothing in a body, so leaving such a route
+	// out only narrows what its lists allow.
+	SentinelBodyPlaces    bool    `gorm:"column:sentinel_body_places;not null;default:false" json:"-"`
 	PublicKey             string  `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
 	KeyType               string  `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
 	Ready                 bool    `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
