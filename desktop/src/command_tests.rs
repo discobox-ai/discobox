@@ -208,14 +208,25 @@ impl Sent {
     }
 }
 
-/// The mock, with everything sent to it written down.
+/// The mock, with everything sent to it written down and terminal streams controlled by the test.
 struct Recorder {
     inner: Box<dyn Backend + Send>,
     sent: Sent,
+    inbox: crate::backend::Inbox,
 }
 
 impl Backend for Recorder {
     fn send(&mut self, m: Out) {
+        // Never start a local shell for these panes: its asynchronous startup or input echo
+        // could overwrite the bytes a gesture test selects, searches or follows as a link.
+        if let Out::Open { stream, exec, .. } = &m {
+            if !exec.starts_with("service:") {
+                self.inbox.push(Event::Stream(crate::wire::Stream {
+                    stream: *stream, state: crate::wire::StreamState::Attached, ..Default::default()
+                }));
+                return;
+            }
+        }
         if let Out::Command(c) = &m {
             self.sent.commands.lock().unwrap().push(c.clone());
         }
@@ -242,11 +253,11 @@ impl Backend for Null {
 /// A box attached, its primary focused, with what is sent recorded and a clipboard of its own.
 fn attached() -> (Runtime<State>, Sent, MemoryClipboard, u32) {
     let mut rt = runtime();
-    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
-    settle(&mut rt);
     let sent = Sent::default();
     let inner = std::mem::replace(&mut rt.state.backend, Box::new(Null));
-    rt.state.backend = Box::new(Recorder { inner, sent: sent.clone() });
+    rt.state.backend = Box::new(Recorder { inner, sent: sent.clone(), inbox: rt.state.inbox.clone() });
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(&mut rt);
     let clip = rune::clipboard::memory();
     rt.use_clipboard(&clip);
     let stream = rt.state.focused_pane().expect("a focused pane").stream;
