@@ -4,6 +4,7 @@
 package liverun_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,6 +97,8 @@ printf '%s' "$code"
 // passingProbes are what the probes print where the fence and the proxy
 // hold: the proxy answers a refused plain-HTTP request 403 "blocked by
 // proxy", and around it no connection is made (time_connect 0).
+//
+//nolint:gosec // G101: probe answers, not a credential.
 const passingProbes = `proxy-env http://discobox-pool-proxy:3128
 allowed-proxy 200 200 0 0.012 <!doctype html>
 unlisted-proxy 403 000 0 0.001 blocked by proxy
@@ -134,13 +137,13 @@ func liveRun(t *testing.T, setup func(stub string)) run {
 	if extra, err := os.ReadFile(filepath.Join(stub, "args")); err == nil {
 		args = append(args, strings.Fields(string(extra))...)
 	}
-	cmd := exec.Command("bash", args...)
+	cmd := exec.CommandContext(t.Context(), "bash", args...) //nolint:gosec // G204: the repository's own script, with the test's own arguments
 	cmd.Env = append(os.Environ(),
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"STUB="+stub, "BOXD_API_KEY="+key, "DISCOBOX=", "DISCO_VM=")
 	out, err := cmd.CombinedOutput()
 	r := run{stub: stub, out: string(out)}
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) {
 		r.exit = exitErr.ExitCode()
 	} else if err != nil {
 		t.Fatal(err)
@@ -411,7 +414,7 @@ func TestDryRun(t *testing.T) {
 		t.Skip("the script is bash")
 	}
 	empty := t.TempDir()
-	cmd := exec.Command("bash", script(t), "--driver", "boxd", "--dry-run", "--evidence", filepath.Join(empty, "evidence"), "--server", "http://server.test")
+	cmd := exec.CommandContext(t.Context(), "bash", script(t), "--driver", "boxd", "--dry-run", "--evidence", filepath.Join(empty, "evidence"), "--server", "http://server.test") //nolint:gosec // G204: the repository's own script
 	// Nothing on PATH but what reads answers: a call out would fail.
 	jq, err := exec.LookPath("jq")
 	if err != nil {
@@ -462,8 +465,8 @@ func TestRequiredFlags(t *testing.T) {
 	}
 	// A live run says whether this box's egress was narrowed.
 	for _, args := range [][]string{{"--dry-run"}, {"--driver", "docker", "--dry-run"}, {"--driver", "boxd"}} {
-		out, err := exec.Command("bash", append([]string{script(t)}, args...)...).CombinedOutput()
-		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 {
+		out, err := exec.CommandContext(t.Context(), "bash", append([]string{script(t)}, args...)...).CombinedOutput() //nolint:gosec // G204: the repository's own script
+		if exitErr := (*exec.ExitError)(nil); !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
 			t.Fatalf("%v: %v, want exit 2:\n%s", args, err, out)
 		}
 	}
