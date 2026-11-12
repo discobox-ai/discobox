@@ -247,6 +247,13 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.store.BeginPoolHealthChecks(ctx); err != nil {
 		return err
 	}
+	// Before anything resolves or mints a sentinel for one: a secret of the
+	// retired exchange type becomes a token secret sent nowhere. It is here
+	// rather than in the database migration because its value is sealed, and
+	// the migration runs before there is a keyring (ADR 26-11-12-957 §2).
+	if err := s.secrets.RetireExchangeSecrets(ctx); err != nil {
+		return fmt.Errorf("retire exchange secrets: %w", err)
+	}
 	// Before anything mints a sentinel: a stored shape read under an older
 	// provider table is brought up to date, so the first sandbox after an
 	// upgrade already gets the current one.

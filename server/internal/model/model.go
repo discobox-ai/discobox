@@ -1491,12 +1491,6 @@ const (
 	// token expiry ride alongside it and never leave the control plane. The
 	// server refreshes the access token on resolve when it is near expiry.
 	SecretTypeOAuth = "oauth"
-	// SecretTypeExchange is fields a person stores, such as an API key, that
-	// the server trades at the token endpoint its recipe names for a
-	// short-lived token (ADR 26-10-08-452). The token lives in
-	// SecretValue.Token and is renewed like an OAuth access token; the stored
-	// fields never leave the control plane.
-	SecretTypeExchange = "exchange"
 
 	SecretRequestStatusPending  = "pending"
 	SecretRequestStatusApproved = "approved"
@@ -1589,7 +1583,7 @@ type Secret struct {
 	// Name is what a person, a request and a binding name the secret by, so
 	// it is unique in its project.
 	Name      string `gorm:"column:name;not null;type:text;uniqueIndex:idx_secret_project_name,priority:2" json:"name" doc:"Secret name"`
-	Type      string `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type" enum:"token,oauth,exchange"`
+	Type      string `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type" enum:"token,oauth"`
 	Anonymous bool   `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
 	Format    string `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
 	// FormatSet says Format was written by a person rather than read from the
@@ -1605,14 +1599,6 @@ type Secret struct {
 	// they were captured with it; this is filled in on read, so a caller can
 	// see what a credential is good for without the credential.
 	OAuth *SecretOAuth `gorm:"-" json:"oauth,omitempty" doc:"What an OAuth credential is; never the tokens themselves"`
-	// ExchangeRecipe is how an exchange credential's stored fields are traded
-	// for its token. It says where the key is sent, never what the key is, so
-	// it is a column rather than part of the sealed value; it is shown on
-	// read through Exchange.
-	ExchangeRecipe *ExchangeRecipe `gorm:"column:exchange_recipe;type:text;serializer:json" json:"-"`
-	// Exchange is the same for an exchange credential: its recipe and when
-	// the token goes stale. Filled in on read.
-	Exchange *SecretExchange `gorm:"-" json:"exchange,omitempty" doc:"What an exchange credential is; never the stored fields or the token"`
 	// MaxBindingTTL is the longest a binding of this credential may last, and
 	// the lifetime a binding takes when nobody names one. It is a ceiling
 	// rather than a suggestion: a longer binding, or one that never lapses, is
@@ -1817,27 +1803,6 @@ type SecretOAuth struct {
 	Refreshable          bool     `json:"refreshable,omitempty" doc:"Whether it carries what it needs to renew itself"`
 }
 
-// SecretExchange is the non-secret half of an exchange credential.
-type SecretExchange struct {
-	Recipe         *ExchangeRecipe `json:"recipe,omitempty" doc:"How the stored fields are exchanged for a token"`
-	TokenExpiresAt int64           `json:"tokenExpiresAt,omitempty" doc:"When the current token goes stale, unix milliseconds"`
-}
-
-// ExchangeRecipe is a templated token request and a reading of its answer
-// (ADR 26-10-08-452): a POST to URL whose body and headers name the stored
-// fields as {name}, and the paths to the token and its expiry in the JSON that
-// comes back.
-type ExchangeRecipe struct {
-	URL           string            `json:"url"`
-	Form          bool              `json:"form,omitempty"`
-	Fields        []string          `json:"fields"`
-	Body          map[string]string `json:"body,omitempty"`
-	Header        map[string]string `json:"header,omitempty"`
-	TokenPath     string            `json:"tokenPath"`
-	ExpiresAtPath string            `json:"expiresAtPath,omitempty"`
-	ExpiresInPath string            `json:"expiresInPath,omitempty"`
-}
-
 // SecretValue holds the type-specific plaintext credential fields.
 // Only fields relevant to the secret type will be populated.
 type SecretValue struct {
@@ -1878,9 +1843,6 @@ type SecretValue struct {
 	// the same grant, not a new grant.
 	Scopes           []string `json:"scopes,omitempty"`
 	SubscriptionType string   `json:"subscriptionType,omitempty"`
-	// Exchange is what an exchange secret trades for Token, by the field
-	// names its recipe declares. It never leaves the server.
-	Exchange map[string]string `json:"exchange,omitempty"`
 }
 
 // SecretRequest is a sandbox asking for a binding (ADR 26-10-27-880 §1): the
@@ -2300,7 +2262,7 @@ type SecretRejection struct {
 	// column — the answer belongs to the secret and its bindings, and a copy
 	// here would be a second writer of it.
 	SecretName        string `gorm:"-" json:"secretName,omitempty" doc:"Name of the refused secret"`
-	SecretType        string `gorm:"-" json:"secretType,omitempty" doc:"Type of the refused secret" enum:"token,oauth,exchange"`
+	SecretType        string `gorm:"-" json:"secretType,omitempty" doc:"Type of the refused secret" enum:"token,oauth"`
 	EnvName           string `gorm:"-" json:"envName,omitempty" doc:"Environment variable the credential is delivered in, when one names it"`
 	HarnessConfigID   string `gorm:"-" json:"harnessConfigId,omitempty" doc:"Harness config whose saved harness changes own this credential, when one does"`
 	HarnessConfigName string `gorm:"-" json:"harnessConfigName,omitempty" doc:"Display name of that harness config"`

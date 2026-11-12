@@ -1202,6 +1202,49 @@ func TestMigrateRetiresPrepullWithoutLosingPools(t *testing.T) {
 	}
 }
 
+// The exchange recipe column goes, and an exchange secret's row stays, with
+// its type and its sealed value, for the secrets service to convert once
+// there is a keyring to open the value with.
+func TestMigrateDropsTheExchangeRecipeAndKeepsTheExchangeSecret(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		"ALTER TABLE secrets ADD COLUMN exchange_recipe text",
+		`INSERT INTO secrets (id, project_id, name, type, max_binding_ttl_seconds, encrypted_value, exchange_recipe, created_at, updated_at)
+			VALUES ('sec-1', 'project-1', 'boxd', 'exchange', 3600, '{"exchange":{"api_key":"bxd_key"}}', '{"url":"https://app.boxd.sh/api/v1/auth/token"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+	} {
+		if err := db.Write.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if db.Write.Migrator().HasColumn(&model.Secret{}, "exchange_recipe") {
+		t.Fatal("exchange_recipe remains")
+	}
+	var got model.Secret
+	if err := db.Write.First(&got, "id = ?", "sec-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != "exchange" || string(got.EncryptedValue) != `{"exchange":{"api_key":"bxd_key"}}` {
+		t.Fatalf("secret = %s %q, want the exchange row as it was", got.Type, got.EncryptedValue)
+	}
+}
+
 // A secret written before value_updated_at existed gets the time its value was
 // last written, so its lifetime does not restart on the next rename.
 func TestMigrateBackfillsSecretValueUpdatedAt(t *testing.T) {
