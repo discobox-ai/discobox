@@ -131,12 +131,17 @@ terminal already running is untouched.
   there is no agent to run in, and its next start provisions anyway. A
   reprovision never starts a box. A box with no provisioning (not Linux) is a
   `409` too.
-- **CLI.** `discobox reprovision DISCOBOX_ID` sends it, then follows the
-  sandbox's recorded `agentStatus.provision` (0060's discipline: each read is
-  the current truth) and narrates the features as they move. It exits 0 when
-  every feature it ran is `ready`, and non-zero, naming each feature still
-  `failed` with its error and log path, when one is not. `--no-wait` returns
-  after the `202`. The console offers it wherever it shows a failed feature.
+- **CLI.** `discobox admin box reprovision DISCOBOX_ID`, beside `restart`
+  and `repair` under `discobox admin box`: it is an advanced command, not
+  part of the everyday top level (owner, on #1026). It sends the request,
+  then follows the sandbox's recorded `agentStatus.provision` (0060's
+  discipline: each read is the current truth) and narrates the features as
+  they move. It exits 0 when every feature it ran is `ready`. When one is
+  not, it exits non-zero and names each feature still `failed`, with its
+  error and log path. `--no-wait` returns after the `202`.
+- **No console surface.** The console (TUI) neither offers reprovision nor
+  binds a key to it, and keeps showing a failed feature as it does today
+  (owner, on #1026).
 - **In the box.** `discobox-provision retry` is the same request, made from
   inside the box. A box's processes run as its user and the steps need root,
   so the personality asks the agent through a request file in a sticky
@@ -218,12 +223,13 @@ moves (953 §5), and it runs no sandbox agent to receive the request.
   whose error looks transient. The Go installer already retries inside its
   step. Revisit if failed features turn out to be mostly transient network
   errors that a person then has to reprovision by hand.
+- **Reprovision in the console**, as repair is offered on `R` (0064 §4).
+  The owner kept it out for now, because it is an advanced feature. Revisit
+  if people reach for it often enough that the console should offer it
+  wherever it shows a failed feature.
 
 ## Open, for implementation
 
 - How the in-box request file is laid out and claimed (§5). The precedent is
   `/run/discobox/sleep`; whether `retry` reuses the agent's existing watch
   loop or adds its own is an implementation choice.
-- Whether the CLI command also goes under `discobox sandbox` beside
-  `repair` and `restart`, as well as at the top level, follows the CLI's
-  existing grouping (26-11-04-204).
