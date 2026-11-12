@@ -2,9 +2,11 @@ package discovm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/discobox-ai/vm/pkg/engine"
@@ -139,9 +141,14 @@ func newDriver(name, scope, base string, keys machine.KeySource) (machine.Driver
 		return nil, err
 	}
 	cfg.Base = base
+	if !slices.Contains(machine.Names(), name) {
+		return nil, fmt.Errorf("%s driver %q is not available in this build (have %s)", ProviderType, name, strings.Join(machine.Names(), ", "))
+	}
+	// Linked, so what New refuses is the configuration: disco-vm's message
+	// names the field and never its value.
 	driver, err := machine.New(name, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("%s driver %q is not available in this build (have %s)", ProviderType, name, strings.Join(machine.Names(), ", "))
+		return nil, fmt.Errorf("%s driver %q: %w", ProviderType, name, err)
 	}
 	return driver, nil
 }
@@ -158,17 +165,69 @@ func newDriver(name, scope, base string, keys machine.KeySource) (machine.Driver
 //     the provider's API key (providerKeys). A local driver's shim and the
 //     server make it with none, so they act as its state root's owner.
 //     disco-vm reads no key of its own accord.
+//   - DriverConfig is the driver's own configuration, which no driver reads
+//     from the environment (disco-vm ADR 26-11-11-215): only what
+//     carriedConfig carries over from the server's, and otherwise the
+//     driver's defaults.
 func driverConfig(name, scope, dir string, keys machine.KeySource) (machine.Config, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return machine.Config{}, err
 	}
+	config, err := carriedConfig(name)
+	if err != nil {
+		return machine.Config{}, err
+	}
 	return machine.Config{
-		Pool:        scope,
-		Dir:         dir,
-		ShimCommand: shimCommand(exe, dir, name, scope),
-		Keys:        keys,
+		Pool:         scope,
+		Dir:          dir,
+		ShimCommand:  shimCommand(exe, dir, name, scope),
+		Keys:         keys,
+		DriverConfig: config,
 	}, nil
+}
+
+// carriedEnv is, by driver, the configuration fields that disco-vm read
+// from the server's environment itself before each driver was given a
+// configuration of its own (disco-vm ADR 26-11-11-215): boxd's cluster
+// endpoints, BOXD_GRPC_ADDR and BOXD_TOKEN_URL. The server reads them for
+// the driver until a provider carries its driver's fields, when they move
+// into the provider's row (ADR 26-11-11-080 §8), so a server pointed at
+// another boxd cluster keeps calling it and its pools' machines stay found.
+// A field disco-vm never read here is not added: boxd's region is a
+// provider's (080 §7), never the server's.
+var carriedEnv = map[string][]string{"boxd": {"addr", "tokenUrl"}}
+
+// carriedConfig is the named driver's carriedEnv fields that the server's
+// environment sets, as disco-vm's command line reads them, or none. One the
+// driver refuses is an error naming the variable it came from, since the
+// provider has no field an operator could correct, and never its value.
+func carriedConfig(name string) (json.RawMessage, error) {
+	set := machine.ConfigFromEnv(name)
+	values := map[string]string{}
+	for _, key := range carriedEnv[name] {
+		if v, ok := set[key]; ok {
+			values[key] = v
+		}
+	}
+	if len(values) == 0 {
+		return nil, nil
+	}
+	config, err := machine.ConfigFromValues(name, values)
+	if err == nil {
+		err = machine.Validate(name, config)
+	}
+	if err != nil {
+		def, _ := machine.DefinitionOf(name)
+		var vars []string
+		for _, key := range carriedEnv[name] {
+			if f, ok := def.Field(key); ok && values[key] != "" {
+				vars = append(vars, f.Env)
+			}
+		}
+		return nil, fmt.Errorf("%w (set by %s in the server's environment)", err, strings.Join(vars, " and "))
+	}
+	return config, nil
 }
 
 // localPool is the disco-vm scope of everything a local driver's

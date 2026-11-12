@@ -98,6 +98,14 @@ else. disco-vm's docker driver is not linked: it is deferred (ADR
 guest agent is the running binary serving exec on loopback; only tests link
 it.
 
+A driver reads no environment for its configuration (disco-vm ADR
+26-11-11-215): `driverConfig` gives it one, `machine.Config.DriverConfig`.
+That holds only boxd's `addr` and `tokenUrl`, from `BOXD_GRPC_ADDR` and
+`BOXD_TOKEN_URL` where the server's environment sets them (`carriedEnv`),
+which disco-vm read itself before; every other field is the driver's
+default. A carried value the driver refuses fails every boxd provider,
+naming the variable.
+
 `driver` is `Immutable`: it cannot change while the provider has pools,
 because only the driver that made a pool's host can remove it.
 

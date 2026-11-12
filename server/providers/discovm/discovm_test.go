@@ -339,6 +339,41 @@ func TestValidateNamesTheDriversInThisBuild(t *testing.T) {
 	}
 }
 
+// boxd's cluster endpoints, which disco-vm once read from the server's
+// environment itself, are still read from it for the driver, and nothing else
+// is: not boxd's region, which is a provider's, nor any field of a driver that
+// read none. A value the driver refuses fails validation naming the field and
+// the variable it came from, not as a driver missing from the build.
+func TestDriverConfigCarriesBoxdsEndpointsFromTheEnvironment(t *testing.T) {
+	isolateStateRoot(t)
+	t.Setenv(boxd.RegionEnv, "nyc")
+	cfg, err := driverConfig("boxd", "prov-test", stateRoot("boxd"), nil)
+	if err != nil || cfg.DriverConfig != nil {
+		t.Fatalf("boxd's configuration with no endpoint set = %s, %v; want none", cfg.DriverConfig, err)
+	}
+	t.Setenv(boxd.AddrEnv, "boxd.example.com:9443")
+	t.Setenv(boxd.TokenURLEnv, "https://app.example.com/api/v1/auth/token")
+	cfg, err = driverConfig("boxd", "prov-test", stateRoot("boxd"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(cfg.DriverConfig, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"addr": "boxd.example.com:9443", "tokenUrl": "https://app.example.com/api/v1/auth/token"} //nolint:gosec // G101: an endpoint URL, not a credential
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("boxd's configuration = %v, want %v", got, want)
+	}
+	if cfg, err := driverConfig("fake", localPool, stateRoot("fake"), nil); err != nil || cfg.DriverConfig != nil {
+		t.Fatalf("the fake driver's configuration = %s, %v; want none", cfg.DriverConfig, err)
+	}
+	t.Setenv(boxd.TokenURLEnv, "http://app.example.com/token")
+	if err := Validate(json.RawMessage(`{"driver":"boxd","apiKey":"k"}`)); err == nil || !strings.Contains(err.Error(), "tokenUrl") || !strings.Contains(err.Error(), boxd.TokenURLEnv) || strings.Contains(err.Error(), "not available") || strings.Contains(err.Error(), "app.example.com") {
+		t.Fatalf("Validate with a plain-http token URL = %v, want an error naming tokenUrl and %s, and not its value", err, boxd.TokenURLEnv)
+	}
+}
+
 // A remote driver needs its key, said rather than guessed, and may name the
 // URL its pool machines reach the server at: without one the server opens a
 // channel to each (ADR 26-10-30-875 §4). A local driver takes neither.
@@ -426,7 +461,11 @@ func TestDriverKeyIsTheProvidersConfiguration(t *testing.T) {
 // name: a remote driver's pool is a machine, a local one's is a host agent in
 // the driver's own state directory.
 func TestPoolHostFollowsTheDriversKind(t *testing.T) {
-	remote, err := engine.Open(boxd.New(machine.Config{Pool: "prov-test"}), "prov-test")
+	driver, err := boxd.New(machine.Config{Pool: "prov-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := engine.Open(driver, "prov-test")
 	if err != nil {
 		t.Fatal(err)
 	}

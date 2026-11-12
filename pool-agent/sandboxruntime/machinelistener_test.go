@@ -79,7 +79,7 @@ func TestFakeMachineAgentOwnsItsEndpointAcrossBoots(t *testing.T) {
 // A failed fake server must fail provisioning, before the product's five-minute
 // agent readiness deadline. Exercise the actual applyProcess.Wait caller.
 func TestFakeMachineAgentStartFailureReturnsFromProvisioning(t *testing.T) {
-	f := newMachineFixture(t)
+	f := newMachineFixture(t, nil)
 	ctx := t.Context()
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_1")); err != nil {
 		t.Fatal(err)

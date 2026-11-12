@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 // operations.
 func fakeMachine(t *testing.T) machine.Guest {
 	t.Helper()
-	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), "provisioner-test", nil), "provisioner-test")
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), "provisioner-test", nil, nil), "provisioner-test")
 	if err != nil {
 		t.Fatal(err)
 	}
