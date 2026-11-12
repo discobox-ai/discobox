@@ -5,7 +5,8 @@
 // A route names hosts — exact names, `*.suffix` for the hosts strictly beneath
 // a suffix, or `*` alone for any host (ADR 26-10-27-939) — and, optionally,
 // the methods, the paths (segment globs) and the GraphQL operations or MCP
-// tools it allows. A blocked route refuses what it is the most specific
+// tools it allows, or the places in a JSON request body a credential is
+// swapped at (a body block, #1012; ADR 26-11-11-080 §9). A blocked route refuses what it is the most specific
 // candidate for: it is a carve-out inside a wider route of the same list, and
 // what a route a judge used to read became, so that removing the judge sent
 // nothing on it unjudged. A credential is held to several lists at once — its
@@ -37,6 +38,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 )
@@ -51,7 +53,21 @@ type Route struct {
 	Paths   []string `json:"paths,omitempty"`
 	GraphQL *GraphQL `json:"graphql,omitempty"`
 	MCP     *MCP     `json:"mcp,omitempty"`
+	Body    *Body    `json:"body,omitempty"`
 	Blocked bool     `json:"blocked,omitempty"`
+}
+
+// Body holds a route to places in a JSON request body: the credential is
+// carried there, and swapped there, instead of in the request's headers or
+// query. A route with a body block grants those places and nothing else: it
+// is no route for a credential in the headers, and a route without one is no
+// route for a credential in the body. An open body route allows a credential
+// at a place it names, and only as the whole of the JSON string there; a
+// blocked one refuses it there.
+type Body struct {
+	// Places are RFC 6901 JSON pointers into the request body, such as
+	// "/api_key". None is refused: a body block names where.
+	Places []string `json:"places"`
 }
 
 // GraphQL holds a route to the GraphQL documents a request executes: the
@@ -82,7 +98,7 @@ const BlockedSuffix = "=blocked"
 
 // Syntax is the typed form of a route, as Parse reads it and Format writes it,
 // for help text and errors to show.
-const Syntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][" + BlockedSuffix + "]"
+const Syntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][" + BlockedSuffix + "]"
 
 // The GraphQL operation types a route may name.
 var graphqlOperations = []string{"query", "mutation", "subscription"}
@@ -90,8 +106,9 @@ var graphqlOperations = []string{"query", "mutation", "subscription"}
 // Normalize is the one reading of a route: it validates every part, lower-cases
 // hosts and operation types, upper-cases methods, and sorts and dedupes every
 // list. A `*` among a block's fields or tools is every one, so the list is
-// dropped. A route without hosts, or with both a GraphQL and an MCP block,
-// which no body could satisfy, is refused.
+// dropped. A route without hosts, or with more than one of a GraphQL, an MCP
+// and a body block, is refused: no body is both GraphQL and MCP, and a body
+// block names where a credential goes, not what a request does.
 func Normalize(r Route) (Route, error) {
 	out := Route{Blocked: r.Blocked}
 	if len(r.Hosts) == 0 {
@@ -120,6 +137,23 @@ func Normalize(r Route) (Route, error) {
 	}
 	if r.GraphQL != nil && r.MCP != nil {
 		return Route{}, fmt.Errorf("a route matches GraphQL or MCP, not both: no request body is both")
+	}
+	if r.Body != nil && (r.GraphQL != nil || r.MCP != nil) {
+		return Route{}, fmt.Errorf("a route with body places has no GraphQL or MCP block: it names where a credential goes in the body, not what the request does")
+	}
+	if r.Body != nil {
+		if len(r.Body.Places) == 0 {
+			return Route{}, fmt.Errorf("a route's body block must name at least one place")
+		}
+		body := &Body{}
+		for _, place := range r.Body.Places {
+			if err := validatePlace(place); err != nil {
+				return Route{}, err
+			}
+			body.Places = append(body.Places, place)
+		}
+		body.Places = sortedSet(body.Places)
+		out.Body = body
 	}
 	if r.GraphQL != nil {
 		graphql := &GraphQL{}
@@ -217,6 +251,26 @@ func normalizePath(routePath string) (string, error) {
 	return trimmed, nil
 }
 
+// validatePlace checks one body place: an RFC 6901 JSON pointer to a member
+// or element, so it starts with "/", and every "~" in it is "~0" or "~1". It
+// holds no space or control character, no "=" (the blocked suffix) and no
+// ",/" (the separator between places), so its typed form reads back as
+// itself. It is taken as written: a pointer names one exact place.
+func validatePlace(place string) error {
+	if !strings.HasPrefix(place, "/") {
+		return fmt.Errorf("route body place %q must be a JSON pointer starting with /", place)
+	}
+	if strings.ContainsAny(place, "= \t") || strings.Contains(place, ",/") || hasControl(place) || !utf8.ValidString(place) {
+		return fmt.Errorf("route body place %q must be a JSON pointer without spaces, = or ,/", place)
+	}
+	for i := 0; i < len(place); i++ {
+		if place[i] == '~' && (i+1 >= len(place) || (place[i+1] != '0' && place[i+1] != '1')) {
+			return fmt.Errorf("route body place %q has a ~ that is not ~0 or ~1", place)
+		}
+	}
+	return nil
+}
+
 // normalizeNames reads a list of GraphQL fields or MCP tools: names of
 // allowed runes, each optionally ending in one `*`. A `*` alone is every
 // name, so it drops the list.
@@ -256,13 +310,14 @@ func sortedSet(list []string) []string {
 
 // Parse reads a route as a person types it (Syntax):
 //
-//	[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]
+//	[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]
 //
 // METHODS is an optional first word of upper-case methods joined by commas.
 // HOSTS is a comma list up to the first "/", and PATHS from it, several
 // joined by a "," immediately followed by "/". OPS is a comma list of
 // operation types, or `*` for any, and FIELDS a comma list of root fields;
-// TOOLS is a comma list of tool names, or `*` for any. The `=blocked` suffix
+// TOOLS is a comma list of tool names, or `*` for any. PLACES is one or more
+// JSON pointers into the request body, joined like PATHS. The `=blocked` suffix
 // on the whole text blocks the route. The route is normalized. Any other word
 // is refused: an "=" anywhere else is the use a route once carried, which
 // nothing reads any more.
@@ -352,6 +407,20 @@ func parseOpen(text string) (Route, error) {
 				return Route{}, err
 			}
 			route.MCP = &MCP{Tools: tools}
+		case "body":
+			if route.Body != nil {
+				return Route{}, fmt.Errorf("a route has one body=")
+			}
+			if !strings.HasPrefix(value, "/") {
+				return Route{}, fmt.Errorf("body=PLACES needs JSON pointers, each starting with /")
+			}
+			route.Body = &Body{}
+			for i, place := range strings.Split(value, ",/") {
+				if i > 0 {
+					place = "/" + place
+				}
+				route.Body.Places = append(route.Body.Places, place)
+			}
 		default:
 			return Route{}, fmt.Errorf("%q is not part of a route: a route is %s", word, Syntax)
 		}
@@ -434,6 +503,10 @@ func Format(r Route) string {
 			b.WriteString("*")
 		}
 		b.WriteString(strings.Join(r.MCP.Tools, ","))
+	}
+	if r.Body != nil {
+		b.WriteString(" body=")
+		b.WriteString(strings.Join(r.Body.Places, ","))
 	}
 	if r.Blocked {
 		b.WriteString(BlockedSuffix)

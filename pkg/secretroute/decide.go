@@ -36,13 +36,23 @@ import (
 // Header is read for the methods a request names besides its request line
 // (methodOverrideHeaders) and for the Content-Type that says whether its body
 // may name one; a nil Header names none.
+//
+// At is where in the request the credential is carried, each decided on its
+// own and every one needing to be allowed: InHeaders for its headers or
+// query, or a body place, the JSON pointer of a string in a JSON body that
+// is exactly the credential's sentinel. None is InHeaders alone.
 type Request struct {
 	Method string
 	Host   string // without port, normalized as hostscope does
 	URL    string // raw request URL; the path is read with RequestPaths
 	Header http.Header
 	Body   func() ([]byte, bool)
+	At     []string
 }
+
+// InHeaders is a credential carried in a request's headers or query, as At
+// names it.
+const InHeaders = ""
 
 // methodOverrideHeaders are the headers servers read a method from in place
 // of the request line's (Google APIs, OData, Rack, Laravel and others). A
@@ -117,6 +127,13 @@ func RequestPaths(rawURL string) []string {
 // case-variant JSON `_method`, a non-string one, a form pair that does not
 // parse — is unknown to every route.
 //
+// Where the credential is carried is decided too (Request.At): every use,
+// its headers and each body place, must be allowed by every list. A route
+// with a body block is a candidate only for the places it names, an open
+// route without one only for the headers, and a blocked route without one
+// for any use, so a body place is held to the same carve-outs as a header.
+// No route grants a body place it does not name.
+//
 // A refusal's reason says what refused, in a short sentence that never
 // carries the body beyond an operation type, a root field, a tool or method
 // name, each escaped when it is not plain: "route X refuses WHAT" for a
@@ -131,46 +148,64 @@ func Decide(lists [][]Route, req Request) (allowed bool, reason string) {
 		return false, "this credential has no routes"
 	}
 	match := newMatcher(req)
-	type candidate struct {
-		route  Route
-		reason string
+	uses := req.At
+	if len(uses) == 0 {
+		uses = []string{InHeaders}
 	}
 	for _, routes := range lists {
 		if len(routes) == 0 {
 			return false, "this credential has no routes"
 		}
-		for _, requestPath := range RequestPaths(req.URL) {
-			best, decided := rank{}, []candidate(nil)
-			nearBest, nearReason := rank{}, ""
-			for _, route := range routes {
-				specificity, ok, near, why := match.route(route, requestPath)
-				if near && !route.Blocked && (nearReason == "" || specificity.compare(nearBest) > 0) {
-					nearBest, nearReason = specificity, "route "+Format(route)+" "+why
-				}
-				if !ok {
-					continue
-				}
-				switch c := specificity.compare(best); {
-				case len(decided) == 0 || c > 0:
-					best, decided = specificity, []candidate{{route, why}}
-				case c == 0:
-					decided = append(decided, candidate{route, why})
-				}
+		for _, at := range uses {
+			if allowed, reason := match.decideList(routes, at); !allowed {
+				return false, reason
 			}
-			where := match.describe(requestPath)
-			if len(decided) == 0 {
-				if nearReason != "" {
-					return false, nearReason
-				}
-				return false, fmt.Sprintf("this credential has no route to %s", where)
+		}
+	}
+	return true, ""
+}
+
+// decideList decides one list for one use of the credential, at every
+// reading of the request's path.
+func (m *matcher) decideList(routes []Route, at string) (allowed bool, reason string) {
+	type candidate struct {
+		route  Route
+		reason string
+	}
+	for _, requestPath := range RequestPaths(m.req.URL) {
+		best, decided := rank{}, []candidate(nil)
+		nearBest, nearReason := rank{}, ""
+		for _, route := range routes {
+			specificity, ok, near, why := m.route(route, requestPath, at)
+			if near && !route.Blocked && (nearReason == "" || specificity.compare(nearBest) > 0) {
+				nearBest, nearReason = specificity, "route "+Format(route)+" "+why
 			}
-			if i := slices.IndexFunc(decided, func(c candidate) bool { return c.route.Blocked }); i >= 0 {
-				what := decided[i].reason
-				if what == "" {
-					what = where
-				}
-				return false, fmt.Sprintf("route %s refuses %s", Format(decided[i].route), what)
+			if !ok {
+				continue
 			}
+			switch c := specificity.compare(best); {
+			case len(decided) == 0 || c > 0:
+				best, decided = specificity, []candidate{{route, why}}
+			case c == 0:
+				decided = append(decided, candidate{route, why})
+			}
+		}
+		where := m.describe(requestPath)
+		if at != InHeaders {
+			where = "the body place " + safe(at) + " of " + where
+		}
+		if len(decided) == 0 {
+			if nearReason != "" {
+				return false, nearReason
+			}
+			return false, fmt.Sprintf("this credential has no route to %s", where)
+		}
+		if i := slices.IndexFunc(decided, func(c candidate) bool { return c.route.Blocked }); i >= 0 {
+			what := decided[i].reason
+			if what == "" {
+				what = where
+			}
+			return false, fmt.Sprintf("route %s refuses %s", Format(decided[i].route), what)
 		}
 	}
 	return true, ""
@@ -204,7 +239,7 @@ func HostAllowed(lists [][]Route, host string) bool {
 func hostOpen(routes []Route, host string) bool {
 	shut, shutFound := 0, false
 	for _, route := range routes {
-		if !route.Blocked || len(route.Methods) > 0 || len(route.Paths) > 0 || route.GraphQL != nil || route.MCP != nil {
+		if !route.Blocked || len(route.Methods) > 0 || len(route.Paths) > 0 || route.GraphQL != nil || route.MCP != nil || route.Body != nil {
 			continue
 		}
 		if score, ok := hostScore(route.Hosts, host); ok && (!shutFound || score > shut) {
@@ -678,7 +713,12 @@ func (m *matcher) hasContentType(mediaType string) bool {
 // match and that fails on its methods or protocol block; reason is why, after
 // "route X". For a blocked candidate, reason is what it refuses, or "" for
 // the request as described.
-func (m *matcher) route(route Route, requestPath string) (r rank, candidate, near bool, reason string) {
+//
+// at is the use being decided (Request.At). A route with a body block is a
+// candidate only for a body place it names; an open route without one only
+// for the headers. A blocked route without one is a candidate for either: a
+// carve-out refuses a credential wherever in the request it is carried.
+func (m *matcher) route(route Route, requestPath, at string) (r rank, candidate, near bool, reason string) {
 	host, ok := hostScore(route.Hosts, m.host)
 	if !ok {
 		return rank{}, false, false, ""
@@ -688,6 +728,14 @@ func (m *matcher) route(route Route, requestPath string) (r rank, candidate, nea
 		return rank{}, false, false, ""
 	}
 	r = rank{host: host, path: pathRank}
+	switch {
+	case route.Body != nil && at == InHeaders:
+		return r, false, false, ""
+	case route.Body != nil && !slices.Contains(route.Body.Places, at):
+		return r, false, true, "does not name the body place " + safe(at)
+	case route.Body == nil && at != InHeaders && !route.Blocked:
+		return r, false, true, "names no body place, so does not allow the credential at " + safe(at) + " in the body"
+	}
 	if len(route.Methods) > 0 {
 		ok, why := m.methodsMatch(route.Methods, route.Blocked)
 		if !ok {

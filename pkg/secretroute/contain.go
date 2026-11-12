@@ -31,6 +31,9 @@ func ProveContained(secret, grant, limit []Route) error {
 			if r.MCP != nil {
 				patterns += len(r.MCP.Tools)
 			}
+			if r.Body != nil {
+				patterns += len(r.Body.Places)
+			}
 			if bytes > agentcreds.MaxRequestRouteBytes || patterns > 16384 {
 				return nil, fmt.Errorf("route containment proof input exceeds its limit")
 			}
@@ -107,6 +110,16 @@ func openContained(g, d Route) bool {
 			return false
 		}
 	}
+	// A body block changes what a route grants, not only how narrowly: one
+	// grants its body places and no header use, and a route without one the
+	// headers and no body place. So the two sides must agree on having one,
+	// and every place the grant names must be one the parent names.
+	if (g.Body == nil) != (d.Body == nil) {
+		return false
+	}
+	if d.Body != nil && !patternsContained(g.Body.Places, d.Body.Places, func(a, b string) bool { return a == b }) {
+		return false
+	}
 	return true
 }
 
@@ -164,6 +177,9 @@ func containmentWork(routes []Route) int {
 		}
 		if r.MCP != nil {
 			groups = append(groups, r.MCP.Tools)
+		}
+		if r.Body != nil {
+			groups = append(groups, r.Body.Places)
 		}
 		for _, patterns := range groups {
 			for _, pattern := range patterns {
