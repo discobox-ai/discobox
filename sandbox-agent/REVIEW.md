@@ -670,6 +670,37 @@ user waits on every single start.
   refusal (`errSockDiagUnsupported`) turns `sock_diag` off for good; any other
   error falls back for one scan, so a transient `EAGAIN` does not put a host
   back on the costly read for the agent's life.
+- **A path compared with one whose links are resolved is resolved too.**
+  On macOS `/var` is `/private/var`, and every test's temporary directory is
+  under it, so `filepath.EvalSymlinks` of a file there no longer starts with
+  the root it was named under. `provision`'s adoption check read every copy
+  as outside the box until it resolved the root as well; only the darwin lane
+  saw it. Prove such a check on Linux with a root reached through a link
+  (`adopt_linkedroot_test.go`). It has happened three times: the adoption
+  check, the boot test's bootstrap, and the drop's no-link walk.
+- **A test that names a uid, a home or another account is Linux's.** Off
+  Linux, `runuser` resolves the sandbox's one account by name and refuses a
+  manifest naming a uid, a group or a home (`resolveOneAccount`): skip such a
+  test with `skipWithoutPOSIXIDs`, and give a darwin bootstrap the account's
+  name and nothing more.
+- **A root step that runs again after the agent drops to the account reads
+  and changes nothing the account owns.** launchd starts the agent as root
+  at every restart, and the account can end it whenever it likes. So the
+  launch daemon's root steps make only directories whose parents are root's
+  and remove files by name; the drop reads only a bootstrap that is root's
+  alone (`bootstrapIsRoots`) and hands over directories alone (`handOver`),
+  never a tree walked, which a hard link the account made would turn onto a
+  root file; a file it does hand over has one name and is in a directory
+  root alone holds while it does, since in one the account holds the account
+  can remove a second name between root's check and its change. On macOS
+  the mode does not say who may write a directory: an ACL survives a change
+  of owner or mode, so a directory the account once held is cleared of one
+  (`clearACL`, `chmod -N`) before its mode is believed. Its walk
+  follows a link only where root alone can have made it (`rootsLink`):
+  refusing every link
+  fails on macOS, where `/etc`, `/var` and the template's `/run` are links,
+  and following any reopens the attack. Anything under a handed-over
+  directory the agent makes after it drops.
 
 ## Idle stop
 

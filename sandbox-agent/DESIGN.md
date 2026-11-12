@@ -259,9 +259,34 @@ absent.
 
 - **Started by launchd, not PID 1.** Its unit is
   [`agentlayer.LaunchdUnits`](../pkg/agentlayer/units.go): one launch daemon,
-  `ai.discobox.sandbox-agent`, which runs `discobox-sandbox-agent.service`'s
-  pre-start steps (a test holds the two to the same steps) and then the agent
-  from `/opt/discobox/current`. launchd has no path units, so it starts the
+  `ai.discobox.sandbox-agent`, which, as root, removes the last start's
+  provisioning files as `discobox-sandbox-agent.service` does and makes the
+  directories at the root of the agent's state (nothing inside them: a test
+  holds it to what the service makes), then runs the agent from
+  `/opt/discobox/current` with `--drop-to-account`. That flag is not a platform's: once the bootstrap
+  names the sandbox's account (`runuser.LookupAccount`, never root), a root
+  agent hands it `/run/discobox`, `/var/lib/discobox` and what the bootstrap
+  names for the database and the working root, each directory alone, and
+  lets it add to `/etc/discobox`, which stays root's and sticky, handing it
+  the intake's `agent-tls` and `proxy` there with the single-named regular
+  files the pool placed in them (its TLS key is root's alone), only while
+  root alone holds them, as the pool places them at each machine start, and
+  after clearing any ACL on them (macOS keeps one through a change of owner
+  or mode, so the account could have left itself an entry); then it
+  takes the account's groups (at most 16 on macOS), gid and uid
+  (`runuser.Become`) and makes its terminals' directory as the account. An
+  agent already the account changes nothing, and any other refuses. A macOS
+  sandbox's agent is its one account, which every exec inherits (ADR 0145
+  §5); the Linux unit leaves the flag off, and the agent stays root and
+  starts each exec as the user. The account is given sudo, as a Linux
+  sandbox's user is, and the agent halts the guest through `sudo -n`; but the
+  drop holds without it. The account can end its agent, which launchd then
+  starts as root again, so root reads only a bootstrap that is root's alone
+  in a directory no one else may replace it in, and opens each directory it
+  hands over from `/`, following a link only where root alone can have made
+  it (root's link, in a directory only root writes: macOS's `/etc`, `/var`
+  and the template's `/run` are such links), and changes it through the
+  descriptor: no bootstrap, link or hard link the account makes reaches root. launchd has no path units, so it starts the
   agent at boot and the agent waits for `sandbox.json` itself
   ([ADR 26-10-09-143](../docs/adr/26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md)
   §1); `KeepAlive` restarts it after a failure and leaves a clean exit. There

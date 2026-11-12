@@ -137,8 +137,10 @@ func run(name string, args []string) int {
 		return boot.Export(ctx, slog.Default(), args[1:], os.Stdout)
 	}
 	var configPath string
+	var dropToAccountOnLoad bool
 	flags := flag.NewFlagSet("discobox-sandbox-agent", flag.ContinueOnError)
 	flags.StringVar(&configPath, "config", config.DefaultPath, "path to sandbox manifest")
+	flags.BoolVar(&dropToAccountOnLoad, dropToAccountFlag, false, "once the manifest names the sandbox's account, give it the agent's state and run as it")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -174,6 +176,18 @@ func run(name string, args []string) int {
 	if err != nil {
 		slog.Error("load config", "error", err)
 		return 1
+	}
+	// Before anything is written or served: what the agent makes from here on
+	// is the account's (see dropToAccountFlag).
+	if dropToAccountOnLoad {
+		acct, dropped, err := dropToAccount(cfg, configPath)
+		if err != nil {
+			slog.Error("drop to the sandbox's account", "error", err)
+			return 1
+		}
+		if dropped {
+			slog.Info("running as the sandbox's account", "account", acct.Name, "uid", acct.UID)
+		}
 	}
 	// The pool's proxy is a box's only way out (ADR 0126 §6), and what the
 	// agent provisions reaches the network through it: apt, a download, a
