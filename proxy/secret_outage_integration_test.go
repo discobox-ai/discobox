@@ -326,3 +326,5 @@ func TestHTTPProxyRetrySendsNoSentinelThePreviousValueCannotCover(t *testing.T) 
 func (r *outageResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
 	return secrets.RawResult{}, secrets.ErrDenied
 }
+
+func (*outageResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }

@@ -754,3 +754,99 @@ func TestResolveAndReportCarryTheValueGeneration(t *testing.T) {
 		t.Fatalf("report = %v, want no valueGeneration when the value had none", reported)
 	}
 }
+
+// A body route survives the SecretsFile, names its places for the requests it
+// covers, and holds each use of a sentinel to one grant: its headers and each
+// body place it stands at (#1012).
+func TestAuthorizeHoldsEveryUseOfASentinelToOneGrant(t *testing.T) {
+	root := withTestRoot(t)
+	const exchange = "https://app.boxd.sh/api/v1/auth/token"
+	grants := map[string][]secretroute.Grant{"SENT": {
+		{Lists: [][]secretroute.Route{parsedRoutes(t, "POST app.boxd.sh/api/v1/auth/token body=/api_key")}},
+		{Lists: [][]secretroute.Route{parsedRoutes(t, "app.boxd.sh")}},
+	}}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grants, nil); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &secretResolver{}
+	r.setSentinelRoutes(doc.Routes)
+	if got := r.BodyPlaces(context.Background(), proxy.SecretBodyPlacesRequest{ClientID: "sb-1", Method: "POST", Host: "app.boxd.sh", URL: exchange}); len(got) != 1 || got[0] != "/api_key" {
+		t.Fatalf("BodyPlaces = %q, want /api_key", got)
+	}
+	if got := r.BodyPlaces(context.Background(), proxy.SecretBodyPlacesRequest{ClientID: "sb-1", Method: "GET", Host: "app.boxd.sh", URL: "https://app.boxd.sh/other"}); len(got) != 0 {
+		t.Fatalf("BodyPlaces elsewhere = %q, want none", got)
+	}
+	authorize := func(headers bool, places ...string) bool {
+		req := proxy.SecretAuthorizeRequest{ClientID: "sb-1", Method: "POST", Host: "app.boxd.sh", URL: exchange, Body: func() ([]byte, bool) { return nil, true }}
+		if headers {
+			req.Sentinels = []string{"SENT"}
+		}
+		for _, at := range places {
+			req.Places = append(req.Places, proxy.SecretPlace{Sentinel: "SENT", At: at})
+		}
+		verdict, err := r.Authorize(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return verdict.Allow
+	}
+	if !authorize(false, "/api_key") {
+		t.Fatal("the body place was refused")
+	}
+	if !authorize(true) {
+		t.Fatal("the header use was refused")
+	}
+	if authorize(false, "/other") {
+		t.Fatal("a place no route names was allowed")
+	}
+	if authorize(true, "/api_key") {
+		t.Fatal("two grants, each allowing one use, allowed both together")
+	}
+}
+
+// SecretsFile keeps body routes where a pool agent from before body places
+// never reads them (#1012): read as that agent reads the file, a body route
+// is absent rather than an open route for the headers, and read as this
+// agent reads it, it is back in its grant and list.
+func TestSecretsFileKeepsBodyRoutesFromAnOlderReader(t *testing.T) {
+	root := withTestRoot(t)
+	grants := map[string][]secretroute.Grant{"SENT": {
+		{Lists: [][]secretroute.Route{parsedRoutes(t, "api.x.test", "POST app.boxd.sh/api/v1/auth/token body=/api_key")}},
+		{Lists: [][]secretroute.Route{parsedRoutes(t, "POST app.boxd.sh/api/v1/auth/token body=/api_key")}},
+	}}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grants, nil); err != nil {
+		t.Fatal(err)
+	}
+	path := root.ProxySecretsFile(testProjectID, testPoolID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An older agent: version 4 grants, no body field, no bodyRoutes.
+	var older struct {
+		Routes map[string]map[string][]struct {
+			Lists [][]struct {
+				Hosts []string `json:"hosts"`
+			} `json:"lists"`
+		} `json:"routes"`
+	}
+	if err := json.Unmarshal(data, &older); err != nil {
+		t.Fatal(err)
+	}
+	held := older.Routes["sb-1"]["SENT"]
+	if len(held) != 2 || len(held[0].Lists[0]) != 1 || held[0].Lists[0][0].Hosts[0] != "api.x.test" || len(held[1].Lists[0]) != 0 {
+		t.Fatalf("an older reader holds %+v, want the header route alone and an empty list", held)
+	}
+	doc, err := readSecretsDoc(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := doc.Routes["sb-1"]["SENT"]
+	if len(got) != 2 || len(got[0].Lists[0]) != 2 || len(got[1].Lists[0]) != 1 || got[1].Lists[0][0].Body == nil {
+		t.Fatalf("read back %+v, want each body route in its grant and list", got)
+	}
+}

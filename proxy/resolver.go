@@ -52,6 +52,13 @@ type SecretGateRefusal = secrets.GateRefusal
 // authorizes it before resolving any of them.
 type SecretAuthorizeRequest = secrets.AuthorizeRequest
 
+// SecretBodyPlacesRequest asks a SecretResolver which body places a client's
+// routes name for a request; SecretPlace is a sentinel found at one.
+type (
+	SecretBodyPlacesRequest = secrets.BodyPlacesRequest
+	SecretPlace             = secrets.Place
+)
+
 // SecretVerdict is a SecretResolver's answer to a SecretAuthorizeRequest.
 type SecretVerdict = secrets.Verdict
 

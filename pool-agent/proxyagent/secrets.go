@@ -273,7 +273,66 @@ func updateSecretsDoc(root layout.Root, projectID, poolID string, update func(*s
 	}
 	update(&doc)
 	doc.Version = secretsDocVersion
-	return writeJSONAtomic(path, doc)
+	return writeJSONAtomic(path, secretsFileOf(doc))
+}
+
+// secretsFile is SecretsFile as this pool agent writes it: secretsDoc, with
+// every route that has a body block (#1012) moved out of Routes into
+// BodyRoutes. A pool agent from before body places reads the file with no
+// error on a field it does not know and keeps a route whose body block it
+// drops, which would read an open body route as an open route for the
+// headers: a credential sent where nothing allowed it. Moved aside, such an
+// agent never sees the route at all, which only narrows its lists — it swaps
+// nothing in a body, and a list left with no route refuses everything — until
+// the control plane, told by its report, sends it routes it takes.
+type secretsFile struct {
+	secretsDoc
+	// BodyRoutes are, per sandbox and sentinel, the body routes of Routes,
+	// each with the grant and list it belongs to.
+	BodyRoutes map[string]map[string][]placedRoute `json:"bodyRoutes,omitempty"`
+}
+
+// placedRoute is a body route and where in a sentinel's grants it belongs.
+type placedRoute struct {
+	Grant int               `json:"grant"`
+	List  int               `json:"list"`
+	Route secretroute.Route `json:"route"`
+}
+
+// secretsFileOf moves doc's body routes aside, leaving doc as it was.
+func secretsFileOf(doc secretsDoc) secretsFile {
+	file := secretsFile{secretsDoc: doc}
+	file.Routes = make(map[string]map[string][]secretroute.Grant, len(doc.Routes))
+	for sandboxID, sentinels := range doc.Routes {
+		file.Routes[sandboxID] = make(map[string][]secretroute.Grant, len(sentinels))
+		for sentinel, grants := range sentinels {
+			kept := make([]secretroute.Grant, 0, len(grants))
+			for g, grant := range grants {
+				lists := make([][]secretroute.Route, 0, len(grant.Lists))
+				for l, list := range grant.Lists {
+					routes := make([]secretroute.Route, 0, len(list))
+					for _, route := range list {
+						if route.Body == nil {
+							routes = append(routes, route)
+							continue
+						}
+						if file.BodyRoutes == nil {
+							file.BodyRoutes = map[string]map[string][]placedRoute{}
+						}
+						if file.BodyRoutes[sandboxID] == nil {
+							file.BodyRoutes[sandboxID] = map[string][]placedRoute{}
+						}
+						file.BodyRoutes[sandboxID][sentinel] = append(file.BodyRoutes[sandboxID][sentinel], placedRoute{Grant: g, List: l, Route: route})
+					}
+					lists = append(lists, routes)
+				}
+				grant.Lists = lists
+				kept = append(kept, grant)
+			}
+			file.Routes[sandboxID][sentinel] = kept
+		}
+	}
+	return file
 }
 
 // WriteResolveContext writes the resolve credential the proxy unit reads.
@@ -291,7 +350,8 @@ func WriteResolveContext(root layout.Root, projectID, poolID string, controlPlan
 // or refused (pool-agent/proxyagent/REVIEW.md).
 type secretsDocOnDisk struct {
 	secretsDoc
-	Routes map[string]map[string]json.RawMessage `json:"routes,omitempty"`
+	Routes     map[string]map[string]json.RawMessage `json:"routes,omitempty"`
+	BodyRoutes map[string]map[string][]placedRoute   `json:"bodyRoutes,omitempty"`
 }
 
 // heldList is one route list as the proxy holds a sentinel to it, every route
@@ -437,6 +497,20 @@ func readSecretsDoc(path string) (secretsDoc, error) {
 				slog.Warn("a legacy route of a sentinel did not convert exactly (ADR 26-10-27-880 §8)", "file", path, "sandbox", sandboxID, "note", note)
 			}
 			set(sandboxID, sentinel, grants)
+		}
+	}
+	// Body routes go back where secretsFileOf took them from. One that names
+	// a grant or list its sentinel no longer has belongs to nothing it can
+	// widen, and is left out.
+	for sandboxID, sentinels := range onDisk.BodyRoutes {
+		for sentinel, placed := range sentinels {
+			grants := doc.Routes[sandboxID][sentinel]
+			for _, p := range placed {
+				if p.Grant < 0 || p.Grant >= len(grants) || p.List < 0 || p.List >= len(grants[p.Grant].Lists) {
+					continue
+				}
+				grants[p.Grant].Lists[p.List] = append(grants[p.Grant].Lists[p.List], p.Route)
+			}
 		}
 	}
 	if doc.Version < 2 {
@@ -797,20 +871,54 @@ func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportReque
 // allowing at its expiry, whether or not the delivery that removes it has
 // landed. A sentinel with no grants is sent nowhere. The first refusal is the
 // answer; nothing is asked of the control plane.
+//
+// A sentinel is held to every use the request makes of it, its headers and
+// each body place it stands at (secretroute.Request.At), and one grant must
+// allow them all: two grants each allowing one use allow neither together.
 func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
 	now := time.Now()
+	uses := map[string][]string{}
+	var order []string
+	use := func(sentinel, at string) {
+		if _, ok := uses[sentinel]; !ok {
+			order = append(order, sentinel)
+		}
+		if !slices.Contains(uses[sentinel], at) {
+			uses[sentinel] = append(uses[sentinel], at)
+		}
+	}
 	for _, sentinel := range req.Sentinels {
+		use(sentinel, secretroute.InHeaders)
+	}
+	for _, place := range req.Places {
+		use(place.Sentinel, place.At)
+	}
+	for _, sentinel := range order {
 		if allowed, reason := secretroute.DecideGrants(r.heldGrants(req.ClientID, sentinel), now, secretroute.Request{
 			Method: req.Method,
 			Host:   req.Host,
 			URL:    req.URL,
 			Header: req.Header,
 			Body:   req.Body,
+			At:     uses[sentinel],
 		}); !allowed {
 			return proxy.SecretVerdict{Reason: reason}, nil
 		}
 	}
 	return proxy.SecretVerdict{Allow: true}, nil
+}
+
+// BodyPlaces are the body places some live grant of the client's sentinels
+// names for a request (secretroute.BodyPlaces): what the proxy reads its body
+// for. It asks nothing of the control plane.
+func (r *secretResolver) BodyPlaces(_ context.Context, req proxy.SecretBodyPlacesRequest) []string {
+	r.routesMu.RLock()
+	defer r.routesMu.RUnlock()
+	var grants []secretroute.Grant
+	for _, held := range r.sentinelRoutes[req.ClientID] {
+		grants = append(grants, held...)
+	}
+	return secretroute.BodyPlaces(grants, time.Now(), secretroute.Request{Method: req.Method, Host: req.Host, URL: req.URL})
 }
 
 func readResolveContext(path string) (resolveContext, error) {
