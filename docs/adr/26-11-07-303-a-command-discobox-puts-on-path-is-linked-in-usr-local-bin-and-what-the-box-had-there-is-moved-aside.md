@@ -1,6 +1,6 @@
 # 26-11-07-303 — A command Discobox puts on PATH is linked in /usr/local/bin, and what the box had there is moved aside
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-07
 - **Amends**:
   [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
