@@ -1553,9 +1553,10 @@ func (m *Model) paneOrigin(p *pane) (x, y int) {
 	// translated through it, so an offset applied anywhere else would move one
 	// and not the other.
 	top := 2 + m.bannerTop()
-	if p != nil && m.shells.index(p) >= 0 {
+	if p != nil && !m.hasScreen(p) && m.shells.index(p) >= 0 {
 		// A shell tab: its box starts where the terminals' box ends, or at the
-		// window's edge when it is the maximized one.
+		// window's edge when it is the maximized one. A tool with the screen
+		// starts at that edge too, even though its tab lives in this column.
 		return m.shellLeft() + 1 + boxPad, top
 	}
 	return 1 + boxPad, top
