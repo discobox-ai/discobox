@@ -111,7 +111,7 @@ func (r *Runner) systemCommand(command string) (string, error) {
 		if r.Self != "" && sameFile(resolved, r.Self) {
 			continue
 		}
-		if r.Placeholders != "" && filepath.Dir(resolved) == r.path(r.Placeholders) {
+		if r.Placeholders != "" && r.isPlaceholderDir(filepath.Dir(resolved)) {
 			continue
 		}
 		if err := r.reachable(resolved); err != nil {
@@ -126,10 +126,26 @@ func (r *Runner) systemCommand(command string) (string, error) {
 	return "", fmt.Errorf("%s is not on the system PATH", command)
 }
 
+// isPlaceholderDir reports whether dir, a path with no link left in it, is
+// the placeholders' directory, which is judged with its own links resolved too.
+func (r *Runner) isPlaceholderDir(dir string) bool {
+	placeholders := r.path(r.Placeholders)
+	if resolved, err := filepath.EvalSymlinks(placeholders); err == nil {
+		placeholders = resolved
+	}
+	return dir == placeholders
+}
+
 // reachable reports why every user cannot run the file at resolved, a path
 // under the runner's root with no link left in it.
 func (r *Runner) reachable(resolved string) error {
+	// resolved has no link left in it, so neither may the root it is judged
+	// against: a root reached through one (macOS's /var is /private/var) would
+	// put every copy outside it.
 	root := filepath.Clean(r.root())
+	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolvedRoot
+	}
 	rel, err := filepath.Rel(root, resolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("%s is outside the box", resolved)
