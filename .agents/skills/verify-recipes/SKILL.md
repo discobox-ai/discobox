@@ -1320,7 +1320,7 @@ agent's published port, or the pool never registers.
   <scratch>/vmsrc`, `chmod -R u+w`, `GOWORK=off CGO_ENABLED=0 go build
   ./cmd/disco-vm`), pull `debian:trixie`, and set `DISCO_VM_DRIVER=docker
   DISCO_VM_BASE=debian:trixie DISCO_VM_AGENT=<that binary>
-  DISCO_VM_DOCKER_ROOT=<scratch dir> DISCO_VM_PROJECT=<yours>`. `disco-vm run
+  DISCO_VM_DOCKER_ROOT=<scratch dir> DISCO_VM_POOL=<yours>`. `disco-vm run
   NAME --data 0 --cache NAME` makes one; `disco-vm cp SRC NAME:DIR` copies
   *into* DIR (a file path names a directory to make), so stage files in a
   directory and copy `dir/.`. Copy a linux `discobox-sandbox-agent` and a
