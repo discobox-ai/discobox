@@ -165,7 +165,7 @@ closed to every other user), a dangling link, an older copy. So which copy
   before `link-command` is laid, and the runner itself links a feature's
   declared `personalities` (the `docker` personality), replacing what the
   box had at the name rather than moving it aside.
-  **The policy:** a name Discobox links is Discobox's. Whatever the box had
+  **The policy** ([ADR 26-11-07-303](../../docs/adr/26-11-07-303-a-command-discobox-puts-on-path-is-linked-in-usr-local-bin-and-what-the-box-had-there-is-moved-aside.md)): a name Discobox links is Discobox's. Whatever the box had
   there — a file, a link anywhere, dangling or not — is moved, never deleted,
   to `/usr/local/lib/discobox/displaced/` under its own path
   (`…/displaced/usr/local/bin/node`, a later one `.1`, `.2`), and the move is
