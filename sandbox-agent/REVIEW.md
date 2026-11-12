@@ -117,7 +117,8 @@
   the box's entry, not yet moved aside. A `file` step
   writes there only a `discobox-*` name, which no box's image ships; the
   browser's `chromium` wrapper is the one that replaces a name a box may
-  have, and is not yet moved aside. See
+  have, and is not yet moved aside. Both are deferred, each with a condition
+  for revisiting, in [ADR 26-11-07-303](../docs/adr/26-11-07-303-a-command-discobox-puts-on-path-is-linked-in-usr-local-bin-and-what-the-box-had-there-is-moved-aside.md). See
   [`provision`](provision/DESIGN.md#where-a-feature-installs).
 - **A step fed by the adopt check must not change that check's answer.**
   The node feature's `select` linked `/usr/local/bin/node` to the
