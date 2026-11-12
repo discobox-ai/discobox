@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -403,8 +404,9 @@ func (c *Converger) failed(state SourceState, err error) SourceState {
 
 // ensureHomeTarget creates a home-relative source's target, and every
 // directory missing between home and it, each given to the sandbox user. A
-// container's is already there, bind-mounted at boot; a VM's is not, and
-// nothing else makes it (ADR 26-11-01-692 §3). Only a path below home is made,
+// Linux box's is already there, bind-mounted at boot (ADR 26-11-02-023 §1); a
+// macOS or Windows guest's is not, and nothing else makes it (ADR 26-11-01-692
+// §3). Only a path below home is made,
 // and a directory on the way that is a link is refused rather than followed:
 // home is the user's, and the agent may be root.
 func (c *Converger) ensureHomeTarget(target string) error {
@@ -446,6 +448,14 @@ func (c *Converger) ensureHomeTarget(target string) error {
 // open is the checkout at target, worked on as whoever owns it.
 func (c *Converger) open(target string) (*repository, error) {
 	info, err := os.Stat(target)
+	if errors.Is(err, fs.ErrNotExist) && runtime.GOOS == "linux" {
+		// A Linux box's boot makes every source's target, a container's and
+		// a machine's, and mounts the source there (ADR 26-11-02-023 §1):
+		// one that is missing says the box's mounts did not come up, which
+		// no clone into a new directory would put right. A macOS or Windows
+		// guest's boot makes none.
+		return nil, fmt.Errorf("source target %s does not exist: the box's boot makes it and mounts the source there, so this box's sources did not come up", target)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("source target: %w", err)
 	}

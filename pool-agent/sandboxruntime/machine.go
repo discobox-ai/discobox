@@ -1010,9 +1010,20 @@ func (r *MachineSandboxRuntime) agentListenAddress(ctx context.Context, inst mac
 // place puts in the running machine what its agent boots on — sandbox.json,
 // and the agent layer when it is not there yet, its units and its pins — and
 // runs `discobox-provision apply`, which starts the agent. It reports moved
-// when the machine was placed before with something else, which the agent
-// started on at boot: then the machine is restarted so it boots on this.
-func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord) (bool, error) {
+// when the machine must be restarted to boot on this, and then applies
+// nothing and records nothing: it was never placed in this instance, or was
+// placed before with something else, which the agent started on at boot. A
+// machine's own services — boxd's dockerd and containerd — are already
+// running on the paths its volumes are mounted onto, which only
+// discobox-wire.service at a boot, before them, may mount (ADR 26-11-02-023
+// §3); an agent started here would mount them under those services.
+//
+// restarted is the placement after that restart: the machine booted on what
+// was placed, its agent started by its own units as a container's does, so
+// it is placed again, applies nothing either, and is recorded. A pool agent
+// gone between the two leaves the old record, and the next start restarts
+// the machine again rather than take it as placed.
+func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord, restarted bool) (bool, error) {
 	pins, ok, err := r.deliveredPins(sandboxID)
 	if err != nil {
 		return false, err
@@ -1066,21 +1077,37 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	}
 	reader, writer := io.Pipe()
 	go func() {
-		writer.CloseWithError(agentlayer.Archive(writer, agent, had && placed.Layer == agent.Digest, pins, agentlayer.Units))
+		// The placement after a restart finds the layer the one before it
+		// placed, and its agent running from it: it is not written again.
+		writer.CloseWithError(agentlayer.Archive(writer, agent, restarted || had && placed.Layer == agent.Digest, pins, agentlayer.MachineUnits))
 	}()
 	defer reader.Close()
-	result, err := provisioner.Provision(ctx, guest, provisioner.Plan{
-		Dir:     "/",
-		Tree:    reader,
-		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply"}},
-	})
-	if err != nil {
-		if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
-			err = fmt.Errorf("%w: %s", err, tail)
+	// A machine that is restarted onto this starts nothing first: its agent,
+	// started by apply on the running machine, would mount its volumes under
+	// the provider's services already running on those paths, and move their
+	// data out from under them (ADR 26-11-02-023 §3). The unit mounts them at
+	// the boot the restart makes, and the placement after it applies.
+	moved := !restarted && (!had || placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
+	if moved || restarted {
+		if err := guest.CopyTo(ctx, "/", reader); err != nil {
+			return false, fmt.Errorf("place sandbox %s's agent: %w", sandboxID, err)
 		}
-		return false, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
+	} else {
+		result, err := provisioner.Provision(ctx, guest, provisioner.Plan{
+			Dir:     "/",
+			Tree:    reader,
+			Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply"}},
+		})
+		if err != nil {
+			if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
+				err = fmt.Errorf("%w: %s", err, tail)
+			}
+			return false, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
+		}
 	}
-	moved := had && (placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
+	if moved {
+		return true, nil
+	}
 	if err := r.writePlaced(sandboxID, placedRecord{Container: inst.ID, Layer: agent.Digest, Pins: pins, Bootstrap: bootstrapDigest}); err != nil {
 		return false, err
 	}

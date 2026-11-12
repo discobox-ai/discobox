@@ -1,9 +1,12 @@
 # Starts the sandbox agent once its bootstrap is in place, and not before: a
 # machine with no sandbox in it runs no agent. In a container
 # discobox-wire.service binds sandbox.json onto /etc/discobox before
-# local-fs.target, so this fires at boot; a VM's backend places it through the running guest, and this fires
-# then (ADR 26-10-09-143 §1). The agent waits for the file itself as well, so
-# an init with no path units of its own starts it at boot instead.
+# local-fs.target, so this fires at boot. A machine's pool places it through
+# the running guest and restarts the machine before anything starts, so the
+# wiring runs first (ADR 26-11-02-023 §3); this fires at every boot after
+# that, and when a later placement starts it. The agent waits for the file
+# itself as well, so an init with no path units of its own starts it at boot
+# instead (ADR 26-10-09-143 §1).
 [Unit]
 Description=Discobox Sandbox Agent bootstrap
 Documentation=https://github.com/discobox-ai/discobox

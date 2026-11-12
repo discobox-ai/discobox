@@ -93,3 +93,12 @@ func TestImageLinksEveryPersonalityAndNothingElse(t *testing.T) {
 		t.Errorf("the features link the agent as %v, want %v", got, want)
 	}
 }
+
+// The machine drop-in's ExecCondition asks the agent whether it mounts a
+// machine's volumes, and this one answers at once, without mounting
+// anything (ADR 26-11-02-023).
+func TestTheAgentSaysItMountsAMachine(t *testing.T) {
+	if code := run("discobox-sandbox-agent", []string{"wire", "--can-mount-machine"}); code != 0 {
+		t.Fatalf("wire --can-mount-machine = %d, want 0", code)
+	}
+}

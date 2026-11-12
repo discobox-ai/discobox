@@ -113,8 +113,14 @@ func run(name string, args []string) int {
 		}
 		return 0
 	}
-	// discobox-wire.service: a pool container's boot (ADR 26-10-10-767).
+	// discobox-wire.service: a sandbox's boot, a pool container's (ADR
+	// 26-10-10-767) or a machine's (ADR 26-11-02-023).
 	if len(args) > 0 && args[0] == "wire" {
+		// The machine drop-in's ExecCondition: this agent mounts a machine's
+		// volumes (ADR 26-11-02-023). An agent from before ignores the flag.
+		if len(args) > 1 && args[1] == "--can-mount-machine" {
+			return 0
+		}
 		if err := boot.Wire(slog.Default()); err != nil {
 			slog.Error("wire sandbox", "error", err)
 			return 1

@@ -921,11 +921,43 @@ d admin pool create krunpool --provider <prov_id>
 - `d admin pool rm` of a failed libkrun pool can leave it listed, and the
   provider then refuses deletion (`provider instance has pools`).
 
-# Verifying the sandbox agent with nothing to wire (a VM guest's start)
+# Verifying a machine's wiring (`discobox-wire.service` on a machine)
 
-No disco-vm driver runs here; a box's image booted with no config volume is
-the same start a VM guest makes: `discobox-wire.service` is skipped and the
-agent provisions from its own start. The sandbox base image has no agent or
+A machine is wired by the same unit, with the drop-in its pool places
+(`pkg/agentlayer/units/discobox-wire-machine.conf`, ADR 26-11-02-023). No pool
+or dev box is needed: boot the sandbox base image as a box (`/sbin/init`; the
+image's own command is `bash`), make the machine's state, place the agent, the
+unit, its `sysinit.target.requires` link, the drop-in and a bootstrap, and
+`docker restart` it. That restart is the first placement's.
+
+```bash
+docker run -d --name mwire --privileged --cgroupns=private --tmpfs /run \
+  --tmpfs /run/lock discobox-sandbox-base:dev-<tag> /sbin/init
+# boxd's state, and an account a pre-ADR machine already has
+docker exec mwire sh -c 'mkdir -p /var/lib/docker/overlay2 && echo boxd > /var/lib/docker/engine-id && useradd -m -u 1000 dev'
+# docker cp: the agent (CGO_ENABLED=0 go build ./cmd/discobox-sandbox-agent) to
+# /opt/discobox/current/features/core/, the unit, the drop-in to
+# /etc/systemd/system/discobox-wire.service.d/, and /etc/discobox/sandbox.json
+# with `user` (name, uid, gid; never gid and groupName both) and top-level `volumes`
+docker restart mwire
+docker exec mwire sh -c 'systemctl show discobox-wire -p Result; findmnt --mountpoint /var/lib/docker; cat /.discobox/data/.layouts/*'
+```
+
+- A failure powers it off: the container exits with nothing in `docker logs`
+  unless it was run with `-t`. `docker commit` the stopped box and run the
+  image with `-t` to read why.
+- `findmnt` says `overlay` for every bind here: the source is on the
+  container's own root, Docker's overlay. The layout record (`bind`) is
+  the answer. To see the disk under a mount, `mount --bind / /mnt/r` and
+  list `/mnt/r/<path>`.
+
+# Verifying the sandbox agent with nothing to wire (an unwired box's start)
+
+No disco-vm driver runs here; a box's image booted with no config volume and
+no machine drop-in is the start of a box Wire did not run on (an agent layer
+placed by a pool that places no drop-in): `discobox-wire.service` is skipped,
+and the agent provisions, and mounts the machine's volumes, from its own
+start. The sandbox base image has no agent or
 units of its own — its pool places both before each start — so boot a stopped
 dev box's container committed (`docker commit <its container> vwire:test`,
 as for the wiring recipe below), which carries what its pool placed.

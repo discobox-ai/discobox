@@ -107,6 +107,42 @@ func TestArchivePlacesTheAgentItsUnitsAndPins(t *testing.T) {
 	}
 }
 
+// A machine is placed the wire unit with a drop-in that runs it where its
+// pool placed the bootstrap and powers the machine off when it fails (ADR
+// 26-11-02-023 §3); a container is placed the unit alone, which runs where
+// its config volume is and exits the container.
+func TestAMachineIsWiredWhereItsBootstrapIsPlaced(t *testing.T) {
+	const dropIn = "etc/systemd/system/discobox-wire.service.d/discobox-machine.conf"
+	for name, units := range map[string][]Unit{"container": Units, "machine": MachineUnits} {
+		var buf bytes.Buffer
+		if err := Archive(&buf, testAgent("agent-binary"), false, testPins(), units); err != nil {
+			t.Fatal(err)
+		}
+		_, entries := readArchive(t, buf.Bytes())
+		wire := entries["etc/systemd/system/discobox-wire.service"].body
+		if !strings.Contains(wire, "ConditionPathExists=/.discobox/config/sandbox.json") || !strings.Contains(wire, "FailureAction=exit-force") {
+			t.Fatalf("%s: wire unit is not a container's:\n%s", name, wire)
+		}
+		conf, placed := entries[dropIn]
+		if name == "container" {
+			if placed {
+				t.Fatalf("container: placed the machine's drop-in")
+			}
+			continue
+		}
+		// The empty assignment resets the unit's condition rather than adding
+		// to it: a machine has no config volume.
+		for _, line := range []string{"ConditionPathExists=\n", "ConditionPathExists=/etc/discobox/sandbox.json\n", "RequiresMountsFor=/.discobox/data /.discobox/cache\n", "FailureAction=poweroff-force\n", "ExecCondition=" + AgentPath + " wire --can-mount-machine\n"} {
+			if !placed || !strings.Contains(conf.body, line) {
+				t.Fatalf("machine: drop-in (placed %v) lacks %q:\n%s", placed, line, conf.body)
+			}
+		}
+	}
+	if len(MachineUnits) != len(Units)+1 || !slices.Equal(MachineUnits[:len(Units)], Units) {
+		t.Fatal("MachineUnits is not Units and the drop-in")
+	}
+}
+
 // A box that already holds the layer is sent everything but it.
 func TestArchiveLeavesOutALayerTheBoxHolds(t *testing.T) {
 	var buf bytes.Buffer

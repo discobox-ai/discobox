@@ -2,6 +2,7 @@ package agentlayer
 
 import (
 	"embed"
+	"slices"
 )
 
 // unitFiles are the agent's own units: what boots a box before any feature
@@ -59,3 +60,11 @@ var Units = []Unit{
 	{Name: "discobox-render-proxy-env.service", Path: "/etc/systemd/system/discobox-render-proxy-env.service", target: "sysinit.target"},
 	{Name: "journald-console.conf", Path: "/etc/systemd/journald.conf.d/discobox-console.conf"},
 }
+
+// MachineUnits are what a machine sandbox boots with: Units, and the drop-in
+// that runs discobox-wire.service where its pool placed the bootstrap rather
+// than where a container's config volume is, powering the machine off when
+// the wiring fails (ADR 26-11-02-023 §3).
+var MachineUnits = append(slices.Clip(Units),
+	Unit{Name: "discobox-wire-machine.conf", Path: "/etc/systemd/system/discobox-wire.service.d/discobox-machine.conf"},
+)

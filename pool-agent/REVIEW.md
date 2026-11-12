@@ -417,6 +417,26 @@ changed. A step added that lays a binary needs it there too.
   bounded, drained pipe with data disabled and redaction enabled. Never send
   it to stderr or a file: a lent request may carry real credentials.
 
+## A machine's placement
+
+- **A placement the machine restarts onto applies nothing, before or after.**
+  `place` decides whether the machine restarts (a first placement in the
+  instance, or a moved agent, pins or bootstrap) before it applies, and then
+  only copies. `discobox-provision apply` starts the agent on the running
+  machine, and an agent there mounts the machine's volumes under the
+  provider's dockerd and containerd, already running on those paths, and
+  moves their data out from under them (ADR 26-11-02-023 §3). The review of
+  the mounting found the restart decided after apply, which started the new
+  agent on every machine provisioned before it. The placement after the
+  restart (`restarted`) applies nothing either: the agent started at boot,
+  and an apply racing it would run `systemctl` under the identity re-exec of
+  a box made from a snapshot, and wait on a boot's long first move.
+- **The placement record is written only once the machine runs what was
+  placed.** A placement the machine restarts onto records nothing; the one
+  after the restart does. Recorded before the restart, a pool agent gone in
+  between leaves a running machine whose record says current, no agent, and
+  every request a 502.
+
 ## A machine's new root
 
 - **What the pool placed is the old root's.** A new root (`upgradeMachine`)

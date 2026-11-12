@@ -1,22 +1,23 @@
-# A pool container's boot (ADR 26-10-10-767): provisions the sandbox user from
-# the bootstrap, binds the config and secrets volumes onto /etc/discobox and
-# /run/discobox/secrets, and wires the image-declared volumes and the sources
-# from the primary volumes the pool agent mounted under /.discobox (ADR 0007).
+# A sandbox's boot, on every boot (ADR 26-10-10-767, ADR 26-11-02-023):
+# provisions the sandbox user from the bootstrap and wires the image-declared
+# volumes from the box's data and cache roots under /.discobox (ADR 0007); in
+# a pool's container it also binds the config and secrets volumes onto
+# /etc/discobox and /run/discobox/secrets and wires the sources, all from the
+# primary volumes the pool agent mounted there.
 #
 # Before local-fs.target, so every unit that uses a wired path starts after it:
 # everything with default dependencies (sysinit.target is after local-fs.target)
 # and the early units of this image, which order themselves after
-# local-fs.target. After tmp.mount, so nothing wired under /tmp is covered by
+# local-fs.target -- on a machine, the provider's own dockerd and containerd
+# among them. After tmp.mount, so nothing wired under /tmp is covered by
 # it, and after systemd-sysusers.service, so the sandbox user is added to the
 # account files after systemd's own and never alongside them.
 #
-# Only a pool's container has the config volume. A machine with a data volume
-# of its own mounted at /.discobox/data runs it too, to make its mounts onto
-# that volume again before anything uses them; it never fails the unit there,
-# since the agent's start wires again and fails if it cannot. A machine with
-# no data volume, or a container run without its volumes, skips this unit -- a
-# skipped unit is not a failed one -- and its agent provisions from its own
-# start instead (ADR 26-10-09-143 §1).
+# As written here it is a container's: it runs where the config volume is, and
+# a container run without its volumes skips it -- a skipped unit is not a
+# failed one. A machine's pool places discobox-wire-machine.conf beside it,
+# which runs it where the placed bootstrap is and powers the machine off on a
+# failure instead.
 #
 # A failure ends the container: sysinit.target requires this unit, so nothing
 # behind it starts, and the manager exits with a non-zero status. A sandbox
@@ -30,8 +31,7 @@ Documentation=https://github.com/discobox-ai/discobox
 DefaultDependencies=no
 After=systemd-journald.socket tmp.mount systemd-sysusers.service
 Before=local-fs.target sysinit.target systemd-tmpfiles-setup.service
-ConditionPathExists=|/.discobox/config/sandbox.json
-ConditionPathIsMountPoint=|/.discobox/data
+ConditionPathExists=/.discobox/config/sandbox.json
 FailureAction=exit-force
 FailureActionExitStatus=1
 
