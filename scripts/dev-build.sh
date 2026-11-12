@@ -36,7 +36,9 @@ fi
 # Old mapped images may resist deletion until a later build.
 if [ "$exe" = .exe ]; then
 	for old in build/.dev-retiring-*.old; do
-		[ -f "$old" ] && rm -f -- "$old" 2>/dev/null || true
+		if [ -f "$old" ]; then
+			rm -f -- "$old" 2>/dev/null || true
+		fi
 	done
 fi
 publish() {
