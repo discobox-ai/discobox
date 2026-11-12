@@ -68,8 +68,11 @@ true of it, and true *by rule* rather than by slug:
   from a development bundle's layout, the layers its manifest lists.
   A bundle's tree is its layers side by side, so a deletion has nothing to
   mean. The verdict is its digest's, so each digest's layers are read once
-  per process (`verifiedBundles`): the platform bundle's are the agent's
-  binaries, and seeding runs on every project and every start. The layers
+  across restarts (`verifiedBundles`, persisted as `VerifiedBundle`): the platform bundle's are the agent's
+  binaries, and seeding runs on every project and every start. A registry
+  index is verified by its selected image digest, so another architecture
+  never inherits that verdict. Labels are still admitted on every inspection.
+  Only successful checks are stored; database errors are surfaced. The layers
   are read only once the labels admit the bundle (`InspectBundle`'s
   `admit`): a harness bundle once its manifest composes, the platform once it
   carries its layer — and, first, either one only if it carries no
