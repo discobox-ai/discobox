@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -100,6 +99,8 @@ func TestBootstrapIdentityRejectsGidAndGroupTogether(t *testing.T) {
 // nothing -- no account changes under the user's running processes, no
 // re-seeding.
 func TestProvisionRunsOncePerSandbox(t *testing.T) {
+	// Provisioning resolves the image's user by uid: Linux's alone.
+	skipWithoutPOSIXIDs(t)
 	dir := t.TempDir()
 	useRecords(t, dir)
 	bootstrap := writeBootstrap(t, dir, "sbx_1")
@@ -125,6 +126,7 @@ func TestProvisionRunsOncePerSandbox(t *testing.T) {
 // A disk provisioned by an agent that kept the marker the records replaced is
 // not provisioned again: the marker is carried into the records and removed.
 func TestProvisionCarriesTheLegacyMarkerIntoTheRecords(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	dir := t.TempDir()
 	useRecords(t, dir)
 	bootstrap := writeBootstrap(t, dir, "sbx_1")
@@ -231,9 +233,9 @@ func TestProvisionExpandsAHomeRelativeSourceTarget(t *testing.T) {
 // than make them: "source -> target".
 func useMachineRoots(t *testing.T, b *booter) *[]string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("a machine is provisioned as its Linux guest's user, by POSIX ids")
-	}
+	// A machine is provisioned as its Linux guest's user, by POSIX ids,
+	// which a darwin or Windows sandbox does not have.
+	skipWithoutPOSIXIDs(t)
 	dir := t.TempDir()
 	savedData, savedCache := dataMountPath, cacheMountPath
 	savedWired, savedDataWired, savedVolume := machineWiredPath, machineDataWiredFile, machineDataVolume
