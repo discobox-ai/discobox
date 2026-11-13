@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2141,14 +2142,19 @@ type HeldSandboxes func(ctx context.Context) ([]string, error)
 
 // WatchSandboxVolumes reaps the durable trees
 // (pools/{poolID}/sandboxes/{sandboxID}) of sandboxes the control plane no
-// longer holds, on a slow interval (ADR 26-10-01-876), and on a slower one
-// their namespaces of this pool's Git caches, collecting each cache as it
-// goes (ADR 26-10-10-545 §5).
+// longer holds, on a slow interval (ADR 26-10-01-876), with all else this pool
+// keeps for them, their containers first; removes the sandbox containers of
+// this pool that neither a tree nor a sandbox the control plane holds names,
+// as a machine pool removes its orphan machines; and on a slower interval
+// reaps their namespaces of this pool's Git caches, collecting each cache as
+// it goes (ADR 26-10-10-545 §5).
 //
-// Whether a container exists plays no part. A sandbox the control plane holds
-// — failed and awaiting repair, archived, or on its way out — keeps its tree
-// however long it has had no container; deletion removes the tree itself,
-// through DeleteSandbox, and confirms it (ADR 0022 §3).
+// Whether a container exists plays no part in which trees go. A sandbox the
+// control plane holds — failed and awaiting repair, archived, or on its way
+// out — keeps its tree however long it has had no container; deletion
+// removes the tree itself, through DeleteSandbox, and confirms it (ADR 0022
+// §3). What the reaper collects is what a delete that never reached this pool
+// left: its container, too, which would otherwise pin its image for good.
 func (r *DockerSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger *slog.Logger, held HeldSandboxes) {
 	if logger == nil {
 		logger = slog.Default()
@@ -2156,7 +2162,7 @@ func (r *DockerSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger *
 	ticker := time.NewTicker(sandboxVolumeReapInterval)
 	defer ticker.Stop()
 	for {
-		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger, nil)
+		r.reapUnheldSandboxes(ctx, logger, held, time.Now())
 		// When the last sweep ran is the store's to remember, on disk: a pool
 		// agent that restarts often neither repacks every cache each time it
 		// does nor goes without ever collecting one.
@@ -2410,6 +2416,132 @@ func reapUnheldSandboxVolumes(ctx context.Context, root string, held HeldSandbox
 			continue
 		}
 		logger.Info("reaped unheld sandbox volume", "sandboxID", sandboxID, "unheldFor", now.Sub(unheldAt).Truncate(time.Minute).String())
+	}
+}
+
+// reapUnheldSandboxes is one pass of the reaper over what this pool keeps for
+// sandboxes the control plane no longer holds. An unheld tree goes the way a
+// delete takes a sandbox, its container, proxy material and published images
+// with it; then the containers no tree names.
+func (r *DockerSandboxRuntime) reapUnheldSandboxes(ctx context.Context, logger *slog.Logger, held HeldSandboxes, now time.Time) {
+	reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, now, logger, r.DeleteSandbox)
+	r.reapOrphanContainers(ctx, logger, held, now)
+}
+
+// containerOrphanMarkersName is the directory, in the pool's durable state,
+// that holds when each orphan sandbox container was first seen, by sandbox ID.
+const containerOrphanMarkersName = "container-orphans"
+
+// reapOrphanContainers removes the sandbox containers of this pool that
+// neither a tree of this pool nor a sandbox the control plane holds names
+// (reapOrphans): the container of a sandbox whose tree is already gone, which
+// the tree reaper never sees. Each goes as DeleteSandbox takes it, under the
+// sandbox's lock. Only a container labeled with a sandbox ID is considered.
+func (r *DockerSandboxRuntime) reapOrphanContainers(ctx context.Context, logger *slog.Logger, held HeldSandboxes, now time.Time) {
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters("")})
+	if err != nil {
+		logger.Warn("list the pool's sandbox containers", "error", err)
+		return
+	}
+	stored, err := r.StoredSandboxIDs(ctx)
+	if err != nil {
+		logger.Warn("list the pool's sandbox trees", "error", err)
+		return
+	}
+	var found []string
+	for _, ctr := range containers.Items {
+		if sandboxID, ok := orphanContainerName(ctr.Labels[sandboxLabelSandbox]); ok {
+			found = append(found, sandboxID)
+		}
+	}
+	reapOrphans(ctx, logger, held, stored, now, orphanSweep{
+		kind:    "sandbox container",
+		markers: filepath.Join(r.root.PoolData(r.projectID, r.poolID), containerOrphanMarkersName),
+		found:   found,
+		nameOf:  orphanContainerName,
+		remove:  r.DeleteSandbox,
+	})
+}
+
+// orphanContainerName is the sandbox ID a container is judged and recorded
+// by. It names a marker file, so only a sandbox's ID (`sbx_…`) with nothing a
+// path could make of it is one.
+func orphanContainerName(sandboxID string) (string, bool) {
+	sandboxID = strings.TrimSpace(sandboxID)
+	if !strings.HasPrefix(sandboxID, id.PrefixSandbox+"_") || strings.ContainsAny(sandboxID, `/\`) || sandboxID == "." || sandboxID == ".." {
+		return "", false
+	}
+	return sandboxID, true
+}
+
+// orphanSweep is one kind of thing a runtime makes for a sandbox outside its
+// tree — a container, a machine — as reapOrphans judges it.
+type orphanSweep struct {
+	// kind names it in the log.
+	kind string
+	// markers is the directory that holds when each orphan was first seen,
+	// one file per name.
+	markers string
+	// found is the name of each one on the pool.
+	found []string
+	// nameOf is the name a sandbox's would have, if it can have one.
+	nameOf func(sandboxID string) (string, bool)
+	// remove removes the one of that name.
+	remove func(ctx context.Context, name string) error
+}
+
+// reapOrphans removes each thing sweep found that neither a tree of this pool
+// (stored) nor a sandbox the control plane holds names, once it has been seen
+// so for sandboxVolumeRetention, as an unheld tree is kept. The listing comes
+// before the control plane is asked, as reapUnheldSandboxVolumes's does, so a
+// sandbox made in between is in the answer. No answer removes nothing.
+func reapOrphans(ctx context.Context, logger *slog.Logger, held HeldSandboxes, stored []string, now time.Time, sweep orphanSweep) {
+	heldCtx, cancel := context.WithTimeout(ctx, sandboxVolumeHeldTimeout)
+	heldIDs, err := held(heldCtx)
+	cancel()
+	if err != nil {
+		logger.Warn("list the sandboxes the control plane holds; removing no orphan "+sweep.kind+" this pass", "error", err)
+		return
+	}
+	named := map[string]bool{}
+	for _, sandboxID := range append(slices.Clone(stored), heldIDs...) {
+		if name, ok := sweep.nameOf(strings.TrimSpace(sandboxID)); ok {
+			named[name] = true
+		}
+	}
+	orphans := map[string]bool{}
+	for _, name := range sweep.found {
+		if named[name] || orphans[name] {
+			continue
+		}
+		orphans[name] = true
+		marker := filepath.Join(sweep.markers, name)
+		seen, ok := readSandboxTombstone(marker)
+		if !ok {
+			logger.Warn(sweep.kind+" is named by no sandbox of this pool; removing it after retention", "name", name, "retention", sandboxVolumeRetention.String())
+			if err := os.MkdirAll(sweep.markers, 0o700); err != nil {
+				logger.Warn("record an orphan "+sweep.kind, "name", name, "error", err)
+				continue
+			}
+			writeSandboxTombstone(marker, now, logger)
+			continue
+		}
+		if now.Sub(seen) < sandboxVolumeRetention {
+			continue
+		}
+		if err := sweep.remove(ctx, name); err != nil {
+			logger.Warn("remove an orphan "+sweep.kind, "name", name, "error", err)
+			continue
+		}
+		_ = os.Remove(marker)
+		logger.Info("removed an orphan "+sweep.kind, "name", name, "orphanedFor", now.Sub(seen).Truncate(time.Minute).String())
+	}
+	// One named again, or gone, starts no clock.
+	entries, _ := os.ReadDir(sweep.markers)
+	for _, entry := range entries {
+		if !orphans[entry.Name()] {
+			_ = os.Remove(filepath.Join(sweep.markers, entry.Name()))
+		}
 	}
 }
 

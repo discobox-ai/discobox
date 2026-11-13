@@ -1547,12 +1547,9 @@ func (r *MachineSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger 
 	ticker := time.NewTicker(sandboxVolumeReapInterval)
 	defer ticker.Stop()
 	for {
-		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger, func(ctx context.Context, sandboxID string) error {
-			lock := r.sandboxLock(sandboxID)
-			lock.Lock()
-			defer lock.Unlock()
-			return r.removeMachine(ctx, sandboxID)
-		})
+		// An unheld sandbox goes the way a delete takes it: its machine,
+		// proxy material and published images with its tree.
+		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger, r.DeleteSandbox)
 		r.reapOrphanMachines(ctx, logger, held, time.Now())
 		r.sweepSnapshots(ctx, logger, time.Now())
 		r.gitCache.SweepIfDue(ctx, gitCacheSweepInterval, gitcache.Held(held), gitcache.SweepOptions{
@@ -1573,11 +1570,11 @@ const orphanMarkersName = "machine-orphans"
 
 // reapOrphanMachines removes the machines of the pool's disco-vm pool that look
 // like a sandbox's and that neither a tree of this pool nor a sandbox the
-// control plane holds names, once they have been seen so for
-// sandboxVolumeRetention, as an unheld tree is kept. Only a name a sandbox ID
-// spells is considered (`sbx-…`): a machine of any other name in the project
-// is nothing this runtime made, and is left alone however it got there. One
-// the control plane holds is kept: its create finds it by name.
+// control plane holds names (reapOrphans). Only a name a generated sandbox ID
+// spells is considered (`sbx-` and its whole random part, id.IsGenerated): a
+// machine of any other name in the project is nothing this runtime
+// made, and is left alone however it got there. One the control
+// plane holds is kept: its create finds it by name.
 func (r *MachineSandboxRuntime) reapOrphanMachines(ctx context.Context, logger *slog.Logger, held HeldSandboxes, now time.Time) {
 	instances, err := r.engine.List(ctx)
 	if err != nil {
@@ -1589,59 +1586,31 @@ func (r *MachineSandboxRuntime) reapOrphanMachines(ctx context.Context, logger *
 		logger.Warn("list the pool's sandbox trees", "error", err)
 		return
 	}
-	heldCtx, cancel := context.WithTimeout(ctx, sandboxVolumeHeldTimeout)
-	heldIDs, err := held(heldCtx)
-	cancel()
-	if err != nil {
-		logger.Warn("list the sandboxes the control plane holds; removing no orphan machine this pass", "error", err)
-		return
-	}
-	named := map[string]bool{}
-	for _, id := range append(stored, heldIDs...) {
-		if name, err := machineName(id); err == nil {
-			named[name] = true
-		}
-	}
-	markers := filepath.Join(r.root.PoolData(r.projectID, r.poolID), orphanMarkersName)
-	orphans := map[string]bool{}
+	var found []string
 	for _, inst := range instances {
-		if named[inst.Name] || !strings.HasPrefix(inst.Name, sandboxMachinePrefix) {
-			continue
-		}
-		orphans[inst.Name] = true
-		marker := filepath.Join(markers, inst.Name)
-		seen, ok := readSandboxTombstone(marker)
-		if !ok {
-			logger.Warn("sandbox machine is named by no sandbox of this pool; removing it after retention", "machine", inst.Name, "retention", sandboxVolumeRetention.String())
-			if err := os.MkdirAll(markers, 0o700); err != nil {
-				logger.Warn("record an orphan sandbox machine", "machine", inst.Name, "error", err)
-				continue
-			}
-			writeSandboxTombstone(marker, now, logger)
-			continue
-		}
-		if now.Sub(seen) < sandboxVolumeRetention {
-			continue
-		}
-		if err := r.engine.Remove(ctx, inst, true); err != nil {
-			logger.Warn("remove an orphan sandbox machine", "machine", inst.Name, "error", err)
-			continue
-		}
-		_ = os.Remove(marker)
-		logger.Info("removed an orphan sandbox machine", "machine", inst.Name, "orphanedFor", now.Sub(seen).Truncate(time.Minute).String())
-	}
-	// A machine named again, or gone, starts no clock.
-	entries, _ := os.ReadDir(markers)
-	for _, entry := range entries {
-		if !orphans[entry.Name()] {
-			_ = os.Remove(filepath.Join(markers, entry.Name()))
+		// Only a name a generated sandbox ID spells back is one: the machine
+		// goes through DeleteSandbox under that ID, so a name merely beginning
+		// `sbx-`, or one id.Canonical reads as a short ID (`sbx-test`), is no
+		// sandbox's and is left alone.
+		if sandboxID := id.Canonical(id.PrefixSandbox, inst.Name); sandboxID != inst.Name && id.IsGenerated(sandboxID) {
+			found = append(found, inst.Name)
 		}
 	}
+	reapOrphans(ctx, logger, held, stored, now, orphanSweep{
+		kind:    "sandbox machine",
+		markers: filepath.Join(r.root.PoolData(r.projectID, r.poolID), orphanMarkersName),
+		found:   found,
+		nameOf: func(sandboxID string) (string, bool) {
+			name, err := machineName(sandboxID)
+			return name, err == nil
+		},
+		// The machine goes as a delete takes its sandbox, with what else the
+		// pool keeps for it.
+		remove: func(ctx context.Context, name string) error {
+			return r.DeleteSandbox(ctx, id.Canonical(id.PrefixSandbox, name))
+		},
+	})
 }
-
-// sandboxMachinePrefix begins the name of every sandbox's machine: a sandbox
-// ID's prefix, spelled as machineName spells it.
-const sandboxMachinePrefix = id.PrefixSandbox + "-"
 
 // WatchProxyMaterial reclaims the proxy material of sandboxes with no
 // machine, on an interval: there is no event stream to watch.

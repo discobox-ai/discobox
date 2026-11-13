@@ -874,6 +874,14 @@ an import that died before its row was written, a row removed without its
 delete reaching this pool. The 24h window is the margin against a wrong answer,
 and covers an import's tree restored before its row exists (ADR 0123 §3).
 
+On every runtime a reaped tree takes the rest of its sandbox with it, through
+the runtime's own `DeleteSandbox`: its container or machine first, then its
+proxy material and published images. Left behind, a container pins its image
+for good. A sandbox container or machine of this pool that neither a tree nor
+a held sandbox names, one whose tree went without it, goes the same way on the
+same clock (`reapOrphans`, its clock under the pool's `container-orphans` or
+`machine-orphans`).
+
 All per-sandbox state is project- and pool-scoped by path — sandbox
 volume trees live under `projects/{project_id}/pools/{pool_id}/` and proxy
 material under `proxy/projects/{project_id}/pools/{pool_id}/` — so agents
@@ -1083,10 +1091,11 @@ flowchart LR
   sandbox keeps its cache.
 - **Refused**: suspend (a machine is not frozen whole; a sleep is a stop),
   tree export and import, both `sandboxruntime.ErrUnsupported`, answered 501.
-- **The reaper** removes an unheld sandbox's machine with its tree, and a
-  machine of the pool's disco-vm scope named as a sandbox's (`sbx-…`) that neither a
+- **The reaper** deletes an unheld sandbox, its machine with its tree, and a
+  machine of the pool's disco-vm scope named as a generated sandbox ID's
+  (`sbx-` and its whole random part: `id.Canonical`, `id.IsGenerated`) that neither a
   tree nor a held sandbox names, once it has been so for the trees' retention
-  (its clock under the pool's `machine-orphans`). A snapshot's VM (`snap-…`)
+  (its clock under the pool's `machine-orphans`), both through `DeleteSandbox`. A snapshot's VM (`snap-…`)
   is the snapshot sweep's. A machine of any other name is left alone.
 
 ### The Hop

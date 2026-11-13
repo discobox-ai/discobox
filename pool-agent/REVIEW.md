@@ -321,6 +321,11 @@ durable state asks the same question.
   the Docker and the machine runtime; a step added for one is added to the
   other. The machine runtime once skipped the registry namespace the Docker
   runtime removed, though both pools build.
+- **A reaper removes a sandbox through `DeleteSandbox`.** The tree reaper's
+  release and the orphan container and machine sweeps are deletes that never
+  reached the pool, so they take everything a delete takes. Removing only the
+  container or machine leaves its proxy material and registry namespace with
+  nothing left to collect them. Both runtimes' reapers once did that (#1095).
 
 ## Snapshots
 

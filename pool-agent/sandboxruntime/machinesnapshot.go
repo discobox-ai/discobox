@@ -33,8 +33,8 @@ import (
 
 const (
 	// snapshotMachinePrefix begins the name of every snapshot's VM. No
-	// sandbox's machine name begins with it (sandboxMachinePrefix), so the
-	// orphan reaper and the snapshot sweep never take each other's.
+	// sandbox's machine name begins with it (a sandbox ID's prefix, `sbx-`),
+	// so the orphan reaper and the snapshot sweep never take each other's.
 	snapshotMachinePrefix = "snap-"
 	// snapshotRecordsName is the directory, in the pool's durable state,
 	// that holds each snapshot's done record, by key.
