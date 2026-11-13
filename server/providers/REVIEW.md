@@ -81,6 +81,13 @@
 - Drivers must not implement Docker readiness polling or carry anything of a
   pool in VM user data; the engine owns readiness waits and places the
   bootstrap in the pool's box (ADR 26-10-24-953 §§2, 4).
+- A readiness wait bounds every attempt by its deadline, not only the polling
+  between attempts: the reconcile context never ends, and a wedged guest
+  accepts a connection and never answers it (#1101). It also starts no attempt
+  once the deadline has passed: one would fail only on the deadline, and the
+  pool would then report `context deadline exceeded` in place of the daemon's
+  own error. Anything a driver does under the acquire context, an SSH
+  handshake included, must end when that context does.
 - Compare a pool container against the image the engine would launch *now*
   (`Engine.resolvePoolImage`), never against `cfg.SandboxBaseImage` directly.
   When the configured image cannot be pulled the engine may launch a

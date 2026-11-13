@@ -49,6 +49,9 @@ type Driver interface {
 	// AcquireDockerClient returns a Docker API client for the daemon that
 	// hosts this pool's containers: the host daemon for the local driver, or
 	// the in-VM daemon (for example dialed over SSH or vsock) for VM drivers.
+	// The context bounds acquiring the client only: the lease must keep
+	// working after it ends, because the engine acquires under a readiness
+	// attempt's deadline and goes on using the lease once the attempt is done.
 	AcquireDockerClient(ctx context.Context, poolID string) (*DockerClientLease, error)
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the
 	// pool-agent API inside the pool-agent container.

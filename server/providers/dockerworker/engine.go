@@ -346,13 +346,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		// Only a VM hosted here is judged this way: a daemon behind a network
 		// can be silent because of the network, and restarting the VM for that
 		// would kill a healthy pool on every retry.
-		//
-		// The context only bounds an attempt that hangs. It outlasts the wait by a
-		// poll so that a daemon refusing connections is reported by its own error
-		// rather than by the deadline.
-		answerCtx, cancel := context.WithTimeout(ctx, dockerAnswerWait+dockerReadyPollDelay)
-		lease, answerErr := e.acquireDockerReady(answerCtx, pool.ID, dockerAnswerWait)
-		cancel()
+		lease, answerErr := e.acquireDockerReady(ctx, pool.ID, dockerAnswerWait)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -533,32 +527,57 @@ func (e *Engine) dockerReadyTimeout() time.Duration {
 // acquireDockerReady acquires the pool's Docker client and waits up to timeout
 // for the daemon to answer pings. Drivers do not implement readiness waiting
 // themselves.
+//
+// The timeout bounds every attempt, not only the polling between them: a guest
+// wedged in its kernel can accept a connection and never answer it, and a
+// caller's context (the reconcile engine's lifetime) need not end at all. An
+// attempt the deadline cuts off is a daemon not ready, reported as such.
 func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout time.Duration) (*DockerClientLease, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
-		lease, err := e.driver.AcquireDockerClient(ctx, poolID)
+		lease, err := e.pingDocker(ctx, poolID, deadline)
 		if err == nil {
-			_, pingErr := lease.Client.Ping(ctx, client.PingOptions{})
-			if pingErr == nil {
-				return lease, nil
-			}
-			lastErr = pingErr
-			lease.Release()
-		} else {
-			lastErr = err
+			return lease, nil
 		}
-		if !time.Now().Before(deadline) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		lastErr = err
+		// No attempt starts with no time left: it could only fail on the
+		// deadline, and a daemon refusing connections would then be reported
+		// by the deadline rather than by its own error.
+		wait := min(dockerReadyPollDelay, time.Until(deadline))
+		if wait <= 0 {
 			return nil, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
 		}
-		timer := time.NewTimer(dockerReadyPollDelay)
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return nil, ctx.Err()
 		case <-timer.C:
 		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
+		}
 	}
+}
+
+// pingDocker makes one readiness attempt that gives up at deadline. The lease
+// outlives the attempt's context, as Driver.AcquireDockerClient promises.
+func (e *Engine) pingDocker(ctx context.Context, poolID string, deadline time.Time) (*DockerClientLease, error) {
+	attemptCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	lease, err := e.driver.AcquireDockerClient(attemptCtx, poolID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := lease.Client.Ping(attemptCtx, client.PingOptions{}); err != nil {
+		lease.Release()
+		return nil, err
+	}
+	return lease, nil
 }
 
 // ensurePoolContainer creates or drift-corrects the pool's container on the

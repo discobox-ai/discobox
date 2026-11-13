@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
@@ -258,6 +260,117 @@ func TestRepairCanceledWhileCheckingDockerKeepsTheVM(t *testing.T) {
 	if driver.stopCalls != 0 || driver.ensureCalled {
 		t.Fatalf("lifecycle calls = stop:%d ensure:%v, want neither", driver.stopCalls, driver.ensureCalled)
 	}
+}
+
+// silentDriver is a running VM hosted here whose Docker daemon takes every
+// connection and never says a word on it: a guest wedged in its kernel.
+type silentDriver struct {
+	lifecycleDriver
+}
+
+func (d *silentDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
+	cli, err := NewDockerClientForDialer(func(context.Context, string, string) (net.Conn, error) {
+		conn, _ := net.Pipe()
+		return conn, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return NewDockerClientLease(cli, DaemonOnThisMachine, func() { _ = cli.Close() }), nil
+}
+
+// A guest wedged in its kernel can accept a connection and never answer it.
+// Bringing the pool up must still give up once its readiness budget is spent,
+// whatever the caller's context, or the reconciler never reaches repair.
+func TestEnsurePoolGivesUpOnADockerDaemonThatNeverAnswers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		driver := &silentDriver{lifecycleDriver: lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}}
+		engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		err = engine.EnsurePool(
+			context.Background(),
+			nil,
+			&model.SandboxProviderInstance{ID: "provider-1"},
+			&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+			nil,
+			func(context.Context) error { return nil },
+		)
+		if err == nil || !strings.Contains(err.Error(), "docker daemon not ready") {
+			t.Fatalf("EnsurePool error = %v, want docker daemon not ready", err)
+		}
+		if elapsed := time.Since(start); elapsed > defaultDockerReadyWait {
+			t.Fatalf("EnsurePool took %v, want at most %v", elapsed, defaultDockerReadyWait)
+		}
+	})
+}
+
+// refusingDriver is a VM whose Docker socket refuses every connection, and
+// which, like the drivers, reports an ended context in place of acquiring.
+type refusingDriver struct {
+	lifecycleDriver
+}
+
+func (d *refusingDriver) AcquireDockerClient(ctx context.Context, _ string) (*DockerClientLease, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("connection refused")
+}
+
+// A daemon that refuses connections is reported by its own error when the
+// readiness wait runs out, not by the deadline that ended the wait.
+func TestDockerReadyReportsTheDaemonsOwnError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		engine, err := New(Config{SandboxBaseImage: "worker-image"}, &refusingDriver{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, timeout := range []time.Duration{dockerAnswerWait, defaultDockerReadyWait, dockerReadyPollDelay / 2} {
+			_, err := engine.acquireDockerReady(context.Background(), "pool-1", timeout)
+			if err == nil || !strings.Contains(err.Error(), "connection refused") || errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("acquireDockerReady(%v) error = %v, want the daemon's connection refused", timeout, err)
+			}
+		}
+	})
+}
+
+// Repair checks a silent daemon within its short answer wait, restarts the VM,
+// and gives the rebooted one its readiness budget, each bounded although the
+// caller's context never ends.
+func TestRepairRestartsARunningVMWhoseDockerNeverAnswers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		driver := &silentDriver{lifecycleDriver: lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}}
+		engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		err = engine.RepairPool(
+			context.Background(),
+			nil,
+			&model.SandboxProviderInstance{ID: "provider-1"},
+			&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+			nil,
+			"", nil,
+		)
+		if err == nil || !strings.Contains(err.Error(), "docker daemon not ready") {
+			t.Fatalf("RepairPool error = %v, want the rebooted VM's Docker wait to fail", err)
+		}
+		if driver.stopCalls != 1 || driver.deleteCalls != 0 || !driver.ensureCalled {
+			t.Fatalf(
+				"lifecycle calls = stop:%d delete:%d ensure:%v, want stop:1 delete:0 ensure:true",
+				driver.stopCalls,
+				driver.deleteCalls,
+				driver.ensureCalled,
+			)
+		}
+		if elapsed, budget := time.Since(start), dockerAnswerWait+defaultDockerReadyWait; elapsed > budget {
+			t.Fatalf("RepairPool took %v, want at most %v", elapsed, budget)
+		}
+	})
 }
 
 func TestNewDefaults(t *testing.T) {
