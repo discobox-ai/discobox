@@ -54,8 +54,10 @@ The agent runs as that account and every exec inherits it, so no exec switches
 users and the resolution has exactly one answer — ADR 0025's contract, where
 the sandbox resolves its own identity, with nothing left to choose. Where an
 init starts the agent as root (macOS's launch daemon), the agent becomes the
-account before it resolves anything (`LookupAccount`, `Become`, below), so the
-image layer is the account all the same:
+account once its bootstrap names it (`LookupAccount`, `Become`, below).
+`boot.Provision` resolves before that, as root, and finds nothing to do off
+Linux; every resolution after it reads the account, since the image layer is
+looked up from the current uid on each call:
 
 - The image layer is the agent's own account as it is now: the account of
   its uid, looked up on every call (`currentOSUser`), never `os/user.Current`,
