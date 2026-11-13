@@ -28,6 +28,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if len(os.Args) > 1 && os.Args[1] == poolagent.InMachineFenceCommand {
+		if err := poolagent.RunInMachineFence(ctx); err != nil {
+			logger.Error("in-machine fence failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "buildkit-mediator" {
 		if err := poolagent.RunBuildkitMediator(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("buildkit mediator failed", "error", err)

@@ -8,7 +8,7 @@ beside `dockerworker.Engine` rather than under it: such a pool has no
 pool-agent container, Docker daemon or sandbox network of the engine's
 (ADR 26-10-09-106 §1). This package holds the provider kind, the embedded
 engine and its shim, and pool hosting: a remote driver's pool machine, made
-the pool's box and given its provisioning key, with its console and log. The
+the pool's box and authenticated (in-machine, or with an issued key), with its console and log. The
 type is the driver; how a pool is hosted follows from the driver's kind:
 whether it is disco-vm's local driver, whose provider is this host's disk. A local driver's host pool agent is not staged yet
 (#64): its `EnsurePool` and `AcquirePoolAgentClient` answer so.
@@ -19,7 +19,7 @@ flowchart TD
     runtime["discovm.Runtime\nengine"]
     engine["disco-vm pkg/engine\non machine.New(type, driver config, key, checked dial)"]
     host{"driver is a *local.Driver?"}
-    machine["poolMachine\na Linux machine from a driver base\nmade the pool's box · provisioning key"]
+    machine["poolMachine\na Linux machine from a driver base\nmade the pool's box · in-machine or issued key"]
     agent["hostAgent\npool agent on this host"]
 
     pool --> runtime
@@ -102,9 +102,8 @@ A provider's configuration is one object in two parts that share no key
 (ADR 26-11-11-080 §2):
 
 - **discobox's pool-hosting fields**, at the top level: the pool policy;
-  `controlPlaneUrl` and `deliverProviderKey` for a driver reached at its
-  URLs; `base` for one whose definition takes one (`TakesBase`). A held
-  driver refuses all three.
+  `controlPlaneUrl` for a driver reached at its URLs; `base` for one whose
+  definition takes one (`TakesBase`). A held driver refuses both.
 - **the driver's own**, under `driver`: given to disco-vm as
   `machine.Config.DriverConfig` and validated by it alone (`machine.New`),
   less the driver's secret, which `decode` takes out and passes as
@@ -252,7 +251,7 @@ A remote driver's pool machine is made the pool's box as a Docker pool's
 container is, with `poolruntime.ProvisionBox` over the machine's guest
 operations (ADR 26-10-24-953 §2), every feature of the pool bundle applied:
 the pool-shared builder serves its sandboxes' builds there, beside the
-provisioning key and the driver's machine token, a cost ADR 26-10-27-767
+driver's machine token (and an issued key, on a driver that issues one), a cost ADR 26-10-27-767
 states. Its bootstrap names its own engine (ADR 26-10-23-551 §3):
 the machine runtime, the driver, the pool's scope as the scope and
 network its sandboxes' machines are made in, the provider's base and its
@@ -304,37 +303,56 @@ journald drop-in (`journald.conf`): persistent and bounded at 256M, since
 boxd's image keeps no journal and the journal is what says why an agent did
 not come up, across a stop and start as often as not.
 
-## The Provisioning Key
+## How a Pool's Machine Authenticates
 
-A pool's machine is given the key its engine calls the driver with
-(`poolkey.go`, ADR 26-10-23-551 §4), as `bundle.ProvisioningKeyFile`, a
-`machine.Key` root's alone, placed before the agent is provisioned or alone
-when it is renewed: the agent's engine reads it on every call, so a renewed
-key restarts nothing.
+A pool's engine authenticates in the first of these ways its driver offers
+(`poolkey.go`, ADR 26-11-11-080 §9). The provider's own key is never placed
+on a pool's machine: the server alone uses it, to make, repair and remove
+the machine.
 
-- **Issued** (`Driver.IssueKey`): named `<pool scope>-<time>`, so every key
-  of a pool is found by name, lasting `poolKeyTTL` (seven days), replaced by
-  half its life. The old key is left to expire, not revoked, so no call in
-  flight meets a revoked key; expired keys of the pool are swept at each
-  renewal. A renewal that fails in any way — not issued, not issuable, not
-  placed — leaves the pool on its key until it expires, so a working pool is
-  never failed, and repaired, over a key it does not need yet.
-- **The provider's own**, only with `deliverProviderKey`, and only when the
-  driver cannot issue one (`ErrCannotIssue`, `ErrNoKey`; boxd issues none
-  from an API key). Placed again when the configured key changes (its
-  fingerprint is recorded), and replaced by an issued key when the driver
-  issues one, which it is asked daily (`providerKeyRecheck`). Without the
-  opt-in, such a pool is blocked with that reason; withdrawing the opt-in
-  takes the provider's key off the machine. An issue that fails for any other reason is retried, never
-  answered with the provider's key.
-- **Revoked**: every key of the pool, by name, when the pool is deleted or its
-  machine replaced. A record that says a key was issued makes a refused
-  listing an error to retry rather than a key left behind.
-- **Shown**: the pool's `HostCredential` says which key its host holds, its
-  scope, ID and expiry, and that the machine carries the driver's own token
-  (`MachineToken`: a driver that isolates gives a machine that is not
-  isolated what isolation strips). `admin pool get` prints it. Neither the
-  record nor the credential holds a secret.
+- **In-machine** (`inMachineField`): a driver whose definition declares
+  in-machine auth (disco-vm's `Definition.InMachine`, vm#140; boxd's
+  `inMachine`) authenticates a machine as itself, with the credential the
+  driver gives it. discobox reads the field from the declaration, never by
+  its name. Nothing is placed: no key, issued or the provider's, and no key
+  file. The pool's bootstrap turns that field on in its `DriverConfig`, the
+  one place it says so, and the agent's engine is made with no key. The
+  agent keeps the declaration's endpoints from every other process on the
+  machine ([pool-agent](../../../pool-agent/DESIGN.md#machine-sandboxes)).
+  The server never offers or takes the field: its own engine calls with the
+  provider's key. Nothing is revoked per pool: the credential goes with the
+  machine. A key an older server placed stays, with its record, until the
+  placement that turns in-machine auth on has applied, since the running
+  agent reads it on every call, and an issued one is renewed until then;
+  then it is taken off and every key issued for the pool revoked by name
+  (`poolKeys.retire`). With no record, as on a new machine or one whose
+  record was lost, the same is done once: a lost record says nothing of
+  what an older server left.
+- **Issued** (`Driver.IssueKey`), placed as `bundle.ProvisioningKeyFile`, a
+  `machine.Key` root's alone, before the agent is provisioned or alone when
+  it is renewed; the agent's engine reads it on every call, so a renewed key
+  restarts nothing. Named `<pool scope>-<time>`, so every key of a pool is
+  found by name, lasting `poolKeyTTL` (seven days), replaced by half its
+  life. The old key is left to expire, not revoked, so no call in flight
+  meets a revoked key; expired keys of the pool are swept at each renewal. A
+  renewal that fails in any way — not issued, not issuable, not placed —
+  leaves the pool on its key until it expires, so a working pool is never
+  failed, and repaired, over a key it does not need yet.
+- **Neither**: the pool is blocked, saying why, until §9's sentinel is built
+  for such a driver (none is linked with pools today: archil's are refused);
+  the provider's key an older server placed (`deliverProviderKey`, gone) is
+  taken off the machine.
+- **Revoked**: every issued key of the pool, by name, when the pool is
+  deleted or its machine replaced. A record that says a key was issued makes
+  a refused listing an error to retry rather than a key left behind.
+- **Shown**: the pool's `HostCredential` says how its host authenticates
+  (`in-machine` or `issued`), an issued key's scope, ID and expiry, and that
+  the machine carries the driver's own token (`MachineToken`: a driver that
+  isolates gives a machine that is not isolated what isolation strips). On
+  boxd that token is the owner's member credential for the whole org, which
+  can delete the owner's other machines, other pools' included (ADR
+  26-11-11-080 §9, #1090). `admin pool get` prints it. Neither the record
+  nor the credential holds a secret.
 
 ## Images
 

@@ -4,6 +4,9 @@ Documentation=https://github.com/discobox-ai/discobox
 Wants=discobox-pool-agent.service
 After=discobox-buildkitd.service discobox-pool-agent.service
 Wants=discobox-buildkitd.service
+# Retried for as long as the box is a pool's, as the agent is: a load that
+# fails at boot (no default route yet) must not leave it down for good.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -19,6 +22,11 @@ EnvironmentFile=/etc/discobox/proxy.env
 # Sandboxes reach this listener only over the per-pool internal network, and
 # the connection is still mTLS; ALPN enforcement is not what authenticates it.
 Environment=GRPC_ENFORCE_ALPN_ENABLED=false
+# Not without the rule set that keeps an in-machine credential's endpoint
+# from it, on a pool whose driver declares one (ADR 26-11-11-080 §9), read
+# from the bootstrap as the agent reads it.
+Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
+ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence
 ExecStart=/usr/local/bin/discobox-pool-agent buildkit-mediator
 Restart=on-failure
 RestartSec=2s

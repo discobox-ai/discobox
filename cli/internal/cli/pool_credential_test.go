@@ -8,7 +8,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
-// A pool's host credential says which key the host holds, how far it reaches
+// A pool's host credential says which credential the host holds, how far it reaches
 // and when it expires, and the driver's machine token beside it.
 func TestFormatPoolHostCredential(t *testing.T) {
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
@@ -25,7 +25,11 @@ func TestFormatPoolHostCredential(t *testing.T) {
 		},
 		{
 			apimodel.PoolHostCredential{Key: apiclientgen.NewOptPoolHostCredentialKey(apiclientgen.PoolHostCredentialKeyProvider)},
-			"the provider's own key, which discobox never expires, renews or revokes",
+			"the provider's own key, which an older server placed and the pool's next reconcile takes off",
+		},
+		{
+			apimodel.PoolHostCredential{Key: apiclientgen.NewOptPoolHostCredentialKey(apiclientgen.PoolHostCredentialKeyInMachine), MachineToken: apiclientgen.NewOptBool(true)},
+			"its machine's own in-machine credential, which reaches the org as the machine's owner; nothing is placed, and it ends with the machine",
 		},
 		{
 			apimodel.PoolHostCredential{MachineToken: apiclientgen.NewOptBool(true)},

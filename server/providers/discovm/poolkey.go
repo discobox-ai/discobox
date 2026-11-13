@@ -2,8 +2,6 @@ package discovm
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,63 +23,58 @@ import (
 // leaves the pool working on the old one.
 const poolKeyTTL = 7 * 24 * time.Hour
 
-// poolKeys is how a pool's machine is given the provisioning key its engine
-// calls the driver with (ADR 26-10-23-551 §4): one the driver issues for the
-// pool, which expires and cannot itself issue keys; or, only where the
-// provider's configuration opts in, the provider's own.
+// poolKeys is how a pool's machine authenticates its engine (ADR
+// 26-11-11-080 §9), in the first of these ways its driver offers: in-machine,
+// where the driver gives the machine a credential of its own, and nothing is
+// placed; or a key the driver issues for the pool, which expires and cannot
+// itself issue keys (ADR 26-10-23-551 §4). The provider's own key is never
+// placed on a pool's machine: a driver that offers neither has its pools
+// blocked, until §9's sentinel is built for it.
 type poolKeys struct {
 	driver machine.Driver
-	// own is the provider's own key, which is placed only when deliver is
-	// set and the driver cannot issue one.
-	own     machine.Key
-	deliver bool
-	ttl     time.Duration
-	now     func() time.Time
+	// inMachineField is the field of the driver's configuration that has
+	// its machine authenticate as itself (inMachineField), or empty for a
+	// driver that cannot: a pool's machine on one that can is given nothing.
+	inMachineField string
+	ttl            time.Duration
+	now            func() time.Time
 }
 
-func newPoolKeys(driver machine.Driver, cfg settings) poolKeys {
+func newPoolKeys(driver machine.Driver) poolKeys {
+	field, _ := inMachineField(driver.Name())
 	return poolKeys{
-		driver:  driver,
-		own:     machine.Key{Driver: driver.Name(), Secret: cfg.key},
-		deliver: cfg.DeliverProviderKey,
-		ttl:     poolKeyTTL,
-		now:     time.Now,
+		driver:         driver,
+		inMachineField: field,
+		ttl:            poolKeyTTL,
+		now:            time.Now,
 	}
 }
 
-// check refuses a provider that opts in to delivering a key it does not have.
-func (k poolKeys) check() error {
-	if k.deliver && k.own.Secret == "" {
-		return fmt.Errorf("the %s provider opts in to delivering its own key to its pools' machines, and has no key", k.driver.Name())
-	}
-	return nil
-}
+// inMachine reports whether the driver's pools authenticate in-machine.
+func (k poolKeys) inMachine() bool { return k.inMachineField != "" }
 
-// poolKeyRecord is the provisioning key placed on a pool's machine, as the
-// provider's record keeps it: never its secret.
+// poolKeyRecord is how a pool's machine authenticates, as the provider's
+// record keeps it: never a secret.
 type poolKeyRecord struct {
-	// Issued is a key the driver issued for the pool; false is the
-	// provider's own.
+	// Issued is a key the driver issued for the pool. Neither it nor
+	// InMachine is the provider's own key, which an older server placed:
+	// it is taken off the machine.
 	Issued bool `json:"issued"`
+	// InMachine is a machine that authenticates as itself, given nothing.
+	InMachine bool `json:"inMachine,omitempty"`
 	// ID and Name are the driver's for an issued key.
 	ID       string        `json:"id,omitempty"`
 	Name     string        `json:"name,omitempty"`
 	Scope    machine.Scope `json:"scope,omitempty"`
 	IssuedAt time.Time     `json:"issuedAt,omitzero"`
 	Expires  time.Time     `json:"expires,omitzero"`
-	// Fingerprint names the provider's own key placed, so a key its
-	// configuration rotates is placed again.
+	// Fingerprint names the provider's own key an older server placed.
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // renewAt is when an issued key is replaced: half its life.
 func (r poolKeyRecord) renewAt() time.Time {
 	return r.IssuedAt.Add(r.Expires.Sub(r.IssuedAt) / 2)
-}
-
-func fingerprint(key machine.Key) string {
-	sum := sha256.Sum256([]byte(key.Driver + "\x00" + key.Secret))
-	return hex.EncodeToString(sum[:8])
 }
 
 // keyPrefix is how every key issued for the pool is named, so a provider that
@@ -95,33 +88,46 @@ func keyPrefix(pool *model.Pool) (string, error) {
 	return scope + "-", nil
 }
 
-// providerKeyRecheck is how often a pool holding the provider's own key asks
-// the driver again for a narrower one, which a driver given a key that can
-// issue (a boxd session's, in place of an API key) makes.
-const providerKeyRecheck = 24 * time.Hour
-
-// ensure gives the pool's machine a key that is not due for renewal, through
-// guest, and returns the record of what the machine now holds, beside any
-// error: current when nothing was placed, and nil when it holds none.
+// ensure gives the pool's machine what its engine authenticates with,
+// through guest, and returns the record of it, beside any error: current
+// when nothing changed, and nil when it holds nothing.
 //
-// A key still in its first half-life is kept. One past it is replaced with a
-// newly issued one, and the old is left to expire rather than revoked, so no
-// call in flight meets a revoked key. A renewal that fails in any way — not
-// issued, not issuable, not placed — leaves the pool on the key it holds
-// while that still works, and is tried again on the next reconcile: a pool
-// that works is never failed, and so repaired, over a key it does not need
-// yet. An issue that fails is retried, never answered with the provider's
-// own key: that is placed only when the driver cannot issue one at all and
-// the provider opts in, and is asked to be replaced by an issued one daily.
-// Without the opt-in such a pool is blocked, saying why, and a provider's
-// key placed before the opt-in was withdrawn is taken off the machine.
+// On a driver that authenticates in-machine nothing is placed. A key an older
+// server placed (the provider's own, or one issued) is left where it is, and
+// its record with it, for the agent still running on it: retire takes it off
+// once the in-machine placement has applied. Until then an issued key is
+// still renewed, but a renewal that fails never holds the switch up. With no
+// record nothing is known of what the machine holds (a new machine, or a
+// record lost), so none is returned, and retire takes off whatever an older
+// server may have left.
+//
+// Otherwise a key still in its first half-life is kept. One past it is
+// replaced with a newly issued one, and the old is left to expire rather than
+// revoked, so no call in flight meets a revoked key. A renewal that fails in
+// any way — not issued, not issuable, not placed — leaves the pool on the key
+// it holds while that still works, and is tried again on the next reconcile:
+// a pool that works is never failed, and so repaired, over a key it does not
+// need yet. A driver that cannot issue at all blocks the pool, saying why,
+// and the provider's key an older server placed is taken off.
 func (k poolKeys) ensure(ctx context.Context, pool *model.Pool, guest machine.Guest, current *poolKeyRecord) (*poolKeyRecord, error) {
+	if k.inMachine() {
+		if current == nil || current.InMachine || !current.Issued {
+			return current, nil
+		}
+		renewed, err := k.ensureIssued(ctx, pool, guest, current)
+		if err != nil {
+			slog.WarnContext(ctx, "the issued key of a pool moving to in-machine auth was not renewed", "pool", pool.ID, "key", current.ID, "error", err)
+			return current, nil
+		}
+		return renewed, nil
+	}
+	return k.ensureIssued(ctx, pool, guest, current)
+}
+
+// ensureIssued is ensure for a key the driver issues the pool.
+func (k poolKeys) ensureIssued(ctx context.Context, pool *model.Pool, guest machine.Guest, current *poolKeyRecord) (*poolKeyRecord, error) {
 	now := k.now()
-	ownPlaced := current != nil && !current.Issued && k.deliver && current.Fingerprint == fingerprint(k.own)
-	switch {
-	case current != nil && current.Issued && now.Before(current.renewAt()):
-		return current, nil
-	case ownPlaced && now.Before(current.IssuedAt.Add(providerKeyRecheck)):
+	if current != nil && current.Issued && now.Before(current.renewAt()) {
 		return current, nil
 	}
 	// keep answers a renewal that failed: the key held stays while it works.
@@ -138,54 +144,58 @@ func (k poolKeys) ensure(ctx context.Context, pool *model.Pool, guest machine.Gu
 	}
 	name := prefix + strconv.FormatInt(now.Unix(), 36)
 	issued, err := k.driver.IssueKey(ctx, machine.IssueRequest{Name: name, TTL: k.ttl})
-	var key machine.Key
-	var record poolKeyRecord
 	switch {
 	case err == nil:
-		key = issued
-		record = poolKeyRecord{Issued: true, ID: issued.ID, Name: issued.Name, Scope: issued.Scope, IssuedAt: now, Expires: issued.Expires}
 	case errors.Is(err, machine.ErrCannotIssue) || errors.Is(err, machine.ErrNoKey):
-		if ownPlaced {
-			// Still none to be had: the provider's key stays, asked about
-			// again in a day.
-			kept := *current
-			kept.IssuedAt = now
-			return &kept, nil
-		}
-		if !k.deliver {
-			blocked := fmt.Errorf("pool %s is blocked: the %s driver cannot issue its machine a key (%w), and the provider does not opt in to delivering its own (deliverProviderKey)", pool.ID, k.driver.Name(), err)
-			if current != nil && !current.Issued {
-				// The opt-in was withdrawn: the provider's key leaves the
-				// machine, whatever else follows.
-				if rerr := removeProvisioningKey(ctx, guest); rerr != nil {
-					return current, errors.Join(blocked, fmt.Errorf("remove the provider's key from pool %s's machine: %w", pool.ID, rerr))
-				}
-				return nil, blocked
+		blocked := fmt.Errorf("pool %s is blocked: the %s driver neither authenticates its machines in-machine nor can issue one a key (%w), and the provider's own key is never placed on a pool's machine (ADR 26-11-11-080 §9)", pool.ID, k.driver.Name(), err)
+		if current != nil && !current.Issued {
+			// The provider's key an older server placed leaves the
+			// machine, whatever else follows.
+			if rerr := removeProvisioningKey(ctx, guest); rerr != nil {
+				return current, errors.Join(blocked, fmt.Errorf("remove the provider's key from pool %s's machine: %w", pool.ID, rerr))
 			}
-			return keep(blocked)
+			return nil, blocked
 		}
-		key = k.own
-		record = poolKeyRecord{Issued: false, IssuedAt: now, Fingerprint: fingerprint(k.own)}
+		return keep(blocked)
 	default:
 		return keep(fmt.Errorf("issue pool %s's provisioning key: %w", pool.ID, notReachable(err)))
 	}
-	data, err := json.Marshal(key) //nolint:gosec // G117: the key file the pool's engine reads, placed root's alone
+	record := poolKeyRecord{Issued: true, ID: issued.ID, Name: issued.Name, Scope: issued.Scope, IssuedAt: now, Expires: issued.Expires}
+	data, err := json.Marshal(issued) //nolint:gosec // G117: the key file the pool's engine reads, placed root's alone
 	if err != nil {
 		return nil, err
 	}
 	if err := poolruntime.PlaceBoxFiles(ctx, guest, poolruntime.BoxFile{Path: bundle.ProvisioningKeyFile, Data: data}); err != nil {
-		if record.Issued {
-			// A key that never reached the machine is nobody's: take it back.
-			if rerr := k.driver.RevokeKey(context.WithoutCancel(ctx), issued); rerr != nil {
-				slog.WarnContext(ctx, "an issued key that was not placed is left to expire", "pool", pool.ID, "key", issued.ID, "error", rerr)
-			}
+		// A key that never reached the machine is nobody's: take it back.
+		if rerr := k.driver.RevokeKey(context.WithoutCancel(ctx), issued); rerr != nil {
+			slog.WarnContext(ctx, "an issued key that was not placed is left to expire", "pool", pool.ID, "key", issued.ID, "error", rerr)
 		}
 		return keep(fmt.Errorf("place pool %s's provisioning key: %w", pool.ID, err))
 	}
-	if record.Issued {
-		k.sweepExpired(ctx, pool, prefix)
-	}
+	k.sweepExpired(ctx, pool, prefix)
 	return &record, nil
+}
+
+// retire ends the key an older server placed on a pool whose machine now
+// authenticates in-machine, and returns the record that says so: called once
+// the placement that turns in-machine auth on has applied, so the agent that
+// still read the key file ran on it until it was replaced (ADR 26-11-11-080
+// §9). The file is taken off the machine, and every key issued for the pool
+// is revoked, found by name, so one read from the machine's disk stops
+// working now rather than when it expires. With no record, both are done all
+// the same: a record lost says nothing of what an older server placed. A step
+// that fails keeps the record as it was, and the next reconcile does it again.
+func (k poolKeys) retire(ctx context.Context, pool *model.Pool, guest machine.Guest, current *poolKeyRecord) (*poolKeyRecord, error) {
+	if !k.inMachine() || (current != nil && current.InMachine) {
+		return current, nil
+	}
+	if err := removeProvisioningKey(ctx, guest); err != nil {
+		return current, fmt.Errorf("take any key an older server placed off pool %s's machine: %w", pool.ID, err)
+	}
+	if err := k.revokeAll(ctx, pool, current); err != nil {
+		return current, err
+	}
+	return &poolKeyRecord{InMachine: true}, nil
 }
 
 // removeProvisioningKey takes the provisioning key off a pool's machine.
@@ -255,6 +265,9 @@ func (k poolKeys) hostCredential(record *poolKeyRecord) *model.PoolHostCredentia
 	credential := &model.PoolHostCredential{MachineToken: k.driver.Capabilities().Isolation}
 	if record != nil {
 		credential.Key, credential.Scope, credential.KeyID = model.PoolHostKeyProvider, string(record.Scope), record.ID
+		if record.InMachine {
+			credential.Key = model.PoolHostKeyInMachine
+		}
 		if record.Issued {
 			credential.Key = model.PoolHostKeyIssued
 			if !record.Expires.IsZero() {

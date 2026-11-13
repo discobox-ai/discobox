@@ -662,9 +662,10 @@ type PoolManifest struct {
 // PoolHostCredential is a credential of its provider's that a pool's host
 // holds, as the pool shows it: never its secret.
 type PoolHostCredential struct {
-	// Key is the provisioning key the host holds: PoolHostKeyIssued, or
-	// PoolHostKeyProvider. Empty is none.
-	Key string `json:"key,omitempty" enum:"issued,provider"`
+	// Key is how the host authenticates its engine: PoolHostKeyIssued,
+	// PoolHostKeyInMachine, or PoolHostKeyProvider (an older server's).
+	// Empty is none.
+	Key string `json:"key,omitempty" enum:"issued,in-machine,provider"`
 	// Scope is what the key reaches, as the driver says (account, org,
 	// project); empty where it cannot tell.
 	Scope string `json:"scope,omitempty"`
@@ -682,10 +683,14 @@ const (
 	// PoolHostKeyIssued is a key the provider's driver issued for the pool,
 	// which expires and is renewed and revoked by discobox.
 	PoolHostKeyIssued = "issued"
-	// PoolHostKeyProvider is the provider's own key, delivered because its
-	// configuration opts in: it has no expiry discobox sets, and is never
-	// renewed or revoked by discobox.
+	// PoolHostKeyProvider is the provider's own key, which an older server
+	// delivered where its configuration opted in (deliverProviderKey, gone
+	// with ADR 26-11-11-080 §9): the pool's next reconcile takes it off.
 	PoolHostKeyProvider = "provider"
+	// PoolHostKeyInMachine is a host that authenticates as itself with a
+	// credential its driver gives the machine (boxd's in-machine token,
+	// ADR 26-11-11-080 §9): nothing of the provider's is placed on it.
+	PoolHostKeyInMachine = "in-machine"
 )
 
 // Pool is the user-visible sharing boundary sandboxes are scheduled into,

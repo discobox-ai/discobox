@@ -18,7 +18,7 @@ import (
 func TestMigrateVMProvidersMakesEachALinkedDriversType(t *testing.T) {
 	ctx := context.Background()
 	st, db := newTestStoreWithDB(t, true)
-	rawProviderRow(t, db, "prov-boxd", "vm", `{"driver":"boxd","apiKey":"bxd_key","controlPlaneUrl":"https://discobox.example.com","base":"img","maxPools":2}`)
+	rawProviderRow(t, db, "prov-boxd", "vm", `{"driver":"boxd","apiKey":"bxd_key","controlPlaneUrl":"https://discobox.example.com","base":"img","maxPools":2,"deliverProviderKey":true}`)
 	rawProviderRow(t, db, "prov-plain", "vm", `{"driver":"boxd","apiKey":"bxd_other"}`)
 	rawProviderRow(t, db, "prov-vz", "vm", `{"driver":"vz"}`)
 	rawProviderRow(t, db, "prov-docker", "docker", `{"socketPath":"/var/run/docker.sock"}`)
@@ -41,7 +41,7 @@ func TestMigrateVMProvidersMakesEachALinkedDriversType(t *testing.T) {
 	if driver["addr"] != "boxd.internal:9443" || driver["tokenUrl"] != "https://boxd.internal/api/v1/auth/token" || len(driver) != 2 {
 		t.Errorf("prov-boxd driver = %v, want the environment's endpoints", got["driver"])
 	}
-	if got["controlPlaneUrl"] != "https://discobox.example.com" || got["base"] != "img" || got["maxPools"] != float64(2) || got["apiKey"] != nil {
+	if got["controlPlaneUrl"] != "https://discobox.example.com" || got["base"] != "img" || got["maxPools"] != float64(2) || got["apiKey"] != nil || got["deliverProviderKey"] != nil {
 		t.Errorf("prov-boxd config = %v, want every other field kept and no key", got)
 	}
 	if !slices.Equal(boxd.CarriedEndpoints, []string{"driver.addr", "driver.tokenUrl"}) {
@@ -121,5 +121,23 @@ func TestMigrateVMProvidersSealsAKeyLeftClear(t *testing.T) {
 	}
 	if secrets := openedSecrets(t, st, row); secrets["driver.apiKey"] != "bxd_clear" {
 		t.Fatalf("prov-boxd sealed fields = %v, want the clear key as driver.apiKey", secrets)
+	}
+}
+
+// A row a server before §9 already moved to its driver's type keeps no
+// deliverProviderKey either (ADR 26-11-11-080 §9).
+func TestMigrateVMProvidersDropsKeyDeliveryFromAMovedRow(t *testing.T) {
+	ctx := context.Background()
+	st, db := newTestStoreWithDB(t, true)
+	rawProviderRow(t, db, "prov-boxd", "boxd", `{"deliverProviderKey":true,"driver":{"region":"fra"}}`)
+	rawProviderRow(t, db, "prov-docker", "docker", `{"deliverProviderKey":true}`)
+	if err := st.MigrateVMProviders(ctx, func(string) (string, bool) { return "", false }); err != nil {
+		t.Fatal(err)
+	}
+	if got := configFields(t, providerRow(t, db, "prov-boxd")); got["deliverProviderKey"] != nil || got["driver"] == nil {
+		t.Fatalf("prov-boxd config = %v, want key delivery gone and the rest kept", got)
+	}
+	if got := configFields(t, providerRow(t, db, "prov-docker")); got["deliverProviderKey"] != true {
+		t.Fatalf("a docker row was rewritten: %v", got)
 	}
 }

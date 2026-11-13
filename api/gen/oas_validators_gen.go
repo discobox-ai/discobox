@@ -4667,6 +4667,8 @@ func (s PoolHostCredentialKey) Validate() error {
 	switch s {
 	case "issued":
 		return nil
+	case "in-machine":
+		return nil
 	case "provider":
 		return nil
 	default:

@@ -87,6 +87,46 @@ func (s *Store) MigrateVMProviders(ctx context.Context, lookupEnv func(string) (
 			slog.ErrorContext(ctx, "vm provider was not upgraded to its driver's type", "project", row.ProjectID, "provider", row.ID, "error", err)
 		}
 	}
+	return s.dropDeliverProviderKey(ctx)
+}
+
+// dropDeliverProviderKey takes deliverProviderKey out of a row already of a
+// linked driver's type: one a server between the per-driver types and §9
+// moved, which kept it (ADR 26-11-11-080 §9). Rows without it are not
+// written.
+func (s *Store) dropDeliverProviderKey(ctx context.Context) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	types := make([]string, 0, len(vmDriverUpgrades))
+	for driver := range vmDriverUpgrades {
+		types = append(types, driver)
+	}
+	var rows []model.SandboxProviderInstance
+	if err := write.Where("type IN ? AND config LIKE ?", types, "%deliverProviderKey%").Find(&rows).Error; err != nil {
+		return err
+	}
+	for i := range rows {
+		config := map[string]json.RawMessage{}
+		if json.Unmarshal(rows[i].Config, &config) != nil {
+			continue
+		}
+		if _, ok := config["deliverProviderKey"]; !ok {
+			continue
+		}
+		delete(config, "deliverProviderKey")
+		data, err := json.Marshal(config)
+		if err != nil {
+			return err
+		}
+		if len(config) == 0 {
+			data = nil
+		}
+		if err := write.Model(&model.SandboxProviderInstance{}).Where("id = ?", rows[i].ID).Update("config", model.RawJSON(data)).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -133,6 +173,10 @@ func (s *Store) migrateVMProvider(ctx context.Context, tx *gorm.DB, provider *mo
 		moved[upgrade.secret] = key
 	}
 	delete(config, "driver")
+	// Nothing of the provider's is placed on a pool's machine now (ADR
+	// 26-11-11-080 §9): a machine that held the key has it taken off at its
+	// next reconcile.
+	delete(config, "deliverProviderKey")
 	driverConfig := map[string]string{}
 	var carried []string
 	for _, endpoint := range upgrade.carried {

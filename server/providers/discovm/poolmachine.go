@@ -78,7 +78,7 @@ func newPoolMachine(e *engine.Engine, cfg settings) *poolMachine {
 		driverConfig:    cfg.driverConfig,
 		controlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
 		policy:          cfg.Env(),
-		keys:            newPoolKeys(e.Driver, cfg),
+		keys:            newPoolKeys(e.Driver),
 		shell:           []string{"/bin/bash", "-l"},
 		logs:            journalCommand,
 		logSource:       "pool machine journal",
@@ -235,9 +235,6 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if maker == nil {
 		return errors.New("a pool maker is required")
 	}
-	if err := h.keys.check(); err != nil {
-		return err
-	}
 	scope, err := machinePool(pool.ID)
 	if err != nil {
 		return err
@@ -334,7 +331,9 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	if !force && current {
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
-		return nil
+		// A pass that applied the in-machine placement and stopped before
+		// its old key was retired retires it now.
+		return h.retireKey(ctx, pool, guest, &record)
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
 	// closed first, as it is before any agent is replaced.
@@ -363,7 +362,25 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	record.Box = box
 	pool.OutboundAppliedRevision = pool.Outbound.Revision()
-	return h.writeState(pool, record)
+	if err := h.writeState(pool, record); err != nil {
+		return err
+	}
+	return h.retireKey(ctx, pool, guest, &record)
+}
+
+// retireKey takes the key an older server placed off a pool's machine that
+// now authenticates in-machine, once the placement that turns that on has
+// applied (poolKeys.retire), and records it.
+func (h *poolMachine) retireKey(ctx context.Context, pool *model.Pool, guest machine.Guest, record *poolRuntimeState) error {
+	key, err := h.keys.retire(ctx, pool, guest, record.Key)
+	if key == record.Key {
+		return err
+	}
+	record.Key = key
+	if werr := h.writeState(pool, *record); werr != nil && err == nil {
+		err = werr
+	}
+	return err
 }
 
 // create makes the pool's machine from the base, on the pool's network alone,
@@ -408,6 +425,15 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	// (ADR 26-11-11-080 §6). It is in the placement's fingerprint: a pool
 	// whose provider has none keeps the fingerprint it had.
 	bootstrap.DriverConfig = h.driverConfig
+	if h.keys.inMachine() {
+		// The pool's engine authenticates as its machine (ADR 26-11-11-080
+		// §9): the driver's in-machine field on, and no key file to read.
+		config, err := withInMachine(h.driverConfig, h.keys.inMachineField)
+		if err != nil {
+			return poolruntime.BoxPlacement{}, err
+		}
+		bootstrap.DriverConfig = config
+	}
 	bootstrap.MachineNetwork = scope
 	// Where the server reaches the pool's agent, and where its sandboxes'
 	// machines reach the pool, from which the agent derives their endpoints

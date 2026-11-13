@@ -7412,8 +7412,8 @@ components:
             description: A credential of its provider's that the pool's host holds (ADR 26-10-23-551 §4), shown so a pool whose host can reach the provider's account says how far. Never its secret.
             properties:
                 key:
-                    description: "The provisioning key the host holds: issued, a key the provider's driver issued for this pool, which expires and is renewed and revoked by discobox; or provider, the provider's own key, delivered because its configuration opts in, which discobox never expires, renews or revokes. Absent when it holds none."
-                    enum: [issued, provider]
+                    description: "How the host authenticates its engine: in-machine, as its own machine, with the credential its driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's driver issued for this pool, which expires and is renewed and revoked by discobox; or provider, the provider's own key an older server delivered, which the pool's next reconcile takes off. Absent when it holds none."
+                    enum: [issued, in-machine, provider]
                     type: string
                 scope:
                     description: What the key reaches, as the driver says (account, org, project). Absent where it cannot tell.

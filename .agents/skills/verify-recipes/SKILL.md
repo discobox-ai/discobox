@@ -1370,8 +1370,8 @@ agent's published port, or the pool never registers.
   `sandbox-agent/boot/clearcache_test.go` and the router test
   `sandbox-agent/server/cache_clear_test.go` cover it.
 - A boxd credential through discobox-access works as the dev loop's
-  provider `apiKey`, for the server's own calls to boxd, when its secret has
-  the route `'POST app.boxd.sh/api/v1/auth/token body=/api_key'`. disco-vm
+  provider's `driver.apiKey`, for the server's own calls to boxd, when its
+  secret has the route `'POST app.boxd.sh/api/v1/auth/token body=/api_key'`. disco-vm
   POSTs a `bxd_` key to that exchange as `{"api_key":"<key>"}`; a sentinel
   inferred from a `bxd_` key keeps the prefix, and egress swaps it at the
   `body=` place (`proxy/internal/secrets/body.go`). A key without the prefix
@@ -1385,18 +1385,16 @@ agent's published port, or the pool never registers.
     unbinding the secret does not end it. Anything the box runs can read it,
     or send the sentinel to the exchange itself. So the throwaway-org rule
     below holds for a sentinel exactly as for a real key.
-  - **A boxd pool does not run on it.** A boxd driver issues no per-pool key,
-    so its pool runs only with `deliverProviderKey`, which puts the
-    provider's `apiKey` on the pool machine: there it is a sentinel outside
-    the box's egress, boxd refuses it, and the pool never registers. That
-    is the sentinel, not a regression. Its pool's lifecycle is the fake
-    driver's to verify.
+  - **A boxd pool does not need it.** A boxd pool's machine holds no key: it
+    authenticates in-machine, through the boxd metadata endpoint that
+    `machine.Definition.InMachine` names, which the pool blocks from its
+    sandboxes, proxy and builder. Its pool's lifecycle is the fake driver's
+    to verify.
 
   Do not put the real key in the box instead: a real secret in a box
   bypasses the placeholder model — anything the box runs can read it,
   nothing records or revokes its use, and the isolated server's provider
-  config and a `deliverProviderKey` pool's machine hold it too. The fake
-  driver stays the default. A live boxd run, sentinel or not, is the user's
+  config holds it too. The fake driver stays the default. A live boxd run, sentinel or not, is the user's
   call alone: it takes a key of a throwaway boxd org, which the user
   revokes, with that org's machines, when the run ends, and say so in the
   report.

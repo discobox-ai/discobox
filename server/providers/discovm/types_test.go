@@ -30,7 +30,8 @@ func TestValidateWhatADriverNeeds(t *testing.T) {
 		{"boxd", `{"driver":{"apiKey":"k","region":"fra","nope":1}}`, "nope"},
 		{"boxd", `{"driver":{"apiKey":"k","tokenUrl":"http://app.example.com/t"}}`, "tokenUrl"},
 		{"boxd", `{"driver":{"apiKey":"k"},"controlPlaneUrl":"unix:///run/discobox.sock"}`, "http or https"},
-		{"boxd", `{"driver":{"apiKey":"k"},"controlPlaneUrl":"https://discobox.example.com","deliverProviderKey":true,"base":"ubuntu"}`, ""},
+		{"boxd", `{"driver":{"apiKey":"k"},"controlPlaneUrl":"https://discobox.example.com","base":"ubuntu"}`, ""},
+		{"boxd", `{"driver":{"apiKey":"k","inMachine":true}}`, "discobox's to set"},
 		{"archil", `{"driver":{"apiKey":"key-k","region":"aws-eu-west-1"}}`, ""},
 		{"archil", `{"driver":{"apiKey":"key-k","region":"mars"}}`, "region"},
 		{"fake", `{"controlPlaneUrl":"https://discobox.example.com"}`, "control plane URL"},
@@ -95,7 +96,12 @@ func TestDefinitionIsTheDriversRegistry(t *testing.T) {
 	if f := fields["driver.region"]; f.Privileged || !f.Immutable {
 		t.Fatalf("driver.region = %+v, want a fixed field that is not privileged", f)
 	}
-	for _, key := range []string{"controlPlaneUrl", "base", "deliverProviderKey"} {
+	for _, key := range []string{"deliverProviderKey", "driver.inMachine"} {
+		if _, ok := fields[key]; ok {
+			t.Errorf("Definition(boxd) offers %s, which is discobox's (ADR 26-11-11-080 §9)", key)
+		}
+	}
+	for _, key := range []string{"controlPlaneUrl", "base"} {
 		if _, ok := fields[key]; !ok {
 			t.Errorf("Definition(boxd) has no %s", key)
 		}
@@ -131,7 +137,10 @@ func TestPrivilegedFieldsAreTheCheckedEndpoints(t *testing.T) {
 		}
 		var privileged []string
 		for _, f := range def.ConfigFields {
-			if f.Privileged {
+			// The in-machine switch is privileged too, but no endpoint:
+			// discobox sets it on a pool's machine alone, and offers it to
+			// no one (TestInMachineIsDiscoboxs).
+			if f.Privileged && (def.InMachine == nil || f.Key != def.InMachine.Field) {
 				privileged = append(privileged, f.Key)
 			}
 			// disco-vm still decodes a Retired field into its ReplacedBy, and
@@ -217,5 +226,26 @@ func TestTheEnginesDialIsChecked(t *testing.T) {
 	err = list()
 	if len(accepted) == 0 || errors.Is(err, sandbox.ErrEndpointRefused) {
 		t.Fatalf("the carried endpoint was not dialed: %v", err)
+	}
+}
+
+// A driver that authenticates a machine as itself is known by what disco-vm
+// declares (Definition.InMachine; boxd's inMachine, vm#140), never by a field's
+// name. Its field is discobox's alone to set, on a pool's machine: the
+// server's own engine calls with the provider's key (ADR 26-11-11-080 §9).
+func TestInMachineIsDiscoboxs(t *testing.T) {
+	field, ok := inMachineField("boxd")
+	if !ok || field != "inMachine" {
+		t.Fatalf("boxd's in-machine field = %q, %v; want inMachine", field, ok)
+	}
+	if field, ok := inMachineField("archil"); ok {
+		t.Fatalf("archil's in-machine field = %q, want none", field)
+	}
+	config, err := withInMachine(json.RawMessage(`{"region":"fra"}`), field)
+	if err != nil || string(config) != `{"inMachine":true,"region":"fra"}` {
+		t.Fatalf("withInMachine = %s, %v", config, err)
+	}
+	if err := machine.Validate("boxd", config); err != nil {
+		t.Fatalf("disco-vm refuses the pool's configuration: %v", err)
 	}
 }

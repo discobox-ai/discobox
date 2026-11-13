@@ -251,7 +251,10 @@ driver's type, its sealed `apiKey` becomes the driver's secret
 endpoints the server's environment gave the old driver are written into its
 `driver` fields and named in `carried_endpoints`, a server-held column no
 request writes, which marks them the operator's. Any other `vm` row is
-disabled and kept.
+disabled and kept. Every row it moves loses `deliverProviderKey`, and so,
+on every start, does a row already of a linked driver's type that still has
+it (`dropDeliverProviderKey`, §9): the provider's key is never placed on a
+pool's machine. A row without it is not written.
 
 ## Error Contract
 
@@ -281,7 +284,7 @@ Keep files split by resource area:
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
 | `sandbox_events.go` | Sandbox events: the per-transaction batch and its recording, the stream's reads, retention, and the backfill `database.Migrate` runs. |
 | `providers.go` | Provider instance persistence. |
-| `vmproviders.go` | The upgrade of each retired `vm` provider row to its driver's type (`MigrateVMProviders`). |
+| `vmproviders.go` | The upgrade of each retired `vm` provider row to its driver's type, and the drop of `deliverProviderKey` from every linked driver's row (`MigrateVMProviders`). |
 | `pools.go` | Pool persistence: CRUD, enrollment (the key a pool's maker read from its box) and heartbeats (the first registers it), telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go` | Secrets (sealed values), secret requests and refresh requests. |
 | `secret_bindings.go`, `effective_bindings.go` | Bindings with their events and cascades, and what applies at a target (narrowest per variable). |

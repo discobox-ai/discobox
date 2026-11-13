@@ -11,8 +11,9 @@
   or an error: the record keeps its ID, name, scope, expiry, and for the
   provider's own key a fingerprint. Why: the pool's row is read back by the
   API and the server's logs leave the host.
-- An issue that fails is retried, never answered with the provider's own
-  key, and the provider's key is placed only with `deliverProviderKey`. A
+- The provider's own key is never placed on a pool's machine (ADR
+  26-11-11-080 §9): in-machine, or an issued key, or the pool is blocked.
+  An issue that fails is retried, never answered with a wider key. A
   renewal never revokes the key it replaces. Why: a transient error must not
   hand a pool a wider key that nothing expires (551 §4), and a revoked key
   fails the calls already in flight on it.
@@ -84,3 +85,14 @@
   connecting by IP through a proxy breaks a TLS-intercepting or
   hostname-only proxy, and a name dialed straight but resolved twice could
   rebind inward between the check and the dial.
+- A driver's in-machine auth is read from disco-vm's declaration
+  (`machine.Definition.InMachine`: its field and its endpoints), never from
+  a field's name, here or in the pool agent. Why: a field's name is no
+  promise across drivers, and the declaration is the contract disco-vm keeps
+  (vm#140); a new driver that declares it is picked up with no change here.
+- A credential a running pool agent reads (its provisioning key file) is
+  taken off its machine, and revoked, only after the placement whose agent
+  no longer needs it has applied (`poolKeys.retire` after `ProvisionBox`).
+  Why: the agent rereads the file on every call, and a placement that fails
+  on a running pool keeps the old agent, which would then authenticate
+  nowhere while the pool reads as converged.

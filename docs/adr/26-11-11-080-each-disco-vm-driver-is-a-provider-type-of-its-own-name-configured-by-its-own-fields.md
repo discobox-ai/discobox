@@ -48,7 +48,10 @@
 - **Amended**, both before anything shipped against it:
   - 2026-11-13, §9: a boxd pool authenticates in-machine, by the owner
     merging PR 1093 (#1092);
-  - 2026-11-13, §3's check at dial through a proxy, by the owner on #1006.
+  - 2026-11-13, §3's check at dial through a proxy, by the owner on #1006;
+  - 2026-11-14, §9: a driver's in-machine auth is known from disco-vm's
+    declaration of it (vm#140), and its endpoints are kept from the pool
+    machine's other processes, by the owner on #1006.
 - **Issue**: #1006
 - **Relates to**:
   - [0003](0003-promote-pool-to-a-first-class-primitive.md), one provider
@@ -390,6 +393,21 @@ owner on every read. An isolated machine gets none (#1090).
 - **Nothing to revoke per pool.** The credential goes with the machine:
   deleting the pool machine ends it, and its last token dies within fifteen
   minutes.
+- **Known from disco-vm's declaration.** A driver that can authenticate as
+  its machine declares it (`machine.Definition.InMachine`, vm#140): the
+  privileged boolean field that turns it on, and every endpoint a process
+  on the machine reaches for the credential (boxd's: `<gateway>:9002`).
+  discobox picks this way, and sets that field on the pool's machine alone,
+  from the declaration, never from a field's name.
+- **Its endpoints are kept from the rest of the pool.** They answer any
+  process on the pool machine. The pool's proxy, which every sandbox's and
+  build step's egress leaves through, and its builder, which fetches what a
+  Dockerfile names itself, would otherwise hand a sandbox the token. So a
+  rule set on the pool machine refuses every connection to the declared
+  endpoints but the pool agent's engine's, which it marks. Every unit that
+  carries a sandbox's traffic loads it before it starts and does not start
+  without it, and the pool agent loads it too, so a pool machine that
+  cannot load it runs no pool.
 
 **What the in-machine token reaches, stated.** It is the machine owner's
 `member` credential, fenced to one org and to the machine's life, as #1090
@@ -635,8 +653,11 @@ read the key from its memory.
   - **an in-machine credential source** (vm#109): boxd's driver reads its
     machine's metadata endpoint and caches the token until near its expiry,
     on a machine where no key is given. Whether a driver authenticates
-    in-machine, and what its pool machine must be for that (boxd: private,
-    not isolated), is readable from its definition, so discobox picks §9's
-    way without knowing the driver. That boxd's endpoint and token lifetime
+    in-machine is readable from its definition (`Definition.InMachine`,
+    vm#140), so discobox picks §9's way without knowing the driver. What its
+    pool machine must be for that (boxd: private, not isolated) is not
+    declared, and need not be: discobox makes every pool machine so
+    (`poolMachine.create`, 551 §4), whatever the driver (amended
+    2026-11-14). That boxd's endpoint and token lifetime
     hold is the driver's to keep: neither is in boxd's documentation.
 - **Issues.** #997 closes into #1006.

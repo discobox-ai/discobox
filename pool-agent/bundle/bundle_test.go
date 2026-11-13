@@ -170,3 +170,34 @@ func TestAgentRestartLeavesBuilderRunning(t *testing.T) {
 		})
 	}
 }
+
+// Every unit that carries a sandbox's traffic loads the in-machine rule set
+// before it starts, and does not start without it: a reboot clears the
+// kernel's tables, and these units do not wait on the agent's start (ADR
+// 26-11-11-080 §9). The agent's own unit is the one exempt.
+func TestSandboxTrafficUnitsLoadTheInMachineFence(t *testing.T) {
+	const pre = "ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence"
+	for _, unit := range []string{
+		filepath.Join("features", "pool-agent", "systemd", "discobox-proxy.service"),
+		filepath.Join("features", "pool-builder-units", "systemd", "discobox-buildkitd.service"),
+		filepath.Join("features", "pool-builder-units", "systemd", "discobox-buildkit-mediator.service"),
+		filepath.Join("features", "pool-builder-units", "systemd", "discobox-registry.service"),
+	} {
+		data, err := os.ReadFile(unit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{pre, "Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=" + BootstrapFile, "StartLimitIntervalSec=0"} {
+			if !strings.Contains(string(data), "\n"+want+"\n") {
+				t.Errorf("%s lacks %q: it loads the in-machine fence before it starts, from the bootstrap the agent reads, and is retried for good", unit, want)
+			}
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join("features", "*", "systemd", "*.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 5 {
+		t.Errorf("units = %v: a new one that carries a sandbox's traffic loads the in-machine fence too", matches)
+	}
+}

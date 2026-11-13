@@ -26,6 +26,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 // poolTestDriver is the fake driver as a remote driver's pool machine sees
@@ -50,6 +51,10 @@ type poolTestDriver struct {
 	restarts [][]string
 	// issueErr, when set, is what IssueKey answers.
 	issueErr error
+	// name, when set, is the driver's name: boxd's, for a pool that
+	// authenticates in-machine, which the fake driver's configuration
+	// cannot ask for.
+	name string
 	// applyFails makes apply exit non-zero.
 	applyFails bool
 	// lookupErr, when set, is what Instance and Instances answer: the
@@ -61,6 +66,13 @@ type poolTestDriver struct {
 	// fences is each machine's isolation and networks, by ID, as Create was
 	// asked for them: the fake driver under this one keeps neither.
 	fences map[string]machine.InstanceSpec
+}
+
+func (d *poolTestDriver) Name() string {
+	if d.name != "" {
+		return d.name
+	}
+	return d.Driver.Name()
 }
 
 func (d *poolTestDriver) Capabilities() machine.Capabilities {
@@ -214,7 +226,12 @@ func (m *poolTestMachine) Exec(ctx context.Context, req machine.ExecRequest) (ma
 		if len(req.Argv) != 4 || req.Argv[3] != "--wait" {
 			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo apply was not asked to wait >&2; exit 2"}})
 		}
-		check += ` && test -f "$root` + bundle.BootstrapFile + `" && test -f "$root` + bundle.ProvisioningKeyFile + `"`
+		check += ` && test -f "$root` + bundle.BootstrapFile + `"`
+		if m.driver.name == "" {
+			// A pool that authenticates in-machine (a test driver named as
+			// boxd) is given no key file; any other is.
+			check += ` && test -f "$root` + bundle.ProvisioningKeyFile + `"`
+		}
 		check += ` && test "$(cat "$root` + agentlayer.PlacedBlob(testPoolBlob) + `")" = "` + testPoolBlobData + `"`
 		process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", check}})
 		if err != nil {
@@ -244,6 +261,9 @@ func (p *applyCheck) Wait(stdout, stderr io.Writer) (int, error) {
 		into any
 	}{{bundle.BootstrapFile, &bootstrap}, {bundle.ProvisioningKeyFile, &key}} {
 		data, err := readGuestFile(p.machine.Machine, file.path)
+		if err != nil && file.path == bundle.ProvisioningKeyFile && p.machine.driver.name != "" {
+			continue
+		}
 		if err != nil {
 			return 1, err
 		}
@@ -668,52 +688,46 @@ func TestFakePoolMachineRenewsItsKey(t *testing.T) {
 	}
 }
 
-// A driver that cannot issue a key blocks the pool, saying so, unless the
-// provider opts in to delivering its own; an issue that fails otherwise is
-// retried, never answered with the provider's key.
+// A driver that cannot issue a key, and does not authenticate a machine
+// as itself, blocks the pool, saying so; the provider's own key is never
+// placed (ADR 26-11-11-080 §9). An issue that fails otherwise is retried. A
+// provider key an older server placed is taken off the machine.
 func TestFakePoolMachineKeyWhenTheDriverCannotIssue(t *testing.T) {
 	r, driver := newFakePool(t, "")
 	ctx := context.Background()
 	pool := &model.Pool{ID: "pool-8", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
-	host := r.host.(*poolMachine)
-	host.keys.own = machine.Key{Driver: "fake", Secret: "the-providers-own"}
 
 	driver.issueErr = errors.New("service unavailable")
-	host.keys.deliver = true
 	err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
 	if err == nil || !strings.Contains(err.Error(), "service unavailable") || driver.applies() != 0 {
-		t.Fatalf("a failed issue with the opt-in = %v, applies %d; want it failed, not downgraded", err, driver.applies())
+		t.Fatalf("a failed issue = %v, applies %d; want it failed", err, driver.applies())
 	}
 
 	driver.issueErr = machine.ErrCannotIssue
-	host.keys.deliver = false
 	err = r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
-	if err == nil || !strings.Contains(err.Error(), "blocked") || !strings.Contains(err.Error(), "deliverProviderKey") || driver.applies() != 0 {
-		t.Fatalf("no issue and no opt-in = %v, applies %d; want the pool blocked, naming the opt-in", err, driver.applies())
+	if err == nil || !strings.Contains(err.Error(), "blocked") || !strings.Contains(err.Error(), "never placed") || driver.applies() != 0 {
+		t.Fatalf("no issue = %v, applies %d; want the pool blocked, saying the provider's key is never placed", err, driver.applies())
 	}
 
-	host.keys.deliver = true
-	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
-		t.Fatalf("no issue with the opt-in: %v", err)
-	}
-	if key := driver.lastKey(t); key.Issued || key.Secret != "the-providers-own" {
-		t.Fatalf("placed %v, want the provider's own key", key)
-	}
-	if credential := pool.HostCredential; credential == nil || credential.Key != model.PoolHostKeyProvider || credential.ExpiresAt != nil {
-		t.Fatalf("host credential = %+v, want the provider's own key shown", credential)
-	}
-	if strings.Contains(string(pool.RuntimeState), "the-providers-own") {
-		t.Fatal("the pool's record holds the provider's key")
-	}
-
-	// A key the provider's configuration rotates is placed again.
-	host.keys.own.Secret = "rotated"
-	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+	// A machine an older server put the provider's own key on.
+	host := r.host.(*poolMachine)
+	inst, err := host.instance(ctx, pool)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if guestKey(t, r, pool).Secret != "rotated" {
-		t.Fatal("a rotated provider key was not placed")
+	guest, err := r.engine.Guest(ctx, inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := poolruntime.PlaceBoxFiles(ctx, guest, poolruntime.BoxFile{Path: bundle.ProvisioningKeyFile, Data: []byte(`{"driver":"fake","secret":"the-providers-own"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.keys.ensure(ctx, pool, guest, &poolKeyRecord{IssuedAt: time.Now(), Fingerprint: "an-old-provider-key"}); err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("an older provider key's machine = %v, want blocked", err)
+	}
+	if _, err := readGuestFile(guest, bundle.ProvisioningKeyFile); err == nil {
+		t.Fatal("the provider's key an older server placed stayed on the machine")
 	}
 }
 
@@ -866,57 +880,152 @@ func TestFakePoolMachineKeepsItsKeyWhenRenewalFails(t *testing.T) {
 	}
 }
 
-// The provider's own key is asked to be replaced by an issued one daily, and
-// withdrawing the opt-in takes it off the machine and blocks the pool.
-func TestFakePoolMachineProviderKeyIsReplacedOrWithdrawn(t *testing.T) {
+// A driver that authenticates a machine as itself (boxd, vm#109) has its
+// pool's machine given nothing: no key, issued or the provider's, and no key
+// file; its bootstrap turns the driver's in-machine field on and names no
+// key (ADR 26-11-11-080 §9).
+func TestFakePoolMachineAuthenticatesInMachine(t *testing.T) {
 	r, driver := newFakePool(t, "")
 	ctx := context.Background()
 	pool := &model.Pool{ID: "pool-17", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
 	host := r.host.(*poolMachine)
-	host.keys.own = machine.Key{Driver: "fake", Secret: "the-providers-own"}
-	host.keys.deliver = true
-	driver.issueErr = machine.ErrCannotIssue
+	driver.name = "boxd"
+	host.keys.inMachineField = "inMachine"
+	host.driverConfig = json.RawMessage(`{"region":"fra"}`)
+
 	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
 		t.Fatal(err)
+	}
+	if issued := issuedKeys(t, r, pool); len(issued) != 0 {
+		t.Fatalf("issued %v for an in-machine pool, want none", issued)
+	}
+	if _, err := readGuestFile(poolGuest(t, r, pool), bundle.ProvisioningKeyFile); err == nil {
+		t.Fatal("an in-machine pool's machine holds a key file")
+	}
+	if record := recordOf(t, pool).Key; record == nil || !record.InMachine || record.Issued {
+		t.Fatalf("record %+v, want in-machine", record)
+	}
+	if credential := pool.HostCredential; credential == nil || credential.Key != model.PoolHostKeyInMachine {
+		t.Fatalf("host credential = %+v, want in-machine", credential)
+	}
+	bootstrap := driver.applied[len(driver.applied)-1]
+	var config map[string]any
+	_ = json.Unmarshal(bootstrap.DriverConfig, &config)
+	if config["inMachine"] != true || config["region"] != "fra" || len(config) != 2 {
+		t.Fatalf("bootstrap's driver configuration = %s; want the driver's in-machine field on beside the provider's", bootstrap.DriverConfig)
+	}
+}
+
+// A pool an older server keyed keeps its key until the placement that turns
+// in-machine auth on has applied: its running agent reads the key file on
+// every call. A placement that does not apply leaves the key, its file and
+// its record as they were. Once it applies the file is taken off and every
+// key issued for the pool revoked, so one read from the machine's disk stops
+// working now (ADR 26-11-11-080 §9).
+func TestFakePoolMachineMovesToInMachineAfterItsPlacementApplies(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-18", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	host := r.host.(*poolMachine)
+	driver.name = "boxd"
+	maker := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	keyed := recordOf(t, pool).Key
+	if keyed == nil || !keyed.Issued || len(issuedKeys(t, r, pool)) != 1 {
+		t.Fatalf("the older server's pool = %+v, want an issued key", keyed)
 	}
 
-	// The driver can issue now, but it is not asked until a day has passed.
-	driver.issueErr = nil
-	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+	// The server now authenticates the driver's pools in-machine.
+	host.keys.inMachineField = "inMachine"
+	driver.applyFails = true
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatalf("a running pool whose in-machine placement does not apply = %v, want it kept", err)
+	}
+	if record := recordOf(t, pool).Key; record == nil || record.ID != keyed.ID || record.InMachine {
+		t.Fatalf("record after a failed apply = %+v, want the issued key's", record)
+	}
+	if guestKey(t, r, pool).ID != keyed.ID || len(issuedKeys(t, r, pool)) != 1 {
+		t.Fatal("the key the running agent reads was taken before its in-machine placement applied")
+	}
+	// While the switch has not applied, the key it reads is still renewed.
+	host.keys.now = func() time.Time { return time.Now().Add(poolKeyTTL*3/4 - time.Hour) }
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatal(err)
 	}
-	if recordOf(t, pool).Key.Issued {
-		t.Fatal("the provider's key was replaced before its recheck")
+	renewed := recordOf(t, pool).Key
+	if renewed == nil || !renewed.Issued || renewed.ID == keyed.ID || guestKey(t, r, pool).ID != renewed.ID {
+		t.Fatalf("record past half-life while the switch has not applied = %+v, want a renewed key placed", renewed)
 	}
-	host.keys.now = func() time.Time { return time.Now().Add(providerKeyRecheck + time.Hour) }
-	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
-		t.Fatal(err)
-	}
-	if key := guestKey(t, r, pool); !key.Issued || pool.HostCredential.Key != model.PoolHostKeyIssued {
-		t.Fatalf("after the recheck the machine holds %v, want an issued key", key)
-	}
-
-	// Back to the provider's key, then the opt-in withdrawn.
-	r.RemovePool(ctx, nil, nil, pool)
 	host.keys.now = time.Now
-	driver.issueErr = machine.ErrCannotIssue
-	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+
+	driver.applyFails = false
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatal(err)
 	}
-	host.keys.deliver = false
-	err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
-	if err == nil || !strings.Contains(err.Error(), "blocked") {
-		t.Fatalf("a withdrawn opt-in = %v, want the pool blocked", err)
+	if record := recordOf(t, pool).Key; record == nil || !record.InMachine {
+		t.Fatalf("record = %+v, want in-machine", record)
 	}
-	inst, _ := host.instance(ctx, pool)
-	guest, _ := r.engine.Guest(ctx, inst)
-	if _, err := readGuestFile(guest, bundle.ProvisioningKeyFile); err == nil {
-		t.Fatal("the provider's key stayed on the machine after the opt-in was withdrawn")
+	if _, err := readGuestFile(poolGuest(t, r, pool), bundle.ProvisioningKeyFile); err == nil {
+		t.Fatal("the key an older server placed stayed on an in-machine pool's machine")
 	}
-	if recordOf(t, pool).Key != nil || pool.HostCredential == nil || pool.HostCredential.Key != "" {
-		t.Fatalf("record %+v, credential %+v; want no key shown", recordOf(t, pool).Key, pool.HostCredential)
+	if issued := issuedKeys(t, r, pool); len(issued) != 0 {
+		t.Fatalf("keys = %v after the move to in-machine, want every one revoked", issued)
 	}
+	var config map[string]any
+	_ = json.Unmarshal(driver.applied[len(driver.applied)-1].DriverConfig, &config)
+	if config["inMachine"] != true {
+		t.Fatalf("the applied bootstrap's driver configuration = %v, want in-machine on", config)
+	}
+
+	// A record lost says nothing of what the machine holds: whatever an older
+	// server left there is taken off once the placement applies.
+	if err := poolruntime.PlaceBoxFiles(ctx, poolGuest(t, r, pool), poolruntime.BoxFile{Path: bundle.ProvisioningKeyFile, Data: []byte(`{"driver":"boxd","secret":"bxd_old"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	state := recordOf(t, pool)
+	state.Key = nil
+	if err := host.writeState(pool, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if record := recordOf(t, pool).Key; record == nil || !record.InMachine {
+		t.Fatalf("record after a lost one = %+v, want in-machine", record)
+	}
+	if _, err := readGuestFile(poolGuest(t, r, pool), bundle.ProvisioningKeyFile); err == nil {
+		t.Fatal("a key an older server placed stayed on the machine after its record was lost")
+	}
+
+	// The provider's own key, which an older server placed, is taken off too.
+	if err := poolruntime.PlaceBoxFiles(ctx, poolGuest(t, r, pool), poolruntime.BoxFile{Path: bundle.ProvisioningKeyFile, Data: []byte(`{"driver":"boxd","secret":"bxd_old"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := host.keys.retire(ctx, pool, poolGuest(t, r, pool), &poolKeyRecord{IssuedAt: time.Now(), Fingerprint: "an-old-provider-key"})
+	if err != nil || record == nil || !record.InMachine {
+		t.Fatalf("retiring the provider's key = %+v, %v; want in-machine", record, err)
+	}
+	if _, err := readGuestFile(poolGuest(t, r, pool), bundle.ProvisioningKeyFile); err == nil {
+		t.Fatal("the provider's key an older server placed stayed on the machine")
+	}
+}
+
+// poolGuest is the pool's machine's guest.
+func poolGuest(t *testing.T, r *Runtime, pool *model.Pool) machine.Guest {
+	t.Helper()
+	inst, err := r.host.(*poolMachine).instance(context.Background(), pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := r.engine.Guest(context.Background(), inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return guest
 }
 
 // A record from before the box's record held its placement kept it beside
