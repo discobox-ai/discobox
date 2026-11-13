@@ -62,3 +62,51 @@ fi
 if ! mountpoint -q /var/lib/containerd; then
     mount --bind /var/lib/discobox/containerd /var/lib/containerd
 fi
+
+# This guest's Docker keeps images in containerd's store (daemon.json). A data
+# disk a classic-store guest used still holds that store's images, layers and
+# containers, which this daemon can neither see nor remove. They are moved
+# aside here, before dockerd starts, and deleted by
+# discobox-remove-classic-store.service once boot is under way: renames on the
+# one filesystem are instant, deleting tens of GiB is not, and the pool waits
+# on dockerd. Each step is a rename that leaves a smaller classic store behind,
+# so a boot interrupted half way finishes the move on the next one.
+#
+# What marks the classic store is overlay2's own state: its layer directory and
+# its image and layer database under image/overlay2. A containerd-store daemon
+# writes neither. containers/ and buildkit/ are shared by both stores, so each
+# is split by store, never moved whole: only the containers that name overlay2
+# as their driver go, and only BuildKit's classic-store files (moby's
+# builder-next: its content store and its metadata and snapshot databases).
+# cache.db, executor/ and net/ are the containerd-store BuildKit's as well, and
+# so is history.db on the Docker this guest installs (only later Docker names
+# the containerd store's history_c8d.db); its snapshots are held by leases in
+# containerd's own database, which moving its files would orphan.
+docker_root=/var/lib/discobox/docker
+if [ -d "$docker_root/overlay2" ] || [ -d "$docker_root/image/overlay2" ]; then
+    install -d -m 0700 /var/lib/discobox/docker-classic-store
+    trash=$(mktemp -d /var/lib/discobox/docker-classic-store/store.XXXXXX)
+    echo "moving the classic Docker store's data aside for removal"
+    if [ -d "$docker_root/containers" ]; then
+        mkdir "$trash/containers"
+        for container in "$docker_root"/containers/*/; do
+            container=${container%/}
+            [ -f "$container/config.v2.json" ] || continue
+            if grep -q '"Driver":"overlay2"' "$container/config.v2.json"; then
+                mv "$container" "$trash/containers/"
+            fi
+        done
+    fi
+    for path in \
+        buildkit/content \
+        buildkit/containerdmeta.db \
+        buildkit/snapshots.db \
+        buildkit/metadata.db \
+        buildkit/metadata_v2.db \
+        image/overlay2 \
+        overlay2; do
+        if [ -e "$docker_root/$path" ]; then
+            mv "$docker_root/$path" "$trash/$(echo "$path" | tr / -)"
+        fi
+    done
+fi
