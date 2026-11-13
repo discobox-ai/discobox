@@ -13,6 +13,7 @@ import (
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -122,6 +123,9 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 	if err := checkRawBinding(ctx, binding, secret); err != nil {
 		return nil, err
 	}
+	if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+		return nil, err
+	}
 	ttl, named := input.TtlSeconds.Get()
 	if !named {
 		ttl = secret.MaxBindingTTL
@@ -197,6 +201,35 @@ func checkRawBinding(ctx context.Context, binding *model.SecretBinding, secret *
 	return nil
 }
 
+// checkSecretBodyPlaces refuses a binding with a route naming a body place
+// some other list it is held to (store.RouteLists: its secret's routes, each
+// route constraint, and its parent's, when parent is given) allows nowhere on
+// that route's hosts and methods. Every list is held at once and `*` grants
+// no body place, so such a binding is one the proxy refuses on every use:
+// whoever writes it, a person or a discobox, is told now, rather than told it
+// is granted (#1097). The binding's own list is among them, and always
+// allows its own places.
+func checkSecretBodyPlaces(binding *model.SecretBinding, secret *model.Secret, parent *model.SecretBinding) error {
+	for i, list := range store.RouteLists(secret, binding, parent) {
+		err := secretroute.BodyPlacesAllowed(binding.Routes, list)
+		if err == nil {
+			continue
+		}
+		switch {
+		case i == 0:
+			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+				"secret %s's routes: %v, so the credential would never be sent there; the secret needs a route naming that body place first", secret.Name, err))
+		case i <= len(secret.RouteConstraints):
+			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+				"secret %s's harness route constraints: %v, so the credential would never be sent there", secret.Name, err))
+		default:
+			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+				"the delegation this is handed on under (%s): %v, so the credential would never be sent there", parent.ID, err))
+		}
+	}
+	return nil
+}
+
 // UpdateSecretBinding changes a binding's routes, lifetime, variable, or what
 // it is for. A lifetime named runs from now, held to the secret's limit and,
 // for a binding handed on, to its parent's. Turning use off takes the variable
@@ -255,6 +288,17 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 	if err := checkRawBinding(ctx, binding, secret); err != nil {
 		return nil, err
 	}
+	var parent *model.SecretBinding
+	if binding.ParentID != "" {
+		if parent, err = s.store.SecretBindingByExactID(ctx, projectID, binding.ParentID); err != nil {
+			return nil, apperrors.NotFound(err, "the delegate binding this was handed on under is gone")
+		}
+	}
+	if input.Routes != nil {
+		if err := checkSecretBodyPlaces(binding, secret, parent); err != nil {
+			return nil, err
+		}
+	}
 	now := time.Now().UTC()
 	if ttl, ok := input.TtlSeconds.Get(); ok {
 		if ttl < 0 {
@@ -263,11 +307,7 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 		if err := guardBindingTTL(secret, ttl); err != nil {
 			return nil, err
 		}
-		if binding.ParentID != "" {
-			parent, err := s.store.SecretBindingByExactID(ctx, projectID, binding.ParentID)
-			if err != nil {
-				return nil, apperrors.NotFound(err, "the delegate binding this was handed on under is gone")
-			}
+		if parent != nil {
 			if _, err := fitToParent(parent, ttl, true, now); err != nil {
 				return nil, err
 			}
@@ -555,6 +595,9 @@ func (s *Service) PrepareSandboxBindings(ctx context.Context, projectID string, 
 		}
 		binding.SecretID, binding.SecretName = secret.ID, secret.Name
 		if err := checkRawBinding(ctx, binding, secret); err != nil {
+			return SandboxBindings{}, err
+		}
+		if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
 			return SandboxBindings{}, err
 		}
 		if binding.Use {
