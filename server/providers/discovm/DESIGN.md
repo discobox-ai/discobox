@@ -147,10 +147,12 @@ as ADR 26-10-09-106 §1 places it:
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated
   machine only with machines that are not, so it keeps what the driver gives
-  a machine (its machine token, shown on the pool). The pool agent makes
-  every sandbox's machine isolated on that network (ADR 26-10-23-551 §4). A
-  driver that cannot isolate (`Capabilities.Isolation`) makes no pool
-  machine.
+  a machine (its machine token, shown on the pool). It asks the driver for a
+  public URL, not strictly (`CreateOptions.URLs`), which the server reaches
+  its agent at. The pool agent makes every sandbox's machine isolated on that
+  network (ADR 26-10-23-551 §4) with its public URL off, strictly, so boxd
+  gives it no URL beyond its private one (disco-vm ADR 26-11-12-604). A driver that cannot isolate
+  (`Capabilities.Isolation`) makes no pool machine.
 - A remote machine whose service does not answer reads `Unknown`, which is
   neither running nor stopped. The engine reads `Unknown` for any failure to
   ask, so the machine is asked again through `Engine.Guest`, which makes the

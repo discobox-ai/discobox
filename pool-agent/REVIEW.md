@@ -562,17 +562,21 @@ answer is seen): after that its disk is the sandbox's work.
   to the sandbox agent.** The sandbox user has passwordless sudo, so the agent
   in a box can stop the sandbox agent and bind that port itself. Whatever the
   driver publishes there is an inbound channel that neither the egress fence
-  nor the pool proxy's audit sees. Today the boxd driver publishes it on every
-  machine (its default proxy, `pinProxy` in disco-vm), though a direct-form
-  pool dials only the private URL. The edge form (ADR 26-10-29-481 §3) reaches
-  the agent at the public URL by design. A change that adds, keeps or relies
-  on a sandbox machine's public URL is judged against that: "the agent answers
-  nothing else there" is never a control, because the guest's root, not the
-  agent, decides what answers. What does restrict it (a check at the provider,
-  or no public URL) is still undecided: #947's scope tracks it for boxd and
-  for a driver with no isolation. Why: code in a box could otherwise exfiltrate
-  or take instructions around the proxy while every check inside the guest
-  passes.
+  nor the pool proxy's audit sees. So a sandbox's machine, and a snapshot
+  build's, asks the driver for no public URL, strictly (`createOptions`;
+  disco-vm ADR 26-11-12-604): boxd gives it none, removing the default proxy
+  it gives every machine, and a driver that cannot withhold one refuses the
+  machine. The driver is trusted to keep to a strict request; nothing polls a
+  machine for a URL, and a machine made before the request keeps its URL
+  until it is made again. The pool's own machine asks for one, not strictly,
+  since the server reaches the pool agent there. A change that adds, keeps or
+  relies on a sandbox machine's public URL, or drops the strict request, is
+  judged against that: "the agent answers nothing else there" is never a
+  control, because the guest's root, not the agent, decides what answers. The
+  edge form (ADR 26-10-29-481 §3) reaches a sandbox at its public URL by
+  design, and has no pool until a driver with no isolation settles how
+  (#1053). Why: code in a box could otherwise exfiltrate or take instructions
+  around the proxy while every check inside the guest passes.
 
 ## The sandbox agent's TLS
 

@@ -948,10 +948,15 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 }
 
 // createOptions is how every machine of the pool is made, a sandbox's or a
-// snapshot build's: isolated on the pool's network and fenced to its hop
-// (ADR 26-10-23-551 §4, ADR 26-10-29-481 §4).
+// snapshot build's: isolated on the pool's network, fenced to its hop, and
+// with no public URL, asked strictly, so a driver that cannot withhold one
+// refuses the machine (ADR 26-10-23-551 §4, ADR 26-10-29-481 §4, disco-vm ADR
+// 26-11-12-604). The pool reaches it at its private URL alone, and a public
+// one would be an inbound path from the internet that the guest's root
+// answers and the pool's fence never sees.
 func (r *MachineSandboxRuntime) createOptions(name string) engine.CreateOptions {
 	opts := engine.CreateOptions{Name: name, Egress: r.egress}
+	opts.URLs.Public = machine.URLRequest{Mode: machine.URLOff, Strict: true}
 	if r.isolate {
 		opts.Isolated, opts.Networks = true, []string{r.network}
 	}
@@ -1244,8 +1249,9 @@ func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID str
 }
 
 // agentURL is the private URL of the sandbox's machine while it runs: a
-// direct path on the pool's network, or its public URL where the driver
-// gives its machines no other.
+// direct path on the pool's network, or its URL where the driver gives its
+// machines no other path and that URL is not public (a loopback port); a
+// sandbox's machine has no public URL (createOptions).
 func (r *MachineSandboxRuntime) agentURL(ctx context.Context, sandboxID string) (string, error) {
 	if value, ok := r.urls.Load(sandboxID); ok {
 		if target, ok := value.(string); ok {

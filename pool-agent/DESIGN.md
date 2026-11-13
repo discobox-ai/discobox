@@ -982,7 +982,7 @@ error. Only boxd is linked.
 
 ```mermaid
 flowchart LR
-    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool)"]
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool, no public URL)"]
     inst --> newroot{"machine.json asks\na new root?"}
     newroot -->|yes| upgrade["upgradeMachine:\nengine.Upgrade, keeping\nits data and cache volumes"]
     newroot -->|no| start["startLocked: engine.Start"]
@@ -1000,10 +1000,14 @@ flowchart LR
   is made `Isolated` on `MachineNetwork` (ADR 26-10-23-551 §4) and fenced to
   what the pool's hop reaches (`Egress`; [The Hop](#the-hop)), which the
   driver sets and reads back before the create returns, so the fence holds
-  before anything is placed. A driver that cannot isolate or fence is
-  refused, and a machine found by name whose fence its driver reports
-  otherwise — made before the fence, or by hand — is refused rather than run
-  (`fenced`).
+  before anything is placed. It asks for no public URL, strictly, so boxd
+  gives it none beyond its private one, `http://<machine>.boxd:7302`, and a
+  driver that cannot withhold one refuses it (disco-vm ADR 26-11-12-604;
+  [REVIEW.md](REVIEW.md#a-machines-public-port)). The driver is trusted to
+  keep to that: nothing re-checks a machine for a URL. A driver that cannot
+  isolate or fence is refused, and a machine found by name whose fence its
+  driver reports otherwise — made before the fence, or by hand — is refused
+  rather than run (`fenced`).
 - **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
   when the pool's record does not say it is there, the units
   (`agentlayer.MachineUnits`: the agent's, and the drop-in that runs
@@ -1121,7 +1125,7 @@ the bootstrap, and `resolvePoolHop` derives from them, once, at start:
 | the pool's private URL | its sandboxes' endpoints | a sandbox machine's fence |
 | --- | --- | --- |
 | not its public URL: a direct path | `https://discobox-pool-proxy:<port>`, as on a Docker pool, with the private URL's host as discobox's answer for the name (`PoolEndpoints.Address`), which the sandbox's bridges dial in its place and resolve through the provider at each dial | nothing beyond the pool's network |
-| its public URL: an edge | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone |
+| its public URL: an edge (no driver reaches it: it would reach each sandbox at its machine's public URL, which a sandbox's machine asks off, strictly; #1053) | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone |
 
 The names are discobox's own, as a private DNS would answer them: the
 provider's name for the pool's machine, and its address, are never in an
