@@ -366,9 +366,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 // off the org's default one, so no other machine of the provider's reaches it
 // (ADR 26-10-23-551 §4). It is not isolated: boxd peers an isolated machine
 // only with machines that are not, so the pool's machine keeps what the
-// driver gives a machine (the pool's HostCredential says so).
+// driver gives a machine (the pool's HostCredential says so). It asks for a
+// public URL, which the server reaches its agent at, not strictly: a driver
+// that gives none fails where the server dials it. A sandbox's machine asks
+// for none, strictly (disco-vm ADR 26-11-12-604).
 func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string) (engine.Instance, error) {
-	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}})
+	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Public: machine.URLRequest{Mode: machine.URLOn}}})
 	if err != nil {
 		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))
 	}

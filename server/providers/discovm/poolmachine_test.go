@@ -398,8 +398,8 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
 	const scope = "pool-0123456789abcdef"
-	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{scope}) {
-		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone", driver.created, scope, scope)
+	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{scope}) || driver.created[0].URLs.Public != (machine.URLRequest{Mode: machine.URLOn}) {
+		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone, with a public URL", driver.created, scope, scope)
 	}
 	if len(maker.enrolled) != 1 || maker.enrolled[0] != testPoolKey {
 		t.Fatalf("enrolled %q, want the key the box made", maker.enrolled)

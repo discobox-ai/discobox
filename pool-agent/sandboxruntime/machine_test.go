@@ -1550,3 +1550,17 @@ func TestAPlacementAfterAForcedRestartIsRecordedOnceItsAgentAnswers(t *testing.T
 		t.Fatalf("placement record before the agent answered: %v %v, want none", ok, err)
 	}
 }
+
+// A sandbox's machine, and a snapshot build's, asks for no public URL,
+// strictly: the pool reaches it at its private URL, and a public one would be
+// an inbound path from the internet that the guest's root answers and the
+// pool's fence never sees (disco-vm ADR 26-11-12-604).
+func TestMachineAsksNoPublicURL(t *testing.T) {
+	want := machine.URLRequest{Mode: machine.URLOff, Strict: true}
+	for _, isolate := range []bool{true, false} {
+		r := &MachineSandboxRuntime{isolate: isolate, network: "pool-0123456789abcdef"}
+		if opts := r.createOptions("sbx-1"); opts.URLs.Public != want || opts.URLs.Private != (machine.URLRequest{}) || opts.URLs.Internal != (machine.URLRequest{}) {
+			t.Fatalf("isolated %v: create options ask URLs %+v, want the public one off, strictly, and nothing else", isolate, opts.URLs)
+		}
+	}
+}
