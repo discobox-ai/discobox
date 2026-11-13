@@ -53,7 +53,7 @@ func sandboxHTTPProxyHandler(service services.SandboxService) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		proxy := sandboxPoolReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease, writePlainProxyError)
 		proxy.ServeHTTP(w, r)
 	})
 }

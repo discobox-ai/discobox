@@ -134,6 +134,13 @@ Current proxy routes:
   the same handler for the sandbox-agent's datagram tunnel (ADR 0109): one
   datagram per frame, under `udp:connect`. SSH has no counterpart, so nothing
   in-process reaches it.
+- Every one of them shares `sandboxPoolReverseProxy`: a pool it cannot reach
+  is answered 502 in the route's own contract, never a bare status a generated
+  client cannot decode. The sandbox-agent routes and the tunnels answer in the
+  API's error shape (`{"error": …}`, `writeSandboxAgentProxyError`); git and a
+  box's ports in plain text (`writePlainProxyError`), which git and a browser
+  show as it is. The transport's error is only logged. An answer the pool did
+  send, its own 502 included, is handed on as it is.
 
 ### Pool Host Console
 

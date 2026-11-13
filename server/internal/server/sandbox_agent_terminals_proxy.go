@@ -163,7 +163,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		proxy := sandboxPoolReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease, writeSandboxAgentProxyError)
 		if notRunning != nil {
 			// The pool agent found the sandbox not running — stopped, or not
 			// yet done starting — and refused rather than start it, saying
