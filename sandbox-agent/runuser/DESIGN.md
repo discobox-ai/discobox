@@ -57,8 +57,11 @@ init starts the agent as root (macOS's launch daemon), the agent becomes the
 account before it resolves anything (`LookupAccount`, `Become`, below), so the
 image layer is the account all the same:
 
-- The image layer is the agent's own account (`os/user.Current`, a Windows
-  `DOMAIN\` prefix dropped).
+- The image layer is the agent's own account as it is now: the account of
+  its uid, looked up on every call (`currentOSUser`), never `os/user.Current`,
+  which caches its first answer for the life of the process and so would
+  still say root after the agent dropped to the account. Windows, with no
+  POSIX uid, asks `os/user.Current`, a `DOMAIN\` prefix dropped.
 - The manifest names that account and nothing more. Naming another is an error
   saying the sandbox was assembled wrong, not a switch. Names compare without
   case (`sandboxuser.SameAccount`), as neither Windows nor macOS tells account
