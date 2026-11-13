@@ -470,4 +470,4 @@ replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviol
 // commit under github.com/discobox-ai/vm. Temporary: drop this once the
 // disco-vm PR (discobox-ai/vm#103) merges, and bump the require above to
 // disco-vm's main. Never merge this replace.
-replace github.com/discobox-ai/vm => github.com/ibuildthecloud-bot/vm v0.0.0-20261113033929-12878d7535e6
+replace github.com/discobox-ai/vm => github.com/ibuildthecloud-bot/vm v0.0.0-20261113034654-aa6ae604a06c
