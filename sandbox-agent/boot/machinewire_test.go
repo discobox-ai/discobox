@@ -69,7 +69,7 @@ func TestWireMachineBootOncePerStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, git := newFakeGitBooter(nil)
-	if err := b.wireMachineBoot(slog.Default(), sandboxconfig.Config{SandboxID: "sbx_1"}, identity{}); err != nil {
+	if err := b.wireMachineBoot(slog.Default(), sandboxconfig.Config{SandboxID: "sbx_1"}, identity{}, wireMachine); err != nil {
 		t.Fatalf("mounted already this start: %v", err)
 	}
 	if len(git.runs) != 0 {
@@ -86,12 +86,15 @@ func TestOnlyADataVolumeIsRecordedAsKeepingTheData(t *testing.T) {
 	for name, volume := range map[string]bool{"a data volume": true, "roots on the disk": false} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			savedVolume, savedWired, savedData := machineDataVolume, machineWiredPath, machineDataWiredFile
-			t.Cleanup(func() { machineDataVolume, machineWiredPath, machineDataWiredFile = savedVolume, savedWired, savedData })
+			savedVolume, savedWired, savedData, savedRoot := machineDataVolume, machineWiredPath, machineDataWiredFile, dataMountPath
+			t.Cleanup(func() {
+				machineDataVolume, machineWiredPath, machineDataWiredFile, dataMountPath = savedVolume, savedWired, savedData, savedRoot
+			})
 			machineDataVolume = func() bool { return volume }
+			dataMountPath = filepath.Join(dir, "data")
 			machineWiredPath = filepath.Join(dir, "run", "machine-wired")
 			machineDataWiredFile = filepath.Join(dir, "data-wired")
-			if err := markMachineWired("sbx_1"); err != nil {
+			if err := markMachineWired("sbx_1", wireMachine); err != nil {
 				t.Fatal(err)
 			}
 			token, err := os.ReadFile(machineWiredPath)
@@ -104,6 +107,9 @@ func TestOnlyADataVolumeIsRecordedAsKeepingTheData(t *testing.T) {
 			}
 			if !volume && !os.IsNotExist(err) {
 				t.Fatalf("roots on the disk recorded %q (%v); want nothing", data, err)
+			}
+			if fileExists(adoptedPath()) != volume {
+				t.Fatalf("adopted marker = %v, want %v: a boot's wiring marks a data volume's layouts its own", fileExists(adoptedPath()), volume)
 			}
 		})
 	}
