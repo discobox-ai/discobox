@@ -139,7 +139,18 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*ssh.Client, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // Fresh pool VMs have no pinnable host key; see comment above.
 		Timeout:         connectTimeout,
 	}
+	// The handshake does not take a context, and a host that accepts the
+	// connection and never speaks would hold it forever. Ending the context
+	// expires the connection's deadline, which ends the handshake.
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if !stop() {
+		if err == nil {
+			_ = sshConn.Close()
+		}
+		_ = conn.Close()
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
