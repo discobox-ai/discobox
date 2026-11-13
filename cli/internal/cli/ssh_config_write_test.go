@@ -584,7 +584,9 @@ func TestSSHConfigWriteTwoInstallsKeepEachOthersIncludes(t *testing.T) {
 	if strings.Contains(got, secondConfig) {
 		t.Fatalf("the deleted install's Include survived:\n%s", got)
 	}
-	if !strings.Contains(stderr, "removed a stale Include of "+secondConfig) {
+	// Reported in the form paths are compared in, which on Windows is the
+	// slash one.
+	if !strings.Contains(filepath.ToSlash(stderr), "removed a stale Include of "+filepath.ToSlash(secondConfig)) {
 		t.Fatalf("removing it should be reported, got:\n%s", stderr)
 	}
 	if !strings.Contains(got, "Include "+firstConfig) {
