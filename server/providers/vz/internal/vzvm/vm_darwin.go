@@ -299,8 +299,9 @@ func (v *VM) Listen(port uint32) (net.Listener, error) {
 	return listener, nil
 }
 
-// Running reports whether the guest is still up. A guest that panicked or
-// powered itself off reports false, which is what makes the engine replace it.
+// Running reports whether the VM is still up. A guest that powered itself off
+// reports false, which is what makes the engine replace it. A guest that
+// panicked does not: panic= reboots it inside the same VM, which stays running.
 func (v *VM) Running() bool {
 	v.mu.Lock()
 	machine, closed := v.machine, v.closed

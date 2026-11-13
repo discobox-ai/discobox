@@ -100,7 +100,7 @@ func TestKernelCmdlineMountsTheRootReadOnly(t *testing.T) {
 }
 
 // A kernel that halts on panic leaves the VM running with nothing inside, which
-// the driver reports as a healthy guest. panic= must reset it, and so stop it.
+// the driver reports as a healthy guest. panic= must reboot it instead.
 func TestKernelCmdlineResetsOnPanic(t *testing.T) {
 	for _, field := range strings.Fields(kernelCmdline) {
 		value, ok := strings.CutPrefix(field, "panic=")
@@ -115,9 +115,9 @@ func TestKernelCmdlineResetsOnPanic(t *testing.T) {
 	t.Fatalf("kernel command line %q does not reset the guest on panic", kernelCmdline)
 }
 
-// A hard-locked guest must panic, so panic= resets it and repair takes over;
-// soft lockups and RCU stalls must not, since a busy Mac can deschedule a vCPU
-// past their thresholds with nothing wrong in the guest.
+// A hard-locked guest must panic, so panic= reboots it inside the same VM and
+// its pool comes back; soft lockups and RCU stalls must not, since a busy Mac
+// can deschedule a vCPU past their thresholds with nothing wrong in the guest.
 func TestKernelCmdlinePanicsOnHardLockupOnly(t *testing.T) {
 	fields := strings.Fields(kernelCmdline)
 	if !slices.Contains(fields, "nmi_watchdog=panic") {
