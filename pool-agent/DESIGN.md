@@ -314,7 +314,12 @@ flowchart LR
 
 - Resolving the dialer is where a sandbox that cannot be reached at all is
   refused (no container, no address — mapped to a status before the proxy sends
-  anything); a failed dial after that is a 502.
+  anything); a failed dial after that is a 502, answered in the route's own
+  contract (`sandboxProxy`'s `unreachable`): the sandbox-agent API in its
+  error shape (`{"error": …}`, the discobox may be restarting), which the
+  control plane hands on as it is, so a client decodes it; a box's port in
+  plain text naming the port, where the commonest cause is nothing listening.
+  The dial's own error is only logged.
 - A request's URL names no address: `HTTPURL(port, path)` is
   `http://localhost:<port>/…`, which is only the `Host` the sandbox's server
   reads — and the name a dev server checking `Host` accepts.

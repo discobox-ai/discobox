@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log"
 	"net"
@@ -562,7 +563,9 @@ func TestSandboxHTTPProxyReachesThePortThroughTheRuntimeDialer(t *testing.T) {
 	}
 }
 
-// A sandbox the proxy cannot reach is a failure worth a line and a 502.
+// A sandbox the proxy cannot reach is a failure worth a line and a 502, in
+// the API's error shape a client can decode, saying so: not a bare status,
+// and not the dial's error, an address only the log needs.
 func TestSandboxProxyReportsAnUnreachableSandbox(t *testing.T) {
 	logged := captureProxyLog(t)
 	upstream := httptest.NewServer(http.NotFoundHandler())
@@ -570,13 +573,70 @@ func TestSandboxProxyReportsAnUnreachableSandbox(t *testing.T) {
 	upstream.Close()
 
 	recorder := httptest.NewRecorder()
-	sandboxProxy(dialAddress(address), sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, "/"), "").ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil))
+	sandboxProxy(dialAddress(address), sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, "/"), "", sandboxAgentUnreachable).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil))
 
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
 	}
 	if !strings.Contains(logged.String(), "http: proxy error") {
 		t.Fatalf("log = %q, want the proxy error reported", logged.String())
+	}
+	assertUnreachableAnswer(t, recorder, address)
+}
+
+// A box's own port is no API: a dial there that fails is answered in plain
+// text naming the port, which a browser or git shows as it is, and never the
+// sandbox agent's JSON or its "may be restarting", which is not the commonest
+// cause there (nothing listening on that port).
+func TestSandboxPortProxyAnswersAnUnreachablePortInPlainText(t *testing.T) {
+	captureProxyLog(t)
+	upstream := httptest.NewServer(http.NotFoundHandler())
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream.Close()
+
+	publicKey, sign := testPoolTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: "project-1", PoolID: "pool-1"},
+		Runtime:               newProxyTestRuntime(t, baseURL),
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/http/5173/", nil)
+	req.Header.Set("Authorization", "Bearer "+sign("project-1", "pool-1", "sandbox-1", ScopeSandboxHTTP))
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %q, want %d", resp.Code, resp.Body.String(), http.StatusBadGateway)
+	}
+	if got := resp.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+		t.Fatalf("Content-Type = %q, want plain text", got)
+	}
+	if body := resp.Body.String(); !strings.Contains(body, "port 5173") || strings.Contains(body, "restarting") || strings.Contains(body, baseURL.Host) {
+		t.Fatalf("body = %q, want the port named, without the agent's message or the address", body)
+	}
+}
+
+// assertUnreachableAnswer checks a 502 is the API's error shape, says the
+// discobox could not be reached, and does not carry address.
+func assertUnreachableAnswer(t *testing.T, recorder *httptest.ResponseRecorder, address string) {
+	t.Helper()
+	if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("Content-Type = %q, want the API's JSON error", got)
+	}
+	var answer struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("body %q is not the API's error shape: %v", recorder.Body.String(), err)
+	}
+	if !strings.Contains(answer.Error, "could not be reached") || strings.Contains(answer.Error, address) {
+		t.Fatalf("error = %q, want it to say the discobox could not be reached, without %s", answer.Error, address)
 	}
 }
 
@@ -593,7 +653,7 @@ func TestSandboxProxyDoesNotForwardThePoolToken(t *testing.T) {
 		request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil)
 		request.Header.Set("Authorization", "Bearer pool-agent-token")
 		request.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-agent-token")
-		sandboxProxy(dialAddress(upstream.Listener.Addr().String()), sandboxruntime.HTTPURL(8080, "/"), downstream).ServeHTTP(httptest.NewRecorder(), request)
+		sandboxProxy(dialAddress(upstream.Listener.Addr().String()), sandboxruntime.HTTPURL(8080, "/"), downstream, sandboxAgentUnreachable).ServeHTTP(httptest.NewRecorder(), request)
 		if got := <-seen; got != downstream {
 			t.Errorf("downstream %q: the sandbox was told Authorization %q", downstream, got)
 		}
@@ -612,7 +672,7 @@ func TestSandboxProxyIgnoresAClientThatWentAway(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/sandbox", nil)
-	sandboxProxy(dialAddress(upstream.Listener.Addr().String()), sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, "/"), "").ServeHTTP(httptest.NewRecorder(), request)
+	sandboxProxy(dialAddress(upstream.Listener.Addr().String()), sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, "/"), "", sandboxAgentUnreachable).ServeHTTP(httptest.NewRecorder(), request)
 
 	if logged.Len() != 0 {
 		t.Fatalf("log = %q, want nothing for a client that went away", logged.String())

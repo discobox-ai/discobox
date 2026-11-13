@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -128,7 +129,12 @@ func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {
 		if suffix := chi.URLParam(r, "*"); suffix != "" {
 			path = "/" + suffix
 		}
-		sandboxProxy(dial, sandboxruntime.HTTPURL(port, path), "").ServeHTTP(w, r)
+		// A box's own port is no API: what reaches it is a browser, curl or
+		// git, and a failed dial is most often nothing listening there.
+		unreachable := func(w http.ResponseWriter) {
+			http.Error(w, fmt.Sprintf("port %d in the discobox could not be reached", port), http.StatusBadGateway)
+		}
+		sandboxProxy(dial, sandboxruntime.HTTPURL(port, path), "", unreachable).ServeHTTP(w, r)
 	})
 }
 
@@ -171,7 +177,17 @@ func (s *sandboxService) forwardToSandboxAgent(w http.ResponseWriter, r *http.Re
 			chi.URLParam(r, "sandboxId"),
 		)),
 	))
-	sandboxProxy(dial, target, downstreamAuth).ServeHTTP(w, r)
+	sandboxProxy(dial, target, downstreamAuth, sandboxAgentUnreachable).ServeHTTP(w, r)
+}
+
+// sandboxAgentUnreachable answers a sandbox-agent API request whose dial
+// failed in the API's error shape, which the control plane hands on as it is:
+// a bare 502 is no answer a generated client can decode. The commonest cause
+// is a sandbox restarting under the request.
+func sandboxAgentUnreachable(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusBadGateway)
+	_, _ = io.WriteString(w, `{"error":"the discobox could not be reached: it may be restarting; try again once it is running"}`+"\n")
 }
 
 func authorizeProxyScope(r *http.Request, scope string) error {
@@ -308,8 +324,9 @@ func sandboxAgentPath(projectID, sandboxID, suffix string) string {
 // sandboxProxy forwards to target over dial, the connection the runtime
 // supplies (ADR 0126 §5); target names no address, only the path and the Host
 // the sandbox sees. An upgrade — an exec attach, a tunnel — is forwarded on
-// the same connection.
-func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth string) *httputil.ReverseProxy {
+// the same connection. A failed dial is answered by unreachable, which is
+// the route's: each route answers in its own contract.
+func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth string, unreachable func(http.ResponseWriter)) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Transport: dial.Transport(),
 		Rewrite: func(req *httputil.ProxyRequest) {
@@ -331,19 +348,16 @@ func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth st
 			}
 			req.SetXForwarded()
 		},
-		ErrorHandler: sandboxProxyError,
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// The control plane cancels its request here whenever its own
+			// client leaves, so that one is not a failure, and logging it
+			// would print a line for every closed terminal and abandoned
+			// fetch. The error itself, a dial on the way, is only the log's.
+			if r.Context().Err() != nil {
+				return
+			}
+			log.Printf("http: proxy error: %v", err)
+			unreachable(w)
+		},
 	}
-}
-
-// sandboxProxyError answers a request the sandbox could not be asked, as the
-// default handler does, except for a request whose client has already gone.
-// The control plane cancels its request here whenever its own client leaves, so
-// that one is not a failure, and logging it would print a line for every
-// closed terminal and abandoned fetch.
-func sandboxProxyError(w http.ResponseWriter, r *http.Request, err error) {
-	if r.Context().Err() != nil {
-		return
-	}
-	log.Printf("http: proxy error: %v", err)
-	w.WriteHeader(http.StatusBadGateway)
 }

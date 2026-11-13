@@ -84,7 +84,7 @@ func sandboxTunnelProxyHandler(service services.SandboxService, tunnel sandboxTu
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		proxy := sandboxPoolReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease, writeSandboxAgentProxyError)
 		proxy.ServeHTTP(w, r)
 	})
 }

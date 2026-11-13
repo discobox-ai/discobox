@@ -44,3 +44,8 @@
 - Pool console output errors must fail commands and close both output readers;
   treating a broken driver attach as EOF can hang waiting for a process whose
   output was truncated, or report its later successful status.
+- A proxy shared by routes with different contracts answers its own failures
+  in the contract of the route it serves, never one shape for all: the
+  sandbox-agent API decodes `{"error": …}`, while git and a box's ports show
+  plain text. The first fix for a bare 502 gave the git and port routes, here
+  and in the pool agent, the agent API's JSON and its "may be restarting".

@@ -107,7 +107,7 @@ func sandboxGitProxyHandler(service services.SandboxService, route gitRoute) htt
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		proxy := sandboxPoolReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease, writePlainProxyError)
 		rewrite := proxy.Rewrite
 		proxy.Rewrite = func(req *httputil.ProxyRequest) {
 			rewrite(req)
@@ -192,7 +192,12 @@ func sandboxGitProxyTargetURL(baseURL, projectID, poolID, sandboxID, kind, repos
 	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, fmt.Sprintf("/%s/%s.git%s", kind, url.PathEscape(repositoryID), suffix))
 }
 
-func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {
+// sandboxPoolReverseProxy forwards to the pool at target. A pool it cannot
+// reach is answered by refuse, which is the route's: the sandbox-agent API
+// answers in its JSON error shape (writeSandboxAgentProxyError), and git and
+// a box's ports, which no generated client reads, in plain text
+// (writePlainProxyError).
+func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease, refuse func(w http.ResponseWriter, status int, message string)) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {
 			rawQuery := req.In.URL.RawQuery
@@ -205,7 +210,9 @@ func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *
 		},
 	}
 	// A canceled request ended the exchange itself; logging it would bury
-	// real failures under one line per disconnected client.
+	// real failures under one line per disconnected client. Any other failure
+	// is answered, never a bare 502, which a generated client cannot decode;
+	// the error itself, an address on the way, is only the log's.
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		if r.Context().Err() != nil {
 			return
@@ -215,10 +222,16 @@ func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *
 			logger = log.Default()
 		}
 		logger.Printf("http: proxy error: %v", err)
-		w.WriteHeader(http.StatusBadGateway)
+		refuse(w, http.StatusBadGateway, "the discobox's pool could not be reached; try again once it is connected")
 	}
 	proxy.Transport = sandboxagentclient.AuthTransport{Base: baseTransportFor(lease), Lease: lease}
 	return proxy
+}
+
+// writePlainProxyError answers a proxied request that is no API call, git's
+// or a box port's, in plain text, which git and a browser show as it is.
+func writePlainProxyError(w http.ResponseWriter, status int, message string) {
+	http.Error(w, message, status)
 }
 
 func baseTransportFor(lease *services.HTTPClientLease) http.RoundTripper {
