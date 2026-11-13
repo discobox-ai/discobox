@@ -5,7 +5,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
@@ -684,5 +686,103 @@ func TestSSHConfigWriteRetiresOnlyItsOwnLegacyRoute(t *testing.T) {
 	}
 	if !strings.Contains(readFile(t, filepath.Join(home, ".ssh", "config")), current) {
 		t.Fatal("current Include missing")
+	}
+}
+
+// TestSSHConfigWriteWaitsForAnotherInstallsWrite: two installs with their own
+// state directories (a dev build beside the release) share one ~/.ssh/config,
+// and each edits it by read, prepend, rename. While one is between its read and
+// its rename the other must wait, or the later rename puts back a file without
+// the earlier install's Include. Install A is held mid-write here by holding the
+// lock A takes around that edit; install B must not touch the file until A lets
+// go of it.
+func TestSSHConfigWriteWaitsForAnotherInstallsWrite(t *testing.T) {
+	home, stateB := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	userConfig := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	const before = "Host *\n    ServerAliveInterval 30\n"
+	if err := os.WriteFile(userConfig, []byte(before), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Install A, mid-edit of ~/.ssh/config: it holds the lock it takes around
+	// that edit, which sits beside the file rather than in A's state directory.
+	held, err := acquireFileLock(filepath.Join(filepath.Dir(userConfig), userConfigLockName), 0)
+	if err != nil {
+		t.Fatalf("hold install A's lock: %v", err)
+	}
+	released := false
+	defer func() {
+		if !released {
+			_ = held.Release()
+		}
+	}()
+
+	// Install B writes meanwhile.
+	t.Setenv("XDG_STATE_HOME", stateB)
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	cmd.SetOut(&strings.Builder{})
+	cmd.SetErr(&strings.Builder{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("install B finished its write (err %v) while install A was mid-edit; ~/.ssh/config is now:\n%s", err, readFile(t, userConfig))
+	case <-time.After(500 * time.Millisecond):
+	}
+	if got := readFile(t, userConfig); got != before {
+		t.Fatalf("install B rewrote ~/.ssh/config while install A was mid-edit:\n%s", got)
+	}
+
+	released = true
+	if err := held.Release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("install B's write after A finished: %v", err)
+	}
+	if got := readFile(t, userConfig); !strings.Contains(got, filepath.Join(stateB, "discobox", "cli", "ssh")) {
+		t.Fatalf("install B's Include is missing once A finished:\n%s", got)
+	}
+}
+
+// TestSSHConfigIncludesOfTwoInstallsEditingAtOnceBothLand: two installs, each
+// with its own state directory, add their Includes to one ssh_config at the
+// same moment, over and over. Every round must end with both lines; one lost to
+// the other's rename is the race the lock beside the file closes.
+func TestSSHConfigIncludesOfTwoInstallsEditingAtOnceBothLand(t *testing.T) {
+	home := t.TempDir()
+	userConfig := filepath.Join(home, ".ssh", "config")
+	installs := []sshTarget{
+		{state: samePath(t.TempDir()), userConfig: samePath(userConfig)},
+		{state: samePath(t.TempDir()), userConfig: samePath(userConfig)},
+	}
+	for round := range 50 {
+		if err := os.RemoveAll(userConfig); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		errs := make([]error, len(installs))
+		for i, install := range installs {
+			wg.Go(func() {
+				_, errs[i] = install.ensureUserConfigInclude(t.Context(), install.configPath("proj_1"))
+			})
+		}
+		wg.Wait()
+		got := readFile(t, userConfig)
+		for i, install := range installs {
+			if errs[i] != nil {
+				t.Fatalf("round %d: install %d: %v", round, i, errs[i])
+			}
+			if !install.hasInclude(got, install.configPath("proj_1").client) {
+				t.Fatalf("round %d: install %d's Include is missing:\n%s", round, i, got)
+			}
+		}
 	}
 }

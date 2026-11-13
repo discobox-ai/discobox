@@ -478,6 +478,11 @@ run's staged copy), and this user's Discobox files in the temporary directory
 - **Only this machine's ssh.** On WSL the Windows side's managed files sit
   beside a Windows install's state, so they are left alone. An Include is
   removed only when the file it names is being removed or is already gone.
+  The lines the plan listed, and only those, are cut from the file as it is
+  once the user has answered, read again under the ssh_config lock rather
+  than the copy the plan showed: another install may have added its own line
+  since. The lock file beside `~/.ssh/config` stays, and the help says so,
+  since other installs may still edit that file under it.
   The console's clipboard helper (`%LOCALAPPDATA%\discobox\bin`) is left the
   same way; each install of it prunes the copies other builds left.
 - The root's pre-run hook is skipped, as `version` skips it: a configuration
@@ -2157,13 +2162,30 @@ level or layering on the attach transports above.
   servers with different addresses and host keys. The ID is resolved first, so
   the same project reached as `default` and by ID does not end up owning two
   files. Older project-only generated files are retained; matching-route stanzas
-  are retired with a migration note, while other routes remain untouched. Nothing else in `~/.ssh` is edited: this command owns those
+  are retired with a migration note, while other routes remain untouched. Nothing else in `~/.ssh` is edited, and the one file
+  added there is the lock that edit is made under (below): this command owns those
   two files and rewrites them wholesale, so it never has to parse or merge into
   a config the user maintains by hand. The `Include` goes at the *top*, because
   ssh takes the first value obtained for each keyword and an `Include` placed
   after an existing `Host *` block would lose every setting that block sets. It
   is idempotent — re-running after creating a sandbox refreshes the stanzas and
   leaves one `Include`.
+- **Two locks, by who shares what.** The managed files are one install's own
+  and are written under `config.lock` in its state directory
+  (`sshConfigLockName`), around the write and the re-key of every other
+  project's file. `~/.ssh/config` is shared by every install on the machine —
+  a development build beside the release, each with its own state directory —
+  so each edit of it (`ensureUserConfigInclude`, the uninstall's removal) is a
+  read, a prepend or cut, and a rename under `.discobox-ssh-config.lock` beside
+  that file (`lockUserConfig`); a lock in either state directory would let two
+  installs each rename over the other and lose one's `Include`. The second is
+  taken inside the first, never the other way round. A filesystem that will
+  not give the lock costs only the race it closes, so any failure but another
+  holder lets the edit go ahead unlocked. For WSL's Windows target the lock
+  file sits on the drive mount, where a `flock` from the distribution
+  serializes the distribution's own CLIs but is not known to exclude a native
+  Windows CLI's `LockFileEx`: that pairing still races, and a lost `Include`
+  comes back on its install's next write.
 - A project with no sandboxes writes an *empty* config rather than skipping the
   write: these files mirror the server, so a project whose last sandbox is gone
   must stop offering stanzas for it. The `Include` and the `known_hosts` line

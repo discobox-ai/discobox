@@ -83,11 +83,10 @@ type uninstallServer struct {
 }
 
 // uninstallSSHConfig is the edit to this machine's ssh_config: the Includes
-// of discobox configs that are removed, and the config without them.
+// of discobox configs that are removed.
 type uninstallSSHConfig struct {
 	target  sshTarget
 	removed []string
-	body    string
 }
 
 type uninstallPlan struct {
@@ -123,7 +122,8 @@ What this cannot see is left: directories a server.yaml or a
 configuration, the files DISCOBOX_CONFIG_FILE and DISCOBOX_CLIENT_CONFIG_FILE
 name, and the containers, volumes and images a Docker provider created. A
 directory an environment variable names is deleted only when its name says it
-is Discobox's.
+is Discobox's. The lock file beside ~/.ssh/config (.discobox-ssh-config.lock)
+is left too: another install of Discobox may still edit that file under it.
 
 Close editors and discobox windows first: anything that starts a server again
 while this runs recreates what it deletes.`,
@@ -186,10 +186,10 @@ func (a *App) uninstall(cmd *cobra.Command) error {
 
 	var errs []error
 	if len(plan.ssh.removed) > 0 {
-		if err := plan.ssh.target.writeUserConfig(ctx, plan.ssh.body); err != nil {
+		if removed, err := removeUninstalledSSHIncludes(ctx, plan.ssh); err != nil {
 			errs = append(errs, err)
-		} else {
-			fmt.Fprintf(out, "Removed %s from %s\n", plural(len(plan.ssh.removed), "Include line", "Include lines"), plan.ssh.target.userConfig.local)
+		} else if removed > 0 {
+			fmt.Fprintf(out, "Removed %s from %s\n", plural(removed, "Include line", "Include lines"), plan.ssh.target.userConfig.local)
 		}
 	}
 	for _, entry := range plan.entries {
@@ -647,22 +647,62 @@ func uninstallSSHIncludes(target sshTarget, entries []uninstallEntry) (uninstall
 	if err != nil {
 		return edit, fmt.Errorf("could not read it: %w", err)
 	}
-	var kept []string
-	for _, line := range strings.Split(string(existing), "\n") {
+	_, edit.removed = cutSSHConfigLines(string(existing), func(line string) bool {
 		field, ok := target.includeField(line)
 		path := target.clean(unescapeSSHPercent(field))
-		if ok && target.isManagedConfigPath(path) && uninstallRemoves(entries, path) {
-			edit.removed = append(edit.removed, strings.TrimSpace(line))
+		return ok && target.isManagedConfigPath(path) && uninstallRemoves(entries, path)
+	})
+	return edit, nil
+}
+
+// removeUninstalledSSHIncludes removes the Include lines the plan listed,
+// reporting how many it removed. It reads the file again under the target's
+// lockUserConfig rather than writing back the copy the plan read, since that
+// was read before the user answered and another install's write since would be
+// put back without the Include it added. And it cuts the lines the plan listed
+// and no others, since what the plan lists is exactly what is removed: a line
+// added meanwhile is kept even when it names a file this run deletes, which
+// costs nothing, as ssh passes over an Include of a missing file.
+func removeUninstalledSSHIncludes(ctx context.Context, edit uninstallSSHConfig) (int, error) {
+	target := edit.target
+	release, err := target.lockUserConfig()
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+	existing, err := os.ReadFile(target.userConfig.local)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read %s: %w", target.userConfig.local, err)
+	}
+	body, cut := cutSSHConfigLines(string(existing), func(line string) bool {
+		return slices.Contains(edit.removed, strings.TrimSpace(line))
+	})
+	if len(cut) == 0 {
+		return 0, nil
+	}
+	if err := target.writeUserConfig(ctx, body); err != nil {
+		return 0, err
+	}
+	return len(cut), nil
+}
+
+// cutSSHConfigLines removes the lines of config that cut picks, returning the
+// config without them and the lines removed, trimmed.
+func cutSSHConfigLines(config string, cut func(line string) bool) (string, []string) {
+	var kept, removed []string
+	for _, line := range strings.Split(config, "\n") {
+		if cut(line) {
+			removed = append(removed, strings.TrimSpace(line))
 			continue
 		}
 		kept = append(kept, line)
 	}
-	if len(edit.removed) > 0 {
-		// The Include was written at the top with a blank line after it, and
-		// the blank would otherwise be what the file now starts with.
-		edit.body = strings.TrimLeft(collapseBlankRuns(strings.Join(kept, "\n")), "\n")
-	}
-	return edit, nil
+	// The Include was written at the top with a blank line after it, and the
+	// blank would otherwise be what the file now starts with.
+	return strings.TrimLeft(collapseBlankRuns(strings.Join(kept, "\n")), "\n"), removed
 }
 
 // uninstallRemoves reports whether path will be gone once the uninstall has

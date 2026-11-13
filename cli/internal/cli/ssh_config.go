@@ -32,7 +32,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			"or an ssh_config Include directive.\n\n" +
 			"With --write, the stanzas and the server's host key are written to files this\n" +
 			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
-			"at them. Nothing else in ~/.ssh is edited.\n\n" +
+			"at them. Nothing else in ~/.ssh is edited; a lock file beside it,\n" +
+			".discobox-ssh-config.lock, keeps another install of Discobox from editing\n" +
+			"~/.ssh/config at the same moment.\n\n" +
 			"--write covers every server: the primary and the ones `discobox admin remote`\n" +
 			"lists, each into its own files. Without it, the stanzas printed are the\n" +
 			"primary's, since what is printed is one block to paste; --server picks another.\n\n" +
@@ -379,7 +381,9 @@ func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRe
 
 // sshConfigLockName is held across writing the managed ssh_config files, in
 // this machine's own state directory whichever ssh reads them: every command
-// writing them, for either side of a WSL machine, runs here.
+// writing them, for either side of a WSL machine, runs here. It is this
+// install's alone, so the edit of the user's ssh_config inside it, a file
+// every install shares, takes userConfigLockName beside that file as well.
 const sshConfigLockName = "config.lock"
 
 // sshConfigLockWait is how long one write waits for another. A write across

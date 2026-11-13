@@ -3560,7 +3560,9 @@ or an ssh_config Include directive.
 
 With --write, the stanzas and the server's host key are written to files this
 command owns and rewrites, and ~/.ssh/config gains a single Include line pointing
-at them. Nothing else in ~/.ssh is edited.
+at them. Nothing else in ~/.ssh is edited; a lock file beside it,
+.discobox-ssh-config.lock, keeps another install of Discobox from editing
+~/.ssh/config at the same moment.
 
 --write covers every server: the primary and the ones `discobox admin remote`
 lists, each into its own files. Without it, the stanzas printed are the
@@ -3947,7 +3949,8 @@ What this cannot see is left: directories a server.yaml or a
 configuration, the files DISCOBOX_CONFIG_FILE and DISCOBOX_CLIENT_CONFIG_FILE
 name, and the containers, volumes and images a Docker provider created. A
 directory an environment variable names is deleted only when its name says it
-is Discobox's.
+is Discobox's. The lock file beside ~/.ssh/config (.discobox-ssh-config.lock)
+is left too: another install of Discobox may still edit that file under it.
 
 Close editors and discobox windows first: anything that starts a server again
 while this runs recreates what it deletes.
