@@ -1,7 +1,7 @@
 #!/bin/sh
 # Set up a boxd pool on a discobox server: make a new boxd API key with the
-# boxd CLI, create (or update) a vm provider named boxd on the boxd driver with
-# it, and create a pool named boxd on that provider.
+# boxd CLI, create (or update) a boxd provider named boxd with it, and create a
+# pool named boxd on that provider.
 #
 # Usage: scripts/boxd-pool.sh [--name NAME] [--base ID] [discobox flags...]
 #
@@ -70,13 +70,13 @@ config=$(mktemp)
 trap 'rm -f "$config"' EXIT
 chmod 600 "$config"
 jq -n --arg key "$key" --arg base "$base" \
-	'{driver: "boxd", apiKey: $key, deliverProviderKey: true} + (if $base == "" then {} else {base: $base} end)' >"$config"
+	'{driver: {apiKey: $key}, deliverProviderKey: true} + (if $base == "" then {} else {base: $base} end)' >"$config"
 
 if "$discobox" "$@" admin provider get "$name" >/dev/null 2>&1; then
 	"$discobox" "$@" admin provider update "$name" --config "@$config" >/dev/null
 	echo "updated provider $name with the new key; revoke the key it held before in boxd" >&2
 else
-	"$discobox" "$@" admin provider create --type vm --name "$name" --config "@$config" >/dev/null
+	"$discobox" "$@" admin provider create --type boxd --name "$name" --config "@$config" >/dev/null
 	echo "created provider $name" >&2
 fi
 

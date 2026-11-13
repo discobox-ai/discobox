@@ -536,7 +536,7 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   with the loop's pools, which share its IDs.
 - A pool of a VM kind (`vm/boxd`) with no boxd reachable, for what create or
   import decides by a pool's kind: on that DB copy, `admin provider create
-  --type vm --config '{"driver":"boxd","apiKey":"x"}'` and `admin pool create`,
+  --type boxd --config '{"driver":{"apiKey":"x"}}'` and `admin pool create`,
   stop the server, then `sqlite3 … "UPDATE pools SET image_kind='vm/boxd',
   platform='linux/amd64', state='active'"`. Create and import are judged
   against that row; the box then fails on boxd being unreachable, which is
@@ -1410,9 +1410,8 @@ agent's published port, or the pool never registers.
   What boxd holds is read with a scratch `go run` (from `server/`) of
   `boxd.New(machine.Config{Pool: "prov-…", Keys: …}).Instances`, which
   shows each machine's `Isolated` and `Networks`, and that delete left none.
-- Do not create a `vm` provider with `{"driver":"boxd"}` in the dev loop
-  without a working `apiKey` in its configuration: its pool fails naming
-  `apiKey`, and so does deleting it, since the stateless engine asks boxd
+- Do not create a `boxd` provider in the dev loop without a working
+  `driver.apiKey`: its pool fails naming the key, and so does deleting it, since the stateless engine asks boxd
   whether the pool's machine exists, and its keys are revoked by name. The
   pool stays `failed` in the loop's database. Use an isolated server (above)
   for it.

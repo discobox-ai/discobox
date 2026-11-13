@@ -195,7 +195,7 @@ func TestLiveRunKeyOnlyInProviderConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `"apiKey": "` + key + `"`; !strings.Contains(string(config), want) {
+	if want := `"apiKey": "` + key + `"`; !strings.Contains(string(config), want) || !strings.Contains(string(config), `"driver": {`) {
 		t.Fatalf("provider config %s does not hold the key", config)
 	}
 	if strings.Contains(string(config), "deliverProviderKey") {
@@ -448,8 +448,8 @@ func TestDryRun(t *testing.T) {
 		t.Fatalf("the dry run's report claims an observation, or did not finish:\n%s", s)
 	}
 	for _, want := range []string{
-		"+ discobox --server http://server.test -o json admin provider create --type vm --name live-boxd-",
-		`config: {"driver":"boxd","apiKey":"<$BOXD_API_KEY>"}`,
+		"+ discobox --server http://server.test -o json admin provider create --type boxd --name live-boxd-",
+		`config: {"driver":{"apiKey":"<$BOXD_API_KEY>"}}`,
 		"+ disco-vm --driver boxd --pool pool-dryrun ls -a",
 		"| DRY | left-provider-scope |",
 	} {
