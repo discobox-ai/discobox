@@ -579,15 +579,16 @@ step with what was entered kept; from the first, Esc leaves it waiting.
 flowchart LR
   C[which credential] -->|saved| S[summary]
   C -->|Enter new credential…| N[new credential] --> S
-  S -->|Accept| H[how long]
-  S -->|Review…| U[its own use] --> W[its workers] --> H
+  C -->|For…| T[lifetime] -->|chosen| C
+  S -->|Accept| A((stored, approved))
+  S -->|Review…| U[its own use] --> W[its workers] --> A
   S -->|Deny| X((denied))
-  H -->|chosen| A((stored, approved))
 ```
 
 - **Which credential.** Every saved secret is listed: the one the variable
   already holds first, then those that can answer, then the rest marked ✗,
-  and "Enter new credential…" last. A secret can answer when each of its
+  and "Enter new credential…" after them. A single "For <lifetime>" option
+  edits the lifetime, defaulting to what was requested or one hour. A secret can answer when each of its
   route lists — its routes and every constraint — covers each requested route
   (`uncovered`, `secretroute.ProveContained`, which fails closed: a working
   secret may be marked ✗, never the reverse); one with no routes is sent
@@ -613,13 +614,15 @@ flowchart LR
   otherwise the data source runs it once when the credential is stored. A new
   credential's routes are the exact hosts an open route of the request names
   — never a blocked one, never a pattern (`newCredentialHosts`, ADR
-  26-11-11-857), and the last step says them, with any requested route they
+  26-11-11-857), and the approval cards say them, with any requested route they
   leave uncovered (`uncovered`, as a saved secret's ✗): the grant holds the box to the
   routes it asked for, so the credential stays usable for the next request on
   those hosts.
 - **Summary.** Each part in a line — the hosts it reaches and how many
   operations, a row of its route table each — with Accept and Deny answering
-  every part at once, and Review… walking them.
+  every part at once at the selected lifetime, and Review… walking them.
+  Each part's route table and the consequences of replacing or shortening a
+  standing grant are shown before Accept can send.
 - **Review.** One card per part the request has, use then delegation, each
   with its routes (`approvalRouteSection`) and the roles it asked for as the
   discobox's words (ADR 26-11-02-022 §3). Approve, Deny or Modify…: as
@@ -628,19 +631,16 @@ flowchart LR
   `$EDITOR`, one `secretroute` route a line; an edit that does not parse names
   the line and offers the editor again on what was saved, or abandoning it.
   Changed routes are marked, and the roles then say they describe the ask.
-- **How long.** Shown only when a part was approved; every part denied denies
-  the request. It opens on what the box asked for, or an hour; lifetimes over
-  a saved credential's limit are greyed with the reason, and a custom one over
-  it, or text that is not a lifetime, is refused. Above the choices is the
-  whole approval — the credential, each part's answer and scope, an addition
-  or a replacement — and what it replaces in the variable at the lifetime
-  under the cursor (`bindingplan`), with the delegate part's own replacement
-  and its approved route tables (ADR 26-11-03-329 §5,
-  26-11-04-616 §4). Choosing one sends.
+- **Lifetime.** Edited from credential selection, never asked after consent.
+  Presets and custom input select a value without granting anything. When a
+  chosen secret's limit is shorter than the selected lifetime, the picker
+  explains the limit and requires a permitted value before showing approval.
+  A cancelled edit returns to credential selection. Accept on the summary,
+  or the last part decision, sends directly; every part denied denies the request.
 
 A use part asked as an addition stacks only on the secret delivering its
 variable (ADR 26-11-03-329 §4); answered with another, it is granted as a
-replacement shadowing that one, and the summary and last step say so.
+replacement shadowing that one, and the approval cards say so.
 The summary and use-part card offer an independent add/replace choice, marked
 edited when it differs from the ask. A person's approval has no parent; any
 standing use binding under a lead's delegation disables replacement and
@@ -656,20 +656,19 @@ approval carries each part's decision, scope, edited routes
 
 While a read-to-end hold is active, ↓, Tab and j scroll the content; reaching
 the end returns navigation to the decisions. A scroll position and “more below”
-marker expose content below the fold, including on the custom-lifetime form.
+marker expose content below the fold on approval cards.
 
 **An approval card longer than its window is read to its end before it is
 answered** (`approvalDialog`, `requireEnd`): its decisions open only once
 the summary above them has been drawn to its end, a summary that changes — a
-scope chosen, a lifetime moved under the cursor — starts the reading over,
+scope chosen, a different lifetime selected — starts the reading over,
 and a form decision is refused when the form changed since the frame that was
 read (`reviewState`). A card that fits its window opens on its first frame,
 so this keeps consequences from being sent from below the fold; it does not
 stop a key typed ahead of a card that fits. The API access,
 adoption, trust and refresh cards use it as they are; the request dialog's
-summary and part cards use it, and its last step — a menu — and its custom
-lifetime hold their choice behind it the same way, so what an approval
-replaces is never sent from below the fold (ADR 26-11-04-616 §4). The API
+summary and part cards use it, so what an approval replaces is never sent
+from below the fold (ADR 26-11-04-616 §4). The API
 access card says what turning the discobox API on gives (discovery, the
 boxes it leads, and its limits) and grants no credential.
 
@@ -3544,7 +3543,7 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, the raw request, and an answer's outcome |
-| `credential_request_steps.go` | the guided dialog that answers a credential request: which credential, a new one, summary, review, how long, and sending |
+| `credential_request_steps.go` | the guided dialog that answers a credential request: credential and lifetime selection, a new credential, summary, per-part review, and sending |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |

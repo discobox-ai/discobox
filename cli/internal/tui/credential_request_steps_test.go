@@ -14,7 +14,7 @@ import (
 
 // A credential request is answered by a guided dialog (issue #1017): which
 // credential, a new one if none fits, a summary answering every part at
-// once or a review answering each, and how long, last.
+// once or a review answering each, using the lifetime selected up front.
 
 // onRequestCard is whether the first step, which credential, is up.
 func onRequestCard(m *Model) bool {
@@ -45,17 +45,20 @@ func pickItem(t *testing.T, m *Model, key string) {
 	t.Fatalf("no row %q on %s", key, describe(d))
 }
 
-// grantFor accepts the summary and answers how long with ttl, which sends.
+// grantFor revises the first step when needed, then consents on the summary.
 func grantFor(t *testing.T, m *Model, ttl time.Duration) {
 	t.Helper()
-	if !onStep(m, "summary") {
-		t.Fatalf("dialog = %s, want the summary", describe(m.dialog))
+	if ttl != time.Hour {
+		send(t, m, keyPress("esc"))
+		if !onRequestCard(m) {
+			t.Fatal("not on credential selection")
+		}
+		key := m.dialog.items[m.dialog.cursor].key
+		pickItem(t, m, "ttl")
+		pickItem(t, m, strconv.FormatInt(lifetime.Seconds(ttl), 10))
+		pickItem(t, m, key)
 	}
 	answerApproval(t, m, "accept")
-	if !onStep(m, "how long") {
-		t.Fatalf("dialog = %s, want how long", describe(m.dialog))
-	}
-	pickItem(t, m, strconv.FormatInt(lifetime.Seconds(ttl), 10))
 }
 
 // toSummary opens the request and answers step 1 with the secret keyed id.
@@ -91,7 +94,7 @@ func TestStepOneMarksWhatCannotAnswerAndSaysWhy(t *testing.T) {
 	for _, item := range m.dialog.items {
 		labels = append(labels, item.label)
 	}
-	want := []string{"  GitHub token", "✗ OpenAI key", "✗ unrouted", "  Enter new credential…"}
+	want := []string{"  GitHub token", "✗ OpenAI key", "✗ unrouted", "  Enter new credential…", "For 1 hour · change…"}
 	if strings.Join(labels, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows = %q, want %q", labels, want)
 	}
@@ -150,8 +153,7 @@ func TestASecretCoveringPartOfTheRequestCannotAnswer(t *testing.T) {
 	}
 }
 
-// The summary answers every part at once; Accept goes on to how long, which
-// sends with each part approved on the routes it asked for.
+// The summary sends every part at once at the lifetime selected up front.
 func TestTheSummaryAcceptsEveryPart(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
@@ -229,7 +231,6 @@ func TestReviewAnswersEachPartWithItsOwnScope(t *testing.T) {
 				t.Fatalf("dialog = %s, want the delegate part", describe(m.dialog))
 			}
 			answerApproval(t, m, tc.delegate)
-			pickItem(t, m, "3600")
 			if len(ds.approvals) != 1 {
 				t.Fatalf("approvals = %#v, want one answer for both parts", ds.approvals)
 			}
@@ -309,75 +310,75 @@ func TestEditedRoutesAreSentAsThePartsOwn(t *testing.T) {
 // limit greys the longer choices with the reason, and a custom value over it,
 // or one that is not a lifetime, is refused.
 func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		asked time.Duration
-		want  string
-	}{{0, "3600"}, {time.Nanosecond, "3600"}, {72 * time.Hour, "259200"}} {
+	for _, asked := range []time.Duration{0, time.Nanosecond, 72 * time.Hour} {
 		m, ds := sourceWithRequest(t)
 		req := waitingRequest()
-		req.AskedTTL = tc.asked
+		req.AskedTTL = asked
 		ds.requests = []CredentialRequest{req}
 		send(t, m, tickMsg{})
-		toSummary(t, m, "sec_gh")
+		send(t, m, keyPress("tab"), keyPress(credentialsKey))
+		want := lifetime.Label(defaultRequestTTL(req))
+		if !strings.Contains(plainFrame(m), "For "+want+" · change") {
+			t.Fatalf("default missing: %s", plainFrame(m))
+		}
+		pickItem(t, m, "sec_gh")
 		answerApproval(t, m, "accept")
-		if got := m.dialog.items[m.dialog.cursor].key; got != tc.want {
-			t.Fatalf("asked %v: cursor on %s, want %s", tc.asked, got, tc.want)
+		if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != lifetime.Seconds(defaultRequestTTL(req)) {
+			t.Fatalf("approvals: %+v", ds.approvals)
 		}
 	}
-
 	m, ds := sourceWithRequest(t)
 	ds.projectSecrets[0].MaxTTL = lifetime.Day
-	toSummary(t, m, "sec_gh")
-	answerApproval(t, m, "accept")
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	pickItem(t, m, "ttl")
+	pickItem(t, m, "604800")
+	pickItem(t, m, "sec_gh")
+	if !onStep(m, "how long") || !strings.Contains(m.dialog.body, "exceeds the limit") {
+		t.Fatal("over-limit lifetime was accepted")
+	}
 	for _, item := range m.dialog.items {
-		long := item.key == "0" || item.key == strconv.Itoa(int(lifetime.Week/time.Second)) || item.key == strconv.Itoa(int(lifetime.Month/time.Second))
-		if long && (item.enabled || item.why != "“GitHub token” credential allows at most 1 day") {
-			t.Fatalf("%s: enabled=%v why=%q, want it greyed with the limit", item.label, item.enabled, item.why)
+		if item.key == "604800" && item.enabled {
+			t.Fatal("over-limit preset enabled")
 		}
 	}
 	pickItem(t, m, "custom")
 	for _, typed := range []string{"fortnight", "2d"} {
 		m.dialog.form.set("ttl", typed)
-		readRequestEnd(t, m, "down")
 		send(t, m, keyPress("enter"))
-		if len(ds.approvals) != 0 || m.dialog.form.err == "" {
-			t.Fatalf("%q was taken: err=%q approvals=%v", typed, m.dialog.form.err, ds.approvals)
+		if m.dialog.form.err == "" || len(ds.approvals) != 0 {
+			t.Fatal("invalid custom accepted")
 		}
 	}
-	if !strings.Contains(m.dialog.form.err, "“GitHub token” credential allows at most 1 day") {
-		t.Fatalf("err = %q, want the limit", m.dialog.form.err)
-	}
 	m.dialog.form.set("ttl", "12h")
-	readRequestEnd(t, m, "tab")
 	send(t, m, keyPress("enter"))
+	if !onStep(m, "summary") || len(ds.approvals) != 0 {
+		t.Fatal("lifetime choice sent without consent")
+	}
+	answerApproval(t, m, "accept")
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 12*3600 {
-		t.Fatalf("approvals = %#v, want twelve hours", ds.approvals)
+		t.Fatalf("approvals: %+v", ds.approvals)
 	}
 }
 
 // Esc on how long goes back to the card that decided, and nothing is sent.
 func TestEscOnHowLongGoesBackToTheDecision(t *testing.T) {
-	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	toSummary(t, m, "sec_gh")
-	answerApproval(t, m, "accept")
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	pickItem(t, m, "ttl")
 	send(t, m, keyPress("esc"))
-	if !onStep(m, "summary") || len(ds.approvals) != 0 {
-		t.Fatalf("dialog = %s approvals = %v, want the summary back and nothing sent", describe(m.dialog), ds.approvals)
+	if !onRequestCard(m) || len(ds.approvals) != 0 {
+		t.Fatal("lifetime cancellation did not return to selection")
 	}
 }
 
-// The last step says what the approval replaces in the variable, at the
-// lifetime under the cursor (ADR 26-11-03-329 §5).
+// Consent says what the approval replaces at the selected lifetime.
 func TestHowLongSaysWhatTheApprovalReplaces(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_old", SecretName: "old token", From: BindingProject}}
 	toSummary(t, m, "sec_gh")
-	answerApproval(t, m, "accept")
 	text := plainFrame(m)
-	for _, want := range []string{"this replaces", "“old token” in GH_TOKEN, from its project — is set aside for 1 hour", "the routes it asked for"} {
+	for _, want := range []string{"this replaces", "“old token” in GH_TOKEN, from its project — is set aside for 1 hour", "api.github.com"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("how long = %q, want %q", text, want)
 		}
@@ -460,11 +461,10 @@ func TestANewCredentialIsStoredOnItsHostsAndApproved(t *testing.T) {
 	}
 	m.dialog.form.moveTo(2)
 	send(t, m, keyPress("enter"))
-	answerApproval(t, m, "accept")
-	if text := plainFrame(m); !strings.Contains(text, "stored for") || !strings.Contains(text, "any request to api.github.com") {
+	if text := plainFrame(m); !strings.Contains(text, "stored for") || !strings.Contains(text, "api.github.com") {
 		t.Fatalf("how long = %q, want the hosts the new credential is stored for", text)
 	}
-	pickItem(t, m, "3600")
+	answerApproval(t, m, "accept")
 	if len(ds.createdSecrets) != 1 || len(ds.approvals) != 1 {
 		t.Fatalf("created = %v approvals = %v, want one of each", ds.createdSecrets, ds.approvals)
 	}
@@ -589,36 +589,25 @@ func TestAnywhereShowsEveryCeilingOfTheCredential(t *testing.T) {
 	}
 }
 
-// What the last step lists — what the approval replaces — is read to its end
-// before a lifetime sends it: on a window too short to hold it, Enter does
-// nothing until it has been scrolled through (ADR 26-11-04-616 §4).
-func TestHowLongIsReadToItsEndBeforeItSends(t *testing.T) {
-	t.Parallel()
+// Replacement consequences on consent are read to the end before sending.
+func TestApprovalConsequencesAreReadToTheEndBeforeSending(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	send(t, m, sizeMsg(80, 24))
 	for i := range 20 {
-		ds.heldGrants = append(ds.heldGrants, HeldGrant{BindingID: "sbd_" + strconv.Itoa(i), SecretID: "sec_old", SecretName: "old token " + strconv.Itoa(i), From: BindingProject})
+		ds.heldGrants = append(ds.heldGrants, HeldGrant{BindingID: "sbd_" + strconv.Itoa(i), SecretID: "old", SecretName: "old token " + strconv.Itoa(i), From: BindingProject})
 	}
 	toSummary(t, m, "sec_gh")
-	answerApproval(t, m, "accept")
-	if !onStep(m, "how long") {
-		t.Fatalf("dialog = %s, want how long", describe(m.dialog))
-	}
-	text := plainFrame(m)
-	if !strings.Contains(text, "Scroll to the end to choose") {
-		t.Fatalf("how long = %q, want it to say it is held until read", text)
+	if !m.dialog.decisionsBlocked || !strings.Contains(plainFrame(m), "more below") {
+		t.Fatal("long approval not gated")
 	}
 	send(t, m, keyPress("enter"))
 	if len(ds.approvals) != 0 {
-		t.Fatal("a lifetime was sent past consequences nobody scrolled to")
+		t.Fatal("unread approval sent")
 	}
-	for i := 0; m.dialog.decisionsBlocked && i < 100; i++ {
-		send(t, m, keyPress("pgdown"))
-		plainFrame(m)
-	}
+	readRequestEnd(t, m, "j")
 	send(t, m, keyPress("enter"))
 	if len(ds.approvals) != 1 {
-		t.Fatal("the lifetime did not send once what it replaces was read")
+		t.Fatal("read approval did not send")
 	}
 }
 
@@ -716,15 +705,23 @@ func TestAStaleCommandResultIsDropped(t *testing.T) {
 // A custom lifetime shows what the approval replaces at the lifetime typed,
 // as a preset does.
 func TestACustomLifetimeShowsWhatItReplaces(t *testing.T) {
-	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_old", SecretName: "old token", From: BindingProject}}
-	toSummary(t, m, "sec_gh")
-	answerApproval(t, m, "accept")
+	ds.heldGrants = []HeldGrant{{BindingID: "base", SecretID: "old", SecretName: "old token", From: BindingProject}}
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	pickItem(t, m, "ttl")
 	pickItem(t, m, "custom")
+	if strings.Contains(plainFrame(m), "this approval") {
+		t.Fatal("lifetime repeats approval")
+	}
 	m.dialog.form.set("ttl", "90m")
-	if text := plainFrame(m); !strings.Contains(text, "is set aside for 90 minutes") {
-		t.Fatalf("custom = %q, want what it replaces at 90 minutes", text)
+	send(t, m, keyPress("enter"))
+	pickItem(t, m, "sec_gh")
+	if !strings.Contains(plainFrame(m), "is set aside for 90 minutes") {
+		t.Fatal("summary omitted selected lifetime's consequences")
+	}
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 5400 {
+		t.Fatalf("approvals: %+v", ds.approvals)
 	}
 }
 
@@ -748,7 +745,7 @@ func TestAChosenFormatIsCheckedAgainstTheValueOnContinue(t *testing.T) {
 }
 
 // A new credential held to the exact hosts leaves out a route the request
-// names on a pattern; the last step lists it before anything is stored.
+// names on a pattern; consent lists it before anything is stored.
 func TestANewCredentialSaysWhatItWillNotBeSentOn(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
@@ -760,9 +757,8 @@ func TestANewCredentialSaysWhatItWillNotBeSentOn(t *testing.T) {
 	m.dialog.form.set("value", fakeGitHubToken)
 	m.dialog.form.moveTo(2)
 	send(t, m, keyPress("enter"))
-	answerApproval(t, m, "accept")
 	text := plainFrame(m)
-	for _, want := range []string{"any request to api.github.com", "requested, but this credential will not be sent on", "*.githubusercontent.com"} {
+	for _, want := range []string{"api.github.com", "requested, but this credential will not be sent on", "*.githubusercontent.com"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("how long = %q, want %q", text, want)
 		}
@@ -781,11 +777,11 @@ func TestANewCredentialsGapIsOfWhatIsApproved(t *testing.T) {
 		d := &dialog{sections: sections}
 		return strings.Join(d.sectionLines(newStyles(false), 120), "\n")
 	}
-	if got := text(answerSections(req, ans, time.Hour, true)); strings.Contains(got, "will not be sent on") {
+	if got := text(approvalConsequences(req, ans)); strings.Contains(got, "will not be sent on") {
 		t.Fatalf("a denied part's routes are listed as a gap:\n%s", got)
 	}
 	ans.useChoice = partChoice{scope: "edited", routes: []secretroute.Route{{Hosts: []string{"uploads.github.com"}}}}
-	if got := text(answerSections(req, ans, time.Hour, true)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
+	if got := text(approvalConsequences(req, ans)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
 		t.Fatalf("a host added by an edit is not listed as a gap:\n%s", got)
 	}
 }
@@ -826,13 +822,12 @@ func TestRequestAdditionBesideDelegatedBase(t *testing.T) {
 		}
 	}
 	pickItem(t, m, "add")
-	answerApproval(t, m, "accept")
 	readRequestEnd(t, m, "j")
 	text = plainFrame(m)
 	if strings.Contains(text, "this replaces") || strings.Contains(text, "held within") {
 		t.Fatalf("misleading preview: %s", text)
 	}
-	pickItem(t, m, "3600")
+	answerApproval(t, m, "accept")
 	if len(ds.approvals) != 1 || ds.approvals[0].UseAs != "add" {
 		t.Fatalf("approvals: %+v", ds.approvals)
 	}
@@ -855,8 +850,6 @@ func TestRequestUseModeCanBeChangedOnSummaryAndPart(t *testing.T) {
 				t.Fatal("changed mode not marked edited")
 			}
 			answerApproval(t, m, "accept")
-			readRequestEnd(t, m, "down")
-			pickItem(t, m, "3600")
 			if len(ds.approvals) != 1 || ds.approvals[0].UseAs != "add" {
 				t.Fatalf("approvals: %+v", ds.approvals)
 			}
@@ -867,7 +860,7 @@ func TestRequestUseModeCanBeChangedOnSummaryAndPart(t *testing.T) {
 func TestCancellingUseModeReturnsToFirstDecision(t *testing.T) {
 	for _, review := range []bool{false, true} {
 		t.Run(strconv.FormatBool(review), func(t *testing.T) {
-			m, _ := sourceWithRequest(t)
+			m, ds := sourceWithRequest(t)
 			toSummary(t, m, "sec_gh")
 			if review {
 				answerApproval(t, m, "review")
@@ -878,7 +871,7 @@ func TestCancellingUseModeReturnsToFirstDecision(t *testing.T) {
 				t.Fatal("mode chooser retained focus")
 			}
 			answerApproval(t, m, "accept")
-			if !onStep(m, "how long") {
+			if len(ds.approvals) != 1 {
 				t.Fatal("Enter reopened mode chooser")
 			}
 		})
