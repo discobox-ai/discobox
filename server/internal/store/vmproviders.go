@@ -119,6 +119,16 @@ func (s *Store) migrateVMProvider(ctx context.Context, tx *gorm.DB, provider *mo
 	}
 	key, hasKey := moved["apiKey"]
 	delete(moved, "apiKey")
+	// A clear key SealProviderCredentials could not seal on this start is
+	// sealed here, under the driver's secret, or the row is not moved: the
+	// new type's secret field no longer names apiKey, so nothing would ever
+	// seal it, and every read of the provider would return it.
+	if clearKey, ok := config["apiKey"]; ok {
+		delete(config, "apiKey")
+		if !hasKey && stringField(clearKey) != "" {
+			key, hasKey = clearKey, true
+		}
+	}
 	if hasKey && upgrade.secret != "" {
 		moved[upgrade.secret] = key
 	}
@@ -156,6 +166,7 @@ func (s *Store) migrateVMProvider(ctx context.Context, tx *gorm.DB, provider *mo
 	}
 	if len(provider.EncryptedConfig) > 0 {
 		if err := s.sealProviderSecrets(ctx, provider); err != nil {
+			// The row stays vm, its key where it was, for the next start.
 			return err
 		}
 	}

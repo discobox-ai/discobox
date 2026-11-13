@@ -133,6 +133,13 @@ pools and key. If the server's environment set `BOXD_GRPC_ADDR` or
 `vm` provider on any other driver (vz, for example) is disabled and left for
 you to delete, with its pools. Those pools never ran.
 
+Behind an egress proxy (`HTTPS_PROXY`, or a SOCKS5 `ALL_PROXY`), the server
+resolves a VM provider's endpoint itself and asks the proxy for the address it
+checked, never the name. A name the server cannot resolve is refused. If your
+server resolves names only through its proxy, or your proxy allows only
+hostnames, list the provider's hosts in `providerEndpoints` (for boxd,
+`boxd.sh` and `app.boxd.sh`): a listed host goes to the proxy by name.
+
 ### DNS on machine providers
 
 Discobox tries to make `169.254.53.53`, its local DNS stub, the system resolver

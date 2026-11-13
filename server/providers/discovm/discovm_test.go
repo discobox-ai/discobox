@@ -389,7 +389,7 @@ func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
 // runtime, whose shims are this binary.
 func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	isolateStateRoot(t)
-	provider, err := FactoryWithPoolManager("fake", nil, nil, sandbox.EndpointPolicy{})(context.Background(), fakeInstance(t))
+	provider, err := FactoryWithPoolManager("fake", nil, nil, func() sandbox.EndpointPolicy { return sandbox.EndpointPolicy{} })(context.Background(), fakeInstance(t))
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}
@@ -486,7 +486,7 @@ func TestUnreachableIsATransportFailureOnly(t *testing.T) {
 // console, as a host pool agent has no host to open one on.
 func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
 	isolateStateRoot(t)
-	built, err := FactoryWithPoolManager("fake", nil, nil, sandbox.EndpointPolicy{})(context.Background(), fakeInstance(t))
+	built, err := FactoryWithPoolManager("fake", nil, nil, func() sandbox.EndpointPolicy { return sandbox.EndpointPolicy{} })(context.Background(), fakeInstance(t))
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}

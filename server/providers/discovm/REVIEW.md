@@ -58,6 +58,13 @@
   so a field the new pin adds is offered with no change here, and one it
   marks `Privileged` fails `TestPrivilegedFieldsAreTheCheckedEndpoints` until
   it is checked (ADR 26-11-11-080 §3).
+- A linked driver has no `Retired` field. disco-vm decodes one into its
+  `ReplacedBy`, and the catalog lists it nowhere, so the providers service's
+  per-key checks of a `Privileged` or `Immutable` field never see a write of
+  the old name: `grpcAddr` retired onto `addr` would send the sealed key to
+  any host, with no key demanded and pools standing. Why: the checks compare
+  catalog keys, not the configuration disco-vm makes of them;
+  `TestPrivilegedFieldsAreTheCheckedEndpoints` fails on one until they do.
 - Nothing that carries the driver's configuration carries its secret: the
   bootstrap, the placement fingerprint, a shim's arguments, a log or an
   error. `decode` takes the secret out of `driver` before anything else sees
@@ -70,3 +77,9 @@
   a driver a config from the environment, nor a nil `Dial`. Why: a project
   member writes the provider, and the server's network is not theirs (ADR
   26-11-11-080 §§2–3).
+- The checked dial never hands a name it checked to anything that resolves
+  it again: through a proxy, it CONNECTs to the address it resolved and
+  checked, and refuses a name it cannot resolve, but for an endpoint the
+  operator allows or the upgrade carried. Why: a checked dial that hands a
+  name to someone else to resolve has checked nothing; a rebinding name
+  answers public here and inward at the proxy (#1006 review).

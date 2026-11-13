@@ -299,7 +299,7 @@ reconciles every pool.
 Both pool providers make the box with `poolruntime.ProvisionBox`
 (`poolruntime/box.go`), through `pool-agent/provisioner`, over the box as a
 `machine.Guest` — the Docker engine's container (`dockerworker/poolbox.go`),
-or the `vm` provider's machine. When the placement asks
+or a disco-vm driver's pool machine. When the placement asks
 (`BoxPlacement.Fence`), its first step is the network fence (`FenceBox`,
 `poolruntime/fence.go`; ADR 26-11-11-963 §6): it learns the box's network
 devices (each with a `device` link), places `/etc/nftables.conf` — a table of
@@ -308,8 +308,8 @@ neighbor discovery and its DHCP client's replies — and a prefix drop-in
 holding every `discobox-*.service` to `nftables.service`, which the base
 loads before `network-pre.target` on every boot; loads it and reads it back
 as written. A fence that does not read back, or a base without `nft` or the
-enabled unit, fails the box with nothing else placed. Only the `vm`
-provider asks, for a held driver's pool machine, and no pool reaches that
+enabled unit, fails the box with nothing else placed. Only a disco-vm
+driver's provider asks, for a held driver's pool machine, and no pool reaches that
 today ([discovm](discovm/DESIGN.md#the-pools-box)); Docker and boxd pools
 are not fenced this way (963 Deferred). Then it places the agent, runs
 `discobox-provision identity` and enrolls the public key it prints
@@ -328,7 +328,7 @@ provider's configuration and the pool's own settings, such as
 `disableAgentEndpointTls` (`PlacementFingerprint`) — is provisioned again in
 its running box, its agent and proxy restarted for a moved placement
 (`RestartPoolUnits`), and the agent alone moving provisions nothing (§5). What else a provider places for its agent
-— the `vm` provider's provisioning key — goes in first
+— a disco-vm driver's provisioning key — goes in first
 (`poolruntime.PlaceBoxFiles`); see [discovm](discovm/DESIGN.md).
 
 ## Development Image Convergence

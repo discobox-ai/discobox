@@ -134,6 +134,12 @@ func TestPrivilegedFieldsAreTheCheckedEndpoints(t *testing.T) {
 			if f.Privileged {
 				privileged = append(privileged, f.Key)
 			}
+			// disco-vm still decodes a Retired field into its ReplacedBy, and
+			// the catalog lists it nowhere, so the providers service's
+			// per-key checks (§§3–5) never see a write of it.
+			if f.Retired {
+				t.Errorf("%s has the retired field %s (into %q): compare the driver config as disco-vm normalizes it before linking it", name, f.Key, f.ReplacedBy)
+			}
 		}
 		if fmt.Sprint(privileged) != fmt.Sprint(want[name]) {
 			t.Errorf("%s's Privileged fields = %v, want %v: check the new one (ADR 26-11-11-080 §3) before linking it", name, privileged, want[name])
@@ -151,7 +157,7 @@ func TestRegisterRefusesATakenName(t *testing.T) {
 			t.Fatal("Register over a taken name did not panic")
 		}
 	}()
-	Register(manager, nil, nil, sandbox.EndpointPolicy{})
+	Register(manager, nil, nil)
 }
 
 // Every connection the engine makes to the driver's service goes through

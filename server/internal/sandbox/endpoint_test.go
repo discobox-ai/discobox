@@ -1,13 +1,18 @@
 package sandbox
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConfigPaths(t *testing.T) {
@@ -97,5 +102,70 @@ func TestEndpointDial(t *testing.T) {
 	}
 	if PublicAddr(netip.MustParseAddr("::ffff:10.0.0.1")) {
 		t.Fatal("a mapped private address is public")
+	}
+}
+
+// With a proxy, a dial goes through it with a CONNECT to the address the
+// server checked, never a name the proxy would resolve again; an endpoint the
+// operator allows goes by name. The proxy itself is not checked at all: it is
+// the operator's, on loopback here.
+func TestEndpointDialThroughAProxy(t *testing.T) {
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	connects := make(chan string, 4)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				req, err := http.ReadRequest(bufio.NewReader(conn))
+				if err != nil {
+					return
+				}
+				connects <- req.Method + " " + req.Host
+				_, _ = io.WriteString(conn, "HTTP/1.1 200 Connection established\r\n\r\ntunnel")
+			}()
+		}
+	}()
+	proxyURL, _ := url.Parse("http://" + listener.Addr().String())
+	policy := EndpointPolicy{Allowed: []string{"boxd.internal"}, Proxy: func(string) (*url.URL, error) { return proxyURL, nil }}
+	dial := policy.Dial(nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := dial(ctx, "tcp", "203.0.113.9:443")
+	if err != nil {
+		t.Fatalf("a public target through the proxy: %v", err)
+	}
+	first := make([]byte, 6)
+	if _, err := io.ReadFull(conn, first); err != nil || string(first) != "tunnel" {
+		t.Fatalf("read through the tunnel = %q, %v", first, err)
+	}
+	_ = conn.Close()
+	if got := <-connects; got != "CONNECT 203.0.113.9:443" {
+		t.Fatalf("the proxy was asked %q", got)
+	}
+	if _, err := dial(ctx, "tcp", "10.1.2.3:443"); !errors.Is(err, ErrEndpointRefused) {
+		t.Fatalf("a private target through the proxy = %v, want refused", err)
+	}
+	if _, err := dial(ctx, "tcp", "no-such-host.invalid:443"); !errors.Is(err, ErrEndpointRefused) {
+		t.Fatalf("a name the server cannot resolve through the proxy = %v, want refused, never handed on", err)
+	}
+	conn, err = dial(ctx, "tcp", "boxd.internal:443")
+	if err != nil {
+		t.Fatalf("an allowed endpoint through the proxy: %v", err)
+	}
+	_ = conn.Close()
+	if got := <-connects; got != "CONNECT boxd.internal:443" {
+		t.Fatalf("the proxy was asked %q for an allowed endpoint, want it by name", got)
+	}
+	if _, err := dial(ctx, "tcp", "localhost:443"); !errors.Is(err, ErrEndpointRefused) {
+		t.Fatalf("a name that resolves to loopback through the proxy = %v, want refused", err)
 	}
 }

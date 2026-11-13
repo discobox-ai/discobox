@@ -107,7 +107,12 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    before anything mints a sentinel, and seals the credentials an older
    server kept in a provider's config in the clear
    (`Store.SealProviderCredentials`, ADR 26-10-31-694 §4), before anything
-   resolves a provider. Then it starts the engine, whose reconciles resolve
+   resolves a provider. Then it upgrades each provider row of the retired
+   `vm` type to its disco-vm driver's own type (`Store.MigrateVMProviders`,
+   ADR 26-11-11-080 §8): after the seal, so the key it moves is sealed to
+   sealed, and before the engine, whose reconciles resolve providers by
+   type. It is the one place the server reads a driver's environment
+   variable. Then it starts the engine, whose reconciles resolve
    providers, and marks every pool for a reconcile, so each settles once in
    this run whether or not the release moved; the upgrade watch goes on it.
 4. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`, and
