@@ -16,7 +16,7 @@ require (
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/discobox-ai/envelope v0.0.0-20261102232903-985c222e7477
-	github.com/discobox-ai/vm v0.0.0-20261112233043-cf01befccd92
+	github.com/discobox-ai/vm v0.0.0-20261113133654-7d58d05dc2d0
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/distribution/reference v0.6.0
 	github.com/ebitengine/purego v0.11.1
@@ -464,10 +464,3 @@ replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20260
 replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
 
 replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4
-
-// The disco-vm change for #1049 (URL requests; disco-vm ADR 26-11-12-604),
-// at its commit on the bot's fork, since the module proxy fetches no fork
-// commit under github.com/discobox-ai/vm. Temporary: drop this once the
-// disco-vm PR (discobox-ai/vm#103) merges, and bump the require above to
-// disco-vm's main. Never merge this replace.
-replace github.com/discobox-ai/vm => github.com/ibuildthecloud-bot/vm v0.0.0-20261113041318-5bb499908252
