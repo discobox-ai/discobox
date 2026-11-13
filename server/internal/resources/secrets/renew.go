@@ -32,11 +32,10 @@ const tokenRenewTimeout = 30 * time.Second
 // refusal is worth a person's time (ADR 0132 §3).
 var errRenewalRefused = errors.New("token renewal refused")
 
-// tokenHTTPClient is the client renewals are made with. It is a package var so
-// tests can point it at an httptest server.
+// tokenHTTPClient is the client OAuth refreshes are made with.
 //
-// It follows no redirect. A 307 or 308 re-sends the body, and with it the key
-// or refresh token, to whatever the Location names — another host, or plain
+// It follows no redirect. A 307 or 308 re-sends the body, and with it the
+// refresh token, to whatever the Location names — another host, or plain
 // http — past every check made on the URL the secret holds. A token endpoint
 // that redirects is answered as the error it is.
 var tokenHTTPClient = &http.Client{
