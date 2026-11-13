@@ -298,7 +298,10 @@ flowchart TD
   golangci-lint's analysis cache is Depot Cache too, through the
   `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
   modules come from the module proxy each run, which measured no slower than
-  restoring an `actions/cache` tarball of them.
+  restoring an `actions/cache` tarball of them. Go does not retry a download
+  the proxy drops, so `ci:check` downloads them first in `ci:mod-download`,
+  which retries and names the module that still fails, then runs the steps
+  that load packages with `GOPROXY=off`.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
