@@ -12,12 +12,15 @@
     §4's provider's own key placed on a pool machine when the driver cannot
     issue one (`deliverProviderKey`), with what bounds a delivered key that
     is the provider's own: "the proxy never forwards it". A pool machine
-    holds a sentinel instead, and its proxy forwards the key to the one
-    place the driver sends it (§9). §4's issued key, and its bounds, stand,
-    as does its "A key wider than the pool is acceptable where the driver
-    offers nothing narrower", which now also covers §9's tokens and the key
-    in the proxy's memory. Its "the pool records whether its key is issued or the
-    provider's" reads "issued or a sentinel for the provider's".
+    authenticates in-machine where its driver gives it a credential (boxd),
+    and otherwise holds a sentinel, which its proxy swaps for the key at the
+    one place the driver sends it (§9). §4's issued key, and its bounds,
+    stand, but for a driver that authenticates in-machine, which is issued
+    none (§9). So does its "A key wider than the pool is acceptable where the
+    driver offers nothing narrower", which now also covers §9's in-machine
+    token, the tokens a sentinel obtains, and the key in the proxy's memory.
+    Its "the pool records whether its key is issued or the provider's" reads
+    "issued, in-machine, or a sentinel for the provider's".
 - **Narrows**:
   - 26-11-11-963, "One vm provider type: every pool runs a Linux pool agent
     in a machine its driver makes" (Proposed in #1003), if it is accepted:
@@ -39,7 +42,7 @@
   - [26-10-31-694](26-10-31-694-a-providers-credentials-are-sealed-in-its-row-and-never-returned.md)
     §2's "a field the body leaves out keeps its sealed value", for a write
     that changes a `Privileged` field (§4).
-- **Date**: 2026-11-11
+- **Date**: 2026-11-11; §9 amended 2026-11-13 (#1092), while Proposed
 - **Issue**: #1006
 - **Relates to**:
   - [0003](0003-promote-pool-to-a-first-class-primitive.md), one provider
@@ -50,6 +53,9 @@
   - ADR 26-11-06-442, WebSocket credentials require explicit message places
     (Proposed in #748, for #741), whose place model §9's HTTP body places
     (#1012) follow.
+  - #1090, the spike that found a boxd pool machine already holds an
+    in-machine credential, and on which the owner chose it for boxd's pools
+    (2026-11-13); disco-vm's in-machine credential source for boxd (vm#109).
 
 ## Context
 
@@ -197,11 +203,13 @@ field is listed under `driver.<key>` with the rest, and:
   bootstrap (§6), its placement fingerprint, a shim's configuration file
   (215 §6), nor anything disco-vm prints.
 - **is never on a pool machine's disk, in its environment or in its
-  provisioning key file.** That file holds an issued key (551 §4), or else a
-  sentinel for the driver's key secret, which its pool's proxy swaps (§9).
-  The key is on the pool machine only in that proxy's memory, while cached. An issued key is a value
-  for the driver's key secret, so the pool agent's engine calls with it as
-  the provider's engine calls with the provider's.
+  provisioning key file.** A pool that authenticates in-machine has no
+  such file (§9). Otherwise it holds an issued key (551 §4), or else a
+  sentinel for the driver's key secret, which its pool's proxy swaps (§9),
+  and the key is on the pool machine only in that proxy's memory, while
+  cached. An issued key is a value for the driver's key secret, so the pool
+  agent's engine calls with it as the provider's engine calls with the
+  provider's.
 - **tells discobox which drivers take a key.** A driver with a secret field
   takes one, which replaces the guess from `Capabilities.Keys` (which says
   whether a driver issues keys, not whether it takes one).
@@ -327,43 +335,87 @@ idempotent: it finds only rows still typed `vm`. It runs where
     of an unregistered type is deleted is implementation's.
 - **`deliverProviderKey`** is dropped from every row. A pool machine that
   holds the provider's key has it taken off at its next reconcile, as
-  withdrawing the opt-in takes it off today, and is given the sentinel (§9).
+  withdrawing the opt-in takes it off today, and is given what §9 gives its
+  driver: nothing on boxd, which authenticates in-machine; a sentinel on a
+  driver that does not.
 - **Sealing.** `SealProviderCredentials` is keyed by the stored type
   (`storedProviderCredentials`, `"vm": apiKey`). A `vm` row's clear `apiKey`
   is sealed first, under `vm`, and then moved as above, so it is never left
   clear.
 
-### 9. A pool machine holds a sentinel for its driver's key
+### 9. A pool machine authenticates in-machine, or holds a sentinel for its driver's key
 
-`deliverProviderKey` goes. A pool on a driver reached at its URLs gets its
-engine's key in one of two ways:
+`deliverProviderKey` goes, and the provider's key is never placed on a pool
+machine. A pool on a driver reached at its URLs authenticates its engine in
+the first of these ways its driver offers:
 
+- **In-machine**, when the driver gives a pool machine a credential of its
+  own. This is every boxd pool.
 - **An issued key**, when the driver issues one (551 §4, unchanged):
   narrower, expiring, renewed at half its life, revoked by name.
 - **Otherwise, a sentinel for the driver's key secret, swapped by the pool's
-  own proxy.** boxd issues none to an API key (`ErrCannotIssue`,
-  `pkg/machine/boxd/keys.go`), so this is every boxd pool on an API key.
-  - The pool machine's provisioning key file holds a sentinel shaped as the
-    driver's key. For boxd that is `bxd_…`, which its driver exchanges for
-    a token rather than sending it as a bearer.
-  - The pool agent's engine reaches the driver's endpoints through the
-    pool's proxy, as a client of its own: the proxy tells clients apart by
-    their mutual-TLS certificate, and no sandbox or build step holds the
-    pool agent's. The pool agent trusts the proxy's CA for those hosts
-    alone.
-  - The proxy swaps the sentinel only at the place the driver sends its
-    key. For boxd that is the JSON body field `/api_key` of a `POST` to its
-    `tokenUrl`, the one request that carries the key. That is an **HTTP body
-    place** (#1012), following #741's WebSocket places (ADR 26-11-06-442):
-    the value at a JSON pointer must be exactly a sentinel, on a named host,
-    method and path, and nothing else in that request or any other is
-    swapped.
-  - What comes back is the driver's own short-lived credential (boxd's
-    one-hour JWT), which the engine uses as it is. boxd's gRPC calls carry
-    that token, never the key, so no gRPC route is needed.
-  - Where a driver sends its key is the driver's to declare with its secret
-    field (Consequences), and discobox writes the route from that. Its host
-    is the driver's `Privileged` endpoint field, which §3 already checks.
+  own proxy.** No linked driver takes this way today: archil's pools are
+  refused (§1). It is archil's once disco-vm gives it a fence, and any
+  driver's that has neither of the others.
+
+**In-machine, on boxd.** boxd gives a private machine that is not isolated
+a metadata endpoint on its gateway, which mints a token for the machine's
+owner on every read. An isolated machine gets none (#1090).
+
+- **The pool machine is private and not isolated**, as disco-vm makes it
+  now, on a network of the pool's own. Not isolated is also what lets its
+  isolated sandboxes reach it. It is never shared: a shared machine's token
+  cannot snapshot a machine or set its egress allowlist.
+- **Nothing is placed.** The pool machine gets no key, no sentinel and no
+  provisioning key file, and is issued no key. The provider's key is used
+  by the server alone, to create, repair and delete the pool machine.
+- **The pool agent's engine uses disco-vm's in-machine credential source**
+  (vm#109): it reads the endpoint, caches the token until near its expiry,
+  and calls the driver's endpoints with it directly. It does not go through
+  the pool's proxy, and the pool has no grant, route or body place for it.
+  Its bootstrap names no key secret.
+- **Nothing to revoke per pool.** The credential goes with the machine:
+  deleting the pool machine ends it, and its last token dies within fifteen
+  minutes.
+
+**What the in-machine token reaches, stated.** It is the machine owner's
+`member` credential, fenced to one org and to the machine's life, as #1090
+observed it:
+
+- it lists, creates, snapshots, runs commands in and **deletes every machine
+  the owner has in the org**, other pools' included, and reads the org's env
+  var values (not secret values);
+- it cannot manage API keys, nor change its own machine's egress allowlist;
+- it lives fifteen minutes, and cannot be revoked apart from deleting the
+  machine;
+- root on the pool machine, such as a build that escapes onto it (767), can
+  mint one whenever it likes.
+
+That is the provider's key's reach, less key management, with shorter-lived
+tokens. boxd has nothing narrower for a pool machine (Deferred), and the
+machine holds this credential whatever discobox places on it, so no sentinel
+would narrow it (Alternatives rejected).
+
+**The sentinel, on a driver without in-machine auth.**
+
+- The pool machine's provisioning key file holds a sentinel shaped as the
+  driver's key.
+- The pool agent's engine reaches the driver's endpoints through the
+  pool's proxy, as a client of its own: the proxy tells clients apart by
+  their mutual-TLS certificate, and no sandbox or build step holds the
+  pool agent's. The pool agent trusts the proxy's CA for those hosts
+  alone.
+- The proxy swaps the sentinel only at the place the driver sends its
+  key: a header, or an **HTTP body place** (#1012), following #741's
+  WebSocket places (ADR 26-11-06-442), where the value at a JSON pointer
+  must be exactly a sentinel, on a named host, method and path. Nothing
+  else in that request or any other is swapped.
+- Where the driver exchanges its key for a short-lived credential, what
+  comes back is used by the engine as it is, and calls that carry it need
+  no route.
+- Where a driver sends its key is the driver's to declare with its secret
+  field (Consequences), and discobox writes the route from that. Its host
+  is the driver's `Privileged` endpoint field, which §3 already checks.
 
 **The server hands a provider's key to a pool's proxy only for that pool.**
 Today the only way a pool learns a secret's value is resolving a sandbox's
@@ -372,7 +424,8 @@ is a new resolution, and it is answered only:
 
 - to a request authorized by the asking pool's own credential;
 - with the key secret of the provider that pool is bound to, never another
-  provider's, and never for a pool of another type;
+  provider's, and never for a pool of another type, nor for a pool that
+  authenticates in-machine;
 - for the pool agent's own client, an identity no sandbox ID can take;
 - for the host, method, path and place the driver declares;
 - while the pool exists and is bound to that provider. It is refused once
@@ -382,22 +435,23 @@ is a new resolution, and it is answered only:
 exchanges and serves them through the pool's audit API, which any project
 member may read. For the pool agent's exchanges on a driver route:
 
-- the request body is recorded as the client sent it, with the sentinel,
-  never with the key;
-- the response body of the exchange that returns a credential is never
+- the request is recorded as the client sent it, with the sentinel, never
+  with the key;
+- the response body of an exchange that returns a credential is never
   recorded or served, and a response header that carries one is redacted as
   a swapped header is.
 
-**What it bounds, exactly.** The provider's key is never on the pool
+**What a sentinel bounds, exactly.** The provider's key is never on the pool
 machine's disk, in its environment, in its provisioning key file, or in
 anything recorded. A build step there (767) reads a sentinel. The key is on
 the pool machine only in its proxy's memory, while cached, as every swapped
 secret is. Withdrawing the grant stops every new exchange, and the last
 token dies by its own expiry.
 
-**The cost, stated.** Each token the pool obtains has the key's full scope
-for its life (boxd: an hour). A build that escapes onto the pool machine
-could mint tokens through the proxy, or read the key from its memory.
+**The sentinel's cost, stated.** Each request the engine sends through the
+proxy, and each token it obtains, has the key's full scope. A build that
+escapes onto the pool machine could use the proxy as the engine does, or
+read the key from its memory.
 
 ## Alternatives rejected
 
@@ -422,8 +476,27 @@ could mint tokens through the proxy, or read the key from its memory.
 - **Keeping `deliverProviderKey`**, the provider's own key on the pool
   machine by consent. It is the account's full, never-expiring key, in a
   file on a machine where builds run (767), and discobox can neither rotate
-  nor revoke it there. A sentinel keeps it off the disk and out of reach of
-  anything that reads files (§9). Placing it with no opt-in at all is worse still.
+  nor revoke it there. §9 keeps it off the machine: in-machine auth places
+  nothing, and a sentinel keeps it off the disk and out of reach of anything
+  that reads files. Placing it with no opt-in at all is worse still.
+- **A sentinel for boxd's key, swapped in its token exchange's body**, as
+  this ADR first had it. A boxd pool machine is private and not isolated,
+  and boxd gives every such machine a token of the owner's member scope
+  (§9), whether or not it holds a sentinel. So the sentinel narrows nothing
+  root on the pool machine can do. It still costs a grant of the provider's
+  key to the pool's proxy, a body place (#1012), and the proxy's CA trusted
+  for boxd's hosts by the pool agent's engine, which disco-vm cannot do
+  today. In-machine auth takes the key and the sentinel off the machine
+  entirely, with shorter-lived tokens (fifteen minutes, not an hour) that
+  cannot manage keys (#1090).
+- **An issued key for a boxd pool**, where boxd would issue one (551 §4):
+  boxd's issued keys are `member` keys too (disco-vm ADR 26-10-24-562), so
+  one reaches no less than the in-machine token, and sits on the pool
+  machine's disk for days rather than minutes.
+- **A shared boxd pool machine**, whose in-machine token is narrowed to the
+  machines it created. That token cannot read its owner (`Whoami`), snapshot
+  a machine or set one's egress allowlist, so disco-vm cannot run a pool on
+  it (#1090).
 - **The server minting the pool's short-lived token**: boxd's `IssueKey`
   answering an API key with an exchanged one-hour JWT, placed and renewed
   as an issued key is. It needs no proxy work, but it is a second,
@@ -468,6 +541,12 @@ could mint tokens through the proxy, or read the key from its memory.
   where they are (`tokenUrl`, say). Until then every one is `Immutable`
   (§5).
 
+- **A boxd in-machine token narrowed to the machines its pool machine
+  created**, as boxd narrows a shared machine's. A private machine's token
+  is not narrowed today. Revisited when boxd offers it for a private
+  machine, which would make in-machine auth narrower than any key; it is to
+  be asked of boxd.
+
 ## Consequences
 
 - **`server/providers/discovm`.**
@@ -483,24 +562,31 @@ could mint tokens through the proxy, or read the key from its memory.
   - `runShim` (`shim.go`) makes its driver with the configuration its file
     holds (215 §6), for hcs.
 - **pool-agent.** `pool-agent/drivers.go` links archil too, and its engine
-  is made with the bootstrap's driver configuration. Its engine's calls to
-  the driver go through the pool's proxy as a client of its own, with the
-  route §9 writes, when it holds a sentinel.
-- **The proxy owes**, before §8's drop of `deliverProviderKey` and §9 land:
-  sentinels swapped at a named place in an HTTP request's JSON body (#1012),
-  the request-body counterpart of #741, with §9's audit rules. Until then
-  no `deliverProviderKey` is dropped, so no pool that runs today stops.
-- **`server/internal/resources/secrets`.** §9's resolution: a pool asking
-  for its provider's key secret, authorized by the pool's own credential,
-  beside `ResolveSandboxSecret`. The provider's key secret is that pool
-  agent's grant, on the route §9 writes.
+  is made with the bootstrap's driver configuration. On a driver that
+  authenticates in-machine (boxd), its engine uses disco-vm's in-machine
+  credential source and calls the driver's endpoints directly. When it
+  holds a sentinel, its engine's calls to the driver go through the pool's
+  proxy as a client of its own, with the route §9 writes.
+- **§8's drop of `deliverProviderKey` waits** on what its pool is given
+  instead: on boxd, disco-vm's in-machine credential source (vm#109) in
+  discobox's pin; on a driver that takes a sentinel, the proxy's sentinels
+  swapped at a named place in an HTTP request's JSON body (#1012), the
+  request-body counterpart of #741, with §9's audit rules. Until then no
+  `deliverProviderKey` is dropped, so no pool that runs today stops. boxd's
+  pools do not wait on #1012.
+- **`server/internal/resources/secrets`.** §9's resolution, for a pool that
+  holds a sentinel: a pool asking for its provider's key secret, authorized
+  by the pool's own credential, beside `ResolveSandboxSecret`. The
+  provider's key secret is that pool agent's grant, on the route §9 writes.
+  No boxd pool has one.
 - **`server/go.mod` and `pool-agent/go.mod`** pin disco-vm at `8b07714` or
   later, and at PR 69's merge for a working region.
 - **`server/internal/resources/providers`.** §4's rule beside
   `refuseImmutableChange`, and §3's endpoint check with the server setting
   that allows more.
 - **`server/providers/discovm`'s provisioning key** (`poolkey.go`). The
-  provider's own key is never placed. A driver that cannot issue gets the
+  provider's own key is never placed. A driver that authenticates in-machine
+  gets no key file and is issued no key; one that cannot issue gets the
   sentinel and its grant (§9).
 - **`server/internal/sandbox` and the API.** `ProviderConfigField` gains
   what the catalog needs to show a driver field (`Default`). Its `Immutable`
@@ -512,7 +598,8 @@ could mint tokens through the proxy, or read the key from its memory.
   a fixed list.
 - **Docs.** The providers and their fields are listed. `discovm/DESIGN.md`
   and `server/providers/DESIGN.md` describe the per-driver types, with the
-  code.
+  code. `discovm/DESIGN.md` states the reach of a boxd pool machine's
+  in-machine token (§9) where it shows the pool's `MachineToken`.
 - **disco-vm owes discobox**, before the implementation lands:
   - **secret fields in a driver's definition**, superseding 215 §7's "no
     field holds a secret", passed to the engine apart from `DriverConfig`,
@@ -525,5 +612,12 @@ could mint tokens through the proxy, or read the key from its memory.
   - whether a driver takes a base, readable from its definition, to replace
     §2's stand-in;
   - a dialer its engine's service connections use, given by the embedder,
-    for §3's check at dial.
+    for §3's check at dial;
+  - **an in-machine credential source** (vm#109): boxd's driver reads its
+    machine's metadata endpoint and caches the token until near its expiry,
+    on a machine where no key is given. Whether a driver authenticates
+    in-machine, and what its pool machine must be for that (boxd: private,
+    not isolated), is readable from its definition, so discobox picks §9's
+    way without knowing the driver. That boxd's endpoint and token lifetime
+    hold is the driver's to keep: neither is in boxd's documentation.
 - **Issues.** #997 closes into #1006.
