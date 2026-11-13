@@ -108,3 +108,45 @@ func TestPruneBlobsRemovesOnlyOldBlobsNothingKeeps(t *testing.T) {
 		}
 	}
 }
+
+// A blob that was received whole and verified, and only failed to be renamed
+// into place, is renamed on the next try without being fetched or checked again.
+func TestPartialBlobRetriesOnlyTheRenameOnceVerified(t *testing.T) {
+	layout := Open(t.TempDir())
+	if err := os.MkdirAll(layout.blobDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("a layer")
+	digest := digestOf(data)
+	path, err := layout.blobPath(digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A non-empty directory where the blob goes refuses the rename.
+	if err := os.MkdirAll(path+"/in-the-way", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	part, err := layout.createPartial(digest, int64(len(data)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer part.discard()
+	if _, err := part.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := part.commit(); err == nil {
+		t.Fatal("renamed over a directory")
+	}
+	if !part.verified || part.written != int64(len(data)) {
+		t.Fatalf("after a failed rename, verified = %v with %d bytes, want the verified blob kept", part.verified, part.written)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := part.commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("blob = %q, %v; want %q", got, err, data)
+	}
+}

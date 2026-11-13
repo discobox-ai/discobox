@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -109,7 +110,7 @@ func onThisMachine(host string) bool {
 // get requests a path under the reference's repository, authorizing once if
 // the registry asks — which it also does when a token has expired partway
 // through a long staging, so an expiry costs one round trip.
-func (r *registry) get(ctx context.Context, ref Reference, path, accept string) (*http.Response, error) {
+func (r *registry) get(ctx context.Context, ref Reference, path string, header http.Header) (*http.Response, error) {
 	host := ref.apiHost()
 	// A token is scoped to one repository, so authorization is kept per
 	// repository: five images from one registry are five scopes.
@@ -120,8 +121,8 @@ func (r *registry) get(ctx context.Context, ref Reference, path, accept string) 
 		if err != nil {
 			return nil, err
 		}
-		if accept != "" {
-			req.Header.Set("Accept", accept)
+		for name, values := range header {
+			req.Header[name] = values
 		}
 		if authorization != "" {
 			// Go drops this header on a redirect to another host, which is what
@@ -293,7 +294,7 @@ func parseChallenge(header string) (string, map[string]string) {
 // that is the digest a daemon pulling the same tag would record, and so the one
 // a sandbox gets pinned to.
 func (r *registry) manifest(ctx context.Context, ref Reference, pinned string) ([]byte, Descriptor, error) {
-	resp, err := r.get(ctx, ref, "/manifests/"+pinned, acceptManifests)
+	resp, err := r.get(ctx, ref, "/manifests/"+pinned, http.Header{"Accept": {acceptManifests}})
 	if err != nil {
 		return nil, Descriptor{}, fmt.Errorf("fetch %s: %w", ref.Name(), err)
 	}
@@ -335,29 +336,72 @@ func manifestMediaType(data []byte, contentType string) string {
 	return mediaType
 }
 
-// blob streams d's bytes into w. At most one byte past the declared size is
-// read, which is enough for the caller to tell "exactly right" from "more than
+// blob streams d's bytes into part, carrying on from what part already holds:
+// it asks for the rest with a Range, and takes a 206 that starts there. A
+// registry that answers 200 instead is sending the whole blob, so part starts
+// again from the first byte. At most one byte past the declared size is read,
+// which is enough for the caller to tell "exactly right" from "more than
 // promised" without letting a source serving something else fill the disk.
-func (r *registry) blob(ctx context.Context, ref Reference, d Descriptor, w io.Writer) error {
+func (r *registry) blob(ctx context.Context, ref Reference, d Descriptor, part *partialBlob) error {
 	// Canceled by the stall watch as well as by the caller: a read blocked
 	// inside a body that stopped arriving is only ended by its context.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	resp, err := r.get(ctx, ref, "/blobs/"+d.Digest, "")
+	if part.written >= d.Size {
+		// Nothing is left to ask for, yet the blob is not in place: the last
+		// attempt received all of it and could not sync it. Fetch it again.
+		if err := part.restart(); err != nil {
+			return err
+		}
+	}
+	var header http.Header
+	from := part.written
+	if from > 0 {
+		header = http.Header{"Range": {fmt.Sprintf("bytes=%d-", from)}}
+	}
+	resp, err := r.get(ctx, ref, "/blobs/"+d.Digest, header)
 	if err != nil {
 		return err
 	}
 	defer drainAndClose(resp)
-	if resp.StatusCode != http.StatusOK {
+	switch {
+	case resp.StatusCode == http.StatusPartialContent && from > 0:
+		if start, ok := contentRangeStart(resp.Header.Get("Content-Range")); !ok || start != from {
+			// Bytes from somewhere else would land at the wrong offset, and a
+			// request that comes back wrong once may again: start over.
+			return errors.Join(fmt.Errorf("asked for bytes from %d, and the registry sent %q", from, resp.Header.Get("Content-Range")), part.restart())
+		}
+	case resp.StatusCode == http.StatusOK:
+		if from > 0 {
+			if err := part.restart(); err != nil {
+				return err
+			}
+		}
+	default:
 		return errors.New(resp.Status)
 	}
 	watch := newStallWatch(cancel)
 	defer watch.stop()
-	_, err = io.Copy(w, &stallReader{reader: io.LimitReader(resp.Body, d.Size+1), watch: watch})
+	_, err = io.Copy(part, &stallReader{reader: io.LimitReader(resp.Body, d.Size-part.written+1), watch: watch})
 	if err != nil && watch.stalled.Load() {
 		return fmt.Errorf("nothing arrived for %s", stallTimeout)
 	}
 	return err
+}
+
+// contentRangeStart reads the first byte position of a Content-Range such as
+// "bytes 300-1023/1024".
+func contentRangeStart(value string) (int64, bool) {
+	spec, ok := strings.CutPrefix(value, "bytes ")
+	if !ok {
+		return 0, false
+	}
+	first, _, ok := strings.Cut(spec, "-")
+	if !ok {
+		return 0, false
+	}
+	start, err := strconv.ParseInt(first, 10, 64)
+	return start, err == nil && start >= 0
 }
 
 // stallWatch cancels a download once nothing has arrived for stallTimeout.

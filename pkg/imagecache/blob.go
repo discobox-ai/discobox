@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,10 +27,22 @@ func (l *Layout) PutBlob(digest string, r io.Reader) error {
 	if err := os.MkdirAll(l.blobDir(), 0o700); err != nil {
 		return fmt.Errorf("create blob store: %w", err)
 	}
-	return l.writeBlob(digest, -1, func(w io.Writer) error {
-		_, err := io.Copy(w, r)
+	path, err := l.blobPath(digest)
+	if err != nil {
 		return err
-	})
+	}
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		return nil
+	}
+	part, err := l.createPartial(digest, -1, nil)
+	if err != nil {
+		return err
+	}
+	defer part.discard()
+	if _, err := io.Copy(part, r); err != nil {
+		return fmt.Errorf("write %s: %w", digest, err)
+	}
+	return part.commit()
 }
 
 // OpenBlob reads the blob named by digest, failing the read that would end it
@@ -68,50 +82,133 @@ func (l *Layout) RemoveBlob(digest string) error {
 	return nil
 }
 
-// writeBlob writes what fill produces into a temporary beside the blob's
-// destination, hashing it as it goes, and renames it into place only when its
-// digest — and its size, when size is not negative — match. A blob already
-// present is left as it is and fill is not called.
-func (l *Layout) writeBlob(digest string, size int64, fill func(io.Writer) error) error {
+// partialBlob is a blob being written: a temporary beside its destination,
+// hashed as it fills and renamed into place only when its digest — and its
+// size, when one is declared — match. What it holds survives a transfer that
+// ends early, so the next transfer carries on from there rather than from the
+// first byte (#1104).
+type partialBlob struct {
+	digest string
+	// size is the declared size, or negative when none is.
+	size int64
+	path string
+	file *os.File
+	hash hash.Hash
+	// written is how many bytes the temporary holds, and so where a resumed
+	// transfer starts.
+	written int64
+	// held, when set, counts the bytes the temporary holds toward a progress
+	// report — never more than the declared size, and taken back off when the
+	// temporary is emptied — so a report says what is on disk.
+	held *atomic.Int64
+	// verified marks a temporary checked, synced and closed: all that is left
+	// is the rename, and an attempt after a failed one retries only that.
+	verified  bool
+	committed bool
+}
+
+// createPartial opens an empty temporary for the blob named by digest.
+func (l *Layout) createPartial(digest string, size int64, held *atomic.Int64) (*partialBlob, error) {
 	path, err := l.blobPath(digest)
 	if err != nil {
-		return err
-	}
-	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && (size < 0 || info.Size() == size) {
-		return nil
+		return nil, err
 	}
 	file, err := os.CreateTemp(filepath.Dir(path), tempPrefix+strings.TrimPrefix(digest, "sha256:")[:16]+"-*")
 	if err != nil {
+		return nil, err
+	}
+	return &partialBlob{digest: digest, size: size, path: path, file: file, hash: sha256.New(), held: held}, nil
+}
+
+// Write appends to the temporary, hashing exactly the bytes that reached it.
+func (p *partialBlob) Write(b []byte) (int, error) {
+	n, err := p.file.Write(b)
+	p.hash.Write(b[:n])
+	before := p.written
+	p.written += int64(n)
+	if p.held != nil {
+		p.held.Add(p.countable(p.written) - p.countable(before))
+	}
+	return n, err
+}
+
+// countable is how much of n bytes held counts toward progress: a source that
+// sends more than the declared size has not brought the blob any closer.
+func (p *partialBlob) countable(n int64) int64 {
+	if p.size >= 0 {
+		return min(n, p.size)
+	}
+	return n
+}
+
+// restart empties the temporary, for a transfer that starts again from the
+// first byte.
+func (p *partialBlob) restart() error {
+	if p.held != nil {
+		p.held.Add(-p.countable(p.written))
+	}
+	p.written = 0
+	p.hash.Reset()
+	if err := p.file.Truncate(0); err != nil {
 		return err
 	}
-	temp := file.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(temp)
+	_, err := p.file.Seek(0, io.SeekStart)
+	return err
+}
+
+// commit renames the temporary into place once it holds the blob. One that is
+// still short is kept as it is, to be resumed; one holding more than the
+// declared size, or bytes of another digest, can never become the blob and is
+// emptied. One that was verified and then failed to be renamed is not checked
+// again: calling commit again retries the rename.
+func (p *partialBlob) commit() error {
+	if !p.verified {
+		if err := p.verify(); err != nil {
+			return err
 		}
-	}()
-	hash := sha256.New()
-	counter := &countingWriter{}
-	fillErr := fill(io.MultiWriter(file, hash, counter))
+	}
+	if err := os.Rename(p.file.Name(), p.path); err != nil {
+		return fmt.Errorf("write %s: %w", p.digest, err)
+	}
+	p.committed = true
+	return nil
+}
+
+// verify checks that the temporary holds the blob, then syncs and closes it.
+// A sync that fails leaves the file open and whole, for a later attempt to
+// fetch again; a close that fails leaves nothing to write into, so the
+// temporary counts as verified and only the rename is left.
+func (p *partialBlob) verify() error {
+	if p.size >= 0 && p.written < p.size {
+		return fmt.Errorf("write %s: received %d bytes, not the %d its manifest declares", p.digest, p.written, p.size)
+	}
+	if p.size >= 0 && p.written > p.size {
+		err := fmt.Errorf("write %s: received %d bytes, not the %d its manifest declares", p.digest, p.written, p.size)
+		return errors.Join(err, p.restart())
+	}
+	if got := "sha256:" + hex.EncodeToString(p.hash.Sum(nil)); got != p.digest {
+		err := fmt.Errorf("write %s: received bytes with digest %s", p.digest, got)
+		return errors.Join(err, p.restart())
+	}
 	// Sync before the rename that publishes it: on ext4 or xfs the rename can
 	// reach the journal ahead of the data, and a blob is trusted by its name.
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(fillErr, syncErr, closeErr); err != nil {
-		return fmt.Errorf("write %s: %w", digest, err)
+	if err := p.file.Sync(); err != nil {
+		return fmt.Errorf("write %s: %w", p.digest, err)
 	}
-	if size >= 0 && counter.written != size {
-		return fmt.Errorf("write %s: received %d bytes, not the %d its manifest declares", digest, counter.written, size)
+	p.verified = true
+	if err := p.file.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", p.digest, err)
 	}
-	if got := "sha256:" + hex.EncodeToString(hash.Sum(nil)); got != digest {
-		return fmt.Errorf("write %s: received bytes with digest %s", digest, got)
-	}
-	if err := os.Rename(temp, path); err != nil {
-		return fmt.Errorf("write %s: %w", digest, err)
-	}
-	committed = true
 	return nil
+}
+
+// discard removes the temporary, unless it was committed.
+func (p *partialBlob) discard() {
+	if p.committed {
+		return
+	}
+	_ = p.file.Close()
+	_ = os.Remove(p.file.Name())
 }
 
 // PruneBlobs removes every blob keep does not want that was written before
