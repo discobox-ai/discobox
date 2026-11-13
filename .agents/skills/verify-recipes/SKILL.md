@@ -1335,7 +1335,8 @@ agent's published port, or the pool never registers.
 # Verifying a machine pool (`MachineSandboxRuntime`, the `vm` provider)
 
 - A machine pool needs a remote driver: boxd and a key in the `vm`
-  provider's `apiKey`; no credential a box can be given works as that key
+  provider's `apiKey`; a box's is a sentinel swapped in boxd's token
+  exchange, which serves the server's calls but not a pool machine's
   (below). A `controlPlaneUrl` is needed only for a pool that should dial
   out: without one the server opens a control-plane channel to the pool's
   agent (ADR 26-10-30-875), so a dev loop with no public URL can run it. The
@@ -1357,17 +1358,37 @@ agent's published port, or the pool never registers.
   create`, recipe above) or the isolated server's. Otherwise the unit test
   `sandbox-agent/boot/clearcache_test.go` and the router test
   `sandbox-agent/server/cache_clear_test.go` cover it.
-- A boxd credential through discobox-access does not work as the
-  provider's `apiKey`: egress swaps a placeholder in headers only, and
-  disco-vm exchanges a `bxd_` key for a JWT in a POST body (and sends a key
-  without that prefix as the JWT), so boxd answers `invalid token`. Do not
-  ask for the real key to get around it: a real secret in a box bypasses
-  the placeholder model — anything the box runs can read it, nothing records
-  or revokes its use, and the isolated server's provider config and a
-  `deliverProviderKey` pool's machine hold it too. Verify on the fake driver
-  instead. A live boxd run is the user's call alone: it takes a key of a
-  throwaway boxd org, which the user revokes, with that org's machines,
-  when the run ends, and say so in the report.
+- A boxd credential through discobox-access works as the dev loop's
+  provider `apiKey`, for the server's own calls to boxd, when its secret has
+  the route `'POST app.boxd.sh/api/v1/auth/token body=/api_key'`. disco-vm
+  POSTs a `bxd_` key to that exchange as `{"api_key":"<key>"}`; a sentinel
+  inferred from a `bxd_` key keeps the prefix, and egress swaps it at the
+  `body=` place (`proxy/internal/secrets/body.go`). A key without the prefix
+  goes out as the gRPC bearer instead, which that route refuses. Body places
+  need the egress the box sits behind at v0.19.4-rc.1 or later: an older one
+  forwards the sentinel, boxd refuses it, and the run is reported
+  unverified.
+  - **The exchange puts a real credential in the box.** boxd returns a token
+    with the key's full reach over the org (list, create, exec in and delete
+    every machine), valid until it expires; the box holds it unswapped, and
+    unbinding the secret does not end it. Anything the box runs can read it,
+    or send the sentinel to the exchange itself. So the throwaway-org rule
+    below holds for a sentinel exactly as for a real key.
+  - **A boxd pool does not run on it.** A boxd driver issues no per-pool key,
+    so its pool runs only with `deliverProviderKey`, which puts the
+    provider's `apiKey` on the pool machine: there it is a sentinel outside
+    the box's egress, boxd refuses it, and the pool never registers. That
+    is the sentinel, not a regression. Its pool's lifecycle is the fake
+    driver's to verify.
+
+  Do not put the real key in the box instead: a real secret in a box
+  bypasses the placeholder model — anything the box runs can read it,
+  nothing records or revokes its use, and the isolated server's provider
+  config and a `deliverProviderKey` pool's machine hold it too. The fake
+  driver stays the default. A live boxd run, sentinel or not, is the user's
+  call alone: it takes a key of a throwaway boxd org, which the user
+  revokes, with that org's machines, when the run ends, and say so in the
+  report.
 - The live run's recipe is `scripts/live-run.sh`: `go tool task
   live-run:build`, then `go tool task live-run DRIVER=boxd`, run once in a
   one-off box under `docs/tasks/947-remote-drivers-boxd-and-archil.md`'s
