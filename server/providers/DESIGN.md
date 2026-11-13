@@ -751,6 +751,14 @@ sequenceDiagram
   ([ADR 26-10-31-152](../../docs/adr/26-10-31-152-the-control-plane-channel-is-a-websocket.md)):
   a hosted edge (boxd's) forwards WebSockets, not an upgrade to a protocol of
   its own.
+- **What keeps it live.** The `cpmux` session sends a keepalive every 30
+  seconds, even with no open streams. It travels inside the pinned TLS as
+  WebSocket data, so intermediaries see traffic without a second WebSocket
+  heartbeat. A missed reply closes the session and lets the holder redial.
+  A dropped channel closes its streams; new pool connections wait for the
+  replacement channel. The separate create stream recovers an unanswered
+  request through fresh protocol discovery and a retry of the same sandbox
+  ID (`poolruntime.createOnPool`), rather than replaying bytes on a new channel.
 - **What it trusts.** The TLS is the channel's own whatever the front is (a
   droplet's agent port is plain HTTP): the agent presents the pool's enrolled
   key, which the server checks against the pool row, and the server presents
