@@ -49,8 +49,8 @@ type treeProvider struct {
 	exported sandbox.Delivery
 }
 
-func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, delivered sandbox.Delivery, _ []byte) (io.ReadCloser, error) {
-	p.exportedPool = poolID
+func (p *treeProvider) ExportTree(_ context.Context, ref sandbox.SandboxRef, delivered sandbox.Delivery, _ []byte) (io.ReadCloser, error) {
+	p.exportedPool = ref.PoolID
 	p.exported = delivered
 	return io.NopCloser(bytes.NewReader(p.exportTree)), nil
 }

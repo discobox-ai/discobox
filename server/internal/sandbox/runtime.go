@@ -98,10 +98,11 @@ type Provider interface {
 	// a tar archive (ADR 0123 §1). It refuses a running sandbox, because a tar
 	// of a live tree is not a consistent one.
 	//
-	// Like ImportTree it is told the pool rather than reading one out of runtime
-	// state. A sandbox whose create never got as far as a runtime has no state
-	// to read and still has a tree on the pool its row names -- and is exactly
-	// the sandbox somebody wants to export, because it is broken where it is.
+	// It does not read its pool out of runtime state alone: with none, it
+	// asks the pool ref names. A sandbox whose create never got as far as a
+	// runtime has no state to read and still has a tree on the pool its row
+	// names -- and is exactly the sandbox somebody wants to export, because it
+	// is broken where it is.
 	//
 	// The stream is the caller's to close, and the walk behind it runs while
 	// they read, so a failure part way through arrives as a read error rather
@@ -110,7 +111,7 @@ type Provider interface {
 	// delivered is the sandbox's pins. The tree's `data` and `sources` are
 	// read by the sandbox agent's export mode, the agent it is pinned to, and
 	// an archived sandbox has no container left to name it (ADR 0129 §1).
-	ExportTree(ctx context.Context, ref SandboxRef, poolID string, delivered Delivery, state []byte) (io.ReadCloser, error)
+	ExportTree(ctx context.Context, ref SandboxRef, delivered Delivery, state []byte) (io.ReadCloser, error)
 	// ImportTree restores a durable tree onto a pool for a sandbox that has no
 	// runtime and, at this point, no row either (ADR 0123 §3). The pool is named
 	// rather than read from runtime state for exactly that reason: there is no

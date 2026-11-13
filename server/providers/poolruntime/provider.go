@@ -925,13 +925,7 @@ func poolAgentLostError(operation, poolID string, lost error) error {
 // at the pool the control plane placed it in: its source is delivered there
 // while it is still being made (ADR 26-10-10-545 §3).
 func (p *Provider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef, state []byte, scopes []string, use sandbox.Use) (*transport.HTTPClientLease, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
-	if errors.Is(err, sandbox.ErrNotFound) && ref.PoolID != "" {
-		var pool *model.Pool
-		if pool, err = p.manager.GetPool(ctx, ref.ProjectID, ref.PoolID); err == nil {
-			client, err = p.agentClientForPool(ctx, pool)
-		}
-	}
+	client, err := p.agentClientForSandbox(ctx, ref, state)
 	if err != nil {
 		return nil, err
 	}
@@ -946,12 +940,71 @@ func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []
 	return client.Archive(ctx, ref, state)
 }
 
+// Remove deletes the sandbox on its pool.
+//
+// A sandbox with no state naming its pool is still asked of the pool the
+// control plane placed it in: a create that failed or went unanswered after
+// the agent made the container leaves no state behind, and answering
+// not-found from that would let the row go while the container stays on the
+// pool, with nothing left to remove it. But its delete does not wait on that
+// pool as a sandbox with state does. Such a sandbox is the one most likely to
+// sit on a pool that never came up, which cannot be deleted while it holds
+// sandboxes; so when the pool cannot be reached at once, the answer is
+// not-found and the row goes. What the pool made is its reaper's, once the
+// pool is back and holds no such sandbox for the retention (pool-agent
+// DESIGN.md, the tree reaper and its orphan sweeps).
 func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
+	if errors.Is(err, sandbox.ErrNotFound) && strings.TrimSpace(ref.PoolID) != "" {
+		client, err = p.placedPoolClient(ctx, ref)
+	}
 	if err != nil {
 		return state, err
 	}
 	return client.Remove(ctx, ref, state)
+}
+
+// placedPoolClient reaches the agent of the pool the control plane placed a
+// sandbox with no state in, if it can be reached now: no reconcile of the pool
+// is started and waited for. One that cannot is reported as not-found.
+func (p *Provider) placedPoolClient(ctx context.Context, ref sandbox.SandboxRef) (*poolAgentClient, error) {
+	if p.manager == nil {
+		return nil, fmt.Errorf("pool manager is required")
+	}
+	pool, err := p.manager.GetPool(ctx, ref.ProjectID, ref.PoolID)
+	if err != nil {
+		return nil, err
+	}
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		slog.WarnContext(ctx, "pool not reachable to remove a sandbox it never reported; leaving what it made to its reaper",
+			"pool", pool.ID, "sandbox", ref.SandboxID, "error", err)
+		return nil, fmt.Errorf("%w: pool %s not reachable: %w", sandbox.ErrNotFound, pool.ID, err)
+	}
+	return newPoolAgentClient(pool, p.manager, lease), nil
+}
+
+// agentClientForSandbox reaches the agent of the pool the sandbox's state
+// names, or, when its state names none, of the pool the control plane placed
+// it in.
+func (p *Provider) agentClientForSandbox(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*poolAgentClient, error) {
+	client, err := p.agentClientFromState(ctx, ref, state)
+	if !errors.Is(err, sandbox.ErrNotFound) || strings.TrimSpace(ref.PoolID) == "" {
+		return client, err
+	}
+	// With empty state this is the first touch of the manager, where every
+	// other path has already dereferenced it.
+	if p.manager == nil {
+		return nil, fmt.Errorf("pool manager is required")
+	}
+	pool, err := p.manager.GetPool(ctx, ref.ProjectID, ref.PoolID)
+	if err != nil {
+		return nil, err
+	}
+	return p.agentClientForPool(ctx, pool)
 }
 
 func (p *Provider) agentClientFromState(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*poolAgentClient, error) {

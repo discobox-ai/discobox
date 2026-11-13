@@ -27,26 +27,12 @@ import (
 // Runtime state names the pool when there is any, because that is where a
 // sandbox that has actually run lives. When there is none -- a create that
 // failed before the agent reported, which is a sandbox worth exporting rather
-// than one to refuse -- the pool the caller names is used instead.
-func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, delivered sandbox.Delivery, state []byte) (io.ReadCloser, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
+// than one to refuse -- the pool on the sandbox's row is used instead
+// (agentClientForSandbox).
+func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, delivered sandbox.Delivery, state []byte) (io.ReadCloser, error) {
+	client, err := p.agentClientForSandbox(ctx, ref, state)
 	if err != nil {
-		if !errors.Is(err, sandbox.ErrNotFound) || strings.TrimSpace(poolID) == "" {
-			return nil, err
-		}
-		// Guarded here as ImportTree guards it: with empty state this is the
-		// first touch of the manager, where every other path has already
-		// dereferenced it.
-		if p.manager == nil {
-			return nil, fmt.Errorf("pool manager is required")
-		}
-		pool, poolErr := p.manager.GetPool(ctx, ref.ProjectID, poolID)
-		if poolErr != nil {
-			return nil, poolErr
-		}
-		if client, err = p.agentClientForPool(ctx, pool); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	return client.ExportTree(ctx, ref, delivered)
 }
