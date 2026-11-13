@@ -166,7 +166,10 @@ Three artifacts, resolved by `server/providers/guestimage`: an uncompressed
 kernel (`vmlinux`), an initrd (`initrd.img`, declared optional so a guest with
 virtio built in still boots), and a read-only raw ext4 root (`root.ext4`).
 Disks are attached in a fixed order the guest depends on — root, data, cache
-become `/dev/vda`, `/dev/vdb`, `/dev/vdc`.
+become `/dev/vda`, `/dev/vdb`, `/dev/vdc` — each cached, with fsync
+synchronization, as Lima, UTM and vfkit attach theirs. The framework's default
+(automatic caching, full synchronization) corrupts ext4 on Apple silicon. A
+guest flush still reaches the disk as an `fsync` of the image file.
 
 The kernel command line carries `panic=`, so a panicked guest resets, and the
 framework stops a VM whose guest resets. That is what makes `Running` mean

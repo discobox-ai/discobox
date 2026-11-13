@@ -15,6 +15,9 @@
   fix it at the binding, not with a method that lies.
 - **The root disk is shared and read-only.** Never attach it writable and never
   add `rw` to the kernel command line: every pool on the host has it open.
+- **Writable disks attach cached, with fsync sync.** The framework's default
+  attachment corrupts ext4 on Apple silicon; do not go back to
+  `NewDiskImageStorageDeviceAttachment` for a new disk.
 - **`StopVM` keeps the disks; only `DeleteVM` removes them.** Repair calls
   `StopVM`, and a pool's images, volumes, and containers all live on `data.raw`.
 - **Ask the guest to shut down before stopping it.** A hard stop is a dirty
