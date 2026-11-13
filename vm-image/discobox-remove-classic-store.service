@@ -1,0 +1,18 @@
+[Unit]
+Description=Remove the classic Docker store's data left on the data disk
+# discobox-mount-storage moves it here; see that script. dockerd and the
+# pool's helpers are not ordered after this, so a large store is deleted while
+# the pool comes up rather than before.
+After=discobox-storage.service
+ConditionPathExists=/var/lib/discobox/docker-classic-store
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/bin/rm -rf /var/lib/discobox/docker-classic-store
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

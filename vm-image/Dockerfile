@@ -155,6 +155,7 @@ RUN systemctl mask \
 COPY --from=guest-tools /out/discobox-vsock-guest /usr/local/bin/discobox-vsock-guest
 COPY vm-image/discobox-storage.service /etc/systemd/system/discobox-storage.service
 COPY --chmod=0755 vm-image/discobox-mount-storage /usr/local/sbin/discobox-mount-storage
+COPY vm-image/discobox-remove-classic-store.service /etc/systemd/system/discobox-remove-classic-store.service
 COPY vm-image/discobox-vsock-docker.service /etc/systemd/system/discobox-vsock-docker.service
 COPY vm-image/discobox-vsock-lifecycle.service /etc/systemd/system/discobox-vsock-lifecycle.service
 COPY --chmod=0755 vm-image/discobox-sync-clock /usr/local/sbin/discobox-sync-clock
@@ -180,6 +181,7 @@ RUN mkdir -p \
     && chmod 0711 /var/lib/containerd /var/lib/docker \
     && systemctl enable \
         discobox-storage.service \
+        discobox-remove-classic-store.service \
         discobox-vsock-docker.service \
         discobox-vsock-lifecycle.service \
         discobox-timesync.timer \

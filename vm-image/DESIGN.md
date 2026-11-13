@@ -84,8 +84,12 @@ deliberately answered the same way for both:
   rebuilt on its pinned image the next time it starts, as a repair rebuilds
   one; its data, caches and sources are binds from the pool's state, not
   Docker's, and are kept, while what was installed outside them is gone. The
-  classic store's data stays on the data disk, unused, until it is removed by
-  hand (`/var/lib/docker/{overlay2,image,containers}`). The store also keeps
+  classic store's data does not stay on the data disk: no daemon API, image
+  reaper or cache clear can see it, so the guest removes it itself. On the
+  first boot that finds it, `discobox-mount-storage` renames it aside before
+  `dockerd` starts (that script says what marks it and what goes), and
+  `discobox-remove-classic-store.service` deletes it in the background, so a
+  large store costs no boot time. containerd's store also keeps
   each layer's compressed blob beside its unpacked snapshot, so the same
   images take more of the data disk than they did.
 - **The host share is `nofail`.** `vz` attaches `/Users` over virtiofs; libkrun

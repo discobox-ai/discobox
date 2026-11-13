@@ -70,3 +70,14 @@ together, where before it broke one".
   privileges, which is what lets CI, a Linux developer, and BuildKit inside a
   running pool VM all produce the same artifacts. A host-side step reintroduces
   the dependency ADR 0062 §6 removed, and breaks the macOS build loop outright.
+- **The classic-store cleanup splits shared directories by store.**
+  `discobox-mount-storage` removes what a classic-store guest left on the data
+  disk, but `containers/` and `buildkit/` under Docker's root are written by
+  both stores. Move only the entries that are the classic store's (a container
+  whose driver is `overlay2`; BuildKit's classic-only files), never the whole
+  directory: a containerd-store disk that also still has classic data would
+  lose its live containers, or orphan BuildKit snapshots that containerd's
+  leases still hold and nothing can prune. Which files are classic-only
+  depends on the Docker this guest installs, not on current moby: Debian's
+  Docker 26 writes `buildkit/history.db` in both stores. Check a list change
+  against a guest booted on each store.
