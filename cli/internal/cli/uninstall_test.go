@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -214,6 +215,55 @@ func TestUninstallRemovesWhatItListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := string(data), "Host mine\n  User me\n"; got != want {
+		t.Fatalf("ssh_config = %q, want %q", got, want)
+	}
+}
+
+// editAtPrompt is the user's answer to the uninstall's prompt, read only once
+// edit has run: whatever happens between the plan being shown and the answer.
+type editAtPrompt struct {
+	edit   func()
+	answer io.Reader
+}
+
+func (r *editAtPrompt) Read(p []byte) (int, error) {
+	if r.edit != nil {
+		r.edit()
+		r.edit = nil
+	}
+	return r.answer.Read(p)
+}
+
+// Another install that adds its Include while the uninstall waits for its yes
+// keeps it: the uninstall reads ssh_config again when it edits it, rather than
+// writing back the copy it planned from. And it cuts only the lines it listed:
+// one added meanwhile stays even when it names a file this run removes.
+func TestUninstallKeepsAnIncludeAddedAfterThePlan(t *testing.T) {
+	home := uninstallHome(t)
+	managed := filepath.Join(home, ".local", "state", "discobox", "cli", "ssh", "proj_1", "config")
+	mustWriteFile(t, managed, "Host box\n")
+	other := filepath.Join(home, "dev-state", "discobox", "cli", "ssh", "proj_2", "config")
+	mustWriteFile(t, other, "Host dev\n")
+	late := filepath.Join(home, ".local", "state", "discobox", "cli", "ssh", "proj_3", "config")
+	sshConfig := filepath.Join(home, ".ssh", "config")
+	mustWriteFile(t, sshConfig, "Include "+sshConfigPath(managed)+"\n\nHost mine\n  User me\n")
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(&editAtPrompt{
+		edit: func() {
+			mustWriteFile(t, sshConfig, "Include "+sshConfigPath(other)+"\n"+"Include "+sshConfigPath(late)+"\n\n"+readFile(t, sshConfig))
+		},
+		answer: strings.NewReader("y\n"),
+	})
+	cmd.SetArgs([]string{"--server", "unix://" + filepath.Join(home, "none.sock"), "admin", "uninstall"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("uninstall: %v\n%s", err, out.String())
+	}
+	want := "Include " + sshConfigPath(other) + "\n" + "Include " + sshConfigPath(late) + "\n\nHost mine\n  User me\n"
+	if got := readFile(t, sshConfig); got != want {
 		t.Fatalf("ssh_config = %q, want %q", got, want)
 	}
 }

@@ -311,6 +311,11 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   nothing reads one back to rewrite it, and each is restricted where it is
   written: the key through `privatefs.Restrict`, the mirror through
   `restrictFile`, ADR 0102 §1.)
+- **Every edit of the user's ssh_config is made under `lockUserConfig`,** the
+  lock beside that file, never only under `sshConfigLockName`: every install
+  on the machine edits that one file, and each has its own state directory.
+  Read the file under the lock, not before it — a body computed earlier (the
+  uninstall's plan) puts back a file without the line another install added.
 
 ## Reading files a paste names
 

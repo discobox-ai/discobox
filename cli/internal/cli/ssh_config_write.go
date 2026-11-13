@@ -11,6 +11,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/internal/filelock"
 )
 
 // The written artifacts live beside the generated key, under the state
@@ -150,21 +151,8 @@ func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, notes no
 	for _, repaired := range edits.repaired {
 		notes("rewrote an Include of %s that ssh could not read", repaired)
 	}
-	if edits.none() {
-		// A run with no edit to make did not rewrite that file, so nothing has
-		// set its permissions since whatever last did — an older CLI, or this
-		// one writing from the other side of a WSL boundary onto a drive mount
-		// that hands out an ACL of its own. ssh reads it under the rule it
-		// reads a key under and refuses every host in it over the answer, and
-		// the Include that put the user in front of that file is ours, so each
-		// run makes sure it is still one ssh will read.
-		//
-		// Best-effort, unlike the write above: this is a repair of a file that
-		// may well need none, and a run that has already made a discobox does
-		// not end over it (ADR 0102 §3).
-		if err := target.restrict(ctx, target.userConfig); err != nil {
-			notes("could not narrow %s to the principals ssh reads it under: %v", target.userConfig.client, err)
-		}
+	if edits.unrestricted != nil {
+		notes("could not narrow %s to the principals ssh reads it under: %v", target.userConfig.client, edits.unrestricted)
 	}
 	return nil
 }
@@ -305,6 +293,9 @@ type includeEdits struct {
 	// repaired are the Includes this CLI wrote before it escaped percent
 	// signs, rewritten in the spelling ssh can read.
 	repaired []string
+	// unrestricted is why a config with no edit to make could not be narrowed
+	// to the principals ssh reads it under. It is a note, not a failure.
+	unrestricted error
 }
 
 func (e includeEdits) none() bool {
@@ -319,7 +310,16 @@ func (e includeEdits) none() bool {
 // The line goes at the top because ssh_config takes the *first* value obtained
 // for each keyword: an Include placed after a `Host *` block the user already
 // has would lose every setting that block also sets.
+//
+// It runs under the target's userConfigLockName (lockUserConfig), which every
+// install on the machine takes, so no other install's edit falls between its
+// read and its rename.
 func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath) (includeEdits, error) {
+	release, err := t.lockUserConfig()
+	if err != nil {
+		return includeEdits{}, err
+	}
+	defer release()
 	userConfig := t.userConfig.local
 	existing, err := os.ReadFile(userConfig)
 	if err != nil && !os.IsNotExist(err) {
@@ -328,7 +328,19 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 	cleaned, edits := t.normalizeManagedIncludes(string(existing), managed.client)
 	edits.added = !t.hasInclude(cleaned, managed.client)
 	if edits.none() {
-		return includeEdits{}, nil
+		// A run with no edit to make did not rewrite that file, so nothing has
+		// set its permissions since whatever last did — an older CLI, or this
+		// one writing from the other side of a WSL boundary onto a drive mount
+		// that hands out an ACL of its own. ssh reads it under the rule it
+		// reads a key under and refuses every host in it over the answer, and
+		// the Include that put the user in front of that file is ours, so each
+		// run makes sure it is still one ssh will read. Under the lock, so it
+		// narrows the file another install's rename has not yet replaced.
+		//
+		// Best-effort, unlike the write: this is a repair of a file that may
+		// well need none, and a run that has already made a discobox does not
+		// end over it (ADR 0102 §3).
+		return includeEdits{unrestricted: t.restrict(ctx, t.userConfig)}, nil
 	}
 	body := cleaned
 	if edits.added {
@@ -343,7 +355,43 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 	return edits, nil
 }
 
-// writeUserConfig replaces the target ssh's config with body.
+// userConfigLockName is the lock every edit of a target's ssh_config is made
+// under. It sits beside that file rather than in a state directory because the
+// file is shared by every install on the machine — a development build beside
+// the release, each with its own state directory — while sshConfigLockName is
+// one install's own. Each edit is a read, a prepend and a rename, and without a
+// lock they all take, two installs editing at once each rename over the other
+// and one install's Include is lost.
+const userConfigLockName = ".discobox-ssh-config.lock"
+
+// lockUserConfig takes userConfigLockName for an edit of the target's
+// ssh_config and returns what lets go of it. It waits as long as a managed
+// write does (sshConfigLockWait), since an edit across the WSL boundary
+// restricts its file through Windows tools.
+//
+// A lock the filesystem will not give is no reason to lose the edit: a drive
+// mount reached across the WSL boundary may not give one, and the race the
+// lock closes costs an Include its install puts back on its next write. So
+// any failure but another holder is passed over, and the edit goes ahead
+// unlocked as it did before the lock existed; a directory the edit cannot
+// write to is the write's own error to report.
+func (t sshTarget) lockUserConfig() (release func(), err error) {
+	dir := filepath.Dir(t.userConfig.local)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("create SSH directory: %w", err)
+	}
+	switch lock, err := acquireFileLock(filepath.Join(dir, userConfigLockName), sshConfigLockWait); {
+	case err == nil:
+		return func() { _ = lock.Release() }, nil
+	case errors.Is(err, filelock.ErrBusy):
+		return nil, fmt.Errorf("another discobox command is still editing %s; try again", t.userConfig.client)
+	default:
+		return func() {}, nil
+	}
+}
+
+// writeUserConfig replaces the target ssh's config with body. The caller
+// holds lockUserConfig.
 func (t sshTarget) writeUserConfig(ctx context.Context, body string) error {
 	userConfig := t.userConfig.local
 	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
