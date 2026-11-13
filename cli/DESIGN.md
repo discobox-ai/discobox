@@ -1415,8 +1415,12 @@ in place (`reprovision.go`, [ADR 26-11-11-560](../docs/adr/26-11-11-560-reprovis
 It follows the run in that same recorded document, as a provisioning wait
 does (ADR 0060): a record older than the agent's answer is the one before the
 run and is passed over; the features the run provisions are each one seen not
-done; it fails naming each that failed again. The console offers no
-reprovision.
+done; it fails naming each that failed again. Two answers that are not the
+agent's are said as such: net/http's plain 404, the route missing in the
+server, the pool agent or the box's agent (all gained it in one release; a box
+running through an upgrade keeps its old agent), names all three and
+`discobox admin box upgrade`; a 502 with no body, a proxy on the way that
+could not reach a restarting box, says so. The console offers no reprovision.
 
 ## Following State Changes (`discobox events`)
 

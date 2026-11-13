@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -55,9 +56,7 @@ is rebuilt. Inside a discobox, "discobox-provision retry" does the same.`,
 			}
 			res, err := client.ReprovisionSandbox(ctx, apiclientgen.ReprovisionSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 			if err != nil {
-				// The answer is the box's agent's: one that is not the API's
-				// error shape is in the error as it came.
-				return errors.New(terminalSafe(err.Error()))
+				return reprovisionCallError(err, sandboxID)
 			}
 			answer, err := expectResponse[apiclientgen.SandboxAgentProvisionStatus](res)
 			if err != nil {
@@ -85,6 +84,28 @@ is rebuilt. Inside a discobox, "discobox-provision retry" does the same.`,
 	}
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Return once the run has started, without following it")
 	return cmd
+}
+
+// reprovisionCallError is a reprovision that got no answer the contract
+// describes. Two are known and said as such: the route missing on the way,
+// which the server, the pool agent and the sandbox agent all gained in one
+// release, so any of them may predate it, though after an upgrade it is most
+// often the box's own agent, which a box running through the upgrade keeps;
+// and a 502 with nothing to say, a proxy on the way that could not reach the
+// box, as while it restarts. Any other answer is the box's agent's or a
+// proxy's own words, escaped.
+func reprovisionCallError(err error, sandboxID string) error {
+	var plain *plainStatusError
+	if !errors.As(err, &plain) {
+		return errors.New(terminalSafe(err.Error()))
+	}
+	switch {
+	case plain.code == http.StatusNotFound && plain.body == "404 page not found":
+		return fmt.Errorf("discobox %s cannot reprovision: its sandbox agent, its pool or the server predates reprovisioning; once the server and its pools are upgraded, a discobox still on its previous agent is upgraded with \"discobox admin box upgrade %s\", which rebuilds it on its current image and provisions it again", sandboxID, sandboxID)
+	case plain.code == http.StatusBadGateway && plain.body == "":
+		return fmt.Errorf("discobox %s could not be reached: it may be restarting; try again once it is running", sandboxID)
+	}
+	return errors.New(terminalSafe(plain.Error()))
 }
 
 // provisionDocument is the agent's answer as the provision.json it is.
