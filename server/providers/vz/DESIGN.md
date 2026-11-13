@@ -175,8 +175,17 @@ The kernel command line carries `panic=`, so a panicked guest resets, and the
 framework stops a VM whose guest resets. That is what makes `Running` mean
 something: without it the kernel halts in place and the VM reports running with
 nothing inside. libkrun needs no equivalent — its default command line already
-carries `panic=-1`. A guest that is running but broken without panicking is the
-engine's to catch, by its Docker daemon not answering a repair.
+carries `panic=-1`. It also carries `nmi_watchdog=panic`: Debian's kernel
+detects a hard lockup (the buddy detector) but only warns, leaving the VM
+running and wedged, and this makes it a panic, so a reset. It is on vz's command
+line rather than a sysctl in the shared guest image because libkrun's kernel,
+the image's other one, has no lockup detector, and it holds from boot.
+`watchdog_thresh=30` goes with it: the buddy detector reads a vCPU the Mac
+descheduled for 1.2 thresholds as locked, which at the default 10 is a load
+spike and at 30 is 36 s or more, while a real lockup never ends. Soft lockups
+and RCU stalls stay warnings for the same reason. A guest that is running but
+broken without panicking is the engine's to catch, by its Docker daemon not
+answering a repair.
 
 Sizing comes from the host, not from constants: every vCPU, half the memory
 (`vmsize.Host`, the rule every local VM provider shares, clamped by

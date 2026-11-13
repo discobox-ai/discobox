@@ -15,6 +15,11 @@
   fix it at the binding, not with a method that lies.
 - **The root disk is shared and read-only.** Never attach it writable and never
   add `rw` to the kernel command line: every pool on the host has it open.
+- **The guest's hard-lockup detector is timer-based, not an NMI.** Debian's
+  arm64 kernel has only the buddy detector, which reads a vCPU the Mac
+  deschedules for 1.2 × `watchdog_thresh` as locked. Since
+  `nmi_watchdog=panic` turns that into a reset, lowering `watchdog_thresh` or
+  making soft lockups or RCU stalls fatal resets pools under host load.
 - **Writable disks attach cached, with fsync sync.** The framework's default
   attachment corrupts ext4 on Apple silicon; do not go back to
   `NewDiskImageStorageDeviceAttachment` for a new disk.

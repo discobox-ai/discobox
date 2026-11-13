@@ -43,7 +43,21 @@ const (
 	// the VM stays running with nothing inside, which the driver cannot tell from
 	// a healthy guest. The delay is for the panic's own trace, the one thing that
 	// explains it, to reach console.log before the machine goes.
-	kernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4 panic=5"
+	//
+	// nmi_watchdog=panic makes a hard lockup one of those panics. Debian's
+	// kernel detects hard lockups (the buddy detector: each CPU watches
+	// another's timer interrupts) but only warns, so a hard-locked guest stayed
+	// wedged and running. It is set on vz's command line, not as a sysctl in the
+	// shared guest image, because the other kernel that image boots, libkrun's
+	// libkrunfw, has no lockup detector to arm; and it holds from boot.
+	//
+	// watchdog_thresh=30 keeps a busy Mac from tripping it. The buddy detector
+	// is not a true NMI: a CPU checks its buddy every 1.2 thresholds, so a vCPU
+	// the host deschedules for that long while the others run reads as locked.
+	// At the default of 10 that is 12 to 24 s, a load spike; at 30 it is 36 to
+	// 72 s, while a real lockup never ends and still resets. Soft lockups (now
+	// 60 s) and RCU stalls (21 s) stay warnings, for the same reason.
+	kernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4 panic=5 nmi_watchdog=panic watchdog_thresh=30"
 
 	gracefulStopTimeout = 30 * time.Second
 	forcedStopTimeout   = 15 * time.Second
