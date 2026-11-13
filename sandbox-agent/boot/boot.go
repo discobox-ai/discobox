@@ -77,7 +77,8 @@ func Wire(logger *slog.Logger) error {
 // 26-10-09-143 §1). Wire has normally provisioned the machine at this boot
 // already (provisionMachine), and then this does nothing; it provisions where
 // the unit did not run -- an agent layer placed by a pool that places no
-// machine drop-in -- the same way, from the agent's start.
+// machine drop-in: an older pool agent, which a newer pinned agent can run
+// under -- from the agent's start, moving nothing (wireMachineStarted).
 //
 // Where Wire ran, it has already done all of this, and Provision does nothing.
 // The config volume is what says so: only a pool's container has one, and Wire
@@ -164,16 +165,23 @@ func (b *booter) provisionMachine(logger *slog.Logger, path string, atBoot bool)
 	if err != nil {
 		return err
 	}
+	// At the agent's start the unit did not run at this boot, and the
+	// machine's services are running on the paths: nothing is moved under
+	// them (wireMachineStarted).
+	mode := wireMachine
+	if !atBoot {
+		mode = wireMachineStarted
+	}
 	if records.Sandbox() == bootstrap.SandboxID {
-		return b.wireMachineBoot(logger, bootstrap, id)
+		return b.wireMachineBoot(logger, bootstrap, id, mode)
 	}
 	if err := ensureMachineRoots(); err != nil {
 		return err
 	}
-	if err := b.provision(logger, id, &bootstrap, wireMachine); err != nil {
+	if err := b.provision(logger, id, &bootstrap, mode); err != nil {
 		return err
 	}
-	if err := markMachineWired(bootstrap.SandboxID); err != nil {
+	if err := markMachineWired(bootstrap.SandboxID, mode); err != nil {
 		return err
 	}
 	if dirExists("/run/systemd/system") {
@@ -327,6 +335,11 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err != nil {
 		return fmt.Errorf("resolve volumes: %w", err)
 	}
+	if mode == wireMachine {
+		if err := adoptLegacyLayouts(bootstrap.SandboxID, volumes, bootstrap.Sources, id.uid); err != nil {
+			return fmt.Errorf("adopt the data volume's layouts: %w", err)
+		}
+	}
 	if err := b.wireVolumes(volumes, id, mode); err != nil {
 		return err
 	}
@@ -356,8 +369,8 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 			return fmt.Errorf("seed desktop launchers: %w", err)
 		}
 	}
-	if mode == wireMachine {
-		if err := b.wireMachineSources(bootstrap.Sources, id); err != nil {
+	if mode != wireContainer {
+		if err := b.wireMachineSources(bootstrap.Sources, id, mode); err != nil {
 			return err
 		}
 	} else if err := b.wireSources(bootstrap.Sources, id); err != nil {
@@ -377,8 +390,20 @@ const (
 	// into its container (Wire).
 	wireContainer wireMode = iota
 	// wireMachine wires from the machine's own data and cache roots: its
-	// driver's volumes, or directories on its disk (ensureMachineRoots).
+	// driver's volumes, or directories on its disk (ensureMachineRoots),
+	// moving what the machine has at each path in first (moveIn). Only at a
+	// boot, from discobox-wire.service, before anything uses the paths.
 	wireMachine
+	// wireMachineStarted is a machine's wiring from the agent's start, where
+	// the unit did not run at this boot (an older pool placed no drop-in):
+	// the machine's services are running on its paths, and moving their
+	// data out from under them loses what they write meanwhile (ADR
+	// 26-11-02-023, Alternatives rejected). So nothing is moved, and the
+	// machine is wired as it was before that ADR: a data volume's paths
+	// mounted with the layout a container's would take (decideLayout) and
+	// its sources bound, and roots on the machine's disk mount nothing, its
+	// source targets made where they are for the intake to clone into.
+	wireMachineStarted
 )
 
 // machineWiredPath marks that a machine's data volume is wired for this start
@@ -401,15 +426,24 @@ var machineDataVolume = func() bool {
 	return err == nil && slices.Contains(mounts, dataMountPath)
 }
 
-// markMachineWired records that this start mounted the machine's volumes: a
+// markMachineWired records that this start's machine wiring has run: a
 // random token in /run (sandboxconfig.MachineWiredFile), which a second
-// mount in the same start reads as done, and, where the data root is a data
+// wiring in the same start reads as done -- written by wireMachineStarted
+// too, where roots on the disk mounted nothing -- and, where the data root is a data
 // volume, on the volume that the sandbox's data is kept there, naming the
 // token (sandboxconfig.MachineDataWiredFile), which the pool reads before it
 // gives the machine a new root. Roots on the machine's own disk say nothing
 // on it: that machine's disk is all it has, and the pool rebuilds it in place
-// (ADR 26-11-02-023 §1).
-func markMachineWired(sandboxID string) error {
+// (ADR 26-11-02-023 §1). A boot's wiring (wireMachine) on a data volume also
+// marks its layouts this agent's (adoptedFile): every path it mounted has
+// its record now. The agent's start, which records nothing for a cache path
+// or a source (decideLayout), does not.
+func markMachineWired(sandboxID string, mode wireMode) error {
+	if mode == wireMachine && machineDataVolume() {
+		if err := markAdopted(); err != nil {
+			return err
+		}
+	}
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return err
@@ -430,6 +464,19 @@ func markMachineWired(sandboxID string) error {
 // test does not write the machine's own.
 var machineDataWiredFile = sandboxconfig.MachineDataWiredFile
 
+// dataWiredFor reports whether the line at path (machineDataWiredFile) says
+// an agent has wired this data volume for sandboxID: at an earlier start,
+// since this start writes it only once its mounts are made. It is what
+// says an older agent's unrecorded paths may be there (adoptLegacyLayouts).
+func dataWiredFor(path, sandboxID string) bool {
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: the agent's own record, at a fixed path
+	if err != nil {
+		return false
+	}
+	id, _, _ := strings.Cut(strings.TrimSpace(string(raw)), " ")
+	return id != "" && id == sandboxID
+}
+
 // ensureMachineRoots makes /.discobox/data and /.discobox/cache on a machine
 // whose driver attached no volumes there; on one that did they are the
 // volumes' mount points already.
@@ -446,7 +493,7 @@ func ensureMachineRoots() error {
 // again, once per start: its declared volumes and its sources, as the first
 // provisioning of this disk made them. A start that mounted them already
 // (sandboxconfig.MachineWiredFile) is left alone.
-func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Config, id identity) error {
+func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Config, id identity, mode wireMode) error {
 	if fileExists(machineWiredPath) {
 		return nil
 	}
@@ -458,12 +505,17 @@ func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Co
 	if err != nil {
 		return fmt.Errorf("resolve volumes: %w", err)
 	}
-	if err := b.wireVolumes(volumes, id, wireMachine); err != nil {
+	if mode == wireMachine {
+		if err := adoptLegacyLayouts(bootstrap.SandboxID, volumes, expanded.Sources, id.uid); err != nil {
+			return fmt.Errorf("adopt the data volume's layouts: %w", err)
+		}
+	}
+	if err := b.wireVolumes(volumes, id, mode); err != nil {
 		return err
 	}
-	if err := b.wireMachineSources(expanded.Sources, id); err != nil {
+	if err := b.wireMachineSources(expanded.Sources, id, mode); err != nil {
 		return err
 	}
 	logger.Info("mounted a machine's volumes", "volumes", len(volumes), "sources", len(expanded.Sources))
-	return markMachineWired(bootstrap.SandboxID)
+	return markMachineWired(bootstrap.SandboxID, mode)
 }

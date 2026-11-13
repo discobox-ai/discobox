@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
@@ -247,4 +248,75 @@ func useMachineRoots(t *testing.T, b *booter) *[]string {
 		return nil
 	}
 	return binds
+}
+
+// At the agent's start the wire unit did not run at this boot (an older pool
+// placed no drop-in) and the machine's services are running on its paths, so
+// nothing is moved out from under them. Roots on the machine's disk mount
+// nothing: a declared path keeps what it has, and a source's target is made
+// where it is, for the intake to clone into, as before ADR 26-11-02-023.
+func TestAMachinesAgentStartMovesNothingOnItsDisk(t *testing.T) {
+	id := selfIdentity(t)
+	b, _ := newFakeGitBooter(nil)
+	binds := useMachineRoots(t, b)
+	root := t.TempDir()
+	docker := filepath.Join(root, "var", "lib", "docker")
+	if err := os.MkdirAll(docker, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docker, "engine-id"), []byte("boxd\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "workspace", "repo")
+	bootstrap := sandboxconfig.Config{
+		AgentRuntime: sandboxconfig.AgentRuntime{WorkingRoot: filepath.Join(root, "workspace")},
+		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
+		Volumes:      []harness.Volume{{Path: docker, Volume: harness.VolumeData}},
+	}
+	if err := b.provision(slog.Default(), id, &bootstrap, wireMachineStarted); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if len(*binds) != 0 {
+		t.Fatalf("binds = %v; roots on the disk mount nothing at the agent's start", *binds)
+	}
+	if data, err := os.ReadFile(filepath.Join(docker, "engine-id")); err != nil || string(data) != "boxd\n" {
+		t.Fatalf("engine-id = %q, %v; want it left where dockerd has it", data, err)
+	}
+	if info, err := os.Stat(source); err != nil || !info.IsDir() {
+		t.Fatalf("source target %s was not made: %v", source, err)
+	}
+	if _, err := os.Stat(dataMountPath); err == nil {
+		if entries, _ := os.ReadDir(dataMountPath); len(entries) != 0 {
+			t.Fatalf("the data root holds %d entries; nothing should have moved there", len(entries))
+		}
+	}
+}
+
+// On a data volume, the agent's start binds a source as an agent before ADR
+// 26-11-02-023 did, without moving what the target holds into it.
+func TestAMachinesAgentStartBindsASourceWithoutMovingIt(t *testing.T) {
+	id := selfIdentity(t)
+	b, _ := newFakeGitBooter(nil)
+	binds := useMachineRoots(t, b)
+	machineDataVolume = func() bool { return true }
+	source := filepath.Join(t.TempDir(), "workspace", "repo")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sources := []sandboxconfig.Source{{Slug: "primary", Target: source}}
+	if err := b.wireMachineSources(sources, id, wireMachineStarted); err != nil {
+		t.Fatal(err)
+	}
+	if want := machineSourceDir(source) + " -> " + source; !slices.Equal(*binds, []string{want}) {
+		t.Fatalf("binds = %v, want %s", *binds, want)
+	}
+	if _, err := os.Stat(filepath.Join(source, "README")); err != nil {
+		t.Fatalf("the target's content was moved: %v", err)
+	}
+	if _, ok, _ := readLayout(sourceRecordPath(source)); ok {
+		t.Fatal("the agent's start recorded a layout for a source it did not move in")
+	}
 }

@@ -61,6 +61,11 @@ func wireSecrets() error {
 // directory safe is who ends up writing in it, which is a claim the image makes
 // in its scope rather than something derivable from who owns the mountpoint.
 func (b *booter) wireVolumes(volumes []harness.ResolvedVolume, id identity, mode wireMode) error {
+	if mode == wireMachineStarted && !machineDataVolume() {
+		// Roots on the machine's disk, at the agent's start: its services
+		// are running on the paths, and nothing is mounted under them.
+		return nil
+	}
 	sortVolumesByDepth(volumes)
 	for _, v := range volumes {
 		if err := b.wireVolume(v, id, mode); err != nil {
@@ -81,8 +86,10 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity, mode wireMode
 	}
 	var layout volumeLayout
 	if mode == wireMachine {
-		// A machine's path is bound, with what the machine had there moved
-		// in first (ADR 26-11-02-023 §2).
+		// A machine's path is bound at a boot, with what the machine had
+		// there moved in first (ADR 26-11-02-023 §2). At the agent's start
+		// (wireMachineStarted) nothing is moved, and the layout is decided
+		// below, as before that ADR.
 		var err error
 		if layout, err = b.moveIn(v.Path, dir, layoutRecordPath(v)); err != nil {
 			return err
@@ -257,8 +264,11 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 // data root, where its tree is kept as the root keeps a declared path's
 // (machineSourceDir), owned as wireSources owns a container's. The sandbox
 // clones into it through the intake, and a new root keeps it where the data
-// root is a data volume.
-func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity) error {
+// root is a data volume. At the agent's start (wireMachineStarted) nothing
+// the target holds is moved, and roots on the machine's disk bind nothing:
+// the target is made where it is, for the intake to clone into.
+func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity, mode wireMode) error {
+	onDisk := mode == wireMachineStarted && !machineDataVolume()
 	// Parents first, as the volumes go: a target nested in another's is then
 	// the outer one's own directory, already on the data root, and moves
 	// nothing (moveIn).
@@ -268,6 +278,12 @@ func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity)
 	})
 	for _, s := range sources {
 		uid, gid := sourceOwner(s, id)
+		if onDisk {
+			if err := mkdirAllOwned(s.Target, "/", uid, gid); err != nil {
+				return fmt.Errorf("create source target %s: %w", s.Target, err)
+			}
+			continue
+		}
 		src := machineSourceDir(s.Target)
 		if err := mkdirAllOwned(src, dataMountPath, uid, gid); err != nil {
 			return fmt.Errorf("create source %s on the data root: %w", s.Slug, err)
@@ -276,10 +292,12 @@ func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity)
 			return fmt.Errorf("create source target %s: %w", s.Target, err)
 		}
 		// A checkout the machine already has at the target -- one cloned
-		// onto its disk before its sources were mounted -- is moved in
-		// rather than hidden under the bind.
-		if _, err := b.moveIn(s.Target, src, sourceRecordPath(s.Target)); err != nil {
-			return fmt.Errorf("source %s: %w", s.Slug, err)
+		// onto its disk before its sources were mounted -- is moved in at a
+		// boot rather than hidden under the bind.
+		if mode == wireMachine {
+			if _, err := b.moveIn(s.Target, src, sourceRecordPath(s.Target)); err != nil {
+				return fmt.Errorf("source %s: %w", s.Slug, err)
+			}
 		}
 		if err := b.bind(src, s.Target); err != nil {
 			return fmt.Errorf("wire source %s: %w", s.Slug, err)
@@ -319,6 +337,9 @@ func sourceRecordPath(target string) string {
 //
 // A target that is volDir already -- a path inside another volume's
 // directory, reached through that volume's bind -- has nothing to move.
+//
+// A path an older agent bound without a record has one by now
+// (adoptLegacyLayouts), so a path with none here was never mounted.
 func (b *booter) moveIn(target, volDir, record string) (volumeLayout, error) {
 	layout, ok, err := readLayout(record)
 	if err != nil || ok {
@@ -373,6 +394,69 @@ func (b *booter) moveIn(target, volDir, record string) (volumeLayout, error) {
 		return "", err
 	}
 	return layoutBind, nil
+}
+
+// adoptedFile, in the data root's layout records, says every path mounted
+// from that root has a record: written once a boot's wiring by this agent
+// is whole, and once an older agent's unrecorded paths are adopted
+// (adoptLegacyLayouts). A name no record has: theirs are escaped paths.
+const adoptedFile = ".adopted"
+
+func adoptedPath() string { return path.Join(dataMountPath, layoutsDir, adoptedFile) }
+
+// adoptLegacyLayouts records, once, the paths a data volume's older agent
+// bound without a layout record, before anything is moved. An agent from
+// before ADR 26-11-02-023 bound a cache path and a source from the volume at
+// every boot and recorded nothing (decideLayout, wireMachineSources), so
+// moveIn would take such a path for one never mounted and move the stale
+// disk under its old bind into the live volume directory, or refuse a name
+// both hold and, through the drop-in, power the machine off at every boot.
+// It runs only on a volume an agent wired for this sandbox
+// (MachineDataWiredFile names it) and no agent marked adopted
+// (adoptedFile): a volume this agent wired from the start never runs it, so
+// a path newly declared there is moved in as any first mount is. A path is
+// adopted only where its volume directory is already there, which is what
+// the older agent's bind left; a new path's is not, and nothing moves before
+// the marker is written, so a cut-short adoption is simply run again.
+func adoptLegacyLayouts(sandboxID string, volumes []harness.ResolvedVolume, sources []sandboxconfig.Source, uid int) error {
+	if !machineDataVolume() || fileExists(adoptedPath()) || !dataWiredFor(machineDataWiredFile, sandboxID) {
+		return nil
+	}
+	for _, v := range volumes {
+		// The older agent recorded every data path's layout (decideLayout).
+		if v.Kind == harness.VolumeData {
+			continue
+		}
+		if err := recordBoundIfThere(layoutRecordPath(v), volumeDir(v, uid)); err != nil {
+			return err
+		}
+	}
+	for _, s := range sources {
+		if err := recordBoundIfThere(sourceRecordPath(s.Target), machineSourceDir(s.Target)); err != nil {
+			return err
+		}
+	}
+	return markAdopted()
+}
+
+// recordBoundIfThere records a bind for a path with no record whose volume
+// directory is there.
+func recordBoundIfThere(record, volDir string) error {
+	if _, ok, err := readLayout(record); err != nil || ok {
+		return err
+	}
+	if !dirExists(volDir) {
+		return nil
+	}
+	return writeLayout(record, layoutBind)
+}
+
+// markAdopted writes adoptedFile durably, as every record is (writeRecord):
+// a marker lost to a power cut after a move of this agent's own began would
+// let the next boot adopt that path's half-filled directory and hide the
+// rest of the disk under its bind.
+func markAdopted() error {
+	return writeRecord(adoptedPath(), "")
 }
 
 // movingPrefix names an entry moveIn is copying across filesystems: set aside

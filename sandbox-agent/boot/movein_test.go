@@ -7,6 +7,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // moveInFixture is a machine's path with content already on its disk, a
@@ -241,5 +244,141 @@ func TestAMachinesCopyCutShortIsFinished(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(volDir, "engine-id")); err != nil || string(data) != "boxd\n" {
 		t.Fatalf("engine-id = %q, %v", data, err)
+	}
+}
+
+// adoptionFixture is a data volume an agent wired for sbx_1 at an earlier
+// start, with the data root and its record files at a test's own directory.
+func adoptionFixture(t *testing.T, wiredFor string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("a machine's mounts are made in its Linux guest")
+	}
+	dir := t.TempDir()
+	savedData, savedCache, savedWired, savedVolume := dataMountPath, cacheMountPath, machineDataWiredFile, machineDataVolume
+	t.Cleanup(func() {
+		dataMountPath, cacheMountPath, machineDataWiredFile, machineDataVolume = savedData, savedCache, savedWired, savedVolume
+	})
+	dataMountPath, cacheMountPath = filepath.Join(dir, "data"), filepath.Join(dir, "cache")
+	machineDataWiredFile = filepath.Join(dataMountPath, ".discobox-wired")
+	machineDataVolume = func() bool { return true }
+	if err := os.MkdirAll(dataMountPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if wiredFor != "" {
+		if err := os.WriteFile(machineDataWiredFile, []byte(wiredFor+" 0123\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A data volume an older agent wired bound its cache paths and its sources
+// without recording a layout. Before anything is moved, each whose volume
+// directory is there is recorded bound, once, so moveIn moves nothing into
+// the live directory -- not even a name the disk under the old bind also
+// has, which moving would refuse and so power the machine off at every boot.
+// A path whose directory is not there was never mounted, and is left to
+// moveIn; and the volume is marked adopted, so this never runs again.
+func TestAnOlderAgentsUnrecordedPathsAreAdoptedOnce(t *testing.T) {
+	adoptionFixture(t, "sbx_1")
+	root := t.TempDir()
+	cache := harness.ResolvedVolume{Path: filepath.Join(root, "home", "dev", ".cache"), Kind: harness.VolumeCache}
+	newCache := harness.ResolvedVolume{Path: filepath.Join(root, "home", "dev", ".npm"), Kind: harness.VolumeCache}
+	repo := filepath.Join(root, "workspace", "repo")
+	for _, dir := range []string{volumeDir(cache, 1000), machineSourceDir(repo)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(volumeDir(cache, 1000), "pip"), []byte("live\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cache.Path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache.Path, "pip"), []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sources := []sandboxconfig.Source{{Slug: "primary", Target: repo}}
+	if err := adoptLegacyLayouts("sbx_1", []harness.ResolvedVolume{cache, newCache}, sources, 1000); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []string{layoutRecordPath(cache), sourceRecordPath(repo)} {
+		if layout, ok, err := readLayout(record); err != nil || !ok || layout != layoutBind {
+			t.Fatalf("%s = %q %v %v, want bind", record, layout, ok, err)
+		}
+	}
+	if _, ok, _ := readLayout(layoutRecordPath(newCache)); ok {
+		t.Fatal("a newly declared path was adopted; it was never mounted")
+	}
+	if !fileExists(adoptedPath()) {
+		t.Fatal("the volume was not marked adopted")
+	}
+
+	b := &booter{}
+	if layout, err := b.moveIn(cache.Path, volumeDir(cache, 1000), layoutRecordPath(cache)); err != nil || layout != layoutBind {
+		t.Fatalf("moveIn = %q, %v; want the adopted bind", layout, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(volumeDir(cache, 1000), "pip")); err != nil || string(data) != "live\n" {
+		t.Fatalf("the live cache = %q, %v; want it kept", data, err)
+	}
+}
+
+// A volume this agent wired from the start is marked adopted by its first
+// boot's wiring, so a path declared on it later -- a new pin's -- has no
+// record and no directory and is moved in like any first mount, rather than
+// bound over what the machine has there.
+func TestAPathNewlyDeclaredOnAWiredVolumeIsMovedIn(t *testing.T) {
+	adoptionFixture(t, "sbx_1")
+	savedWired := machineWiredPath
+	t.Cleanup(func() { machineWiredPath = savedWired })
+	machineWiredPath = filepath.Join(t.TempDir(), "run", "machine-wired")
+	if err := markMachineWired("sbx_1", wireMachine); err != nil {
+		t.Fatal(err)
+	}
+	target, _, _ := moveInFixture(t)
+	v := harness.ResolvedVolume{Path: target, Kind: harness.VolumeCache}
+	if err := adoptLegacyLayouts("sbx_1", []harness.ResolvedVolume{v}, nil, 1000); err != nil {
+		t.Fatal(err)
+	}
+	b := &booter{run: func(name string, args ...string) error {
+		return exec.CommandContext(t.Context(), name, args...).Run()
+	}}
+	if layout, err := b.moveIn(target, volumeDir(v, 1000), layoutRecordPath(v)); err != nil || layout != layoutBind {
+		t.Fatalf("moveIn = %q, %v", layout, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(volumeDir(v, 1000), "engine-id")); err != nil || string(data) != "boxd\n" {
+		t.Fatalf("engine-id in the volume = %q, %v; want the path's content moved in", data, err)
+	}
+}
+
+// The agent's start, which records no layout for a cache path or a source,
+// does not mark a volume adopted: a boot's wiring after it still adopts what
+// it bound.
+func TestTheAgentsStartDoesNotMarkAVolumeAdopted(t *testing.T) {
+	adoptionFixture(t, "")
+	savedWired := machineWiredPath
+	t.Cleanup(func() { machineWiredPath = savedWired })
+	machineWiredPath = filepath.Join(t.TempDir(), "run", "machine-wired")
+	if err := markMachineWired("sbx_1", wireMachineStarted); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(adoptedPath()) {
+		t.Fatal("the agent's start marked the volume adopted")
+	}
+}
+
+// Only a line naming this sandbox says its data volume was wired before.
+func TestDataWiredForNamesThisSandbox(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data-wired")
+	if dataWiredFor(path, "sbx_1") {
+		t.Fatal("no line read as wired")
+	}
+	if err := os.WriteFile(path, []byte("sbx_1 0123abcd\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !dataWiredFor(path, "sbx_1") || dataWiredFor(path, "sbx_2") || dataWiredFor(path, "") {
+		t.Fatal("dataWiredFor read the line wrong")
 	}
 }

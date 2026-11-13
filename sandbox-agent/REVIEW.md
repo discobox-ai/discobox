@@ -537,6 +537,25 @@ user waits on every single start.
   first (`sortVolumesByDepth`), so a cache path in the home moves out of the
   home's volume at its own turn; a path that is its volume directory
   already, reached through a parent's bind, moves nothing.
+- **An older agent's unrecorded paths are adopted once, before anything
+  moves; and only a boot moves.** An agent from before ADR 26-11-02-023
+  bound a data volume's cache paths and sources every boot without
+  recording a layout. `adoptLegacyLayouts` records each whose volume
+  directory is there as bound, and runs only on a volume
+  `sandboxconfig.MachineDataWiredFile` names this sandbox on and no agent
+  marked adopted (`adoptedFile`). Moving into such a path would merge the
+  stale disk under the old bind into the live volume, or refuse a shared
+  name and, through the drop-in's `FailureAction=poweroff-force`, power the
+  machine off at every boot. Do not key it on the wired line alone: this
+  agent writes that line too, and a path a later pin declares would then be
+  bound over the machine's content instead of moved in. A non-empty volume
+  directory is no signal either: a cut-short move leaves one. Only a boot's
+  wiring (`wireMachine`) marks a volume adopted; the agent's start records
+  no layout for a cache path or a source. And `moveIn` runs only at a boot
+  (`wireMachine`): the agent's start (`wireMachineStarted`), where an older
+  pool placed no drop-in, finds the provider's dockerd and containerd
+  running on the paths and moves nothing. Why: both were missed once, in
+  the review of #775.
 - **A test of guest-path code hands it slash paths**
   (`filepath.ToSlash(t.TempDir())`, joined with `path`). `boot` splits
   paths with `path`, which finds no directory in a `filepath.Join` result on

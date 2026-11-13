@@ -22,9 +22,13 @@ const (
 	layoutOverlay volumeLayout = "overlay"
 )
 
-// layoutsDir holds one layout record per data volume, at the data volume's
-// root. It is dot-prefixed for the reason cacheUsersDir is: its siblings are
-// mirrored target paths, and no image declares a data path at "/.layouts".
+// layoutsDir, at the data root, holds the records of how each path mounted
+// from the data and cache roots was mounted, named by its escaped target: a
+// data volume's (decideLayout, moveIn), and on a machine a cache path's and,
+// prefixed "source:", a source's (moveIn, sourceRecordPath); and a machine's
+// adoptedFile, a name no escaped target has. It is dot-prefixed for the
+// reason cacheUsersDir is: its siblings are mirrored target paths, and no
+// image declares a data path at "/.layouts".
 const layoutsDir = ".layouts"
 
 // layoutRecordPath is where the layout a data volume was first wired with is
@@ -52,7 +56,8 @@ func layoutRecordPath(v harness.ResolvedVolume) string {
 // the files it left alone exist only in the image. An overlay whose lower is
 // now an empty directory is still a correct view of everything it holds.
 //
-// A cache volume is always a bind (useOverlay) and records nothing.
+// A cache volume is always a bind (useOverlay), and decideLayout records
+// nothing for it; on a machine, moveIn records a cache path's bind.
 func decideLayout(kind harness.VolumeKind, volDir, record string, targetNonEmpty bool) (volumeLayout, error) {
 	if kind != harness.VolumeData {
 		return layoutBind, nil
@@ -148,13 +153,19 @@ func readLayout(record string) (layout volumeLayout, ok bool, err error) {
 	}
 }
 
-// writeLayout records layout durably: a temporary file synced, renamed over
-// the record, and the directory synced, so a boot cut short -- or the host
-// losing power -- leaves no record or a whole one, never an empty one that
-// would fail every later boot. The temporary name starts with a dot, and a
-// record's name always starts with "%2F", so it cannot be another volume's
-// record.
+// writeLayout records layout durably (writeRecord).
 func writeLayout(record string, layout volumeLayout) error {
+	return writeRecord(record, string(layout)+"\n")
+}
+
+// writeRecord writes one of layoutsDir's files durably: a temporary file
+// synced, renamed over the record, and the directory synced, so a boot cut
+// short -- or the host losing power -- leaves no record or a whole one, never
+// an empty one that would fail every later boot. The temporary name is the
+// record's own behind a dot, and no record's name starts with ".." -- a
+// volume's starts with "%2F", a source's with "source:", and adoptedFile is
+// ".adopted" -- so a temporary file cannot be taken for a record.
+func writeRecord(record, content string) error {
 	dir := path.Dir(record)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -164,7 +175,7 @@ func writeLayout(record string, layout volumeLayout) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(string(layout) + "\n"); err != nil {
+	if _, err := tmp.WriteString(content); err != nil {
 		tmp.Close()
 		return err
 	}

@@ -12,8 +12,14 @@ package sandboxconfig
 const MachineDataWiredFile = "/.discobox/data/.discobox-wired"
 
 // MachineWiredFile is where the agent keeps the token of this start, a
-// random one it makes when it wires the machine's data volume. /run is a new
-// tmpfs at every start, of a container's guest as of a VM's, so a start that
-// wires nothing has none, and the line on the volume names a start that is
-// over. A Linux guest's path.
+// random one it makes once its machine wiring has run, mounted or not: from
+// its data and cache roots, whatever backs them, its driver's volumes or
+// directories on its own disk -- or, at an agent's start on roots on the
+// disk, nothing (only what keeps it from running twice in one start). /run
+// is a new tmpfs at every start, of a container's guest as of a VM's, so a
+// start whose wiring has not run has none.
+// Only MachineDataWiredFile, written where the data root is a data volume,
+// says the data is kept on a volume; roots on the disk write no line there,
+// and a line on the volume naming another token names a start that is over.
+// A Linux guest's path.
 const MachineWiredFile = "/run/discobox/machine-wired"
