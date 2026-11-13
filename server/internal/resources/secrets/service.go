@@ -754,6 +754,9 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 		return nil, err
 	}
 	if a.approverID == "" {
+		if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+			return nil, err
+		}
 		binding.ExpiresAt = expiryAt(now, ttl)
 	}
 	if err := checkBindingShape(binding); err != nil {

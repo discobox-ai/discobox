@@ -60,6 +60,13 @@ func fitDelegation(ctx context.Context, txStore *store.Store, holderID string, b
 	} else if secret.MaxBindingTTL > 0 && (ttl <= 0 || ttl > secret.MaxBindingTTL) {
 		ttl = secret.MaxBindingTTL
 	}
+	// Read under the lock: the routes a body place is held to are the
+	// secret's as they stand now. A parent's list needs no check of its own:
+	// a grant ProveContained fits to it names only places it names, or the
+	// parent is the secret's own list.
+	if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+		return nil, 0, err
+	}
 	holder, err := txStore.GetSandbox(ctx, binding.ProjectID, holderID)
 	if err != nil {
 		return nil, 0, err

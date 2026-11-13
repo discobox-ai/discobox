@@ -25,3 +25,12 @@ is bounded to 67108864. Each weight counts routes, patterns and pattern bytes,
 so it bounds route-pair traversal, string comparisons and repeated path splitting while allowing a role from a multi-policy delegation. Unsupported proofs return an explicit
 refusal requesting provably narrower routes or a person's grant. Omitted binding
 lists inherit and are handled by the caller's effective-parent binding.
+
+# Body places a grant can use
+
+`BodyPlacesAllowed` says whether one list can ever allow a grant's body
+places: each place an open body route of the grant names must be named by an
+open body route of the list on an overlapping host and method, since `*`
+grants no body place. It answers only for what is certainly disjoint (hosts,
+methods); paths and blocks stay `Decide`'s. Callers run it against every list
+the grant will be held to.

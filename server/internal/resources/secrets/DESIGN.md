@@ -83,6 +83,16 @@ flowchart LR
   removes everything handed on under it, each recorded and its holders
   marked; delegate on is refused for a binding handed on itself, since no
   chain grows from a discobox; a binding left for neither is refused.
+- **A body place no other list names is refused when written**
+  (`checkSecretBodyPlaces`, #1097): a binding route naming a body place that
+  its secret's routes, a route constraint or its parent never name on its
+  hosts and methods is one the proxy refuses on every use, so every door that
+  writes routes (create, update, a create's bindings, approval by a person or
+  a discobox) answers 400 naming the list that refused it — for the secret's
+  own routes, that the secret needs a route naming the place. A discobox's
+  handoff checks the secret read under its locks (`fitDelegation`); its parent
+  is covered by `ProveContained`. A change to the secret's own routes is not
+  checked against the bindings standing on it.
 - **A binding lives as long as its target and its parent.** Deleting a sandbox,
   harness config or secret deletes the bindings on it, and what was handed on
   under them (`store.DeleteSecretBindingsForTargetTx`); `CreateSecretBinding`
