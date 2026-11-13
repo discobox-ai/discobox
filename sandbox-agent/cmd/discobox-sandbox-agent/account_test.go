@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,6 +20,18 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
+
+// linkFreeTempDir is a test's temporary directory with its links resolved,
+// so a hand-over walking it meets only links of the system's: a TMPDIR the
+// user reached through a link of their own is refused, as it should be.
+func linkFreeTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
 
 func accountConfig(name string) config.Config {
 	return config.Config{ExecDefaults: config.ExecDefaults{Username: name}, RuntimeDir: ""}
@@ -89,7 +102,7 @@ func TestRootTrustsOnlyABootstrapThatIsRootsAlone(t *testing.T) {
 // A directory is handed over only when it is reached from / without a link:
 // a link the account put in place of a name is refused, never followed.
 func TestHandingOverNeverFollowsALink(t *testing.T) {
-	dir := t.TempDir()
+	dir := linkFreeTempDir(t)
 	plain := filepath.Join(dir, "real")
 	if err := os.Mkdir(plain, 0o755); err != nil {
 		t.Fatal(err)
@@ -172,12 +185,17 @@ func TestEveryStatePathIsTheDroppedAgents(t *testing.T) {
 // a walk refusing them would hand over nothing there. A link in a directory
 // someone else may write is refused, root's or not.
 func TestAWalkFollowsOnlyALinkRootAloneCouldMake(t *testing.T) {
-	dir := t.TempDir()
-	fd, found, err := openDir(dir)
-	if err != nil || !found {
-		t.Fatalf("open %s (through macOS's /var link where there is one): %v, %v", dir, found, err)
+	// On macOS t.TempDir() is reached through /var, root's link to
+	// /private/var; elsewhere a TMPDIR may be reached through the user's own.
+	if runtime.GOOS == "darwin" {
+		raw := t.TempDir()
+		fd, found, err := openDir(raw)
+		if err != nil || !found {
+			t.Fatalf("open %s through macOS's /var link: %v, %v", raw, found, err)
+		}
+		_ = closeFD(fd)
 	}
-	_ = closeFD(fd)
+	dir := linkFreeTempDir(t)
 	if info, err := os.Lstat("/bin"); err == nil && info.Mode()&os.ModeSymlink != 0 && ownerOf(info) == 0 {
 		fd, found, err := openDir("/bin")
 		if err != nil || !found {
@@ -208,7 +226,7 @@ func TestFilesAreHandedOverOnlyFromADirectoryRootAloneHolds(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a directory root makes is root's")
 	}
-	dir := t.TempDir()
+	dir := linkFreeTempDir(t)
 	if err := os.WriteFile(filepath.Join(dir, "agent.key"), []byte("k"), 0o600); err != nil {
 		t.Fatal(err)
 	}

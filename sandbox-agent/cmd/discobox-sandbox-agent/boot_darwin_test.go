@@ -193,10 +193,15 @@ func TestTheAgentBootsServesAndAttachesOnDarwin(t *testing.T) {
 		t.Fatalf("the terminal showed %q, want a shell on a TTY", screen.String())
 	}
 
-	// The exec state is on the template's /run, where a Linux sandbox keeps
-	// it: the paths do not differ by platform.
-	if _, err := os.Stat("/run/discobox/execs"); err != nil {
-		t.Fatalf("no exec state under /run/discobox: %v", err)
+	// The exec state is under the runtime directory the pool's bootstrap
+	// names, on the template's /run: the paths do not differ by platform.
+	if entries, err := os.ReadDir(poolTerminalsDir); err != nil || len(entries) == 0 {
+		t.Fatalf("no exec state under %s: %v (%d entries)", poolTerminalsDir, err, len(entries))
+	}
+	// The primary terminal launched as the sandbox's one account: a launch
+	// restating that account's home in its request is refused on darwin.
+	if strings.Contains(logs.String(), "launch primary terminal") {
+		t.Fatalf("the primary terminal did not launch")
 	}
 }
 

@@ -45,7 +45,13 @@ func newBox(t *testing.T) *box {
 			t.Skipf("%s is not available: %v", tool, err)
 		}
 	}
-	root := t.TempDir()
+	// The root with its links resolved: what a script's paths resolve to is
+	// compared against it, and on macOS every temporary directory is reached
+	// through /var, a link to /private/var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	b := &box{t: t, root: root, stubs: filepath.Join(t.TempDir(), "stubs")}
 	mkdir(t, b.stubs)
 	mkdir(t, b.path("/usr/local/bin"))
