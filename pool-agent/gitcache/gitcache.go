@@ -183,17 +183,10 @@ func syncTree(dir string) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			return fsdurable.SyncRootDir(root, path)
-		}
-		if !d.Type().IsRegular() {
+		if !d.IsDir() && !d.Type().IsRegular() {
 			return nil
 		}
-		f, err := root.Open(path)
-		if err != nil {
-			return err
-		}
-		return errors.Join(f.Sync(), f.Close())
+		return fsdurable.SyncIn(root, path)
 	})
 }
 
