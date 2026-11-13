@@ -171,13 +171,14 @@ synchronization, as Lima, UTM and vfkit attach theirs. The framework's default
 (automatic caching, full synchronization) corrupts ext4 on Apple silicon. A
 guest flush still reaches the disk as an `fsync` of the image file.
 
-The kernel command line carries `panic=`, so a panicked guest resets, and the
-framework stops a VM whose guest resets. That is what makes `Running` mean
-something: without it the kernel halts in place and the VM reports running with
-nothing inside. libkrun needs no equivalent — its default command line already
-carries `panic=-1`. It also carries `nmi_watchdog=panic`: Debian's kernel
-detects a hard lockup (the buddy detector) but only warns, leaving the VM
-running and wedged, and this makes it a panic, so a reset. It is on vz's command
+The kernel command line carries `panic=`, so a panicked guest reboots. The
+framework reboots it inside the same VM, on the same disks: the VM stays
+running, the guest boots again, and its pool agent re-registers, with nothing
+from the driver. Without it the kernel halts in place and the VM reports running
+with nothing inside. libkrun needs no equivalent — its default command line
+already carries `panic=-1`. vz's also carries `nmi_watchdog=panic`: Debian's
+kernel detects a hard lockup (the buddy detector) but only warns, leaving the VM
+running and wedged, and this makes it a panic, so a reboot. It is on vz's command
 line rather than a sysctl in the shared guest image because libkrun's kernel,
 the image's other one, has no lockup detector, and it holds from boot.
 `watchdog_thresh=30` goes with it: the buddy detector reads a vCPU the Mac

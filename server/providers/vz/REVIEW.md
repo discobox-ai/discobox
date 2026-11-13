@@ -20,6 +20,11 @@
   deschedules for 1.2 × `watchdog_thresh` as locked. Since
   `nmi_watchdog=panic` turns that into a reset, lowering `watchdog_thresh` or
   making soft lockups or RCU stalls fatal resets pools under host load.
+- **A panicked guest reboots inside the same VM.** Virtualization.framework
+  does not stop a VM whose guest panics: `Running` stays true, and the guest's
+  own reboot is what recovers the pool, not repair. Do not write recovery code
+  or docs that wait for the VM to stop on a panic; that belief was written into
+  four places before a real Mac showed otherwise.
 - **Writable disks attach cached, with fsync sync.** The framework's default
   attachment corrupts ext4 on Apple silicon; do not go back to
   `NewDiskImageStorageDeviceAttachment` for a new disk.

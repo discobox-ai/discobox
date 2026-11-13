@@ -38,11 +38,13 @@ const (
 	// kernelCmdline mounts the shared read-only root; everything writable is on
 	// the per-pool data and cache disks the guest mounts itself.
 	//
-	// panic= turns a kernel panic into a reset, which Virtualization.framework
-	// answers by stopping the VM. Without it Debian's kernel halts in place and
-	// the VM stays running with nothing inside, which the driver cannot tell from
-	// a healthy guest. The delay is for the panic's own trace, the one thing that
-	// explains it, to reach console.log before the machine goes.
+	// panic= turns a kernel panic into a reboot, which Virtualization.framework
+	// carries out inside the same VM: the guest boots again on the same disks,
+	// its pool agent comes back, and the VM never stops (observed on macOS
+	// 27.2). Without it Debian's kernel halts in place and the VM stays running
+	// with nothing inside, which the driver cannot tell from a healthy guest.
+	// The delay is for the panic's own trace, the one thing that explains it,
+	// to reach console.log before the guest goes.
 	//
 	// nmi_watchdog=panic makes a hard lockup one of those panics. Debian's
 	// kernel detects hard lockups (the buddy detector: each CPU watches
