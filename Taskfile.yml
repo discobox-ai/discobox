@@ -1076,14 +1076,25 @@ tasks:
     cmds:
       - docker buildx create --name {{.BUILDX_BUILDER}} --driver docker-container >/dev/null
 
+  ci:mod-download:
+    desc: Download every module the workspace needs, retrying a download the proxy drops
+    # The rule is in scripts/go-mod-download.sh. It runs before anything else
+    # loads packages, so a dropped download is retried and reported as one,
+    # instead of failing lint as `could not import` typecheck errors.
+    cmds:
+      - scripts/go-mod-download.sh
+
   ci:check:
     desc: "The static half of CI on Linux: every lint pass, dead code, shellcheck, and the windows/amd64 cross type-check"
+    # Modules are downloaded once, with retries, and the steps that load
+    # packages run after it with GOPROXY=off: a module the download missed
+    # fails as a missing module, not as a network error mid-lint. GOPROXY is
+    # set on a nested task, not as a task's `env:`, because Task lets a
+    # variable the caller already exports win over a Taskfile's `env:`.
     cmds:
-      - task: check
-      - task: check:deadcode
-      - task: check:windows
+      - task: ci:mod-download
+      - GOPROXY=off go tool task check check:deadcode check:windows check:dockerfile-deps
       - task: check:dockerfiles
-      - task: check:dockerfile-deps
       - task: check:shell
 
   test:codex-trust:

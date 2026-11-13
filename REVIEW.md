@@ -62,6 +62,10 @@ Global review expectations:
   git, and what the runner image ships. Those jobs have no Nix devShell (ADR
   26-11-02-173), so a target reaching for jq, shellcheck, bats or node works in
   a developer's shell and fails, or finds the image's own version, in CI.
+- A Taskfile target that must force an environment variable sets it on the
+  command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
+  lets a variable the caller already exports win over `env:`, so a forced
+  `GOPROXY=off` there was silently ignored on any machine that exports one.
 - A constructor that starts a goroutine reading into an object takes its own
   claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
   reader before claiming its stream, so a server closing at once left nothing
