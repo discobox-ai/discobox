@@ -28,6 +28,10 @@ const (
 	libkrunDiscoVMEnv = "DISCOBOX_TEST_LIBKRUN_DISCO_VM"
 	libkrunBaseEnv    = "DISCOBOX_TEST_LIBKRUN_BASE"
 	libkrunRuntimeEnv = "DISCOBOX_TEST_LIBKRUN_RUNTIME"
+	// libkrunOutEnv, when set, is a host:port the guest connects out to
+	// once fenced: an address passt reaches from this host, with something
+	// listening.
+	libkrunOutEnv = "DISCOBOX_TEST_LIBKRUN_OUT"
 )
 
 // A held driver's pool machine, on libkrun: the fence loads and reads back
@@ -140,6 +144,20 @@ WantedBy=multi-user.target
 	if !sameRules(listed, want) {
 		t.Fatalf("after a reboot the kernel holds\n%s", listed)
 	}
+	// Fenced from boot, the device still takes its address and route from
+	// passt, which leases one only where this host has a route out, and the
+	// machine's own connections still go out and get their replies.
+	if hostHasDefaultRoute(t) {
+		if route := run(guest, "ip route show default dev eth0"); route == "" {
+			t.Fatalf("fenced from boot, eth0 has no default route: %s", run(guest, "ip addr show eth0"))
+		}
+		if out := os.Getenv(libkrunOutEnv); out != "" {
+			host, port, _ := strings.Cut(out, ":")
+			run(guest, "timeout 5 bash -c 'exec 3<>/dev/tcp/"+host+"/"+port+" && head -c1 <&3 >/dev/null'")
+		}
+	} else {
+		t.Log("this host has no default route, so passt leases no address: the device's way out is not checked")
+	}
 	at := func(unit, property string) int64 {
 		t.Helper()
 		v, err := strconv.ParseInt(run(guest, "systemctl show -P "+property+" "+unit), 10, 64)
@@ -176,4 +194,18 @@ WantedBy=multi-user.target
 	if state := run(guest, "systemctl is-active discobox-fence-probe.service"); state != "active" {
 		t.Fatalf("the pool unit is %s once fenced again", state)
 	}
+}
+
+// hostHasDefaultRoute reports whether this host has an IPv4 default route.
+func hostHasDefaultRoute(t *testing.T) bool {
+	data, err := os.ReadFile("/proc/net/route")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(data), "\n")[1:] {
+		if fields := strings.Fields(line); len(fields) > 1 && fields[1] == "00000000" {
+			return true
+		}
+	}
+	return false
 }
