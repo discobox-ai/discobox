@@ -1225,10 +1225,11 @@ func (a *fakeMachineAgent) authorized(r *http.Request, scope string) bool {
 	return sandboxID == a.sandboxID && slices.Equal(scopes, []string{scope})
 }
 
-// The reaper removes only a machine that a sandbox ID would name and that no
-// sandbox of this pool or of the control plane names, and only once it has
-// been so for the retention a tree is kept for: a machine of another name in
-// the project is nothing this runtime made.
+// The reaper removes only a machine that a generated sandbox ID would name and
+// that no sandbox of this pool or of the control plane names, and only once it
+// has been so for the retention a tree is kept for: a machine of another name
+// in the project, one merely beginning `sbx-` or spelling a short ID among
+// them, is nothing this runtime made.
 func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
@@ -1236,12 +1237,17 @@ func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := &engine.Engine{Driver: f.owner, Pool: machineTestPool}
-	for _, name := range []string{"sbx-orphan", "sbx-held", "pool-own-machine"} {
+	for _, name := range []string{"sbx-dead000000000000", "sbx-taken00000000000", "sbx-my-box", "sbx-test", "pool-own-machine"} {
 		if _, err := e.Create(ctx, engine.CreateOptions{Name: name}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	held := func(context.Context) ([]string, error) { return []string{"sbx_held"}, nil }
+	// The orphan goes as a delete takes its sandbox, with what else the pool
+	// keeps for it: its proxy material here.
+	if _, err := proxyagent.EnsureSandboxMaterial(f.runtime.root, f.runtime.projectID, f.runtime.poolID, "sbx_dead000000000000"); err != nil {
+		t.Fatal(err)
+	}
+	held := func(context.Context) ([]string, error) { return []string{"sbx_taken00000000000"}, nil }
 	names := func() []string {
 		t.Helper()
 		all, err := f.owner.Instances(ctx)
@@ -1257,12 +1263,15 @@ func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 	}
 	now := time.Now()
 	f.runtime.reapOrphanMachines(ctx, quietLogger(), held, now)
-	if got := names(); !slices.Equal(got, []string{"pool-own-machine", "sbx-held", "sbx-kept", "sbx-orphan"}) {
+	if got := names(); !slices.Equal(got, []string{"pool-own-machine", "sbx-dead000000000000", "sbx-kept", "sbx-my-box", "sbx-taken00000000000", "sbx-test"}) {
 		t.Fatalf("machines after the first pass = %v, want every one kept", got)
 	}
 	f.runtime.reapOrphanMachines(ctx, quietLogger(), held, now.Add(sandboxVolumeRetention+time.Minute))
-	if got := names(); !slices.Equal(got, []string{"pool-own-machine", "sbx-held", "sbx-kept"}) {
+	if got := names(); !slices.Equal(got, []string{"pool-own-machine", "sbx-kept", "sbx-my-box", "sbx-taken00000000000", "sbx-test"}) {
 		t.Fatalf("machines after retention = %v, want only the orphan removed", got)
+	}
+	if _, err := os.Stat(filepath.Join(proxyagent.PoolSandboxMaterialRoot(f.runtime.root, f.runtime.projectID, f.runtime.poolID), "sbx_dead000000000000")); !os.IsNotExist(err) {
+		t.Fatalf("orphan's proxy material after it was removed: stat err = %v, want it gone", err)
 	}
 }
 
