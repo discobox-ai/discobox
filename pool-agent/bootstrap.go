@@ -101,6 +101,12 @@ type Bootstrap struct {
 	// from, as the driver's configuration names it (machine.Config.Base);
 	// empty is the driver's default.
 	MachineBase string `json:"machineBase,omitempty"`
+	// DriverConfig is the driver's own configuration, the provider's, so the
+	// pool's engine calls the same endpoints and region as the provider's
+	// (ADR 26-11-11-080 §6): machine.Config.DriverConfig. It holds no secret,
+	// which the provisioning key file carries apart. Empty is the driver's
+	// defaults.
+	DriverConfig json.RawMessage `json:"driverConfig,omitempty"`
 	// MachineNetwork is the provider's network the pool's machine is on,
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551
 	// §4). A driver that isolates machines needs one.
@@ -187,7 +193,7 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
-		if b.MachinePool != "" || b.MachineBase != "" || b.MachineNetwork != "" || b.PublicURL != "" || b.PrivateURL != "" {
+		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.MachineNetwork != "" || b.PublicURL != "" || b.PrivateURL != "" {
 			return fmt.Errorf("a machine pool, base, network and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
 		}
 	case RuntimeMachine:
@@ -196,6 +202,11 @@ func (b Bootstrap) Validate() error {
 		}
 		if err := machine.ValidatePool(b.MachinePool); err != nil {
 			return fmt.Errorf("the %s runtime's machine pool: %w", RuntimeMachine, err)
+		}
+		if len(b.DriverConfig) > 0 {
+			if err := machine.Validate(b.Driver, b.DriverConfig); err != nil {
+				return fmt.Errorf("the %s runtime's driver configuration: %w", RuntimeMachine, err)
+			}
 		}
 		// A driver with no path between its machines cannot carry a machine
 		// pool: its sandboxes could not reach it (ADR 26-10-29-481 §1).

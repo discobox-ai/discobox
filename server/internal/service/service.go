@@ -110,6 +110,9 @@ type Options struct {
 	// ConfiguredGateways is the server configuration file's gateways
 	// (ADR 26-10-17-271).
 	ConfiguredGateways gateways.Configured
+	// ProviderEndpoints is where providers' Privileged endpoints may point
+	// (ADR 26-11-11-080 §3).
+	ProviderEndpoints sandbox.EndpointPolicy
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
@@ -117,6 +120,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		options.ListenEndpoints = []string{endpoint.DefaultEndpoint()}
 	}
 	manager := sandbox.NewProviderManager(store)
+	manager.SetEndpointPolicy(options.ProviderEndpoints)
 	poolControlPlane := pools.NewControlPlane(store, engine)
 	poolControlPlane.OutboundDefaults = options.PoolOutbound
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
@@ -125,6 +129,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		ListenEndpoints:      options.ListenEndpoints,
 		ServerDefaults:       options.ServerDefaults,
 		WSLCCommand:          options.WSLCCommand,
+		ProviderEndpoints:    options.ProviderEndpoints,
 	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
@@ -272,6 +277,13 @@ func (s *Service) Start(ctx context.Context) error {
 	// no reconcile meets one unsealed (ADR 26-10-31-694 §4).
 	if err := s.store.SealProviderCredentials(ctx, os.LookupEnv); err != nil {
 		return fmt.Errorf("seal provider credentials: %w", err)
+	}
+	// Then each vm provider becomes its driver's type, its key sealed to
+	// sealed, and the endpoints the server's environment gave its driver
+	// carried into its row: the one read of a driver's variable the server
+	// makes (ADR 26-11-11-080 §8).
+	if err := s.store.MigrateVMProviders(ctx, os.LookupEnv); err != nil {
+		return fmt.Errorf("upgrade vm providers: %w", err)
 	}
 	if err := s.engine.Start(ctx); err != nil {
 		return err

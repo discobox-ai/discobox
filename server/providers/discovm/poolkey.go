@@ -39,10 +39,10 @@ type poolKeys struct {
 	now     func() time.Time
 }
 
-func newPoolKeys(driver machine.Driver, cfg Config) poolKeys {
+func newPoolKeys(driver machine.Driver, cfg settings) poolKeys {
 	return poolKeys{
 		driver:  driver,
-		own:     machine.Key{Driver: driver.Name(), Secret: strings.TrimSpace(cfg.APIKey)},
+		own:     machine.Key{Driver: driver.Name(), Secret: cfg.key},
 		deliver: cfg.DeliverProviderKey,
 		ttl:     poolKeyTTL,
 		now:     time.Now,
@@ -52,7 +52,7 @@ func newPoolKeys(driver machine.Driver, cfg Config) poolKeys {
 // check refuses a provider that opts in to delivering a key it does not have.
 func (k poolKeys) check() error {
 	if k.deliver && k.own.Secret == "" {
-		return fmt.Errorf("the %s provider opts in to delivering its own key to its pools' machines, and has no API key", ProviderType)
+		return fmt.Errorf("the %s provider opts in to delivering its own key to its pools' machines, and has no key", k.driver.Name())
 	}
 	return nil
 }

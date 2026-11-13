@@ -107,7 +107,8 @@ subcommand runs. Use --help=<provider> to show provider-specific options.
 Examples:
   discobox admin provider create --help
   discobox admin provider create --help=digitalocean
-  discobox admin provider create --type digitalocean --ssh-keys 12345 --secret token=@do-token --secret sshPrivateKey=@id_ed25519`,
+  discobox admin provider create --type digitalocean --ssh-keys 12345 --secret token=@do-token --secret sshPrivateKey=@id_ed25519
+  discobox admin provider create --type boxd --name boxd --driver-region fra --secret driver.apiKey=@boxd-key`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		RunE:               a.runProviderCreate,
@@ -145,7 +146,7 @@ Examples:
   discobox admin provider update --help
   discobox admin provider update --help=docker
   discobox admin provider update my-provider --min-workers 1 --max-workers 2
-  discobox admin provider update my-provider --secret apiKey=@new-key`,
+  discobox admin provider update my-boxd --secret driver.apiKey=@new-key`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		ValidArgsFunction:  a.completeProviders,

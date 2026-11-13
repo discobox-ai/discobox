@@ -23,7 +23,7 @@ const testControlPlaneURL = "http://127.0.0.1:8080"
 // processes with no journal, so its log is a command that honors the tail it
 // is asked for.
 func fakePoolMachine(e *engine.Engine, base string) *poolMachine {
-	h := newPoolMachine(e, Config{Driver: e.Driver.Name(), Base: base, ControlPlaneURL: testControlPlaneURL})
+	h := newPoolMachine(e, settings{Config: Config{Base: base, ControlPlaneURL: testControlPlaneURL}, name: e.Driver.Name()})
 	h.shell = []string{"/bin/sh"}
 	h.logs = func(opts sandbox.PoolLogOptions) []string {
 		return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}

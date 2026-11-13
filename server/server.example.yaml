@@ -342,6 +342,15 @@
 # Environment: DISCOBOX_IMAGE_RETENTION
 #imageRetention:
 
+# Endpoints a provider may send its key to beyond public https hosts,
+# private ones included: each a HOST (every port) or HOST:PORT. A
+# provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise
+# name only a public host over TLS. The environment variable takes a
+# comma-separated list.
+# Example: providerEndpoints: [boxd.internal.example.com, 10.0.0.5:9443]
+# Environment: DISCOBOX_PROVIDER_ENDPOINTS
+#providerEndpoints:
+
 # Retired, and ignored: a pool's container runs the sandbox base image
 # (dockerSandboxBaseImage), provisioned from the pool bundle
 # (poolAgentBundle). Read with a warning, and refused from the next

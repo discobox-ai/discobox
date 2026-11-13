@@ -20,13 +20,18 @@ persists the credential (ADR 26-10-23-948).
 
 A pool is its own runtime host (ADR-0006): a VM, a Docker host, or (later) a pod
 runs the pool-agent container, and the pool's sandboxes run beside it on the
-same Docker daemon — never nested inside it. A `vm` pool is the exception:
-its sandboxes are disco-vm machines (ADR 26-10-09-106), and none of the
-engine's Docker mechanics apply to it.
+same Docker daemon — never nested inside it. A pool on a disco-vm driver's
+type is the exception: its sandboxes are disco-vm machines (ADR
+26-10-09-106), and none of the engine's Docker mechanics apply to it.
 
 `providers.RegisterBuiltInSandboxProviderFactories` registers the portable
-providers (`vm`, `docker`, `digitalocean`, `exec`, `libkrun`) everywhere,
-plus one build-tagged platform provider: `vz` on macOS, `wslc` on Windows.
+providers (`docker`, `digitalocean`, `exec`, `libkrun`) everywhere, one
+build-tagged platform provider (`vz` on macOS, `wslc` on Windows), and last a
+type per linked disco-vm driver, by the driver's name (`boxd`, `archil`, and
+`hcs` on Windows; ADR 26-11-11-080 §1), which panics on a taken name.
+Where a provider's `Privileged` endpoint fields may point is the operator's
+`providerEndpoints` (`sandbox.EndpointPolicy`), checked by the providers
+service on a write and by each disco-vm driver's dialer on every connection.
 
 ## Runtime References
 
@@ -58,7 +63,7 @@ flowchart TD
     vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
     wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
     discovm["discovm.Runtime\nembedded disco-vm engine · machines, not the engine's containers"]
-    dvdriver["disco-vm driver (configured: vz, hcs, boxd)\nremote: pool machine · local: host pool agent"]
+    dvdriver["disco-vm driver, one type each (boxd, archil, hcs)\nreached at its URLs: pool machine · held: host pool agent"]
 
     pool --> engine --> driver
     driver --> local & do & execd & libkrun & vz & wslc

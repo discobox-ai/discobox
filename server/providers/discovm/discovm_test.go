@@ -38,25 +38,25 @@ func isolateStateRoot(t *testing.T) {
 
 // fakeConfig is a provider on disco-vm's fake driver, whose guest agent is
 // this test binary, which TestMain lets play one.
-func fakeConfig(t *testing.T) Config {
+func fakeConfig(t *testing.T) settings {
 	t.Helper()
-	return Config{Driver: "fake"}
+	return settings{name: "fake"}
 }
 
 func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 	t.Helper()
-	config, err := json.Marshal(fakeConfig(t)) //nolint:gosec // G117: a fake driver's configuration, with no key
+	config, err := json.Marshal(fakeConfig(t).Config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: ProviderType, Config: config}
+	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "fake", Config: config}
 }
 
 // openRuntime is newRuntime for the provider instance prov_test, closed when
 // the test ends as the server closes it.
-func openRuntime(t *testing.T, cfg Config) *Runtime {
+func openRuntime(t *testing.T, cfg settings) *Runtime {
 	t.Helper()
-	r, err := newRuntime(cfg, "prov_test")
+	r, err := newRuntime(cfg, "prov_test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	r, _ := newFakePool(t, "")
 	ctx := context.Background()
 	instance := fakeInstance(t)
-	provider := poolruntime.New(r, Definition(), nil, nil)
+	provider := poolruntime.New(r, Definition("fake"), nil, nil)
 	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
 
@@ -255,7 +255,7 @@ func fakeBasesMade(t *testing.T) []string {
 // says which, before reading anything.
 func TestBuildGuestImageIsUnsupported(t *testing.T) {
 	isolateStateRoot(t)
-	r := openRuntime(t, Config{Driver: "boxd"})
+	r := openRuntime(t, settings{name: "boxd"})
 	if isLocal(r.engine.Driver) {
 		t.Fatal("boxd is a local driver")
 	}
@@ -327,69 +327,38 @@ func TestHostAgentRefusesAConsoleAndReadsTheAgentLog(t *testing.T) {
 	}
 }
 
-func TestValidateNamesTheDriversInThisBuild(t *testing.T) {
-	for _, tc := range []struct{ config, want string }{
-		{`{}`, "driver is required"},
-		{`{"driver":"hyperv"}`, `driver "hyperv" is not available in this build`},
-	} {
-		err := Validate(json.RawMessage(tc.config))
-		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "boxd") {
-			t.Errorf("Validate(%s) = %v, want %q naming boxd", tc.config, err, tc.want)
+// Each linked driver but the fake one is a provider type of its own name;
+// docker, libkrun and vz are built-in types, and never linked (ADR
+// 26-11-11-080 §1).
+func TestTypesAreTheLinkedDrivers(t *testing.T) {
+	want := []string{"archil", "boxd"}
+	if runtime.GOOS == "windows" {
+		want = append(want, "hcs")
+	}
+	if got := Types(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("Types() = %v, want %v", got, want)
+	}
+	for _, name := range []string{"docker", "libkrun", "vz"} {
+		if _, err := machine.DefinitionOf(name); err == nil {
+			t.Errorf("the %s driver is linked, and its name is a built-in provider type", name)
 		}
 	}
 }
 
-// boxd's cluster endpoints, which disco-vm once read from the server's
-// environment itself, are still read from it for the driver, and nothing else
-// is: not boxd's region, which is a provider's, nor any field of a driver that
-// read none. A value the driver refuses fails validation naming the field and
-// the variable it came from, not as a driver missing from the build.
-func TestDriverConfigCarriesBoxdsEndpointsFromTheEnvironment(t *testing.T) {
+// The server reads no driver's environment: boxd's endpoints set there reach
+// no driver it makes, which the provider's own fields alone configure (ADR
+// 26-11-11-080 §2).
+func TestTheServerReadsNoDriverEnvironment(t *testing.T) {
 	isolateStateRoot(t)
-	t.Setenv(boxd.RegionEnv, "nyc")
-	cfg, err := driverConfig("boxd", "prov-test", stateRoot("boxd"), nil)
-	if err != nil || cfg.DriverConfig != nil {
-		t.Fatalf("boxd's configuration with no endpoint set = %s, %v; want none", cfg.DriverConfig, err)
-	}
 	t.Setenv(boxd.AddrEnv, "boxd.example.com:9443")
-	t.Setenv(boxd.TokenURLEnv, "https://app.example.com/api/v1/auth/token")
-	cfg, err = driverConfig("boxd", "prov-test", stateRoot("boxd"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]string
-	if err := json.Unmarshal(cfg.DriverConfig, &got); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{"addr": "boxd.example.com:9443", "tokenUrl": "https://app.example.com/api/v1/auth/token"} //nolint:gosec // G101: an endpoint URL, not a credential
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("boxd's configuration = %v, want %v", got, want)
-	}
-	if cfg, err := driverConfig("fake", localPool, stateRoot("fake"), nil); err != nil || cfg.DriverConfig != nil {
-		t.Fatalf("the fake driver's configuration = %s, %v; want none", cfg.DriverConfig, err)
-	}
 	t.Setenv(boxd.TokenURLEnv, "http://app.example.com/token")
-	if err := Validate(json.RawMessage(`{"driver":"boxd","apiKey":"k"}`)); err == nil || !strings.Contains(err.Error(), "tokenUrl") || !strings.Contains(err.Error(), boxd.TokenURLEnv) || strings.Contains(err.Error(), "not available") || strings.Contains(err.Error(), "app.example.com") {
-		t.Fatalf("Validate with a plain-http token URL = %v, want an error naming tokenUrl and %s, and not its value", err, boxd.TokenURLEnv)
+	t.Setenv(boxd.RegionEnv, "nyc")
+	cfg, err := driverConfig("boxd", "prov-test", stateRoot("boxd"), nil, nil)
+	if err != nil || cfg.DriverConfig != nil {
+		t.Fatalf("boxd's configuration = %s, %v; want none from the environment", cfg.DriverConfig, err)
 	}
-}
-
-// A remote driver needs its key, said rather than guessed, and may name the
-// URL its pool machines reach the server at: without one the server opens a
-// channel to each (ADR 26-10-30-875 §4). A local driver takes neither.
-func TestValidateWhatADriverNeeds(t *testing.T) {
-	for _, tc := range []struct{ config, want string }{
-		{`{"driver":"boxd"}`, "apiKey"},
-		{`{"driver":"boxd","apiKey":"k"}`, ""},
-		{`{"driver":"boxd","apiKey":"k","controlPlaneUrl":"unix:///run/discobox.sock"}`, "http or https"},
-		{`{"driver":"boxd","apiKey":"k","controlPlaneUrl":"https://discobox.example.com","deliverProviderKey":true}`, ""},
-		{`{"driver":"fake","apiKey":"k"}`, "takes no API key"},
-		{`{"driver":"fake"}`, ""},
-	} {
-		err := Validate(json.RawMessage(tc.config))
-		if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
-			t.Errorf("Validate(%s) = %v, want %q", tc.config, err, tc.want)
-		}
+	if err := validate("boxd", json.RawMessage(`{"driver":{"apiKey":"k"}}`)); err != nil {
+		t.Fatalf("a boxd provider under a refused environment value = %v, want accepted", err)
 	}
 }
 
@@ -397,14 +366,16 @@ func TestValidateWhatADriverNeeds(t *testing.T) {
 // boxd, which refuses darwin, and darwin on a driver that reports it, which is
 // vz's report, without a vz in this build (ADR 26-11-11-963 §1).
 func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
-	if err := ValidatePoolOS(json.RawMessage(`{"driver":"boxd"}`), "linux"); err != nil {
+	if err := PoolOSValidator("boxd")(json.RawMessage(`{}`), "linux"); err != nil {
 		t.Fatalf("a linux pool on boxd: %v", err)
 	}
-	if err := ValidatePoolOS(json.RawMessage(`{"driver":"boxd"}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
+	if err := PoolOSValidator("boxd")(json.RawMessage(`{}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
 		t.Fatalf("a darwin pool on boxd = %v, want refused", err)
 	}
-	if err := ValidatePoolOS(json.RawMessage(`{"driver":"hyperv"}`), "linux"); err == nil {
-		t.Fatal("a pool on a driver this build lacks was accepted")
+	// archil fences nothing, so its pools are refused when made, saying so
+	// (ADR 26-11-11-080 §1).
+	if err := PoolOSValidator("archil")(json.RawMessage(`{"driver":{"apiKey":"key-k"}}`), "linux"); err == nil || !strings.Contains(err.Error(), "cannot isolate machines") {
+		t.Fatalf("a linux pool on archil = %v, want refused for its fence", err)
 	}
 	vz := machine.Capabilities{GuestOS: []machine.OS{machine.Darwin, machine.Linux}}
 	for _, os := range []string{"linux", "darwin"} {
@@ -418,7 +389,7 @@ func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
 // runtime, whose shims are this binary.
 func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	isolateStateRoot(t)
-	provider, err := FactoryWithPoolManager(nil, nil)(context.Background(), fakeInstance(t))
+	provider, err := FactoryWithPoolManager("fake", nil, nil, sandbox.EndpointPolicy{})(context.Background(), fakeInstance(t))
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}
@@ -426,11 +397,11 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	if _, ok := provider.(*poolruntime.Provider); !ok {
 		t.Fatalf("factory built %T, want *poolruntime.Provider", provider)
 	}
-	if provider.Definition().Name != "vm" {
+	if provider.Definition().Name != "fake" {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)
-	cfg, err := driverConfig("fake", localPool, stateRoot("fake"), nil)
+	cfg, err := driverConfig("fake", localPool, stateRoot("fake"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,20 +411,6 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	}
 	if cfg.Pool != localPool || cfg.Dir != stateRoot("fake") {
 		t.Fatalf("driver config scope %q dir %q, want %q in the state root", cfg.Pool, cfg.Dir, localPool)
-	}
-}
-
-// A remote driver calls its service with the provider's API key, from its
-// configuration, never the server's environment; a provider with none fails
-// every call saying what to set.
-func TestDriverKeyIsTheProvidersConfiguration(t *testing.T) {
-	t.Setenv(boxd.APIKeyEnv, "from-the-environment")
-	key, err := providerKeys(Config{Driver: "boxd", APIKey: " secret "})(context.Background())
-	if err != nil || key.Secret != "secret" || key.Driver != "boxd" {
-		t.Fatalf("boxd's key = %v, %v, want the configuration's", key, err)
-	}
-	if _, err := providerKeys(Config{Driver: "boxd"})(context.Background()); err == nil || !strings.Contains(err.Error(), "apiKey") {
-		t.Fatalf("a provider with no key = %v, want an error naming apiKey", err)
 	}
 }
 
@@ -469,8 +426,8 @@ func TestPoolHostFollowsTheDriversKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host, ok := newPoolHost(remote, Config{}).(*poolMachine); !ok {
-		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, Config{}))
+	if host, ok := newPoolHost(remote, settings{}).(*poolMachine); !ok {
+		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, settings{}))
 	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
 		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
 	}
@@ -492,16 +449,16 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 	if err != nil || scope != "prov-0123456789abcdef" {
 		t.Fatalf("remotePool(prov_…) = %q, %v, want prov-0123456789abcdef", scope, err)
 	}
-	if _, _, err := openDriver("boxd", "Not A Project!", "", nil); err == nil {
+	if _, _, err := openDriver(settings{name: "boxd"}, "Not A Project!", nil, nil); err == nil {
 		t.Fatal("openDriver accepted an ID outside disco-vm's scope rule")
 	}
 	isolateStateRoot(t)
-	remote := openRuntime(t, Config{Driver: "boxd"})
+	remote := openRuntime(t, settings{name: "boxd"})
 	if remote.engine.Pool != "prov-test" {
 		t.Fatalf("boxd engine scope = %q, want the provider's", remote.engine.Pool)
 	}
 	local := openRuntime(t, fakeConfig(t))
-	if _, scope, err := openDriver("fake", "Not A Project!", "", nil); err != nil || scope != localPool || local.engine.Pool != localPool {
+	if _, scope, err := openDriver(fakeConfig(t), "Not A Project!", nil, nil); err != nil || scope != localPool || local.engine.Pool != localPool {
 		t.Fatalf("a local driver's scope = %q, %v (engine %q), want %q for every provider", scope, err, local.engine.Pool, localPool)
 	}
 }
@@ -529,7 +486,7 @@ func TestUnreachableIsATransportFailureOnly(t *testing.T) {
 // console, as a host pool agent has no host to open one on.
 func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
 	isolateStateRoot(t)
-	built, err := FactoryWithPoolManager(nil, nil)(context.Background(), fakeInstance(t))
+	built, err := FactoryWithPoolManager("fake", nil, nil, sandbox.EndpointPolicy{})(context.Background(), fakeInstance(t))
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}

@@ -171,6 +171,13 @@ type Config struct {
 	// the pool agent's side of the same wire.
 	ImageRetention time.Duration `yaml:"imageRetention" env:"DISCOBOX_IMAGE_RETENTION" doc:"How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. A Go duration; defaults to 24h." example:"72h"`
 
+	// ProviderEndpoints are the endpoints, private ones included, that a
+	// provider's Privileged fields may name beyond public https hosts (ADR
+	// 26-11-11-080 §3): a private boxd cluster, say. Any project member may
+	// write a provider, and the server dials these from its own network
+	// with the provider's key, so nothing else that is not public is.
+	ProviderEndpoints []string `yaml:"providerEndpoints" env:"DISCOBOX_PROVIDER_ENDPOINTS" doc:"Endpoints a provider may send its key to beyond public https hosts, private ones included: each a HOST (every port) or HOST:PORT. A provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise name only a public host over TLS. The environment variable takes a comma-separated list." example:"[boxd.internal.example.com, 10.0.0.5:9443]"`
+
 	// RetiredDockerPoolImage is server.yaml's dockerPoolImage, which named the
 	// pool-agent image a Docker pool's container ran. A pool's container runs
 	// the sandbox base image and is provisioned from the pool bundle (ADR

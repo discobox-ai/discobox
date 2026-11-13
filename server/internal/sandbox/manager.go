@@ -58,6 +58,8 @@ type ProviderManager struct {
 	building  map[string]*sync.Mutex
 	defaultID string
 	secrets   ProviderSecrets
+	// endpoints is where providers' Privileged endpoints may point.
+	endpoints EndpointPolicy
 }
 
 type cachedProvider struct {
@@ -126,6 +128,21 @@ func (m *ProviderManager) RegisterPoolOSValidator(providerType string, validator
 		return
 	}
 	m.poolOSes[providerType] = validator
+}
+
+// SetEndpointPolicy sets where providers' Privileged endpoints may point
+// (ADR 26-11-11-080 §3): the server's operator's setting.
+func (m *ProviderManager) SetEndpointPolicy(policy EndpointPolicy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.endpoints = policy
+}
+
+// EndpointPolicy is where providers' Privileged endpoints may point.
+func (m *ProviderManager) EndpointPolicy() EndpointPolicy {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.endpoints
 }
 
 // RegisterProviderDefinition registers provider metadata without an implementation.
@@ -467,7 +484,7 @@ func secretFieldIn(config []byte, definition ProviderDefinition) (string, bool) 
 		return "", false
 	}
 	for _, key := range definition.SecretFields() {
-		if _, ok := fields[key]; ok {
+		if _, ok := ConfigValue(fields, key); ok {
 			return key, true
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
 )
 
 // ProviderConfigFieldSecret is the type of a field that holds a credential.
@@ -13,6 +12,9 @@ import (
 const ProviderConfigFieldSecret = "secret"
 
 // ProviderConfigField describes one provider instance configuration field.
+//
+// Key is a path into the config object (ConfigValue): "driver.addr" is addr
+// in the object a disco-vm driver is given (ADR 26-11-11-080 §2).
 type ProviderConfigField struct {
 	Key         string `json:"key"`
 	Label       string `json:"label"`
@@ -27,6 +29,14 @@ type ProviderConfigField struct {
 	// them: a vm pool's driver, whose machines only that driver can
 	// reach.
 	Immutable bool `json:"immutable,omitempty"`
+	// Default is the value the provider takes when the field is unset, shown
+	// for a person; the provider applies it, never the catalog.
+	Default string `json:"default,omitempty"`
+	// Privileged is an endpoint the provider's secret fields are sent to. A
+	// write that sets or changes it carries every secret field in the same
+	// body, so a sealed secret is only ever sent where someone who supplied
+	// it pointed it (ADR 26-11-11-080 §4).
+	Privileged bool `json:"privileged,omitempty"`
 }
 
 // PoolSizeField names one field of a pool's size, spelled as the API
@@ -66,7 +76,8 @@ type ProviderStatus struct {
 	Details   any    `json:"details,omitempty"`
 }
 
-// SecretFields lists the keys of the fields typed secret.
+// SecretFields lists the keys of the fields typed secret: paths, sealed and
+// joined at their place in the config.
 func (d ProviderDefinition) SecretFields() []string {
 	var keys []string
 	for _, field := range d.ConfigFields {
@@ -93,7 +104,11 @@ func JoinProviderConfig(config json.RawMessage, sealed map[string]json.RawMessag
 	if fields == nil {
 		fields = map[string]json.RawMessage{}
 	}
-	maps.Copy(fields, sealed)
+	for key, value := range sealed {
+		if err := SetConfigValue(fields, key, value); err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(fields)
 }
 

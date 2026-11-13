@@ -92,6 +92,12 @@ func providerConfigFieldToService(field sandboxesvc.ProviderConfigField) service
 	if field.Immutable {
 		out.Immutable = services.OptBool{Value: field.Immutable, Set: true}
 	}
+	if field.Default != "" {
+		out.Default = services.OptString{Value: field.Default, Set: true}
+	}
+	if field.Privileged {
+		out.Privileged = services.OptBool{Value: field.Privileged, Set: true}
+	}
 	return out
 }
 
@@ -136,6 +142,9 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 	config := services.RawMessage(input.Config)
 	if err := manager.ValidateProviderConfig(input.Type, config); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	if _, err := s.checkPrivilegedWrite(ctx, input.Type, nil, config, nil); err != nil {
+		return nil, err
 	}
 	plain, sealed, err := s.splitConfig(input.Type, config, nil)
 	if err != nil {
@@ -214,8 +223,7 @@ func withoutSecretFields(config json.RawMessage, secretKeys []string) json.RawMe
 	}
 	removed := false
 	for _, key := range secretKeys {
-		if _, ok := fields[key]; ok {
-			delete(fields, key)
+		if _, ok := sandbox.DeleteConfigValue(fields, key); ok {
 			removed = true
 		}
 	}
@@ -252,15 +260,14 @@ func (s *Service) splitConfig(providerType string, config json.RawMessage, kept 
 	}
 	definition, _ := s.sandboxes.SandboxProviderManager().GetProviderDefinition(providerType)
 	secretKeys := definition.SecretFields()
-	if !slices.ContainsFunc(secretKeys, func(key string) bool { _, ok := fields[key]; return ok }) {
+	if !slices.ContainsFunc(secretKeys, func(key string) bool { _, ok := sandbox.ConfigValue(fields, key); return ok }) {
 		return config, sealed, nil
 	}
 	for _, key := range secretKeys {
-		value, ok := fields[key]
+		value, ok := sandbox.DeleteConfigValue(fields, key)
 		if !ok {
 			continue
 		}
-		delete(fields, key)
 		if clearsSecretField(value) {
 			delete(sealed, key)
 			continue
@@ -337,6 +344,11 @@ func (s *Service) updateConfig(ctx context.Context, tx *store.Store, provider *m
 	if err := s.refuseImmutableChange(ctx, tx, provider, plain); err != nil {
 		return err
 	}
+	carried, err := s.checkPrivilegedWrite(ctx, provider.Type, provider.Config, config, provider.CarriedEndpoints)
+	if err != nil {
+		return err
+	}
+	provider.CarriedEndpoints = carried
 	provider.Config = model.RawJSON(plain)
 	return store.SetSandboxProviderSecrets(provider, sealed)
 }
@@ -381,8 +393,9 @@ func (s *Service) refuseImmutableChange(ctx context.Context, tx *store.Store, pr
 	return nil
 }
 
-// configValue is one top-level field of a provider config, compacted, so that
-// formatting does not read as a change. An absent field is empty.
+// configValue is one field of a provider config, at its key's path,
+// compacted, so that formatting does not read as a change. An absent field is
+// empty.
 func configValue(config []byte, key string) (string, error) {
 	if len(config) == 0 {
 		return "", nil
@@ -391,7 +404,7 @@ func configValue(config []byte, key string) (string, error) {
 	if err := json.Unmarshal(config, &fields); err != nil {
 		return "", fmt.Errorf("decode provider config: %w", err)
 	}
-	value, ok := fields[key]
+	value, ok := sandbox.ConfigValue(fields, key)
 	if !ok {
 		return "", nil
 	}
@@ -460,4 +473,67 @@ func (s *Service) EnqueueProviderPools(ctx context.Context, projectID, providerI
 		}
 	}
 	return nil
+}
+
+// checkPrivilegedWrite holds a write of written over before (the stored
+// config; nil on a create) to ADR 26-11-11-080 §§3–4, for each Privileged
+// field it sets or changes: the write carries every secret field of the
+// provider, so a sealed secret is only ever sent where someone who supplied
+// it pointed it, and the new endpoint is one the server's endpoint policy
+// allows. A field left as it is (a key rotated, a policy changed) is not
+// checked again. It returns carried without the keys of the fields the write
+// changed: a value written over a carried one is checked as any other.
+func (s *Service) checkPrivilegedWrite(ctx context.Context, providerType string, before []byte, written json.RawMessage, carried []string) ([]string, error) {
+	manager := s.sandboxes.SandboxProviderManager()
+	definition, ok := manager.GetProviderDefinition(providerType)
+	if !ok {
+		return carried, nil
+	}
+	var fields map[string]json.RawMessage
+	if len(bytes.TrimSpace(written)) > 0 {
+		if err := json.Unmarshal(written, &fields); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("provider config must be a JSON object: %v", err))
+		}
+	}
+	var changed []string
+	for _, field := range definition.ConfigFields {
+		if !field.Privileged {
+			continue
+		}
+		was, err := configValue(before, field.Key)
+		if err != nil {
+			return nil, err
+		}
+		now, err := configValue(written, field.Key)
+		if err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		}
+		if was == now {
+			continue
+		}
+		changed = append(changed, field.Key)
+		if now == "" {
+			continue
+		}
+		var endpoint string
+		if err := json.Unmarshal([]byte(now), &endpoint); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("%s must be text", field.Key))
+		}
+		if err := manager.EndpointPolicy().CheckEndpoint(ctx, endpoint, false); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("%s: %v", field.Key, err))
+		}
+	}
+	if len(changed) == 0 {
+		return carried, nil
+	}
+	var missing []string
+	for _, key := range definition.SecretFields() {
+		if value, ok := sandbox.ConfigValue(fields, key); !ok || clearsSecretField(value) {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("%s changes where this provider's secrets are sent, so the same write must carry %s", strings.Join(changed, ", "), strings.Join(missing, ", ")))
+	}
+	return slices.DeleteFunc(slices.Clone(carried), func(key string) bool { return slices.Contains(changed, key) }), nil
 }

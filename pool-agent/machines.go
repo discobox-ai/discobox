@@ -20,14 +20,16 @@ import (
 )
 
 // openMachineEngine is a machine pool's own disco-vm engine (ADR 26-10-23-551
-// §3): its driver, in the pool's disco-vm scope, calling with the provisioning key
-// its maker placed, read again on every call.
+// §3): its driver, configured as its provider's (ADR 26-11-11-080 §6), in the
+// pool's disco-vm scope, calling with the provisioning key its maker placed,
+// read again on every call.
 func openMachineEngine(root layout.Root, bootstrap Bootstrap, keyFile string) (*engine.Engine, error) {
 	driver, err := machine.New(bootstrap.Driver, machine.Config{
-		Pool: bootstrap.MachinePool,
-		Base: bootstrap.MachineBase,
-		Dir:  root.PoolMachines(bootstrap.ProjectID, bootstrap.PoolID),
-		Keys: provisioningKeys(keyFile, bootstrap.Driver),
+		Pool:         bootstrap.MachinePool,
+		Base:         bootstrap.MachineBase,
+		Dir:          root.PoolMachines(bootstrap.ProjectID, bootstrap.PoolID),
+		Keys:         provisioningKeys(keyFile, bootstrap.Driver),
+		DriverConfig: bootstrap.DriverConfig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("the %s driver of this machine pool: %w", bootstrap.Driver, err)

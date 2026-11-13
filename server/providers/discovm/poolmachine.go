@@ -54,6 +54,9 @@ type poolMachine struct {
 	// created fresh from (Config.Base), which the driver is made with and the
 	// pool's agent makes its own with; empty is the driver's default.
 	base string
+	// driverConfig is the provider's driver configuration, without its
+	// secret, which the pool's agent makes its engine with.
+	driverConfig json.RawMessage
 	// controlPlaneURL is where the machine reaches this server
 	// (Config.ControlPlaneURL).
 	controlPlaneURL string
@@ -68,10 +71,11 @@ type poolMachine struct {
 	logSource string
 }
 
-func newPoolMachine(e *engine.Engine, cfg Config) *poolMachine {
+func newPoolMachine(e *engine.Engine, cfg settings) *poolMachine {
 	return &poolMachine{
 		engine:          e,
 		base:            strings.TrimSpace(cfg.Base),
+		driverConfig:    cfg.driverConfig,
 		controlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
 		policy:          cfg.Env(),
 		keys:            newPoolKeys(e.Driver, cfg),
@@ -238,11 +242,9 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err != nil {
 		return err
 	}
-	if !h.engine.Driver.Capabilities().Isolation {
-		// A pool machine is on a network of the pool's own, and its
-		// sandboxes' machines isolated on it; a driver that cannot is not
-		// enabled (ADR 26-10-23-551 §4).
-		return fmt.Errorf("the %s driver cannot isolate machines or place them on networks, which a pool's machine and its sandboxes' need", h.engine.Driver.Name())
+	// A pool made before its create refused the driver (fences).
+	if err := fences(h.engine.Driver); err != nil {
+		return err
 	}
 	record := decodeRuntimeState(pool)
 	inst, err := h.instance(ctx, pool)
@@ -401,6 +403,11 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	bootstrap.Driver = h.engine.Driver.Name()
 	bootstrap.MachinePool = scope
 	bootstrap.MachineBase = h.base
+	// The provider's driver configuration, without its secret, so the
+	// pool's engine calls the same endpoints and region as the provider's
+	// (ADR 26-11-11-080 §6). It is in the placement's fingerprint: a pool
+	// whose provider has none keeps the fingerprint it had.
+	bootstrap.DriverConfig = h.driverConfig
 	bootstrap.MachineNetwork = scope
 	// Where the server reaches the pool's agent, and where its sandboxes'
 	// machines reach the pool, from which the agent derives their endpoints
@@ -568,6 +575,12 @@ func notReachable(err error) error {
 // driver's errors, and a remote driver on another transport is added here
 // (REVIEW.md).
 func unreachable(err error) bool {
+	// An endpoint the server's policy refuses is the provider's to fix,
+	// never a fault to wait out, though it fails as a dial does (ADR
+	// 26-11-11-080 §3). gRPC keeps only a dial error's text.
+	if errors.Is(err, sandbox.ErrEndpointRefused) || strings.Contains(status.Convert(err).Message(), sandbox.ErrEndpointRefused.Error()) {
+		return false
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) || errors.Is(err, context.DeadlineExceeded) {
 		return true

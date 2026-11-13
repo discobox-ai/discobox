@@ -51,7 +51,7 @@ func runShim(ctx context.Context, args []string) error {
 		return errors.New("usage: --dir <state dir> --driver <driver> --pool <pool> <shim arguments>")
 	}
 	dir, name, scope := args[1], args[3], args[5]
-	cfg, err := driverConfig(name, scope, dir, nil)
+	cfg, err := driverConfig(name, scope, dir, nil, nil)
 	if err != nil {
 		return err
 	}

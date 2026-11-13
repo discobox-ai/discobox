@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/sshd"
@@ -237,6 +238,7 @@ func Run(ctx context.Context) error {
 		ArchiveRetention:               cfg.ArchiveRetention,
 		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
 		PoolOutbound:                   cfg.PoolOutbound,
+		ProviderEndpoints:              sandbox.EndpointPolicy{Allowed: cfg.ProviderEndpoints},
 		ServerDefaults: dockerworker.ServerDefaults{
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,
 			PoolAgentBundle:  cfg.PoolAgentBundle,

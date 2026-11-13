@@ -29,6 +29,10 @@ type FactoryOptions struct {
 	// ServerDefaults are the provider settings the server configures rather
 	// than any one provider instance.
 	ServerDefaults dockerworker.ServerDefaults
+	// ProviderEndpoints is where a provider's Privileged endpoints may point
+	// (ADR 26-11-11-080 §3), checked again at each dial a disco-vm driver
+	// makes.
+	ProviderEndpoints sandbox.EndpointPolicy
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for. Empty looks for the component's own name.
 	WSLCCommand string
@@ -41,10 +45,6 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterProviderDefinition(digitalocean.ProviderType, digitalocean.Definition())
 	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults, options.ControlPlaneStreams))
 	manager.RegisterProviderConfigValidator(digitalocean.ProviderType, digitalocean.Validate)
-	manager.RegisterProviderDefinition(discovm.ProviderType, discovm.Definition())
-	manager.RegisterFactory(discovm.ProviderType, discovm.FactoryWithPoolManager(poolManager, options.ControlPlaneStreams))
-	manager.RegisterProviderConfigValidator(discovm.ProviderType, discovm.Validate)
-	manager.RegisterPoolOSValidator(discovm.ProviderType, discovm.ValidatePoolOS)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
 	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
@@ -55,6 +55,9 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(libkrun.ProviderType, libkrun.Validate)
 	registerPlatformProviderFactories(manager, poolManager, options)
+	// Last, so a disco-vm driver named as a built-in type fails its
+	// registration (ADR 26-11-11-080 §1).
+	discovm.Register(manager, poolManager, options.ControlPlaneStreams, options.ProviderEndpoints)
 }
 
 // EnsurePlatformPrerequisites reports whether this host has what the platform's
