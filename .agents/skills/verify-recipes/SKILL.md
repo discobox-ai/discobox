@@ -63,6 +63,30 @@ so filter it out). The leader followed by `q` quits it normally.
   $S/discobox ./cli/cmd/discobox`, and expect the image watcher to fail on
   that path until the replace names a pushed version.
 
+# Verifying `admin ssh-config --write` and `admin uninstall` (the user's ssh_config)
+
+Both edit `~/.ssh/config`, so give each run a home of its own under the
+scratchpad. An install is a state directory: two `XDG_STATE_HOME`s sharing one
+`HOME` are two installs.
+
+```bash
+H=$S/home; mkdir -p $H/.ssh
+env -u DISCOBOX_SERVER HOME=$H XDG_CONFIG_HOME=$HOME/.config XDG_STATE_HOME=$S/stA \
+  $S/discobox --server http://127.0.0.1:8080 admin ssh-config --write
+```
+
+- Keep `XDG_CONFIG_HOME` at the real one: that is where the dev server's
+  credentials are. Each fresh state directory enrolls a new key in the dev
+  project. Remove them after with `admin ssh-keys ls` / `admin ssh-keys rm <id>`.
+- Hold the ssh_config lock from outside with `flock $H/.ssh/.discobox-ssh-config.lock sleep N &`
+  (`flock(1)` takes the same `flock(2)` the CLI does).
+- `admin uninstall` stops every local server it can reach, so run it under
+  `env -i PATH=$PATH HOME=$U USERPROFILE=$U` with every `XDG_*_HOME`,
+  `XDG_RUNTIME_DIR` and `TMPDIR` under `$U`, `DISCOBOX_SERVER_ADDRESS=`, and
+  `--server unix://$U/none.sock`. It reads its yes from stdin after printing
+  the plan, so `{ sleep 1; <edit>; echo y; } | ... admin uninstall` acts
+  between the plan and the answer.
+
 # Verifying harness save-back (`admin harness changes`, the console's `H` card)
 
 The dev server's `claude-code` harness usually has a login saved already
