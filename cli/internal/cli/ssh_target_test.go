@@ -287,12 +287,12 @@ func TestSSHTargetIncludeIsIdempotentAcrossTheBoundary(t *testing.T) {
 	}
 }
 
-// A managed Include this CLI no longer writes is dropped whichever way its path
-// is spelled: ssh fails outright on an Include it cannot read, so one left over
-// from an older state directory breaks every host in the file.
+// A managed Include of a file that is gone is dropped whichever way its path is
+// spelled: across the boundary it is wslpath that says where to look for it.
 func TestSSHTargetDropsStaleManagedIncludes(t *testing.T) {
-	wslTestWindowsTools(t)
-	target := wslTestTarget(t.TempDir())
+	root := t.TempDir()
+	fakeWSLPath(t, wslTestWindowsTools(t), root)
+	target := wslTestTarget(root)
 	managed := target.configPath("proj_1")
 	stale := `C:\Users\Ada Lovelace\AppData\Roaming\discobox\cli\ssh\proj_1\config`
 	existing := `Include "` + stale + `"` + "\n\nHost work\n    HostName work.example.com\n"
@@ -316,6 +316,53 @@ func TestSSHTargetDropsStaleManagedIncludes(t *testing.T) {
 	}
 	if !strings.Contains(got, "Host work\n") {
 		t.Fatalf("the user's own config was not preserved:\n%s", got)
+	}
+}
+
+// Outside the state directory, a Windows ssh's managed Include is stale only
+// when wslpath names a file here that is gone — a share's included, judged by
+// its own spelling rather than the slash form paths are compared in. Another install's file that is
+// still there is not, wherever it sits: the state directory a Windows CLI used
+// before %LOCALAPPDATA% is where an install with XDG_STATE_HOME set keeps its
+// own.
+func TestSSHTargetStaleManagedIncludeAcrossTheBoundary(t *testing.T) {
+	root := t.TempDir()
+	fakeWSLPath(t, wslTestWindowsTools(t), root)
+	target := wslTestTarget(root)
+	managed := target.configPath("proj_1").client
+	exists := func(local string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(local, []byte("Host x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists(filepath.Join(root, "Users", "Ada Lovelace", ".local", "state", "discobox", "cli", "ssh", "proj_1", "config"))
+	exists(filepath.Join(root, "dev", "state", "discobox", "cli", "ssh", "proj_1", "config"))
+	distro := filepath.Join(t.TempDir(), "discobox", "cli", "ssh", "proj_1", "config")
+	exists(distro)
+	gone := filepath.Join(t.TempDir(), "discobox", "cli", "ssh", "proj_1", "config")
+
+	for _, tc := range []struct {
+		name, path string
+		want       bool
+	}{
+		{name: "this run's own", path: managed, want: false},
+		{name: "another project in this state", path: `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\proj_2\config`, want: false},
+		{name: "another install, still there", path: `C:\dev\state\discobox\cli\ssh\proj_1\config`, want: false},
+		{name: "another install under ~/.local/state, still there", path: `C:\Users\Ada Lovelace\.local\state\discobox\cli\ssh\proj_1\config`, want: false},
+		{name: "another install, gone", path: `C:\gone\discobox\cli\ssh\proj_1\config`, want: true},
+		{name: "another install in the distribution, still there", path: `\\wsl.localhost\Ubuntu` + strings.ReplaceAll(distro, "/", `\`), want: false},
+		{name: "another install in the distribution, gone", path: `\\wsl.localhost\Ubuntu` + strings.ReplaceAll(gone, "/", `\`), want: true},
+		{name: "a share wslpath cannot translate", path: `\\server\share\discobox\cli\ssh\proj_1\config`, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := target.staleManagedInclude(t.Context(), tc.path, managed); got != tc.want {
+				t.Fatalf("staleManagedInclude(%s) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
 	}
 }
 
