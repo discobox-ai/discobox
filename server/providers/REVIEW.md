@@ -147,10 +147,16 @@
   that silent response; phase heartbeat ticks are display only.
 
 - A fenced pool box (`BoxPlacement.Fence`, a held driver's pool machine) gets
-  nothing placed or run before `FenceBox` reads its rule set back: not the
-  agent, not a key, not a unit. Why: a pool listener started before the fence
-  is reachable from the host and the driver's other guests (ADR 26-11-11-963
-  §6). The fence's rule set is compared with what `nft` lists, as text: one
+  nothing of the pool's placed or run before `FenceBox` reads its rule set
+  back: not the agent, not a unit. `poolMachine.converge` places the
+  provisioning key before it calls `ProvisionBox`; a held driver issues none
+  and has no provider key to deliver, so nothing lands there before the fence
+  today, and a change that gives a held pool machine a key places it after the
+  fence. Why: a pool listener started before the fence is reachable from the
+  host and the driver's other guests (ADR 26-11-11-963 §6). The fence admits
+  on its device what keeps the device's addresses (neighbor discovery, DHCP
+  and DHCPv6 client replies): it loads before the network on every boot, so a
+  rule that drops one costs the pool its way out after its first reboot. The fence's rule set is compared with what `nft` lists, as text: one
   rule per device (a set's elements list in no fixed order), and any change to
   it is run against the base's `nft` (`TestFenceRulesListBackFromNft`, and
   `TestFenceBoxOnALibkrunPoolMachine` on KVM). It replaces its own table

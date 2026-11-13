@@ -287,16 +287,18 @@ reconciles every pool.
 Both pool providers make the box with `poolruntime.ProvisionBox`
 (`poolruntime/box.go`), through `pool-agent/provisioner`, over the box as a
 `machine.Guest` — the Docker engine's container (`dockerworker/poolbox.go`),
-or the `vm` provider's machine. For a held driver's pool machine (vz,
-libkrun: `BoxPlacement.Fence`) its first step is the network fence
-(`FenceBox`, `poolruntime/fence.go`; ADR 26-11-11-963 §6): it learns the
-machine's network devices (each with a `device` link), places
-`/etc/nftables.conf` — a table of its own, `inet discobox_fence`, admitting on
-each device only replies and IPv6 neighbour discovery — and a prefix drop-in
+or the `vm` provider's machine. When the placement asks
+(`BoxPlacement.Fence`), its first step is the network fence (`FenceBox`,
+`poolruntime/fence.go`; ADR 26-11-11-963 §6): it learns the box's network
+devices (each with a `device` link), places `/etc/nftables.conf` — a table of
+its own, `inet discobox_fence`, admitting on each device only replies, IPv6
+neighbor discovery and its DHCP client's replies — and a prefix drop-in
 holding every `discobox-*.service` to `nftables.service`, which the base
 loads before `network-pre.target` on every boot; loads it and reads it back
 as written. A fence that does not read back, or a base without `nft` or the
-enabled unit, fails the box with nothing else placed. Docker and boxd pools
+enabled unit, fails the box with nothing else placed. Only the `vm`
+provider asks, for a held driver's pool machine, and no pool reaches that
+today ([discovm](discovm/DESIGN.md#the-pools-box)); Docker and boxd pools
 are not fenced this way (963 Deferred). Then it places the agent, runs
 `discobox-provision identity` and enrolls the public key it prints
 (`PoolMaker.Enroll`), places the bootstrap and the agent's environment

@@ -70,8 +70,12 @@ nft list table inet ` + fenceTable
 var deviceName = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 
 // fenceRules is the rule set that fences uplinks: on each, input and forward
-// admit only replies to the machine's connections, and IPv6 neighbor and
-// router discovery, without which the device has no IPv6 way out. Anything on
+// admit only replies to the machine's connections, and what the device needs
+// to keep its addresses, which loads before the network on every boot: IPv6
+// neighbor and router discovery, and replies to its DHCP and DHCPv6 client
+// (a server answers a broadcast or multicast request, which connection
+// tracking does not match as a reply). Only the client's own port takes
+// those, from the server's. Anything on
 // loopback, or on a bridge the pool makes for its builds, is not touched.
 // Each device has a rule of its own, not a set, so the kernel lists the rules
 // in the order they are written and the read back compares as text.
@@ -83,6 +87,8 @@ func fenceRules(uplinks []string) string {
 	for _, dev := range uplinks {
 		fmt.Fprintf(&input, "\t\tiifname %q ct state established,related accept\n", dev)
 		fmt.Fprintf(&input, "\t\tiifname %q icmpv6 type { nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept\n", dev)
+		fmt.Fprintf(&input, "\t\tiifname %q udp sport 67 udp dport 68 accept\n", dev)
+		fmt.Fprintf(&input, "\t\tiifname %q udp sport 547 udp dport 546 accept\n", dev)
 		fmt.Fprintf(&input, "\t\tiifname %q drop\n", dev)
 		fmt.Fprintf(&forward, "\t\tiifname %q ct state established,related accept\n", dev)
 		fmt.Fprintf(&forward, "\t\tiifname %q drop\n", dev)
