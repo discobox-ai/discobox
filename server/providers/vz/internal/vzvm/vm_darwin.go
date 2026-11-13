@@ -170,7 +170,14 @@ func storageDevices(opts Options) ([]vz.StorageDeviceConfiguration, error) {
 	}
 	devices := make([]vz.StorageDeviceConfiguration, 0, len(disks))
 	for _, disk := range disks {
-		attachment, err := vz.NewDiskImageStorageDeviceAttachment(disk.path, disk.readOnly)
+		// Cached with fsync sync, as Lima, UTM and vfkit attach theirs. The
+		// framework's default (automatic caching, full sync) corrupts ext4 on
+		// Apple silicon (lima-vm/lima#1957), and the closest match to the CPU 0
+		// hard lockups of #1101 was traced to it (NixOS/nixpkgs#557576). A
+		// guest flush still reaches the disk: fsync sync forwards it as
+		// fsync(2) on the image file. Needs macOS 12, as virtiofs already does.
+		attachment, err := vz.NewDiskImageStorageDeviceAttachmentWithCacheAndSync(
+			disk.path, disk.readOnly, vz.DiskImageCachingModeCached, vz.DiskImageSynchronizationModeFsync)
 		if err != nil {
 			return nil, fmt.Errorf("vzvm: attach disk %s: %w", disk.path, err)
 		}
