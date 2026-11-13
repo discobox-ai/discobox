@@ -50,23 +50,7 @@ func fakeWSLMachine(t *testing.T, opts ...wslMachineOption) (root, record string
 			"#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+record+"'\n")
 	}
 
-	// wslpath translates both ways, and says of a path in the distribution
-	// exactly what the real one says: it is reachable only as a UNC share.
-	writeFakeTool(t, filepath.Join(tools, "wslpath"), strings.ReplaceAll(`#!/bin/sh
-root='__ROOT__'
-case "$1" in
--w)
-	case "$2" in
-	"$root"/*) printf 'C:%s\n' "$(printf '%s' "${2#$root}" | tr / '\\')" ;;
-	*) printf '\\\\wsl.localhost\\Ubuntu%s\n' "$(printf '%s' "$2" | tr / '\\')" ;;
-	esac ;;
--u)
-	case "$2" in
-	C:*) printf '%s%s\n' "$root" "$(printf '%s' "${2#C:}" | tr '\\' /)" ;;
-	*) printf '%s\n' "$2" ;;
-	esac ;;
-esac
-`, "__ROOT__", root))
+	fakeWSLPath(t, tools, root)
 
 	system32 := filepath.Join(root, "Windows", "System32")
 	if err := os.MkdirAll(system32, 0o700); err != nil {
@@ -88,6 +72,32 @@ esac
 	t.Setenv("DISCOBOX_VSCODE", "")
 	t.Setenv("DISCOBOX_ZED", "")
 	return root, record
+}
+
+// fakeWSLPath writes a wslpath into dir for a machine whose C: drive is
+// mounted at root. It translates both ways, and says of a path in the
+// distribution exactly what the real one says: it is reachable only as a UNC
+// share. Translating back, that share is this distribution's own filesystem,
+// and any other share is one it refuses.
+func fakeWSLPath(t *testing.T, dir, root string) {
+	t.Helper()
+	writeFakeTool(t, filepath.Join(dir, "wslpath"), strings.ReplaceAll(`#!/bin/sh
+root='__ROOT__'
+case "$1" in
+-w)
+	case "$2" in
+	"$root"/*) printf 'C:%s\n' "$(printf '%s' "${2#$root}" | tr / '\\')" ;;
+	*) printf '\\\\wsl.localhost\\Ubuntu%s\n' "$(printf '%s' "$2" | tr / '\\')" ;;
+	esac ;;
+-u)
+	case "$2" in
+	C:*) printf '%s%s\n' "$root" "$(printf '%s' "${2#C:}" | tr '\\' /)" ;;
+	'\\wsl.localhost\Ubuntu\'*) printf '%s\n' "$(printf '%s' "${2#'\\wsl.localhost\Ubuntu'}" | tr '\\' /)" ;;
+	'\\'*) echo "wslpath: $2: Invalid argument" >&2; exit 1 ;;
+	*) printf '%s\n' "$2" ;;
+	esac ;;
+esac
+`, "__ROOT__", root))
 }
 
 // wslMachine is what a test can vary about the fake machine.

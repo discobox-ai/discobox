@@ -2147,15 +2147,17 @@ level or layering on the attach transports above.
   `~/.ssh/config`. It also normalizes the `Include` lines it owns
   (`normalizeManagedIncludes`, recognizing the
   `.../discobox/cli/ssh/<project>/config` shape it writes and nothing else
-  does): the ones naming a state directory it no longer uses are removed, and
-  the ones an older version wrote with an unescaped percent sign are rewritten
-  rather than dropped, since the file they name is still the right one and the
-  line may belong to a project this run cannot re-add. ssh fails outright on an
-  `Include` it will not read, so a line left
-  pointing at a moved — or, on Windows, wrongly permissioned — file breaks every
-  connection through the config, the ones the new line was written to enable
-  included. Other projects' lines under the current state directory stay: one
-  per project is the design, and the user's own `Include`s are never touched. Both files are scoped to the resolved project and server endpoint —
+  does): a stale one is removed, and the ones an older version wrote with an
+  unescaped percent sign are rewritten rather than dropped, since the file they
+  name is still the right one and the line may belong to a project this run
+  cannot re-add. Stale is narrow (`staleManagedInclude`): a line outside the
+  current state directory whose file is gone — the rule `admin uninstall`
+  follows. A line whose file is still there may be another install's (a dev
+  build beside the release, each with its own `XDG_STATE_HOME`, sharing one
+  `~/.ssh/config`), and where it sits cannot tell it from an older state
+  directory of this one, so it stays; so do other projects' lines under the
+  current state directory, since one per project is
+  the design, and the user's own `Include`s are never touched. Both files are scoped to the resolved project and server endpoint —
   `<state>/ssh/<project-id>-<endpoint-hash>/{config,known_hosts}`, one `Include` each — because a run only knows
   about the project it was given: a shared file would drop every other
   project's stanzas on each write, and two projects can live on different

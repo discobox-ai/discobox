@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/wsl"
 	"github.com/discobox-ai/discobox/internal/filelock"
 )
 
@@ -288,7 +290,8 @@ func removeFiles(paths ...string) error {
 // them.
 type includeEdits struct {
 	added bool
-	// dropped are the Includes of files this CLI no longer writes.
+	// dropped are the stale Includes of files this CLI no longer writes
+	// (staleManagedInclude).
 	dropped []string
 	// repaired are the Includes this CLI wrote before it escaped percent
 	// signs, rewritten in the spelling ssh can read.
@@ -325,7 +328,7 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 	if err != nil && !os.IsNotExist(err) {
 		return includeEdits{}, fmt.Errorf("read %s: %w", userConfig, err)
 	}
-	cleaned, edits := t.normalizeManagedIncludes(string(existing), managed.client)
+	cleaned, edits := t.normalizeManagedIncludes(ctx, string(existing), managed.client)
 	edits.added = !t.hasInclude(cleaned, managed.client)
 	if edits.none() {
 		// A run with no edit to make did not rewrite that file, so nothing has
@@ -433,15 +436,13 @@ func (t sshTarget) writeUserConfig(ctx context.Context, body string) error {
 }
 
 // normalizeManagedIncludes brings the Include lines this CLI owns into the
-// state this run writes them in: the ones naming a file it no longer writes are
-// removed, and the ones written before it escaped percent signs are rewritten
+// state this run writes them in: the stale ones are removed, and the ones written before it escaped percent signs are rewritten
 // in the spelling ssh can read. It returns the config and what it did to it.
 //
-// Removing the stale ones is not tidiness. ssh fails outright on an Include it
-// will not read — one whose permissions it dislikes, in particular — so a line
-// left pointing into a directory this CLI has moved out of breaks every
-// connection through this config, including the ones the new line was written
-// to make work.
+// Removing the stale ones is tidiness: ssh passes over an Include that names
+// no file. A line naming a file that is there is never removed for being
+// somewhere this run does not write, because another install's line is
+// exactly that (below).
 //
 // The repair is the same failure reached the other way. A line written before
 // escapeSSHPercent existed names a file ssh cannot expand, and ssh abandons the
@@ -457,14 +458,19 @@ func (t sshTarget) writeUserConfig(ctx context.Context, body string) error {
 //
 // A managed path is recognized by its shape — <anything>/discobox/cli/ssh/<project>/config
 // — which is what this CLI has always written and nothing else has reason to.
-// Anything matching that shape and sitting outside the current state directory
-// was written by an older version that kept its state somewhere else, and is
-// now a path with nothing behind it or, worse, a file whose permissions ssh
-// refuses. Includes under the current state directory are left alone however
-// many there are: one per project is the design.
+// Includes under the current state directory are left alone however many there
+// are: one per project is the design.
+//
+// A managed path outside the current state directory is not necessarily ours.
+// Another install on this machine — a dev build beside the release, each with
+// its own XDG_STATE_HOME — writes the same shape into the same ssh_config, and
+// dropping its line breaks ssh to its boxes; dropping it on each run of the
+// other install just moves the breakage back and forth. So such a line is
+// removed only when the file it names is gone (staleManagedInclude), which is
+// the rule `admin uninstall` follows too.
 //
 // The user's own Includes are untouched. Only this shape is ours to edit.
-func (t sshTarget) normalizeManagedIncludes(config, managed string) (string, includeEdits) {
+func (t sshTarget) normalizeManagedIncludes(ctx context.Context, config, managed string) (string, includeEdits) {
 	var kept []string
 	var edits includeEdits
 	for _, line := range strings.Split(config, "\n") {
@@ -474,7 +480,7 @@ func (t sshTarget) normalizeManagedIncludes(config, managed string) (string, inc
 		switch {
 		case !ok || !t.isManagedConfigPath(path):
 			kept = append(kept, line)
-		case !t.samePathAs(path, managed) && !t.within(t.state.client, path):
+		case t.staleManagedInclude(ctx, filename, managed):
 			edits.dropped = append(edits.dropped, path)
 		case field != escapeSSHPercent(filename):
 			edits.repaired = append(edits.repaired, path)
@@ -494,6 +500,40 @@ func (t sshTarget) normalizeManagedIncludes(config, managed string) (string, inc
 		body = collapseBlankRuns(body)
 	}
 	return body, edits
+}
+
+// staleManagedInclude reports whether a managed Include of filename — the
+// file the line names, spelled as it spells it — is a leftover this run should
+// remove rather than another install's line or another project's. Neither
+// managed itself nor anything under the current state directory is: those are
+// this install's, and normalizeManagedIncludes keeps them.
+//
+// Outside it, a line is stale only when the file it names is gone. Where it
+// sits says nothing: an older state directory of this install and the state
+// directory of another install that is still there look the same, and only
+// the second still has its file. A file this process cannot look at — a
+// Windows path wslpath will not translate — is one it cannot tell is gone,
+// and the line stays.
+//
+// The file is looked for under the line's own spelling, not the one clean
+// compares in: clean turns a Windows share's \\server\share into
+// /server/share, which names something else entirely, and a line on a share
+// would be judged by a file that was never there.
+func (t sshTarget) staleManagedInclude(ctx context.Context, filename, managed string) bool {
+	path := t.clean(filename)
+	if t.samePathAs(path, managed) || t.within(t.state.client, path) {
+		return false
+	}
+	local := filename
+	if t.acrossWSL() {
+		translated, err := wsl.LinuxPath(ctx, filename)
+		if err != nil {
+			return false
+		}
+		local = translated
+	}
+	_, err := os.Stat(local)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // includeField is the path an Include line names, if the line is one, spelled

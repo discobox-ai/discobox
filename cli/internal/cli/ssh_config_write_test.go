@@ -433,13 +433,10 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 	}
 }
 
-// An Include this CLI wrote to a state directory it no longer uses is removed
-// rather than left behind.
-//
-// It is not tidiness: ssh fails outright on an Include it will not read, and
-// the file at the old path is exactly the one whose permissions it refuses on
-// Windows. Left there, the line breaks every connection through this config —
-// including the one the new Include was written to make work.
+// An Include this CLI wrote to a state directory whose file is gone is removed
+// rather than left behind. Being somewhere else is not what makes it stale —
+// another install's line is somewhere else too
+// (TestSSHConfigWriteKeepsAnotherInstallsInclude) — the missing file is.
 func TestSSHConfigWriteDropsAnIncludeFromAnOldStateDirectory(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
@@ -484,6 +481,114 @@ func TestSSHConfigWriteDropsAnIncludeFromAnOldStateDirectory(t *testing.T) {
 	config, _ := managedPaths(t, state)
 	if !strings.Contains(got, "Include "+config) {
 		t.Fatalf("the new Include is missing:\n%s", got)
+	}
+}
+
+// Another install on this machine — a dev build beside the installed release,
+// each with its own XDG_STATE_HOME — writes its own Include into the same
+// ~/.ssh/config. Its file is there and readable: the line is that install's,
+// not a leftover of this one, and removing it breaks ssh to its boxes.
+func TestSSHConfigWriteKeepsAnotherInstallsInclude(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	otherState := filepath.Join(t.TempDir(), "other-install")
+	other := filepath.Join(otherState, "discobox", "cli", "ssh", "proj_other000000001", "config")
+	if err := os.MkdirAll(filepath.Dir(other), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(other, []byte("Host other\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	userConfig := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(userConfig, []byte("Include "+other+"\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var errOut strings.Builder
+	cmd.SetOut(&strings.Builder{})
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+
+	if got := readFile(t, userConfig); !strings.Contains(got, "Include "+other) {
+		t.Fatalf("another install's Include was dropped as stale:\n%s\nstderr:\n%s", got, errOut.String())
+	}
+}
+
+// Two installs sharing one ~/.ssh/config, each with its own state directory,
+// run in turn: neither removes the other's Include, however many times they
+// alternate, and each still removes a line whose file is gone — a leftover
+// from a third state directory, and the other install's own line once that
+// install's state is deleted.
+func TestSSHConfigWriteTwoInstallsKeepEachOthersIncludes(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	first, second := filepath.Join(t.TempDir(), "first"), filepath.Join(t.TempDir(), "second")
+	userConfig := filepath.Join(home, ".ssh", "config")
+	gone := filepath.Join(t.TempDir(), "removed", "discobox", "cli", "ssh", "proj_gone000000001", "config")
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(userConfig, []byte("Include "+gone+"\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	server := writeFakeServer().start(t)
+	write := func(state string) string {
+		t.Helper()
+		t.Setenv("XDG_STATE_HOME", state)
+		cmd := NewRootCommand()
+		var errOut strings.Builder
+		cmd.SetOut(&strings.Builder{})
+		cmd.SetErr(&errOut)
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute ssh-config --write with state %s: %v\n%s", state, err, errOut.String())
+		}
+		return errOut.String()
+	}
+
+	write(first)
+	firstConfig, _ := managedPaths(t, first)
+	write(second)
+	secondConfig, _ := managedPaths(t, second)
+	write(first)
+	write(second)
+
+	got := readFile(t, userConfig)
+	for _, want := range []string{"Include " + firstConfig, "Include " + secondConfig} {
+		if strings.Count(got, want+"\n") != 1 {
+			t.Fatalf("want exactly one %q after the installs alternated:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, gone) {
+		t.Fatalf("the Include of a file that is gone survived:\n%s", got)
+	}
+
+	// The second install is deleted: its line now names nothing, and is the
+	// first install's to tidy away.
+	if err := os.RemoveAll(second); err != nil {
+		t.Fatalf("remove the second install's state: %v", err)
+	}
+	stderr := write(first)
+	got = readFile(t, userConfig)
+	if strings.Contains(got, secondConfig) {
+		t.Fatalf("the deleted install's Include survived:\n%s", got)
+	}
+	if !strings.Contains(stderr, "removed a stale Include of "+secondConfig) {
+		t.Fatalf("removing it should be reported, got:\n%s", stderr)
+	}
+	if !strings.Contains(got, "Include "+firstConfig) {
+		t.Fatalf("this install's own Include is missing:\n%s", got)
 	}
 }
 

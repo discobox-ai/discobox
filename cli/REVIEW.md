@@ -301,6 +301,12 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 - **Retire route-matching legacy SSH stanzas even for an empty project.**
   Keep the expected proxy route independent of rendered box stanzas: the last
   box disappearing must remove old aliases too, while other servers' files stay.
+- **A managed `Include` outside this install's state directory is not
+  ours to drop by location.** Another install with its own `XDG_STATE_HOME`
+  writes the same `.../discobox/cli/ssh/<project>/config` shape into the same
+  `~/.ssh/config`. Remove such a line only when `staleManagedInclude` finds
+  its file gone, never for where it sits — "not under my state", or a named
+  old directory another install's `XDG_STATE_HOME` can still point at.
 - **Every write of a project's managed config or known_hosts is restricted
   and locked.** Each is put through `target.restrict` once written — over an
   existing file `os.WriteFile` keeps the ACL an older CLI left, and an
