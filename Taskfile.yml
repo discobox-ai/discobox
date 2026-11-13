@@ -2163,6 +2163,13 @@ tasks:
         for required in CONFIG_PACKET=y CONFIG_NFT_COMPAT=y CONFIG_BRIDGE=y CONFIG_VETH=y CONFIG_OVERLAY_FS=y; do
           grep -qx "$required" kernel.config || { echo "kernel is missing $required" >&2; exit 1; }
         done
+        # CONFIG_BASE_SMALL caps pid_max at PAGE_SIZE*8 (32768) and boots it at
+        # max(4096, 1024 per CPU): the guest's systemd-sysctl then fails every
+        # boot on Debian's 50-pid-max.conf, and the whole pool VM, every sandbox
+        # in it, shares a few thousand PIDs. Absent from the config is off too.
+        if grep -q '^CONFIG_BASE_SMALL=y' kernel.config; then
+          echo "kernel is built with CONFIG_BASE_SMALL; pid_max is capped at 32768" >&2; exit 1
+        fi
         echo "kernel verified"
 
   vm:publish:
