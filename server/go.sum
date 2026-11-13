@@ -535,8 +535,8 @@ github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/ibuildthecloud-bot/vm v0.0.0-20261113034654-aa6ae604a06c h1:e01dE3euqSoRLLHsb46kzwMacstqMtQvV2GKY34NGv8=
-github.com/ibuildthecloud-bot/vm v0.0.0-20261113034654-aa6ae604a06c/go.mod h1:AaDzMI+l/pAuOJWX918yjp6iZTXHhAbN27LH7vv92x0=
+github.com/ibuildthecloud-bot/vm v0.0.0-20261113041318-5bb499908252 h1:zjNDKVfBM02Cq3vldHgkPdOUdgctoLXS0OWL9NHhAVM=
+github.com/ibuildthecloud-bot/vm v0.0.0-20261113041318-5bb499908252/go.mod h1:AaDzMI+l/pAuOJWX918yjp6iZTXHhAbN27LH7vv92x0=
 github.com/in-toto/in-toto-golang v0.5.0 h1:hb8bgwr0M2hGdDsLjkJ3ZqJ8JFLL/tgYdAxF/XEFBbY=
 github.com/in-toto/in-toto-golang v0.5.0/go.mod h1:/Rq0IZHLV7Ku5gielPT4wPHJfH1GdHMCq8+WPxw8/BE=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
