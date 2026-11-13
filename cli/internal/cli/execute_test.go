@@ -138,3 +138,29 @@ func TestAPlainTextAnswerIsNotAnUnreachableServer(t *testing.T) {
 		t.Fatalf("an answered request was marked unreachable: %v", err)
 	}
 }
+
+// A failure answered with no content type, as a proxy that could not reach
+// what it fronts answers it, is a status the caller can read, not a body the
+// generated client fails to decode for want of a media type.
+func TestAnAnswerWithNoContentTypeIsAPlainStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(server.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := textPlainErrorTransport{}.RoundTrip(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	var plain *plainStatusError
+	if !errors.As(err, &plain) || plain.code != http.StatusBadGateway || plain.body != "" {
+		t.Fatalf("err = %#v, want a plain 502 with no body", err)
+	}
+	if got, want := err.Error(), "request failed: 502 Bad Gateway"; got != want {
+		t.Fatalf("err = %q, want %q", got, want)
+	}
+}

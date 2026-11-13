@@ -126,3 +126,43 @@ func TestReprovisionEscapesWhatTheBoxWrote(t *testing.T) {
 		t.Fatalf("a control character reached the terminal: %q", out)
 	}
 }
+
+// A discobox whose agent predates reprovisioning answers the forwarded route
+// with net/http's own plain-text 404. The command names the cause and the
+// way forward, not the bare 404.
+func TestReprovisionOnAnAgentThatPredatesItNamesTheRemedy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"sandboxes":[` + reprovisionSandbox(`{}`) + `]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	refused := runCLIRefused(t, server.URL, "admin", "box", "reprovision", "--no-wait", reprovisionSandboxID)
+	if strings.Contains(refused, "404 page not found") || !strings.Contains(refused, "admin box upgrade") {
+		t.Fatalf("refused with %q, want the cause and `discobox admin box upgrade`, not the bare 404", refused)
+	}
+}
+
+// A discobox restarting under the request: its proxy answers a 502 with no
+// body. The command says the discobox could not be reached, not a decode
+// error.
+func TestReprovisionWhileTheBoxRestartsSaysSo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"sandboxes":[` + reprovisionSandbox(`{}`) + `]}`))
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+		}
+	}))
+	t.Cleanup(server.Close)
+	refused := runCLIRefused(t, server.URL, "admin", "box", "reprovision", "--no-wait", reprovisionSandboxID)
+	if strings.Contains(refused, "parse media type") || strings.Contains(refused, "decode response") || !strings.Contains(refused, "could not be reached") {
+		t.Fatalf("refused with %q, want a message, not a decode error", refused)
+	}
+}

@@ -912,8 +912,13 @@ func (t textPlainErrorTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if err != nil || resp == nil || resp.StatusCode < 400 {
 		return resp, err
 	}
-	ct, _, parseErr := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if parseErr != nil || ct != "text/plain" || resp.Body == nil {
+	// A failure answered with no content type at all is plain too: a proxy
+	// on the way that could not reach what it fronts answers a bare 502, and
+	// handed on it is a decode error about a media type rather than a status.
+	contentType := resp.Header.Get("Content-Type")
+	ct, _, parseErr := mime.ParseMediaType(contentType)
+	plain := contentType == "" || parseErr == nil && ct == "text/plain"
+	if !plain || resp.Body == nil {
 		return resp, err
 	}
 	body, readErr := io.ReadAll(resp.Body)
@@ -937,6 +942,9 @@ type plainStatusError struct {
 }
 
 func (e *plainStatusError) Error() string {
+	if e.body == "" {
+		return "request failed: " + e.status
+	}
 	return fmt.Sprintf("request failed: %s: %s", e.status, e.body)
 }
 
