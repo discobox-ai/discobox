@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,7 +47,9 @@ type Progress struct {
 	Images int
 	// Current and Total are bytes of what this image still needed when its
 	// download began. Total is known from the manifests before the first byte,
-	// and never grows.
+	// and never grows. Current is what is on disk: a blob's transfer that ends
+	// early keeps its bytes for the retry to carry on from, and one the
+	// registry sends again from the start takes them back off.
 	Current int64
 	Total   int64
 	// Layers and LayersComplete count the blobs this image still needed: how
@@ -56,8 +57,28 @@ type Progress struct {
 	// the layout already held, which is fetching nothing.
 	Layers         int
 	LayersComplete int
+	// Retry, when set, is the blob most recently being fetched again after its
+	// transfer ended early, for as long as it still is.
+	Retry *Retry
 	// Done marks the closing report, sent once every image is staged.
 	Done bool
+}
+
+// Retry describes a blob being fetched again after a transfer of it ended
+// early.
+type Retry struct {
+	// Layer is the blob's position among Progress.Layers, from 1.
+	Layer int
+	// Attempt is which try this is, from 2.
+	Attempt int
+	// Kept is how many of the blob's bytes the earlier attempts left on disk,
+	// which the retry asks the registry for the rest after. Zero when they
+	// left none, or left bytes that could never be the blob. A registry that
+	// ignores the request for the rest sends the whole blob again, and those
+	// bytes come back off Progress.Current.
+	Kept int64
+	// Err is what ended the last attempt.
+	Err error
 }
 
 // Options configures a staging.
@@ -345,10 +366,15 @@ func (s *stager) download(ctx context.Context, ref Reference, blobs []Descriptor
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var current, complete atomic.Int64
-	stopReporting := s.reportWhile(progress, &current, &complete)
+	var retry atomic.Pointer[Retry]
+	stopReporting := s.reportWhile(progress, &current, &complete, &retry)
 	defer stopReporting()
 
-	work := make(chan Descriptor)
+	type job struct {
+		blob  Descriptor
+		layer int
+	}
+	work := make(chan job)
 	var once sync.Once
 	var first error
 	var wg sync.WaitGroup
@@ -356,8 +382,20 @@ func (s *stager) download(ctx context.Context, ref Reference, blobs []Descriptor
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for blob := range work {
-				if err := s.fetch(ctx, ref, blob, &current); err == nil {
+			for job := range work {
+				// Only this blob's own retry is cleared when it ends: another
+				// blob's may have replaced it since.
+				var mine *Retry
+				onRetry := func(r Retry) {
+					r.Layer = job.layer
+					mine = &r
+					retry.Store(mine)
+				}
+				err := s.fetch(ctx, ref, job.blob, &current, onRetry)
+				if mine != nil {
+					retry.CompareAndSwap(mine, nil)
+				}
+				if err == nil {
 					complete.Add(1)
 				} else {
 					// The first failure is the one worth reporting; the rest are
@@ -369,9 +407,9 @@ func (s *stager) download(ctx context.Context, ref Reference, blobs []Descriptor
 		}()
 	}
 feed:
-	for _, blob := range blobs {
+	for i, blob := range blobs {
 		select {
-		case work <- blob:
+		case work <- job{blob: blob, layer: i + 1}:
 		case <-ctx.Done():
 			break feed
 		}
@@ -383,15 +421,14 @@ feed:
 
 // reportWhile reports progress now and on every tick until the returned func
 // is called, which reports once more.
-func (s *stager) reportWhile(progress Progress, current, complete *atomic.Int64) func() {
+func (s *stager) reportWhile(progress Progress, current, complete *atomic.Int64, retry *atomic.Pointer[Retry]) func() {
 	if s.report == nil {
 		return func() {}
 	}
 	emit := func() {
-		// A retried blob counts its first partial attempt too, so the count is
-		// held at the total rather than being allowed past it.
-		progress.Current = min(current.Load(), progress.Total)
+		progress.Current = current.Load()
 		progress.LayersComplete = int(complete.Load())
+		progress.Retry = retry.Load()
 		s.report(progress)
 	}
 	emit()
@@ -417,51 +454,57 @@ func (s *stager) reportWhile(progress Progress, current, complete *atomic.Int64)
 	}
 }
 
-// fetch downloads one blob, trying again after a failure.
-func (s *stager) fetch(ctx context.Context, ref Reference, blob Descriptor, current *atomic.Int64) error {
-	var err error
-	for attempt := 1; attempt <= downloadAttempts; attempt++ {
-		if err = s.fetchOnce(ctx, ref, blob, current); err == nil || ctx.Err() != nil {
-			return err
-		}
-		if attempt < downloadAttempts {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * time.Second):
-			}
-		}
-	}
-	return err
-}
-
-// fetchOnce downloads one blob through writeBlob, which renames it into place
-// only when the digest and the size both match. A blob's name is therefore a
-// claim about its content.
-func (s *stager) fetchOnce(ctx context.Context, ref Reference, blob Descriptor, current *atomic.Int64) error {
+// fetch downloads one blob, trying again after a failure. Every attempt writes
+// into the same temporary, so one whose transfer ended early leaves what it
+// received for the next to carry on from. The blob is renamed into place only
+// when its digest and its size both match, so a blob's name is a claim about
+// its content. held counts its bytes on disk; onRetry is told before each
+// attempt after the first.
+func (s *stager) fetch(ctx context.Context, ref Reference, blob Descriptor, held *atomic.Int64, onRetry func(Retry)) error {
 	if s.layout.hasBlob(blob) {
 		// Another staging finished it meanwhile.
 		return nil
 	}
-	if err := s.layout.writeBlob(blob.Digest, blob.Size, func(w io.Writer) error {
-		return s.registry.blob(ctx, ref, blob, io.MultiWriter(w, &countingWriter{total: current}))
-	}); err != nil {
+	part, err := s.layout.createPartial(blob.Digest, blob.Size, held)
+	if err != nil {
 		return fmt.Errorf("download %s: %w", blob.Digest, err)
 	}
-	return nil
-}
-
-type countingWriter struct {
-	total   *atomic.Int64
-	written int64
-}
-
-func (w *countingWriter) Write(p []byte) (int, error) {
-	w.written += int64(len(p))
-	if w.total != nil {
-		w.total.Add(int64(len(p)))
+	defer part.discard()
+	for attempt := 1; ; attempt++ {
+		var err error
+		if !part.verified {
+			err = s.registry.blob(ctx, ref, blob, part)
+		}
+		if err == nil {
+			err = part.commit()
+		}
+		if err == nil {
+			return nil
+		}
+		err = fmt.Errorf("download %s: %w", blob.Digest, err)
+		if ctx.Err() != nil || attempt == downloadAttempts {
+			return err
+		}
+		if !part.verified {
+			// A blob that is in hand and only failed to be renamed is not
+			// fetched again, so there is no retry of its transfer to report.
+			// A temporary that holds every byte and is still not the blob (its
+			// sync failed) is fetched again from the first byte: nothing kept.
+			kept := part.written
+			if kept >= blob.Size {
+				kept = 0
+			}
+			onRetry(Retry{Attempt: attempt + 1, Kept: kept, Err: err})
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+		if s.layout.hasBlob(blob) {
+			return nil
+		}
 	}
-	return len(p), nil
 }
 
 // prune drops the entries nothing staged recently, then the blobs no remaining
