@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -111,6 +113,32 @@ func TestKernelCmdlineResetsOnPanic(t *testing.T) {
 		return
 	}
 	t.Fatalf("kernel command line %q does not reset the guest on panic", kernelCmdline)
+}
+
+// A hard-locked guest must panic, so panic= resets it and repair takes over;
+// soft lockups and RCU stalls must not, since a busy Mac can deschedule a vCPU
+// past their thresholds with nothing wrong in the guest.
+func TestKernelCmdlinePanicsOnHardLockupOnly(t *testing.T) {
+	fields := strings.Fields(kernelCmdline)
+	if !slices.Contains(fields, "nmi_watchdog=panic") {
+		t.Fatalf("kernel command line %q does not panic on a hard lockup", kernelCmdline)
+	}
+	// The buddy detector checks every 1.2 thresholds, so the default of 10
+	// reads a vCPU the Mac descheduled for 12 s as a lockup and resets the pool.
+	if !slices.ContainsFunc(fields, func(field string) bool {
+		value, ok := strings.CutPrefix(field, "watchdog_thresh=")
+		threshold, err := strconv.Atoi(value)
+		return ok && err == nil && threshold >= 30
+	}) {
+		t.Fatalf("kernel command line %q lets a descheduled vCPU read as a hard lockup", kernelCmdline)
+	}
+	for _, field := range fields {
+		for _, fatal := range []string{"softlockup_panic=", "sysctl.kernel.softlockup_panic=", "sysctl.kernel.panic_on_rcu_stall="} {
+			if strings.HasPrefix(field, fatal) && !strings.HasSuffix(field, "=0") {
+				t.Fatalf("kernel command line %q makes %s fatal", kernelCmdline, strings.TrimSuffix(fatal, "="))
+			}
+		}
+	}
 }
 
 // Every VSOCK port is distinct, and matches the guest image's units. Two
