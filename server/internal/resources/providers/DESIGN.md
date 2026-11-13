@@ -14,8 +14,11 @@ rest of the config (ADR 26-10-31-694):
 
 - **Write.** The service splits a written config by the definition's secret
   fields: they go to `encrypted_config`, which the store seals, and `config`
-  keeps the rest. On update, a secret field the body leaves out keeps its
-  sealed value, a value replaces it, and null clears it. The update reads
+  keeps the rest. A field's key is a dotted path into the config
+  (`driver.apiKey` is `apiKey` in the `driver` object, ADR 26-11-11-080 §2),
+  sealed, kept and joined at its place. On update, a secret field the body
+  leaves out keeps its sealed value, a value replaces it, and null clears it,
+  but for a write that sets or changes a `Privileged` field (below). The update reads
   the row locked and writes it in one transaction. The config is validated whole,
   secret fields joined in, as create's is.
 - **Read.** Every answer carries `config` without secret fields and
@@ -81,7 +84,17 @@ flowchart LR
   changes a field the provider's definition marks `Immutable` while pools are
   bound. Such a field decides what made a pool's host, as a VM driver
   does, so a new value would leave hosts nothing can remove. Fields compare by
-  compacted JSON value, and an absent field differs from a present one.
+  compacted JSON value at the field's path, and an absent field differs from
+  a present one.
+- A write (create or update) that sets or changes a field the definition
+  marks `Privileged` — an endpoint the provider's secrets are sent to — is
+  refused (400) unless it carries every secret field in the same body, and
+  unless the new endpoint is one the server's `providerEndpoints` policy
+  allows: public, over TLS, or listed by the operator (`checkPrivilegedWrite`,
+  ADR 26-11-11-080 §§3–4). A field left as it is is not checked again. A
+  value the vm upgrade carried from the server's environment
+  (`CarriedEndpoints`) is the operator's, and its mark goes when a write
+  changes the field.
 - Startup reconciliation (`EnsureExistingSandboxProviderInstances`), run from
   `internal/service.Service.Start` once the reconcile engine is up, resolves
   every enabled instance in every project. Resolving runs the provider's

@@ -59,7 +59,8 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    URL each, and the scheme alone picks the transport ([`wire`](../pkg/wire),
    in the root module). The bootstrap also names the sandbox runtime: `docker`
    (the default) or `machine`, with its disco-vm driver, the disco-vm pool
-   its sandboxes' machines are made in, the base they boot, the provider
+   its sandboxes' machines are made in, the base they boot, the driver's
+   configuration as the provider's (no secret; ADR 26-11-11-080 §6), the provider
    network they share with the pool's machine, and that machine's public and
    private URLs. Every pool's bootstrap says whether it reaches its sandboxes'
    agents over TLS (`disableAgentEndpointTls`; [The Agent's
@@ -978,7 +979,8 @@ A machine pool's sandboxes are disco-vm machines on the pool's own engine
 bootstrap's driver and `MachinePool` scope, with a key source that reads
 `bundle.ProvisioningKeyFile` (a `machine.Key` as JSON) on every call, so a
 renewed key is a new file and nothing more; nothing of the file reaches an
-error. Only boxd is linked.
+error. It is made with the bootstrap's `DriverConfig`, so it calls the
+provider's endpoints and region. boxd and archil are linked.
 
 ```mermaid
 flowchart LR

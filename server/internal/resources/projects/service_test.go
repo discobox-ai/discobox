@@ -28,6 +28,10 @@ const testUserID = "user-1"
 // dragging provider validation or a reconcile engine into these tests.
 type stubProviders struct{ st *store.Store }
 
+// HasSandboxProviderType has every type but the retired vm (ADR
+// 26-11-11-080 §8).
+func (s stubProviders) HasSandboxProviderType(providerType string) bool { return providerType != "vm" }
+
 func (s stubProviders) CreateSandboxProviderInstance(ctx context.Context, projectID string, input services.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
 	provider := &model.SandboxProviderInstance{
 		ProjectID: projectID,
@@ -296,8 +300,8 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 func TestCreateProjectCopiesAProvidersSecretFields(t *testing.T) {
 	svc, st, ctx := newService(t)
 	source := seedSourceProject(ctx, t, st)
-	keyed := &model.SandboxProviderInstance{ProjectID: source.ID, Type: "vm", Name: "VM", Config: model.RawJSON(`{"driver":"boxd"}`)}
-	if err := store.SetSandboxProviderSecrets(keyed, map[string]json.RawMessage{"apiKey": json.RawMessage(`"bxd_key"`)}); err != nil {
+	keyed := &model.SandboxProviderInstance{ProjectID: source.ID, Type: "boxd", Name: "boxd", Config: model.RawJSON(`{"driver":{"region":"fra"}}`)}
+	if err := store.SetSandboxProviderSecrets(keyed, map[string]json.RawMessage{"driver.apiKey": json.RawMessage(`"bxd_key"`)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.CreateSandboxProviderInstance(ctx, keyed); err != nil {
@@ -317,13 +321,45 @@ func TestCreateProjectCopiesAProvidersSecretFields(t *testing.T) {
 	}
 	var given string
 	for _, provider := range providers {
-		if provider.Type == "vm" {
+		if provider.Type == "boxd" {
 			// stubProviders stores the create's config as it was given.
 			given = string(provider.Config)
 		}
 	}
-	if given != `{"apiKey":"bxd_key","driver":"boxd"}` {
-		t.Fatalf("copied vm provider was created with %q, want its config with the key joined in", given)
+	if given != `{"driver":{"apiKey":"bxd_key","region":"fra"}}` {
+		t.Fatalf("copied boxd provider was created with %q, want its config with the key joined in at its place", given)
+	}
+}
+
+// A vm row its upgrade disabled (ADR 26-11-11-080 §8) is of a type this
+// server no longer has: a copy leaves it and its pools behind, and copies
+// the rest, rather than failing whole.
+func TestCreateProjectCopyLeavesARetiredProviderTypeBehind(t *testing.T) {
+	svc, st, ctx := newService(t)
+	source := seedSourceProject(ctx, t, st)
+	retired := &model.SandboxProviderInstance{ProjectID: source.ID, Type: "vm", Name: "old-vz", Config: model.RawJSON(`{"driver":"vz"}`), Disabled: true}
+	if err := st.CreateSandboxProviderInstance(ctx, retired); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.ListSandboxProviderInstances(ctx, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Copy", CopyFromProjectId: apigen.NewOptString(source.ID)})
+	if err != nil {
+		t.Fatalf("a copy of a project with a retired provider: %v", err)
+	}
+	copied, err := st.ListSandboxProviderInstances(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(copied) != len(before)-1 {
+		t.Fatalf("copied %d providers of %d, want all but the retired one", len(copied), len(before))
+	}
+	for _, provider := range copied {
+		if provider.Type == "vm" {
+			t.Fatal("the retired vm provider was copied")
+		}
 	}
 }
 

@@ -244,6 +244,14 @@ carried as bytes. `SealProviderCredentials` runs at every start, before any
 provider resolves: it moves what an older server kept in `config` in the
 clear, from a list of type and key fixed in the migration rather than read
 from the definitions, and resolves an environment reference once.
+`MigrateVMProviders` (`vmproviders.go`) runs right after it, once per row
+still typed `vm` (ADR 26-11-11-080 §8): a row of a linked driver takes the
+driver's type, its sealed `apiKey` becomes the driver's secret
+(`driver.apiKey`), sealed to sealed, and a clear one is sealed then; the
+endpoints the server's environment gave the old driver are written into its
+`driver` fields and named in `carried_endpoints`, a server-held column no
+request writes, which marks them the operator's. Any other `vm` row is
+disabled and kept.
 
 ## Error Contract
 
@@ -273,6 +281,7 @@ Keep files split by resource area:
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
 | `sandbox_events.go` | Sandbox events: the per-transaction batch and its recording, the stream's reads, retention, and the backfill `database.Migrate` runs. |
 | `providers.go` | Provider instance persistence. |
+| `vmproviders.go` | The upgrade of each retired `vm` provider row to its driver's type (`MigrateVMProviders`). |
 | `pools.go` | Pool persistence: CRUD, enrollment (the key a pool's maker read from its box) and heartbeats (the first registers it), telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go` | Secrets (sealed values), secret requests and refresh requests. |
 | `secret_bindings.go`, `effective_bindings.go` | Bindings with their events and cascades, and what applies at a target (narrowest per variable). |

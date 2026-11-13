@@ -27,6 +27,10 @@ import (
 // scheduling, and built-in harness seeding against current images.
 type ProviderInstances interface {
 	CreateSandboxProviderInstance(ctx context.Context, projectID string, input services.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error)
+	// HasSandboxProviderType reports whether this server has the provider
+	// type: a row of a retired type (a vm row its upgrade disabled, ADR
+	// 26-11-11-080 §8) is kept, but nothing can be made of it.
+	HasSandboxProviderType(providerType string) bool
 }
 
 type Pools interface {

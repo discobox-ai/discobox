@@ -117,6 +117,13 @@ func providerStatusToService(status sandboxesvc.ProviderStatus) services.Provide
 	return out
 }
 
+// HasSandboxProviderType reports whether this server registers the provider
+// type.
+func (s *Service) HasSandboxProviderType(providerType string) bool {
+	_, ok := s.sandboxes.SandboxProviderManager().GetProviderDefinition(providerType)
+	return ok
+}
+
 func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")

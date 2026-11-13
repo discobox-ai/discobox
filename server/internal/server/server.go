@@ -238,7 +238,7 @@ func Run(ctx context.Context) error {
 		ArchiveRetention:               cfg.ArchiveRetention,
 		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
 		PoolOutbound:                   cfg.PoolOutbound,
-		ProviderEndpoints:              sandbox.EndpointPolicy{Allowed: cfg.ProviderEndpoints},
+		ProviderEndpoints:              sandbox.EndpointPolicy{Allowed: cfg.ProviderEndpoints, Proxy: sandbox.EnvironmentProxy()},
 		ServerDefaults: dockerworker.ServerDefaults{
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,
 			PoolAgentBundle:  cfg.PoolAgentBundle,

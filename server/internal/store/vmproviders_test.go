@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/encryption"
@@ -97,5 +98,28 @@ func TestMigrateVMProvidersCarriesNothingUnset(t *testing.T) {
 	}
 	if secrets := openedSecrets(t, st, row); secrets["driver.apiKey"] != "bxd_key" {
 		t.Fatalf("prov-boxd sealed fields = %v", secrets)
+	}
+}
+
+// A vm row whose clear key SealProviderCredentials did not seal (the keyring
+// refused it on that start) is sealed by the move itself: the new type's
+// secret field no longer names apiKey, so a key left clear in its config
+// would be returned by every read and never sealed again.
+func TestMigrateVMProvidersSealsAKeyLeftClear(t *testing.T) {
+	ctx := context.Background()
+	st, db := newTestStoreWithDB(t, true)
+	rawProviderRow(t, db, "prov-boxd", "vm", `{"driver":"boxd","apiKey":"bxd_clear"}`)
+	if err := st.MigrateVMProviders(ctx, func(string) (string, bool) { return "", false }); err != nil {
+		t.Fatal(err)
+	}
+	row := providerRow(t, db, "prov-boxd")
+	if row.Type != "boxd" || strings.Contains(string(row.Config), "bxd_clear") || configFields(t, row)["apiKey"] != nil {
+		t.Fatalf("prov-boxd = %q config %s, want a boxd row with no key in its config", row.Type, row.Config)
+	}
+	if !encryption.Sealed(row.EncryptedConfig) || bytes.Contains(row.EncryptedConfig, []byte("bxd_clear")) {
+		t.Fatalf("prov-boxd's key is not sealed: %q", row.EncryptedConfig)
+	}
+	if secrets := openedSecrets(t, st, row); secrets["driver.apiKey"] != "bxd_clear" {
+		t.Fatalf("prov-boxd sealed fields = %v, want the clear key as driver.apiKey", secrets)
 	}
 }

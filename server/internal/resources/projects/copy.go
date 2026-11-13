@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -154,6 +155,14 @@ func (s *Service) copyProviders(ctx context.Context, sourceProjectID, projectID 
 	ids := make(map[string]string, len(sourceProviders))
 	for i := range sourceProviders {
 		sourceProvider := &sourceProviders[i]
+		// A row of a type this server no longer has (a vm row its upgrade
+		// disabled, ADR 26-11-11-080 §8) is left behind, with its pools,
+		// which copyPools skips without their provider: its pools never ran,
+		// and nothing could be made of it.
+		if !s.providers.HasSandboxProviderType(sourceProvider.Type) {
+			slog.WarnContext(ctx, "a provider of a type this server no longer has is not copied", "project", sourceProjectID, "provider", sourceProvider.ID, "type", sourceProvider.Type)
+			continue
+		}
 		// The copy carries the source's secret fields, sealed again in its
 		// own row (ADR 26-10-31-694 §5): a sealed value is bound to the row
 		// it was sealed in, so it is opened and given to the create whole.

@@ -921,7 +921,7 @@
       ]
     },
     "providerEndpoints": {
-      "description": "Endpoints a provider may send its key to beyond public https hosts, private ones included: each a HOST (every port) or HOST:PORT. A provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise name only a public host over TLS. The environment variable takes a comma-separated list. Environment: DISCOBOX_PROVIDER_ENDPOINTS (takes precedence over this file).",
+      "description": "Endpoints a provider may send its key to beyond public https hosts, private ones included: each a HOST (every port) or HOST:PORT. A provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise name only a public host over TLS. Through an egress proxy a listed host is also the only kind reached by name: any other is resolved by the server and the proxy asked for that address, so a server that resolves names only through its proxy, or a proxy that allows only hostnames, lists its providers' hosts here (for boxd, boxd.sh and app.boxd.sh). The environment variable takes a comma-separated list. Environment: DISCOBOX_PROVIDER_ENDPOINTS (takes precedence over this file).",
       "examples": [
         [
           "boxd.internal.example.com",

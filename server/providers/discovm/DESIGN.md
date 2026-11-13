@@ -4,7 +4,7 @@ Package `discovm` registers a provider type for each disco-vm driver the build
 links, by the driver's own name (`boxd`, `archil`, `hcs` on Windows; ADR
 26-11-11-080 §1), all served by one `poolruntime.RuntimeProvider`
 for pools whose sandboxes are disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
-beside `dockerworker.Engine` rather than under it: a vm pool has no
+beside `dockerworker.Engine` rather than under it: such a pool has no
 pool-agent container, Docker daemon or sandbox network of the engine's
 (ADR 26-10-09-106 §1). This package holds the provider kind, the embedded
 engine and its shim, and pool hosting: a remote driver's pool machine, made
@@ -42,8 +42,10 @@ are separate follow-ups. This cutover provides no bootstrap/state migration.
   scope and its state, and every image and instance is read from it.
   `driverConfig` is the one `machine.Config` the server and its shims make a
   driver with: the state root as `Dir`, this binary's shim as `ShimCommand`,
-  and as `Keys` the provider's `apiKey` for a remote driver (`providerKeys`),
-  none for a local one.
+  as `Keys` the provider's secret (`driver.apiKey`, which `decode` takes out
+  of the driver's configuration) for a remote driver (`providerKeys`), none
+  for a local one, as `DriverConfig` the rest of the provider's `driver`
+  object, and as `Dial` the checked dial (Drivers, below).
 - One state root per driver per host (`stateRoot`, under the platform's data
   directory), shared by every provider instance on that driver; it is not
   configurable. Only a local driver keeps anything in it. Each provider
@@ -57,7 +59,7 @@ are separate follow-ups. This cutover provides no bootstrap/state migration.
   - **local driver**: `discobox` (`localPool`) for every provider
     instance. The engine counts a driver's running-guest cap at `Start`
     over the driver's instances, which are its scope's, so one scope per
-    root is what makes vz's two running macOS guests the host's (ADR
+    root is what makes a driver's cap of running guests the host's (ADR
     26-10-09-106 §4). It is not disco-vm's default scope, which is the
     disco-vm CLI's.
 - Which scope follows from the driver's kind, so the driver is made in
@@ -126,7 +128,12 @@ never read. The one exception is the upgrade of a `vm` row
 Every connection the engine makes to the driver's service goes through
 `sandbox.EndpointPolicy.Dial` (`machine.Config.Dial`): an address that is not
 public is refused unless the operator's `providerEndpoints` or the row's
-carried endpoints name it. A refused dial is the pool's error, never
+carried endpoints name it. A driver given a dialer reads no proxy variable,
+so the dial proxies as the driver would have: through `HTTPS_PROXY` (under
+`NO_PROXY`), or else a SOCKS5 `ALL_PROXY`, of the server's environment
+(`sandbox.EnvironmentProxy`), to the address the server resolved and
+checked; a name it cannot resolve is refused, unless the operator lists it
+or it was carried, and those go to the proxy by name. A refused dial is the pool's error, never
 `unreachable`: the reconciler would wait on it unseen.
 
 A pool on a driver reached at its URLs that cannot fence its machines
@@ -138,9 +145,10 @@ pools: they decide where a pool's machines are, and only the driver that
 made a pool's host can find and remove it.
 
 A pool names the OS its sandboxes run when it is created (ADR 26-11-11-963
-§1). `ValidatePoolOS`, registered as the type's `PoolOSValidator`, takes the
-OSes the driver's `Capabilities().GuestOS` reports, never the driver's name:
-linux on every driver that boots it, darwin on vz. hcs reports only windows,
+§1). The type's `PoolOSValidator` takes the OSes the driver's
+`Capabilities().GuestOS` reports, never the driver's name: linux on every
+driver that boots it (no linked driver boots darwin; vz is not linked), and
+refuses a driver that cannot fence its pools (`fences`, above). hcs reports only windows,
 so a pool on it is refused, linux included, until the Windows work ADR
 26-11-11-963 §13 defers.
 

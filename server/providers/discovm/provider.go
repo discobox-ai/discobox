@@ -246,18 +246,18 @@ func validateFor(s settings, local bool) error {
 
 // FactoryWithPoolManager makes the named driver's provider instances. hub is
 // the server's carrier hub, which a pool with no controlPlaneUrl is reached
-// through (ADR 26-10-30-875). endpoints is where the driver may connect: every
-// connection the engine makes to the driver's service is checked against it
-// as it is dialed, the instance's carried endpoints allowed (ADR 26-11-11-080
-// §§3, 8).
-func FactoryWithPoolManager(name string, poolManager poolruntime.PoolManager, hub *carrierhub.Hub, endpoints sandbox.EndpointPolicy) sandbox.ProviderFactory {
+// through (ADR 26-10-30-875). endpoints is where the driver may connect, read
+// as each instance is made: every connection the engine makes to the
+// driver's service is checked against it as it is dialed, the instance's
+// carried endpoints allowed (ADR 26-11-11-080 §§3, 8).
+func FactoryWithPoolManager(name string, poolManager poolruntime.PoolManager, hub *carrierhub.Hub, endpoints func() sandbox.EndpointPolicy) sandbox.ProviderFactory {
 	definition := Definition(name)
 	return func(_ context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		s, err := decode(name, instance.Config)
 		if err != nil {
 			return nil, err
 		}
-		runtime, err := newRuntime(s, instance.ID, endpoints.Dial(carriedValues(instance), nil))
+		runtime, err := newRuntime(s, instance.ID, endpoints().Dial(carriedValues(instance), nil))
 		if err != nil {
 			return nil, err
 		}
@@ -354,17 +354,19 @@ func Definition(name string) sandbox.ProviderDefinition {
 	}
 }
 
-// Register registers a provider type for each driver of Types with manager.
-// A driver whose name is already a provider type panics, as disco-vm's own
-// duplicate registration does: a disco-vm driver added under a taken name
-// fails the build's tests, never a user's server (ADR 26-11-11-080 §1).
-func Register(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, hub *carrierhub.Hub, endpoints sandbox.EndpointPolicy) {
+// Register registers a provider type for each driver of Types with manager,
+// whose endpoint policy (ADR 26-11-11-080 §3) its instances dial under, as
+// the providers service checks a write under it. A driver whose name is
+// already a provider type panics, as disco-vm's own duplicate registration
+// does: a disco-vm driver added under a taken name fails the build's tests,
+// never a user's server (ADR 26-11-11-080 §1).
+func Register(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, hub *carrierhub.Hub) {
 	for _, name := range Types() {
 		if _, taken := manager.GetProviderDefinition(name); taken {
 			panic(fmt.Sprintf("discovm: the disco-vm driver %q is named as a provider type that is already registered: do not link it", name))
 		}
 		manager.RegisterProviderDefinition(name, Definition(name))
-		manager.RegisterFactory(name, FactoryWithPoolManager(name, poolManager, hub, endpoints))
+		manager.RegisterFactory(name, FactoryWithPoolManager(name, poolManager, hub, manager.EndpointPolicy))
 		manager.RegisterProviderConfigValidator(name, Validator(name))
 		manager.RegisterPoolOSValidator(name, PoolOSValidator(name))
 		for _, variable := range environment(name) {
