@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -82,7 +83,7 @@ func (g *fenceGuest) CopyTo(_ context.Context, dir string, stream io.Reader) err
 		if err != nil {
 			return err
 		}
-		name := filepath.Join(dir, header.Name)
+		name := path.Join(dir, header.Name) // a guest path, slash-separated on every host
 		g.files[name] = string(data)
 		placed = append(placed, name)
 	}
