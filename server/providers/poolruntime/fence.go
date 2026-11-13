@@ -70,7 +70,7 @@ nft list table inet ` + fenceTable
 var deviceName = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 
 // fenceRules is the rule set that fences uplinks: on each, input and forward
-// admit only replies to the machine's connections, and IPv6 neighbour and
+// admit only replies to the machine's connections, and IPv6 neighbor and
 // router discovery, without which the device has no IPv6 way out. Anything on
 // loopback, or on a bridge the pool makes for its builds, is not touched.
 // Each device has a rule of its own, not a set, so the kernel lists the rules
