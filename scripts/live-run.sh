@@ -463,19 +463,18 @@ fi
 pass preflight "tools on PATH, \$$key_var set, the server ${server:-local} answers"
 
 echo "--- provider" >&2
-# The provider's config, on the vm type as the server takes it today: the
-# driver and its sealed apiKey, with no deliverProviderKey, so the key never
-# goes on a pool's machine (the plan's Q2). ADR 26-11-11-080 replaces this
-# with a provider type per driver (#1006), which B6, this run's one live use,
-# waits on; this is the one place that changes then.
+# The provider's config, on the driver's own provider type (ADR
+# 26-11-11-080 §§1–2): its sealed key as driver.apiKey, with no
+# deliverProviderKey, so the key never goes on a pool's machine (the plan's
+# Q2).
 config=$work/provider.json
 if [ "$dry" = 1 ]; then
-	jq -n --arg driver "$driver" --arg var "$key_var" '{driver: $driver, apiKey: ("<$" + $var + ">")}' >"$config"
+	jq -n --arg var "$key_var" '{driver: {apiKey: ("<$" + $var + ">")}}' >"$config"
 	note "config: $(jq -c . "$config")"
 else
-	KEY_VAR=$key_var jq -n --arg driver "$driver" '{driver: $driver, apiKey: $ENV[$ENV.KEY_VAR]}' >"$config"
+	KEY_VAR=$key_var jq -n '{driver: {apiKey: $ENV[$ENV.KEY_VAR]}}' >"$config"
 fi
-if ! dcout out 0 '{"id":"prov_dryrun"}' -o json admin provider create --type vm --name "$name" --config "@$config"; then
+if ! dcout out 0 '{"id":"prov_dryrun"}' -o json admin provider create --type "$driver" --name "$name" --config "@$config"; then
 	rm -f "$config"
 	fail provider "could not create: $err"
 	exit 1
