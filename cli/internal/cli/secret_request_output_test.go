@@ -266,3 +266,44 @@ func TestApprovalHistoryDistinguishesEmptyGrantRestrictions(t *testing.T) {
 		t.Fatalf("out=%s", out.String())
 	}
 }
+
+// A request whose routes name a body place decodes and shows it, from the
+// list, one request, and its approval: the CLI that could not read a route
+// with a body could not answer such a request (#1097).
+func TestARequestWithABodyPlaceRouteDecodesEverywhere(t *testing.T) {
+	const requestID = "request-1"
+	request := `{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","sandboxId":"sbx-1","status":"pending","envName":"BOXD_KEY",` +
+		`"use":{"routes":[{"hosts":["app.boxd.sh"],"methods":["POST"],"paths":["/api/v1/auth/token"],"body":{"places":["/api_key"]}}]},` +
+		`"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
+			_, _ = w.Write([]byte(`{"secretRequests":[` + request + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(request))
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			_, _ = w.Write([]byte(strings.Replace(request, `"status":"pending"`, `"status":"approved","secretId":"sec_1"`, 1)))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"sec_1","projectId":"project-1","name":"boxd","type":"token","maxBindingTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-bindings":
+			_, _ = w.Write([]byte(`{"secretBindings":[]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/bound-secrets":
+			_, _ = w.Write([]byte(`{"boundSecrets":[]}`))
+		default:
+			t.Logf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	for _, args := range [][]string{
+		{"secret", "request", "ls"},
+		{"secret", "request", "get", requestID},
+		{"secret", "request", "approve", requestID, "--secret", "sec_1"},
+	} {
+		out := runCLI(t, server.URL, args...)
+		if args[2] == "get" && !strings.Contains(out, "body=/api_key") {
+			t.Errorf("%v does not show the body place:\n%s", args, out)
+		}
+	}
+}
