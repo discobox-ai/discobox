@@ -2699,6 +2699,13 @@ digest, because "is 41 bytes, not the 76312841 this build expects" is the legibl
 complaint for a truncated download or a URL that has started serving something
 else.
 
+An image's count is what is on disk. A layer whose transfer ended early is
+resumed from its bytes, or, when the registry sends it whole again, counted
+from zero again; while it is, the line names it, so a count that slows or steps
+back is not a download that looks finished:
+
+    ⠋ Downloading images (3 of 3): discobox-sandbox-base:v1 — 426.7 MiB of 463.4 MiB, retrying layer 3 of 9 after its transfer ended at 172.0 MiB
+
 The download narrates before the console's window opens, not inside it. The
 window needs a server to list from, so the download is already over by the time
 there is a window. Pool preload is narrated by the sandbox create wait.

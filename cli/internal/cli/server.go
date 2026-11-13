@@ -318,7 +318,16 @@ func imagesStageText(report imagecache.Progress) string {
 	if report.Image == "" {
 		return line
 	}
-	return line + ": " + shortImage(report.Image) + bytesSuffix(report.Current, report.Total, 0, 0)
+	line += ": " + shortImage(report.Image) + bytesSuffix(report.Current, report.Total, 0, 0)
+	if retry := report.Retry; retry != nil {
+		// Said for as long as the layer is being fetched again, so a count that
+		// slows or steps back reads as the retry it is.
+		line += fmt.Sprintf(", retrying layer %d of %d", retry.Layer, report.Layers)
+		if retry.Kept > 0 {
+			line += " after its transfer ended at " + humanBytes(retry.Kept)
+		}
+	}
+	return line
 }
 
 func (a *App) newServerShutdownCommand() *cobra.Command {
