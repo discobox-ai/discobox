@@ -116,7 +116,8 @@ reading the engine:
   is the socket-transport rule the docker provider applies to bind mounts — the host socket locally, the in-VM daemon over SSH for
   DigitalOcean, VSOCK terminated at a private Unix socket for libkrun, a VSOCK
   connection to the VM for `vz`, or a guest Unix-socket dial over the WSL
-  session for `wslc`. `NewDockerClientForDialer` adapts any `net.Conn`
+  session for `wslc`. Its context bounds the acquiring only (an SSH handshake
+  included); the lease outlives it. `NewDockerClientForDialer` adapts any `net.Conn`
   dialer; `dockerworker/sshdocker` is the shared pure-Go SSH-to-docker-socket
   dialer for cloud VM drivers and for `ssh://` endpoints from the exec driver.
 - `AcquirePoolAgentClient`: an HTTP lease reaching the pool-agent API — the
@@ -131,7 +132,10 @@ reading the engine:
   [Guest Image Artifacts](#guest-image-artifacts).
 
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
-deadline), so drivers never implement boot polling.
+deadline), so drivers never implement boot polling. The deadline bounds each
+attempt as well as the polling: a wedged guest can accept a connection and
+never answer it, and the reconcile context never ends, so an unbounded ping
+would hold the pool in `waiting_for_docker` and never reach repair.
 
 ## VM Lifetime
 
