@@ -287,11 +287,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 		metadata[metadataPrimary] = "true"
 	}
 	execReq := execs.CreateRequest{
-		ID:       id,
-		Shell:    true,
-		Workdir:  workdir,
-		Env:      env,
-		User:     cloneUser(s.defaultUser),
+		ID:      id,
+		Shell:   true,
+		Workdir: workdir,
+		Env:     env,
+		// No user: the exec's default is s.defaultUser by construction, and a
+		// request restating it whole would name a home, which a sandbox with
+		// one account refuses from a request (runuser.resolveOneAccount).
 		TTY:      true,
 		Rows:     req.Rows,
 		Cols:     req.Cols,
@@ -469,9 +471,9 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 		}
 	}
 	revived, err := s.execs.Relaunch(ctx, execs.RelaunchRequest{
-		ID:             id,
-		Env:            env,
-		User:           cloneUser(s.defaultUser),
+		ID:  id,
+		Env: env,
+		// No user, as for a launch: the default is s.defaultUser.
 		StartupCommand: startup,
 	})
 	if err != nil {
@@ -1192,27 +1194,6 @@ func cloneMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
-}
-
-func cloneUser(in *execs.User) *execs.User {
-	if in == nil {
-		return nil
-	}
-	out := *in
-	out.Name = strings.TrimSpace(out.Name)
-	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
-	out.UID = cloneInt64(in.UID)
-	out.GID = cloneInt64(in.GID)
-	out.AdditionalGroups = append([]string(nil), in.AdditionalGroups...)
-	return &out
-}
-
-func cloneInt64(in *int64) *int64 {
-	if in == nil {
-		return nil
-	}
-	out := *in
-	return &out
 }
 
 // CurrentHarnessID is the sandbox's selected harness, independent of a
