@@ -25,7 +25,7 @@ import (
 // is said when it is chosen, on a card of its own, rather than beside every
 // row. The first that can answer is highlighted, or a new one when none can.
 func (m *Model) askWhichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
-	return m.whichCredential(req, secrets, held, "")
+	return m.whichCredential(req, secrets, held, "", defaultRequestTTL(req))
 }
 
 // Why a secret cannot answer a request (cannotAnswer).
@@ -57,7 +57,7 @@ func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, pinned, rea
 
 // whichCredential is step 1 with the cursor on at, or on the first secret
 // that can answer when at is empty.
-func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, at string) tea.Cmd {
+func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, at string, ttl time.Duration) tea.Cmd {
 	holder, pinned := heldBy(held)
 	readable := func(s Secret) bool {
 		return slices.ContainsFunc(secrets, func(r Secret) bool { return r.ID == s.ID })
@@ -101,10 +101,16 @@ func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []
 		}
 	}
 
+	items = append(items, action{key: "ttl", label: "For " + lifetime.Label(ttl) + " · change…", enabled: true})
 	d := actionsDialog("Credential request", m.credentialSentence(req), items, func(key string) tea.Cmd {
-		again := func() tea.Cmd { return m.whichCredential(req, secrets, held, key) }
+		again := func() tea.Cmd { return m.whichCredential(req, secrets, held, key, ttl) }
+		if key == "ttl" {
+			return m.askHowLong(req, requestAnswer{ttl: ttl}, again, func(chosen time.Duration) tea.Cmd {
+				return m.whichCredential(req, secrets, held, "", chosen)
+			})
+		}
 		if key == "new" {
-			return m.enterNewCredential(req, secrets, held, holder.SecretID, again)
+			return m.enterNewCredential(req, secrets, held, holder.SecretID, ttl, again)
 		}
 		i := slices.IndexFunc(ordered, func(s Secret) bool { return s.ID == key })
 		if i < 0 {
@@ -114,8 +120,15 @@ func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []
 		if reason := why(s); reason != "" {
 			return m.whyNotCompatible(req, s, reason, heldSecret(secrets, holder), again)
 		}
-		ans := requestAnswer{credential: s.Name, secret: s, credentialRoutes: s.Routes, maxTTL: s.MaxTTL, held: held, holderID: holder.SecretID}
-		return m.readStanding(req, ans, again)
+		ans := requestAnswer{credential: s.Name, secret: s, credentialRoutes: s.Routes, maxTTL: s.MaxTTL, ttl: ttl, held: held, holderID: holder.SecretID}
+		proceed := func(chosen time.Duration) tea.Cmd {
+			ttl, ans.ttl = chosen, chosen
+			return m.readStanding(req, ans, again)
+		}
+		if !withinLimit(s, ttl) {
+			return m.askHowLong(req, ans, again, proceed)
+		}
+		return proceed(ttl)
 	})
 	d.titleRight = "credential"
 	d.answerLabel = "Which credential should it get?"
@@ -145,7 +158,7 @@ type standingReadMsg struct {
 }
 
 // readStanding reads what the asking box holds of a saved secret before
-// anything is decided, so the last step can say what approving replaces:
+// anything is decided, so the approval cards can say what approving replaces:
 // the box's own bindings of it, their parent IDs,
 // and what applies in the variable the use part names. back is step 1.
 func (m *Model) readStanding(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
@@ -206,7 +219,7 @@ func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
 // enterNewCredential is step 2 for a credential the project does not hold
 // yet: its name, filled from the request, and its value. back is step 1.
 // Nothing is stored here; the value is held only by this card.
-func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, back func() tea.Cmd) tea.Cmd {
+func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, ttl time.Duration, back func() tea.Cmd) tea.Cmd {
 	name := textRow("name", "Name", "what you'll know it by", freeSecretName(secrets, credentialName(req)))
 	name.required = "give it a name"
 	source := pickRow("source", "Get it by",
@@ -317,7 +330,7 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 			f.cursor, f.err = 0, "it names no exact host a new credential can be held to — only patterns, or hosts it blocks — so store it on the secrets screen (F4) with the routes it should have"
 			return nil
 		}
-		ans := requestAnswer{credential: n, fresh: true, value: f.value("value"), credentialRoutes: []secretroute.Route{{Hosts: hosts}}, held: held, holderID: holderID}
+		ans := requestAnswer{credential: n, fresh: true, value: f.value("value"), credentialRoutes: []secretroute.Route{{Hosts: hosts}}, held: held, holderID: holderID, ttl: ttl}
 		if chosen != auto(f) {
 			ans.format = chosen
 		}
@@ -569,7 +582,7 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 		d.formActions = append(d.formActions, action{key: "use-as", label: "Add or replace…", enabled: true})
 	}
 	d.titleRight = "summary"
-	d.body = m.credentialSentence(req) + " Answering with “" + ans.credential + "”."
+	d.body = m.credentialSentence(req) + " Answering with “" + ans.credential + "” for " + lifetime.Label(ans.ttl) + "."
 	what := section{label: ans.credential + " would be"}
 	if req.Use != nil {
 		what.fields = append(what.fields, field{label: "used by this box", value: partSummary(req.Use), tone: toneAccent})
@@ -580,7 +593,16 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	if note := ans.additionNote(req); note != "" {
 		what.lines = append(what.lines, line{text: note, tone: toneDim})
 	}
+	preview := ans
+	preview.use, preview.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
 	d.sections = []section{what}
+	if req.Use != nil {
+		d.sections = append(d.sections, choiceSection("its own use", req.Use, preview.useChoice, preview))
+	}
+	if req.Delegate != nil {
+		d.sections = append(d.sections, choiceSection("its workers", req.Delegate, preview.delegateChoice, preview))
+	}
+	d.sections = append(d.sections, approvalConsequences(req, preview)...)
 	d.keys = []hint{says("←→ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
 	m.withRawRequest(d, req)
 	d.onCancel = back
@@ -692,6 +714,14 @@ func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool,
 	d.titleRight = step
 	d.body = body
 	d.sections = []section{choiceSection(label, part, *choice, ans)}
+	d.body += " For " + lifetime.Label(ans.ttl) + "."
+	preview := ans
+	if delegate {
+		preview.delegate, preview.delegateChoice = PartApprove, *choice
+	} else {
+		preview.use, preview.useChoice = PartApprove, *choice
+	}
+	d.sections = append(d.sections, approvalConsequences(req, preview)...)
 	if len(part.Roles) > 0 {
 		roles := section{label: "the roles it asked for · the discobox's words"}
 		for _, role := range part.Roles {
@@ -860,32 +890,34 @@ func (m *Model) routesEdited(msg routesEditedMsg) tea.Cmd {
 	return msg.then(string(b), err)
 }
 
-// partsAnswered ends the decisions. Every part denied is the request
-// denied; otherwise how long is asked last. Back from it is the card that
-// decided.
+// partsAnswered sends the decisions at the lifetime selected with the
+// credential. Every part denied denies the request instead.
 func (m *Model) partsAnswered(req CredentialRequest, ans requestAnswer) tea.Cmd {
 	if ans.use != PartApprove && ans.delegate != PartApprove {
 		return m.denyCredential(req)
 	}
-	decided := m.dialog
-	return m.askHowLong(req, ans, func() tea.Cmd { m.dialog = decided; return nil })
+	return m.sendAnswer(req, ans)
 }
 
-// askHowLong is the last step: how long the box holds what was approved,
-// over everything the approval is — the credential, each part's answer and
-// what it is approved for, and what it replaces at the lifetime under the
-// cursor (ADR 26-11-04-616 §4). It opens on what the box asked for, or an
-// hour; a saved credential's limit takes the longer choices away, saying
-// why. Choosing one sends the answer.
-func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
-	asked := req.AskedTTL
-	if asked <= 0 || asked%time.Second != 0 {
-		asked = agentcreds.DefaultGrantTTL
+func defaultRequestTTL(req CredentialRequest) time.Duration {
+	if req.AskedTTL <= 0 || req.AskedTTL%time.Second != 0 {
+		return agentcreds.DefaultGrantTTL
 	}
+	return req.AskedTTL
+}
+
+// askHowLong edits the one-line lifetime option on credential selection.
+// It grants nothing: the following approval cards show the consequences at
+// the selected lifetime and keep the read-to-end gate before sending.
+func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
 	limit := "“" + ans.credential + "” credential allows at most " + lifetime.Label(ans.maxTTL)
 	var items []action
 	cursor := 0
-	for i, d := range lifetimeChoices(req.AskedTTL) {
+	choices := lifetimeChoices(req.AskedTTL)
+	if !slices.Contains(choices, ans.ttl) {
+		choices = append(choices, ans.ttl)
+	}
+	for i, d := range choices {
 		item := action{key: strconv.FormatInt(lifetime.Seconds(d), 10), label: lifetime.Label(d), enabled: true}
 		if d == req.AskedTTL && req.AskedTTL > 0 {
 			item.label += " · what it asked for"
@@ -893,125 +925,61 @@ func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func()
 		if !withinLimit(Secret{MaxTTL: ans.maxTTL}, d) {
 			item.enabled, item.why = false, limit
 		}
-		if d == asked {
+		if d == ans.ttl {
 			cursor = i
 		}
 		items = append(items, item)
 	}
 	items = append(items, action{key: "custom", label: "Custom…", enabled: true})
-	what := ans.credential
-	if ans.use != PartApprove {
-		what += ", to give to its workers,"
-	}
 	var d *dialog
-	d = actionsDialog("Credential request", "How long should Discobox “"+boxLabel(m, req)+"” hold "+what+"?", items, func(key string) tea.Cmd {
+	d = actionsDialog("Credential request", "How long should the credential be available?", items, func(key string) tea.Cmd {
 		if key == "custom" {
-			return m.customHowLong(req, ans, limit, func() tea.Cmd { m.dialog = d; return nil }, func(ttl time.Duration) tea.Cmd {
-				ans.ttl = ttl
-				return m.sendAnswer(req, ans)
-			})
+			return m.customHowLong(ans.maxTTL, limit, func() tea.Cmd { m.dialog = d; return nil }, done)
 		}
 		seconds, _ := strconv.ParseInt(key, 10, 64)
-		ans.ttl = time.Duration(seconds) * time.Second
-		return m.sendAnswer(req, ans)
+		return done(time.Duration(seconds) * time.Second)
 	})
 	d.titleRight = "how long"
-	// What it replaces is read to its end before a lifetime sends it, as on
-	// every approval card (ADR 26-11-04-616 §4): a short window must not
-	// leave the consequences below the fold.
-	d.requireEnd, d.decisionsBlocked = true, true
 	d.cursor = d.nextEnabled(cursor, -1)
-	d.refreshSections = func() {
-		ttl, known := time.Duration(0), false
-		if d.cursor >= 0 && d.cursor < len(d.items) && d.items[d.cursor].key != "custom" {
-			seconds, _ := strconv.ParseInt(d.items[d.cursor].key, 10, 64)
-			ttl, known = time.Duration(seconds)*time.Second, true
-		}
-		d.sections = answerSections(req, ans, ttl, known)
+	if ans.credential != "" && !withinLimit(Secret{MaxTTL: ans.maxTTL}, ans.ttl) {
+		d.body = "The selected lifetime exceeds the limit. " + limit + ". Choose a shorter lifetime."
 	}
-	d.keys = []hint{says("↑↓ moves"), pressing("Enter sends", "enter"), pressing("Esc goes back", "esc")}
+	d.keys = []hint{says("↑↓ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
 	m.withRawRequest(d, req)
 	d.onCancel = back
 	m.dialog = d
 	return nil
 }
 
-// customHowLong takes a lifetime typed as the CLI's flags take one, over
-// the whole approval and what it replaces at the lifetime typed so far: a
-// custom one is held to the same consequences as a preset (ADR 26-11-04-616
-// §4), read to their end before it sends.
-func (m *Model) customHowLong(req CredentialRequest, ans requestAnswer, limit string, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
+// customHowLong edits the lifetime before approval; it never sends a grant.
+func (m *Model) customHowLong(maxTTL time.Duration, limit string, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
 	input := textRow("ttl", "For", "90m, 3d, 6mo or forever", "")
 	input.required = "say how long, such as 90m, 3d, 6mo or forever"
 	f := newForm(input)
-	var d *dialog
-	d = formDialog("How long", f, func(f *form) tea.Cmd {
+	d := formDialog("How long", f, func(f *form) tea.Cmd {
 		ttl, err := lifetime.Parse(f.value("ttl"))
 		switch {
 		case err != nil:
 			f.err = err.Error()
 			return nil
-		case !withinLimit(Secret{MaxTTL: ans.maxTTL}, ttl):
+		case !withinLimit(Secret{MaxTTL: maxTTL}, ttl):
 			f.err = limit
-			return nil
-		case d.decisionsBlocked:
-			f.err = "scroll to the end of what this replaces first"
 			return nil
 		}
 		return done(ttl)
 	})
-	d.requireEnd, d.decisionsBlocked = true, true
-	d.refreshSections = func() {
-		ttl, err := lifetime.Parse(f.value("ttl"))
-		d.sections = answerSections(req, ans, ttl, err == nil)
-	}
-	d.keys = []hint{pressing("Enter sends", "enter"), pressing("Esc goes back", "esc")}
+	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
 	d.onCancel = back
 	m.dialog = d
 	return nil
 }
 
-// answerSections is the whole approval, as the last step shows it above the
-// lifetimes: what answers, each part's answer and what it is approved for,
-// what it replaces. The console answers as a person, with no parent. ttl is the
-// lifetime under the cursor, unknown while a custom one is still to be typed.
-func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration, known bool) []section {
-	with := ans.credential
+// approvalConsequences shows only information needed at consent: a new
+// credential's own ceiling and gaps, and what approving replaces or shortens.
+func approvalConsequences(req CredentialRequest, ans requestAnswer) []section {
+	var out []section
 	if ans.fresh {
-		with += " · new, stored when this is sent"
-	}
-	sec := section{label: "this approval", fields: []field{{label: "credential", value: with, tone: toneAccent}}}
-	// A new credential's own reach is said before it is stored: the hosts
-	// it may ever be sent to, whatever later grants of it say.
-	if ans.fresh {
-		var hosts []string
-		for _, r := range ans.credentialRoutes {
-			hosts = append(hosts, r.Hosts...)
-		}
-		sec.fields = append(sec.fields, field{label: "stored for", value: "any request to " + strings.Join(hosts, ", ")})
-	}
-	part := func(label, answer string, c partChoice) {
-		value := "denied — what it holds of it stays as it is"
-		if answer == PartApprove {
-			value = "approved · " + choiceText(c)
-		}
-		sec.fields = append(sec.fields, field{label: label, value: value})
-	}
-	if req.Use != nil {
-		part("its own use", ans.use, ans.useChoice)
-		if note := ans.additionNote(req); note != "" && ans.use == PartApprove {
-			sec.fields = append(sec.fields, field{label: "", value: note, tone: toneDim})
-		}
-	}
-	if req.Delegate != nil {
-		part("its workers", ans.delegate, ans.delegateChoice)
-	}
-	out := []section{sec}
-	if ans.use == PartApprove {
-		out = append(out, choiceSection("approved for its own use", req.Use, ans.useChoice, ans))
-	}
-	if ans.delegate == PartApprove {
-		out = append(out, choiceSection("approved for its workers", req.Delegate, ans.delegateChoice, ans))
+		out = append(out, routesSection("new credential stored for", ans.credentialRoutes))
 	}
 	// Held to exact hosts, a new credential can leave out routes the request
 	// names on a pattern: approved, they are never sent on. Said as a saved
@@ -1023,24 +991,11 @@ func answerSections(req CredentialRequest, ans requestAnswer, ttl time.Duration,
 			out = append(out, gap)
 		}
 	}
-	if lines := replaces(req, ans, ttl, known); len(lines) > 0 {
+	if lines := replaces(req, ans, ans.ttl, true); len(lines) > 0 {
 		out = append(out, section{label: "this replaces", labelTone: toneAlert, lines: lines})
 	}
 
 	return out
-}
-
-// choiceText is what a part is approved for, in a phrase.
-func choiceText(c partChoice) string {
-	switch c.scope {
-	case "hosts":
-		return "any path on its hosts"
-	case "anywhere":
-		return "anywhere the credential may be sent"
-	case "edited":
-		return plural(len(c.routes), "edited route", "edited routes")
-	}
-	return "the routes it asked for"
 }
 
 // replaces is what approving takes away or cuts short of what the box holds

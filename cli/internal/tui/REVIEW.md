@@ -316,7 +316,7 @@
   line that shows both says it twice, once from a poll that lags the stream.
   Name a box without its program's words where the msg goes beside it
   (`recordTitle`).
-- **What the last step of a request says a binding becomes follows the
+- **What a request's consent cards say a binding becomes follows the
   server's rule, fate by fate.** The routes a replaced binding gains are shown on whichever
   binding `bindingplan` keeps (`plan.Keep`: an `Updated` one, or the
   delegation of a `Split`), never on one fate alone, and "the same routes" is
@@ -453,3 +453,8 @@
   recover a server from the current box-ID listing map. Two independent
   servers can share an ID, and a newer listing can arrive before the UI sees
   it. Workspace, selection and tool-cache identities include the server too.
+
+- Choose lifetime alongside the credential, before consent. A lifetime picker
+  never sends a grant; the summary and part cards show replacement consequences
+  at that lifetime and keep the read-to-end gate. Repeating the whole approval
+  on a final lifetime screen made a simple time choice unnecessarily long.

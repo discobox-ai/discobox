@@ -112,7 +112,7 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 		}
 		keys = append(keys, item.key)
 	}
-	if strings.Join(keys, ",") != "sec_gh,sec_openai,new" {
+	if strings.Join(keys, ",") != "sec_gh,sec_openai,new,ttl" {
 		t.Fatalf("rows = %v, want every secret and a new credential", keys)
 	}
 }
@@ -161,13 +161,13 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 	for _, item := range m.dialog.items {
 		order = append(order, item.key)
 	}
-	if strings.Join(order, ",") != "sec_gh,sec_loose,sec_openai,new" {
+	if strings.Join(order, ",") != "sec_gh,sec_loose,sec_openai,new,ttl" {
 		t.Fatalf("order = %v, want those that can answer first, the one named github first among them", order)
 	}
 }
 
 // A secret bound to the host being asked for is approved from the summary,
-// with how long the last thing asked.
+// using the lifetime selected with the credential.
 func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
@@ -203,11 +203,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	}
 }
 
-// How long a credential is handed out for is the half of an approval nobody
-// thinks to look for — until it was asked, the window minted whatever the
-// credential's own ceiling happened to be, which for most credentials was
-// forever. So it is a step of its own, after the secret, and it has to be
-// answered.
+// Lifetime is selected with the credential and is retained through consent.
 
 // Forever is offered, and sends the zero that means it never expires.
 func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
@@ -220,31 +216,6 @@ func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
 		t.Fatalf("approvals = %#v, want the zero that means it never expires", ds.approvals)
 	}
 }
-
-// Esc on the lifetime is "not that secret", not "never mind": it goes back to
-// the request, which is still waiting.
-
-// Every lifetime offered is one the `discobox secret` flags parse: the window
-// and the CLI mint the same grant from the same words.
-
-// An agent that says how long it needs the credential has that on the request
-// card, and the lifetime step opens on it — among the presets in its place when
-// it is not one of them — so Enter approves what was asked.
-
-// An ask that is already a preset opens on that preset rather than offering
-// it twice.
-
-// An ask that cannot be a row is no row at all, and the step opens on the hour.
-// A row's identity is its count of whole seconds, so a sub-second ask shares
-// forever's count: offered, it would take the cursor and Enter would mint a
-// grant that never lapses — the one outcome this step exists to prevent.
-
-// The presets are the common answers, not every answer.
-
-// A credential that caps how long its bindings may last is one the server
-// would refuse a longer binding of. The window says so before the choice — on
-// the secret's row, and on the lifetimes it does not allow — and does not
-// offer those, nor take one typed in.
 
 // The report is the only place the lifetime is said after the dialogs are gone.
 func TestTheApprovalSaysHowLongItGrantedFor(t *testing.T) {
