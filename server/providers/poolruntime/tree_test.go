@@ -46,7 +46,7 @@ func TestExportTreeFallsBackToTheNamedPoolWhenThereIsNoRuntimeState(t *testing.T
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	stream, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", sandbox.Delivery{}, nil)
+		sandbox.SandboxRef{ProjectID: "project-1", PoolID: "pool-1", SandboxID: "sandbox-1"}, sandbox.Delivery{}, nil)
 	if err != nil {
 		t.Fatalf("export with no runtime state: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestExportTreeWithoutAPoolStillReportsNotFound(t *testing.T) {
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	if _, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "", sandbox.Delivery{}, nil); err == nil {
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, sandbox.Delivery{}, nil); err == nil {
 		t.Fatal("an export with neither runtime state nor a pool was accepted")
 	}
 }
@@ -147,7 +147,7 @@ func TestExportTreeSendsThePinsToThePool(t *testing.T) {
 		},
 	}
 	stream, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", delivered, nil)
+		sandbox.SandboxRef{ProjectID: "project-1", PoolID: "pool-1", SandboxID: "sandbox-1"}, delivered, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

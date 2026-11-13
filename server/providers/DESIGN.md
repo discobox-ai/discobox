@@ -680,15 +680,24 @@ are required methods on the core interface rather than an optional capability �
 every backend stores a sandbox's durable state the same way, through the pool
 agent, so there is no runtime variation for optionality to express.
 
-Both name their pool instead of reading it out of runtime state, and for the
-same reason: runtime state is only written once a create has returned a runtime
-sandbox. `ImportTree` has none because the row does not exist yet (ADR 0123 §3);
+Neither reads its pool out of runtime state alone, for the same reason: runtime
+state is only written once a create has returned a runtime sandbox.
+`ImportTree` names its pool because the row does not exist yet (ADR 0123 §3);
 it resolves and waits for a schedulable pool the way a create does, and returns
 the pool the tree landed on so the row created afterwards names where the data
-actually is. `ExportTree` prefers runtime state when there is any and falls back
-to the pool named on the row, because a sandbox whose create failed before its
-agent reported has no state and is exactly the one somebody wants to export —
-broken where it is, with a tree on the pool the row still names.
+actually is. `ExportTree`, `Remove` and `AcquireHTTPClient` prefer runtime state
+when there is any and fall back to the pool on the sandbox's row
+(`agentClientForSandbox`; `placedPoolClient` for `Remove`). A sandbox whose create failed before its agent
+reported has no state; it is exactly the one somebody wants to export, broken
+where it is with a tree on the pool the row still names, and a delete of it
+must still reach that pool: answering not-found from the empty state lets the
+row go while the container stays. The agent's delete finds the container by
+its labels, so asking it with no state removes whatever it made. That delete
+does not wait for its pool, though, as one with state does: a pool that
+cannot be reached at once answers not-found and the row goes, since a pool
+that never came up could otherwise hold its sandboxes and itself forever. What
+it made is its own reaper's once it is back
+([pool-agent](../../pool-agent/DESIGN.md)).
 
 The agent's refusals survive the hop as statuses — "it is running", "this pool
 already holds that sandbox" — because both are answers a person acts on, not

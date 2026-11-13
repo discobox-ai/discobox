@@ -585,7 +585,7 @@ func TestAnActionEndsWithItsCaller(t *testing.T) {
 	}
 }
 
-func (*provisioningProvider) ExportTree(context.Context, sandbox.SandboxRef, string, sandbox.Delivery, []byte) (io.ReadCloser, error) {
+func (*provisioningProvider) ExportTree(context.Context, sandbox.SandboxRef, sandbox.Delivery, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

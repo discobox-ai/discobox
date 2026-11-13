@@ -77,7 +77,7 @@ func (s *Service) ExportSandbox(ctx context.Context, projectID, sandboxID string
 	// after create.
 	// The pins, not the harness config's current ones: the tree is read by
 	// the agent the sandbox is pinned to (ADR 0129 §1).
-	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, sandboxDelivery(sb), sb.ProviderState)
+	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sandboxDelivery(sb), sb.ProviderState)
 	if err != nil {
 		return nil, err
 	}

@@ -64,6 +64,14 @@
   pool (#893). `Engine.AcquirePoolAgentClient` maps it for every
   dockerworker driver; a runtime that does not go through the engine
   (discovm's missing machine) maps its own.
+- The one place an unreachable pool becomes `ErrNotFound` on purpose is
+  `poolruntime.Provider.Remove` of a sandbox with no state
+  (`placedPoolClient`), and only after the acquire itself refused. Such a
+  sandbox is most likely to sit on a pool that never came up, and a pool
+  cannot be deleted while it holds sandboxes, so a delete that waited on it
+  would hold both forever. The pool's reaper collects what it made. A path
+  that newly asks a pool on delete must not make the delete depend on that
+  pool coming back (#1095).
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.
