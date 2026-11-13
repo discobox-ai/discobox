@@ -5,10 +5,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -83,7 +83,12 @@ func (g *fenceGuest) CopyTo(_ context.Context, dir string, stream io.Reader) err
 		if err != nil {
 			return err
 		}
-		name := path.Join(dir, header.Name) // a guest path, slash-separated on every host
+		// A guest path, slash-separated on every host: every tree the fence
+		// places is rooted at "/".
+		if dir != "/" || strings.Contains(header.Name, "..") {
+			return fmt.Errorf("placed %q under %q", header.Name, dir)
+		}
+		name := "/" + strings.TrimPrefix(header.Name, "/")
 		g.files[name] = string(data)
 		placed = append(placed, name)
 	}
@@ -215,7 +220,7 @@ func TestFenceRulesListBackFromNft(t *testing.T) {
 	if _, err := exec.LookPath("nft"); err != nil {
 		t.Skip("no nft on this host")
 	}
-	if err := exec.Command("unshare", "-rn", "true").Run(); err != nil {
+	if err := exec.CommandContext(t.Context(), "unshare", "-rn", "true").Run(); err != nil {
 		t.Skipf("cannot make a network namespace here: %v", err)
 	}
 	rules := fenceRules([]string{"eth0", "enp0s1", "ens3"})
@@ -224,7 +229,7 @@ func TestFenceRulesListBackFromNft(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, stderr bytes.Buffer
-	cmd := exec.Command("unshare", "-rn", "sh", "-ec", `nft -f "$1"; nft -f "$1"; nft list table inet `+fenceTable, "sh", file)
+	cmd := exec.CommandContext(t.Context(), "unshare", "-rn", "sh", "-ec", `nft -f "$1"; nft -f "$1"; nft list table inet `+fenceTable, "sh", file)
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("nft: %v: %s", err, stderr.String())
