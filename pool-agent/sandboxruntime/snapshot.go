@@ -313,7 +313,7 @@ func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time) error {
 	}
 	r.snapshots.records.Lock()
 	defer r.snapshots.records.Unlock()
-	return writeFileDurably(path, []byte(at.UTC().Format(time.RFC3339)+"\n"))
+	return fsdurable.WriteFile(path, []byte(at.UTC().Format(time.RFC3339)+"\n"))
 }
 
 func (r *sandboxCore) forgetSnapshotFailure(key string) error {
@@ -448,42 +448,4 @@ func runSnapshotCommand(ctx context.Context, guest machine.Guest, agent agentlay
 		return fmt.Errorf("run the build's provisioning: %w", err)
 	}
 	return nil
-}
-
-// writeFileDurably writes data to path by a rename of a file of its own,
-// synced: once it returns, path holds data whole after a crash, and a reader
-// never sees part of it.
-func writeFileDurably(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp) // gone once renamed; left only by a failure
-	_, err = f.Write(data)
-	if err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	return fsdurable.SyncDir(filepath.Dir(path))
-}
-
-// removeFileDurably removes path, synced: once it returns, path is gone after
-// a crash too.
-func removeFileDurably(path string) error {
-	if err := os.Remove(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	return fsdurable.SyncDir(filepath.Dir(path))
 }

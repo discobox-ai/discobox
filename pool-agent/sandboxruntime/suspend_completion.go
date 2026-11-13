@@ -10,6 +10,8 @@ import (
 	"time"
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // A successful freeze must supersede older explicit starts before releasing
@@ -103,9 +105,5 @@ func writeSuspendCompletion(path string, receipt suspendCompletion) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }

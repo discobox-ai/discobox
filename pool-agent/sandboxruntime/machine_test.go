@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -820,6 +821,9 @@ type agentDriver struct {
 	// pool agent going away, or by the provider, fails.
 	upgradeFailures int
 	upgrades        int
+	// shutdownRefused has a machine refuse to power off in order, so its
+	// stop is forced.
+	shutdownRefused atomic.Bool
 	mu              sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
@@ -960,6 +964,9 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 }
 
 func (m *agentMachine) Shutdown(ctx context.Context, reboot bool) error {
+	if m.driver.shutdownRefused.Load() {
+		return errors.New("the guest refused to power off")
+	}
 	m.driver.agents.stop(m.inst.Name)
 	return m.Machine.Shutdown(ctx, reboot)
 }
@@ -1495,5 +1502,51 @@ func TestMachineStagingRecordsSourceCaches(t *testing.T) {
 	}
 	if caches["primary"] != originTestCacheKey {
 		t.Fatalf("recorded caches = %v, want the primary's %q", caches, originTestCacheKey)
+	}
+}
+
+// A machine forced off on its way to booting on what was placed may have
+// lost the copy, so that placement is recorded only once its agent has
+// answered, which a lost layer would not let it do. It is recorded then, so
+// the running machine is not restarted again by the next request.
+func TestAPlacementAfterAForcedRestartIsRecordedOnceItsAgentAnswers(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	f.driver.shutdownRefused.Store(true)
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+		t.Fatalf("create = %v, want %v", got, want)
+	}
+	if _, ok, err := r.readPlaced("sbx_9"); err != nil || !ok {
+		t.Fatalf("placement record once the agent answered: %v %v", ok, err)
+	}
+	if err := r.EnsureSandboxRunning(ctx, "sbx_9"); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.driver.takeEvents("sbx-9"); len(got) != 0 {
+		t.Fatalf("a request after a forced restart = %v, want nothing: the machine runs what was placed", got)
+	}
+
+	// The placement itself records nothing: it hands the record back.
+	if err := os.Remove(r.placedRecordPath("sbx_9")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := r.readMachineRecord("sbx_9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, pending, err := r.place(ctx, "sbx_9", inst, record, restartedForced)
+	if err != nil || moved || pending == nil || pending.Container != inst.ID {
+		t.Fatalf("place after a forced restart = %v, %+v, %v; want the placement handed back", moved, pending, err)
+	}
+	if _, ok, err := r.readPlaced("sbx_9"); err != nil || ok {
+		t.Fatalf("placement record before the agent answered: %v %v, want none", ok, err)
 	}
 }

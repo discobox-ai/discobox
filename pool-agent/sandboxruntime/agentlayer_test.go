@@ -353,3 +353,41 @@ func TestAPlacedRecordFromBeforePinsWereAListReads(t *testing.T) {
 		t.Fatalf("record = %+v, want the platform pin it recorded", record)
 	}
 }
+
+// A pool VM stopped hard can keep the rename of agent-placed.json and lose
+// its data, leaving the record empty or cut short. That record is the pool's
+// own note of what it placed, so one that does not decode reads as nothing
+// placed: the next start places the agent again, rather than failing on the
+// record for good, repair included.
+func TestAPlacedRecordAHardStopCutShortReadsAsNothingPlaced(t *testing.T) {
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t)})
+	if err := os.MkdirAll(r.sandboxRoot("sbx_1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"empty":     "",
+		"truncated": `{"container":"ctr_1","layer":"sha256:la`,
+	} {
+		if err := os.WriteFile(r.placedRecordPath("sbx_1"), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := r.readPlaced("sbx_1"); err != nil || ok {
+			t.Errorf("%s record: readPlaced = %v, %v; want nothing placed, no error", name, ok, err)
+		}
+	}
+}
+
+// A placed record that is whole JSON of another shape is no hard stop's
+// doing: it still fails, rather than restarting the box on every create.
+func TestAPlacedRecordOfAnotherShapeStillFails(t *testing.T) {
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t)})
+	if err := os.MkdirAll(r.sandboxRoot("sbx_1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.placedRecordPath("sbx_1"), []byte(`{"container":5}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.readPlaced("sbx_1"); err == nil {
+		t.Fatal("readPlaced of a record of another shape: no error")
+	}
+}

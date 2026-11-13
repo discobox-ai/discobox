@@ -10,6 +10,7 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
@@ -125,12 +126,11 @@ func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID str
 // whole of what unarchive needs on this side: the existing reuse-the-tree path
 // already restores the sandbox against the data that was kept.
 func clearSandboxArchiveMarker(root string) error {
-	if err := os.Remove(sandboxArchiveMarkerPath(root)); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	return fsdurable.Remove(sandboxArchiveMarkerPath(root))
 }
 
+// writeSandboxArchiveMarker archives a tree, durably: a marker a hard stop
+// lost would have the next start undo the archive rather than refuse it.
 func writeSandboxArchiveMarker(root string, at time.Time) error {
-	return os.WriteFile(sandboxArchiveMarkerPath(root), []byte(at.UTC().Format(time.RFC3339)+"\n"), 0o600)
+	return fsdurable.WriteFile(sandboxArchiveMarkerPath(root), []byte(at.UTC().Format(time.RFC3339)+"\n"))
 }

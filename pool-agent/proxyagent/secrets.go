@@ -19,6 +19,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/wire"
@@ -533,11 +534,7 @@ func writeJSONAtomic(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }
 
 // secretResolver implements proxy.SecretResolver by calling the control-plane

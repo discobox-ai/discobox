@@ -20,6 +20,7 @@ import (
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 )
 
@@ -176,6 +177,13 @@ func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, contai
 	if _, err := r.client.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: "/", Content: reader}); err != nil {
 		return fmt.Errorf("place the agent in sandbox %s: %w", sandboxID, err)
 	}
+	if !placed {
+		// The record says the layer is in the container, so the layer is on
+		// disk first: a hard stop that kept the record and lost the copy would
+		// leave a box no start places its agent in again. Docker wrote it, so
+		// there is no file of ours to sync.
+		fsdurable.SyncAll()
+	}
 	return r.writePlaced(sandboxID, placedRecord{Container: containerID, Layer: agent.Digest, Pins: pins})
 }
 
@@ -260,8 +268,18 @@ func (r *sandboxCore) readPlaced(sandboxID string) (placedRecord, bool, error) {
 	if err != nil {
 		return placedRecord{}, false, err
 	}
+	// A record that is empty or not JSON is one a hard stop of the pool's host
+	// cut short, written before records were synced: the rename survived and
+	// the data did not. It reads as nothing placed, so the next start places
+	// the agent again (which is idempotent) rather than every start, repair
+	// included, failing on it for good. JSON of another shape is no hard
+	// stop's doing, and still fails.
 	var record placedRecord
 	if err := json.Unmarshal(data, &record); err != nil {
+		if syntax := (*json.SyntaxError)(nil); errors.As(err, &syntax) {
+			slog.Warn("a placed record cut short reads as nothing placed", "sandbox", sandboxID, "error", err)
+			return placedRecord{}, false, nil
+		}
 		return placedRecord{}, false, fmt.Errorf("decode %s: %w", placedRecordName, err)
 	}
 	return record, true, nil
@@ -273,11 +291,7 @@ func (r *sandboxCore) writePlaced(sandboxID string, record placedRecord) error {
 		return err
 	}
 	path := r.placedRecordPath(sandboxID)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }
 
 // deliveredMove is what moved under a delivered sandbox's container since

@@ -273,7 +273,8 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		}
 	}
 	r.observe(sandboxID, StatusRunning)
-	moved, err := r.place(ctx, sandboxID, inst, record, false)
+	var pending *placedRecord
+	moved, _, err := r.place(ctx, sandboxID, inst, record, notRestarted)
 	if err != nil {
 		return fail(err)
 	}
@@ -283,15 +284,19 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		// was placed now, its volumes wired before anything else starts, as
 		// a container placed before its start does (ADR 26-11-02-023 §3).
 		slog.InfoContext(ctx, "restarting a sandbox machine onto what was placed in it", "sandboxId", sandboxID)
-		if err := r.engine.Stop(ctx, inst, machineStopTimeout); err != nil && r.engine.State(ctx, inst) != engine.Stopped {
-			return fail(fmt.Errorf("restart sandbox %s's machine: %w", sandboxID, err))
+		after := restartedInOrder
+		if err := r.engine.Stop(ctx, inst, machineStopTimeout); err != nil {
+			if r.engine.State(ctx, inst) != engine.Stopped {
+				return fail(fmt.Errorf("restart sandbox %s's machine: %w", sandboxID, err))
+			}
+			after = restartedForced
 		}
 		if err := r.engine.Start(ctx, inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
 			started = r.engine.State(context.WithoutCancel(ctx), inst) == engine.Running
 			return fail(fmt.Errorf("restart sandbox %s's machine: %w", sandboxID, err))
 		}
 		r.urls.Delete(sandboxID)
-		if _, err := r.place(ctx, sandboxID, inst, record, true); err != nil {
+		if _, pending, err = r.place(ctx, sandboxID, inst, record, after); err != nil {
 			return fail(err)
 		}
 	}
@@ -301,6 +306,11 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			return r.remakeFresh(ctx, sandboxID, record.Snapshot, err)
 		}
 		return err
+	}
+	if pending != nil {
+		if err := r.writePlaced(sandboxID, *pending); err != nil {
+			return err
+		}
 	}
 	// The agent is up, so its provisioning has wired what it wires this
 	// start.

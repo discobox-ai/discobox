@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // ErrHarnessChangeRefused means no new harness may be accepted for this runtime.
@@ -42,11 +44,7 @@ func (r *sandboxCore) writeHarnessFence(id string, f harnessChangeFence) error {
 		return err
 	}
 	path := r.harnessFencePath(id)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }
 
 // reserveHarnessChange holds the same lock as every power transition. Retrying

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -90,11 +91,7 @@ func (r *sandboxCore) writeSourceCaches(sandboxID string, sources []sandboxSourc
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }
 
 // readSourceCaches is the sandbox's cache-delivered sources and the cache

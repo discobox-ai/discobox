@@ -596,3 +596,54 @@ func TestAnImportRunsNothingTheImportedRepositoryNames(t *testing.T) {
 		}
 	}
 }
+
+// A namespace whose owner marker a hard stop left empty has an unknown
+// owner, not none: Sweep keeps its refs rather than remove a live sandbox's.
+func TestSweepKeepsANamespaceWhoseOwnerMarkerIsEmpty(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.DiscardHandler)
+	s := New(filepath.Join(t.TempDir(), "caches"))
+	path := use(t, s, "github.com/acme/widget")
+	w := newWork(t)
+	if out, err := w.push(s, path, "sbx-live", "widget", "", w.commit("live")+":refs/heads/main"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(path, namespacesDir, Namespace("sbx-live", "widget")), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held := func(context.Context) ([]string, error) { return []string{"sbx-live"}, nil }
+	opts := SweepOptions{NamespaceRetention: time.Hour, CacheRetention: time.Hour}
+	now := time.Now()
+	s.Sweep(ctx, held, opts, now, logger)
+	s.Sweep(ctx, held, opts, now.Add(2*time.Hour), logger)
+	if !hasBranches(t, s, path, "sbx-live", "widget") {
+		t.Fatal("a namespace whose owner marker is empty was removed")
+	}
+}
+
+// A marker's staged write a hard stop left behind is no namespace: the
+// sweep removes it, and it keeps no cache from expiring.
+func TestSweepRemovesAMarkersLeftoverStagedWrite(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.DiscardHandler)
+	s := New(filepath.Join(t.TempDir(), "caches"))
+	path := use(t, s, "github.com/acme/widget")
+	leftover := filepath.Join(path, namespacesDir, ".sbx-gone-widget.123.tmp")
+	if err := os.MkdirAll(filepath.Dir(leftover), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(leftover, []byte("sbx-gone\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	none := func(context.Context) ([]string, error) { return nil, nil }
+	opts := SweepOptions{NamespaceRetention: time.Hour, CacheRetention: time.Hour}
+	now := time.Now()
+	s.Sweep(ctx, none, opts, now, logger)
+	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
+		t.Fatalf("the leftover staged write is still there: %v", err)
+	}
+	s.Sweep(ctx, none, opts, now.Add(2*time.Hour), logger)
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("a cache whose only entry was a leftover staged write was kept past its retention")
+	}
+}

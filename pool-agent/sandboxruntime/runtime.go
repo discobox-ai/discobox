@@ -26,6 +26,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
@@ -1268,6 +1269,9 @@ func writeRootFile(root *os.Root, name string, data []byte, mode os.FileMode) er
 		return err
 	}
 	_, werr := f.Write(data)
+	if werr == nil {
+		werr = f.Sync()
+	}
 	if err := errors.Join(werr, f.Close()); err != nil {
 		return err
 	}
@@ -1275,7 +1279,11 @@ func writeRootFile(root *os.Root, name string, data []byte, mode os.FileMode) er
 	if err := root.Chmod(tmp, mode); err != nil {
 		return err
 	}
-	return root.Rename(tmp, name)
+	if err := root.Rename(tmp, name); err != nil {
+		return err
+	}
+	// Synced, so a hard stop of the pool's host leaves the file whole.
+	return fsdurable.SyncRootDir(root, ".")
 }
 
 // documentHarnessSecrets carries the harness's declared credentials onto the
@@ -1838,11 +1846,10 @@ func (r *sandboxCore) recordFileSecrets(sandboxID string, secrets []harness.Secr
 		return fmt.Errorf("record file secrets: %w", err)
 	}
 	path := r.fileSecretsRecordPath(sandboxID)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := fsdurable.WriteFile(path, data); err != nil {
 		return fmt.Errorf("record file secrets: %w", err)
 	}
-	return os.Rename(tmp, path)
+	return nil
 }
 
 // readFileSecretsRecord is the sandbox's file secrets record, and false when
