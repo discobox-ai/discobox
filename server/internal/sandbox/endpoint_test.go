@@ -105,10 +105,10 @@ func TestEndpointDial(t *testing.T) {
 	}
 }
 
-// With a proxy, a dial goes through it with a CONNECT to the address the
-// server checked, never a name the proxy would resolve again; an endpoint the
-// operator allows goes by name. The proxy itself is not checked at all: it is
-// the operator's, on loopback here.
+// With a proxy, a dial goes through it with a CONNECT to the target as named:
+// the proxy resolves it, and what it reaches is the operator's policy. Only a
+// literal non-public address is refused before it. The proxy itself is not
+// checked at all: it is the operator's, on loopback here.
 func TestEndpointDialThroughAProxy(t *testing.T) {
 	var lc net.ListenConfig
 	listener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
@@ -154,8 +154,13 @@ func TestEndpointDialThroughAProxy(t *testing.T) {
 	if _, err := dial(ctx, "tcp", "10.1.2.3:443"); !errors.Is(err, ErrEndpointRefused) {
 		t.Fatalf("a private target through the proxy = %v, want refused", err)
 	}
-	if _, err := dial(ctx, "tcp", "no-such-host.invalid:443"); !errors.Is(err, ErrEndpointRefused) {
-		t.Fatalf("a name the server cannot resolve through the proxy = %v, want refused, never handed on", err)
+	conn, err = dial(ctx, "tcp", "no-such-host.invalid:443")
+	if err != nil {
+		t.Fatalf("a name only the proxy resolves: %v", err)
+	}
+	_ = conn.Close()
+	if got := <-connects; got != "CONNECT no-such-host.invalid:443" {
+		t.Fatalf("the proxy was asked %q, want the name", got)
 	}
 	conn, err = dial(ctx, "tcp", "boxd.internal:443")
 	if err != nil {
@@ -164,8 +169,5 @@ func TestEndpointDialThroughAProxy(t *testing.T) {
 	_ = conn.Close()
 	if got := <-connects; got != "CONNECT boxd.internal:443" {
 		t.Fatalf("the proxy was asked %q for an allowed endpoint, want it by name", got)
-	}
-	if _, err := dial(ctx, "tcp", "localhost:443"); !errors.Is(err, ErrEndpointRefused) {
-		t.Fatalf("a name that resolves to loopback through the proxy = %v, want refused", err)
 	}
 }

@@ -77,9 +77,10 @@
   a driver a config from the environment, nor a nil `Dial`. Why: a project
   member writes the provider, and the server's network is not theirs (ADR
   26-11-11-080 §§2–3).
-- The checked dial never hands a name it checked to anything that resolves
-  it again: through a proxy, it CONNECTs to the address it resolved and
-  checked, and refuses a name it cannot resolve, but for an endpoint the
-  operator allows or the upgrade carried. Why: a checked dial that hands a
-  name to someone else to resolve has checked nothing; a rebinding name
-  answers public here and inward at the proxy (#1006 review).
+- Without a proxy the checked dial connects to the address it resolved and
+  checked, never the name again. Through the server's proxy it sends the
+  name and leaves resolving to the proxy: what an operator's proxy reaches
+  is its policy, not the server's (owner, #1006). Why: resolving here and
+  connecting by IP through a proxy breaks a TLS-intercepting or
+  hostname-only proxy, and a name dialed straight but resolved twice could
+  rebind inward between the check and the dial.

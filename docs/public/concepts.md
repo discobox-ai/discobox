@@ -134,11 +134,10 @@ pools and key. If the server's environment set `BOXD_GRPC_ADDR` or
 you to delete, with its pools. Those pools never ran.
 
 Behind an egress proxy (`HTTPS_PROXY`, or a SOCKS5 `ALL_PROXY`), the server
-resolves a VM provider's endpoint itself and asks the proxy for the address it
-checked, never the name. A name the server cannot resolve is refused. If your
-server resolves names only through its proxy, or your proxy allows only
-hostnames, list the provider's hosts in `providerEndpoints` (for boxd,
-`boxd.sh` and `app.boxd.sh`): a listed host goes to the proxy by name.
+reaches a VM provider's endpoints through the proxy by name, and the proxy
+resolves them. What the proxy lets the server reach is the proxy's to decide:
+if it can reach your internal network, refuse private addresses there, since a
+project member can name a provider endpoint.
 
 ### DNS on machine providers
 

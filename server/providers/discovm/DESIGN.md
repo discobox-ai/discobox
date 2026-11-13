@@ -131,9 +131,10 @@ public is refused unless the operator's `providerEndpoints` or the row's
 carried endpoints name it. A driver given a dialer reads no proxy variable,
 so the dial proxies as the driver would have: through `HTTPS_PROXY` (under
 `NO_PROXY`), or else a SOCKS5 `ALL_PROXY`, of the server's environment
-(`sandbox.EnvironmentProxy`), to the address the server resolved and
-checked; a name it cannot resolve is refused, unless the operator lists it
-or it was carried, and those go to the proxy by name. A refused dial is the pool's error, never
+(`sandbox.EnvironmentProxy`), by name. The proxy resolves it, and what an
+operator's proxy lets the server reach is that proxy's policy: the dial
+refuses only a literal non-public address there. Without a proxy the dial
+resolves the name itself and connects to the address it checked. A refused dial is the pool's error, never
 `unreachable`: the reconciler would wait on it unseen.
 
 A pool on a driver reached at its URLs that cannot fence its machines
