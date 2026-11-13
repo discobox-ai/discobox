@@ -116,3 +116,10 @@ tool github.com/ogen-go/ogen/cmd/ogen
 // Drop this with the one in the root go.mod, once an upstream release fixes both
 // call sites (elazarl/goproxy#805 covers only the MITM half).
 replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
+
+// The disco-vm change for #1049 (URL requests; disco-vm ADR 26-11-12-604),
+// at its commit on the bot's fork, since the module proxy fetches no fork
+// commit under github.com/discobox-ai/vm. Temporary: drop this once the
+// disco-vm PR (discobox-ai/vm#103) merges, and bump the require above to
+// disco-vm's main. Never merge this replace.
+replace github.com/discobox-ai/vm => github.com/ibuildthecloud-bot/vm v0.0.0-20261113033929-12878d7535e6
