@@ -1409,6 +1409,15 @@ in isolated dirs, make boxes, then start this tree's server on the same data.
   under `$S/up`, and `unset DISCOBOX_SERVER`. Run the release server under it
   (`run_in_background`), and drive it with the release CLI
   (`--server http://127.0.0.1:8095`, `run -H shell -d --no-source`, `stop`).
+- A server run under `env -i` has no egress: add this box's `HTTP(S)_PROXY`,
+  `ALL_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` lines to the env file, or it
+  cannot pull its release bundles (`network is unreachable`). Any `unix://`
+  listener it is given goes under the workspace
+  (`/workspace/discobox/.tmp/<name>/s.sock`), never `/tmp`: a release pool
+  reaches the server through that socket's directory, mounted from the Docker
+  daemon's filesystem, which does not see an agent shell's `/tmp`; the pool
+  agent then crash-loops on `dial unix …: no such file` and the pool never
+  becomes healthy.
 - Stop it, then run this tree's server under the same env plus
   `DISCOBOX_ENV_FILE=/workspace/discobox/.env` (the loop's images and bundles).
   Build that binary yourself (`cd server && go build -o $S/… ./cmd/discobox-server`),
