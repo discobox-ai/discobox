@@ -116,10 +116,13 @@ It builds libkrunfw's patched Linux from a checksum-pinned libkrunfw commit and
 kernel tarball. `configure-kernel` then builds in what libkrunfw's compact
 nftables-only baseline leaves out and the guest needs — Docker's `x_tables` /
 `iptables-nft` compatibility, `PACKET` for the DHCP client, macvlan, ipvlan,
-VXLAN and 802.1Q — and fails the build if `olddefconfig` drops any required
-setting. The output is an ELF `vmlinux`, which libkrun loads with no initramfs,
-plus the `kernel.config` it was built from, so what booted can be read back off
-the artifact.
+VXLAN and 802.1Q — and turns off the one baseline setting the guest cannot
+live with, `BASE_SMALL`, which caps `pid_max` at 32768 for the whole pool VM
+(boots it at a few thousand) and fails `systemd-sysctl` on Debian's
+`50-pid-max.conf`. It fails the build if `olddefconfig` drops any required
+setting or keeps `BASE_SMALL`. The output is an ELF `vmlinux`, which libkrun
+loads with no initramfs, plus the `kernel.config` it was built from, so what
+booted can be read back off the artifact.
 
 The guest build still installs `linux-image-<arch>` on both architectures, so it
 has no per-backend branch in it. Assembly publishes `vmlinux` only where it can
@@ -172,7 +175,8 @@ not optional politeness: a guest that publishes a kernel the hypervisor cannot
 load, or a root filesystem that will not mount, fails as a blank console with
 nothing to read. `vm:verify` checks the kernel format per architecture, the root
 label, the hostname, and the network properties above; `vm:verify-kernel`
-checks the ELF header and the required config settings.
+checks the ELF header, the required config settings, and that `BASE_SMALL` is
+off.
 
 ## Compatibility surface
 

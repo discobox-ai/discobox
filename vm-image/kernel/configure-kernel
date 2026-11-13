@@ -14,7 +14,15 @@ scripts_config="$kernel_dir/scripts/config"
 # socket. libkrunfw's baseline happens to enable it, which is exactly why it is
 # stated — an upstream trim would otherwise land as a guest that boots, runs
 # dockerd, and has no address.
+#
+# BASE_SMALL goes the other way: libkrunfw's baseline sets it, and under it
+# PID_MAX_LIMIT is PAGE_SIZE * 8 (32768) and the boot-time pid_max is
+# max(4096, 1024 per CPU). One pool VM runs every sandbox in it, so they would
+# all share a few thousand PIDs, and Debian's systemd 50-pid-max.conf (4194304),
+# which would raise it, fails systemd-sysctl on every boot instead. It also
+# sizes other core tables (the futex hash among them) for tiny systems.
 "$scripts_config" --file "$config" \
+    --disable BASE_SMALL \
     --enable PACKET \
     --enable NETFILTER_XTABLES \
     --enable NFT_COMPAT \
@@ -70,3 +78,9 @@ for required in \
         exit 1
     }
 done
+
+# Absent from the config is off too: the option only has a prompt under EXPERT.
+if grep -q '^CONFIG_BASE_SMALL=y' "$config"; then
+    echo "kernel setting still enabled after olddefconfig: CONFIG_BASE_SMALL" >&2
+    exit 1
+fi
