@@ -3,15 +3,27 @@ package runuser
 import (
 	"fmt"
 	osuser "os/user"
+	"strconv"
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
-// currentOSUser is who this process is, as the OS names it. It is a variable
-// for the reason the lookups in runuser.go are: a test supplies a fixed
-// account instead of whoever runs it.
-var currentOSUser = osuser.Current
+// currentOSUser is who this process is now, as the OS names it: the account
+// of its uid, looked up again on every call. Never os/user.Current, which
+// caches its first answer for the life of the process: an agent started as
+// root asks before it drops to the sandbox's account (Become) and again
+// after, and must hear the account the second time. Windows has no POSIX uid
+// and nothing there drops, so it asks os/user.Current. It is a variable for
+// the reason the lookups in runuser.go are: a test supplies a fixed account
+// instead of whoever runs it.
+var currentOSUser = func() (*osuser.User, error) {
+	uid, _ := effectiveIDs()
+	if uid < 0 {
+		return osuser.Current()
+	}
+	return lookupUserByID(strconv.FormatInt(uid, 10))
+}
 
 // currentAccount is the image layer where a sandbox has one account: this
 // process's own account, by name and home. The agent runs as that account, and

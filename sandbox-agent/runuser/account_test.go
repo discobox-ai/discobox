@@ -2,7 +2,9 @@ package runuser
 
 import (
 	"errors"
+	"os"
 	osuser "os/user"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -44,5 +46,29 @@ func TestLookupAccountNamesWhatItCannotFind(t *testing.T) {
 	withAccount(t, nil, errors.New("unknown user ghost"))
 	if _, err := LookupAccount("ghost"); err == nil || !strings.Contains(err.Error(), `"ghost"`) {
 		t.Fatalf("LookupAccount(ghost) = %v", err)
+	}
+}
+
+// The image layer is who the process is now, not who it was first asked as:
+// an agent started as root resolves its user before it drops to the
+// sandbox's account (boot.Provision) and again after, and os/user.Current
+// would answer root both times, so a dropped macOS agent refused its own
+// account and launchd restarted it in a loop. Changing the effective uid
+// between the two asks must change the account currentAccount reads.
+func TestTheImageAccountFollowsAChangeOfUID(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX uid and nothing there drops to an account")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("needs a uid that is not root's, to change it to root's")
+	}
+	before := currentAccount()
+	if before == nil || before.Name == "" || before.Name == "root" {
+		t.Fatalf("the image account as this test's user = %+v", before)
+	}
+	restore := FixedEffectiveIDs(0, 0)
+	defer restore()
+	if after := currentAccount(); after == nil || after.Name != "root" {
+		t.Fatalf("after the uid became 0, the image account = %+v, want root: an answer cached from before the change", after)
 	}
 }

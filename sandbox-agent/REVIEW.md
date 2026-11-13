@@ -701,6 +701,12 @@ user waits on every single start.
   fails on macOS, where `/etc`, `/var` and the template's `/run` are links,
   and following any reopens the attack. Anything under a handed-over
   directory the agent makes after it drops.
+- **Who the agent is, it reads from its uid each time, never from
+  `os/user.Current`.** That caches its first answer for the life of the
+  process, and the agent asks before it drops (`boot.Provision`) and after:
+  a macOS guest's dropped agent read itself as root, refused its own
+  account, and looped. CI's boot test runs as the account and never drops,
+  so `TestTheImageAccountFollowsAChangeOfUID` is what holds it.
 
 ## Idle stop
 
