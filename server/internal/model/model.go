@@ -1457,10 +1457,17 @@ type SandboxProviderInstance struct {
 	EncryptedConfig []byte  `gorm:"column:encrypted_config" json:"-"`
 	// SecretFields names the secret fields EncryptedConfig holds a value for.
 	// It is not stored: the providers service reads it for an API answer.
-	SecretFields []string  `gorm:"-" json:"secretFields,omitempty" doc:"The secret fields that have a value. Their values are never returned."`
-	Disabled     bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
-	CreatedAt    time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	SecretFields []string `gorm:"-" json:"secretFields,omitempty" doc:"The secret fields that have a value. Their values are never returned."`
+	// CarriedEndpoints are the config keys of Privileged endpoints the
+	// upgrade from the vm type carried from the server's own environment
+	// (ADR 26-11-11-080 §8): the operator's values, allowed as an operator's
+	// listed endpoint is, when written and at dial. Only that migration sets
+	// it; no request can, a write that changes such a field drops its key,
+	// and a project copy does not carry it.
+	CarriedEndpoints []string  `gorm:"column:carried_endpoints;type:text;serializer:json" json:"-"`
+	Disabled         bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 	Pools   []Pool   `gorm:"foreignKey:ProviderInstanceID" json:"pools,omitempty" doc:"Pools backed by this provider instance"`

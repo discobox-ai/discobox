@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -129,6 +130,9 @@ type AppOptions struct {
 	// ConfiguredGateways is the server configuration file's gateways
 	// (ADR 26-10-17-271).
 	ConfiguredGateways gateways.Configured
+	// ProviderEndpoints is where providers' Privileged endpoints may point
+	// (ADR 26-11-11-080 §3).
+	ProviderEndpoints sandbox.EndpointPolicy
 }
 
 // DefaultAppOptions returns the production defaults for the app. It names no
@@ -232,6 +236,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*ch
 		ArchiveRetention:               opts.ArchiveRetention,
 		ServerPeerID:                   addressPeerID,
 		ConfiguredGateways:             opts.ConfiguredGateways,
+		ProviderEndpoints:              opts.ProviderEndpoints,
 		PoolOutbound:                   opts.PoolOutbound,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,

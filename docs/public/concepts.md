@@ -100,6 +100,39 @@ server you will modify for their names, required values and descriptions.
 Secrets are supplied separately from provider config. Never put a token in
 a documentation snapshot or a catalog fixture.
 
+### VM providers: boxd, archil and hcs
+
+Each VM driver the server links is a provider type of the driver's own name.
+Its own settings are under `driver`, as `--driver-*` flags, and its key is the
+secret `driver.apiKey`. The catalog reads them from the driver, so
+`--help=boxd` on your server is the complete list.
+
+| Type | Driver fields | Pools |
+| --- | --- | --- |
+| `boxd` | `driver.apiKey` (secret, required), `driver.region`, `driver.addr` and `driver.tokenUrl` (advanced endpoints) | Linux |
+| `archil` | `driver.apiKey` (secret, required), `driver.region`, `driver.baseUrl` (advanced endpoint) | refused for now: Archil has no machine isolation |
+| `hcs` (Windows) | none | refused until Windows pools |
+
+`boxd` and `archil` also take `controlPlaneUrl`, `base` and the pool policy.
+Every `driver` field is fixed while the provider has pools.
+
+```sh
+discobox admin provider create --type boxd --name boxd --driver-region fra \
+  --secret driver.apiKey=@boxd-key
+```
+
+An endpoint field is where the driver sends your key, so the server checks it.
+It must be a public host over https, or a public `HOST:PORT`. A write that sets
+or changes one must carry `driver.apiKey` in the same request. To allow a
+private endpoint, such as your own boxd cluster, the server's operator lists it
+in `providerEndpoints` (`DISCOBOX_PROVIDER_ENDPOINTS`).
+
+On upgrade, a `vm` provider on boxd becomes a `boxd` provider with the same ID,
+pools and key. If the server's environment set `BOXD_GRPC_ADDR` or
+`BOXD_TOKEN_URL`, those values move into the provider's `driver` fields. A
+`vm` provider on any other driver (vz, for example) is disabled and left for
+you to delete, with its pools. Those pools never ran.
+
 ### DNS on machine providers
 
 Discobox tries to make `169.254.53.53`, its local DNS stub, the system resolver

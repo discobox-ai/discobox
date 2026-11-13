@@ -1332,7 +1332,7 @@ agent's published port, or the pool never registers.
 - Restart the server: the agent logs `control-plane channel closed`, then
   `open` again within seconds, the same pid.
 
-# Verifying a machine pool (`MachineSandboxRuntime`, the `vm` provider)
+# Verifying a machine pool (`MachineSandboxRuntime`, a disco-vm driver's provider type)
 
 - A machine pool needs a remote driver: boxd and a key in the `vm`
   provider's `apiKey`; a box's is a sentinel swapped in boxd's token

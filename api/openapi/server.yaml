@@ -4458,17 +4458,24 @@ components:
             properties:
                 advanced:
                     type: boolean
+                default:
+                    description: The value the provider takes when the field is unset, for a person to see; the provider applies it, never the client.
+                    type: string
                 description:
                     type: string
                 immutable:
                     description: The field cannot change while the provider instance has pools, because the pools' hosts were made by what it names.
                     type: boolean
                 key:
+                    description: 'Where the field is in the config object: a dotted path, so driver.addr is addr in the config''s driver object.'
                     type: string
                 label:
                     type: string
                 placeholder:
                     type: string
+                privileged:
+                    description: An endpoint the provider's secret fields are sent to. A write that sets or changes it must carry every secret field.
+                    type: boolean
                 required:
                     type: boolean
                 type:

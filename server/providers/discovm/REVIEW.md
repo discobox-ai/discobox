@@ -1,4 +1,4 @@
-# vm Provider Review Notes
+# disco-vm Provider Types Review Notes
 
 - Nothing is placed on a remote driver's pool machine — the agent, the
   bootstrap, the provisioning key — that was not created on the pool's own
@@ -51,11 +51,22 @@
   26-11-03-606). Its description says it is trusted with the pool: a base a
   name can be repointed under boots whatever it is repointed to, with the
   pool's keys in it, so an operator names one only their account controls.
-- When the disco-vm pin moves, compare each linked driver's configuration
-  fields (`machine.DefinitionOf`) and anything it read from the environment
-  at the old pin with the new one, and say in the change what a server's
-  driver now runs with. Why: `driverConfig` gives a driver only `carriedEnv`'s
-  fields, so a setting the new pin stops reading, or a field it adds, is
-  silently its default, which no test sees (the move past disco-vm ADR
-  26-11-11-215 dropped boxd's `BOXD_GRPC_ADDR` and `BOXD_TOKEN_URL` until
-  review caught it).
+- When the disco-vm pin moves, compare each linked driver's definition
+  (`machine.DefinitionOf`: fields, secrets and their sends, base) with the
+  old pin's, and say in the change what a provider now offers and runs
+  with. Why: a provider's catalog, validation and secret are the driver's,
+  so a field the new pin adds is offered with no change here, and one it
+  marks `Privileged` fails `TestPrivilegedFieldsAreTheCheckedEndpoints` until
+  it is checked (ADR 26-11-11-080 §3).
+- Nothing that carries the driver's configuration carries its secret: the
+  bootstrap, the placement fingerprint, a shim's arguments, a log or an
+  error. `decode` takes the secret out of `driver` before anything else sees
+  it, and it reaches disco-vm only as `machine.Config.Keys`. Why: disco-vm
+  refuses a configuration that names its secret, and everything that carries
+  the configuration is read by more than the server (ADR 26-11-11-080 §2).
+- The server reads no driver's environment variable but in the vm upgrade's
+  migration (`store.MigrateVMProviders`), and every engine connection goes
+  through the provider's checked dialer (`EndpointPolicy.Dial`). Do not give
+  a driver a config from the environment, nor a nil `Dial`. Why: a project
+  member writes the provider, and the server's network is not theirs (ADR
+  26-11-11-080 §§2–3).

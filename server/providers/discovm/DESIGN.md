@@ -1,22 +1,23 @@
-# vm Provider Design
+# disco-vm Provider Types Design
 
-The `vm` provider (package `discovm`) is the `poolruntime.RuntimeProvider`
+Package `discovm` registers a provider type for each disco-vm driver the build
+links, by the driver's own name (`boxd`, `archil`, `hcs` on Windows; ADR
+26-11-11-080 §1), all served by one `poolruntime.RuntimeProvider`
 for pools whose sandboxes are disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
 beside `dockerworker.Engine` rather than under it: a vm pool has no
 pool-agent container, Docker daemon or sandbox network of the engine's
 (ADR 26-10-09-106 §1). This package holds the provider kind, the embedded
 engine and its shim, and pool hosting: a remote driver's pool machine, made
 the pool's box and given its provisioning key, with its console and log. The
-driver is configuration it passes to disco-vm; how a pool is hosted follows
-from the driver's kind: whether it is disco-vm's local driver, whose provider
-is this host's disk. A local driver's host pool agent is not staged yet
+type is the driver; how a pool is hosted follows from the driver's kind:
+whether it is disco-vm's local driver, whose provider is this host's disk. A local driver's host pool agent is not staged yet
 (#64): its `EnsurePool` and `AcquirePoolAgentClient` answer so.
 
 ```mermaid
 flowchart TD
     pool["poolruntime.Provider"]
     runtime["discovm.Runtime\nengine"]
-    engine["disco-vm pkg/engine\non machine.New(config driver)"]
+    engine["disco-vm pkg/engine\non machine.New(type, driver config, key, checked dial)"]
     host{"driver is a *local.Driver?"}
     machine["poolMachine\na Linux machine from a driver base\nmade the pool's box · provisioning key"]
     agent["hostAgent\npool agent on this host"]
@@ -86,28 +87,55 @@ are separate follow-ups. This cutover provides no bootstrap/state migration.
 
 ## Drivers
 
-The driver is configuration, passed to disco-vm as it is: `newDriver` is
-`machine.New(cfg.Driver, driverConfig(...))` on disco-vm's own registry, and validation asks the
-same registry. Nothing in this package is written per driver, but for
-`unreachable` (below), which reads the transports the linked remote drivers
-use, because disco-vm reports no unreachable service of its own. A build links
-the real drivers its OS has (`drivers.go`: boxd everywhere,
-`drivers_darwin.go`: vz, `drivers_windows.go`: hcs), as imports and nothing
-else. disco-vm's docker driver is not linked: it is deferred (ADR
-26-10-09-106 Deferred, ADR 26-10-23-551 §5). Nor is its `fake` driver, whose
-guest agent is the running binary serving exec on loopback; only tests link
-it.
+Each linked driver is a provider type of its name (`Register`, last in
+`RegisterBuiltInSandboxProviderFactories`): `Types` is `machine.Names()`
+without `fake`, which only tests link. A build links the drivers its OS has
+(`drivers.go`: archil and boxd everywhere, `drivers_windows.go`: hcs) as
+imports and nothing else. docker, libkrun and vz are built-in provider types,
+so disco-vm's drivers of those names are not linked (ADR 26-11-11-080
+Deferred); registering a taken name panics, and a test fails a build that
+does.
 
-A driver reads no environment for its configuration (disco-vm ADR
-26-11-11-215): `driverConfig` gives it one, `machine.Config.DriverConfig`.
-That holds only boxd's `addr` and `tokenUrl`, from `BOXD_GRPC_ADDR` and
-`BOXD_TOKEN_URL` where the server's environment sets them (`carriedEnv`),
-which disco-vm read itself before; every other field is the driver's
-default. A carried value the driver refuses fails every boxd provider,
-naming the variable.
+A provider's configuration is one object in two parts that share no key
+(ADR 26-11-11-080 §2):
 
-`driver` is `Immutable`: it cannot change while the provider has pools,
-because only the driver that made a pool's host can remove it.
+- **discobox's pool-hosting fields**, at the top level: the pool policy;
+  `controlPlaneUrl` and `deliverProviderKey` for a driver reached at its
+  URLs; `base` for one whose definition takes one (`TakesBase`). A held
+  driver refuses all three.
+- **the driver's own**, under `driver`: given to disco-vm as
+  `machine.Config.DriverConfig` and validated by it alone (`machine.New`),
+  less the driver's secret, which `decode` takes out and passes as
+  `machine.Config.Keys` (disco-vm ADR 26-11-12-461).
+
+`Definition(name)` is read from `machine.DefinitionOf` when the server
+starts: each field as `driver.<key>` (`Default` shown, `Retired` hidden), its
+secret as the `secret` field `driver.<key>` (`driver.apiKey` for boxd and
+archil), sealed in the row as any secret field is. Every driver field is
+`Immutable` (§5); a `Privileged` one is an endpoint the key is sent to,
+`Advanced` and marked `Privileged`, which the providers service checks on
+the write that sets it and which needs the key in the same write (§§3–4).
+A field disco-vm adds shows up with no change here, but for a `Privileged`
+one, which `TestPrivilegedFieldsAreTheCheckedEndpoints` holds back.
+
+The server reads no driver's environment (ADR 26-11-11-080 §2): a variable a
+linked driver names, set in the server's environment, is warned of at start,
+never read. The one exception is the upgrade of a `vm` row
+(`store.MigrateVMProviders`, §8), which carries `BOXD_GRPC_ADDR` and
+`BOXD_TOKEN_URL` into a boxd row's `driver` fields and marks them carried.
+Every connection the engine makes to the driver's service goes through
+`sandbox.EndpointPolicy.Dial` (`machine.Config.Dial`): an address that is not
+public is refused unless the operator's `providerEndpoints` or the row's
+carried endpoints name it. A refused dial is the pool's error, never
+`unreachable`: the reconciler would wait on it unseen.
+
+A pool on a driver reached at its URLs that cannot fence its machines
+(`Capabilities.Isolation`; archil today) is refused when it is created, by
+the type's `PoolOSValidator` (`fences`), saying so (ADR 26-11-11-080 §1).
+
+The type cannot change, and no `driver` field can while the provider has
+pools: they decide where a pool's machines are, and only the driver that
+made a pool's host can find and remove it.
 
 A pool names the OS its sandboxes run when it is created (ADR 26-11-11-963
 §1). `ValidatePoolOS`, registered as the type's `PoolOSValidator`, takes the
@@ -177,18 +205,19 @@ as ADR 26-10-09-106 §1 places it:
   configured base (a local driver, so they build that `poolMachine`
   themselves), which runs the engine, its shim, and the guest operations as a
   real machine does.
-- A remote driver authenticates with the provider's `apiKey`, passed as
-  `Config.Keys` (`providerKeys`); disco-vm reads no key of its own accord,
-  and the server's environment is not read. `apiKey` is a `secret` field:
-  sealed in the provider's row and joined into its config only at resolve
-  (ADR 26-10-31-694). A provider made before it held
-  one fails each call to the service, naming `apiKey`. A remote driver's
+- A remote driver authenticates with the provider's secret
+  (`driver.apiKey`), passed as `Config.Keys` (`providerKeys`); disco-vm
+  reads no key of its own accord, and the server's environment is not read.
+  It is sealed in the provider's row and joined into its config only at
+  resolve (ADR 26-10-31-694). A provider without one fails each call to the
+  service, naming the field. A remote driver's
   `controlPlaneUrl`, where its pool machines reach this server, is optional:
   without one the server opens a
   [control-plane channel](../DESIGN.md#the-control-plane-channel) to each pool
   machine's agent, so it needs no URL a machine can reach (ADR 26-10-30-875).
-  `Validate` requires the key, and an `http(s)` URL when one is given, for a
-  remote driver, and refuses both for a local one.
+  Validation requires the key of a driver that declares one, and an
+  `http(s)` URL when one is given, for a remote driver, and refuses the URL
+  for a local one.
 
 One-off console argv runs through the same login shell (`-c 'exec "$@"'` with
 positional arguments), preserving the machine's login environment without
@@ -217,7 +246,8 @@ the pool-shared builder serves its sandboxes' builds there, beside the
 provisioning key and the driver's machine token, a cost ADR 26-10-27-767
 states. Its bootstrap names its own engine (ADR 26-10-23-551 §3):
 the machine runtime, the driver, the pool's scope as the scope and
-network its sandboxes' machines are made in, the provider's base, the
+network its sandboxes' machines are made in, the provider's base and its
+driver configuration without the secret (ADR 26-11-11-080 §6), the
 provider's `controlPlaneUrl` or, with none, the channel's socket, and where
 the agent listens: the driver's `Service.Listen` for the machine, which its one URL reaches (ADR
 26-10-27-345 §2's rule, for the pool agent). The pool agent is reached at that

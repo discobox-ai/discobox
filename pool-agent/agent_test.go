@@ -146,6 +146,7 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		pool    string
 		public  string
 		private string
+		config  string
 		wantErr string
 	}{
 		{name: "none is docker", runtime: ""},
@@ -157,6 +158,9 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		{name: "machine without a public URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
 		{name: "machine with a URL that is not http", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "tcp://pool-1.boxd:7302", wantErr: "private URL"},
 		{name: "machine with a URL that names a path", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh/agent", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
+		{name: "machine on the provider's driver configuration", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302", config: `{"region":"fra","tokenUrl":"https://app.example.com/token"}`},
+		{name: "machine on a driver configuration its driver refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302", config: `{"apiKey":"bxd_k"}`, wantErr: "driver configuration"},
+		{name: "docker with a driver configuration", runtime: poolagent.RuntimeDocker, config: `{"region":"fra"}`, wantErr: "machine pool"},
 		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, pool: "pool-1", wantErr: "needs a driver"},
 		{name: "machine without a pool", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine pool"},
 		{name: "machine in a pool disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool_1", wantErr: "machine pool"},
@@ -168,6 +172,9 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 			bootstrap := base
 			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachinePool = tc.runtime, tc.driver, tc.pool
 			bootstrap.PublicURL, bootstrap.PrivateURL = tc.public, tc.private
+			if tc.config != "" {
+				bootstrap.DriverConfig = json.RawMessage(tc.config)
+			}
 			err := bootstrap.Validate()
 			if tc.wantErr == "" {
 				if err != nil {

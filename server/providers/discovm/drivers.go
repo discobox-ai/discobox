@@ -1,17 +1,17 @@
 package discovm
 
-// The disco-vm drivers this build links, so that machine.New finds them by the
-// name a provider is configured with. Each registers itself with disco-vm;
-// nothing here acts on which one is configured.
+// The disco-vm drivers this build links, each a provider type of its own name
+// (ADR 26-11-11-080 §1). Each registers itself with disco-vm; nothing here acts
+// on which one a provider is.
 //
 // They are imported one by one rather than through disco-vm's
-// pkg/machine/drivers, which also links its fake driver: a fake guest is the
-// running binary serving exec on loopback, which is a test's to run, never a
-// server's.
+// pkg/machine/drivers, which also links its fake driver (a test's to run,
+// never a server's) and drivers whose names are built-in provider types
+// already: docker, libkrun and vz are not linked, and a test fails a build
+// that links one (ADR 26-11-11-080 §1, Deferred).
 import (
-	// boxd's hypervisor is in the cloud, so every build can drive it.
-	//
-	// disco-vm's docker driver is not linked: it is deferred (ADR
-	// 26-10-09-106 Deferred, ADR 26-10-23-551 §5).
+	// archil's and boxd's hypervisors are in the cloud, so every build
+	// can drive them.
+	_ "github.com/discobox-ai/vm/pkg/machine/archil"
 	_ "github.com/discobox-ai/vm/pkg/machine/boxd"
 )

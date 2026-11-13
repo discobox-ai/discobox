@@ -920,6 +920,22 @@
         "null"
       ]
     },
+    "providerEndpoints": {
+      "description": "Endpoints a provider may send its key to beyond public https hosts, private ones included: each a HOST (every port) or HOST:PORT. A provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise name only a public host over TLS. The environment variable takes a comma-separated list. Environment: DISCOBOX_PROVIDER_ENDPOINTS (takes precedence over this file).",
+      "examples": [
+        [
+          "boxd.internal.example.com",
+          "10.0.0.5:9443"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "releaseManifest": {
       "description": "Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization. Environment: DISCOBOX_RELEASE_MANIFEST (takes precedence over this file).",
       "examples": [

@@ -472,7 +472,9 @@ func withProviderSecrets(raw jx.Raw, secrets map[string]string) (jx.Raw, error) 
 		}
 	}
 	for key, value := range secrets {
-		config[key] = value
+		if err := setProviderConfigValue(config, key, value); err != nil {
+			return nil, err
+		}
 	}
 	data, err := json.Marshal(config)
 	if err != nil {
@@ -484,7 +486,7 @@ func withProviderSecrets(raw jx.Raw, secrets map[string]string) (jx.Raw, error) 
 // requireProviderSecrets refuses a create that leaves out a required secret
 // field, naming the flag that gives it.
 func requireProviderSecrets(raw jx.Raw, provider apimodel.SandboxProviderCatalogItem) error {
-	config := map[string]json.RawMessage{}
+	config := map[string]any{}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &config)
 	}
@@ -492,7 +494,7 @@ func requireProviderSecrets(raw jx.Raw, provider apimodel.SandboxProviderCatalog
 		if !isSecretProviderField(field) || !field.Required.Or(false) {
 			continue
 		}
-		if _, ok := config[field.Key]; !ok {
+		if !providerConfigHas(config, field.Key) {
 			return fmt.Errorf("required secret %s not set: give it with --secret %s=@path or --secret %s=-", field.Key, field.Key, field.Key)
 		}
 	}
@@ -521,7 +523,9 @@ func dynamicProviderCreateConfig(flags *pflag.FlagSet, provider apimodel.Sandbox
 		if err != nil {
 			return nil, fmt.Errorf("--%s: %w", flagName, err)
 		}
-		m[field.Key] = converted
+		if err := setProviderConfigValue(m, field.Key, converted); err != nil {
+			return nil, err
+		}
 	}
 	if len(m) == 0 {
 		return nil, nil
@@ -592,10 +596,14 @@ func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider api
 		if err != nil {
 			return nil, fmt.Errorf("--%s: %w", flagName, err)
 		}
-		m[field.Key] = converted
+		if err := setProviderConfigValue(m, field.Key, converted); err != nil {
+			return nil, err
+		}
 	}
 	for key, value := range secrets {
-		m[key] = value
+		if err := setProviderConfigValue(m, key, value); err != nil {
+			return nil, err
+		}
 	}
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -709,10 +717,7 @@ func writeProviderCreateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 			if field.Required.Or(false) {
 				required = " (required)"
 			}
-			placeholder := ""
-			if value, ok := field.Placeholder.Get(); ok && strings.TrimSpace(value) != "" {
-				placeholder = fmt.Sprintf(" default/example: %s", value)
-			}
+			placeholder := providerFieldDefaultHelp(field)
 			description := field.Description.Or(field.Label)
 			advanced := ""
 			if field.Advanced.Or(false) {
@@ -742,10 +747,7 @@ func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	if len(fields) > 0 {
 		fmt.Fprintln(w, "\nProvider Flags:")
 		for _, field := range fields {
-			placeholder := ""
-			if value, ok := field.Placeholder.Get(); ok && strings.TrimSpace(value) != "" {
-				placeholder = fmt.Sprintf(" default/example: %s", value)
-			}
+			placeholder := providerFieldDefaultHelp(field)
 			description := field.Description.Or(field.Label)
 			advanced := ""
 			if field.Advanced.Or(false) {
@@ -825,7 +827,7 @@ func providerFieldFlagName(key string) string {
 			out.WriteRune(r + ('a' - 'A'))
 			continue
 		}
-		if r == '_' || r == ' ' {
+		if r == '_' || r == ' ' || r == '.' {
 			out.WriteByte('-')
 			continue
 		}
@@ -840,7 +842,9 @@ func providerFieldDescription(field apimodel.ProviderConfigField) string {
 	if field.Required.Or(false) {
 		parts = append(parts, "required")
 	}
-	if placeholder, ok := field.Placeholder.Get(); ok && strings.TrimSpace(placeholder) != "" {
+	if def, ok := field.Default.Get(); ok && strings.TrimSpace(def) != "" {
+		parts = append(parts, "default: "+def)
+	} else if placeholder, ok := field.Placeholder.Get(); ok && strings.TrimSpace(placeholder) != "" {
 		parts = append(parts, "default/example: "+placeholder)
 	}
 	if field.Advanced.Or(false) {
@@ -863,4 +867,47 @@ func providerFieldValue(field apimodel.ProviderConfigField, value string) (any, 
 	default:
 		return value, nil
 	}
+}
+
+// setProviderConfigValue sets value at key's place in config. A field's key is
+// a dotted path into the config object: driver.addr is addr in the config's
+// driver object, made when it is missing.
+func setProviderConfigValue(config map[string]any, key string, value any) error {
+	head, rest, nested := strings.Cut(key, ".")
+	if !nested {
+		config[key] = value
+		return nil
+	}
+	child, ok := config[head].(map[string]any)
+	if !ok {
+		if existing, set := config[head]; set && existing != nil {
+			return fmt.Errorf("config %s is not an object, so %s cannot be set in it", head, key)
+		}
+		child = map[string]any{}
+		config[head] = child
+	}
+	return setProviderConfigValue(child, rest, value)
+}
+
+// providerConfigHas reports whether config sets key's dotted path.
+func providerConfigHas(config map[string]any, key string) bool {
+	head, rest, nested := strings.Cut(key, ".")
+	value, ok := config[head]
+	if !ok || !nested {
+		return ok
+	}
+	child, isObject := value.(map[string]any)
+	return isObject && providerConfigHas(child, rest)
+}
+
+// providerFieldDefaultHelp is what help shows of a field's value when it is
+// unset: the default the provider takes, or else an example.
+func providerFieldDefaultHelp(field apimodel.ProviderConfigField) string {
+	if value, ok := field.Default.Get(); ok && strings.TrimSpace(value) != "" {
+		return " default: " + value
+	}
+	if value, ok := field.Placeholder.Get(); ok && strings.TrimSpace(value) != "" {
+		return " default/example: " + value
+	}
+	return ""
 }
