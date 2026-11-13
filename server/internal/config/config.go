@@ -176,7 +176,7 @@ type Config struct {
 	// 26-11-11-080 §3): a private boxd cluster, say. Any project member may
 	// write a provider, and the server dials these from its own network
 	// with the provider's key, so nothing else that is not public is.
-	ProviderEndpoints []string `yaml:"providerEndpoints" env:"DISCOBOX_PROVIDER_ENDPOINTS" doc:"Endpoints a provider may send its key to beyond public https hosts, private ones included: each a HOST (every port) or HOST:PORT. A provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise name only a public host over TLS. Through an egress proxy a listed host is also the only kind reached by name: any other is resolved by the server and the proxy asked for that address, so a server that resolves names only through its proxy, or a proxy that allows only hostnames, lists its providers' hosts here (for boxd, boxd.sh and app.boxd.sh). The environment variable takes a comma-separated list." example:"[boxd.internal.example.com, 10.0.0.5:9443]"`
+	ProviderEndpoints []string `yaml:"providerEndpoints" env:"DISCOBOX_PROVIDER_ENDPOINTS" doc:"Endpoints a provider may send its key to beyond public https hosts, private ones included: each a HOST (every port) or HOST:PORT. A provider's endpoint fields, such as boxd's addr and tokenUrl, otherwise name only a public host over TLS. The environment variable takes a comma-separated list." example:"[boxd.internal.example.com, 10.0.0.5:9443]"`
 
 	// RetiredDockerPoolImage is server.yaml's dockerPoolImage, which named the
 	// pool-agent image a Docker pool's container ran. A pool's container runs

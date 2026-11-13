@@ -42,9 +42,13 @@
   - [26-10-31-694](26-10-31-694-a-providers-credentials-are-sealed-in-its-row-and-never-returned.md)
     §2's "a field the body leaves out keeps its sealed value", for a write
     that changes a `Privileged` field (§4).
-- **Date**: 2026-11-11; §9 amended 2026-11-13 (#1092), while Proposed
+- **Date**: 2026-11-11
 - **Accepted**: by the owner merging #1007, 2026-11-12. disco-vm's debts
   (Consequences) are met by its ADR 26-11-12-461 (vm#88).
+- **Amended**, both before anything shipped against it:
+  - 2026-11-13, §9: a boxd pool authenticates in-machine, by the owner
+    merging PR 1093 (#1092);
+  - 2026-11-13, §3's check at dial through a proxy, by the owner on #1006.
 - **Issue**: #1006
 - **Relates to**:
   - [0003](0003-promote-pool-to-a-first-class-primitive.md), one provider
@@ -245,6 +249,13 @@ with the key, as does the pool agent (§6). So:
   The engine's connections are checked again at dial,
   through a dialer disco-vm takes from its embedder (Consequences), so a
   name that later resolves elsewhere reaches nothing.
+- **Through the server's egress proxy**, the dial sends the name as named
+  and the proxy resolves it; only a literal non-public address is refused
+  there. A proxy in the server's environment is the operator's, outside
+  discobox's control, and what it lets the server reach is its policy: an
+  operator whose proxy reaches an internal network refuses private
+  addresses there (owner, 2026-11-13, #1006). The dial without a proxy is as
+  above.
 - **`Advanced`** in the catalog, whatever disco-vm marks them.
 - **A test holds each linked driver's `Privileged` keys.** A driver that
   gains one fails it, and is linked again only once that field is checked:
@@ -517,6 +528,12 @@ read the key from its memory.
   their own key to a boxd account, and an endpoint of the provider's own
   (a public boxd cluster) is theirs to name. The operator's list (§3) covers
   what is not public.
+- **Through a proxy, resolving the name on the server and connecting to the
+  checked address**, so a rebinding name could not answer inward at the
+  proxy. A TLS-intercepting proxy mints its certificate for the address it
+  is asked for, and a hostname-only proxy refuses an address, so every
+  driver call failed behind one (a discobox box's own egress among them);
+  and the proxy is the operator's to police (§3).
 - **Linking vz and libkrun under other names (`vm-vz`).** Two providers of
   one hypervisor, named apart by a prefix, on one Mac. The owner's direction
   is not to link them (Deferred).

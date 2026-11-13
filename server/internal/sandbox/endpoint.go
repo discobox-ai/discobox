@@ -63,8 +63,9 @@ func (p EndpointPolicy) CheckEndpoint(ctx context.Context, value string, carried
 // any address it reaches is not public, and dialed at the address checked, so
 // a name that resolves elsewhere between the check and the dial reaches
 // nothing. Where Proxy names a proxy for it, the connection goes through the
-// proxy to that same checked address: a name the server cannot resolve is
-// refused, unless the operator allows it or it was carried.
+// proxy by name, which the proxy resolves: what an operator's proxy reaches
+// is its policy, not the server's. Only a literal non-public address is
+// refused there.
 func (p EndpointPolicy) Dial(carried []string, next func(ctx context.Context, network, addr string) (net.Conn, error)) func(ctx context.Context, network, addr string) (net.Conn, error) {
 	if next == nil {
 		var d net.Dialer
@@ -79,22 +80,24 @@ func (p EndpointPolicy) Dial(carried []string, next func(ctx context.Context, ne
 			h, pt, ok := carriedHostPort(value)
 			return ok && strings.EqualFold(h, host) && pt == port
 		})
-		var proxyURL *url.URL
+		if allowed {
+			return p.dialVia(ctx, network, addr, next)
+		}
 		if p.Proxy != nil {
-			if proxyURL, err = p.Proxy(addr); err != nil {
+			proxyURL, err := p.Proxy(addr)
+			if err != nil {
 				return nil, err
 			}
-		}
-		// Through a proxy as straight: an endpoint the operator allows or
-		// carried is theirs, and reached as it is named.
-		via := func(target string) (net.Conn, error) {
 			if proxyURL != nil {
-				return dialProxy(ctx, proxyURL, target, next)
+				// The proxy resolves the name, and what it lets the server
+				// reach is the operator's policy to enforce, not this one's:
+				// the name goes to it as named. Only an address given
+				// literally, which no one resolves, is checked here.
+				if literal, err := netip.ParseAddr(host); err == nil && !PublicAddr(literal) {
+					return nil, fmt.Errorf("%w: dial %q, which is not a public address", ErrEndpointRefused, addr)
+				}
+				return dialProxy(ctx, proxyURL, addr, next)
 			}
-			return next(ctx, network, target)
-		}
-		if allowed {
-			return via(addr)
 		}
 		addrs, err := p.resolve(ctx, host)
 		if err != nil {
@@ -105,12 +108,11 @@ func (p EndpointPolicy) Dial(carried []string, next func(ctx context.Context, ne
 				return nil, fmt.Errorf("%w: dial %q reaches %s, which is not a public address", ErrEndpointRefused, addr, a)
 			}
 		}
-		// Any other is reached at the address checked, through a proxy too:
-		// a name handed on would be resolved again where the check cannot
-		// see, and a rebinding name answer inward there.
+		// Any other is dialed at the address checked, so a name that
+		// resolves elsewhere between the check and the dial reaches nothing.
 		var errs []error
 		for _, a := range addrs {
-			conn, err := via(net.JoinHostPort(a.String(), port))
+			conn, err := next(ctx, network, net.JoinHostPort(a.String(), port))
 			if err == nil {
 				return conn, nil
 			}
@@ -118,6 +120,21 @@ func (p EndpointPolicy) Dial(carried []string, next func(ctx context.Context, ne
 		}
 		return nil, errors.Join(errs...)
 	}
+}
+
+// dialVia dials addr as named: through the proxy Proxy names for it, or
+// straight.
+func (p EndpointPolicy) dialVia(ctx context.Context, network, addr string, next func(ctx context.Context, network, addr string) (net.Conn, error)) (net.Conn, error) {
+	if p.Proxy != nil {
+		proxyURL, err := p.Proxy(addr)
+		if err != nil {
+			return nil, err
+		}
+		if proxyURL != nil {
+			return dialProxy(ctx, proxyURL, addr, next)
+		}
+	}
+	return next(ctx, network, addr)
 }
 
 // allows reports whether the operator's list names host, or host:port.
