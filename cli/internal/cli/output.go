@@ -439,12 +439,17 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 }
 
 // formatPoolHostCredential says which provider credential a pool's host
-// holds and how far it reaches (ADR 26-10-23-551 §4): an issued key, which
-// expires and discobox renews, or the provider's own, which it never does; and
-// the driver's machine token beside either.
+// holds and how far it reaches (ADR 26-10-23-551 §4, ADR 26-11-11-080 §9):
+// the machine's own in-machine credential, for which nothing is placed; an
+// issued key, which expires and discobox renews; or the provider's own, which
+// an older server placed and the next reconcile takes off; and the driver's
+// machine token beside a key.
 func formatPoolHostCredential(credential apimodel.PoolHostCredential, now time.Time) string {
 	var parts []string
 	switch credential.Key.Or("") {
+	case apiclientgen.PoolHostCredentialKeyInMachine:
+		// The machine token is the credential itself: said once.
+		return "its machine's own in-machine credential, which reaches the org as the machine's owner; nothing is placed, and it ends with the machine"
 	case apiclientgen.PoolHostCredentialKeyIssued:
 		what := "an issued key"
 		if id := credential.KeyId.Or(""); id != "" {
@@ -459,7 +464,7 @@ func formatPoolHostCredential(credential apimodel.PoolHostCredential, now time.T
 		}
 		parts = append(parts, what)
 	case apiclientgen.PoolHostCredentialKeyProvider:
-		parts = append(parts, "the provider's own key, which discobox never expires, renews or revokes")
+		parts = append(parts, "the provider's own key, which an older server placed and the pool's next reconcile takes off")
 	}
 	if len(parts) > 0 {
 		if scope := credential.Scope.Or(""); scope != "" {

@@ -104,6 +104,22 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err := ensurePoolName(root.System("/etc/hosts")); err != nil {
 		return err
 	}
+	// A driver that can authenticate as this machine has an endpoint here
+	// that mints its credential for any process: kept from all but the
+	// engine (ADR 26-11-11-080 §9). Each unit that carries a sandbox's
+	// traffic loads it again before it starts; this load fails the pool's
+	// start on a machine that cannot, where it is reported.
+	if runtimeKind == RuntimeMachine {
+		auth, _, err := inMachineAuth(bootstrap)
+		if err != nil {
+			return err
+		}
+		if auth != nil {
+			if err := fenceInMachine(ctx, auth, root.System("/proc/net/route")); err != nil {
+				return err
+			}
+		}
+	}
 	// Render the shared builder's and its registry's configuration for the
 	// same reason and at the same point: both run as systemd units with a
 	// clean environment, and every path they own is pool-scoped (ADR 0044).

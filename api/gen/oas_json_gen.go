@@ -27383,6 +27383,8 @@ func (s *PoolHostCredentialKey) Decode(d *jx.Decoder) error {
 	switch PoolHostCredentialKey(v) {
 	case PoolHostCredentialKeyIssued:
 		*s = PoolHostCredentialKeyIssued
+	case PoolHostCredentialKeyInMachine:
+		*s = PoolHostCredentialKeyInMachine
 	case PoolHostCredentialKeyProvider:
 		*s = PoolHostCredentialKeyProvider
 	default:

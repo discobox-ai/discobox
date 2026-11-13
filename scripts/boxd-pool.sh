@@ -17,11 +17,10 @@
 # PATH) and $BOXD the boxd CLI (default: boxd on PATH).
 #
 # The provider has no controlPlaneUrl, so the server opens a channel to its pool
-# machine and needs no public URL (ADR 26-10-30-875). It sets deliverProviderKey,
-# because boxd issues a pool no narrower key from an API key (ADR 26-10-23-551
-# §4): the key is placed on the pool's machine, and nothing expires it. The
-# server seals the key in the provider's row and never returns it (ADR
-# 26-10-31-694).
+# machine and needs no public URL (ADR 26-10-30-875). The key is the server's
+# alone: the pool's machine authenticates as itself, and is given no key (ADR
+# 26-11-11-080 §9). The server seals the key in the provider's row and never
+# returns it (ADR 26-10-31-694).
 set -eu
 
 name=boxd
@@ -70,7 +69,7 @@ config=$(mktemp)
 trap 'rm -f "$config"' EXIT
 chmod 600 "$config"
 jq -n --arg key "$key" --arg base "$base" \
-	'{driver: {apiKey: $key}, deliverProviderKey: true} + (if $base == "" then {} else {base: $base} end)' >"$config"
+	'{driver: {apiKey: $key}} + (if $base == "" then {} else {base: $base} end)' >"$config"
 
 if "$discobox" "$@" admin provider get "$name" >/dev/null 2>&1; then
 	"$discobox" "$@" admin provider update "$name" --config "@$config" >/dev/null

@@ -18958,9 +18958,10 @@ func (*PoolHeldSandboxesBody) listPoolHeldSandboxesRes() {}
 // whose host can reach the provider's account says how far. Never its secret.
 // Ref: #/components/schemas/PoolHostCredential
 type PoolHostCredential struct {
-	// The provisioning key the host holds: issued, a key the provider's driver issued for this pool,
-	// which expires and is renewed and revoked by discobox; or provider, the provider's own key,
-	// delivered because its configuration opts in, which discobox never expires, renews or revokes.
+	// How the host authenticates its engine: in-machine, as its own machine, with the credential its
+	// driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's
+	// driver issued for this pool, which expires and is renewed and revoked by discobox; or provider,
+	// the provider's own key an older server delivered, which the pool's next reconcile takes off.
 	// Absent when it holds none.
 	Key OptPoolHostCredentialKey `json:"key"`
 	// What the key reaches, as the driver says (account, org, project). Absent where it cannot tell.
@@ -19025,21 +19026,24 @@ func (s *PoolHostCredential) SetMachineToken(val OptBool) {
 	s.MachineToken = val
 }
 
-// The provisioning key the host holds: issued, a key the provider's driver issued for this pool,
-// which expires and is renewed and revoked by discobox; or provider, the provider's own key,
-// delivered because its configuration opts in, which discobox never expires, renews or revokes.
+// How the host authenticates its engine: in-machine, as its own machine, with the credential its
+// driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's
+// driver issued for this pool, which expires and is renewed and revoked by discobox; or provider,
+// the provider's own key an older server delivered, which the pool's next reconcile takes off.
 // Absent when it holds none.
 type PoolHostCredentialKey string
 
 const (
-	PoolHostCredentialKeyIssued   PoolHostCredentialKey = "issued"
-	PoolHostCredentialKeyProvider PoolHostCredentialKey = "provider"
+	PoolHostCredentialKeyIssued    PoolHostCredentialKey = "issued"
+	PoolHostCredentialKeyInMachine PoolHostCredentialKey = "in-machine"
+	PoolHostCredentialKeyProvider  PoolHostCredentialKey = "provider"
 )
 
 // AllValues returns all PoolHostCredentialKey values.
 func (PoolHostCredentialKey) AllValues() []PoolHostCredentialKey {
 	return []PoolHostCredentialKey{
 		PoolHostCredentialKeyIssued,
+		PoolHostCredentialKeyInMachine,
 		PoolHostCredentialKeyProvider,
 	}
 }
@@ -19048,6 +19052,8 @@ func (PoolHostCredentialKey) AllValues() []PoolHostCredentialKey {
 func (s PoolHostCredentialKey) MarshalText() ([]byte, error) {
 	switch s {
 	case PoolHostCredentialKeyIssued:
+		return []byte(s), nil
+	case PoolHostCredentialKeyInMachine:
 		return []byte(s), nil
 	case PoolHostCredentialKeyProvider:
 		return []byte(s), nil
@@ -19061,6 +19067,9 @@ func (s *PoolHostCredentialKey) UnmarshalText(data []byte) error {
 	switch PoolHostCredentialKey(data) {
 	case PoolHostCredentialKeyIssued:
 		*s = PoolHostCredentialKeyIssued
+		return nil
+	case PoolHostCredentialKeyInMachine:
+		*s = PoolHostCredentialKeyInMachine
 		return nil
 	case PoolHostCredentialKeyProvider:
 		*s = PoolHostCredentialKeyProvider

@@ -77,14 +77,6 @@ type Config struct {
 	// channel to each pool machine instead, and needs no URL a machine can
 	// reach (ADR 26-10-30-875 §4). A held driver refuses it.
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
-	// DeliverProviderKey opts in to placing the driver's key itself on a
-	// pool's machine when the driver cannot issue the pool a narrower key
-	// that expires (ADR 26-10-23-551 §4). It reaches everything the key
-	// reaches, nothing discobox does expires, renews or revokes it, and
-	// whoever reads it on a pool's machine keeps it after the pool is gone.
-	// Without it, such a pool is blocked, and a failed issue is retried,
-	// never answered with this key.
-	DeliverProviderKey bool `json:"deliverProviderKey,omitempty"`
 }
 
 // settings is a provider's configuration as disco-vm takes it: the driver's
@@ -121,12 +113,43 @@ func decode(name string, data []byte) (settings, error) {
 			s.key = strings.TrimSpace(s.key)
 		}
 	}
+	if field, ok := inMachineField(name); ok {
+		if _, set := fields[field]; set {
+			return settings{}, fmt.Errorf("%s: %s.%s is discobox's to set, on a pool's machine alone: the server's engine calls with the provider's key", name, driverKey, field)
+		}
+	}
 	if len(fields) > 0 {
 		if s.driverConfig, err = json.Marshal(fields); err != nil {
 			return settings{}, err
 		}
 	}
 	return s, nil
+}
+
+// inMachineField is the field of the named driver's configuration that has
+// it authenticate as the machine it runs on, with no key, if the driver can:
+// disco-vm declares it (Definition.InMachine; boxd's inMachine, vm#140), so
+// discobox knows it without knowing the driver. A driver that declares it
+// authenticates its pools in-machine (ADR 26-11-11-080 §9), and only
+// discobox sets it, on the pool's machine.
+func inMachineField(name string) (string, bool) {
+	def, err := machine.DefinitionOf(name)
+	if err != nil || def.InMachine == nil {
+		return "", false
+	}
+	return def.InMachine.Field, true
+}
+
+// withInMachine is a driver configuration with its in-machine field on.
+func withInMachine(config json.RawMessage, field string) (json.RawMessage, error) {
+	fields := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(config)) > 0 {
+		if err := json.Unmarshal(config, &fields); err != nil {
+			return nil, err
+		}
+	}
+	fields[field] = json.RawMessage("true")
+	return json.Marshal(fields)
 }
 
 // secretOf is the driver's secret, its key (ADR 26-11-12-461 in disco-vm:
@@ -221,8 +244,8 @@ func validateFor(s settings, local bool) error {
 	if local {
 		// The server makes a held driver with no key: it acts as its state
 		// root's owner.
-		if url != "" || s.DeliverProviderKey || s.key != "" {
-			return fmt.Errorf("the %s driver runs its pools on this host: it takes no key, control plane URL or key delivery", s.name)
+		if url != "" || s.key != "" {
+			return fmt.Errorf("the %s driver runs its pools on this host: it takes no key or control plane URL", s.name)
 		}
 		return nil
 	}
@@ -324,6 +347,10 @@ func Definition(name string) sandbox.ProviderDefinition {
 		})
 	}
 	for _, field := range def.Current() {
+		if def.InMachine != nil && field.Key == def.InMachine.Field {
+			// discobox's to set, on a pool's engine alone (§9).
+			continue
+		}
 		fields = append(fields, sandbox.ProviderConfigField{
 			Key:         driverKey + "." + field.Key,
 			Label:       field.Label,
@@ -340,7 +367,6 @@ func Definition(name string) sandbox.ProviderDefinition {
 	if !local {
 		fields = append(fields,
 			sandbox.ProviderConfigField{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where this provider's pool machines reach this server. Leave it empty and this server opens a channel to each pool machine instead, so it needs no public URL."},
-			sandbox.ProviderConfigField{Key: "deliverProviderKey", Label: "Deliver Provider Key", Type: "boolean", Advanced: true, Description: "When the driver cannot issue a pool a narrower key that expires, place this provider's own key on the pool's machine instead. It reaches everything the key reaches, discobox never expires, renews or revokes it, and whoever reads it there keeps it: rotate it when a pool machine is lost or suspected. Without it such a pool is blocked."},
 		)
 		if def.TakesBase() {
 			fields = append(fields, sandbox.ProviderConfigField{Key: "base", Label: def.Base.Label, Type: "string", Placeholder: def.Base.Placeholder, Default: def.Base.Default, Advanced: true, Description: def.Base.Description + " A pool's machine and its sandboxes' machines are made from it, and the pool's keys run on it: name one only your account controls."})

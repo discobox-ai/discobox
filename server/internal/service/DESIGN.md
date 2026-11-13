@@ -111,7 +111,8 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    `vm` type to its disco-vm driver's own type (`Store.MigrateVMProviders`,
    ADR 26-11-11-080 §8): after the seal, so the key it moves is sealed to
    sealed, and before the engine, whose reconciles resolve providers by
-   type. It is the one place the server reads a driver's environment
+   type; the same step takes `deliverProviderKey` off every linked driver's
+   row (§9). It is the one place the server reads a driver's environment
    variable. Then it starts the engine, whose reconciles resolve
    providers, and marks every pool for a reconcile, so each settles once in
    this run whether or not the release moved; the upgrade watch goes on it.

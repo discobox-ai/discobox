@@ -133,6 +133,15 @@ pools and key. If the server's environment set `BOXD_GRPC_ADDR` or
 `vm` provider on any other driver (vz, for example) is disabled and left for
 you to delete, with its pools. Those pools never ran.
 
+A provider's key never goes on a pool's machine. A boxd pool's machine
+authenticates as itself, with the token boxd gives the machine's owner, and
+is given no key. That token reaches every machine the owner has in the org,
+other pools' included, as the key would; give discobox a boxd account of its
+own. The pool keeps its boxes and their builds from the endpoint that mints
+that token, with an nftables rule set on its machine, so a boxd provider's
+`base` needs `nft`. A pool on a driver that neither does this nor issues a
+pool a key of its own is refused.
+
 Behind an egress proxy (`HTTPS_PROXY`, or a SOCKS5 `ALL_PROXY`), the server
 reaches a VM provider's endpoints through the proxy by name, and the proxy
 resolves them. What the proxy lets the server reach is the proxy's to decide:

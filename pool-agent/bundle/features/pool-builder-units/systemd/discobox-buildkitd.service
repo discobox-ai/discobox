@@ -6,6 +6,9 @@ Documentation=https://github.com/discobox-ai/discobox
 Wants=discobox-pool-agent.service
 After=network-online.target discobox-pool-agent.service
 Wants=network-online.target
+# Retried for as long as the box is a pool's, as the agent is: a load that
+# fails at boot (no default route yet) must not leave it down for good.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -14,6 +17,11 @@ EnvironmentFile=/etc/discobox/buildkitd.env
 # trick ADR 0020 uses in the sandbox. buildkitd is also pointed at the wrapper
 # explicitly below; the PATH entry covers anything that resolves runc by name.
 Environment=PATH=/opt/discobox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Not without the rule set that keeps an in-machine credential's endpoint
+# from it, on a pool whose driver declares one (ADR 26-11-11-080 §9), read
+# from the bootstrap as the agent reads it.
+Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
+ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence
 ExecStartPre=/usr/bin/install -d -m 0700 ${DISCOBOX_BUILDKIT_ROOT}
 # Discard the previous run's network namespaces, keeping the build cache beside
 # them. A netns is a bind mount of nsfs; once this container restarts the mount

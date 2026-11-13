@@ -35,7 +35,7 @@ from the in-sandbox `sandbox-agent` API.
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
-| `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-builder-units`, `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and a machine pool's `ProvisioningKeyFile`). See [The Pool Bundle](#the-pool-bundle). |
+| `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-builder-units`, `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and an issued key's `ProvisioningKeyFile` on a machine pool that does not authenticate in-machine). See [The Pool Bundle](#the-pool-bundle). |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a container's as `ContainerGuest`, with the daemon's platform from `ContainerPlatform`), a tar tree, a command and its stdin, it places the tree with the guest's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code beyond that container's guest, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree — or on `Plan.Stdin` where they must never touch the box's disk, as a snapshot build's plan (ADR 26-11-03-986 §1). It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
 | `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver and the shim that holds a fake machine, and `FakeDriver` is that driver, with one base, any key source and the driver configuration the test gives it and its shims (the driver reads none from the environment), so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
@@ -70,7 +70,10 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    tunnel URL of a pool reached through an edge, and prepares the proxy CA
    bundle and control key, names its own host by the pool's server name in
    `/etc/hosts` (`ensurePoolName`, never DNS), and renders the
-   BuildKit/registry configuration, on every pool. It starts the child systemd namespace — only as PID 1 in a
+   BuildKit/registry configuration, on every pool. On a machine pool whose
+   driver declares in-machine auth it loads the rule set that keeps the
+   credential's endpoints from everything but its engine
+   ([Machine Sandboxes](#machine-sandboxes)). It starts the child systemd namespace — only as PID 1 in a
    pool container — and the `childproc` reaper. The agent then tells systemd it has started (`sd_notify` `READY=1`),
    which only a pool machine's Type=notify unit listens for: the proxy unit is
    ordered after it.
@@ -976,11 +979,38 @@ holds while both trees cover the same set of pools.
 A machine pool's sandboxes are disco-vm machines on the pool's own engine
 ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
 §3), `sandboxruntime.MachineSandboxRuntime`. The engine is opened on the
-bootstrap's driver and `MachinePool` scope, with a key source that reads
-`bundle.ProvisioningKeyFile` (a `machine.Key` as JSON) on every call, so a
-renewed key is a new file and nothing more; nothing of the file reaches an
-error. It is made with the bootstrap's `DriverConfig`, so it calls the
+bootstrap's driver and `MachinePool` scope. Where `DriverConfig` turns on
+the field its driver's in-machine auth names (disco-vm's
+`Definition.InMachine`; boxd's `inMachine`, ADR 26-11-11-080 §9), it is
+given no key, and its driver authenticates as the pool's machine; otherwise
+its key source reads `bundle.ProvisioningKeyFile` (an issued
+`machine.Key` as JSON) on every call, so a renewed key is a new file and
+nothing more, and nothing of the file reaches an error. It is made with the bootstrap's `DriverConfig`, so it calls the
 provider's endpoints and region. boxd and archil are linked.
+
+A driver that declares in-machine auth has endpoints on the machine that mint
+its credential for any process that asks (boxd's metadata adapter,
+`<gateway>:9002`), whether its configuration uses them or not. They are
+kept from every other process there by a rule set of the agent's own,
+`inet discobox_in_machine` (`fenceInMachine`, `inmachine.go`): every
+connection to an endpoint, as the machine resolves it when the set is
+loaded (its default gateway from the route table, read as disco-vm's boxd
+driver reads it, an address or CIDR, a name's addresses), is reset on
+output unless it carries `engineMark`, and always on forward. Only the
+engine's dialer (`machine.Config.Dial`, `engineDial`) sets the mark. A
+reboot clears the kernel's tables, and the units that carry a sandbox's
+traffic do not wait on the agent's start, so each of them — the proxy,
+BuildKit, its mediator and the registry — loads the set itself before it
+starts (`ExecStartPre=discobox-pool-agent in-machine-fence`,
+`RunInMachineFence`, which reads the bootstrap as the agent does) and does
+not start without it, retried with no start limit; the agent loads it too
+before `READY`, so a machine that cannot (no `nft`, no default gateway)
+fails the pool's start, saying why. The proxy, which a sandbox's and a build
+step's egress leaves through, and BuildKit, which fetches what a Dockerfile
+names itself, so never reach the endpoints. A gateway that moves is fenced
+anew at the next start of any of them. Root on the
+machine can set the mark, or mint the credential anyway; the ADR states that
+cost.
 
 ```mermaid
 flowchart LR
@@ -2304,7 +2334,7 @@ sandboxes share a solver cache
 machine pool's as a Docker pool's
 ([ADR 26-10-27-767](../docs/adr/26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md)).
 On a machine pool the builds run on the pool's machine, beside the
-provisioning key and the driver's machine token; the ADR states that cost.
+driver's machine token (an in-machine credential on boxd) and any issued key; the ADR states that cost. A build step and BuildKit's own fetches never reach boxd's in-machine endpoint: the agent's rule set refuses them ([Machine Sandboxes](#machine-sandboxes)).
 `docker run` stays in the sandbox: a nested run's bind mounts name sandbox
 paths that do not exist out here.
 

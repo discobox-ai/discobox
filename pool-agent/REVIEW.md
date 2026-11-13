@@ -688,3 +688,28 @@ linux, since an agent that is given none declares linux (#1010).
   regenerated into `docs/public/cli.md`) states what a clear keeps. A change
   to the reaper's rules changes that text in the same change: it is the only
   description a user reads, and it went stale once already.
+
+## In-machine credential endpoints
+
+On a machine pool whose driver declares in-machine auth, anything that
+originates traffic on the pool's machine for a sandbox — the proxy, BuildKit
+and its build steps, a new bridge or forwarder — must stay behind the
+`discobox_in_machine` rule set, and only the engine's dialer (`engineDial`)
+sets `engineMark`. Do not give another connection the mark. A unit that sends
+a sandbox's traffic loads the set itself before it starts
+(`ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence`, which
+`bundle`'s `TestSandboxTrafficUnitsLoadTheInMachineFence` holds), never only
+`After=` the agent: a reboot clears the kernel's tables, and `Wants=`/`After=`
+start a unit even when the agent's start failed. It reads the bootstrap as
+the agent does (`Load`, `Validate`, the unit naming the file), and the unit
+has no start limit (`StartLimitIntervalSec=0`), so a load that fails at boot
+is retried rather than leaving the pool up with no proxy or builder. Why: boxd's metadata adapter
+mints the owner's org-wide token for any request from the machine, asking for
+nothing, so a sandbox that reaches it through the proxy or a build step
+escapes to every machine in the org (ADR 26-11-11-080 §9).
+
+`defaultGateway` reads the route table exactly as disco-vm's boxd driver
+does (its unexported `defaultGateway`, `pkg/machine/boxd/vmtoken.go`). When
+the disco-vm pin moves, compare the two. Why: the address fenced must be the
+one the driver asks; until disco-vm exports the resolution, they are two
+copies.

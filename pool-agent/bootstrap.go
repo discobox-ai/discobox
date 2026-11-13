@@ -105,7 +105,10 @@ type Bootstrap struct {
 	// pool's engine calls the same endpoints and region as the provider's
 	// (ADR 26-11-11-080 §6): machine.Config.DriverConfig. It holds no secret,
 	// which the provisioning key file carries apart. Empty is the driver's
-	// defaults.
+	// defaults. Where it turns on the field the driver's in-machine auth
+	// names (disco-vm's Definition.InMachine; boxd's inMachine), the engine
+	// authenticates as its machine and is given no key (§9): it is the one
+	// place the bootstrap says so.
 	DriverConfig json.RawMessage `json:"driverConfig,omitempty"`
 	// MachineNetwork is the provider's network the pool's machine is on,
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551

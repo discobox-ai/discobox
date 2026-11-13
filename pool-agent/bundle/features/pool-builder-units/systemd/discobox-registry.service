@@ -6,12 +6,20 @@ Documentation=https://github.com/discobox-ai/discobox
 Wants=discobox-pool-agent.service
 After=network-online.target discobox-pool-agent.service
 Wants=network-online.target
+# Retried for as long as the box is a pool's, as the agent is: a load that
+# fails at boot (no default route yet) must not leave it down for good.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 # Storage root and listen address are pool-scoped, so the unit cannot
 # address its own state without this.
 EnvironmentFile=/etc/discobox/registry.env
+# Not without the rule set that keeps an in-machine credential's endpoint
+# from it, on a pool whose driver declares one (ADR 26-11-11-080 §9), read
+# from the bootstrap as the agent reads it.
+Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
+ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence
 ExecStartPre=/usr/bin/install -d -m 0700 ${REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY}
 ExecStart=/usr/local/bin/registry serve /etc/discobox/registry.yml
 Restart=on-failure
