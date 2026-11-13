@@ -1282,7 +1282,7 @@ func writeRootFile(root *os.Root, name string, data []byte, mode os.FileMode) er
 		return err
 	}
 	// Synced, so a hard stop of the pool's host leaves the file whole.
-	return fsdurable.SyncRootDir(root, ".")
+	return fsdurable.SyncIn(root, ".")
 }
 
 // documentHarnessSecrets carries the harness's declared credentials onto the

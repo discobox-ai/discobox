@@ -39,19 +39,21 @@ func SyncDir(path string) error {
 	return nil
 }
 
-// SyncRootDir flushes the entries of the directory name in root, as SyncDir
-// does for a path, without following a link out of root: for a directory
-// another party can write. It is a no-op on Windows, as SyncDir is.
-func SyncRootDir(root *os.Root, name string) error {
+// SyncIn flushes name in root, a file's data or a directory's entries, as
+// SyncDir does for a directory by path, without following a link out of
+// root: for a tree another party can write. It is a no-op on Windows, as
+// SyncDir is: a directory cannot be flushed there, nor a file opened only to
+// read.
+func SyncIn(root *os.Root, name string) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	dir, err := root.Open(name)
+	f, err := root.Open(name)
 	if err != nil {
 		return fmt.Errorf("sync %s: %w", name, err)
 	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
+	defer f.Close()
+	if err := f.Sync(); err != nil {
 		return fmt.Errorf("sync %s: %w", name, err)
 	}
 	return nil

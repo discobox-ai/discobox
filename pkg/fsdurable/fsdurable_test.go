@@ -3,6 +3,7 @@ package fsdurable
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestWriteFileReplacesWholeAndLeavesNothingBeside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Errorf("mode %v, want 0600", mode)
 	}
 	entries, err := os.ReadDir(dir)
@@ -44,11 +45,17 @@ func TestRemoveOfAPathAlreadyGone(t *testing.T) {
 	}
 }
 
-// SyncRootDir syncs a directory in a root, and refuses one a link leads out
-// of it to.
-func TestSyncRootDirStaysInTheRoot(t *testing.T) {
+// SyncIn syncs a file or directory in a root, and refuses one a link leads
+// out of it to. Windows has nothing to sync, so nothing to refuse.
+func TestSyncInStaysInTheRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SyncIn is a no-op on Windows")
+	}
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "in"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "in", "file"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(t.TempDir(), filepath.Join(dir, "out")); err != nil {
@@ -59,12 +66,12 @@ func TestSyncRootDirStaysInTheRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	for _, name := range []string{".", "in"} {
-		if err := SyncRootDir(root, name); err != nil {
-			t.Errorf("SyncRootDir(%q): %v", name, err)
+	for _, name := range []string{".", "in", "in/file"} {
+		if err := SyncIn(root, name); err != nil {
+			t.Errorf("SyncIn(%q): %v", name, err)
 		}
 	}
-	if err := SyncRootDir(root, "out"); err == nil {
-		t.Error("SyncRootDir followed a link out of its root")
+	if err := SyncIn(root, "out"); err == nil {
+		t.Error("SyncIn followed a link out of its root")
 	}
 }
