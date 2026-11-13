@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/x/id"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -267,11 +268,7 @@ func (r *MachineSandboxRuntime) writeMachineRecord(sandboxID string, record mach
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }
 
 // instance is the sandbox's machine, by its name alone, and ErrNotFound when
@@ -789,7 +786,7 @@ func (r *MachineSandboxRuntime) upgradeMachine(ctx context.Context, sandboxID st
 		return inst, fmt.Errorf("give sandbox %s's machine a new root: %w", sandboxID, err)
 	default:
 		slog.InfoContext(ctx, "gave a sandbox machine a new root, keeping its volumes", "sandboxId", sandboxID)
-		if err := os.Remove(r.placedRecordPath(sandboxID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := fsdurable.Remove(r.placedRecordPath(sandboxID)); err != nil {
 			return inst, err
 		}
 		// The driver keeps a machine's service across a stop and start, and
@@ -1018,25 +1015,30 @@ func (r *MachineSandboxRuntime) agentListenAddress(ctx context.Context, inst mac
 // discobox-wire.service at a boot, before them, may mount (ADR 26-11-02-023
 // §3); an agent started here would mount them under those services.
 //
-// restarted is the placement after that restart: the machine booted on what
-// was placed, its agent started by its own units as a container's does, so
-// it is placed again, applies nothing either, and is recorded. A pool agent
-// gone between the two leaves the old record, and the next start restarts
-// the machine again rather than take it as placed.
-func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord, restarted bool) (bool, error) {
+// after is how the machine came to boot on this. Restarted, it is the
+// placement after that restart: the machine booted on what was placed, its
+// agent started by its own units as a container's does, so it is placed
+// again, applies nothing either, and is recorded. A pool agent gone between
+// the two leaves the old record, and the next start restarts the machine
+// again rather than take it as placed. A restart whose stop was forced may
+// have lost what was copied before it, and a record would have every later
+// start skip the layer: that placement is returned, for the caller to record
+// once the agent has answered.
+func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord, after placeAfter) (bool, *placedRecord, error) {
+	restarted := after != notRestarted
 	pins, ok, err := r.deliveredPins(sandboxID)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if !ok {
-		return false, fmt.Errorf("sandbox %s: %w", sandboxID, ErrUndelivered)
+		return false, nil, fmt.Errorf("sandbox %s: %w", sandboxID, ErrUndelivered)
 	}
 	agent, ok, err := r.sandboxAgent(ctx, sandboxID)
 	if err != nil {
-		return false, fmt.Errorf("the agent of sandbox %s's pins %v: %w", sandboxID, pins, err)
+		return false, nil, fmt.Errorf("the agent of sandbox %s's pins %v: %w", sandboxID, pins, err)
 	}
 	if !ok {
-		return false, fmt.Errorf("sandbox %s is pinned to %v, and this pool has no asset cache to place its agent from", sandboxID, pins)
+		return false, nil, fmt.Errorf("sandbox %s is pinned to %v, and this pool has no asset cache to place its agent from", sandboxID, pins)
 	}
 	// A machine takes the pool's setting at every start, since its bootstrap
 	// is placed again: a bootstrap that moved with it restarts the machine
@@ -1044,12 +1046,12 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	if record.Bootstrap.Runtime.AgentRuntime.TLS != r.agentTLS {
 		record.Bootstrap.Runtime.AgentRuntime.TLS = r.agentTLS
 		if err := r.writeMachineRecord(sandboxID, record); err != nil {
-			return false, err
+			return false, nil, err
 		}
 	}
 	bootstrap, bootstrapDigest, err := renderBootstrap(record)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	// The keypair the agent serves its API over TLS with goes beside it, the
 	// one the pool holds now, so a start places one due for renewal anew. It
@@ -1059,21 +1061,21 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	if r.agentTLS {
 		material, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		keypair = &material.Agent
 	}
 	placed, had, err := r.readPlaced(sandboxID)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	had = had && placed.Container == inst.ID
 	guest, err := r.engine.Guest(ctx, inst)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair)); err != nil {
-		return false, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
+		return false, nil, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
 	}
 	reader, writer := io.Pipe()
 	go func() {
@@ -1090,7 +1092,7 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	moved := !restarted && (!had || placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
 	if moved || restarted {
 		if err := guest.CopyTo(ctx, "/", reader); err != nil {
-			return false, fmt.Errorf("place sandbox %s's agent: %w", sandboxID, err)
+			return false, nil, fmt.Errorf("place sandbox %s's agent: %w", sandboxID, err)
 		}
 	} else {
 		result, err := provisioner.Provision(ctx, guest, provisioner.Plan{
@@ -1102,18 +1104,39 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 			if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
 				err = fmt.Errorf("%w: %s", err, tail)
 			}
-			return false, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
+			return false, nil, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
 		}
 	}
 	if moved {
-		return true, nil
+		return true, nil, nil
 	}
-	if err := r.writePlaced(sandboxID, placedRecord{Container: inst.ID, Layer: agent.Digest, Pins: pins, Bootstrap: bootstrapDigest}); err != nil {
-		return false, err
-	}
+	placement := placedRecord{Container: inst.ID, Layer: agent.Digest, Pins: pins, Bootstrap: bootstrapDigest}
 	// How the pool reaches the agent is what the bootstrap just placed says.
-	return moved, r.recordAgentTLS(sandboxID, record.Bootstrap.Runtime.AgentRuntime.TLS)
+	if err := r.recordAgentTLS(sandboxID, record.Bootstrap.Runtime.AgentRuntime.TLS); err != nil {
+		return false, nil, err
+	}
+	if after == restartedForced {
+		// Recorded once its agent answers. On a first placement only this
+		// layer's agent can answer, so that proves it reached the machine's
+		// disk; on a move from another layer, the older agent answering
+		// proves nothing of the new one (#1115).
+		return false, &placement, nil
+	}
+	return false, nil, r.writePlaced(sandboxID, placement)
 }
+
+// placeAfter is how a machine came to boot on what place puts in it.
+type placeAfter int
+
+const (
+	// notRestarted is a machine running before the placement.
+	notRestarted placeAfter = iota
+	// restartedInOrder is a machine restarted onto the placement, stopped in
+	// order: what was copied before the restart is on its disk.
+	restartedInOrder
+	// restartedForced is one whose stop was forced off after its timeout.
+	restartedForced
+)
 
 // renderBootstrap is sandbox.json as record's bootstrap renders it, and its
 // digest, which the placement record keeps.
@@ -1330,7 +1353,7 @@ func (r *MachineSandboxRuntime) markSnapshotProven(sandboxID string) error {
 	if err != nil || !ok || record.Snapshot == "" || r.snapshotProven(sandboxID) {
 		return err
 	}
-	return writeFileDurably(r.snapshotProvenPath(sandboxID), nil)
+	return fsdurable.WriteFile(r.snapshotProvenPath(sandboxID), nil)
 }
 
 // stopRefusedSandbox stops a machine whose agent refused the pool's

@@ -121,6 +121,13 @@ func (s *Store) sweepCache(ctx context.Context, path string, held map[string]str
 	}
 	for _, marker := range markers {
 		namespace := marker.Name()
+		if strings.HasPrefix(namespace, ".") {
+			// A marker's staged write (fsdurable.WriteFile) a hard stop left
+			// behind: no namespace's name starts with a dot, and none is being
+			// written while the sweep holds the cache.
+			_ = os.Remove(filepath.Join(path, namespacesDir, namespace))
+			continue
+		}
 		if strings.HasSuffix(namespace, unheldSuffix) {
 			continue
 		}
@@ -129,12 +136,19 @@ func (s *Store) sweepCache(ctx context.Context, path string, held map[string]str
 			continue
 		}
 		file := filepath.Join(path, namespacesDir, namespace)
-		owner, err := os.ReadFile(file)
+		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
 		}
+		owner := strings.TrimSpace(string(data))
+		if owner == "" {
+			// A marker a hard stop left empty, before markers were synced:
+			// its owner is unknown, not nobody, so its refs are kept.
+			logger.Warn("keep a git cache namespace whose owner marker is empty", "cache", path, "namespace", namespace)
+			continue
+		}
 		unheld := file + unheldSuffix
-		if _, ok := held[strings.TrimSpace(string(owner))]; ok {
+		if _, ok := held[owner]; ok {
 			_ = os.Remove(unheld)
 			continue
 		}

@@ -20,6 +20,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -748,9 +749,8 @@ func (r *sandboxCore) writeProjectLayerRecord(sandboxID string, record projectLa
 	if err := os.MkdirAll(r.sandboxRoot(sandboxID), 0o755); err != nil {
 		return fmt.Errorf("record project layer: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := fsdurable.WriteFile(path, data); err != nil {
 		return fmt.Errorf("record project layer: %w", err)
 	}
-	return os.Rename(tmp, path)
+	return nil
 }

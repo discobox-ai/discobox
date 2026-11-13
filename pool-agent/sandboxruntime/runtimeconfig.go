@@ -22,6 +22,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
@@ -120,12 +121,8 @@ func (r *sandboxCore) writeRuntimeConfig(sandboxID string, doc sandboxconfig.Run
 		return err
 	}
 	// The record names sentinels, never resolved values, but it is still the
-	// pool's alone.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	// pool's alone: WriteFile writes it 0600.
+	return fsdurable.WriteFile(path, data)
 }
 
 // decideRuntimeConfig settles the sandbox's document: the record as it stands

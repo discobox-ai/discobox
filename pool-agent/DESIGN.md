@@ -977,7 +977,7 @@ flowchart LR
     start --> place{"place: sandbox.json,\nagentlayer.Archive"}
     place -->|"placed as before"| apply["discobox-provision apply"]
     place -->|"never placed in this instance,\nor placed before with something else:\nnothing applied or recorded"| restart["restart the machine"]
-    restart --> again["place again: nothing applied\n(its agent starts at boot), recorded"]
+    restart --> again["place again: nothing applied\n(its agent starts at boot), recorded;\nafter a forced stop, once its agent answers"]
     apply --> boot["finishBoot: wait at the URL,\ndeliver runtime config"]
     again --> boot
 ```
@@ -1008,7 +1008,12 @@ flowchart LR
   §3). After the restart the agent starts from its own units, as a
   container's does, and the placement is made again, applying nothing, and
   recorded; a pool agent gone in between leaves the old record, so the next
-  start restarts the machine again. A first placement is one more guest boot
+  start restarts the machine again. A restart whose stop was forced off may
+  have lost the copy made before it, so that placement is recorded only once
+  `finishBoot` has seen the agent answer: on a first placement no other
+  agent could have, so a lost layer is placed again at the next start. A
+  move from an older layer is not covered yet, since its agent says nothing
+  of the layer it runs from. A first placement is one more guest boot
   in a create.
 - **The agent listens where the driver's service says**
   (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into

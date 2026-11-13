@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/gitbackend"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 )
@@ -154,10 +155,46 @@ func (s *Store) ensure(ctx context.Context, path, key string) error {
 	if err := os.WriteFile(filepath.Join(tmp, keyFile), []byte(key+"\n"), 0o600); err != nil {
 		return err
 	}
+	// Synced before the rename and the root after it: a hard stop of the
+	// pool's host must not leave a cache whose key file says it is whole over
+	// files that were never written out.
+	if err := syncTree(tmp); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(path); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return fsdurable.SyncDir(s.root)
+}
+
+// syncTree flushes every file and directory under dir, the fresh bare
+// repository ensure makes: a handful of small files. It is read through a
+// root, so nothing in it is followed out of it.
+func syncTree(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return fsdurable.SyncRootDir(root, path)
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		f, err := root.Open(path)
+		if err != nil {
+			return err
+		}
+		return errors.Join(f.Sync(), f.Close())
+	})
 }
 
 // ReceiveConfig is the configuration every push into a cache is received
@@ -453,7 +490,9 @@ func (s *Store) markNamespace(path, namespace, sandboxID string) error {
 	if owner, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(owner)) == sandboxID {
 		return nil
 	}
-	return os.WriteFile(marker, []byte(sandboxID+"\n"), 0o600)
+	// Durable: a marker a hard stop left empty reads as nobody's, and Sweep
+	// would remove a live sandbox's refs.
+	return fsdurable.WriteFile(marker, []byte(sandboxID+"\n"))
 }
 
 // Receiving prepares the cache at path to take a push into one source's

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
@@ -221,6 +222,9 @@ func ExtractAgent(layer io.Reader, path string) error {
 			// The entry's own size: a layer that holds less fails, not a
 			// short agent.
 			_, copyErr := io.CopyN(out, tr, header.Size)
+			if copyErr == nil {
+				copyErr = out.Sync()
+			}
 			if err := errors.Join(copyErr, out.Close()); err != nil {
 				return fmt.Errorf("extract the agent: %w", err)
 			}
@@ -231,7 +235,12 @@ func ExtractAgent(layer io.Reader, path string) error {
 	if !found {
 		return fmt.Errorf("%w: it holds no %s", ErrNotAgentLayer, AgentFile)
 	}
-	return os.Rename(tmp, path)
+	// Synced: an agent is extracted once and trusted for existing, so one a
+	// hard stop left empty would be placed in every box after it.
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return fsdurable.SyncDir(filepath.Dir(path))
 }
 
 // Agent is an agent layer to place: its digest, and the agent binary it

@@ -385,8 +385,39 @@ durable state asks the same question.
   survives the pool container being recreated. Changing the shape of what
   they hold — `agentlayer.Pins` became a list — or their file name needs a
   reader for the old one (`Pins.UnmarshalJSON`, `readLegacyRecord`), and a
-  test with a record the previous release wrote. A record that no longer
-  decodes fails every create of its sandbox until someone deletes it.
+  test with a record the previous release wrote. A record of a shape that no
+  longer decodes fails every create of its sandbox until someone deletes it.
+- **A file the pool trusts for existing is synced before the rename or
+  create that makes it trusted, and its directory after.** That is every
+  record, marker (`.discobox-archived`, a Git cache's namespace owners) and
+  anything a later start reuses because it is there (an extracted agent, a
+  Git cache). One file is written with `fsdurable.WriteFile`, never
+  `os.WriteFile` and a rename; a staged directory syncs its tree, then is
+  renamed and its parent synced (`gitcache` `ensure`). A removal whose
+  absence means something uses `fsdurable.Remove`. A hard stop of the pool's
+  host (a libkrun VM killed by repair) can keep an unsynced rename and lose
+  its data, leaving the file empty for good.
+- **A directory the pool lists skips `fsdurable.WriteFile`'s staged files.**
+  They are named `.<name>.*.tmp` beside the target, and a hard stop can
+  leave one. A walk that counts or parses entries (the Git cache's namespace
+  markers) skips or removes names starting with a dot, or one leftover keeps
+  a cache from ever expiring.
+- **What a record says was done is on disk before the record is.** A durable
+  `agent-placed.json` over a layer copy a hard stop lost would have every
+  later start skip the layer. `placeAgent` flushes Docker's copy
+  (`fsdurable.SyncAll`) before recording it. A machine forced off on its way
+  to booting on a placement records it only once its agent has answered
+  (`restartedForced`), which proves the layer only on a first placement:
+  an older agent can answer over a lost new one until the agent reports
+  the layer it runs from. The pool runs nothing in a guest to flush it, and
+  never leaves a running machine's placement unrecorded once its agent is
+  up, since that reads as a start that did not finish (`answersRunning`) and
+  restarts the machine on its next request.
+- **Only a record whose absence means "do it again" reads a cut-short one as
+  absent.** `agent-placed.json` may (the agent is placed again), and only for
+  an empty or non-JSON file; JSON of another shape still fails. Any other
+  record must be durable instead, since absent does not stand for what it
+  held.
 
 ## The pool bundle's features
 

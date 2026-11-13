@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/layout"
 )
@@ -122,11 +123,7 @@ func WriteRecord(sandboxRoot string, d Delivery) error {
 	if err := os.MkdirAll(sandboxRoot, 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsdurable.WriteFile(path, data)
 }
 
 // ReadRecord is what the sandbox whose tree is sandboxRoot is delivered.

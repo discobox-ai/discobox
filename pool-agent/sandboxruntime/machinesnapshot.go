@@ -16,6 +16,7 @@ import (
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
@@ -114,7 +115,7 @@ func (r *MachineSandboxRuntime) writeSnapshotRecord(key string, record snapshotR
 	if err != nil {
 		return err
 	}
-	return writeFileDurably(r.snapshotRecordPath(key), data)
+	return fsdurable.WriteFile(r.snapshotRecordPath(key), data)
 }
 
 // unpublishSnapshot unpublishes the snapshot keyed key, durably, before
@@ -122,7 +123,7 @@ func (r *MachineSandboxRuntime) writeSnapshotRecord(key string, record snapshotR
 func (r *MachineSandboxRuntime) unpublishSnapshot(key string) error {
 	r.snapshots.records.Lock()
 	defer r.snapshots.records.Unlock()
-	return removeFileDurably(r.snapshotRecordPath(key))
+	return fsdurable.Remove(r.snapshotRecordPath(key))
 }
 
 // snapshotRecords is every done record, by key.
