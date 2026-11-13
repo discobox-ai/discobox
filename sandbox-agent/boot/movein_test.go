@@ -197,6 +197,12 @@ func TestASourcesRecordIsApartFromAVolumes(t *testing.T) {
 // cut before its rename, the entry set aside is copied again over what part
 // of it was copied; cut after, the whole copy stands and the aside goes.
 func TestAMachinesCopyCutShortIsFinished(t *testing.T) {
+	// It runs the real copy, GNU cp's --no-target-directory, which a Linux
+	// machine's guest has and macOS's cp does not; nothing moves volumes in
+	// on any other platform.
+	if runtime.GOOS != "linux" {
+		t.Skip("the move-in copy is a Linux guest's GNU cp")
+	}
 	b := &booter{run: func(name string, args ...string) error {
 		return exec.CommandContext(t.Context(), name, args...).Run()
 	}}
