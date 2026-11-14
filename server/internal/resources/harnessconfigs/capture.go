@@ -451,7 +451,8 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 	scoped.store = tx
 	var secret *model.Secret
 	if owned {
-		secret, err = tx.GetSecret(ctx, cfg.ProjectID, existingID)
+		// Locked, as its routes are written back and judge what they strand.
+		secret, err = tx.LockSecret(ctx, cfg.ProjectID, existingID)
 		if err != nil {
 			return err
 		}
@@ -480,6 +481,7 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 		routes = configuredRoutes(cfg, c.EnvName, hostscope.Normalize(provider.Host))
 	}
 	routesChanged := false
+	prior := *secret
 	if len(routes) > 0 {
 		if owned {
 			routesChanged, err = secret.RestrictRoutes(routes)
@@ -499,6 +501,11 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 		generation := secret.ValueGeneration()
 		if err := tx.UpdateSecret(ctx, secret); err != nil {
 			return err
+		}
+		if routesChanged {
+			if err := s.removeStrandedBindingsTx(ctx, tx, db, &prior, secret, "the routes a saved "+c.Provider+" login declares"); err != nil {
+				return err
+			}
 		}
 		if (routesChanged || secret.ValueGeneration() != generation) && s.sandboxes != nil {
 			if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, tx, db, cfg.ProjectID, secret.ID); err != nil {

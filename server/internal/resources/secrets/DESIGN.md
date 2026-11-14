@@ -91,8 +91,21 @@ flowchart LR
   a discobox) answers 400 naming the list that refused it — for the secret's
   own routes, that the secret needs a route naming the place. A discobox's
   handoff checks the secret read under its locks (`fitDelegation`); its parent
-  is covered by `ProveContained`. A change to the secret's own routes is not
-  checked against the bindings standing on it.
+  is covered by `ProveContained`.
+- **A route edit that strands a standing binding is refused** (#1105): an
+  `UpdateSecret` whose new routes allow nowhere a body place a live binding
+  names, where the old routes allowed it, answers 409 naming each binding and
+  place (`refuseStrandingBindingsTx`, over `store.StrandedBodyPlaceBindings`),
+  so the person editing is told rather than left with grants the proxy
+  refuses. The edit reads the secret locked (`store.LockSecret`) and its
+  bindings after writing it, in one transaction, so a discobox's handoff and a
+  harness writer, which lock or write that row, are serialized with it. A
+  person's binding write does not take that lock, so one racing the edit can
+  still slip past both checks. A binding already stranded before the edit, or
+  held to routes that sent the credential nowhere, does not block it. The
+  harness writers, which add route constraints with nobody to read a refusal,
+  take the stranded routes from such bindings instead, removing one left with
+  no open route ([harnessconfigs](../harnessconfigs/DESIGN.md)).
 - **A binding lives as long as its target and its parent.** Deleting a sandbox,
   harness config or secret deletes the bindings on it, and what was handed on
   under them (`store.DeleteSecretBindingsForTargetTx`); `CreateSecretBinding`

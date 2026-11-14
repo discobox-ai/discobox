@@ -445,7 +445,14 @@ There is one save mode, with no force parameter or revision-conflict retry.
 Provider destination policy follows ADR 26-11-04-772: capture and bundle refresh
 select by delivered credential type, including numbered accounts, and append
 independent `Secret.RouteConstraints` for owned secrets. Previous route lists
-remain enforced. Manual bindings are unchanged. A provider marked `manualRoutes`
+remain enforced. Manual bindings are unchanged, except one a new constraint
+strands (#1105): a binding naming a body place the constraint allows nowhere
+would stay reported as granted while the proxy refused it, and refusing the
+config apply or the login save would fail the harness, so the stranded routes
+are taken from it (`removeStrandedBindingsTx`): it keeps the routes that still
+work, and is removed when no open route is left, each change recorded with the
+cause and its holders marked.
+A provider marked `manualRoutes`
 refuses new automatic capture and adds an empty denying list to an old owned
 credential on refresh. The fixed diagnostic directs the person to bind a secret
 with explicit endpoint routes. See [the inventory](../../../../harness/credential-destinations.md).

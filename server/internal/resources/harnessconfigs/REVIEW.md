@@ -27,3 +27,4 @@
 - Refuse inheritance from a parent whose `FileOverrides` is nil until it has
   refreshed. Its legacy `Files` may still mix personal account files with the
   bundle baseline; copying them would leak personal state into another config.
+- A writer that changes a binding on someone else's behalf (`removeStrandedBindingsTx` taking a stranded route) reads that binding with `store.LockSecretBinding` in its transaction and takes only what it means to from the row as it now stands. Why: `UpdateSecretBinding` writes every saved column, so writing back a copy listed earlier would undo a person's concurrent edit (delegate turned off, raw taken away, a shorter expiry), recorded as the harness's change (#1105 review).
