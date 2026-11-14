@@ -3,7 +3,9 @@
 - **Status**: Accepted (§2's premise that `LastTagTime` is stamped on every
   build superseded by
   [0143](0143-an-arrival-no-later-than-the-build-is-an-unknown-age.md);
-  everything else stands)
+  §2's "a zero `LastTagTime` is never reclaimed" and §5's newest image of
+  every repository superseded by [26-11-13-655](26-11-13-655-an-unknown-image-age-is-started-by-the-reaper-and-only-a-kept-repository-keeps-its-newest.md); everything else
+  stands)
 - **Date**: 2026-08-14
 
 ## Context
