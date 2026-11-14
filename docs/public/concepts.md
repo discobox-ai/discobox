@@ -142,6 +142,22 @@ that token, with an nftables rule set on its machine, so a boxd provider's
 `base` needs `nft`. A pool on a driver that neither does this nor issues a
 pool a key of its own is refused.
 
+A boxd account carries discobox's pools only if:
+
+- **neither its org nor the key's owner holds a host-bound secret.** boxd
+  lets every machine in their scope reach the hosts such a secret is bound
+  to, whatever the machine's egress fence says, so a sandbox could reach them
+  too. Keep those secrets out of the org discobox uses, and out of the key
+  owner's personal scope.
+- **its org's machine limit has room.** Each pool runs one machine for itself
+  and one per running sandbox, and a new org without a payment method may
+  run only 2.
+
+Before it makes a pool's machine, the server checks the account through
+boxd's API (that the key is accepted, and that the org has the provider's
+region enabled). The pool fails with the reason if boxd refuses it, and waits
+if boxd does not answer.
+
 Behind an egress proxy (`HTTPS_PROXY`, or a SOCKS5 `ALL_PROXY`), the server
 reaches a VM provider's endpoints through the proxy by name, and the proxy
 resolves them. What the proxy lets the server reach is the proxy's to decide:

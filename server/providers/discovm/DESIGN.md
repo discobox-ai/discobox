@@ -274,7 +274,10 @@ never against anything the machine reports (551 §1):
 
 - no machine: the pool's keys are revoked by name (a machine lost outside
   discobox, or a record lost), and one is made, keyed and provisioned; it
-  registers anew;
+  registers anew. The driver's `Check` runs first, against its provider's
+  API, so an account that cannot carry a pool makes no machine and the pool's
+  error names why (boxd's: its key, and its region). A check the service does not answer
+  is `notReachable`. A pool whose machine exists is not checked again;
 - a machine under the pool's name that is not the one the record names (a
   pass made it and stopped before its record was saved): it is taken as made —
   the pool's keys revoked, the record reset, the agent placed and keyed — but
