@@ -12,6 +12,7 @@ import (
 	osexec "os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -176,6 +177,63 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		waitUntil(t, "the terminal's session to exit", func() bool {
 			return sessionGone(int(running.PID))
 		})
+	})
+
+	t.Run("StopATerminalAsItsShellStarts", func(t *testing.T) {
+		bash, err := osexec.LookPath("bash")
+		if err != nil {
+			t.Skip("bash not available")
+		}
+		agent := startContractAgent(t, newUnits, contractRuntimeDir(t), newContractAudit())
+		// A long inputrc widens that stretch from the millisecond or two a
+		// fast machine gives it to one a stop through the shim reliably lands
+		// in: readline reads it after the rc file, before the first prompt.
+		inputrc := filepath.Join(t.TempDir(), "inputrc")
+		if err := os.WriteFile(inputrc, []byte(strings.Repeat("set bell-style none\n", 200_000)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for try := range 5 {
+			dir := t.TempDir()
+			ready := filepath.Join(dir, "interactive")
+			rc := filepath.Join(dir, "rc")
+			if err := os.WriteFile(rc, fmt.Appendf(nil, ": > %q\n", ready), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			exec, err := agent.manager.Create(ctx, CreateRequest{
+				Command: []string{bash, "--noprofile", "--rcfile", rc, "-i"},
+				Env:     map[string]string{"INPUTRC": inputrc},
+				TTY:     true,
+				Rows:    24,
+				Cols:    80,
+			})
+			if err != nil {
+				cancel()
+				t.Fatalf("create: %v", err)
+			}
+			if _, err := agent.manager.Start(ctx, exec.ID); err != nil {
+				cancel()
+				t.Fatalf("start: %v", err)
+			}
+			cancel()
+			deadline := time.Now().Add(15 * time.Second)
+			for {
+				if _, err := os.Stat(ready); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("timed out waiting for the shell to run its rc file")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			began := time.Now()
+			if _, err := agent.manager.Stop(context.Background(), exec.ID); err != nil {
+				t.Fatalf("stop: %v", err)
+			}
+			if took := time.Since(began); took >= shimStopGrace/2 {
+				t.Fatalf("try %d: stopping a terminal as its shell started took %s; it has to be hung up, not waited out", try, took)
+			}
+		}
 	})
 
 	t.Run("ConvergesAfterAgentRestart", func(t *testing.T) {

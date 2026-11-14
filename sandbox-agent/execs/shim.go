@@ -131,7 +131,8 @@ const (
 // shim is what keeps a stop honest there.
 //
 // What the session is sent first — SIGTERM, a terminal's SIGHUP, and the
-// SIGCONT that lets a stopped process act on them — is askSessionToStop's.
+// SIGCONT that lets a stopped process act on them — is askSessionToStop's. A
+// terminal is then hung up for real, by closing its PTY master.
 //
 // It is the session rather than the process group because an interactive
 // shell puts each job in a group of its own: a terminal's `npm run dev &`
@@ -155,6 +156,22 @@ func (r *shimRuntime) stop() {
 	// the command's group as part of its session, and only while the session
 	// is still the command's.
 	_ = askSessionToStop(sid, identity, proc.TTY() != nil)
+	if proc.TTY() != nil {
+		// And then the terminal really hangs up. A shell still starting up —
+		// its rc file run, its line editor not yet reading — only records
+		// the SIGHUP and acts on it when a key arrives, which would leave it
+		// waiting out the whole grace (#1142). Closing the master hangs the
+		// terminal up, so the read it then blocks on ends instead. The close
+		// lands only once copyOutput's pending read returns (Hangup says
+		// why), which the shell's prompt, drawn before that read, makes it
+		// do. A program that only records the SIGHUP and then reads without
+		// writing anything still waits out the grace. What the session writes
+		// after the hangup goes to a terminal that is gone, as on a real one.
+		// The runtime gives the handle up first, as close does, so no resize
+		// or repaint reaches for a descriptor being closed.
+		r.stream.ReleaseTTY()
+		proc.Hangup()
+	}
 	grace := time.NewTimer(shimStopGrace)
 	defer grace.Stop()
 	select {

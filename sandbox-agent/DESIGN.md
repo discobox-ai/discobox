@@ -220,7 +220,12 @@ flowchart LR
   job in a group of its own, and a group kill would leave a terminal's
   `cmd &` holding its port. `Stop` sends the shim SIGTERM; the shim sends the
   session SIGTERM — and, for a terminal, SIGHUP, since a stopped terminal is
-  one that went away and an interactive shell exits on that, not on SIGTERM —
+  one that went away and an interactive shell exits on that, not on SIGTERM,
+  then closes the terminal's PTY master, so a shell that only recorded the
+  SIGHUP while starting up reads a hangup instead of waiting for a key (the
+  master is a blocking descriptor with the shim's read pending on it, so the
+  close lands with the program's next output: for a starting shell, its
+  prompt) —
   and SIGKILLs what is left of it once the command has exited or a grace
   period runs out; `Stop` SIGKILLs a shim that has not gone within a timeout
   derived from the shim's own. A shim that goes without recording its
@@ -1395,8 +1400,10 @@ signer. Error output never includes exporter stderr or parse fragments.
   ioctls run under `Runtime.mu` for that reason. Asking a `*os.File` for its
   descriptor is not safe against the close that ends the exec, and a resize or a
   repaint can arrive in the moment the process is exiting, so `shimRuntime.close`
-  calls `Runtime.ReleaseTTY` before `procio.Process.Close`: afterwards there is
-  no terminal to resize, which is the truth about an exec that is ending. Reads
+  calls `Runtime.ReleaseTTY` before `procio.Process.Close`, and a terminal's
+  stop (`shimRuntime.stop`) calls it before `procio.Process.Hangup`, at the
+  start of the stop grace: afterwards there is no terminal to resize, which is
+  the truth about an exec that is ending or hung up. Reads
   and writes on the handle need no such care — those are refcounted against
   close; only the descriptor is not.
 - No phantom deadlines on attach: `http.Server` per-request read/write
