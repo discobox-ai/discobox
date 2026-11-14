@@ -29,7 +29,10 @@ Global review expectations:
   synced before its rename (`SyncTree`, or `SyncDirs` when its files are
   durable already), as is whatever a record or marker vouches for before the
   record. A listing or cleanup of a directory with staged writes in it knows
-  `fsdurable.IsStaged` names. The same write-then-rename was hand-written, and
+  `fsdurable.IsStaged` names. A sync that failed is never retried as proof:
+  a second fsync after a failed one can succeed over data the kernel already
+  dropped, so `File.Commit` keeps a sync failure final and a caller stages
+  the write again. The same write-then-rename was hand-written, and
   half of the copies synced nothing, in the sandbox agent, the pool agent, the
   libkrun driver and four `pkg` packages (#1113), and a hard stop of a pool's
   host keeps an unsynced rename and loses its data. A rename that only keeps

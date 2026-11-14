@@ -26,6 +26,9 @@ type File struct {
 	root   *os.Root
 	closed bool
 	done   bool
+	// syncErr is a sync that failed: final, since a second fsync after a
+	// failed one can report success over data the kernel already dropped.
+	syncErr error
 }
 
 // Create stages a file for path, created with perm less the umask, as
@@ -87,7 +90,10 @@ func IsStaged(name string) bool {
 
 // Commit syncs the file and renames it over its path, then syncs the
 // directory: once it returns, the path holds what was written after a crash
-// too. A Commit that failed at the rename can be called again.
+// too. A Commit that failed at the rename can be called again; one that
+// failed at the sync cannot, since a second fsync after a failed one proves
+// nothing: every later Commit returns that failure, and the caller stages
+// the write again.
 //
 // The one exception is a directory the caller may write but not read, which
 // cannot be opened to flush: the rename stands and Commit returns nil, since
@@ -155,7 +161,7 @@ func (f *File) Discard() error {
 	return err
 }
 
-// flush syncs and closes the staged file, once.
+// flush syncs and closes the staged file, once; a failed sync is final.
 func (f *File) flush() error {
 	if f.done {
 		return fs.ErrClosed
@@ -163,12 +169,15 @@ func (f *File) flush() error {
 	if f.closed {
 		return nil
 	}
-	err := f.Sync()
-	f.closed = true
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
+	if f.syncErr != nil {
+		return f.syncErr
 	}
-	return err
+	if err := f.Sync(); err != nil {
+		f.syncErr = err
+		return err
+	}
+	f.closed = true
+	return f.Close()
 }
 
 func (f *File) remove(name string) error {
