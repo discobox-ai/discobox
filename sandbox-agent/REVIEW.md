@@ -190,7 +190,11 @@
 - **The content store trusts a digest, never a response.** `bundlestore`
   checks a manifest's bytes and a blob's against the digest that named them
   before it parses or extracts either; a layer counts as present only with
-  its `.complete` marker, written after its directory is whole. Never read a
+  its `.complete` marker, and a tree only with its `.json`. Each marker is
+  written durably, and only after what it vouches for is synced and renamed
+  into place (`fsdurable.SyncTree` for a layer, `SyncDirs` for a tree of
+  links): a durable marker over a layer a hard stop lost is trusted for good,
+  which is worse than no marker. Never read a
   pin from anything but `agentlayer.PinsFile`, which the pool places: what
   the box may fetch is the pool's record, and a pin the box chose would
   only be refused there.

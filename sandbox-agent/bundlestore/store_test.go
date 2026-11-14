@@ -288,6 +288,48 @@ func TestApplyFetchesAgainALayerWhosePlacementWasCutShort(t *testing.T) {
 	}
 }
 
+// A hard stop can leave a layer extracted with its marker still staged, or a
+// tree composed with its metadata still staged. A staged marker is no marker:
+// the layer is extracted and the tree composed again, and what was staged is
+// swept.
+func TestApplyRedoesWhatAStagedMarkerWasLeftFor(t *testing.T) {
+	a := newAssets()
+	agent := layer(t, agentLayer)
+	pinned, manifest := a.bundle(t, "discobox-platform", false, agent)
+	s := newStore(t, a)
+	for _, dir := range []string{agentlayer.LayersDir, agentlayer.TreesDir} {
+		if err := os.MkdirAll(s.path(dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(s.path(agentlayer.LayerDir(digestOf(agent))+"/features"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	staged := []string{
+		filepath.Dir(agentlayer.LayerComplete(digestOf(agent))) + "/." + filepath.Base(agentlayer.LayerComplete(digestOf(agent))) + ".cut.tmp",
+		agentlayer.TreesDir + "/." + agentlayer.Hex(manifest) + ".json.cut.tmp",
+	}
+	for _, name := range staged {
+		if err := os.WriteFile(s.path(name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: pinned}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := a.asked["/blobs/"+digestOf(agent)]; n != 1 {
+		t.Fatalf("the layer was fetched %d times, want once", n)
+	}
+	if got := read(t, s, tree(t, s, 0)+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
+		t.Fatalf("agent = %q", got)
+	}
+	for _, name := range staged {
+		if _, err := os.Lstat(s.path(name)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s is still there: %v", name, err)
+		}
+	}
+}
+
 func TestApplyRecordsOnlyTheTreesOfThePinsItApplied(t *testing.T) {
 	a := newAssets()
 	platform, _ := a.bundle(t, "discobox-platform", false, layer(t, agentLayer))

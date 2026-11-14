@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 )
@@ -111,7 +112,12 @@ func (s *Store) Apply(ctx context.Context, pins agentlayer.Pins) error {
 			return err
 		}
 	}
-	if err := sweep(s.path(agentlayer.BundlesDir), keep(names), ".tmp"); err != nil {
+	if err := sweep(s.path(agentlayer.BundlesDir), keep(names), ""); err != nil {
+		return err
+	}
+	// The links are durable before the state that names them is, and the
+	// sweep's removals with them.
+	if err := fsdurable.SyncDir(s.path(agentlayer.BundlesDir)); err != nil {
 		return err
 	}
 	next := state{Bundles: names, Current: current, Previous: recorded.Previous}
@@ -167,21 +173,14 @@ func Trees(root string) ([]string, error) {
 }
 
 // point makes the link of the bundle name a link to the tree of digest,
-// replaced whole.
+// replaced whole and durably.
 func (s *Store) point(name, digest string) error {
 	link := s.path(agentlayer.BundleTree(name))
 	target := "../trees/" + agentlayer.Hex(digest)
 	if current, err := os.Readlink(link); err == nil && current == target {
 		return nil
 	}
-	tmp := link + ".tmp"
-	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err := os.Symlink(target, tmp); err != nil {
-		return err
-	}
-	return os.Rename(tmp, link)
+	return fsdurable.Symlink(target, link)
 }
 
 func keep(names []string) map[string]bool {
@@ -294,6 +293,12 @@ func (s *Store) layer(ctx context.Context, digest string) error {
 	if err := provision.UnpackLayer(blob, staged); err != nil {
 		return err
 	}
+	// The layer is on disk, and its rename too, before the marker that says
+	// it is whole: the marker is trusted alone, so a durable one over a layer
+	// a hard stop lost would never be extracted again.
+	if err := fsdurable.SyncTree(staged); err != nil {
+		return err
+	}
 	dir := s.path(agentlayer.LayerDir(digest))
 	// A directory with no marker is a placement or an extraction cut short.
 	if err := os.RemoveAll(dir); err != nil {
@@ -302,7 +307,10 @@ func (s *Store) layer(ctx context.Context, digest string) error {
 	if err := os.Rename(staged, dir); err != nil {
 		return err
 	}
-	return os.WriteFile(s.path(agentlayer.LayerComplete(digest)), nil, 0o600)
+	if err := fsdurable.SyncDir(layers); err != nil {
+		return err
+	}
+	return fsdurable.WriteFile(s.path(agentlayer.LayerComplete(digest)), nil, 0o600)
 }
 
 // compose builds the tree of the manifest digest from its layers, side by
@@ -323,6 +331,13 @@ func (s *Store) compose(digest string, layers []string) error {
 			return fmt.Errorf("layer %s: %w", layer, err)
 		}
 	}
+	// The tree is on disk before its metadata, which is what says it is
+	// whole, as a layer is before its marker. Its files are links of the
+	// layers' synced files, or copies synced as they were made (copyFile), so
+	// its directories are what is left.
+	if err := fsdurable.SyncDirs(staged); err != nil {
+		return err
+	}
 	dir := s.path(agentlayer.TreeDir(digest))
 	if err := os.RemoveAll(dir); err != nil {
 		return err
@@ -330,11 +345,14 @@ func (s *Store) compose(digest string, layers []string) error {
 	if err := os.Rename(staged, dir); err != nil {
 		return err
 	}
+	if err := fsdurable.SyncDir(trees); err != nil {
+		return err
+	}
 	meta, err := json.Marshal(treeMeta{Layers: layers})
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(dir+".json", meta)
+	return fsdurable.WriteFile(dir+".json", meta, 0o600)
 }
 
 // overlay links every file of the layer at src into dst.
@@ -392,6 +410,11 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 		return err
 	}
 	_, err = io.Copy(out, in)
+	if err == nil {
+		// New data, unlike a link: synced here, since compose syncs only the
+		// tree's directories.
+		err = out.Sync()
+	}
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
 	}
@@ -418,7 +441,7 @@ func (s *Store) writeState(st state) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(s.path(stateFile), data)
+	return fsdurable.WriteFile(s.path(stateFile), data, 0o600)
 }
 
 // collect removes every tree st does not keep and every layer no kept tree
@@ -473,12 +496,4 @@ func sweep(dir string, keep map[string]bool, suffix string) error {
 func digestOf(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-func writeFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
