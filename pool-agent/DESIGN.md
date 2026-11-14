@@ -1064,15 +1064,21 @@ flowchart LR
 - **The data contract.** What a machine keeps across a new root, or on its
   disk across a restart, is what a container keeps across a rebuild: its
   declared volumes (the platform's home, a harness's paths), mounted from its
-  data and cache roots as `volumeDir` lays them out, and its sources, each
-  kept at its target's own path on the data root. The sandbox agent makes
+  data and cache roots as `volumeDir` lays them out, its sources, each
+  kept at its target's own path on the data root, and its working root where
+  neither backs it, kept at the data root's `.working-root` ([ADR
+  26-11-14-302](../docs/adr/26-11-14-302-a-boxs-working-root-is-durable-when-no-source-backs-it.md)). The sandbox agent makes
   those mounts at every boot (`discobox-wire.service`, and its own start
   where that did not run; [sandbox-agent `boot`](../sandbox-agent/DESIGN.md)),
   and, where the data root is a data volume, says so on the volume (`sandboxconfig.MachineDataWiredFile`: the sandbox's ID
   and a random token of this start, kept in the start's own `/run`,
   `sandboxconfig.MachineWiredFile`). The pool reads both, as bounded file
-  copies, after every start into `machine.json` (`dataOnVolume`,
-  `recordDataOnVolume`), true only when the line names this start's token:
+  copies, after every start into `machine.json` (`dataAndWorkingRootOnVolume`,
+  `recordDataOnVolume`), true only when the line names this start's token
+  and says the working root is durable too (`sandboxconfig.MachineDataWiredLine`;
+  an agent from before ADR 26-11-14-302 left a no-source box's working root
+  on the root, so that machine is rebuilt in place once, and the boot on the
+  new agent moves it onto the volume):
   the agent is the sandbox's pin, which any start may move, and one that
   predates the wiring, or a guest that wires nothing, keeps its data on its
   root and leaves `/run` without a token. A boot ID would not do: a
@@ -2464,6 +2470,21 @@ any container work, so a malformed request costs nothing.
 - `containerSpecDrifted` replaces an existing container built from another
   spec: one whose recorded fingerprint differs from the request's, or that
   records none, which predates fingerprinting and the bundles alike.
+- **A removed container's working root is carried to the next one** ([ADR
+  26-11-14-302](../docs/adr/26-11-14-302-a-boxs-working-root-is-durable-when-no-source-backs-it.md) §3).
+  An agent from before that ADR left a no-source box's work in the
+  container's own layer at the working root. Every removal that a rebuild
+  follows (the spec-change replace, `ArchiveSandbox` and so repair,
+  `removeForRebuild`) first copies what the layer holds there out through
+  Docker's archive API into `working-root-carried.tar` at the sandbox
+  tree's root, beside its volumes as `runtime-config.json` is, never in them
+  (`stashWorkingRoot`: nothing but the directory, or a Docker mount over it,
+  is nothing to keep; a stash already there is kept; a failed copy fails the
+  removal and leaves the container). It survives an archive and leaves with
+  a delete; an export carries the volumes only, so not it. The next container built for the sandbox is
+  given it, into its layer, with its owners, before it starts
+  (`restoreWorkingRoot`), and the stash is removed; boot moves it onto the
+  data root. Nothing the box wrote is extracted on the pool host.
 - An image the pool cannot obtain is `ErrImageUnavailable`: the daemon
   refuses the base image's pull as not found before any progress, or the
   sandbox is pinned to no platform (`ErrUndelivered`). An unauthorized or

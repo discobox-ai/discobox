@@ -760,6 +760,106 @@ func TestMachineAgentThatStopsWiringIsRebuiltInPlace(t *testing.T) {
 	}
 }
 
+// #1156: a machine whose agent wired its data volume but left the working
+// root on the machine's root, as an agent from before ADR 26-11-14-302 did,
+// is rebuilt on the root it has: a new root would take the work of a box with
+// no source with it. The boot on the new agent moves the working root onto the
+// volume and says so, and only then is a rebuild given a new root (§4).
+func TestMachineWhoseWorkingRootIsOnItsRootIsRebuiltInPlace(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	f.driver.workingRootOnRoot = true
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_13")); err != nil {
+		t.Fatal(err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_13"); err != nil || record.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want its data not all on its volume", record, err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-13")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+	// The rebuild runs the agent that keeps the working root on the volume.
+	f.driver.workingRootOnRoot = false
+	req := machineCreate("sbx_13")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 0 {
+		t.Fatalf("upgrades = %d, want none while the working root was on the root", f.driver.upgrades)
+	}
+	if !machineHasFile(t, r, inst, "/opt/kept.txt") {
+		t.Fatal("the root's file is gone, want the root kept")
+	}
+	if record, _, err := r.readMachineRecord("sbx_13"); err != nil || !record.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want its data on its volume once its agent moved the working root there", record, err)
+	}
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-3")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want the next rebuild given a new root", f.driver.upgrades)
+	}
+}
+
+// A machine.json an older pool wrote says "dataOnVolume" from a line that did
+// not ask about the working root. It is not taken for the answer this pool
+// gives: a rebuild before the machine's next start on this pool keeps the
+// root, and the box's working root on it (ADR 26-11-14-302 §4).
+func TestMachineRecordFromAnOlderPoolIsRebuiltInPlace(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	f.driver.workingRootOnRoot = true
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_14")); err != nil {
+		t.Fatal(err)
+	}
+	path := r.machineRecordPath("sbx_14")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	// As the older pool left it, from the two-field line.
+	record["dataOnVolume"] = true
+	raw, err = json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if saved, _, err := r.readMachineRecord("sbx_14"); err != nil || saved.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want an older pool's dataOnVolume not read as this one", saved, err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+	// The rebuild runs the agent that keeps the working root on the volume,
+	// which only its own start can say.
+	f.driver.workingRootOnRoot = false
+	req := machineCreate("sbx_14")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 0 {
+		t.Fatalf("upgrades = %d, want none from an older pool's record", f.driver.upgrades)
+	}
+	if !machineHasFile(t, r, inst, "/opt/kept.txt") {
+		t.Fatal("the root's file is gone, want the root kept")
+	}
+}
+
 func mustDialer(t *testing.T, r *MachineSandboxRuntime, sandboxID string) Dialer {
 	t.Helper()
 	dial, err := r.SandboxDialer(context.Background(), sandboxID, SandboxAgentPort)
@@ -913,6 +1013,11 @@ type agentDriver struct {
 	// root, as one that predates wiring a data volume does: it records
 	// nothing on the volume (sandboxconfig.MachineDataWiredFile).
 	rootData bool
+	// workingRootOnRoot is an agent that wires the data volume but leaves the
+	// working root of a box with no source on the machine's root, as one from
+	// before ADR 26-11-14-302 does: its line on the volume does not name the
+	// working root.
+	workingRootOnRoot bool
 	// upgradeFailures is how many upgrades to fail, as one cut short by the
 	// pool agent going away, or by the provider, fails.
 	upgradeFailures int
@@ -1123,7 +1228,7 @@ func (m *agentMachine) startAgent(bootstrap string) error {
 		if err := m.CopyTo(context.Background(), "/run/discobox", fileTree(nil, "machine-wired", token+"\n")); err != nil {
 			return err
 		}
-		line := cfg.SandboxID + " " + token + "\n"
+		line := sandboxconfig.MachineDataWiredLine(cfg.SandboxID, token, !m.driver.workingRootOnRoot) + "\n"
 		if err := m.CopyTo(context.Background(), "/.discobox/data", fileTree(nil, ".discobox-wired", line)); err != nil {
 			return err
 		}

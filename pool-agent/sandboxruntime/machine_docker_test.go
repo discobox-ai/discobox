@@ -92,7 +92,7 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 	if err := guest.CopyTo(ctx, "/run/discobox", fileTree(t, "machine-wired", "start-1\n")); err != nil {
 		t.Fatal(err)
 	}
-	if err := guest.CopyTo(ctx, "/.discobox/data", fileTree(t, ".discobox-wired", "sbx_docker start-1\n")); err != nil {
+	if err := guest.CopyTo(ctx, "/.discobox/data", fileTree(t, ".discobox-wired", "sbx_docker start-1 working-root\n")); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.writeMachineRecord("sbx_docker", machineRecord{Instance: inst.ID}); err != nil {

@@ -109,6 +109,11 @@ func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID str
 		return err
 	}
 	if err == nil {
+		// Kept for the container an unarchive or a repair builds next
+		// (ADR 26-11-14-302 §3).
+		if err := r.stashWorkingRoot(ctx, sandboxID, sb.ID); err != nil {
+			return err
+		}
 		r.publishSandboxState(ctx, sandboxID, StateStopping)
 		if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 			return err
