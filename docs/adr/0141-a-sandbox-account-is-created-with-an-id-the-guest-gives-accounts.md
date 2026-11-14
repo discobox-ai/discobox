@@ -1,6 +1,6 @@
 # 0141 — A sandbox account is created with an id the guest gives accounts
 
-- **Status**: Accepted
+- **Status**: Accepted (for a darwin sandbox, §1's range and §2's normalization of a macOS client's ids superseded by [26-11-12-060](26-11-12-060-a-macos-sandbox-account-takes-uids-from-501.md))
 - **Date**: 2026-09-22
 - **Supersedes**: [ADR 0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5's "one giving only `name` leaves the ids to the image's account", for
