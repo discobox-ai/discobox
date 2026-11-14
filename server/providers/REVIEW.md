@@ -176,3 +176,14 @@
   it is run against the base's `nft` (`TestFenceRulesListBackFromNft`, and
   `TestFenceBoxOnALibkrunPoolMachine` on KVM). It replaces its own table
   alone, never the ruleset, which holds BuildKit's CNI rules.
+- A package the sandbox base image installs from a third-party apt repository
+  usually has a matching `sandbox-agent/features` install script that installs
+  it on boxes running a provider's own image. A change to how one trusts that
+  repository's key checks the other. The GitHub CLI's keys are pinned in both
+  places: the image's `GH_APT_KEY_FINGERPRINTS` checks the downloaded keyring,
+  and the cli feature ships its own copy,
+  `sandbox-agent/features/cli/githubcli-archive-keyring.asc`. Both hold the
+  fingerprints GitHub publishes in cli/cli `docs/install_linux.md`, and a
+  change to either moves both. Why: the keyring is served beside the packages
+  it signs, and the feature still fetched it unchecked after the image's copy
+  was pinned (#1168).

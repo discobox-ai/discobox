@@ -178,8 +178,23 @@ RUN set -eux \
 # layer, so it is also where Debian's sources go back from the snapshot to the
 # live sid archive: a box's own apt, and the features provisioned onto it,
 # install today's sid.
+#
+# GitHub's key is served beside the packages it signs, so it is held to the
+# fingerprints GitHub publishes for it (cli/cli docs/install_linux.md). The
+# keyring holds more than one primary key, so the pin is the whole set, sorted:
+# a key missing from it, or one added to it, fails the build. 2C61...6059
+# expired on 2026-09-05 and is still served; when GitHub drops it, or adds a
+# key, this build fails until the pin and the cli feature's copy of the keyring
+# (sandbox-agent/features/cli/githubcli-archive-keyring.asc) move with it.
+ARG GH_APT_KEY_FINGERPRINTS="2C6106201985B60E6C7AC87323F3D4EA75716059 7F38BBB59D064DBCB3D84D725612B36462313325"
 RUN set -eux \
     && curl -fsSL --retry 5 --retry-all-errors https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && gnupg=$(mktemp -d) \
+    && fingerprints=$(GNUPGHOME=$gnupg gpg --show-keys --with-colons /etc/apt/keyrings/githubcli-archive-keyring.gpg | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }' | sort | paste -sd ' ') \
+    && rm -rf "$gnupg" \
+    && if [ "$fingerprints" != "$GH_APT_KEY_FINGERPRINTS" ]; then \
+        echo "GitHub CLI's apt key is not $GH_APT_KEY_FINGERPRINTS: $fingerprints (compare GitHub's published fingerprints in cli/cli docs/install_linux.md)" >&2; exit 1; \
+    fi \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update \
