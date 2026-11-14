@@ -222,10 +222,14 @@ the only thing that removes rows — `DefaultRetention` (48h) unless the pool
 container's `DISCOBOX_PROXY_AUDIT_RETENTION` overrides it. Files are also held to
 a byte budget, below.
 
-Deleting a sandbox deliberately does **not** reclaim its audit trail. What a
-sandbox sent is the question the trail exists to answer, and it is most often
-asked after that sandbox is gone, so age and the [spool budget](#spool-budget)
-are all that reclaim here.
+Archiving a sandbox, or a reaper removing one, does **not** reclaim its audit
+trail. What a sandbox sent is the question the trail exists to answer, and it
+is most often asked after that sandbox is gone, so age and the
+[spool budget](#spool-budget) are what reclaim it. A purge is the one
+exception: it is the owner's word that the sandbox's data should go, and the
+pool agent's delete takes the trail through the control API's purge
+([ADR 26-11-14-896](../docs/adr/26-11-14-896-pool-storage-accounts-for-the-whole-disk-and-a-purge-takes-a-boxs-recordings.md)
+§5).
 
 One pass deletes rows by their creation timestamp and spool files by their
 modification time, against the one cutoff. Pairing them that way is exact
@@ -1029,7 +1033,8 @@ earlier proxy wrote drops the `swapped_use_ids` column it may hold
 judge, ADR 26-10-27-880).
 
 The control API (`ControlHandler`, served by `ListenAndServeControl` only when
-`Control.ListenAddress` is set) is read-only. It lists HTTP and SOCKS audit rows
+`Control.ListenAddress` is set) reads the audit, and has one write: a purge of
+one client's audit (below). It lists HTTP and SOCKS audit rows
 (`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host`, `since`
 and `until` (RFC 3339, both inclusive, compared in UTC because rows are written
 in UTC) and `limit` up to 1000)
@@ -1050,9 +1055,36 @@ contradictory `client_id` is still refused, so asking for another sandbox is a
 403 rather than a silent read of your own. The proxy stores only the public verification key;
 `CreateControlToken` signs with the private key its caller holds.
 
+`DELETE /audit/clients/{client}` purges one client's audit
+([ADR 26-11-14-896](../docs/adr/26-11-14-896-pool-storage-accounts-for-the-whole-disk-and-a-purge-takes-a-boxs-recordings.md)
+§5): its HTTP, SOCKS and DNS rows and its body and stream spools
+(`Recorder.PurgeClient`), answering what it removed. It takes `audit:purge`, a
+scope of its own, and a token whose `sandbox_id` is the client in the path; a
+read token cannot delete, and a purge token cannot read. The purge runs on the
+recorder's one writer, behind every event queued before it (the DNS queue
+drained first), so no row queued before it lands after it, and the writer stays
+the only thing that touches the database and the spools' running total. The
+client's open spools are closed before it is queued, rows go before files, and
+a client with nothing recorded purges to nothing, so a repeated purge succeeds.
+The response cache is not touched. The database is not vacuumed: SQLite reuses
+the pages freed, and the age sweep does not vacuum either.
+
+Closing a spool does not end its exchange, and an exchange's row is written
+when it ends: after a purge a sandbox's network is gone, so an upgraded stream
+of its ends only when the upstream closes or a write times out, hours later.
+So the writer also remembers each purge that succeeded, in memory, for
+`purgedClientMemory` (a day), and drops that client's HTTP, SOCKS and DNS rows
+that arrive meanwhile, removing any spool one names (`dropPurged`). A purge
+that failed is not remembered, so its retry still finds the rows it left. A
+proxy restart forgets every purge, which costs nothing: the exchanges it would
+have caught end with the old process, whose queue is written before it exits
+(`Recorder.Close`). A row that arrives after a day is written, and the age
+sweep takes it within the retention window.
+
 `ControlClient` is the other half of the control API, in this package so the
 paths, parameters, token and response shape have one owner. It signs a fresh
-token per call. A sandbox-scoped read carries the sandbox twice, in the token
+token per call: `audit:read` for every read, and `audit:purge` naming the
+sandbox for `PurgeClient` alone. A sandbox-scoped read carries the sandbox twice, in the token
 and as `client_id`: an authenticated proxy narrows by the token (and the two
 agree), and a proxy serving the control API without authentication, which
 ignores the token, is still narrowed by the query. It also reads recorded
@@ -1077,7 +1109,8 @@ re-read a window on every poll to catch those and can still miss one; reading
 after an id needs neither, and orders by the primary key. It takes precedence
 over `since`, `until` and `order`. A Discobox pool proxy
 serves the control API on loopback only, trusting a key the pool agent holds,
-and the pool agent is its only reader
+and the pool agent is its only reader and its only writer, purging a sandbox's
+audit as it deletes the sandbox
 ([`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md#reading-the-proxys-audit)).
 
 `ClientHTTPAudit` is the one read that is not the control API: the process

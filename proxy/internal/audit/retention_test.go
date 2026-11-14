@@ -114,7 +114,7 @@ func TestSweepSkipsASpoolStillBeingWritten(t *testing.T) {
 	live := filepath.Join(dir, "streams", "streams", "sbx-live", "stream-live.bin")
 	writeSpool(t, live, now.Add(-72*time.Hour))
 
-	release := recorder.trackSpool("streams/sbx-live/stream-live.bin")
+	release := recorder.trackSpool("streams/sbx-live/stream-live.bin", nil)
 	if _, err := recorder.Sweep(context.Background(), now.Add(-48*time.Hour)); err != nil {
 		t.Fatalf("Sweep() error = %v", err)
 	}

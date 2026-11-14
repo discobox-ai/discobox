@@ -227,3 +227,48 @@ func TestControlAuthUnscopedTokenKeepsTheQueryClient(t *testing.T) {
 		t.Fatalf("client_id = %q, want the query's client", got)
 	}
 }
+
+// The one control route that deletes takes a scope of its own, and a token
+// that names the client it purges: a read token cannot delete, and a purge
+// token cannot read or purge another sandbox (ADR 26-11-14-896 §5).
+func TestControlAuthPurgeNeedsItsOwnScopeAndItsSandbox(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	auth, err := newControlAuthenticator(ControlConfig{TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey)})
+	if err != nil {
+		t.Fatalf("newControlAuthenticator() error = %v", err)
+	}
+	handler := auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, tc := range []struct {
+		name    string
+		method  string
+		path    string
+		sandbox string
+		scopes  []string
+		want    int
+	}{
+		{"purge token purges its sandbox", http.MethodDelete, "/audit/clients/sbx_1", "sbx_1", []string{ScopeAuditPurge}, http.StatusNoContent},
+		{"read token cannot purge", http.MethodDelete, "/audit/clients/sbx_1", "sbx_1", []string{ScopeAuditRead}, http.StatusForbidden},
+		{"purge token cannot purge another sandbox", http.MethodDelete, "/audit/clients/sbx_2", "sbx_1", []string{ScopeAuditPurge}, http.StatusForbidden},
+		{"pool-wide purge token names no sandbox", http.MethodDelete, "/audit/clients/sbx_1", "", []string{ScopeAuditPurge}, http.StatusForbidden},
+		{"purge token cannot read", http.MethodGet, "/audit/http", "sbx_1", []string{ScopeAuditPurge}, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", WorkerID: "worker-1", SandboxID: tc.sandbox, Scopes: tc.scopes})
+			if err != nil {
+				t.Fatalf("CreateControlToken() error = %v", err)
+			}
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("status = %d, want %d", rec.Code, tc.want)
+			}
+		})
+	}
+}

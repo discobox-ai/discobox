@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,7 +91,7 @@ func TestRecordHTTPRedactsTheClientsRawSecrets(t *testing.T) {
 // A body spool is redacted however the secret is split across writes.
 func TestBodySpoolRedactsAcrossWrites(t *testing.T) {
 	dir := t.TempDir()
-	recorder := &Recorder{enabled: true, bodyDir: dir, openSpool: map[string]struct{}{}}
+	recorder := &Recorder{enabled: true, bodyDir: dir, openSpool: map[string]io.Closer{}}
 	recorder.SetRedactor(redactFor)
 	body := []byte(`{"password":"` + redactSecret + `","again":"` + redactSecret + `"}`)
 	for split := 1; split < len(body); split += 3 {
