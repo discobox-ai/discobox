@@ -251,7 +251,10 @@ platform's features provision onto either. Every sandbox container runs it,
 with the platform's and its harness's features provisioned on top, and a
 Docker pool's own container runs it too, provisioned as a pool
 ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
-§2), so a pool host pulls one image. No harness is an image (ADR 26-10-16-423
+§2), so a pool host pulls one image. The pool's container has the host's
+Docker socket bound where the image's `docker.socket` listens, so the engine
+masks that unit there (`/dev/null` bound over its file) and the container boots
+with no failed unit; sandboxes keep it. No harness is an image (ADR 26-10-16-423
 §10). Common Debian apt requirements of core, build, cli, python and
 shells-editors are installed in the base before application inputs
 (ADR 26-11-06-664). Feature declarations remain portable requirements; the
