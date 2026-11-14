@@ -155,7 +155,12 @@ func (r *shimRuntime) stop() {
 	// SIGTERM whichever group took the number since. askSessionToStop reaches
 	// the command's group as part of its session, and only while the session
 	// is still the command's.
-	_ = askSessionToStop(sid, identity, proc.TTY() != nil)
+	// One that could not be asked — its session could not be listed — is
+	// left to a terminal's hangup below, or else to the kill once the grace
+	// runs out; the log is what says why the stop took that long.
+	if err := askSessionToStop(sid, identity, proc.TTY() != nil); err != nil {
+		slog.Warn("ask the stopped exec's session to end", "execID", r.cfg.ExecID, "session", sid, "error", err)
+	}
 	if proc.TTY() != nil {
 		// And then the terminal really hangs up. A shell still starting up —
 		// its rc file run, its line editor not yet reading — only records
@@ -194,7 +199,14 @@ func (r *shimRuntime) stop() {
 			slog.Warn("kill the stopped exec", "execID", r.cfg.ExecID, "error", err)
 		}
 	} else if err := endSession(sid, identity); err != nil {
+		// Either the session could not be listed, and nothing in it was
+		// killed, or something in it outlived the SIGKILL (a process in
+		// uninterruptible sleep). Whichever, the command at least is ended,
+		// through the same handle as above.
 		slog.Warn("end the stopped exec's session", "execID", r.cfg.ExecID, "session", sid, "error", err)
+		if err := proc.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			slog.Warn("kill the stopped exec", "execID", r.cfg.ExecID, "error", err)
+		}
 	}
 	// The exit is recorded once the output is drained, which a killed session
 	// leaves nothing to hold up; the bound is for a process that left the
@@ -285,8 +297,14 @@ func (r *shimRuntime) startProcess(opts procio.Options) error {
 	// child and so cannot be anything else: what a stop, or the supervisor
 	// collecting a dead shim, checks the pid against before signaling it
 	// (isCommand). One that cannot be read leaves the stop to the process
-	// handle alone.
-	r.identity, _ = processIdentity(int(proc.PID()))
+	// handle alone, which reaches neither the rest of the session nor a
+	// terminal's shell with a hangup: said in the shim's log, since a stop
+	// that then sits out its whole grace has nothing else to say why.
+	identity, err := processIdentity(int(proc.PID()))
+	if err != nil {
+		slog.Warn("read the exec's process identity", "execID", r.cfg.ExecID, "pid", proc.PID(), "error", err)
+	}
+	r.identity = identity
 	r.status.ProcessIdentity = r.identity
 
 	if tty := proc.TTY(); tty != nil {

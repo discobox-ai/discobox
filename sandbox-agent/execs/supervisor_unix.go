@@ -258,6 +258,13 @@ func signalSession(sid int, identity string, sig syscall.Signal) error {
 // for the same reason. SIGCONT follows, as systemd sends it: a stopped process
 // — a Ctrl-Z'd editor, a harness's suspended child — holds the others pending
 // and would meet the SIGKILL without ever having seen them.
+//
+// A shell is only sure to act on the hangup once it is at its prompt. bash's
+// own handler only records a SIGHUP, for its line editor to act on; one that
+// lands after the rc file but before readline has installed its handlers —
+// the first prompt's readline setup, which reads inputrc and terminfo — is
+// recorded where nothing looks until a key is read. The shim's stop hangs the
+// terminal up for that case, by closing its PTY master after these signals.
 func askSessionToStop(sid int, identity string, terminal bool) error {
 	signals := []syscall.Signal{syscall.SIGTERM}
 	if terminal {
