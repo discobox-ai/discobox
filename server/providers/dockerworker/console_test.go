@@ -37,7 +37,7 @@ func TestConsoleHostConfigSharesTheHost(t *testing.T) {
 		switch hostConfig.Mounts[i].Target {
 		case consoleHostRoot:
 			hostRoot = &hostConfig.Mounts[i]
-		case dockerSocketPath:
+		case containerDockerSocketPath:
 			socket = &hostConfig.Mounts[i]
 		}
 	}
