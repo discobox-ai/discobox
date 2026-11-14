@@ -77,11 +77,12 @@ fi
 # writes neither. containers/ and buildkit/ are shared by both stores, so each
 # is split by store, never moved whole: only the containers that name overlay2
 # as their driver go, and only BuildKit's classic-store files (moby's
-# builder-next: its content store and its metadata and snapshot databases).
-# cache.db, executor/ and net/ are the containerd-store BuildKit's as well, and
-# so is history.db on the Docker this guest installs (only later Docker names
-# the containerd store's history_c8d.db); its snapshots are held by leases in
-# containerd's own database, which moving its files would orphan.
+# builder-next: its content store, its metadata and snapshot databases, and
+# history.db, which the Docker this guest installs keeps for the classic store
+# alone since it names the containerd store's history_c8d.db). cache.db,
+# executor/ and net/ are the containerd-store BuildKit's as well; its snapshots
+# are held by leases in containerd's own database, which moving its files would
+# orphan.
 docker_root=/var/lib/discobox/docker
 if [ -d "$docker_root/overlay2" ] || [ -d "$docker_root/image/overlay2" ]; then
     install -d -m 0700 /var/lib/discobox/docker-classic-store
@@ -100,6 +101,7 @@ if [ -d "$docker_root/overlay2" ] || [ -d "$docker_root/image/overlay2" ]; then
     for path in \
         buildkit/content \
         buildkit/containerdmeta.db \
+        buildkit/history.db \
         buildkit/snapshots.db \
         buildkit/metadata.db \
         buildkit/metadata_v2.db \

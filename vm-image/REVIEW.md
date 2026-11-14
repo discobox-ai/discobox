@@ -79,8 +79,10 @@ together, where before it broke one".
   lose its live containers, or orphan BuildKit snapshots that containerd's
   leases still hold and nothing can prune. Which files are classic-only
   depends on the Docker this guest installs, not on current moby: Debian's
-  Docker 26 writes `buildkit/history.db` in both stores. Check a list change
-  against a guest booted on each store.
+  Docker 26 wrote `buildkit/history.db` in both stores, while sid's 28 names
+  the containerd store's `history_c8d.db`, leaving `history.db` the classic
+  store's. Check a list change, and any bump of the Debian pin that moves the
+  guest's Docker, against a guest booted on each store.
 - **The guest's Debian is the repository's one pin.** Every stage is sid, from
   `DEBIAN_IMAGE` and `DEBIAN_SNAPSHOT`; never add an apt pin, a second suite,
   or another base to take one package from elsewhere. A broken sid package is
