@@ -32,6 +32,10 @@ const tokenRenewTimeout = 30 * time.Second
 // refusal is worth a person's time (ADR 0132 §3).
 var errRenewalRefused = errors.New("token renewal refused")
 
+// errValueReplaced marks a forced renewal finding that the value it was forced
+// for has been replaced since: there is nothing to renew for that refusal.
+var errValueReplaced = errors.New("secret value replaced since it was refused")
+
 // tokenHTTPClient is the client OAuth refreshes are made with.
 //
 // It follows no redirect. A 307 or 308 re-sends the body, and with it the
@@ -115,7 +119,7 @@ func (s *Service) ensureFresh(ctx context.Context, secret *model.Secret, val *mo
 		return val, nil
 	}
 	renewed, err, _ := s.renewing.Do(secret.ID, func() (any, error) {
-		return s.renewLocked(ctx, secret.ProjectID, secret.ID, false)
+		return s.renewLocked(ctx, secret.ProjectID, secret.ID, "")
 	})
 	if err != nil {
 		if val != nil && strings.TrimSpace(val.Token) != "" {
@@ -136,13 +140,21 @@ func (s *Service) ensureFresh(ctx context.Context, secret *model.Secret, val *mo
 // renewal, and persists the renewed credential with an updated_at guard. On a
 // guard conflict it re-reads and returns the winner's value rather than
 // renewing again: an OAuth refresh token it holds is already spent.
-// force skips the freshness check: a credential the upstream has just refused
-// is stale whatever its stated expiry says, which is the whole of what a 401
-// tells us that a clock cannot (ADR 0132 §3).
-func (s *Service) renewLocked(ctx context.Context, projectID, secretID string, force bool) (*model.SecretValue, error) {
+// refused, when set, is the value generation an upstream has just refused, and
+// forces the renewal past the freshness check: a credential the upstream has
+// just refused is stale whatever its stated expiry says, which is the whole of
+// what a 401 tells us that a clock cannot (ADR 0132 §3). A value replaced since
+// is not the one refused and is not renewed for it (errValueReplaced): its
+// refresh token would be spent on a refusal it never drew, and the renewal
+// remembered against the wrong value (ADR 26-11-11-539 §2).
+func (s *Service) renewLocked(ctx context.Context, projectID, secretID, refused string) (*model.SecretValue, error) {
 	secret, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
 		return nil, err
+	}
+	force := refused != ""
+	if force && secret.ValueGeneration() != refused {
+		return nil, errValueReplaced
 	}
 	val, err := s.store.OpenSecretValue(ctx, secret)
 	if err != nil {
@@ -267,13 +279,14 @@ func (s *Service) forceRenew(ctx context.Context, secret *model.Secret) renewal 
 	// credential nothing has tried yet, so a shared call that produced no new
 	// token settles nothing and the next report tries again.
 	renewed, err, shared := s.renewing.Do(secret.ID, func() (any, error) {
-		return s.renewLocked(ctx, secret.ProjectID, secret.ID, true)
+		return s.renewLocked(ctx, secret.ProjectID, secret.ID, secret.ValueGeneration())
 	})
 	if err != nil {
 		if errors.Is(err, errRenewalRefused) {
 			return renewalRefused
 		}
-		// Unreachable, erroring, unparseable, or a store failure. Not a verdict.
+		// Unreachable, erroring, unparseable, a store failure, or a value
+		// replaced since it was refused (errValueReplaced). Not a verdict.
 		return renewalUnavailable
 	}
 	after, ok := renewed.(*model.SecretValue)
