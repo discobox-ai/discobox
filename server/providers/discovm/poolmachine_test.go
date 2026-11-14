@@ -51,6 +51,10 @@ type poolTestDriver struct {
 	restarts [][]string
 	// issueErr, when set, is what IssueKey answers.
 	issueErr error
+	// checkErr, when set, is what Check answers: an account the driver
+	// refuses, or its service not answering. checks counts the calls.
+	checkErr error
+	checks   int
 	// name, when set, is the driver's name: boxd's, for a pool that
 	// authenticates in-machine, which the fake driver's configuration
 	// cannot ask for.
@@ -79,6 +83,17 @@ func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	caps := d.Driver.Capabilities()
 	caps.Isolation = true
 	return caps
+}
+
+func (d *poolTestDriver) Check(ctx context.Context) error {
+	d.mu.Lock()
+	d.checks++
+	err := d.checkErr
+	d.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return d.Driver.Check(ctx)
 }
 
 func (d *poolTestDriver) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
@@ -805,6 +820,49 @@ func TestFakePoolMachineNeedsIsolation(t *testing.T) {
 	err := r.EnsurePool(context.Background(), nil, nil, &model.Pool{ID: "pool-14"}, newTestMaker(), nil)
 	if err == nil || !strings.Contains(err.Error(), "cannot isolate") {
 		t.Fatalf("EnsurePool() on a driver that cannot isolate = %v", err)
+	}
+}
+
+// The driver checks its account before the pool's machine is made: an account
+// it refuses makes no machine, and the pool's error says why; a service that
+// does not answer the check is a host not reachable yet, which the reconciler
+// waits on. A pool whose machine exists is not checked again.
+func TestFakePoolMachineChecksTheAccountBeforeItsMachine(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-15", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+
+	driver.checkErr = status.Error(codes.PermissionDenied, "the account refuses this test")
+	err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
+	if err == nil || !strings.Contains(err.Error(), "refuses its account") || !strings.Contains(err.Error(), "the account refuses this test") || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("EnsurePool() on an account the driver refuses = %v, want the driver's reason, not a wait", err)
+	}
+	if len(driver.created) != 0 {
+		t.Fatalf("created %+v on an account the driver refuses", driver.created)
+	}
+
+	driver.checkErr = status.Error(codes.Unavailable, "connection refused")
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); !errors.Is(err, sandbox.ErrPoolNotReachable) || !strings.Contains(err.Error(), "cannot be checked yet") {
+		t.Fatalf("EnsurePool() while the check does not answer = %v, want ErrPoolNotReachable, not a refusal", err)
+	}
+	if len(driver.created) != 0 {
+		t.Fatalf("created %+v while the check did not answer", driver.created)
+	}
+
+	driver.checkErr = nil
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() once the account passes = %v", err)
+	}
+	if len(driver.created) != 1 {
+		t.Fatalf("created %d machines, want one", len(driver.created))
+	}
+	checks := driver.checks
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() again = %v", err)
+	}
+	if driver.checks != checks {
+		t.Fatalf("a pool whose machine exists was checked again (%d checks, want %d)", driver.checks, checks)
 	}
 }
 

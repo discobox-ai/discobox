@@ -392,6 +392,16 @@ func (h *poolMachine) retireKey(ctx context.Context, pool *model.Pool, guest mac
 // that gives none fails where the server dials it. A sandbox's machine asks
 // for none, strictly (disco-vm ADR 26-11-12-604).
 func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string) (engine.Instance, error) {
+	// The driver checks its account through its provider's API first (boxd's
+	// Check: that the key is accepted, and the region enabled), so an
+	// account it refuses fails here, saying why, rather than at the machine.
+	// A service that does not answer is waited on, as any other call is.
+	if err := h.engine.Driver.Check(ctx); err != nil {
+		if err = notReachable(err); errors.Is(err, sandbox.ErrPoolNotReachable) {
+			return engine.Instance{}, fmt.Errorf("pool %s: the %s driver's account cannot be checked yet: %w", pool.ID, h.engine.Driver.Name(), err)
+		}
+		return engine.Instance{}, fmt.Errorf("pool %s: the %s driver refuses its account: %w", pool.ID, h.engine.Driver.Name(), err)
+	}
 	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Public: machine.URLRequest{Mode: machine.URLOn}}})
 	if err != nil {
 		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))

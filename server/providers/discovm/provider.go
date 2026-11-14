@@ -341,7 +341,7 @@ func Definition(name string) sandbox.ProviderDefinition {
 			Key:         driverKey + "." + secret.Key,
 			Label:       secret.Label,
 			Type:        sandbox.ProviderConfigFieldSecret,
-			Description: secret.Description + " Give discobox an account of its own: every pool of this provider can reach what the key reaches.",
+			Description: secret.Description + " Give discobox an account of its own that holds nothing else, secrets above all: every pool of this provider can reach what the key reaches, and a provider may hand its machines what the account holds.",
 			Placeholder: secret.Placeholder,
 			Required:    true,
 		})
