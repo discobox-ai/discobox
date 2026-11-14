@@ -34,3 +34,10 @@ open body route of the list on an overlapping host and method, since `*`
 grants no body place. It answers only for what is certainly disjoint (hosts,
 methods); paths and blocks stay `Decide`'s. Callers run it against every list
 the grant will be held to.
+
+# Any path
+
+`AnyPath` says whether a route's paths reach every path below the root — no
+paths, or one that contains `/*/**` by the same segment-glob containment the
+proof uses. It is how a summary of a grant names its breadth (the console's
+credential request summary), so breadth follows matching, not spelling.
