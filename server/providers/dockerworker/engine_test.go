@@ -465,6 +465,17 @@ func TestContainerMountsBindDockerSocket(t *testing.T) {
 	}
 }
 
+// The host's socket sits at docker.socket's listen path, so the pool's
+// container masks the unit the sandbox base image enables.
+func TestContainerMountsMaskDockerSocketUnit(t *testing.T) {
+	engine := newTestEngine(t, Config{})
+	mounts := engine.containerMounts("worker-1")
+
+	if !hasMountWithReadOnly(mounts, "/dev/null", dockerSocketUnitPath, true) {
+		t.Fatalf("mounts = %#v, missing /dev/null mask over %s", mounts, dockerSocketUnitPath)
+	}
+}
+
 func TestContainerMountsBindConfiguredHostMounts(t *testing.T) {
 	engine := newTestEngine(t, Config{HostMounts: []HostMount{
 		{Source: "/home", ReadOnly: true},

@@ -55,7 +55,11 @@ const (
 	healthPollDelay           = 500 * time.Millisecond
 	dockerSocketPath          = "/var/run/docker.sock"
 	hostMountTargetRoot       = "/host"
-	workerConfigLayoutVersion = 5
+	workerConfigLayoutVersion = 6
+	// dockerSocketUnitPath is where the pool's container masks the sandbox
+	// base image's docker.socket: that unit would listen at the path the
+	// host's socket is bound to, fail, and leave the container degraded.
+	dockerSocketUnitPath = "/etc/systemd/system/docker.socket"
 
 	LabelManaged            = "discobox.vm.managed"
 	LabelProjectID          = "discobox.project_id"
@@ -799,14 +803,10 @@ func (e *Engine) poolBox(ctx context.Context, cli *client.Client, pool *model.Po
 	return bootstrap, box, nil
 }
 
-// createPoolContainer creates the pool's container from image, which the
-// caller has already resolved and made present — that pull is the longest step
-// in bringing a pool up — starts it, systemd as PID 1, and provisions it as
-// the pool's box (poolruntime.ProvisionBox) before it waits for the agent the box's
-// bundles start.
-func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolruntime.BoxRecord, error) {
-	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
-	defer releaseStart()
+// poolContainerSpec is the pool's container as createPoolContainer creates
+// it, and whether to wait for its healthcheck: image booted with systemd as
+// PID 1, the host's Docker socket and the pool's state bound in.
+func (e *Engine) poolContainerSpec(pool *model.Pool, image string, labels map[string]string) (*container.Config, *container.HostConfig, bool, error) {
 	config := &container.Config{
 		Image:  image,
 		Env:    pool.RuntimeOutbound.Environment(),
@@ -823,13 +823,13 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// Only an IP listener has a port Docker can publish or curl can probe.
 	listen, err := wire.Parse(e.cfg.AgentListenURL)
 	if err != nil {
-		return nil, poolruntime.BoxRecord{}, fmt.Errorf("agent listen URL: %w", err)
+		return nil, nil, false, fmt.Errorf("agent listen URL: %w", err)
 	}
 	waitForHealth := true
 	if listen.IsIP() {
 		exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
 		if !ok {
-			return nil, poolruntime.BoxRecord{}, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
+			return nil, nil, false, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
 		}
 		config.ExposedPorts = network.PortSet{exposedPort: struct{}{}}
 		hostConfig.PortBindings = network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}}
@@ -872,6 +872,21 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	}
 	hostConfig.Mounts = e.containerMounts(pool.ID)
 	hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
+	return config, hostConfig, waitForHealth, nil
+}
+
+// createPoolContainer creates the pool's container from image, which the
+// caller has already resolved and made present — that pull is the longest step
+// in bringing a pool up — starts it, systemd as PID 1, and provisions it as
+// the pool's box (poolruntime.ProvisionBox) before it waits for the agent the box's
+// bundles start.
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolruntime.BoxRecord, error) {
+	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	defer releaseStart()
+	config, hostConfig, waitForHealth, err := e.poolContainerSpec(pool, image, labels)
+	if err != nil {
+		return nil, poolruntime.BoxRecord{}, err
+	}
 	networkConfig := &network.NetworkingConfig{}
 	if e.cfg.Network != "" {
 		networkConfig.EndpointsConfig = map[string]*network.EndpointSettings{e.cfg.Network: {}}
@@ -1055,7 +1070,16 @@ func shouldRemoveExistingContainer(existing container.InspectResponse, desiredIm
 }
 
 func (e *Engine) containerMounts(poolID string) []mount.Mount {
-	mounts := []mount.Mount{{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath}}
+	mounts := []mount.Mount{
+		{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath},
+		// The sandbox base image enables docker.socket for a sandbox's own
+		// daemon. Here the host's socket is already bound at the unit's
+		// listen path (/var/run is a link to /run), so the unit would fail
+		// with "Address already in use" and leave the container degraded.
+		// /dev/null over the unit file masks it in this container only;
+		// sandboxes on the same image keep their socket-activated daemon.
+		{Type: mount.TypeBind, Source: "/dev/null", Target: dockerSocketUnitPath, ReadOnly: true},
+	}
 	// Bound at the same path rather than under the host-mount root, like the
 	// Docker socket above: the agent only dials it, so there is no host path to
 	// translate. The backend's guest-side relay owns the socket in this
