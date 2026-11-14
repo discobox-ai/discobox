@@ -69,6 +69,18 @@ jobs:
             build/ux-smoke/*/*.json
           retention-days: 7
 
+  # The image reaper on both Docker image stores. Every shipped VM pool runs the
+  # classic one, which records no arrival for a load or a pull, and no other job
+  # has a daemon of that store (ADR 26-11-13-655).
+  image-reclaim:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: test:image-reclaim
+
   verify:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30

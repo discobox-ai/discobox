@@ -660,6 +660,12 @@ tasks:
     cmds:
       - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/docker -run Integration -count=1 -v
 
+  test:image-reclaim:
+    desc: Run the image reaper's Docker integration tests against a throwaway daemon of each image store (classic and containerd)
+    platforms: [linux]
+    cmds:
+      - scripts/image-reclaim-integration.sh {{.CLI_ARGS}}
+
   test:vz-stress:
     desc: "Churn VSOCK on a real vz guest while probing a Unix listener (macOS). GUEST=<dir with vmlinux, initrd.img, root.ext4>, or NO_VM=1 for the control"
     # Opt-in and bounded: CYCLES (VSOCK connections, default 10000), DURATION
