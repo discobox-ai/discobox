@@ -676,7 +676,8 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 // It never fails the reconcile of a running pool: a release that does not
 // resolve right now (a registry unreachable after a server restart), or an
 // apply that fails, leaves the box running what it last provisioned, and is
-// logged and tried again on the pool's next reconcile. A failure here that
+// logged, reported to the reconcile (sandbox.ReportBoxKept: the pool still runs
+// its previous agent), and tried again on the pool's next reconcile. A failure here that
 // failed the reconcile would repair the pool — remove a working container and
 // the sandboxes' host with it — over bundles it did not need. Only begin's
 // error is returned for bundle changes. Outbound changes return ErrPoolConfigApply
@@ -685,6 +686,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
+		sandbox.ReportBoxKept(ctx, fmt.Errorf("what its box is made of does not resolve: %w", err))
 		if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
 			return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
 		}
@@ -710,6 +712,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
+		sandbox.ReportBoxKept(ctx, fmt.Errorf("its moved bundles did not apply: %w", err))
 		if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
 			return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
 		}
@@ -718,6 +721,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if recorded.Placement != record.Placement {
 		if err := poolruntime.RestartPoolUnits(ctx, guest, recorded.OutboundRevision != record.OutboundRevision); err != nil {
 			slog.WarnContext(ctx, "the pool's agent did not restart on its new placement; the next reconcile places it again", "pool", pool.ID, "error", err)
+			sandbox.ReportBoxKept(ctx, fmt.Errorf("its agent did not restart on its new placement: %w", err))
 			if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
 				return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
 			}

@@ -30,6 +30,9 @@ type ControlPlane struct {
 	engine           *reconcile.Engine
 	agentAuth        *poolagentauth.Manager
 	boxes            PoolBoxes
+	// upgrades is what the reconciler tells how a pool's reconcile settled,
+	// and the server's health asks which pools are still upgrading.
+	upgrades *UpgradeWatch
 }
 
 // PoolBoxes is what a pool's box is placed with: the release's agent and the
@@ -39,7 +42,13 @@ type PoolBoxes interface {
 }
 
 func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPlane {
-	return &ControlPlane{store: appStore, engine: engine}
+	return &ControlPlane{store: appStore, engine: engine, upgrades: NewUpgradeWatch(appStore)}
+}
+
+// Upgrades is the watch of the pools this server run has not yet brought onto
+// its agent (ADR 26-11-14-624).
+func (s *ControlPlane) Upgrades() *UpgradeWatch {
+	return s.upgrades
 }
 
 func (s *ControlPlane) SetAgentAuthManager(manager *poolagentauth.Manager) {

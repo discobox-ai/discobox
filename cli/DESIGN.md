@@ -867,8 +867,11 @@ CLIs racing to start one do not both download it.
 
 Waiting on it is two-stage, against `health.Status` from `/healthz`. A server
 that never answers has died and is given `StartTimeout`; one that answers
-`starting` is working and is given `ReadyTimeout`, with each new phase drawn on
-one status line — rewritten in place and taken back down before the command that
+`starting` is working and is given `ReadyTimeout`; one that answers
+`upgrading_pools` has started and is bringing its pools onto its agent, and is
+given `UpgradeTimeout` from when that is first seen: the server's own bound
+(`health.PoolUpgradeWait`) and a minute (ADR 26-11-14-624). Each new phase is drawn on
+one status line ("Upgrading pools: <n> left" for the second) — rewritten in place and taken back down before the command that
 wanted the server writes anything — so the wait says what it is waiting for
 without leaving a phase per line scrolled above unrelated output. The child's output goes to a log file
 (`endpoint.ServerLogPath`), and the last launch's tail is what a failed wait

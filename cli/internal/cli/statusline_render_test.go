@@ -195,6 +195,18 @@ func TestServerStartupTextOmitsAnAbsentPhase(t *testing.T) {
 	}
 }
 
+// A server upgrading pools has started: its line says what it is doing, not
+// that it is still starting.
+func TestServerStartupTextNamesPoolsUpgrading(t *testing.T) {
+	status := health.Status{Status: health.StatusUpgradingPools, PoolsUpgrading: 2}
+	if got := serverStartupText(status); got != "Upgrading pools: 2 left (`discobox admin server logs` says which)" {
+		t.Fatalf("serverStartupText() = %q", got)
+	}
+	if got := serverStartupText(health.Status{Status: health.StatusUpgradingPools}); got != "Upgrading pools" {
+		t.Fatalf("serverStartupText() with no count = %q", got)
+	}
+}
+
 // While the line is up it owns the row it is on, so a report from anywhere else
 // in the command goes through it. Written past it, the report came out with the
 // spinner on the front of it: "⠧ preparing sourcesource x: /home/ada/src/x".

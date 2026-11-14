@@ -321,6 +321,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err != nil {
 		if provisioned && !force {
 			slog.WarnContext(ctx, "keeping the pool's machine as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
+			sandbox.ReportBoxKept(ctx, fmt.Errorf("what its machine is made of does not resolve: %w", err))
 			return nil
 		}
 		return err
@@ -345,6 +346,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 			// 26-10-24-953 §5): it keeps what it last provisioned, and the
 			// next reconcile tries again.
 			slog.WarnContext(ctx, "keeping the pool's machine as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
+			sandbox.ReportBoxKept(ctx, fmt.Errorf("its moved bundles did not apply: %w", err))
 			if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
 				return fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
 			}

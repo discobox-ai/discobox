@@ -254,7 +254,8 @@ never against anything the machine reports (551 §1):
   before the box's record held its placement kept it beside the box, and is
   read from there. A running pool whose moved bundles do not resolve or apply
   keeps what it last provisioned and is tried again, as a Docker pool is
-  (953 §5); a new or restarted machine's failure fails the reconcile.
+  (953 §5), and says so with `sandbox.ReportBoxKept`, since the reconcile
+  still settles cleanly (26-11-14-624 §1); a new or restarted machine's failure fails the reconcile.
 
 The record is written as each step lands, so a reconcile that fails part way
 still records a key it placed. The bundle's `pool-agent` feature lays a

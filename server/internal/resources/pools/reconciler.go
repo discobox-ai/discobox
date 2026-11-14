@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
@@ -165,7 +166,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	if provider == nil || provider.Disabled {
+	if provider == nil {
 		return reconcile.Result{}, nil
 	}
 	if runtimeProvider == nil {
@@ -202,6 +203,15 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		pool.Bootstrap = data
 	}
 	ctx = sandbox.WithBootstrapExecutor(ctx, r.pools, pool)
+	// A provider that keeps the box the pool's host last provisioned still
+	// settles cleanly; the upgrade watch hears it here (ADR 26-11-14-624 §1).
+	var keptMu sync.Mutex
+	var kept error
+	ctx = sandbox.WithBoxKeptReporter(ctx, func(reason error) {
+		keptMu.Lock()
+		defer keptMu.Unlock()
+		kept = reason
+	})
 	// repair names why this pass replaces the runtime rather than reconciling
 	// it in place; empty means reconcile. An attempt owes a repair until one
 	// succeeds, so a pass that dies before it leaves it owed (§3).
@@ -357,6 +367,15 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		current.RecordFailure(model.PoolStateOffline,
 			fmt.Sprintf("pool agent has not reported since %s", current.LastSeenAt.UTC().Format(time.RFC3339)), "")
 	}
+	// Before the row: a watch pass that reads this settle must already know
+	// whether it kept the previous box, or it would take the old agent's next
+	// report for the new one's. A row write that then fails leaves the record
+	// for an earlier settle, which only keeps the pool waited on.
+	if r.pools != nil {
+		keptMu.Lock()
+		r.pools.Upgrades().settled(current.ID, settledAt, kept)
+		keptMu.Unlock()
+	}
 	if err := r.update(ctx, current, generation); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -501,15 +520,12 @@ func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	provider, err := r.store.GetSandboxProviderInstance(ctx, pool.ProjectID, pool.ProviderInstanceID)
-	if errors.Is(err, store.ErrNotFound) {
-		return project, nil, nil, nil
-	}
+	provider, err := convergedProvider(ctx, r.store, pool)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if provider.Disabled {
-		return project, provider, nil, nil
+	if provider == nil {
+		return project, nil, nil, nil
 	}
 	if r.manager == nil {
 		return nil, nil, nil, fmt.Errorf("sandbox provider manager is required")
@@ -523,6 +539,23 @@ func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.
 		return project, provider, nil, nil
 	}
 	return project, provider, poolRuntime, nil
+}
+
+// convergedProvider is the pool's provider instance when the reconciler
+// converges a host for it, and nil when it converges nothing: the instance is
+// gone, or disabled. Both the reconciler and the upgrade watch decide it here.
+func convergedProvider(ctx context.Context, appStore *store.Store, pool *model.Pool) (*model.SandboxProviderInstance, error) {
+	provider, err := appStore.GetSandboxProviderInstance(ctx, pool.ProjectID, pool.ProviderInstanceID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if provider.Disabled {
+		return nil, nil
+	}
+	return provider, nil
 }
 
 func (r *PoolReconciler) update(ctx context.Context, pool *model.Pool, generation int64) error {

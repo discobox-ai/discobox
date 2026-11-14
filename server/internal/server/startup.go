@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/api/openapi"
 	"github.com/discobox-ai/discobox/pkg/health"
 	"github.com/discobox-ai/discobox/pkg/version"
+	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/go-faster/jx"
 	"gopkg.in/yaml.v3"
 )
@@ -37,10 +39,17 @@ type startupHandler struct {
 	phase    string
 	warnings []string
 	ready    atomic.Pointer[http.Handler]
+	// readyAt is when the router took over, which the wait for pools to
+	// upgrade counts from; pools counts them. Both are set by setReady.
+	readyAt time.Time
+	pools   services.PoolUpgradeService
+	// upgradeWait is how long health reports upgrading pools before it
+	// reports ready anyway (health.PoolUpgradeWait).
+	upgradeWait time.Duration
 }
 
 func newStartupHandler(phase string) *startupHandler {
-	handler := &startupHandler{}
+	handler := &startupHandler{upgradeWait: health.PoolUpgradeWait}
 	// Through setPhase, so the first step is logged like every other one. It
 	// was the only step that never was, which left a foreground run's log
 	// starting at the second one and saying nothing about the step it was on
@@ -63,8 +72,12 @@ func (h *startupHandler) setPhase(phase string) {
 }
 
 // ready hands over to the real router. Requests arriving after this see the
-// server exactly as if it had bound its listeners only now.
-func (h *startupHandler) setReady(handler http.Handler) {
+// server exactly as if it had bound its listeners only now. pools answers the
+// pools its health still waits on (ADR 26-11-14-624); nil waits on none.
+func (h *startupHandler) setReady(handler http.Handler, pools services.PoolUpgradeService) {
+	h.mu.Lock()
+	h.readyAt, h.pools = time.Now(), pools
+	h.mu.Unlock()
 	h.ready.Store(&handler)
 }
 
@@ -91,11 +104,8 @@ func (h *startupHandler) status() health.Status {
 func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if handler := h.ready.Load(); handler != nil {
 		if r.URL.Path == health.Path {
-			status := readyStatus()
-			h.mu.Lock()
-			status.Warnings = append([]string(nil), h.warnings...)
-			h.mu.Unlock()
-			writeHealthStatus(w, http.StatusOK, status)
+			code, status := h.servingStatus(r.Context())
+			writeHealthStatus(w, code, status)
 			return
 		}
 		(*handler).ServeHTTP(w, r)
@@ -129,9 +139,45 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// readyStatus is what /healthz reports once the real router is serving. It is
-// unconditionally ready: the router this is registered on does not serve until
-// startup has finished.
+// servingStatus is what /healthz reports once the router serves: upgrading
+// pools, with 503, while a pool registered before this start has not been
+// brought onto this server's agent and the wait for it has not run out; then
+// ready, with a warning saying how many pools are still upgrading, until none
+// is. It counts them and never names them: this answers anyone, and the log
+// names them (ADR 26-11-14-624 §2).
+func (h *startupHandler) servingStatus(ctx context.Context) (int, health.Status) {
+	status := readyStatus()
+	h.mu.Lock()
+	status.Warnings = append([]string(nil), h.warnings...)
+	pools, readyAt, wait := h.pools, h.readyAt, h.upgradeWait
+	h.mu.Unlock()
+	if pools == nil {
+		return http.StatusOK, status
+	}
+	status.PoolsUpgrading = pools.PoolsUpgrading(ctx)
+	if status.PoolsUpgrading == 0 {
+		return http.StatusOK, status
+	}
+	if time.Since(readyAt) < wait {
+		status.Status = health.StatusUpgradingPools
+		return http.StatusServiceUnavailable, status
+	}
+	status.Warnings = append(status.Warnings, fmt.Sprintf(
+		"%s not upgraded after %s; the server's log says which and why",
+		countPools(status.PoolsUpgrading), wait))
+	return http.StatusOK, status
+}
+
+func countPools(n int) string {
+	if n == 1 {
+		return "1 pool"
+	}
+	return fmt.Sprintf("%d pools", n)
+}
+
+// readyStatus is what /healthz reports once the real router is serving, before
+// servingStatus adds the pools still upgrading. The router this is registered
+// on does not serve until startup has finished.
 func readyStatus() health.Status {
 	return health.Status{
 		Status:        health.StatusReady,

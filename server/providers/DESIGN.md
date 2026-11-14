@@ -632,6 +632,14 @@ effort to reconcile it back to health instead of abandoning it.
   place rather than recording the failure.
 - The docker watcher re-marks a created but failed/offline pool even when its
   container is gone, so a missing runtime is recreated.
+- A running pool whose moved bundles or placement do not resolve or apply is
+  never failed for it: it keeps the box it last provisioned (ADR 26-10-24-953
+  §5) and the reconcile settles cleanly. Every place a provider keeps the
+  box this way reports it with `sandbox.ReportBoxKept` from the reconcile's
+  context — the only way the server learns the pool still runs its previous
+  agent, which its health waits on after an upgrade (ADR 26-11-14-624 §1).
+  It is a report, not an error, because an error is a pool failure: it ends
+  every start waiting on the pool and repairs a pool with sandboxes.
 
 ## Pool Agent HTTP Routing
 

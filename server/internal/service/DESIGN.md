@@ -29,10 +29,12 @@ flowchart LR
 `*sandboxes.Service`, `SandboxProviderInstanceService`, `PoolService`,
 `JobService`, `SecretService`, `SSHKeyService`, `PeerService`).
 `internal/server.NewApp` assigns the one `*Service` to every field of
-`services.Services` but one, so API calls reach the resource package directly.
+`services.Services` but `Assets`, so API calls reach the resource package directly.
 That one has no route a person calls — only a pool reaches it — and is not
 embedded: `Assets` is `Service.Assets()`, the asset API (ADR 26-10-16-423
-§13).
+§13). `PoolUpgrades` (`PoolUpgradeService`) is `Service` itself, which counts
+the pools its control plane's `UpgradeWatch` still waits on for the server's
+health; no route reaches it (ADR 26-11-14-624).
 
 Options carries the resolved harness bundle references from configuration to
 harness seeding, including any release manifest selection, and the development
@@ -94,7 +96,9 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    and `pool` (`pools.ControlPlane.RegisterJobs`).
 2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`. This
    runs before any worker or HTTP listener can use old readiness; pool
-   identity and lifecycle survive.
+   identity and lifecycle survive. Then it fixes the pools the server's
+   health waits on (`pools.UpgradeWatch.Begin`, ADR 26-11-14-624): every
+   present pool registered before this start.
 3. Converts every secret of the retired `exchange` type into a token secret
    sent nowhere (`secrets.Service.RetireExchangeSecrets`, ADR 26-11-12-957
    §2): its value is sealed, so this waits for the keyring rather than
@@ -104,7 +108,8 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    server kept in a provider's config in the clear
    (`Store.SealProviderCredentials`, ADR 26-10-31-694 §4), before anything
    resolves a provider. Then it starts the engine, whose reconciles resolve
-   providers.
+   providers, and marks every pool for a reconcile, so each settles once in
+   this run whether or not the release moved; the upgrade watch goes on it.
 4. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`, and
    the asset service (`assets.Service.Start`): its hourly removal by
    reference, and resolving the release's bundle references.

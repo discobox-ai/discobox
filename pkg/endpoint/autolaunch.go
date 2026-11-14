@@ -51,13 +51,17 @@ type LaunchOptions struct {
 	// first (ADR 0099), and a build with no server to download fails to
 	// resolve one at all. Neither is a price a caller should pay to discover
 	// that the server it wanted is already up.
-	Command       func(context.Context) (Command, error)
-	Env           []string
-	ProbePath     string
-	ProbeTimeout  time.Duration
-	StartTimeout  time.Duration
-	ReadyTimeout  time.Duration
-	ProbeInterval time.Duration
+	Command      func(context.Context) (Command, error)
+	Env          []string
+	ProbePath    string
+	ProbeTimeout time.Duration
+	StartTimeout time.Duration
+	ReadyTimeout time.Duration
+	// UpgradeTimeout bounds the wait for a server upgrading its pools, from
+	// when that is first seen. The server bounds it itself
+	// (health.PoolUpgradeWait), so the default outlasts that.
+	UpgradeTimeout time.Duration
+	ProbeInterval  time.Duration
 	// ExpectedVersion is the version carried by the launching binary. When a
 	// local server reports an older semantic version, EnsureRunning replaces it
 	// before returning.
@@ -86,7 +90,7 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	// needs waiting on rather than a second process started alongside it.
 	if status, err := probeEndpoint(ctx, opts); err == nil {
 		if !olderServer(status, opts.ExpectedVersion) {
-			if !status.Starting() {
+			if !status.Waiting() {
 				return false, nil
 			}
 			return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
@@ -104,7 +108,7 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	if status, err := probeEndpoint(ctx, opts); err == nil {
 		if olderServer(status, opts.ExpectedVersion) {
 			replaceOlder = true
-		} else if status.Starting() {
+		} else if status.Waiting() {
 			if err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout())); err != nil {
 				return false, err
 			}
@@ -175,7 +179,7 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		if err == nil {
-			if !status.Starting() {
+			if !status.Waiting() {
 				opts.progress(status)
 				return true, nil
 			}
@@ -248,7 +252,7 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 			break
 		}
 		status, probeErr := probeEndpoint(ctx, opts)
-		if resp.StatusCode == http.StatusServiceUnavailable && probeErr == nil && status.Starting() {
+		if resp.StatusCode == http.StatusServiceUnavailable && probeErr == nil && status.Waiting() {
 			if err := waitReady(ctx, opts, readinessDeadline); err != nil {
 				return err
 			}
@@ -277,22 +281,31 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 	return fmt.Errorf("older local server at %s did not stop", opts.Endpoint)
 }
 
-// waitReady polls a server that has answered "starting" until it is ready.
+// waitReady polls a server that has answered "starting" or "upgrading pools"
+// until it is ready.
+//
+// Upgrading pools gets a deadline of its own, from when it is first seen: the
+// server bounds it (health.PoolUpgradeWait) and reports ready once that runs
+// out, so the client's deadline is that and a margin, never the start's.
 func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) error {
 	var last health.Status
-	answered, unanswered := false, 0
+	answered, unanswered, upgrading := false, 0, false
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		switch {
-		case err == nil && !status.Starting():
+		case err == nil && !status.Waiting():
 			opts.progress(status)
 			return nil
 		case err == nil:
+			if status.UpgradingPools() && !upgrading {
+				upgrading = true
+				deadline = time.Now().Add(opts.upgradeTimeout())
+			}
 			answered, unanswered = true, 0
 			// On the step changing, not on every poll: uptime moves with each
 			// answer, so comparing whole statuses reports the same step over
 			// and over.
-			if status.Status != last.Status || status.Phase != last.Phase || !slices.Equal(status.Warnings, last.Warnings) {
+			if status.Status != last.Status || status.Phase != last.Phase || status.PoolsUpgrading != last.PoolsUpgrading || !slices.Equal(status.Warnings, last.Warnings) {
 				opts.progress(status)
 				last = status
 			}
@@ -364,7 +377,7 @@ func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, erro
 		status = health.Status{}
 	}
 	switch {
-	case resp.StatusCode == http.StatusServiceUnavailable && status.Starting():
+	case resp.StatusCode == http.StatusServiceUnavailable && status.Waiting():
 		return status, nil
 	case resp.StatusCode < 200 || resp.StatusCode >= 500:
 		return health.Status{}, fmt.Errorf("local server probe returned %s", resp.Status)
@@ -568,6 +581,18 @@ func (o LaunchOptions) readyTimeout() time.Duration {
 		return o.ReadyTimeout
 	}
 	return 5 * time.Minute
+}
+
+// upgradeMargin is how much longer than the server's own bound a client waits
+// on a server upgrading its pools: past the bound the server answers ready,
+// and a client cut off at the same instant would fail on that answer's eve.
+const upgradeMargin = time.Minute
+
+func (o LaunchOptions) upgradeTimeout() time.Duration {
+	if o.UpgradeTimeout > 0 {
+		return o.UpgradeTimeout
+	}
+	return health.PoolUpgradeWait + upgradeMargin
 }
 
 func (o LaunchOptions) probeInterval() time.Duration {

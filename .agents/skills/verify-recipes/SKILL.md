@@ -1467,7 +1467,13 @@ in isolated dirs, make boxes, then start this tree's server on the same data.
   `DISCOBOX_ENV_FILE=/workspace/discobox/.env` (the loop's images and bundles).
   Build that binary yourself (`cd server && go build -o $S/… ./cmd/discobox-server`),
   since `build/discobox-server` moves under you. Its pool reconcile replaces the
-  old agent about a minute later, so the window is real. Read box state from the
+  old agent about a minute later, and its `/healthz` answers 503
+  `upgrading_pools` (with `poolsUpgrading`) until every pool it had is on the
+  new agent, at most 5 minutes (ADR 26-11-14-624); the server log names each
+  pool and what it waits on. Wait for settled health (`status` `ready`, no
+  `poolsUpgrading`), and time it, before you drive a box — unless what you are
+  verifying is that window itself, which a client reaches only by not waiting
+  (a remote endpoint, a raw API call). Read box state from the
   sqlite DB (`state, generation, observed_generation, error_message`) as well as
   `admin box ls`.
 - A server that fails to start on the old release's database is itself a

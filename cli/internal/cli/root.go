@@ -713,7 +713,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 					shownWarnings[warning] = true
 				}
 			}
-			if status.Starting() {
+			if status.Waiting() {
 				progress.set(serverStartupText(status))
 			}
 		},
@@ -779,7 +779,17 @@ func (a *App) serverStartupLine() *statusLine {
 // images staging (stageLine) — and three ways of writing the same sentence read
 // as three unrelated programs taking turns. A server that reports no phase says
 // only what it is, because "Starting server: starting" is the same word twice.
+//
+// A server upgrading pools has started, and says how many pools it is waiting
+// on: progress of its own, not a step of starting. Which they are is in its
+// log, never in the health answer anyone can read.
 func serverStartupText(status health.Status) string {
+	if status.UpgradingPools() {
+		if status.PoolsUpgrading > 0 {
+			return fmt.Sprintf("Upgrading pools: %d left (`discobox admin server logs` says which)", status.PoolsUpgrading)
+		}
+		return "Upgrading pools"
+	}
 	if phase := strings.TrimSpace(status.Phase); phase != "" {
 		return "Starting server: " + phase
 	}
