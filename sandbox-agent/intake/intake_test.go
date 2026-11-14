@@ -461,9 +461,10 @@ func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Take the last op's staged file away, so every replacement before it
-	// lands and the last one fails.
+	// lands and the last one fails. Discarded, not removed by name: Windows
+	// refuses to remove a file that is still open.
 	last := &ops[len(ops)-1]
-	if err := os.Remove(last.staged.Name()); err != nil {
+	if err := last.staged.Discard(); err != nil {
 		t.Fatal(err)
 	}
 	err = replaceAll(ops)
