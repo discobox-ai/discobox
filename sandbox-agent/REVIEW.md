@@ -943,3 +943,12 @@ user waits on every single start.
 - After yielding `resolv.conf` to its provider, keep observing and persisting
   provider DNS changes. Bridges continue using the saved resolver independently
   of the stub; stopping that watcher strands them after a DHCP renewal.
+
+## Feature apt keys
+
+- A feature never trusts an apt key fetched beside the packages it signs: it
+  ships its own copy (`features/core/git-core-ppa.asc`,
+  `features/cli/githubcli-archive-keyring.asc`). The GitHub CLI copy holds the
+  same keys as the sandbox base image's `GH_APT_KEY_FINGERPRINTS`; a change to
+  one moves the other. Why: #1168 pinned the image's key while this feature
+  still downloaded it unchecked.

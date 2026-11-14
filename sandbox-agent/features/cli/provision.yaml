@@ -23,6 +23,7 @@ steps:
   - name: gh
     apt: true
     run: install-gh.sh
+    inputs: [githubcli-archive-keyring.asc]
   # The image's event monitors (ADR 26-10-31-073 §9), with gh and jq, which
   # they run on. Executable: a runner runs a monitor by its path.
   - name: monitor-github-repo
