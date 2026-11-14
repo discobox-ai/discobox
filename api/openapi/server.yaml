@@ -7474,12 +7474,34 @@ components:
                 layersExtracted:
                     description: For an image loaded from the image cache, layers the daemon has extracted into its store, counting layers it already held
                     type: integer
+                retry:
+                    $ref: '#/components/schemas/SandboxPullRetry'
                 total:
                     description: Total bytes of the layers whose size has been reported
                     format: int64
                     type: integer
             required:
                 - image
+            type: object
+        SandboxPullRetry:
+            additionalProperties: false
+            description: |-
+                A layer being fetched again after its transfer ended early, present for as long as it
+                is. A registry that sends the layer whole again counts it from zero again, so current
+                can step back while this is present; this is what says why.
+            properties:
+                layer:
+                    description: The layer's position among the pull's layers, from 1
+                    type: integer
+                attempt:
+                    description: Which try this is, from 2
+                    type: integer
+                kept:
+                    description: Bytes of the layer the earlier attempts left, which is where the transfer that ended stopped; absent when none were kept
+                    format: int64
+                    type: integer
+            required:
+                - layer
             type: object
         PoolSandboxProvisionPhase:
             description: |-

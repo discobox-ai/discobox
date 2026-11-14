@@ -189,6 +189,15 @@ fired. A pull is its own heartbeat instead — the Docker pulls report as their
 stream advances, and the guest image fetch reports on a ticker so a stalled
 download keeps the phase fresh rather than aging out mid-fetch.
 
+The guest image fetch also carries the image store's retry: while a layer whose
+transfer ended early is fetched again, its pull progress names the layer, the
+attempt, and the bytes kept (`retry`), and a retry starting, ending or moving
+to another attempt is passed on with the store's first report of it rather than
+held for the driver's reporting interval. A registry that sends the layer
+whole again takes its bytes back off the count, and the retry is what says why.
+`guestimage.Progress.PoolPull` is the one conversion both VM drivers report
+through.
+
 Phases exist wherever the wait does, including stretches with no Docker
 mechanic behind them: the guest image fetch, which is hundreds of megabytes
 before there is a VM at all, and the development image build, which runs on the

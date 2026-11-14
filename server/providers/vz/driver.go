@@ -307,14 +307,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	bundle, err := d.guest.Resolve(ctx, func(fetch guestimage.Progress) {
 		d.progress.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
 			Phase: sandbox.PoolPhaseFetchingVMImage,
-			Pull: &sandbox.PoolPullProgress{
-				Image:          fetch.Reference,
-				Current:        fetch.Current,
-				Total:          fetch.Total,
-				Layers:         fetch.Layers,
-				LayersComplete: fetch.LayersComplete,
-				Done:           fetch.Done,
-			},
+			Pull:  fetch.PoolPull(),
 		})
 	})
 	if err != nil {

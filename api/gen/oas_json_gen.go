@@ -23975,6 +23975,39 @@ func (s *OptSandboxPullProgress) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxPullRetry as json.
+func (o OptSandboxPullRetry) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxPullRetry from json.
+func (o *OptSandboxPullRetry) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxPullRetry to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxPullRetry) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxPullRetry) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxRuntimeConfigAgentTLS as json.
 func (o OptSandboxRuntimeConfigAgentTLS) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -49395,6 +49428,12 @@ func (s *SandboxPullProgress) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Retry.Set {
+			e.FieldStart("retry")
+			s.Retry.Encode(e)
+		}
+	}
+	{
 		if s.Total.Set {
 			e.FieldStart("total")
 			s.Total.Encode(e)
@@ -49402,7 +49441,7 @@ func (s *SandboxPullProgress) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxPullProgress = [8]string{
+var jsonFieldsNameOfSandboxPullProgress = [9]string{
 	0: "current",
 	1: "done",
 	2: "extracted",
@@ -49410,7 +49449,8 @@ var jsonFieldsNameOfSandboxPullProgress = [8]string{
 	4: "layers",
 	5: "layersComplete",
 	6: "layersExtracted",
-	7: "total",
+	7: "retry",
+	8: "total",
 }
 
 // Decode decodes SandboxPullProgress from json.
@@ -49418,7 +49458,7 @@ func (s *SandboxPullProgress) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxPullProgress to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -49494,6 +49534,16 @@ func (s *SandboxPullProgress) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"layersExtracted\"")
 			}
+		case "retry":
+			if err := func() error {
+				s.Retry.Reset()
+				if err := s.Retry.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retry\"")
+			}
 		case "total":
 			if err := func() error {
 				s.Total.Reset()
@@ -49513,8 +49563,9 @@ func (s *SandboxPullProgress) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00001000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -49556,6 +49607,136 @@ func (s *SandboxPullProgress) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxPullProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxPullRetry) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxPullRetry) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("layer")
+		e.Int(s.Layer)
+	}
+	{
+		if s.Attempt.Set {
+			e.FieldStart("attempt")
+			s.Attempt.Encode(e)
+		}
+	}
+	{
+		if s.Kept.Set {
+			e.FieldStart("kept")
+			s.Kept.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxPullRetry = [3]string{
+	0: "layer",
+	1: "attempt",
+	2: "kept",
+}
+
+// Decode decodes SandboxPullRetry from json.
+func (s *SandboxPullRetry) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxPullRetry to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "layer":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int()
+				s.Layer = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"layer\"")
+			}
+		case "attempt":
+			if err := func() error {
+				s.Attempt.Reset()
+				if err := s.Attempt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"attempt\"")
+			}
+		case "kept":
+			if err := func() error {
+				s.Kept.Reset()
+				if err := s.Kept.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kept\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxPullRetry")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxPullRetry) {
+					name = jsonFieldsNameOfSandboxPullRetry[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxPullRetry) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxPullRetry) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -40,6 +40,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -130,8 +131,30 @@ type Progress struct {
 	// image it already held, which downloads nothing.
 	Layers         int
 	LayersComplete int
+	// Retry, when set, is the layer the store is fetching again after its
+	// transfer ended early, for as long as it still is. A registry that sends
+	// the layer whole again takes its bytes back off Current, so this is what
+	// says why the count stepped back.
+	Retry *imagecache.Retry
 	// Done marks the closing report, sent once the artifacts are on disk.
 	Done bool
+}
+
+// PoolPull is the report as a pool's pull progress, which is how a VM-backed
+// driver narrates the fetch to a client waiting on its pool.
+func (p Progress) PoolPull() *sandbox.PoolPullProgress {
+	pull := &sandbox.PoolPullProgress{
+		Image:          p.Reference,
+		Current:        p.Current,
+		Total:          p.Total,
+		Layers:         p.Layers,
+		LayersComplete: p.LayersComplete,
+		Done:           p.Done,
+	}
+	if p.Retry != nil {
+		pull.Retry = &sandbox.PoolPullRetry{Layer: p.Retry.Layer, Attempt: p.Retry.Attempt, Kept: p.Retry.Kept}
+	}
+	return pull
 }
 
 // ProgressFunc receives fetch progress. A nil one asks for none, and then
@@ -361,6 +384,7 @@ func fetchProgress(reference string, report ProgressFunc) func(imagecache.Progre
 		return nil
 	}
 	var last time.Time
+	var lastRetry *imagecache.Retry
 	return func(fetch imagecache.Progress) {
 		// The store opens with a report that names the image before its
 		// manifests say how big it is. The driver has announced the phase
@@ -368,19 +392,32 @@ func fetchProgress(reference string, report ProgressFunc) func(imagecache.Progre
 		if fetch.Total == 0 && !fetch.Done {
 			return
 		}
-		if !fetch.Done && time.Since(last) < progressInterval {
+		// A retry starting, ending or moving on to another attempt is passed on
+		// with the store's report that first carries it, rather than held for
+		// this interval: it is what explains a count that steps back.
+		if !fetch.Done && sameRetry(fetch.Retry, lastRetry) && time.Since(last) < progressInterval {
 			return
 		}
-		last = time.Now()
+		last, lastRetry = time.Now(), fetch.Retry
 		report(Progress{
 			Reference:      reference,
 			Current:        fetch.Current,
 			Total:          fetch.Total,
 			Layers:         fetch.Layers,
 			LayersComplete: fetch.LayersComplete,
+			Retry:          fetch.Retry,
 			Done:           fetch.Done,
 		})
 	}
+}
+
+// sameRetry reports whether two reports name the same attempt at the same
+// layer, or both name none.
+func sameRetry(a, b *imagecache.Retry) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Layer == b.Layer && a.Attempt == b.Attempt
 }
 
 // checkPlatform refuses an image built for another architecture.
