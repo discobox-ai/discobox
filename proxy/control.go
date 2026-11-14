@@ -19,7 +19,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// ControlHandler returns the read-only proxy control API.
+// ControlHandler returns the proxy control API: reads of the audit, under
+// ScopeAuditRead, and the one write, a purge of one client's audit, under
+// ScopeAuditPurge (ADR 26-11-14-896 §5).
 func (s *Server) ControlHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -30,10 +32,25 @@ func (s *Server) ControlHandler() http.Handler {
 	mux.HandleFunc("GET /audit/dns", s.handleControlListDNS)
 	mux.HandleFunc("GET /audit/dropped", s.handleControlDropped)
 	mux.HandleFunc("GET /audit/http/", s.handleControlHTTPArtifact)
+	mux.HandleFunc("DELETE "+controlPurgePath+"{client}", s.handleControlPurgeClient)
 	return s.controlAuth.Middleware(mux)
 }
 
-// ListenAndServeControl starts the optional read-only control API listener.
+// controlPurgePath is where a purge of one client's audit is asked for, its
+// client ID following.
+const controlPurgePath = "/audit/clients/"
+
+// handleControlPurgeClient removes one client's audit: its rows and its body
+// and stream spools. A token may purge only the client it names, which the
+// authenticator has already checked against the path; with no authenticator
+// configured, which a pool never runs, the path alone decides.
+func (s *Server) handleControlPurgeClient(w http.ResponseWriter, r *http.Request) {
+	result, err := s.audit.PurgeClient(r.Context(), r.PathValue("client"))
+	writeControlJSON(w, result, err)
+}
+
+// ListenAndServeControl starts the optional control API listener: audit reads
+// and the one write, a purge of one client's audit.
 func (s *Server) ListenAndServeControl(ctx context.Context) error {
 	if s.cfg.Control.ListenAddress == "" {
 		return nil

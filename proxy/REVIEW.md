@@ -16,8 +16,15 @@
   row, or touch an open spool. The age sweep pairs files with rows by mtime.
 - Do not spool a response body the cache stores or serves. The cache entry is
   the record (`BodyFormatCache`), and reading it must not touch the cache's LRU.
-- Do not reclaim audit data on sandbox deletion. The trail deliberately outlives
-  the sandbox; retention and the spool budget are all that remove it.
+- Reclaim one client's audit data only through `Recorder.PurgeClient`, which a
+  purge of its sandbox calls. Retention and the spool budget are all that
+  remove anything else; an archive or a reap keeps the trail. A purge goes
+  through the recorder's writer and closes the client's open spools first: a
+  second path that deletes rows or spools races the writer and the budget's
+  running total. Closing a spool does not end its exchange: the exchange's row
+  is written when it ends, which after a purge can be hours later, so the
+  writer drops a purged client's rows and the spools they name
+  (`dropPurged`). A new event kind a client's exchange writes goes through it.
 - Do not sweep the response cache by age. Its entries are content-addressed and
   bounded by the LRU byte ceiling; anything that puts a file in the cache
   directory must be describable by the index, or it leaks past that ceiling.
@@ -44,11 +51,14 @@
   must preserve the authenticated client ID.
 - Runtime policy changes go through `ApplyConfig` only; do not add an HTTP
   config API to the proxy without revisiting the design.
-- The control API is read-only. Keep audit and stream retrieval scoped by the
-  authenticated client/sandbox ID, and do not serve arbitrary spool paths.
+- The control API's one write is the purge of one client's audit. Do not add
+  another without revisiting the design. Keep audit and stream retrieval scoped
+  by the authenticated client/sandbox ID, and do not serve arbitrary spool paths.
 - If `Control.TrustPublicKey` is configured, do not bypass PASETO auth on
-  control endpoints. Tokens must use the proxy control audience and `audit:read`
-  scope; sandbox-scoped tokens must not read another `client_id`.
+  control endpoints. Tokens must use the proxy control audience; a read needs
+  `audit:read`, and sandbox-scoped tokens must not read another `client_id`. A
+  purge needs `audit:purge` and a `sandbox_id` that is the client purged; a
+  read scope never grants it.
 - Raw upgraded-stream payloads and normal HTTP bodies belong in disk spool
   files, not SQLite. SQLite rows should store only file metadata, byte counts,
   and drop counters.

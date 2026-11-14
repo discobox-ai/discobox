@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -290,9 +291,11 @@ type Recorder struct {
 	dropped         atomic.Uint64
 	closed          atomic.Bool
 	// openSpool names the spool files currently being written, so the
-	// retention sweep does not reclaim one out from under a live stream.
+	// retention sweep does not reclaim one out from under a live stream, and
+	// holds each one's closer, so a purge of its client can close it before
+	// deleting it (PurgeClient).
 	spoolMu   sync.Mutex
-	openSpool map[string]struct{}
+	openSpool map[string]io.Closer
 	// budget bounds the spool trees by bytes (ADR 26-10-08-698). spoolBytes
 	// is their running total, spoolLimit the budget the last pass resolved,
 	// and overBudget wakes a pass when writes take the total past it.
@@ -300,6 +303,10 @@ type Recorder struct {
 	spoolBytes atomic.Int64
 	spoolLimit atomic.Int64
 	overBudget chan struct{}
+	// purged is when each client was purged (PurgeClient), so the rows of its
+	// exchanges that end afterwards are dropped rather than written. Only
+	// the writer reads or writes it.
+	purged map[string]time.Time
 	// redactor is what each client's trail is kept clean of (SetRedactor).
 	redactor atomic.Pointer[func(clientID string) Redactor]
 	// pools owns the database handle db borrows. Close releases it: without
@@ -411,7 +418,7 @@ func (r *Recorder) BeginUpgradeStream(clientID, upgradeType, extensions string) 
 	if redactor := r.redactorFor(clientID); redactor != nil {
 		session.patterns = redactor.Patterns()
 	}
-	session.onClose = r.trackSpool(record.File)
+	session.onClose = r.trackSpool(record.File, session)
 	session.onWrite = r.addSpoolBytes
 	go session.run()
 	return record, session, nil
@@ -427,7 +434,7 @@ func (r *Recorder) BeginBody(clientID, kind string) (*BodyRecord, *BodySpool, er
 		return record, spool, err
 	}
 	spool.redaction = newSpoolRedaction(r.redactorFor(clientID))
-	spool.onClose = r.trackSpool(record.File)
+	spool.onClose = r.trackSpool(record.File, spool)
 	spool.onWrite = r.addSpoolBytes
 	return record, spool, nil
 }
@@ -732,7 +739,12 @@ func (r *Recorder) run() {
 }
 
 func (r *Recorder) write(event any) {
+	if r.dropPurged(event) {
+		return
+	}
 	switch e := event.(type) {
+	case purgeRequest:
+		r.purge(e)
 	case HTTPEvent:
 		_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "http")))
 		writtenAt := time.Now().UTC()

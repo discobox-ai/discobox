@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -156,17 +157,18 @@ func (r *Recorder) sweepSpoolDir(ctx context.Context, dir string, cutoff time.Ti
 
 // trackSpool marks a spool file as being written and returns the release. The
 // retention sweep skips tracked files: an upgraded stream can outlive the
-// retention window while still open, and it has no row until it closes.
-func (r *Recorder) trackSpool(relativePath string) func() {
+// retention window while still open, and it has no row until it closes. spool
+// is what closes it, which a purge of its client does (PurgeClient).
+func (r *Recorder) trackSpool(relativePath string, spool io.Closer) func() {
 	key := spoolKey(relativePath)
 	if r == nil || key == "" {
 		return func() {}
 	}
 	r.spoolMu.Lock()
 	if r.openSpool == nil {
-		r.openSpool = map[string]struct{}{}
+		r.openSpool = map[string]io.Closer{}
 	}
-	r.openSpool[key] = struct{}{}
+	r.openSpool[key] = spool
 	r.spoolMu.Unlock()
 	return func() {
 		r.spoolMu.Lock()

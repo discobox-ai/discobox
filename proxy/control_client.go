@@ -289,6 +289,46 @@ func (c *ControlClient) OpenHTTPArtifact(ctx context.Context, sandboxID string, 
 	return &AuditArtifact{Body: resp.Body, Format: format, ContentType: resp.Header.Get("Content-Type"), TruncatedFrom: truncatedFrom}, nil
 }
 
+// AuditPurgeResult is what a purge of one client's audit removed.
+type AuditPurgeResult = audit.PurgeResult
+
+// PurgeClient removes everything the proxy's audit holds of one sandbox: its
+// rows and its recorded bodies and streams (ADR 26-11-14-896 §5). It signs a
+// token of its own for it, naming the sandbox and carrying ScopeAuditPurge
+// alone: every read keeps signing ScopeAuditRead, so a read can never delete.
+// A sandbox with nothing recorded purges to an empty result.
+func (c *ControlClient) PurgeClient(ctx context.Context, sandboxID string) (AuditPurgeResult, error) {
+	if strings.TrimSpace(sandboxID) == "" {
+		return AuditPurgeResult{}, errors.New("a purge of the proxy's audit names its sandbox")
+	}
+	claims := c.claims
+	claims.SandboxID = sandboxID
+	claims.Scopes = []string{ScopeAuditPurge}
+	token, err := CreateControlToken(c.key, claims)
+	if err != nil {
+		return AuditPurgeResult{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+controlPurgePath+url.PathEscape(sandboxID), nil)
+	if err != nil {
+		return AuditPurgeResult{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return AuditPurgeResult{}, fmt.Errorf("purge the proxy's audit of %s: %w", sandboxID, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return AuditPurgeResult{}, fmt.Errorf("purge the proxy's audit of %s: the proxy control API answered %d: %s", sandboxID, resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+	var result AuditPurgeResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return AuditPurgeResult{}, fmt.Errorf("decode the proxy's purge of %s: %w", sandboxID, err)
+	}
+	return result, nil
+}
+
 // sandboxParams is the query half of a sandbox scope. The token half is what an
 // authenticated proxy narrows by, and it rewrites client_id to match; this half
 // is what narrows a proxy serving its control API without authentication, which
