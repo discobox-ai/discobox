@@ -67,24 +67,7 @@ func TestDroppedVMWithAStopInFlightIsHeldUntilItFails(t *testing.T) {
 	guestDir := teardownGuest(t)
 	dir := teardownDir(t)
 
-	before := vzServices(t)
-	vm, err := Start(stressGuestOptions(t, "vz-teardown-error", guestDir, dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	waitStressDocker(t, vm, 5*time.Minute)
-	service := newVZService(t, before)
-	t.Cleanup(func() { _ = syscall.Kill(service, syscall.SIGKILL) })
-
-	if err := syscall.Kill(service, syscall.SIGSTOP); err != nil {
-		t.Fatal(err)
-	}
-	machine := weak.Make(vm.machine)
-	// The goroutine stays blocked on the stop's completion without keeping
-	// the wrapper reachable.
-	go func(m *vz.VirtualMachine) { _ = m.Stop() }(vm.machine)
-	time.Sleep(500 * time.Millisecond)
-	vm = nil
+	machine, service := startStopAndForget(t, guestDir, dir)
 
 	// A dropped wrapper is finalized at the first collection after the drop.
 	const held = 5 * time.Second
@@ -115,6 +98,30 @@ func TestDroppedVMWithAStopInFlightIsHeldUntilItFails(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Logf("machine released %s after its service died, and no state change panicked", time.Since(killed).Round(time.Millisecond))
+}
+
+// startStopAndForget boots a guest, makes its service unresponsive (SIGSTOP),
+// puts a stop in flight, and drops the VM. It returns only a weak reference
+// and the service's pid, so nothing in the test keeps the machine alive.
+func startStopAndForget(t *testing.T, guestDir, dir string) (weak.Pointer[vz.VirtualMachine], int) {
+	t.Helper()
+	before := vzServices(t)
+	vm, err := Start(stressGuestOptions(t, "vz-teardown-error", guestDir, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStressDocker(t, vm, 5*time.Minute)
+	service := newVZService(t, before)
+	t.Cleanup(func() { _ = syscall.Kill(service, syscall.SIGKILL) })
+
+	if err := syscall.Kill(service, syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	// The goroutine stays blocked on the stop's completion without keeping
+	// the wrapper reachable.
+	go func(m *vz.VirtualMachine) { _ = m.Stop() }(vm.machine)
+	time.Sleep(500 * time.Millisecond)
+	return weak.Make(vm.machine), service
 }
 
 func teardownGuest(t *testing.T) string {
@@ -162,7 +169,11 @@ func requestStressShutdown(t *testing.T, vm *VM) {
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 15 * time.Second}
-	response, err := client.Post("http://lifecycle.local/shutdown", "", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://lifecycle.local/shutdown", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("ask the guest to power off: %v", err)
 	}
@@ -175,7 +186,7 @@ func requestStressShutdown(t *testing.T, vm *VM) {
 // vzServices lists the Virtualization XPC processes running now.
 func vzServices(t *testing.T) map[int]bool {
 	t.Helper()
-	out, _ := exec.Command("/usr/bin/pgrep", "-f", "com.apple.Virtualization.VirtualMachine").Output()
+	out, _ := exec.CommandContext(t.Context(), "/usr/bin/pgrep", "-f", "com.apple.Virtualization.VirtualMachine").Output()
 	pids := map[int]bool{}
 	for _, field := range strings.Fields(string(out)) {
 		if pid, err := strconv.Atoi(field); err == nil {
