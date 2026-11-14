@@ -100,6 +100,10 @@ type MachineSandboxRuntimeConfig struct {
 	// AgentLayers is the pool's asset cache, which a sandbox's agent layer is
 	// read from.
 	AgentLayers AgentLayers
+	// Audit is the pool proxy's audit, which a purge takes the sandbox's
+	// trail from. It is required: a purge that could not take it would
+	// report the sandbox's data gone while its recorded traffic is not.
+	Audit AuditPurger
 }
 
 // MachineSandboxRuntime runs a pool's sandboxes as disco-vm machines.
@@ -129,6 +133,9 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 	if cfg.Engine == nil {
 		return nil, errors.New("a machine runtime needs its engine")
 	}
+	if cfg.Audit == nil {
+		return nil, errors.New("a machine runtime needs the pool proxy's audit, which a purge takes a sandbox's trail from")
+	}
 	if cfg.Isolate {
 		if !cfg.Engine.Driver.Capabilities().Isolation {
 			return nil, fmt.Errorf("the %s driver cannot isolate a sandbox's machine from the rest of its provider's account (ADR 26-10-23-551 §4)", cfg.Engine.Driver.Name())
@@ -155,6 +162,7 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 			root:                  cfg.Root,
 			gitCache:              gitcache.New(cfg.Root.PoolGitCache(cfg.ProjectID, cfg.PoolID)),
 			agentLayers:           cfg.AgentLayers,
+			audit:                 cfg.Audit,
 		},
 		engine:  cfg.Engine,
 		base:    strings.TrimSpace(cfg.Base),
@@ -1428,15 +1436,33 @@ func (r *MachineSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID st
 	return proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
 }
 
-// DeleteSandbox removes the sandbox's machine, its proxy material and its
-// tree, and returns only once the machine is gone: the control plane's delete
-// is confirmed rather than accepted (ADR 0022 §3).
+// DeleteSandbox removes the sandbox's machine, its audit trail in the pool
+// proxy (ADR 26-11-14-896 §5), its proxy material and its tree, and returns
+// only once the machine is gone: the control plane's delete is confirmed
+// rather than accepted (ADR 0022 §3).
 func (r *MachineSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID string) error {
+	return r.removeSandbox(ctx, sandboxID, true)
+}
+
+// reapSandbox removes what a delete does but the sandbox's audit trail, for
+// the reapers, as the Docker runtime's does (ADR 26-11-14-896 §5).
+func (r *MachineSandboxRuntime) reapSandbox(ctx context.Context, sandboxID string) error {
+	return r.removeSandbox(ctx, sandboxID, false)
+}
+
+func (r *MachineSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
 	if err := r.removeMachine(ctx, sandboxID); err != nil {
 		return err
+	}
+	// Once the machine is gone, and before the tree, as the Docker
+	// runtime's.
+	if purge {
+		if err := r.purgeAudit(ctx, sandboxID); err != nil {
+			return err
+		}
 	}
 	r.observed.Delete(sandboxID)
 	r.urls.Delete(sandboxID)
@@ -1584,7 +1610,7 @@ func (r *MachineSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger 
 	for {
 		// An unheld sandbox goes the way a delete takes it: its machine,
 		// proxy material and published images with its tree.
-		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger, r.DeleteSandbox)
+		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger, r.reapSandbox)
 		r.reapOrphanMachines(ctx, logger, held, time.Now())
 		r.sweepSnapshots(ctx, logger, time.Now())
 		r.gitCache.SweepIfDue(ctx, gitCacheSweepInterval, gitcache.Held(held), gitcache.SweepOptions{
@@ -1642,7 +1668,7 @@ func (r *MachineSandboxRuntime) reapOrphanMachines(ctx context.Context, logger *
 		// The machine goes as a delete takes its sandbox, with what else the
 		// pool keeps for it.
 		remove: func(ctx context.Context, name string) error {
-			return r.DeleteSandbox(ctx, id.Canonical(id.PrefixSandbox, name))
+			return r.reapSandbox(ctx, id.Canonical(id.PrefixSandbox, name))
 		},
 	})
 }

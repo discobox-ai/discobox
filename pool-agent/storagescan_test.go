@@ -2,6 +2,7 @@ package poolagent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math"
 	"os"
@@ -10,11 +11,15 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 func testScanner(poolID string) *storageScanner {
 	return &storageScanner{
-		poolID:      poolID,
+		poolID: poolID,
+		diskUsage: func(context.Context) (sandboxruntime.DiskUsage, error) {
+			return sandboxruntime.DiskUsage{}, nil
+		},
 		dutyCycle:   storageScanDutyCycle,
 		minInterval: storageScanMinInterval,
 		maxInterval: storageScanMaxInterval,
@@ -91,7 +96,7 @@ func TestStaggerSpreadsPoolsButIsStablePerPool(t *testing.T) {
 func TestWalkPoolTreesReportsNothingWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if walk, ok := walkPoolTrees(ctx, layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a"}); ok || walk != nil {
+	if walk, ok := walkPoolTrees(ctx, layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a"}, nil); ok || walk != nil {
 		t.Errorf("a canceled sweep returned a result: %+v", walk)
 	}
 }
@@ -160,4 +165,191 @@ func utoaTest(v int) string {
 		v /= 10
 	}
 	return string(buf[i:])
+}
+
+// The walk attributes the disk the pool's proxy holds — its response cache, its
+// recorded bodies and its audit database — not only the sandbox, cache and
+// build trees, so a full disk is not mostly unexplained.
+func TestWalkPoolTreesAttributesTheProxyStore(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	const project, pool = "prj_1", "pool_1"
+	payload := make([]byte, 1<<20)
+	for _, path := range []string{
+		filepath.Join(root.ProxyCache(project, pool), "blob"),
+		filepath.Join(root.ProxyBodies(project, pool), "bodies", "sbx_a", "response-1.bin"),
+		root.ProxyAuditDB(project, pool),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, payload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	walk, ok := walkPoolTrees(context.Background(), root, project, pool, []string{"sbx_a"}, nil)
+	if !ok {
+		t.Fatal("walk reported the context ended")
+	}
+	attributed := walk.DataBytes + walk.CacheBytes + walk.BuildBytes +
+		walk.ProxyCacheBytes + walk.ProxyAuditBytes + walk.ProxyRecordingBytes
+	if want := int64(3 << 20); attributed < want {
+		t.Errorf("walk attributed %d bytes, want at least the %d the proxy store holds", attributed, want)
+	}
+}
+
+// A box's row is everything that is its own: its trees, its container's
+// writable layer and its recordings, under both spool trees. A spool no box
+// of the sweep owns, a purged one's, is the pool's; shared images and other
+// containers' layers are the pool's too, never split across the boxes
+// (ADR 26-11-14-896 §§1-3).
+func TestWalkPoolTreesChargesABoxItsOwnAndThePoolTheShared(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	const project, pool = "prj_1", "pool_1"
+	write := func(path string, size int) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(root.SandboxData(project, pool, "sbx_a"), "file"), 1<<20)
+	write(filepath.Join(root.ProxyBodies(project, pool), "bodies", "sbx_a", "response-1.bin"), 1<<20)
+	write(filepath.Join(root.ProxyStreams(project, pool), "streams", "sbx_a", "stream-1.bin"), 1<<20)
+	write(filepath.Join(root.ProxyBodies(project, pool), "bodies", "sbx_purged", "response-2.bin"), 1<<20)
+
+	disk := &sandboxruntime.DiskUsage{
+		Measured:        true,
+		Layers:          map[string]int64{"sbx_a": 5 << 20, "sbx_unlisted": 2 << 20},
+		ImageBytes:      40 << 20,
+		OtherLayerBytes: 3 << 20,
+		DaemonShared:    true,
+	}
+	walk, ok := walkPoolTrees(context.Background(), root, project, pool, []string{"sbx_a", "sbx_b"}, disk)
+	if !ok {
+		t.Fatal("walk reported the context ended")
+	}
+	a, b := walk.Sandboxes[0], walk.Sandboxes[1]
+	if a.RecordingBytes < 2<<20 {
+		t.Errorf("sbx_a's recordings = %d, want both its spools, at least %d", a.RecordingBytes, 2<<20)
+	}
+	if a.LayerBytes == nil || *a.LayerBytes != 5<<20 {
+		t.Errorf("sbx_a's layer = %v, want %d", a.LayerBytes, 5<<20)
+	}
+	if want := a.DataBytes + a.RecordingBytes + 5<<20; a.TotalBytes != want {
+		t.Errorf("sbx_a's total = %d, want its trees, recordings and layer, %d", a.TotalBytes, want)
+	}
+	// A box with no container has a layer of zero, not an unknown one.
+	if b.LayerBytes == nil || *b.LayerBytes != 0 {
+		t.Errorf("sbx_b's layer = %v, want a measured zero", b.LayerBytes)
+	}
+	if walk.ProxyRecordingBytes < 1<<20 || walk.ProxyRecordingBytes >= 2<<20 {
+		t.Errorf("the pool's recordings = %d, want only the purged box's spool", walk.ProxyRecordingBytes)
+	}
+	if walk.DataBytes != a.TotalBytes+b.TotalBytes {
+		t.Errorf("dataBytes = %d, want the rows' totals, %d", walk.DataBytes, a.TotalBytes+b.TotalBytes)
+	}
+	// A layer of a box the sweep did not list is on no row, so it is one of
+	// the pool's other layers rather than counted nowhere.
+	if walk.ImageBytes == nil || *walk.ImageBytes != 40<<20 || walk.OtherLayerBytes == nil || *walk.OtherLayerBytes != 5<<20 || !walk.DaemonShared {
+		t.Errorf("pool figures = images %v, other layers %v, shared %v", walk.ImageBytes, walk.OtherLayerBytes, walk.DaemonShared)
+	}
+
+	// A runtime that could not say leaves its figures absent rather than zero.
+	unmeasured, _ := walkPoolTrees(context.Background(), root, project, pool, []string{"sbx_a"}, nil)
+	if unmeasured.ImageBytes != nil || unmeasured.OtherLayerBytes != nil || unmeasured.Sandboxes[0].LayerBytes != nil {
+		t.Errorf("an unmeasured sweep reported image and layer figures: %+v", unmeasured)
+	}
+}
+
+// A daemon that does not answer costs the sweep its image and layer figures,
+// which are absent rather than zero, and nothing else: the trees are still
+// walked and the sweep still recorded.
+func TestSweepWithoutTheDaemonReportsItsFiguresAbsent(t *testing.T) {
+	scanner := testScanner("pool-aaaa")
+	scanner.logger = slog.New(slog.DiscardHandler)
+	scanner.sandboxIDs = func(context.Context) []string { return []string{"sbx_a"} }
+	scanner.diskUsage = func(context.Context) (sandboxruntime.DiskUsage, error) {
+		return sandboxruntime.DiskUsage{}, errors.New("daemon unreachable")
+	}
+	if _, ok := scanner.sweep(context.Background()); !ok {
+		t.Fatal("sweep reported the context ended")
+	}
+	walk := scanner.Snapshot()
+	if walk == nil || len(walk.Sandboxes) != 1 {
+		t.Fatalf("the sweep was not recorded whole: %+v", walk)
+	}
+	if walk.ImageBytes != nil || walk.OtherLayerBytes != nil || walk.Sandboxes[0].LayerBytes != nil {
+		t.Errorf("a sweep the daemon did not answer reported its figures: %+v", walk)
+	}
+}
+
+// A tree on another disk than the root's is not in the filesystem figure: a
+// VM pool keeps its cache on a disk of its own. The sweep says how much of
+// what it walked is elsewhere, so a reader does not subtract it from a used
+// figure it is not part of.
+func TestWalkPoolTreesSaysWhatIsOnAnotherFilesystem(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	const project, pool = "prj_1", "pool_1"
+	other, err := os.MkdirTemp("/dev/shm", "discobox-walk-")
+	if err != nil {
+		t.Skipf("no /dev/shm to stand in for another disk: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(other) })
+	if err := os.MkdirAll(root.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rootDevice, ok := statDevice(root.Dir())
+	otherDevice, _ := statDevice(other)
+	if !ok || rootDevice == otherDevice {
+		t.Skip("/dev/shm is on the same filesystem as the test's temporary directory")
+	}
+	// The proxy's subtree lives on the other disk; the sandboxes' do not.
+	if err := os.MkdirAll(filepath.Dir(root.ProxyPool(project, pool)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, root.ProxyPool(project, pool)); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(root.ProxyCache(project, pool), "blob"),
+		filepath.Join(root.SandboxData(project, pool, "sbx_a"), "file"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, make([]byte, 1<<20), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	walk, ok := walkPoolTrees(context.Background(), root, project, pool, []string{"sbx_a"}, nil)
+	if !ok {
+		t.Fatal("walk reported the context ended")
+	}
+	if walk.ProxyCacheBytes == 0 || walk.OtherFilesystemBytes != walk.ProxyCacheBytes {
+		t.Errorf("elsewhere = %d, want the proxy cache's %d and none of the sandbox's", walk.OtherFilesystemBytes, walk.ProxyCacheBytes)
+	}
+}
+
+// The daemon call is part of what a sweep costs, so the duty cycle spaces
+// sweeps by it too; and it has a deadline, so a daemon that hangs costs only
+// its own figures.
+func TestSweepCountsTheDaemonCallAndBoundsIt(t *testing.T) {
+	scanner := testScanner("pool-aaaa")
+	scanner.logger = slog.New(slog.DiscardHandler)
+	scanner.sandboxIDs = func(context.Context) []string { return nil }
+	scanner.diskUsage = func(ctx context.Context) (sandboxruntime.DiskUsage, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("the daemon call has no deadline")
+		}
+		time.Sleep(50 * time.Millisecond)
+		return sandboxruntime.DiskUsage{}, nil
+	}
+	if _, ok := scanner.sweep(context.Background()); !ok {
+		t.Fatal("sweep reported the context ended")
+	}
+	if walk := scanner.Snapshot(); walk == nil || walk.DurationMillis < 50 {
+		t.Errorf("the sweep's cost = %+v, want the daemon call's 50ms in it", walk)
+	}
 }

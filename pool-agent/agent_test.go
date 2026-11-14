@@ -729,7 +729,7 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 			PoolID:          "pool-1",
 			ControlPlaneKey: controlPlaneKey,
 			AgentListenURL:  listenURL,
-		}, &poolagent.Identity{PrivateKey: privateKey}, runtime, client, nil, front)
+		}, &poolagent.Identity{PrivateKey: privateKey}, runtime, client, nil, front, nil)
 	}()
 
 	baseURL, httpClient, err := wire.HTTPClient(listenURL, 0)

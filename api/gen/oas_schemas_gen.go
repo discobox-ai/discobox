@@ -20329,13 +20329,16 @@ type PoolStorageWalk struct {
 	// When the next sweep is due. A figure still unchanged well past this is a sweep that failed or an
 	// agent that stopped.
 	NextScanAt time.Time `json:"nextScanAt"`
-	// Every sandbox's durable tree on this pool, summed. Optional rather than
-	// required: an agent that predates it writes a sweep without one, and a
-	// missing field must cost that figure rather than the whole report, which
-	// would read as a pool that has never been measured. It is the sandboxes'
-	// own storage and nothing shared: each tree holds that sandbox's home, its
-	// sources and its nested container store, which are genuinely its own
-	// copies rather than links into anything.
+	// Every sandbox's own figure on this pool (its totalBytes), summed: its
+	// trees, its container's writable layer and the traffic the proxy
+	// recorded for it. Optional rather than required: an agent that predates
+	// it writes a sweep without one, and a missing field must cost that figure
+	// rather than the whole report, which would read as a pool that has never
+	// been measured. It is the sandboxes' own storage and nothing shared: each
+	// tree holds that sandbox's home, its sources and its nested container
+	// store, which are genuinely its own copies rather than links into
+	// anything. On a shared Docker daemon (daemonShared) the layers in it may
+	// be on another filesystem than the filesystem figure's.
 	// Summed here rather than left to a reader because the parts land on
 	// different rows - each sandbox's own - and a reader joining them can
 	// catch one refreshed and another not.
@@ -20345,7 +20348,36 @@ type PoolStorageWalk struct {
 	CacheBytes int64 `json:"cacheBytes"`
 	// Buildkitd's store and the pool registry's blobs, which no sandbox can reach and which no
 	// per-sandbox figure accounts for.
-	BuildBytes      int64 `json:"buildBytes"`
+	BuildBytes int64 `json:"buildBytes"`
+	// The pool proxy's response cache, shared by the pool's sandboxes as the cache tree is. Absent from
+	// an agent that predates it, as every field below is.
+	ProxyCacheBytes OptInt64 `json:"proxyCacheBytes"`
+	// The pool proxy's audit database, with its write-ahead log.
+	ProxyAuditBytes OptInt64 `json:"proxyAuditBytes"`
+	// Recorded bodies and streams that no sandbox of this sweep owns, such as a sandbox's that was
+	// deleted before deletion took its recordings. Every other recording is on its sandbox's own figure.
+	ProxyRecordingBytes OptInt64 `json:"proxyRecordingBytes"`
+	// The pool's Docker daemon's images that are Discobox's, charged to the pool rather than split
+	// across the sandboxes that run them, a sandbox's snapshot image included. On a daemon the pool has
+	// to itself every image on it is counted, each layer once, as the daemon totals them. On a shared
+	// daemon the daemon names no image's layers, so the figure is an estimate - each image's unique
+	// bytes and the largest share any of them has with another image - which is high where that share is
+	// with an image that is not Discobox's and low where Discobox's images share two different bases; it
+	// is never subtracted from the filesystem's used bytes there. Absent where the pool has no daemon on
+	// its disk (a machine pool), or the daemon did not answer this sweep.
+	ImageBytes OptInt64 `json:"imageBytes"`
+	// The writable layers of the pool's containers that are no sandbox's, such as a snapshot build's,
+	// and on a daemon the pool has to itself, the pool's own container's. Absent as imageBytes is.
+	OtherLayerBytes OptInt64 `json:"otherLayerBytes"`
+	// How much of the walked figures is on a filesystem other than the one the filesystem figure
+	// describes, as a VM pool keeps its cache and build trees on a disk of their own. A reader comparing
+	// what is attributed with the filesystem's used bytes leaves it out. Absent when nothing is.
+	OtherFilesystemBytes OptInt64 `json:"otherFilesystemBytes"`
+	// Whether the Docker daemon imageBytes and otherLayerBytes were measured on is shared with other
+	// pools or with the host. Its storage may then be on another filesystem than the one the filesystem
+	// figure describes, and hold what is not Discobox's, so those figures cannot be subtracted from its
+	// used bytes; on a daemon the pool has to itself they can.
+	DaemonShared    OptBool `json:"daemonShared"`
 	AdditionalProps PoolStorageWalkAdditional
 }
 
@@ -20382,6 +20414,41 @@ func (s *PoolStorageWalk) GetCacheBytes() int64 {
 // GetBuildBytes returns the value of BuildBytes.
 func (s *PoolStorageWalk) GetBuildBytes() int64 {
 	return s.BuildBytes
+}
+
+// GetProxyCacheBytes returns the value of ProxyCacheBytes.
+func (s *PoolStorageWalk) GetProxyCacheBytes() OptInt64 {
+	return s.ProxyCacheBytes
+}
+
+// GetProxyAuditBytes returns the value of ProxyAuditBytes.
+func (s *PoolStorageWalk) GetProxyAuditBytes() OptInt64 {
+	return s.ProxyAuditBytes
+}
+
+// GetProxyRecordingBytes returns the value of ProxyRecordingBytes.
+func (s *PoolStorageWalk) GetProxyRecordingBytes() OptInt64 {
+	return s.ProxyRecordingBytes
+}
+
+// GetImageBytes returns the value of ImageBytes.
+func (s *PoolStorageWalk) GetImageBytes() OptInt64 {
+	return s.ImageBytes
+}
+
+// GetOtherLayerBytes returns the value of OtherLayerBytes.
+func (s *PoolStorageWalk) GetOtherLayerBytes() OptInt64 {
+	return s.OtherLayerBytes
+}
+
+// GetOtherFilesystemBytes returns the value of OtherFilesystemBytes.
+func (s *PoolStorageWalk) GetOtherFilesystemBytes() OptInt64 {
+	return s.OtherFilesystemBytes
+}
+
+// GetDaemonShared returns the value of DaemonShared.
+func (s *PoolStorageWalk) GetDaemonShared() OptBool {
+	return s.DaemonShared
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -20422,6 +20489,41 @@ func (s *PoolStorageWalk) SetCacheBytes(val int64) {
 // SetBuildBytes sets the value of BuildBytes.
 func (s *PoolStorageWalk) SetBuildBytes(val int64) {
 	s.BuildBytes = val
+}
+
+// SetProxyCacheBytes sets the value of ProxyCacheBytes.
+func (s *PoolStorageWalk) SetProxyCacheBytes(val OptInt64) {
+	s.ProxyCacheBytes = val
+}
+
+// SetProxyAuditBytes sets the value of ProxyAuditBytes.
+func (s *PoolStorageWalk) SetProxyAuditBytes(val OptInt64) {
+	s.ProxyAuditBytes = val
+}
+
+// SetProxyRecordingBytes sets the value of ProxyRecordingBytes.
+func (s *PoolStorageWalk) SetProxyRecordingBytes(val OptInt64) {
+	s.ProxyRecordingBytes = val
+}
+
+// SetImageBytes sets the value of ImageBytes.
+func (s *PoolStorageWalk) SetImageBytes(val OptInt64) {
+	s.ImageBytes = val
+}
+
+// SetOtherLayerBytes sets the value of OtherLayerBytes.
+func (s *PoolStorageWalk) SetOtherLayerBytes(val OptInt64) {
+	s.OtherLayerBytes = val
+}
+
+// SetOtherFilesystemBytes sets the value of OtherFilesystemBytes.
+func (s *PoolStorageWalk) SetOtherFilesystemBytes(val OptInt64) {
+	s.OtherFilesystemBytes = val
+}
+
+// SetDaemonShared sets the value of DaemonShared.
+func (s *PoolStorageWalk) SetDaemonShared(val OptBool) {
+	s.DaemonShared = val
 }
 
 // SetAdditionalProps sets the value of AdditionalProps.
@@ -31578,11 +31680,14 @@ func (s *SandboxSourceStates) SetSources(val []SandboxAgentSourceState) {
 
 func (*SandboxSourceStates) getSandboxSourceStatesRes() {}
 
-// One sandbox's durable footprint, by the tree that holds it, walked fresh.
+// One sandbox's footprint on the pool's disk: everything that is its own, which
+// nothing else uses and which goes when it is purged - its trees, its container's
+// writable layer and the traffic the pool proxy recorded for it.
 // There is deliberately no cache figure: cache is one pool-shared tree keyed by
 // the target path a harness declared rather than by which sandbox wrote it, so a
 // per-sandbox cache size has no on-disk answer and is reported once at the pool
-// instead.
+// instead. Images are the pool's for the same reason: one image serves many
+// sandboxes, so it is never split across them.
 // Ref: #/components/schemas/SandboxStorageUsage
 type SandboxStorageUsage struct {
 	SandboxId    string `json:"sandboxId"`
@@ -31591,7 +31696,15 @@ type SandboxStorageUsage struct {
 	SourcesBytes int64  `json:"sourcesBytes"`
 	SecretsBytes int64  `json:"secretsBytes"`
 	OriginsBytes int64  `json:"originsBytes"`
-	// The five trees above, summed. Counted as allocated blocks rather than apparent size, so it is
+	// Its container's writable layer, where its root filesystem outside its volumes lives, as the pool's
+	// Docker daemon accounts for it. Zero for a sandbox with no container. Absent where its pool keeps
+	// no sandbox on its own disk (a machine pool's are on its provider), or the daemon did not answer
+	// the sweep, or from an agent that predates it.
+	LayerBytes OptInt64 `json:"layerBytes"`
+	// The request and response bodies and upgraded streams the pool proxy recorded of its traffic.
+	// Absent from an agent that predates it.
+	RecordingBytes OptInt64 `json:"recordingBytes"`
+	// Every figure above, summed. Counted as allocated blocks rather than apparent size, so it is
 	// comparable with the filesystem's own used figure.
 	TotalBytes      int64 `json:"totalBytes"`
 	AdditionalProps SandboxStorageUsageAdditional
@@ -31625,6 +31738,16 @@ func (s *SandboxStorageUsage) GetSecretsBytes() int64 {
 // GetOriginsBytes returns the value of OriginsBytes.
 func (s *SandboxStorageUsage) GetOriginsBytes() int64 {
 	return s.OriginsBytes
+}
+
+// GetLayerBytes returns the value of LayerBytes.
+func (s *SandboxStorageUsage) GetLayerBytes() OptInt64 {
+	return s.LayerBytes
+}
+
+// GetRecordingBytes returns the value of RecordingBytes.
+func (s *SandboxStorageUsage) GetRecordingBytes() OptInt64 {
+	return s.RecordingBytes
 }
 
 // GetTotalBytes returns the value of TotalBytes.
@@ -31665,6 +31788,16 @@ func (s *SandboxStorageUsage) SetSecretsBytes(val int64) {
 // SetOriginsBytes sets the value of OriginsBytes.
 func (s *SandboxStorageUsage) SetOriginsBytes(val int64) {
 	s.OriginsBytes = val
+}
+
+// SetLayerBytes sets the value of LayerBytes.
+func (s *SandboxStorageUsage) SetLayerBytes(val OptInt64) {
+	s.LayerBytes = val
+}
+
+// SetRecordingBytes sets the value of RecordingBytes.
+func (s *SandboxStorageUsage) SetRecordingBytes(val OptInt64) {
+	s.RecordingBytes = val
 }
 
 // SetTotalBytes sets the value of TotalBytes.

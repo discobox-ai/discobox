@@ -22,7 +22,8 @@ import (
 // pool agent relays over loopback with a token it signs itself, so the key the
 // proxy trusts never leaves the pool.
 
-// ControlListenAddress is where the pool proxy serves its read-only control API.
+// ControlListenAddress is where the pool proxy serves its control API: audit
+// reads, and the purge of one sandbox's audit (ADR 26-11-14-896 §5).
 // Loopback, unlike ListenAddress: the pool agent shares the pool's network
 // namespace with the proxy unit, and nothing a sandbox runs can reach it.
 const ControlListenAddress = "127.0.0.1:17084"

@@ -68,7 +68,7 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 		}
 		_ = driver.DeleteCache(context.Background(), "sbx-docker")
 	})
-	r, err := NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Engine: e, Base: image, Root: layout.ContainerAt(t.TempDir())})
+	r, err := NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, Base: image, Root: layout.ContainerAt(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -23,6 +24,7 @@ import (
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 // What the request gave is forwarded verbatim. What it did not give stays
@@ -1046,7 +1048,34 @@ func idOf(v *int64) int64 {
 // NewDockerSandboxRuntime does: its core asks it for what only it knows.
 func testDockerRuntime(r *DockerSandboxRuntime) *DockerSandboxRuntime {
 	r.boxes = r
+	if r.audit == nil {
+		r.audit = &fakeAuditPurger{}
+	}
 	return r
+}
+
+// fakeAuditPurger stands in for the pool proxy's audit: it records which
+// sandboxes were purged from it, and fails with err when that is set.
+type fakeAuditPurger struct {
+	mu     sync.Mutex
+	purged []string
+	err    error
+}
+
+func (f *fakeAuditPurger) PurgeClient(_ context.Context, sandboxID string) (proxy.AuditPurgeResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return proxy.AuditPurgeResult{}, f.err
+	}
+	f.purged = append(f.purged, sandboxID)
+	return proxy.AuditPurgeResult{}, nil
+}
+
+func (f *fakeAuditPurger) purges() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.purged...)
 }
 
 // The tags a sandbox was created with reach its document beside its

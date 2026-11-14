@@ -137,6 +137,44 @@ func TestDockerReaperRemovesAnUnheldSandboxsContainerWithItsTree(t *testing.T) {
 	if _, err := os.Stat(r.sandboxRoot("sbx_held")); err != nil {
 		t.Fatalf("held sandbox's tree: %v", err)
 	}
+	// A reap is not the owner's word that the data should go: the trail is
+	// left to the proxy's age sweep (ADR 26-11-14-896 §5).
+	if purged := r.audit.(*fakeAuditPurger).purges(); len(purged) != 0 {
+		t.Fatalf("the reaper purged audit trails %v, want none", purged)
+	}
+}
+
+// A delete is a purge: it takes the sandbox's audit trail from the pool
+// proxy with everything else, after the container, and a proxy that cannot
+// take it fails the delete with the tree still there, so the purge's
+// reconcile retries it (ADR 26-11-14-896 §5, ADR 0022 §3).
+func TestDockerDeletePurgesTheAuditTrailOrFails(t *testing.T) {
+	r, daemon := newContainerDaemon(t, "sbx_gone")
+	mkSandboxDir(t, r.sandboxesRoot(), "sbx_gone")
+	ctx := context.Background()
+	audit := r.audit.(*fakeAuditPurger)
+
+	audit.err = errors.New("proxy control API unreachable")
+	if err := r.DeleteSandbox(ctx, "sbx_gone"); err == nil {
+		t.Fatal("a delete whose audit purge failed succeeded")
+	}
+	if got := daemon.sandboxes(); len(got) != 0 {
+		t.Fatalf("containers after the failed delete = %v, want the container gone first", got)
+	}
+	if _, err := os.Stat(r.sandboxRoot("sbx_gone")); err != nil {
+		t.Fatalf("the tree after a failed purge: %v, want it kept for the retry", err)
+	}
+
+	audit.err = nil
+	if err := r.DeleteSandbox(ctx, "sbx_gone"); err != nil {
+		t.Fatalf("the retried delete: %v", err)
+	}
+	if purged := audit.purges(); !slices.Equal(purged, []string{"sbx_gone"}) {
+		t.Fatalf("audit trails purged = %v, want the sandbox's", purged)
+	}
+	if _, err := os.Stat(r.sandboxRoot("sbx_gone")); !os.IsNotExist(err) {
+		t.Fatalf("the tree after the delete: stat err = %v, want it gone", err)
+	}
 }
 
 // A container whose tree is already gone — reaped by a pool from before the
@@ -165,6 +203,9 @@ func TestDockerReaperRemovesContainersNoSandboxNames(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(r.root.PoolData(r.projectID, r.poolID) + "/" + containerOrphanMarkersName); len(entries) != 0 {
 		t.Fatalf("orphan markers left after the orphan went: %d", len(entries))
+	}
+	if purged := r.audit.(*fakeAuditPurger).purges(); len(purged) != 0 {
+		t.Fatalf("the orphan sweep purged audit trails %v, want none", purged)
 	}
 }
 
