@@ -1168,11 +1168,6 @@ tasks:
       DISCOBOX_DARWIN_BOOT_TEST: "1"
     cmds:
       - scripts/darwin-sandbox-dirs.sh
-      # Temporary, #1139's proof (reverted before merge): bash on this runner,
-      # then the old rc-file stop and the prompt stop, 150 times each.
-      - command -v bash && bash --version | head -1
-      - go test ./sandbox-agent/execs -run '^TestStopATerminalAfterItsRCFile$' -count=150 -v 2>&1 | grep -E '^(--- FAIL|\s+stopterminal|ok|FAIL)|took' || true
-      - go test ./sandbox-agent/execs -run '^TestSupervisorPassesTheUnitManagerContract$/^StopATerminal$' -count=150
       - go test ./sandbox-agent/... ./pkg/agentlayer/...
 
   ci:darwin:
