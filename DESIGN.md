@@ -520,20 +520,35 @@ a 7.x guest kernel among other things, in #1133.
   `vm-image/kernel/Dockerfile` the bump rewrites too. A broken sid package is
   answered with the nearest snapshot that works, never with another suite.
 - **When to bump.** Nothing moves without one: a rebuild, scheduled ones
-  included, installs exactly what the last one did. So security fixes in
-  Debian's packages, the guest kernel and runc and containerd among them,
+  included, installs exactly what the last one did, Docker's buildx and
+  Compose plugins in the sandbox base excepted (the newest Docker's suite
+  has). So security fixes in Debian's packages, the guest kernel among them,
   reach an image only through a bump, and so does a Go point release: the Go
   stages run with `GOTOOLCHAIN=local`, so a `go.mod` asking for a newer Go
-  than the snapshot's fails the build until the pin moves.
+  than the snapshot's fails the build until the pin moves. Fixes in Docker,
+  containerd and the runc containerd.io bundles reach an image only through
+  `go tool task docker:bump` (below).
 - **The risks taken.** sid is unstable and has no security team: a snapshot
   can catch a transition half done, a bump can bring a regression, and fixes
   land when its maintainers upload them. Builds depend on snapshot.debian.org,
   which is slower than the mirrors and has been down for hours at a time;
   `Acquire::Retries` rides out a short outage, a long one stops builds.
 - **Exceptions.** libkrun boots libkrunfw's patched kernel, never Debian's;
-  only its build toolchain follows the pin. Docker publishes no sid suite, so
-  the sandbox base installs Docker CE from Docker's trixie suite
-  (`DOCKER_DEBIAN_SUITE`), the one place a build names trixie. A box built
+  only its build toolchain follows the pin. Docker is Docker CE, not sid's
+  `docker.io`, in the sandbox base and in the pool VM guest, so a pool's
+  daemon is the one its sandboxes run; Debian's build of Docker 28.5.2
+  refused archive copies Docker's own builds accept (#1164). Docker
+  publishes no sid suite, so both install from Docker's trixie suite
+  (`DOCKER_DEBIAN_SUITE`), the one place a build names trixie, on a pin of
+  their own: `DOCKER_CE_VERSION` and `CONTAINERD_IO_VERSION` name the
+  upstream versions, `DOCKER_APT_KEY_FINGERPRINT` the key the build holds
+  Docker's to, and `check:debian` fails unless every copy agrees. Docker's
+  repository is not a snapshot, so the pin is what makes a rebuild install the
+  same daemon. It moves on its own clock, with `go tool task docker:bump`
+  (`VERSION=`/`CONTAINERD=`, or the newest Docker publishes for both
+  architectures), so going back to an older Debian snapshot never moves
+  Docker, and a bad Docker release can be held back; a move of it is a guest
+  release like a Debian bump. A box built
   from the snapshot is handed back the live sid archive, so its own `apt`, and
   the features provisioned onto it, get today's sid.
 

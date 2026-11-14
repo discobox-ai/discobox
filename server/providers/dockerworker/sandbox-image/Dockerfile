@@ -125,26 +125,49 @@ RUN set -eux \
 #
 # Docker publishes no suite for Debian sid, so on Debian it is Docker's trixie
 # suite: the one thing in this repository's builds that names trixie, and the
-# owner's choice over sid's own older docker.io. Docker's packages are its own
+# owner's choice over sid's own docker.io. Docker's packages are its own
 # builds with few library dependencies, which sid's newer libraries satisfy.
 # Everything else in the image is sid's.
+#
+# The daemon is pinned, and the pool VM guest runs the same one:
+# DOCKER_CE_VERSION and CONTAINERD_IO_VERSION are one pin with vm-image's,
+# kept one by `go tool task check:debian` and moved by `go tool task
+# docker:bump`.
+# A pin names the upstream version and the build takes the suite's package of
+# it, whichever distribution the image is built on. buildx and Compose are the
+# suite's newest. Docker's key is served beside the packages it signs, so it
+# is held to Docker's published fingerprint, the same on every distribution.
 ARG DOCKER_DEBIAN_SUITE=trixie
+ARG DOCKER_CE_VERSION=29.9.3-1
+ARG CONTAINERD_IO_VERSION=2.4.2-4
+ARG DOCKER_APT_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 RUN set -eux \
     && install -m 0755 -d /etc/apt/keyrings \
     && . /etc/os-release \
     && suite="$VERSION_CODENAME" \
     && if [ "$ID" = debian ]; then suite="$DOCKER_DEBIAN_SUITE"; fi \
     && curl -fsSL --retry 5 --retry-all-errors "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
+    && gnupg=$(mktemp -d) \
+    && fingerprints=$(GNUPGHOME=$gnupg gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }') \
+    && rm -rf "$gnupg" \
+    && if [ "$fingerprints" != "$DOCKER_APT_KEY_FINGERPRINT" ]; then \
+        echo "Docker's apt key is not $DOCKER_APT_KEY_FINGERPRINT: $fingerprints" >&2; exit 1; \
+    fi \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
         "$ID" "$suite" "$(dpkg --print-architecture)" \
         > /etc/apt/sources.list.d/docker.sources \
     && apt-get update \
+    && ce=$(apt-cache madison docker-ce | awk -v v="5:${DOCKER_CE_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
+    && containerd=$(apt-cache madison containerd.io | awk -v v="${CONTAINERD_IO_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
+    && if [ -z "$ce" ] || [ -z "$containerd" ]; then \
+        echo "Docker's $suite suite has no docker-ce $DOCKER_CE_VERSION or containerd.io $CONTAINERD_IO_VERSION" >&2; exit 1; \
+    fi \
     && apt-get install -y --no-install-recommends \
-        containerd.io \
+        containerd.io="$containerd" \
         docker-buildx-plugin \
-        docker-ce \
-        docker-ce-cli \
+        docker-ce="$ce" \
+        docker-ce-cli="$ce" \
         docker-compose-plugin \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \

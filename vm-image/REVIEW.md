@@ -55,6 +55,14 @@ together, where before it broke one".
   `Dockerfile`'s delete list. If the root filesystem depends on it, add it to
   the list the `Dockerfile` writes to `/etc/initramfs-tools/modules`. A missing
   module is a guest that boots to no device or does not boot at all.
+- **Docker is Docker CE at the shared pin, never sid's `docker.io`.** The guest's
+  daemon is the sandbox base's: same repository, same `DOCKER_CE_VERSION` and
+  `CONTAINERD_IO_VERSION` (`check:debian` keeps the copies one). Debian's build
+  of 28.5.2 refuses archive copies Docker's own builds accept, and a pool's box
+  is placed by one (#1164). Moving the version is `go tool task docker:bump`,
+  then a guest release, as for a Debian bump. Docker's key is held to
+  `DOCKER_APT_KEY_FINGERPRINT`; never take it on first download, because the
+  server that serves it serves the packages too.
 - **Guest image changes are a separate release.** Editing this directory does
   not ship with the server; it ships when a `vm/v*` tag is cut and
   `guestimage.DefaultVMImage` is re-pinned to the new `discobox-vm` digest.
@@ -79,13 +87,16 @@ together, where before it broke one".
   lose its live containers, or orphan BuildKit snapshots that containerd's
   leases still hold and nothing can prune. Which files are classic-only
   depends on the Docker this guest installs, not on current moby: Debian's
-  Docker 26 wrote `buildkit/history.db` in both stores, while sid's 28 names
-  the containerd store's `history_c8d.db`, leaving `history.db` the classic
-  store's. Check a list change, and any bump of the Debian pin that moves the
-  guest's Docker, against a guest booted on each store.
+  Docker 26 wrote `buildkit/history.db` in both stores, while 28 and Docker
+  CE 29 name the containerd store's `history_c8d.db`, leaving `history.db`
+  the classic store's (CE 29.9.3's containerd store writes `cache.db`,
+  `containerd-overlayfs/`, `executor/` and `history_c8d.db`). Check a list
+  change, and any `docker:bump` that moves the guest's Docker, against a
+  guest booted on each store.
 - **The guest's Debian is the repository's one pin.** Every stage is sid, from
   `DEBIAN_IMAGE` and `DEBIAN_SNAPSHOT`; never add an apt pin, a second suite,
-  or another base to take one package from elsewhere. A broken sid package is
+  or another base to take one package from elsewhere. Docker CE from Docker's
+  trixie suite is the one exception, on its own pin (above). A broken sid package is
   answered with a nearer snapshot (`go tool task debian:bump`).
   `check:debian` catches a literal base, a suite named in a build, and an apt
   pin, but not a stage that fetches packages some other way (a `.deb` by URL,

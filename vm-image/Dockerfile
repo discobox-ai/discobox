@@ -23,7 +23,9 @@
 # Every stage is Debian sid: the image pinned by digest, apt pinned to a
 # snapshot.debian.org timestamp. They are the repository's one Debian pin, the
 # same two values in every Dockerfile that builds on Debian; see "Debian" in
-# the root DESIGN.md, and `go tool task debian:bump` to move them.
+# the root DESIGN.md, and `go tool task debian:bump` to move them. Docker is
+# the one exception: Docker CE from Docker's trixie suite, on its own pin
+# (DOCKER_CE_VERSION below, moved by `go tool task docker:bump`).
 ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
 ARG DEBIAN_SNAPSHOT=20261111T202414Z
 
@@ -95,6 +97,22 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/discobox-vsock-guest ./cmd/discobox-vsock-guest
 
+# Docker's apt key, fetched where curl, CA certificates and gpg are, so none of
+# them has to be in the guest to read Docker's repository. The key is served
+# beside the packages it signs, so it is held to Docker's published
+# fingerprint: a key that is not Docker's fails the build, rather than signing
+# the daemon every pool runs as root.
+FROM debian AS docker-apt-key
+ARG DOCKER_APT_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gpg \
+    && curl -fsSL --retry 5 --retry-all-errors https://download.docker.com/linux/debian/gpg -o /docker.asc \
+    && fingerprints=$(gpg --show-keys --with-colons /docker.asc | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }') \
+    && if [ "$fingerprints" != "$DOCKER_APT_KEY_FINGERPRINT" ]; then \
+        echo "Docker's apt key is not $DOCKER_APT_KEY_FINGERPRINT: $fingerprints" >&2; exit 1; \
+    fi \
+    && chmod a+r /docker.asc
+
 FROM debian AS rootfs
 ARG TARGETARCH
 
@@ -123,7 +141,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         dbus \
-        docker.io \
         e2fsprogs \
         initramfs-tools \
         iproute2 \
@@ -136,6 +153,42 @@ RUN apt-get update \
         zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Docker is Docker CE from Docker's own repository, the Docker the sandbox base
+# runs, at the same version: DOCKER_CE_VERSION and CONTAINERD_IO_VERSION are
+# one pin with the sandbox base's, kept one by `go tool task check:debian` and
+# moved by `go tool task docker:bump`.
+# Not sid's docker.io: Debian's build of Docker 28.5.2 refuses every archive
+# copy into a container whose bind crosses the /var/run link, where Docker's
+# own builds accept it (#1164). Docker publishes no sid suite, so this is its
+# trixie suite, as for the sandbox base. A pin names the upstream version and
+# the build takes the suite's package of it, so a rebuild installs the same
+# Docker even though Docker's repository is not a snapshot.
+#
+# docker-ce depends on docker-ce-cli, and nothing in the guest runs the CLI
+# (the pool's console brings its own), so it goes, as Debian's docker.io never
+# installed one here.
+ARG DOCKER_DEBIAN_SUITE=trixie
+ARG DOCKER_CE_VERSION=29.9.3-1
+ARG CONTAINERD_IO_VERSION=2.4.2-4
+COPY --from=docker-apt-key /docker.asc /etc/apt/keyrings/docker.asc
+RUN printf 'Types: deb\nURIs: https://download.docker.com/linux/debian\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
+        "$DOCKER_DEBIAN_SUITE" "$(dpkg --print-architecture)" \
+        > /etc/apt/sources.list.d/docker.sources \
+    && apt-get update \
+    && ce=$(apt-cache madison docker-ce | awk -v v="5:${DOCKER_CE_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
+    && containerd=$(apt-cache madison containerd.io | awk -v v="${CONTAINERD_IO_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
+    && if [ -z "$ce" ] || [ -z "$containerd" ]; then \
+        echo "Docker's $DOCKER_DEBIAN_SUITE suite has no docker-ce $DOCKER_CE_VERSION or containerd.io $CONTAINERD_IO_VERSION" >&2; exit 1; \
+    fi \
+    && apt-get install -y --no-install-recommends \
+        containerd.io="$containerd" \
+        docker-ce="$ce" \
+        docker-ce-cli="$ce" \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/docker \
+    && rm -rf /usr/libexec/docker/cli-plugins
 
 # Debian's kernel package carries a module for every device Debian supports.
 # This guest's entire hardware surface is virtio — block, net, vsock, console,
@@ -166,13 +219,9 @@ RUN set -eux; \
 # that are not on this machine.
 RUN rm -rf /usr/lib/udev/hwdb.bin /usr/lib/udev/hwdb.d
 
-# Debian's containerd package ships the CLI and both v1 shims. Docker drives
-# containerd over its socket and starts the v2 shim; nothing here runs the rest.
-RUN rm -f \
-        /usr/bin/containerd-shim \
-        /usr/bin/containerd-shim-runc-v1 \
-        /usr/bin/containerd-stress \
-        /usr/bin/ctr
+# containerd.io ships containerd's CLI. Docker drives containerd over its socket
+# and starts the v2 shim; nothing here runs ctr.
+RUN rm -f /usr/bin/ctr
 
 # The root filesystem is mounted read-only and every virtio driver the guest
 # needs is a module, so the initrd is what brings /dev/vda up. Build it
