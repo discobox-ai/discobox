@@ -1,12 +1,13 @@
 # 26-11-14-896 — Pool storage accounts for the whole disk, and a purge takes a box's recordings
 
-- **Status**: Proposed (would supersede, in part,
+- **Status**: Accepted (supersedes, in part,
   [0071](0071-resource-accounting-is-a-pool-agent-differenced-report.md) §5's
   list of what a per-sandbox report carries, and
   [0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md)'s
   "Retention is 48h and deliberately survives sandbox deletion" and its
   consequence that the proxy's control API is read-only)
 - **Date**: 2026-11-14
+- Accepted by the owner by merging #1169, 2026-11-14
 - **Issue**: [#1096](https://github.com/discobox-ai/discobox/issues/1096)
 - **Relates to**: [26-10-08-698](26-10-08-698-the-pool-audit-spool-is-bounded-by-bytes-and-truncates-before-it-deletes.md),
   the spool budget, which this leaves as it is;

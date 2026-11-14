@@ -1,7 +1,7 @@
 # 0130 — An audit record is read where it was written, and names its attestor
 
 - **Status**: Accepted (§3's empty field for an ordinary injected sentinel superseded by
-  [26-10-01-240](26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md); §5's command lines superseded by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md): `ls`, `hooks` and `execs` take `[DISCOBOX]`, the filters `--discobox`)
+  [26-10-01-240](26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md); §5's command lines superseded by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md): `ls`, `hooks` and `execs` take `[DISCOBOX]`, the filters `--discobox`; retention past sandbox deletion, and the read-only control API, superseded by [26-11-14-896](26-11-14-896-pool-storage-accounts-for-the-whole-disk-and-a-purge-takes-a-boxs-recordings.md) §5: a purge takes a sandbox's trail, through a control route of its own scope)
 - **Date**: 2026-09-16
 - **Relates to**: [ADR 0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md),
   whose closing paragraph — "nothing in the sandbox is a place to keep a record
