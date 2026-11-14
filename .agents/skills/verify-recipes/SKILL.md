@@ -268,6 +268,17 @@ and that the process started after the build (no `ps` in the image: walk
   column. Sentinels are in
   the box's `/run/discobox/secrets/secrets.json` (root). What was recorded:
   `curl 127.0.0.1:8080/projects/<project>/secret-rejections`.
+- The control plane's judgment of a refusal (renewal, cooldown, generation)
+  without an upstream: `d secret create --type oauth --token-url
+  http://127.0.0.1:<port>/token ...` against a local token endpoint that logs
+  each refresh, bind it to any box, read the sentinel from the loop's
+  `.tmp/discobox/discobox.db` (`sandbox_secrets.sentinel`), and POST
+  `{"sandboxId","sentinel","host","outcome":"rejected"[,"valueGeneration"]}`
+  to `/api/pools/<pool>/sandbox-secret-rejections` as the dev pool (minted
+  with the `secret:resolve` scope, [below](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid)).
+  The token endpoint's log says what was renewed; `secret_rejections` in the
+  same database what was recorded. A generation is base36 of
+  `secrets.value_updated_at` in Unix microseconds.
 - A harness bundle's manifest reaches the server only when the image watcher
   has rebuilt it (`.tmp/discobox-dev-images.json` names a new tag). If it never
   does, a build in the chain is failing and retried every 15s: read the
