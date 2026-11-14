@@ -460,7 +460,7 @@ func TestContainerMountsBindDockerSocket(t *testing.T) {
 	engine := newTestEngine(t, Config{DockerSocket: "/custom/docker.sock"})
 	mounts := engine.containerMounts("worker-1")
 
-	if !hasMountWithReadOnly(mounts, "/custom/docker.sock", dockerSocketPath, false) {
+	if !hasMountWithReadOnly(mounts, "/custom/docker.sock", containerDockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing Docker socket bind mount", mounts)
 	}
 }
@@ -529,7 +529,7 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 	})
 	mounts := engine.containerMounts("worker-1")
 
-	if !hasMountWithReadOnly(mounts, "/run/user/1000/docker.sock", dockerSocketPath, false) {
+	if !hasMountWithReadOnly(mounts, "/run/user/1000/docker.sock", containerDockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing configured Docker socket bind", mounts)
 	}
 	if !hasMountWithReadOnly(mounts, dockerSocketPath, "/host/var/run/docker.sock", false) {

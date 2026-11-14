@@ -262,7 +262,7 @@ func (e *Engine) consoleHostConfig() *container.HostConfig {
 			// anyway — the console shares the host PID namespace, so
 			// `nsenter -t 1 -a` enters it directly.
 			{Type: mount.TypeBind, Source: "/", Target: consoleHostRoot},
-			{Type: mount.TypeBind, Source: socket, Target: dockerSocketPath},
+			{Type: mount.TypeBind, Source: socket, Target: containerDockerSocketPath},
 		},
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 	}
