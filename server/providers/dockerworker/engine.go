@@ -55,14 +55,7 @@ const (
 	healthPollDelay           = 500 * time.Millisecond
 	dockerSocketPath          = "/var/run/docker.sock"
 	hostMountTargetRoot       = "/host"
-	workerConfigLayoutVersion = 7
-	// containerDockerSocketPath is where a container discobox makes binds the
-	// Docker socket: /run, which /var/run links to in the sandbox base image,
-	// so the socket is still at /var/run/docker.sock inside. A bind whose
-	// target crosses that link makes Docker 28.5 (sid's docker.io) refuse
-	// every archive copy into the container with "mkdirat var/run: path
-	// escapes from parent", and a pool's box is placed by one (#1133).
-	containerDockerSocketPath = "/run/docker.sock"
+	workerConfigLayoutVersion = 6
 	// dockerSocketUnitPath is where the pool's container masks the sandbox
 	// base image's docker.socket: that unit would listen at the path the
 	// host's socket is bound to, fail, and leave the container degraded.
@@ -1082,10 +1075,10 @@ func shouldRemoveExistingContainer(existing container.InspectResponse, desiredIm
 
 func (e *Engine) containerMounts(poolID string) []mount.Mount {
 	mounts := []mount.Mount{
-		{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: containerDockerSocketPath},
+		{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath},
 		// The sandbox base image enables docker.socket for a sandbox's own
 		// daemon. Here the host's socket is already bound at the unit's
-		// listen path (/run/docker.sock, which /var/run/docker.sock links to), so the unit would fail
+		// listen path (/var/run is a link to /run), so the unit would fail
 		// with "Address already in use" and leave the container degraded.
 		// /dev/null over the unit file masks it in this container only;
 		// sandboxes on the same image keep their socket-activated daemon.
