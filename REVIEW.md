@@ -86,6 +86,15 @@ Global review expectations:
   Those jobs have no Nix devShell (ADR 26-11-02-173), so a target reaching for
   jq, shellcheck, bats or node works in a developer's shell and fails, or finds
   the image's own version, in CI.
+- A check added to CI that reads anything under `docs/` (a Markdown lint, a
+  link check, a test of `docs/public`) is added to `ci:docs` too. A pull
+  request that changes only `docs/` runs `ci:docs` and skips every other job,
+  so a check reachable only from `verify`, `ci:test` or `ci:check` lets such a
+  PR pass and fails the next push to `main`. Nothing enforces this.
+- A CI job gated on `changes` fails closed: its `if` is
+  `!cancelled() && needs.changes.outputs.code != 'false'`. A bare
+  `needs.changes.outputs.code == 'true'` skips the job when `changes` fails,
+  and a skipped job passes a required check, so nothing would have run.
 - A Taskfile target that must force an environment variable sets it on the
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced

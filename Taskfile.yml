@@ -1119,6 +1119,20 @@ tasks:
       - task: check:dockerfiles
       - task: check:shell
 
+  ci:docs:
+    desc: "The checks that read docs/: Mermaid diagrams, the CLI reference, the public pages' links, and shell scripts"
+    # CI runs this alone on a pull request that changes only docs/, where every
+    # other job is skipped (.github/workflows/ci.yml). Any other run gets the
+    # same checks from verify (check:mermaid, and docs:check within
+    # generate:verify), from ci:test (discobox-docs' tests read docs/public),
+    # and from ci:check (check:shell lints a script anywhere, docs/ included).
+    # A check added elsewhere that reads docs/ belongs here too.
+    cmds:
+      - task: check:mermaid
+      - task: docs:check
+      - cd cli && go test ./internal/cmd/discobox-docs/
+      - task: check:shell
+
   test:codex-trust:
     desc: Exercise folder trust against the pinned Codex TUI (Linux, sudo and npm required)
     platforms: [linux]
