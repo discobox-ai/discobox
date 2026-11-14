@@ -84,7 +84,7 @@ func provisioningKeys(path, driver string) machine.KeySource {
 // newMachineSandboxRuntime is a machine pool's runtime: sandboxes as machines
 // of its own engine, each made isolated on the pool's network and fenced to
 // what its hop reaches (ADR 26-10-29-481 §4).
-func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, e *engine.Engine, identityKey ed25519.PrivateKey, assets *assetcache.Cache, client *HTTPClient) (*sandboxruntime.MachineSandboxRuntime, error) {
+func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, e *engine.Engine, identityKey ed25519.PrivateKey, assets *assetcache.Cache, client *HTTPClient, audit sandboxruntime.AuditPurger) (*sandboxruntime.MachineSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
@@ -111,6 +111,7 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 		IdentityKey:           identityKey,
 		Platform:              bootstrap.HostedPlatform(),
 		AgentLayers:           assets,
+		Audit:                 audit,
 	})
 }
 
