@@ -66,9 +66,12 @@ It is the agent's decision, not the pool's: the pool supplies the primary
 volumes and never decides an in-sandbox path (ADR 0007). Any runtime whose
 boot wires volumes from `/.discobox/data` gets it, containers and machines
 alike, with nothing in the runtime-config document, the worker API or the
-control plane. It is kept at `/.discobox/data/<working root>`, as a declared
-data path is (`volumeDir`), so an export of the data subtree (ADR 0129)
-carries it with the rest.
+control plane. It is kept at `/.discobox/data/.working-root`, inside the data
+subtree an export carries (ADR 0129). Not at its own path under the data root,
+as a declared data path is (`volumeDir`): a machine already keeps a source
+nested in the working root at `/.discobox/data/workspace/<slug>`
+(`machineSourceDir`), and the working root's mountpoint for it, moved in,
+would collide with that tree.
 
 It is not a source. `discobox ls`, the diff stat, service discovery, the
 skills sources and direnv see what they see today; a source nested under the
