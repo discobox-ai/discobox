@@ -768,10 +768,11 @@ func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
 		// exists rather than being carried as zeroes.
 		if walk, ok := report.Storage.Walk.Get(); ok {
 			out.DiskDataBytes += walk.DataBytes.Or(0)
-			// The builder's store is disposable and shared, like the cache
-			// beside it, and neither belongs to any one discobox — so a reader
-			// deciding what could be reclaimed reads them as one figure.
-			out.DiskCacheBytes += walk.CacheBytes + walk.BuildBytes
+			// The builder's store and the proxy's response cache are
+			// disposable and shared, like the cache beside them, and none
+			// belongs to any one discobox — so a reader deciding what could
+			// be reclaimed reads them as one figure.
+			out.DiskCacheBytes += walk.CacheBytes + walk.BuildBytes + walk.ProxyCacheBytes.Or(0)
 		}
 	}
 	return out, nil

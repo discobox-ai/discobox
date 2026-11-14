@@ -281,3 +281,122 @@ func TestPoolResourcesReadsASweepWithoutTheDataTotal(t *testing.T) {
 		t.Errorf("output lost the figures the older agent did send:\n%s", out)
 	}
 }
+
+// poolWithWholeDisk is a pool whose sweep measured everything on its disk:
+// the proxy's store, and the images and layers of a daemon whose sharedness
+// is spliced in. 120GiB is used: 4.0GiB of discoboxes (their rows' totals),
+// 41.0GiB cache, 9.0GiB build, 9.5GiB proxy, and 41GiB of images and layers.
+func poolWithWholeDisk(shared bool) string {
+	sharedField := ""
+	if shared {
+		sharedField = `,"daemonShared":true`
+	}
+	return `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
+		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"health":"ready","ready":true,"schedulable":true,"degraded":false,` +
+		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
+		`"resources":{"reportedAt":"2026-08-27T12:00:00Z",` +
+		`"cpu":{"usageUsec":1,"userUsec":1,"systemUsec":0,"vcpus":1.00,"capacityVcpus":16},` +
+		`"memory":{"currentBytes":1073741824},` +
+		`"storage":{"root":"/var/lib/discobox","filesystem":{"totalBytes":536870912000,"usedBytes":128849018880,"freeBytes":408021893120},` +
+		`"walk":{"observedAt":"2026-08-27T11:52:00Z","durationMillis":11400,"intervalSeconds":570,"nextScanAt":"2026-08-27T12:01:30Z",` +
+		`"dataBytes":4265615360,"cacheBytes":44023414784,"buildBytes":9663676416,` +
+		`"proxyCacheBytes":8589934592,"proxyAuditBytes":1073741824,"proxyRecordingBytes":536870912,` +
+		`"imageBytes":42949672960,"otherLayerBytes":1073741824` + sharedField + `}}},` +
+		`"desiredState":"present","state":"active","generation":1,"observedGeneration":1,` +
+		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
+}
+
+// A box whose row carries its container's layer and its recordings.
+const layeredSandboxResources = `{"sandboxId":"sandbox-1","observedAt":"2026-08-27T12:00:00Z",` +
+	`"storage":{"sandboxId":"sandbox-1","dataBytes":2147483648,"configBytes":0,"sourcesBytes":0,"secretsBytes":0,"originsBytes":0,` +
+	`"layerBytes":1073741824,"recordingBytes":536870912,"totalBytes":3758096384}}`
+
+// The pool's disk names every consumer the sweep measured, and then what the
+// filesystem holds beyond them, so a full disk is not mostly unexplained. On
+// a daemon the pool has to itself, the images are on the same disk and are
+// subtracted (ADR 26-11-14-896 §§3-4).
+func TestPoolResourcesAccountsForTheWholeDisk(t *testing.T) {
+	pool := poolWithWholeDisk(false)
+	server := completionServer(t, map[string]string{
+		"/projects/project-1/pools":        `{"pools":[` + pool + `]}`,
+		"/projects/project-1/pools/pool-1": pool,
+		"/projects/project-1/sandboxes":    `{"sandboxes":[` + sandboxRuntime("sandbox-1", "fix-login", layeredSandboxResources) + `]}`,
+	})
+
+	out := runCLI(t, server.URL, "admin", "pool", "resources", "pool-1")
+
+	for _, want := range []string{
+		"discoboxes 4.0GiB",
+		"proxy 9.5GiB: response cache 8.0GiB (shared), audit 1.0GiB, recordings of no discobox 512.0MiB",
+		"images 40.0GiB, other layers 1.0GiB",
+		"not attributed 15.5GiB",
+		"images and layers",
+		"59.5GiB", // pool services: cache, build and the proxy's store
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "the filesystem's") {
+		t.Errorf("a dedicated daemon's remainder was described as a shared one's:\n%s", out)
+	}
+}
+
+// On a shared daemon the images and every layer may be on another
+// filesystem, so none of them is subtracted, the discoboxes' own layers
+// included, and the remainder is said to be the filesystem's.
+func TestPoolResourcesOnASharedDaemonDoesNotSubtractItsImages(t *testing.T) {
+	pool := poolWithWholeDisk(true)
+	server := completionServer(t, map[string]string{
+		"/projects/project-1/pools":        `{"pools":[` + pool + `]}`,
+		"/projects/project-1/pools/pool-1": pool,
+		"/projects/project-1/sandboxes":    `{"sandboxes":[` + sandboxRuntime("sandbox-1", "fix-login", layeredSandboxResources) + `]}`,
+	})
+
+	out := runCLI(t, server.URL, "admin", "pool", "resources", "pool-1")
+
+	for _, want := range []string{
+		"[on a Docker daemon shared with more than this pool]",
+		"not attributed 57.5GiB (the filesystem's",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// A box's disk line names its container layer and its recordings, which are
+// its own and part of its total.
+func TestSandboxResourcesNamesTheLayerAndRecordings(t *testing.T) {
+	server := completionServer(t, map[string]string{
+		"/projects/project-1/sandboxes":           `{"sandboxes":[` + sandboxRuntime("sandbox-1", "fix-login", layeredSandboxResources) + `]}`,
+		"/projects/project-1/sandboxes/sandbox-1": sandboxRuntime("sandbox-1", "fix-login", layeredSandboxResources),
+	})
+
+	out := runCLI(t, server.URL, "admin", "box", "resources", "sandbox-1")
+
+	for _, want := range []string{"3.5GiB total", "container layer 1.0GiB", "proxy recordings 512.0MiB"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// What the sweep found on another disk than the filesystem line's — a VM
+// pool's cache disk — is not in that line's used bytes, so it is left out of
+// what is subtracted from them.
+func TestPoolResourcesLeavesAnotherDisksTreesOutOfTheRemainder(t *testing.T) {
+	pool := strings.Replace(poolWithWholeDisk(false), `"otherLayerBytes":1073741824`, `"otherLayerBytes":1073741824,"otherFilesystemBytes":44023414784`, 1)
+	server := completionServer(t, map[string]string{
+		"/projects/project-1/pools":        `{"pools":[` + pool + `]}`,
+		"/projects/project-1/pools/pool-1": pool,
+		"/projects/project-1/sandboxes":    `{"sandboxes":[` + sandboxRuntime("sandbox-1", "fix-login", layeredSandboxResources) + `]}`,
+	})
+
+	out := runCLI(t, server.URL, "admin", "pool", "resources", "pool-1")
+
+	// 15.5GiB as before, and the 41.0GiB cache is no longer taken off it.
+	if !strings.Contains(out, "not attributed 56.5GiB") {
+		t.Errorf("output missing the remainder with the cache disk left out:\n%s", out)
+	}
+}

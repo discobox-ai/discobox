@@ -93,9 +93,9 @@ names itself. What appears is what software in the discobox resolved on its
 own.
 
 A lookup lives on the pool that answered it for the audit retention window,
-after the discobox is gone. A pool that cannot be read is named on stderr (and
-under unavailablePools with -o json), and its lookups are missing from the
-list.
+after the discobox is removed, unless it is purged: a purge takes its lookups
+with it. A pool that cannot be read is named on stderr (and under
+unavailablePools with -o json), and its lookups are missing from the list.
 
 The name is what the discobox asked, and is shown as data, with non-printing
 characters escaped.`,
