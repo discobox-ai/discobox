@@ -13,7 +13,9 @@ RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/
     && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
     && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
     && printf '%s\n' '#!/bin/sh' \
-        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease)" \
+        'set -eu' \
+        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease /var/lib/apt/lists/*_dists_sid_Release 2>/dev/null | head -n 1)" \
+        "[ -n \"\$released\" ] || { echo 'apt fetched no signed sid Release to check against snapshot ${DEBIAN_SNAPSHOT}: refusing it' >&2; exit 1; }" \
         "d=\$(date -u -d \"\$released\" +%s)" \
         "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
         "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \

@@ -92,3 +92,12 @@ together, where before it broke one".
   a tarball): that is still review's to catch. Bumping the pin moves the guest
   kernel, so it is a guest release: `vm:verify` on both architectures and a
   boot on each backend.
+- **The snapshot hook is what makes reading it over http safe; keep every
+  copy one.** A snapshot source needs `Check-Valid-Until: no`, so any older
+  Debian-signed index would pass for it; `discobox-apt-snapshot` fails each
+  `apt-get update` whose sid `InRelease` or `Release` is not dated within the
+  day before `DEBIAN_SNAPSHOT`. It must fail when it finds no date at all:
+  apt falls back to `Release` when `InRelease` is withheld, and `date -d ""`
+  is today's midnight, not an error. It is written out in every Dockerfile
+  with a snapshot source; `check:debian` fails when a copy differs, so a fix
+  goes into all of them.
