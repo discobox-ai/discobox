@@ -16,6 +16,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -37,6 +38,11 @@ func TestHealthDoesNotRequireAuth(t *testing.T) {
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET /healthz status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	// A test binary runs from no agent layer, so it names none.
+	var health agentlayer.Health
+	if err := json.Unmarshal(resp.Body.Bytes(), &health); err != nil || !health.OK || health.Layer != "" {
+		t.Fatalf("GET /healthz = %s (%v), want ok and no layer", resp.Body.String(), err)
 	}
 }
 

@@ -400,8 +400,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	}
 
 	router := chi.NewRouter()
+	health := agentlayer.Health{OK: true, Layer: runningLayer()}
 	router.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		writeJSON(w, http.StatusOK, health)
 	})
 	router.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ready": true, "schedulable": true})
@@ -459,6 +460,24 @@ func gitCredentialHelper(runtimeDir string) string {
 		return ""
 	}
 	return sourceconverge.HelperCommand(executable, sourceconverge.SocketPath(runtimeDir))
+}
+
+// runningLayer is the digest of the agent layer this agent runs from, or
+// nothing for an agent that runs from none: the layer its own executable is
+// in, which a box's maker reads on /healthz to learn whether a layer it
+// placed is the one running (agentlayer.Health).
+func runningLayer() string {
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	// Linux names the file the process runs, its links resolved, already;
+	// elsewhere it may be the path it was started by.
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	layer, _ := agentlayer.RunningLayer(executable)
+	return layer
 }
 
 // newServiceManager resolves where this sandbox's service declarations live

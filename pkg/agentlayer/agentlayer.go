@@ -87,6 +87,34 @@ func PlacedBlob(digest string) string { return PlacedDir + "/" + Hex(digest) }
 // Hex is a digest's hex, which names its directories.
 func Hex(digest string) string { return strings.TrimPrefix(digest, "sha256:") }
 
+// RunningLayer is the digest of the agent layer an agent whose executable,
+// its links resolved, is at executable runs from: AgentFile in LayerDir of
+// that digest. An agent anywhere else runs from no layer. The agent's process
+// keeps the file it was started from however CurrentLink moves after, so this
+// names the layer that agent is, not the one placed last.
+func RunningLayer(executable string) (string, bool) {
+	rest, ok := strings.CutPrefix(executable, LayersDir+"/")
+	if !ok {
+		return "", false
+	}
+	hex, ok := strings.CutSuffix(rest, "/"+AgentFile)
+	digest := "sha256:" + hex
+	if !ok || !imagecache.IsDigest(digest) {
+		return "", false
+	}
+	return digest, true
+}
+
+// Health is what the sandbox agent's /healthz answers.
+type Health struct {
+	OK bool `json:"ok"`
+	// Layer is the digest of the agent layer the answering agent runs from
+	// (RunningLayer), absent for one that runs from none or is too old to
+	// say. A box's maker that placed a layer and then forced the box off
+	// reads it to learn whether the agent now running is that layer's.
+	Layer string `json:"layer,omitempty"`
+}
+
 // Pin is one bundle a box is pinned to, as the asset API addresses it.
 type Pin struct {
 	// Name is the bundle's name at assets.discobox.internal.
