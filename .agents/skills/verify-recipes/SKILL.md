@@ -1419,6 +1419,20 @@ agent's published port, or the pool never registers.
   What boxd holds is read with a scratch `go run` (from `server/`) of
   `boxd.New(machine.Config{Pool: "prov-…", Keys: …}).Instances`, which
   shows each machine's `Isolated` and `Networks`, and that delete left none.
+- A boxd pool's server-side path (lookup, the driver's `Check`, create) with
+  no account: on an isolated server started with
+  `DISCOBOX_PROVIDER_ENDPOINTS=127.0.0.1` and `SSL_CERT_FILE=<stand-in
+  cert>` (both endpoints must be TLS: an `http` `tokenUrl` is refused, and
+  an untrusted cert reads as unreachable: a failed gRPC handshake is
+  `Unavailable`, a failed token exchange a `*url.Error`, which is a
+  `net.Error`), point `--driver-addr 127.0.0.1:<port>` at a scratch gRPC
+  server (its own module, outside the tree) whose
+  `grpc.UnknownServiceHandler` logs each method and answers
+  `emptypb.Empty` (an empty `ListVms`, `ListSnapshots`) or a status, with a
+  key without the `bxd_` prefix (sent as the bearer, no exchange). The
+  lookup runs `ListVms`/`ListSnapshots`, a pool with no machine then has its
+  keys revoked by name (`ListApiKeys`), `Check` is `Whoami`, and create
+  starts at `GetConfig`; the log of methods shows how far a pass got.
 - Do not create a `boxd` provider in the dev loop without a working
   `driver.apiKey`: its pool fails naming the key, and so does deleting it, since the stateless engine asks boxd
   whether the pool's machine exists, and its keys are revoked by name. The
