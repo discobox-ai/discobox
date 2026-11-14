@@ -3,14 +3,26 @@
 # one image digest and one snapshot.debian.org timestamp (see "Debian" in the
 # root DESIGN.md). The two values are written into each Dockerfile, because a
 # Dockerfile cannot import another, so this script is what keeps them one.
+# Docker CE, which Docker publishes no sid suite of, has a pin of its own
+# beside it: DOCKER_CE_VERSION, CONTAINERD_IO_VERSION and the key Docker signs
+# them with, DOCKER_APT_KEY_FINGERPRINT, one value each wherever Docker is
+# installed (the sandbox base and the pool VM guest). It moves on its own
+# clock, so a Debian bump never moves Docker, nor a Docker bump Debian.
 #
-#   debian-pin.sh check            fail unless every copy of the pin agrees and
-#                                  every Dockerfile builds on it alone
-#   debian-pin.sh bump SNAPSHOT    move every copy to SNAPSHOT (YYYYMMDDTHHMMSSZ)
-#                                  and to the newest dated sid-slim image
-#                                  from a day before it
+#   debian-pin.sh check            fail unless every copy of both pins agrees
+#                                  and every Dockerfile builds on them alone
+#   debian-pin.sh bump SNAPSHOT    move every copy of the Debian pin to SNAPSHOT
+#                                  (YYYYMMDDTHHMMSSZ) and to the newest dated
+#                                  sid-slim image from a day before it
+#   debian-pin.sh docker-bump [CE [CONTAINERD]]
+#                                  move every copy of Docker's pin to docker-ce
+#                                  CE and containerd.io CONTAINERD (upstream
+#                                  versions, such as 29.9.3-1 and 2.4.2-4), each
+#                                  defaulting to the newest Docker's suite
+#                                  publishes for both amd64 and arm64
 #
-# Called by `go tool task check:debian` and `go tool task debian:bump`.
+# Called by `go tool task check:debian`, `go tool task debian:bump` and
+# `go tool task docker:bump`.
 
 set -euo pipefail
 
@@ -19,11 +31,20 @@ cd "${DISCOBOX_ROOT:-$(git rev-parse --show-toplevel)}"
 image_repo=public.ecr.aws/docker/library/debian
 image_re='debian:sid-[0-9]{8}-slim@sha256:[0-9a-f]{64}'
 snapshot_re='DEBIAN_SNAPSHOT=[0-9]{8}T[0-9]{6}Z'
+docker_ce_re='DOCKER_CE_VERSION=[0-9][0-9A-Za-z.+-]*'
+containerd_io_re='CONTAINERD_IO_VERSION=[0-9][0-9A-Za-z.+-]*'
+docker_key_re='DOCKER_APT_KEY_FINGERPRINT=[0-9A-F]{40}'
+docker_suite=trixie
 
 # Every tracked file that carries a copy of the pin. ADRs are history and
 # never rewritten.
 pinned_files() {
   git grep -lIE "$image_re|$snapshot_re" -- ':!docs/adr/**' || true
+}
+
+# Every tracked file that carries a copy of Docker's pin.
+docker_pinned_files() {
+  git grep -lIE "$docker_ce_re|$containerd_io_re" -- ':!docs/adr/**' || true
 }
 
 distinct() {
@@ -45,6 +66,19 @@ check() {
     printf '%s\n' "$snapshots" | sed 's/^/  /' >&2
     failed=1
   fi
+  # Docker CE is one version wherever it is installed, so the pool VM guest's
+  # daemon is the one its sandboxes run.
+  local re name values
+  for re in "$docker_ce_re" "$containerd_io_re" "$docker_key_re"; do
+    name=${re%%=*}
+    values=$(distinct "$re")
+    if [ "$(printf '%s\n' "$values" | grep -c .)" -ne 1 ]; then
+      echo "docker pin: expected one $name, found:" >&2
+      printf '%s\n' "$values" | sed 's/^/  /' >&2
+      failed=1
+    fi
+  done
+
   # The image's date is the day of the snapshot it was built from, at some
   # time that day, and apt never downgrades what the image already holds, so
   # an image not strictly older than the snapshot's day can be newer than its
@@ -93,12 +127,19 @@ check() {
       /debian:[0-9]|golang:|rust:|preferences\.d|Pin-Priority|Pin:|APT::Default-Release|-t [a-z]+-backports/ {
         printf "%s:%d: another Debian, or an apt pin: %s\n", FILENAME, FNR, $0
       }
+      # Docker from its own repository is the pinned Docker CE, never the
+      # newest the suite happens to have.
+      /download\.docker\.com/ { docker = 1 }
+      toupper($1) == "ARG" && $2 ~ /^DOCKER_CE_VERSION=/ { has_ce = 1 }
+      toupper($1) == "ARG" && $2 ~ /^CONTAINERD_IO_VERSION=/ { has_containerd = 1 }
+      toupper($1) == "ARG" && $2 ~ /^DOCKER_APT_KEY_FINGERPRINT=/ { has_key = 1 }
       /URIs: http:\/\/snapshot\.debian\.org/ { sources++ }
       /APT::Update::Post-Invoke-Success \{ "\/usr\/local\/sbin\/discobox-apt-snapshot"; \}/ { hooks++ }
       toupper($1) == "ARG" && $2 ~ /^DEBIAN_IMAGE=/ { has_image = 1 }
       toupper($1) == "ARG" && $2 ~ /^DEBIAN_SNAPSHOT=/ { has_snapshot = 1 }
       END {
         if (has_image != has_snapshot) printf "%s: pins the sid image or the snapshot, not both\n", FILENAME
+        if (docker && !(has_ce && has_containerd && has_key)) printf "%s: installs from Docker'"'"'s repository without ARG DOCKER_CE_VERSION, ARG CONTAINERD_IO_VERSION and ARG DOCKER_APT_KEY_FINGERPRINT\n", FILENAME
         # Over http with Check-Valid-Until off, any older signed index would
         # pass for the snapshot; the hook binds what apt accepts to it.
         if (sources != hooks) printf "%s: %d snapshot sources but %d discobox-apt-snapshot hooks; each needs one\n", FILENAME, sources, hooks
@@ -136,11 +177,77 @@ check() {
     failed=1
   fi
 
+  # The lines that turn Docker's pin into the suite's package versions, and the
+  # one that checks its key, are copied into each Dockerfile that installs
+  # Docker, and they depend on how docker-bump writes the pin: every copy is
+  # held to the same text, its indentation and its joining `&&` set aside.
+  local lookups
+  # The sed program matches the literal text `$gnupg` in the Dockerfiles.
+  # shellcheck disable=SC2016
+  lookups=$(git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -hE 'apt-cache madison (docker-ce|containerd\.io)|gpg --show-keys' |
+    sed -E 's/^[[:space:]]*(&& )?//; s/[[:space:]]*\\$//; s/GNUPGHOME=\$gnupg //; s#/etc/apt/keyrings/docker\.asc|/docker\.asc#KEY#' | sort | uniq -c | awk '{ print $1 }' | sort -u)
+  if [ -n "$lookups" ] && [ "$lookups" != "$(git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -l 'download\.docker\.com' | grep -c .)" ]; then
+    echo "docker pin: the version lookup or key check differs between the Dockerfiles that install Docker:" >&2
+    git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -nE 'apt-cache madison (docker-ce|containerd\.io)|gpg --show-keys' | sed 's/^/  /' >&2
+    failed=1
+  fi
+
   if [ "$failed" -ne 0 ]; then
     echo "debian pin: every Debian stage builds on the one pin; see \"Debian\" in DESIGN.md" >&2
     exit 1
   fi
-  echo "debian pin: $(printf '%s' "$images" | sed 's/^debian://'), snapshot ${snapshots#DEBIAN_SNAPSHOT=}"
+  echo "debian pin: $(printf '%s' "$images" | sed 's/^debian://'), snapshot ${snapshots#DEBIAN_SNAPSHOT=}; docker-ce $(distinct "$docker_ce_re" | cut -d= -f2), containerd.io $(distinct "$containerd_io_re" | cut -d= -f2)"
+}
+
+# docker_versions PACKAGE prints, oldest first, the upstream versions (epoch
+# and the suite's ~debian suffix stripped, so 5:29.9.3-1~debian.13~trixie is
+# 29.9.3-1) of PACKAGE that Docker's suite publishes for both amd64 and arm64:
+# the guest is built for both, so a version on one alone would fail the
+# other's build.
+docker_versions() {
+  local package=$1 arch index
+  for arch in amd64 arm64; do
+    index=$(curl -fsSL --retry 5 "https://download.docker.com/linux/debian/dists/$docker_suite/stable/binary-$arch/Packages") || return 1
+    printf '%s\n' "$index" |
+      awk -v p="$package" '/^Package: / { pkg = $2 } /^Version: / && pkg == p { print $2 }' |
+      sed -E 's/^[0-9]+://; s/~.*$//' | sort -u
+  done | sort | uniq -d | sort -V
+}
+
+# docker_version PACKAGE [VERSION] prints VERSION if Docker's suite publishes
+# it for both architectures, or the newest it does when VERSION is empty.
+docker_version() {
+  local package=$1 wanted=${2:-} versions
+  versions=$(docker_versions "$package") || {
+    echo "docker pin: could not read Docker's $docker_suite suite" >&2
+    return 1
+  }
+  if [ -z "$wanted" ]; then
+    wanted=$(printf '%s\n' "$versions" | tail -n 1)
+  fi
+  if [ -z "$wanted" ] || ! printf '%s\n' "$versions" | grep -qxF "$wanted"; then
+    echo "docker pin: Docker's $docker_suite suite publishes no $package ${wanted:-at all} for both amd64 and arm64" >&2
+    return 1
+  fi
+  if ! [[ "$wanted" =~ ^[0-9][0-9A-Za-z.+-]*$ ]]; then
+    echo "docker pin: $package version $wanted is not one this pin can hold" >&2
+    return 1
+  fi
+  printf '%s\n' "$wanted"
+}
+
+docker_bump() {
+  local ce containerd file
+  ce=$(docker_version docker-ce "${1:-}") || exit 1
+  containerd=$(docker_version containerd.io "${2:-}") || exit 1
+  while IFS= read -r file; do
+    sed -i.bak -E \
+      -e "s/$docker_ce_re/DOCKER_CE_VERSION=$ce/g" \
+      -e "s/$containerd_io_re/CONTAINERD_IO_VERSION=$containerd/g" \
+      "$file"
+    rm -f "$file.bak"
+  done < <(docker_pinned_files)
+  check
 }
 
 bump() {
@@ -189,8 +296,9 @@ bump() {
 case "${1:-}" in
 check) check ;;
 bump) bump "${2:-}" ;;
+docker-bump) docker_bump "${2:-}" "${3:-}" ;;
 *)
-  echo "usage: debian-pin.sh check | bump SNAPSHOT" >&2
+  echo "usage: debian-pin.sh check | bump SNAPSHOT | docker-bump [CE [CONTAINERD]]" >&2
   exit 2
   ;;
 esac

@@ -909,19 +909,28 @@ tasks:
         fi
 
   check:debian:
-    desc: Every Debian stage builds on the one sid pin, and every copy of it agrees
+    desc: Every Debian stage builds on the one sid pin, Docker CE is one pinned version, and every copy of each agrees
     # A Dockerfile cannot import another, so the sid image digest and the
-    # snapshot.debian.org timestamp are written into each one. This is what
-    # keeps them one pin. See "Debian" in DESIGN.md.
+    # snapshot.debian.org timestamp are written into each one, and so are
+    # Docker CE's version, containerd.io's and Docker's key fingerprint in each
+    # one that installs Docker (the sandbox base and the pool VM guest). This
+    # is what keeps them one pin each. See "Debian" in DESIGN.md.
     cmds:
       - scripts/debian-pin.sh check
 
   debian:bump:
-    desc: "Move the Debian pin, in every Dockerfile, to SNAPSHOT=<YYYYMMDDTHHMMSSZ> and the newest dated debian:sid-slim from a day before it"
+    desc: "Move the Debian pin, in every Dockerfile, to SNAPSHOT=<YYYYMMDDTHHMMSSZ> and the newest dated debian:sid-slim from a day before it; Docker CE stays put (docker:bump)"
     requires:
       vars: [SNAPSHOT]
     cmds:
       - scripts/debian-pin.sh bump {{.SNAPSHOT}}
+
+  docker:bump:
+    desc: "Move Docker CE's pin, in the sandbox base and the pool VM guest, to VERSION=<docker-ce, e.g. 29.9.3-1> and CONTAINERD=<containerd.io, e.g. 2.4.2-4>, each defaulting to the newest Docker publishes for amd64 and arm64"
+    # It moves the guest's daemon, so like a Debian bump it is a guest release:
+    # vm:verify on both architectures and a boot on each backend.
+    cmds:
+      - scripts/debian-pin.sh docker-bump "{{.VERSION}}" "{{.CONTAINERD}}"
 
   check:dockerfile-deps:
     desc: Every package an image's Go binaries import is copied into its build context

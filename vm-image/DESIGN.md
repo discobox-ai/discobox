@@ -121,6 +121,13 @@ with `/boot`. `vm:verify` fails on an artifact whose kernel lost a module the
 guest loads on demand: Docker's netfilter (nftables, conntrack, `nft_compat`)
 and bridge, overlay, the VSOCK transport, and the virtio disk and NIC.
 
+Docker is the exception to sid: Docker CE from Docker's trixie suite, the
+sandbox base's daemon at the sandbox base's pinned version (see
+[Debian](../DESIGN.md#debian)), without its CLI, which nothing in the guest
+runs. Debian's `docker.io` is not an option: its 28.5.2 build refuses every
+archive copy into a container whose bind crosses the `/var/run` link, and a
+pool's box is placed by one (#1164).
+
 ## Why the kernel is not one of them
 
 libkrun boots a kernel directly through libkrunfw's patched entry paths, so no
