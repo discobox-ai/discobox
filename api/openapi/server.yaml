@@ -7045,7 +7045,7 @@ components:
                     format: int64
                     type: integer
                 routes:
-                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Set replaces them; an empty array removes them, and the credential is then sent nowhere.
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Set replaces them; an empty array removes them, and the credential is then sent nowhere. A set that leaves a body place a standing binding names allowed by no route, where the routes it replaces allowed it, is refused (409) naming each such binding, since that binding would never be sent the credential.
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     nullable: true

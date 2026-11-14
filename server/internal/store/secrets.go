@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/encryption"
@@ -173,6 +174,18 @@ func (s *Store) GetSecret(ctx context.Context, projectID, secretID string) (*mod
 		return nil, err
 	}
 	return firstByID[model.Secret](read.Where("project_id = ?", projectID), "id", secretID)
+}
+
+// LockSecret reads a project's secret FOR UPDATE, on the caller's
+// transaction: a write decided from the row it read (a route edit judged
+// against the routes it replaces) holds it until commit, so no other writer's
+// change lands between the read and the write.
+func (s *Store) LockSecret(ctx context.Context, projectID, secretID string) (*model.Secret, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return firstByID[model.Secret](write.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID), "id", secretID)
 }
 
 // GetSecretByName reads a project's secret by its name, which is unique in

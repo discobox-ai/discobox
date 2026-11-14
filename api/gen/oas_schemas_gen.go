@@ -37080,7 +37080,10 @@ type UpdateSecretBody struct {
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
 	// must fall on one; the most specific route covering it decides, and a blocked one refuses. Set
-	// replaces them; an empty array removes them, and the credential is then sent nowhere.
+	// replaces them; an empty array removes them, and the credential is then sent nowhere. A set that
+	// leaves a body place a standing binding names allowed by no route, where the routes it replaces
+	// allowed it, is refused (409) naming each such binding, since that binding would never be sent the
+	// credential.
 	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.
