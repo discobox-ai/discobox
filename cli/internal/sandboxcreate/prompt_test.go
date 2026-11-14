@@ -5,13 +5,16 @@ import (
 	"crypto/rand"
 	"net/http"
 	"os"
+	osuser "os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
 
 // fakeCreator answers with a name conflict until conflicts is exhausted,
@@ -128,20 +131,55 @@ func TestNoSourceCreatesWithNothingToMaterialize(t *testing.T) {
 	}
 }
 
-// A sandbox with no POSIX ids has one account, the one its template
+// A Windows sandbox has one account and no ids, the one its template
 // provisions, and is refused a user naming ids, groups or a home (ADR 0145
 // §5) — so a create for one carries no user at all.
-func TestANonLinuxSandboxIsSentNoUser(t *testing.T) {
+func TestAWindowsSandboxIsSentNoUser(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
-	for _, goos := range []string{"darwin", "windows"} {
-		body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: platform.Platform{OS: goos, Arch: "arm64"}, Source: repo, NoSource: true})
-		if err != nil {
-			t.Fatalf("%s: build: %v", goos, err)
-		}
-		local.Close()
-		if user, ok := body.Config.User.Get(); ok {
-			t.Fatalf("%s: user = %+v, want none", goos, user)
-		}
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: platform.Platform{OS: "windows", Arch: "arm64"}, Source: repo, NoSource: true})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	local.Close()
+	if user, ok := body.Config.User.Get(); ok {
+		t.Fatalf("user = %+v, want none", user)
+	}
+}
+
+// A macOS sandbox's account has ids, so a create for one carries this
+// machine's account, normalized against macOS's ids rather than Linux's (ADR
+// 26-11-12-060 §2).
+func TestAMacOSSandboxIsSentThisMachinesAccount(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows client sends its fixed account, covered by TestWindowsRunUserIsAUsableSandboxIdentity")
+	}
+	current, err := osuser.Current()
+	if err != nil {
+		t.Skipf("no current user: %v", err)
+	}
+	if current.Uid == "0" {
+		t.Skip("root asks for nobody")
+	}
+	repo := newRunSourceTestRepo(t)
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: platform.Platform{OS: "darwin", Arch: "arm64"}, Source: repo, NoSource: true})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	local.Close()
+	sent, ok := body.Config.User.Get()
+	if !ok || !sent.UID.Set || !sent.Gid.Set {
+		t.Fatalf("user = %+v, want this machine's account with both ids", sent)
+	}
+	want, _ := parseRunUserIdentity(current, "darwin")
+	if sent.UID.Value != want.UID || sent.Gid.Value != want.GID || sent.Name.Value != want.Name {
+		t.Fatalf("user = %s %d/%d, want %s %d/%d", sent.Name.Value, sent.UID.Value, sent.Gid.Value, want.Name, want.UID, want.GID)
+	}
+	if sent.HomeDirectory.Set {
+		t.Fatalf("home = %q, want none: it is the one account's own", sent.HomeDirectory.Value)
+	}
+	user := sandboxuser.User{Name: sent.Name.Value, UID: sandboxuser.ID(sent.UID.Value), GID: sandboxuser.ID(sent.Gid.Value), HomeDirectory: sent.HomeDirectory.Value}
+	if err := user.ValidateAccount("darwin"); err != nil {
+		t.Fatalf("the account sent is one a darwin create refuses: %v", err)
 	}
 }
 

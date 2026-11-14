@@ -32376,10 +32376,13 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 // overrides that user for one exec — the same fields mean the same thing at
 // both layers.
 // Sandbox create is stricter, because it names the account the sandbox
-// creates: a user that gives name or homeDirectory must give uid, and uid
-// and gid must each be 0 (root) or within 1000-60000, the range a Linux
-// guest gives ordinary accounts. Anything else is refused with 400, never
-// clamped (ADR 0141).
+// creates: a user that gives name or homeDirectory must give uid, and each
+// id must be one the sandbox's guest gives an ordinary account. On Linux,
+// uid and gid are each 0 (root) or within 1000-60000; on macOS, uid is 0
+// (root) or within 501-60000, and gid is 20 (staff) or within 501-60000;
+// a macOS sandbox has one account, so it takes no homeDirectory,
+// groupName or additionalGroups there. Anything else is refused with 400,
+// never clamped.
 // Ref: #/components/schemas/SandboxUser
 type SandboxUser struct {
 	// Supplementary groups, each a group name or a numeric GID, resolved inside

@@ -7,10 +7,12 @@ import (
 )
 
 // HasPOSIXIDs reports whether a sandbox whose platform's OS is goos -- spelled
-// as GOOS spells it -- runs its processes by uid and gid. Linux is the one
-// that does. Everywhere else a sandbox has exactly one account: the one its
-// template provisions, named in its manifest, and nothing invents a uid or a
-// gid for it (ADR 0145 §5).
+// as GOOS spells it -- runs its processes by uid and gid, as whichever account
+// a layer names. Linux is the one that does. Everywhere else a sandbox has
+// exactly one account: the one its template provisions, named in its
+// manifest, and every process runs as it (ADR 0145 §5). A macOS account has
+// ids all the same, which create gives it (AccountIDsFor), but no layer may
+// name another account or ids to switch to (ADR 26-10-09-106 §5).
 func HasPOSIXIDs(goos string) bool { return goos == "linux" }
 
 // OneAccountError refuses a layer that names something a single-account
@@ -39,7 +41,7 @@ func (e *OneAccountError) Error() string {
 	if e.Account != "" {
 		account = fmt.Sprintf("one account, %q,", e.Account)
 	}
-	return fmt.Sprintf("a %s sandbox has %s and no POSIX ids: a run user may not name %s (%s)",
+	return fmt.Sprintf("a %s sandbox has %s and runs every process as it: a run user may not name %s (%s)",
 		e.OS, account, oneAccountRefused[e.Field], e.Named)
 }
 

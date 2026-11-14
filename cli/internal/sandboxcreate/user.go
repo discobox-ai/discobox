@@ -20,9 +20,9 @@ var runUnixUserNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}\$?$`)
 
 // runUserIdentity is this machine's account as a sandbox can hold it. It always
 // carries both ids: a sandbox create refuses an account named without its uid,
-// and an id outside root and the guest's account range (ADR 0141), so an id the
-// guest cannot give an account is replaced here, by the client, rather than
-// dropped or clamped at runtime.
+// and an id outside the ids the sandbox's guest gives accounts (ADR 0141, ADR
+// 26-11-12-060), so an id the guest cannot give an account is replaced here, by
+// the client, rather than dropped or clamped at runtime.
 type runUserIdentity struct {
 	Name          string
 	UID           int64
@@ -35,7 +35,8 @@ type runUserIdentity struct {
 // account whose name would only be a coincidence in the sandbox.
 const fallbackRunUserName = "discobox"
 
-// windowsRunUser is the identity a create carries from a Windows client.
+// windowsRunUser is the identity a create carries from a Windows client, for a
+// sandbox whose guest gives accounts ids.
 //
 // Windows has nothing POSIX to capture. user.Current() there answers with a SID
 // for the ids, a DOMAIN\name for the name, and a C:\Users home -- three values
@@ -51,39 +52,55 @@ const fallbackRunUserName = "discobox"
 // stating, as a whole request, the user it wants the sandbox to have; boot then
 // creates that account exactly as it would for one a Linux client named.
 //
-// 1000 is the first non-system id on every distro the harness images build from,
-// and the name is fallbackRunUserName. The home directory is deliberately
+// The uid is the first the guest gives an ordinary account -- 1000 on every
+// distro the harness images build from, 501 on macOS -- the gid the one the
+// guest would give it (its own on Linux, staff on macOS), and the name is
+// fallbackRunUserName. The home directory is deliberately
 // absent: boot resolves it from the account when the image already has a
 // "discobox", and defaults to /home/discobox when it does not, which is the same
 // "ask where you can, decide only where you must" rule the rest of this follows.
-var windowsRunUser = runUserIdentity{
-	Name: fallbackRunUserName,
-	UID:  sandboxuser.AccountIDMin,
-	GID:  sandboxuser.AccountIDMin,
+func windowsRunUser(ids sandboxuser.AccountIDs) runUserIdentity {
+	return runUserIdentity{Name: fallbackRunUserName, UID: ids.Min, GID: ids.DefaultGID(ids.Min)}
 }
 
-func resolveRunUserIdentity() (runUserIdentity, bool, error) {
+// resolveRunUserIdentity is this machine's account as a sandbox on goos may be
+// created with. ok is false where no user is sent: a root client, or a guest
+// whose account has no ids (sandboxuser.AccountIDsFor), whose one account a
+// user naming a uid, a group or a home is refused (ADR 0145 §5), so the
+// sandbox runs as the account its template provisions.
+func resolveRunUserIdentity(goos string) (runUserIdentity, bool, error) {
+	ids, ok := sandboxuser.AccountIDsFor(goos)
+	if !ok {
+		return runUserIdentity{}, false, nil
+	}
 	if runtime.GOOS == "windows" {
-		return windowsRunUser, true, nil
+		return windowsRunUser(ids), true, nil
 	}
 	current, err := user.Current()
 	if err != nil {
 		return runUserIdentity{}, false, fmt.Errorf("resolve current user: %w", err)
 	}
-	identity, ok := parseRunUserIdentity(current)
+	identity, ok := parseRunUserIdentity(current, goos)
 	return identity, ok, nil
 }
 
-// parseRunUserIdentity turns this machine's account into the one the sandbox is
-// asked for. Root asks for nobody, reported by ok false. Otherwise the name and
-// home travel when a Linux sandbox can use them, and each id when it is in the
-// guest's account range. One that is not -- a macOS account is 501 in group 20,
-// below UID_MIN, and 20 is dialout there -- is replaced: the uid by
-// sandboxuser.AccountIDMin, the gid by the uid, as useradd's own private group
-// would be. This is the one place such a choice is made; the API refuses the
-// out-of-range id rather than making it.
-func parseRunUserIdentity(current *user.User) (identity runUserIdentity, ok bool) {
-	if current == nil {
+// parseRunUserIdentity turns this machine's account into the one a sandbox on
+// goos is asked for. Root, and a guest whose account has no ids, ask for
+// nobody, reported by ok false. Otherwise the name travels when the sandbox
+// can use it, the home when the sandbox switches between accounts (on macOS
+// the one account's home is its own, ADR 0145 §5), the uid when it is in the
+// guest's range, and the gid when the guest gives an ordinary account that
+// group: one in its range, or macOS's staff. One that is not -- a macOS
+// account is 501 in group 20, below a Linux guest's UID_MIN, and 20 is dialout
+// there -- is replaced: the uid by the guest's first account id, the gid by
+// the group the guest would give that account, the uid's own on Linux as
+// useradd's private group would be, staff on macOS. The same account sent to
+// a macOS guest travels unchanged (ADR 26-11-12-060). This is the one place
+// such a choice is made; the API refuses the out-of-range id rather than
+// making it.
+func parseRunUserIdentity(current *user.User, goos string) (identity runUserIdentity, ok bool) {
+	ids, hasIDs := sandboxuser.AccountIDsFor(goos)
+	if current == nil || !hasIDs {
 		return runUserIdentity{}, false
 	}
 	uid, uidOK := parseRunNumericUserID(current.Uid)
@@ -91,18 +108,20 @@ func parseRunUserIdentity(current *user.User) (identity runUserIdentity, ok bool
 		return runUserIdentity{}, false
 	}
 	gid, gidOK := parseRunNumericUserID(current.Gid)
-	identity = runUserIdentity{Name: fallbackRunUserName, UID: sandboxuser.AccountIDMin}
+	identity = runUserIdentity{Name: fallbackRunUserName, UID: ids.Min}
 	if validRunUnixUserName(current.Username) {
 		identity.Name = current.Username
 	}
-	if validRunHomeDirectory(current.HomeDir) {
+	if sandboxuser.HasPOSIXIDs(goos) && validRunHomeDirectory(current.HomeDir) {
 		identity.HomeDirectory = current.HomeDir
 	}
-	if uidOK && sandboxuser.InAccountRange(uid) {
+	if uidOK && ids.InRange(uid) {
 		identity.UID = uid
 	}
-	identity.GID = identity.UID
-	if gidOK && sandboxuser.InAccountRange(gid) {
+	identity.GID = ids.DefaultGID(identity.UID)
+	// Root's group is root's, and root asked for nobody above: an ordinary
+	// account in it takes the guest's group instead.
+	if gidOK && gid != 0 && ids.ValidGID(gid) {
 		identity.GID = gid
 	}
 	return identity, true
@@ -120,7 +139,8 @@ func validRunUnixUserName(value string) bool {
 // validRunHomeDirectory reports whether this machine's home directory is one
 // the sandbox could actually use.
 //
-// The sandbox runs Linux, so only a POSIX absolute path means anything there.
+// The sandbox runs Linux or macOS, so only a POSIX absolute path means
+// anything there.
 // A home like "C:\Users\alice" is not merely useless: sending it makes the
 // request carry a user whose every other field was already rejected as
 // unusable, and the sandbox then fails to start because nothing in it can

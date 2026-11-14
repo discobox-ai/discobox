@@ -17,7 +17,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
-	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
@@ -197,17 +196,14 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if poolID := strings.TrimSpace(opts.PoolID); poolID != "" {
 		body.SetPoolId(apiclientgen.NewOptString(poolID))
 	}
-	// This machine's account is asked for only where the sandbox has POSIX
-	// ids. Elsewhere it has one account, the one its template provisions, and
-	// a user naming a uid, a group or a home is refused there — even the
-	// account's own (ADR 0145 §5) — so none is sent and the sandbox runs as
-	// that account.
-	var userIdentity runUserIdentity
-	userNamed := false
-	if sandboxuser.HasPOSIXIDs(opts.Platform.OS) {
-		if userIdentity, userNamed, err = resolveRunUserIdentity(); err != nil {
-			return nil, nil, err
-		}
+	// This machine's account, normalized against the ids the sandbox's guest
+	// gives accounts: Linux's, or macOS's, which a macOS client's own account
+	// is already in (ADR 26-11-12-060). Where the guest's account has no ids,
+	// none is sent and the sandbox runs as the account its template
+	// provisions (ADR 0145 §5).
+	userIdentity, userNamed, err := resolveRunUserIdentity(opts.Platform.OS)
+	if err != nil {
+		return nil, nil, err
 	}
 	sourceArg := opts.Source
 	skillsRepos := append(slices.Clone(opts.ProjectSkills), skillsArgs.Repositories...)

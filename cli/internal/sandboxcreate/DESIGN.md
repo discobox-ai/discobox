@@ -66,20 +66,29 @@ sandbox create requests.
   ([ADR 0042](../../../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)).
   This inference belongs to the prompt path only — `discobox admin box create` is
   flag-driven and reads nothing from the environment.
-- Local user identity is captured from the client machine, except on Windows,
-  which has no POSIX identity to capture and instead sends a fixed one: `discobox`,
-  uid/gid 1000, home left to the sandbox. Translating a SID and a `C:\Users`
+- Local user identity is captured from the client machine, and only where the
+  sandbox's guest gives its account ids (`sandboxuser.AccountIDsFor`): Linux and
+  macOS. Windows has no POSIX identity to capture and instead sends a fixed
+  one: `discobox`, uid/gid the guest's first account id (1000 on Linux, 501 on
+  macOS), home left to the sandbox. Translating a SID and a `C:\Users`
   home yields nothing usable, and sending nothing means the image's own user
   ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5) — root on the sandbox base image. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
 - Every identity sent carries both ids, because sandbox create refuses an account
-  named without its uid and an id outside root and 1000–60000
-  ([ADR 0141](../../../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)).
-  An id the host has that the guest cannot give an account is replaced here, not
-  dropped: a uid outside the range (a macOS account's 501) becomes 1000, a gid
-  outside it (macOS's 20, Linux's `users` 100) becomes the uid, and a name no
-  Linux account can have becomes `discobox`. The server refuses rather than
+  named without its uid and an id its guest does not give an account
+  ([ADR 0141](../../../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md),
+  [ADR 26-11-12-060](../../../docs/adr/26-11-12-060-a-macos-sandbox-account-takes-uids-from-501.md)).
+  The host account is normalized against the sandbox's guest, read from its
+  pool's platform. An id the host has that the guest cannot give an account is
+  replaced here, not dropped: for a Linux guest a uid outside 1000–60000 (a
+  macOS account's 501) becomes 1000, and a gid outside it (macOS's 20, Linux's
+  `users` 100) becomes the uid. For a macOS guest, whose range starts at 501
+  and which puts every account in `staff` (20), a macOS client's own 501/20
+  travels unchanged; a uid outside it becomes 501 and a gid outside it 20
+  (`AccountIDs.DefaultGID`), and no home is sent, since the one account's
+  home is its own. Root's group is replaced on either. A name no Linux
+  account can have becomes `discobox`. The server refuses rather than
   clamps, so this is the one place the choice is made. A root host asks for
   nobody.
 - A local source keeps its own absolute path inside a **Linux** sandbox **when

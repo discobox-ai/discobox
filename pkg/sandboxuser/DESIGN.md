@@ -7,7 +7,8 @@ caller needs.
 Decision records: [ADR 0025](../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
 (the rules), [ADR 0033](../../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md)
 (where they live), [ADR 0141](../../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)
-(the ids a sandbox account may be created with), [ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)
+(the ids a sandbox account may be created with), [ADR 26-11-12-060](../../docs/adr/26-11-12-060-a-macos-sandbox-account-takes-uids-from-501.md)
+(macOS's), [ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)
 (where there are no POSIX ids, a sandbox has one account).
 
 ## Why it is in the root module
@@ -46,7 +47,7 @@ graph TD
 | `Fields` · `Credential` · `Complete` | Which fields a caller requires. `Credential` is uid+gid+groups (enough to `setuid`); `Complete` adds name and home. |
 | `UnresolvedError` · `Unresolved` | A required field that could not be determined, naming it. Built by `runuser`. |
 | `(*User).Validate` | Rejects the one in-layer contradiction: both `GID` and `GroupName`. |
-| `(*User).ValidateAccount(goos)` · `InAccountRange` · `AccountIDMin`/`AccountIDMax` | The stricter check for a sandbox's own user, which sandbox create applies for the sandbox's platform — today always `linux`, as the control plane records no platform yet ([ADR 0145 §1](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)). On Linux naming an account needs its uid, and each id is 0 or in the guest's account range, 1000–60000. Refused, never clamped; the client picks a usable id ([ADR 0141](../../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)). Elsewhere it is `ValidateOneAccount`. Exec users are checked only by `Validate`, and off Linux by `ValidateOneAccount` as they resolve. |
+| `(*User).ValidateAccount(goos)` · `AccountIDsFor` · `AccountIDs` | The stricter check for a sandbox's own user, which sandbox create applies for the sandbox's platform (its pool's; an undeclared one is Linux). Where the guest gives its accounts ids (`AccountIDsFor`), naming an account needs its uid, the uid is 0 or in the guest's range, and the gid is in that range or the guest's one other group: Linux 1000–60000 and root's 0 ([ADR 0141](../../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)), macOS 501–60000 and `staff`'s 20 ([ADR 26-11-12-060](../../docs/adr/26-11-12-060-a-macos-sandbox-account-takes-uids-from-501.md)). Refused, never clamped; the client picks a usable id for the sandbox's guest. Off Linux the one-account rule holds as well (`ValidateOneAccount`), less the ids on macOS; Windows has none. `DefaultGID` is the group the guest would give a new account: its own on Linux, `staff` on macOS. Exec users are checked only by `Validate`, and off Linux by `ValidateOneAccount` as they resolve. |
 | `HasPOSIXIDs(goos)` · `(*User).ValidateOneAccount(goos, account)` · `OneAccountError` · `SameAccount` | Whether a platform runs processes by uid and gid (Linux only), and the rule where it does not: the sandbox has one account, so a layer may name that account by name — in any case, as `SameAccount` compares — and nothing else: no other user, uid, primary group, group set or home directory, not even the account's own home, which is the account's to have. `account` is empty where it is unknown (the control plane). The refusal names the field and the platform; it is never ignored. |
 | `(*User).Clone` · `ID` | Deep copy that trims strings; pointer to a known id. |
 
@@ -70,15 +71,22 @@ across a change of user would run user A's process in user B's default group.
 Supplementary groups do, deliberately: they describe what the *sandbox* may
 reach rather than who it is, so naming a user must not silently strip them.
 
-## Platforms without POSIX ids
+## Single-account platforms
 
-The uid, gid and group facets are Linux's. A macOS or Windows sandbox has one
-account, which its template provisions and its manifest names, and nothing
-invents ids for it ([ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
-The type does not fork: such a sandbox's `User` is a name and a home, and a
-layer naming more is refused by `ValidateOneAccount`. Which rule applies is
-asked of `HasPOSIXIDs` with the sandbox's platform; inside the sandbox
-[`runuser`](../../sandbox-agent/runuser/DESIGN.md) applies it per build.
+Switching between accounts by uid, gid and group is Linux's: `HasPOSIXIDs` is
+true there alone. A macOS or Windows sandbox has one account, which its
+template provisions and its manifest names, and runs every process as it
+([ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
+The type does not fork: a layer there may name that account and nothing else
+(`ValidateOneAccount`), and inside the sandbox
+[`runuser`](../../sandbox-agent/runuser/DESIGN.md) applies that per build.
+
+The one exception is sandbox create on macOS: that account has POSIX ids
+([ADR 26-10-09-106 §5](../../docs/adr/26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)),
+so `ValidateAccount` takes them, judged by macOS's range, and still refuses a
+group set, a group by name and a home. A Windows account has no ids, so its
+create names the account alone. How a create's ids meet the account the
+darwin base VM already has is not settled yet (ADR 26-11-12-060, Deferred).
 
 ## Rules
 

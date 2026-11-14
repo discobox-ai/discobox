@@ -93,11 +93,11 @@ func SandboxUserToModel(value OptSandboxUser) SandboxUserFields {
 	}
 }
 
-// ValidateAccount refuses a user no sandbox on goos may be created with: on
-// Linux an account named without its uid, or an id outside root and the
-// guest's account range (ADR 0141); elsewhere anything but the sandbox's one
-// account, by name (ADR 0145 §5). The rule is sandboxuser's; this is only the
-// conversion to it.
+// ValidateAccount refuses a user no sandbox on goos may be created with: where
+// the guest gives accounts ids, an account named without its uid, or an id
+// that guest does not give one (ADR 0141, ADR 26-11-12-060); elsewhere
+// anything but the sandbox's one account, by name (ADR 0145 §5). The rule is
+// sandboxuser's; this is only the conversion to it.
 func (f SandboxUserFields) ValidateAccount(goos string) error {
 	user := &sandboxuser.User{AdditionalGroups: f.AdditionalGroups}
 	if f.Name != nil {
