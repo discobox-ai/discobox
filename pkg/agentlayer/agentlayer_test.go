@@ -298,3 +298,27 @@ func TestPinsReadTheObjectTheyWereBeforeTheyWereAList(t *testing.T) {
 		t.Fatal("a string read as pins")
 	}
 }
+
+// An agent names the layer it runs from by where its executable is, so one
+// started from a layer before the current link moved still names that layer.
+func TestRunningLayerIsTheLayerTheAgentRunsFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		executable string
+		want       string
+	}{
+		{"an agent in a layer", LayerDir(platformDigest) + "/" + AgentFile, platformDigest},
+		{"the current link, unresolved", AgentPath, ""},
+		{"an agent outside the store", "/usr/local/bin/discobox-sandbox-agent", ""},
+		{"another file of a layer", LayerDir(platformDigest) + "/features/core/other", ""},
+		{"a layer named by no digest", LayersDir + "/abc/" + AgentFile, ""},
+		{"a nested path", LayersDir + "/x/" + Hex(platformDigest) + "/" + AgentFile, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := RunningLayer(tc.executable)
+			if got != tc.want || ok != (tc.want != "") {
+				t.Fatalf("RunningLayer(%q) = %q, %v; want %q", tc.executable, got, ok, tc.want)
+			}
+		})
+	}
+}
