@@ -514,6 +514,10 @@ func (r *DockerSandboxRuntime) retireContainerWithoutRuntimeConfig(ctx context.C
 // binds, so removing the container loses nothing. The caller holds the
 // sandbox's power lock.
 func (r *DockerSandboxRuntime) removeForRebuild(ctx context.Context, sb *Sandbox) error {
+	// Kept for the container the rebuild makes (ADR 26-11-14-302 §3).
+	if err := r.stashWorkingRoot(ctx, sb.SandboxID, sb.ID); err != nil {
+		return err
+	}
 	if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove sandbox container for a rebuild: %w", err)
 	}

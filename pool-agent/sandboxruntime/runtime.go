@@ -699,6 +699,11 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 				return nil, false, fmt.Errorf("stop sandbox container for a spec change: %w", err)
 			}
 		}
+		// What a container from before ADR 26-11-14-302 kept at the working
+		// root is in its own layer, which removing it deletes (§3).
+		if err := r.stashWorkingRoot(ctx, sandboxID, replaced.ID); err != nil {
+			return nil, false, err
+		}
 		if _, err := r.client.ContainerRemove(ctx, replaced.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			return nil, false, fmt.Errorf("remove sandbox container for a spec change: %w", err)
 		}
@@ -768,6 +773,12 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
 	if err != nil {
+		return nil, false, err
+	}
+	// Before anything starts it, whether or not this create does: the
+	// working root a removed container had in its layer, for boot to move
+	// onto the data root (ADR 26-11-14-302 §3).
+	if err := r.restoreWorkingRoot(ctx, sandboxID, created.ID); err != nil {
 		return nil, false, err
 	}
 	// A create that is not asked to start leaves the container built and down.

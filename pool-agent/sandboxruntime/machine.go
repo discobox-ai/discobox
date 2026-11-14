@@ -217,9 +217,13 @@ type machineRecord struct {
 	// cut short is finished by the next start (disco-vm ADR 26-11-03-782 §3).
 	NewRoot bool `json:"newRoot,omitempty"`
 	// DataOnVolume is that the machine's sandbox agent keeps the sandbox's
-	// data on the machine's data volume, as the pool read from the volume
-	// (recordDataOnVolume): only then is it given a new root.
-	DataOnVolume bool `json:"dataOnVolume,omitempty"`
+	// data on the machine's data volume, its working root included, as the
+	// pool read from the volume (recordDataOnVolume): only then is it given a
+	// new root. Its key is not the "dataOnVolume" a pool from before ADR
+	// 26-11-14-302 wrote, which did not ask about the working root: a record
+	// with only that key reads as false, so a machine is rebuilt on the root
+	// it has until a start on this pool reads its volume again (§4).
+	DataOnVolume bool `json:"dataAndWorkingRootOnVolume,omitempty"`
 }
 
 // snapshotProvenName marks, in a sandbox's tree, that the agent of its
@@ -711,7 +715,9 @@ func (r *MachineSandboxRuntime) wiredThisStart(ctx context.Context, sandboxID st
 		return false, nil
 	}
 	wired, ok := readGuestFile(ctx, guest, sandboxconfig.MachineDataWiredFile)
-	return ok && wired == sandboxID+" "+token, nil
+	// Its working root too: a line from an agent that left it on the root
+	// keeps the machine on the root it has (ADR 26-11-14-302 §4).
+	return ok && wired == sandboxconfig.MachineDataWiredLine(sandboxID, token, true), nil
 }
 
 // guestRecordReadTimeout bounds a read of one of the agent's records from

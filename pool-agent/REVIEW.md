@@ -90,6 +90,11 @@ box's to replace — with a symlink to `/dev/zero` or a FIFO, which the pool
 agent, as root on the host, would follow and read without bound. It has been
 read back twice (`recordedSandboxUser`, and the credential environment before
 `file-secrets.json`); record what you need from the request that wrote it.
+The same holds for every tree bound into the box, the data root and the
+sources as much as the config volume: a file the pool writes for itself and
+reads back later (a stash, a marker, a record) lives at the sandbox tree's
+root beside them, never in them. A third was proposed in the data root (the
+working-root stash of ADR 26-11-14-302) and caught in review.
 
 A machine is the exception, and only for what it boots on: a machine can be
 copied into only while it runs, so `MachineSandboxRuntime.place` copies
@@ -493,7 +498,7 @@ changed. A step added that lays a binary needs it there too.
   only what the data contract puts on the data volume (pool-agent/DESIGN.md,
   Machine Sandboxes): the declared volumes and the sources, which the
   sandbox agent wires there at every boot. The pool gives one only to a
-  machine whose volume says so for the start it is on (`dataOnVolume`, read
+  machine whose volume says so for the start it is on (`dataAndWorkingRootOnVolume`, read
   from `sandboxconfig.MachineDataWiredFile` and this start's token after
   every start, never kept from an earlier one), never on the driver's
   volume alone:
