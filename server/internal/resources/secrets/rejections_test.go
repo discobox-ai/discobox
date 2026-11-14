@@ -258,6 +258,107 @@ func TestARenewalThatFixesNothingIsNotRecoveryTwice(t *testing.T) {
 	}
 }
 
+// The renewal memory is per value. A person saving a new login over a
+// credential the control plane just renewed has replaced the value the renewal
+// was spent on: the new login has never been renewed, and its first refusal is
+// judged afresh — renewed, not condemned. A second refusal of that same value
+// inside the cooldown is the renewal that fixed nothing, as before.
+func TestAReplacedValueIsNotJudgedUnderTheRenewalOfTheOneItReplaced(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	var minted atomic.Int32
+	rotating := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
+		n := minted.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  fmt.Sprintf("rotated-%d", n),
+			"refresh_token": fmt.Sprintf("refresh-%d", n),
+			"expires_in":    3600,
+			"token_type":    "Bearer",
+		})
+	}))
+	t.Cleanup(rotating.Close)
+
+	sec := mustOAuthSecret(t, st, "claude", model.SecretValue{
+		Token:                "old-access",
+		RefreshToken:         "old-refresh",
+		TokenURL:             rotating.URL,
+		ClientID:             "client-1",
+		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
+	})
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
+	createSandbox(t, st, "sb-1", "pool-1")
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
+	generation := func() string {
+		t.Helper()
+		stored, err := st.GetSecret(ctx, "project-1", sec.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stored.ValueGeneration()
+	}
+
+	// The old login is refused and renewed. A control-plane renewal keeps the
+	// generation.
+	old := generation()
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, old); err != nil {
+		t.Fatalf("record rejection of the old login: %v", err)
+	}
+	if n := minted.Load(); n != 1 {
+		t.Fatalf("renewals = %d, want the old login renewed once", n)
+	}
+	if got := generation(); got != old {
+		t.Fatalf("generation after a renewal = %q, want it kept at %q", got, old)
+	}
+
+	// A person signs in again and saves the new login over the secret.
+	value := apimodel.SecretValue{
+		Token:                serverapi.NewOptString("new-access"),
+		RefreshToken:         serverapi.NewOptString("new-refresh"),
+		TokenUrl:             serverapi.NewOptString(rotating.URL),
+		ClientId:             serverapi.NewOptString("client-1"),
+		AccessTokenExpiresAt: serverapi.NewOptInt64(time.Now().Add(time.Hour).UnixMilli()),
+	}
+	if _, err := svc.UpdateSecret(ctx, "project-1", sec.ID, apimodel.UpdateSecretBody{
+		Value: serverapi.NewOptSecretValue(value),
+	}); err != nil {
+		t.Fatalf("replace secret value: %v", err)
+	}
+	replaced := generation()
+	if replaced == old {
+		t.Fatalf("generation = %q after a replacement, want it moved", replaced)
+	}
+
+	// The new login's first refusal is a first refusal: it is renewed, and
+	// nothing is recorded.
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, replaced); err != nil {
+		t.Fatalf("record first rejection of the new login: %v", err)
+	}
+	if n := minted.Load(); n != 2 {
+		t.Fatalf("renewals = %d, want the new login renewed: no renewal was ever spent on it", n)
+	}
+	if got := mustRejections(t, st); len(got) != 0 {
+		t.Fatalf("rejections = %v, want none: the new login was judged under the old one's renewal", got)
+	}
+
+	// Refused again inside the cooldown, the same value is the renewal that
+	// fixed nothing.
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, replaced); err != nil {
+		t.Fatalf("record second rejection of the new login: %v", err)
+	}
+	if n := minted.Load(); n != 2 {
+		t.Fatalf("renewals = %d, want no further renewal of the same value inside the cooldown", n)
+	}
+	got := mustRejection(t, st, sec.ID, "api.anthropic.com")
+	if got.Reason != model.SecretRejectionReasonRejectedAfterRefresh {
+		t.Fatalf("reason = %q, want %q", got.Reason, model.SecretRejectionReasonRejectedAfterRefresh)
+	}
+}
+
 // A credential is refused per destination. One that answers for one host and is
 // refused at another is two different facts, and condemning the credential
 // outright would be the wrong one.

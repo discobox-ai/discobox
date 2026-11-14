@@ -550,9 +550,9 @@ request carries the new value.
 
 **Only an answer is a verdict** (`renewal`, in `oauth.go`). A 4xx from the token
 endpoint is a refusal and is recorded; an unreachable or 5xx endpoint, a value
-that will not decrypt, and a forced refresh that joined a *non*-forced one on
-the shared singleflight are all `renewalUnavailable` — nothing is recorded, and
-the next report tries again. Recording one of those would ask a person to redo a
+that will not decrypt, a forced refresh that joined a *non*-forced one on the
+shared singleflight, and a value replaced since it was refused (below) are all
+`renewalUnavailable` — nothing is recorded, and the next report tries again. Recording one of those would ask a person to redo a
 sign-in they do not need, and then suppress the renewal that would have worked.
 
 Three windows bound the work, and they are deliberately different lengths: the
@@ -563,6 +563,10 @@ longest because it guards a refresh token that rotates on use, and it is what
 stops the quiet failure: a lapsed subscription can hold a good refresh token, so
 every rejection would renew happily, read as recovered, record nothing, and be
 refused again a minute later — forever, with nothing on screen.
+The renewal memory is per value: it holds the generation the renewal was spent
+on, which a renewal in place keeps, so a value a person saved since has never
+been renewed and its first refusal is judged afresh, renewed rather than
+condemned.
 
 What is stored is live state, not history: one `SecretRejection` per secret and
 host, cleared when the value is replaced, when an `accepted` report retracts it,
@@ -580,7 +584,11 @@ upstream answered for. One about a value since replaced is not judged: a dead
 login reported after a new one was saved over it would otherwise force a
 renewal of the new login — spending its rotating refresh token — or clear what
 was recorded about it (#1022). A report naming no generation, from an agent
-that predates them, is about the value stored now. The same generation is what
+that predates them, is about the value stored now. The forced renewal holds to the
+same rule a second time: it names the generation that was refused, and the
+singleflight's re-read of the row renews nothing if a person replaced the value
+in between (`errValueReplaced`), so the new login's refresh token is never spent
+on, nor remembered against, a refusal it never drew. The same generation is what
 a pool drops a replaced value by ([`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)).
 
 Replacing a value clears the rejections on it in `store.UpdateSecret`, which is

@@ -37,11 +37,11 @@ type Service struct {
 	// renewing collapses concurrent resolves of the same OAuth secret onto a single upstream renewal, so a rotating refresh token is
 	// spent once.
 	renewing singleflight.Group
-	// renewals is when a rejection last forced a renewal of each credential,
-	// which bounds how often a refused credential may spend a refresh token.
-	// See renewedRecently.
+	// renewals is, per secret ID, the value generation a rejection last forced
+	// a renewal of and when, which bounds how often a refused value may spend
+	// a refresh token. See renewedRecently.
 	renewalsMu sync.Mutex
-	renewals   map[string]time.Time
+	renewals   map[string]spentRenewal
 	// holders marks the sentinel delivery of the discoboxes a change reaches,
 	// in the transaction that makes it, so each is sent the result.
 	holders SecretHolders

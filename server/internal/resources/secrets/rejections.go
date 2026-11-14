@@ -187,14 +187,14 @@ func (s *Service) judgeRejection(ctx context.Context, secret *model.Secret) verd
 		// An API key is what was stored, and what was stored was refused.
 		return verdict(model.SecretRejectionReasonUnrefreshable)
 	}
-	if s.renewedRecently(secret.ID) {
+	if s.renewedRecently(secret) {
 		// This credential was renewed a moment ago and is being refused again.
 		// The renewal is not the answer, whatever the token endpoint says.
 		return verdict(model.SecretRejectionReasonRejectedAfterRefresh)
 	}
 	switch s.forceRenew(ctx, secret) {
 	case renewalRotated:
-		s.noteRenewal(secret.ID)
+		s.noteRenewal(secret)
 		return verdictRecovered
 	case renewalRefused:
 		// The endpoint refused to renew: the refresh token is spent, revoked,
@@ -211,30 +211,43 @@ func (s *Service) judgeRejection(ctx context.Context, secret *model.Secret) verd
 	return verdictUnknown
 }
 
-// renewedRecently reports whether a rejection already spent a renewal on this
-// credential inside the cooldown.
+// renewedRecently reports whether a rejection already spent a renewal on the
+// value this credential holds, inside the cooldown.
 //
 // It is in memory rather than on the row, because the case it exists for is the
 // one where no row was written: a renewal that succeeded, cleared everything,
 // and fixed nothing. A restart forgets it and costs one further refresh, which
 // is the right way for this to fail.
-func (s *Service) renewedRecently(secretID string) bool {
+//
+// It is per value (ADR 26-11-11-539 §2). A renewal in place keeps the
+// generation, so a value the control plane renewed itself is still held to the
+// cooldown (ADR 0132 §3); a value a person replaced since has never been
+// renewed, and its first refusal is judged afresh.
+func (s *Service) renewedRecently(secret *model.Secret) bool {
 	s.renewalsMu.Lock()
 	defer s.renewalsMu.Unlock()
-	at, ok := s.renewals[secretID]
-	return ok && time.Since(at) < rejectionRefreshCooldown
+	last, ok := s.renewals[secret.ID]
+	return ok && last.generation == secret.ValueGeneration() && time.Since(last.at) < rejectionRefreshCooldown
 }
 
-func (s *Service) noteRenewal(secretID string) {
+func (s *Service) noteRenewal(secret *model.Secret) {
 	s.renewalsMu.Lock()
 	defer s.renewalsMu.Unlock()
 	if s.renewals == nil {
-		s.renewals = map[string]time.Time{}
+		s.renewals = map[string]spentRenewal{}
 	}
-	s.renewals[secretID] = time.Now()
+	s.renewals[secret.ID] = spentRenewal{generation: secret.ValueGeneration(), at: time.Now()}
 	// Nothing sweeps this: a credential that was renewed once and never
-	// rejected again leaves one timestamp behind, and the set is bounded by the
-	// project's secrets.
+	// rejected again leaves one entry behind, and the set is bounded by the
+	// project's secrets — a renewal of a later generation replaces the entry
+	// rather than adding one.
+}
+
+// spentRenewal is the value a rejection last forced a renewal of, by its
+// generation, and when.
+type spentRenewal struct {
+	generation string
+	at         time.Time
 }
 
 func (s *Service) recordRejection(ctx context.Context, projectID, secretID, host, reason, sandboxID string) error {
