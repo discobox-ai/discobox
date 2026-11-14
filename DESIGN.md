@@ -498,11 +498,16 @@ a 7.x guest kernel among other things, in #1133.
 - **One pin.** Each Dockerfile carries the same two build arguments:
   `DEBIAN_IMAGE`, a dated `debian:sid-YYYYMMDD-slim` by digest, and
   `DEBIAN_SNAPSHOT`, the snapshot.debian.org timestamp apt reads instead of
-  the moving archive. No stage adds another suite or an apt pin. A Dockerfile
+  the moving archive, over http, since the sid image has no CA certificates
+  until apt installs them. apt verifies every index against Debian's archive
+  key; because a snapshot needs `Check-Valid-Until: no`, which would let any
+  older signed index pass, an apt hook (`discobox-apt-snapshot`) fails every
+  update whose sid index is not dated within the day before the snapshot. No stage adds another suite or an apt pin. A Dockerfile
   cannot import another, so `scripts/debian-pin.sh` keeps the copies one:
   `go tool task check:debian` (in `ci:check`) fails on two values, an image
   not older than the snapshot's day, a stage built on any other base, another
-  suite named in a build, or an apt pin.
+  suite named in a build, an apt pin, an https snapshot source, or a snapshot
+  source without that hook.
 - **Bumping it** is `go tool task debian:bump SNAPSHOT=<YYYYMMDDTHHMMSSZ>`,
   a snapshot listed at `https://snapshot.debian.org/archive/debian/`: it moves
   every copy to that snapshot and to the newest dated sid image from a day
