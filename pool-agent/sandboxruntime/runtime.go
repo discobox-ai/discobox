@@ -27,6 +27,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/layout"
@@ -2800,7 +2801,7 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 			if dialErr != nil {
 				lastErr = dialErr
 			} else {
-				lastErr = sandboxAgentHealthy(ctx, dial)
+				_, lastErr = sandboxAgentHealth(ctx, dial)
 				if lastErr == nil {
 					return nil
 				}
@@ -2817,22 +2818,30 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 	}
 }
 
-// sandboxAgentHealthy asks the sandbox-agent's /healthz once, over dial.
-func sandboxAgentHealthy(ctx context.Context, dial Dialer) error {
+// sandboxAgentHealth asks the sandbox-agent's /healthz once, over dial, and
+// is what it answers: an error unless it answers 2xx. A body that does not
+// decode says no more than that it is healthy, as an agent too old to name
+// its layer does (agentlayer.Health).
+func sandboxAgentHealth(ctx context.Context, dial Dialer) (agentlayer.Health, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, HTTPURL(SandboxAgentPort, "/healthz").String(), nil)
 	if err != nil {
-		return err
+		return agentlayer.Health{}, err
 	}
 	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
 	if err != nil {
-		return err
+		return agentlayer.Health{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return agentlayer.Health{}, fmt.Errorf("sandbox-agent health returned %s", resp.Status)
+	}
+	var health agentlayer.Health
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&health); err != nil {
+		health = agentlayer.Health{}
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("sandbox-agent health returned %s", resp.Status)
-	}
-	return nil
+	return health, nil
 }
 
 func sandboxAgentTerminalStateError(sb *Sandbox) error {

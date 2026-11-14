@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/vm/pkg/engine"
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -308,7 +309,7 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		return err
 	}
 	if pending != nil {
-		if err := r.writePlaced(sandboxID, *pending); err != nil {
+		if err := r.recordForcedPlacement(ctx, sandboxID, *pending); err != nil {
 			return err
 		}
 	}
@@ -318,6 +319,50 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		slog.WarnContext(ctx, "read whether a sandbox machine keeps its data on its volume", "sandboxId", sandboxID, "error", err)
 	}
 	return nil
+}
+
+// recordForcedPlacement records a placement a machine was forced off on its
+// way to booting on, now that its agent has answered, once that agent says it
+// runs from the layer placed. The copy of a new layer made before the stop may
+// not have reached the machine's disk, and an older agent still on it — the
+// layer it held before, or a snapshot's — answers then, naming its own:
+// recorded, every later start would skip the layer and start no agent.
+// Unrecorded, the running machine's placement is not current
+// (answersRunning), so its next request places the layer again and restarts
+// it onto it.
+//
+// An agent that names no layer — one too old to say — or a health read that
+// fails says nothing of which agent runs. Where the instance held no other
+// layer by the pool's record — a first placement, or a move of its pins or
+// bootstrap alone — the answer the boot's wait saw proves the layer anyway,
+// since a lost copy would have left no agent to give it, and it is recorded;
+// so a machine whose agent is too old to name its layer is not restarted at
+// every request. On a move from another layer it proves nothing, and the
+// placement is left unrecorded: not knowing costs one restart rather than a
+// record that may be false. The caller holds the sandbox's power lock.
+func (r *MachineSandboxRuntime) recordForcedPlacement(ctx context.Context, sandboxID string, placement placedRecord) error {
+	before, had, err := r.readPlaced(sandboxID)
+	if err != nil {
+		return err
+	}
+	moved := had && before.Container == placement.Container && before.Layer != placement.Layer
+	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	var health agentlayer.Health
+	if err == nil {
+		health, err = sandboxAgentHealth(ctx, dial)
+	}
+	switch {
+	case err == nil && health.Layer == placement.Layer:
+	case err == nil && health.Layer != "":
+		slog.WarnContext(ctx, "a sandbox machine forced off on its way to an agent layer runs another; it is placed again at its next request",
+			"sandboxId", sandboxID, "placed", placement.Layer, "running", health.Layer)
+		return nil
+	case moved:
+		slog.WarnContext(ctx, "a sandbox machine forced off on its way to a new agent layer does not say which it runs; it is placed again at its next request",
+			"sandboxId", sandboxID, "placed", placement.Layer, "error", err)
+		return nil
+	}
+	return r.writePlaced(sandboxID, placement)
 }
 
 // remakeFresh makes again, fresh from the driver's base, a sandbox's machine
