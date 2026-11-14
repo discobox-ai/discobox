@@ -1421,8 +1421,8 @@ agent's published port, or the pool never registers.
   the box's own Docker daemon carries: build `disco-vm` from the module
   cache's copy (`cp -r $(go env GOMODCACHE)/github.com/discobox-ai/vm@<ver>/.
   <scratch>/vmsrc`, `chmod -R u+w`, `GOWORK=off CGO_ENABLED=0 go build
-  ./cmd/disco-vm`), pull `debian:trixie`, and set `DISCO_VM_DRIVER=docker
-  DISCO_VM_BASE=debian:trixie DISCO_VM_AGENT=<that binary>
+  ./cmd/disco-vm`), pull `debian:sid`, and set `DISCO_VM_DRIVER=docker
+  DISCO_VM_BASE=debian:sid DISCO_VM_AGENT=<that binary>
   DISCO_VM_DOCKER_ROOT=<scratch dir> DISCO_VM_POOL=<yours>`. `disco-vm run
   NAME --data 0 --cache NAME` makes one; `disco-vm cp SRC NAME:DIR` copies
   *into* DIR (a file path names a directory to make), so stage files in a
@@ -1436,7 +1436,7 @@ agent's published port, or the pool never registers.
   files are gone; place and wire again and the home and checkout are back.
   `disco-vm rm --force` cleans up (the scratch root keeps root-owned
   directories). The pool runtime's side is `TestMachineNewRootOnDocker`, run
-  with `DISCO_VM_DOCKER_IMAGE=debian:trixie` and `DISCO_VM_AGENT` set.
+  with `DISCO_VM_DOCKER_IMAGE=debian:sid` and `DISCO_VM_AGENT` set.
 
 # Verifying an upgrade from a release (server first, pool agents after)
 

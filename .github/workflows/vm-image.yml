@@ -37,10 +37,11 @@ on:
       - "pkg/vsock/**"
       - "pool-agent/cmd/discobox-vsock-guest/**"
       - ".github/workflows/vm-image.yml"
-  # A VM image release is mostly a distribution snapshot, so it is rebuilt on a
-  # cadence even when nothing in this repository changed. This run only builds:
-  # publishing stays tag-driven so a security rebuild is still a deliberate
-  # release someone pins.
+  # Rebuilt on a cadence even when nothing in this repository changed. apt is
+  # pinned to a Debian snapshot, so this installs what the last build did and
+  # proves the pinned build still builds; security fixes arrive by bumping
+  # the Debian pin (`task debian:bump`). This run only builds: publishing stays
+  # tag-driven, a release someone pins.
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:

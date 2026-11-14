@@ -1,6 +1,26 @@
-# Build natively on the host platform and cross-compile, so the platform
+# Go is Debian sid's own, from the repository's one Debian pin (see "Debian"
+# in the root DESIGN.md): there is no golang image on sid. Built natively on
+# the host platform and cross-compiled, so the platform
 # bundle's every architecture is built with nothing emulated.
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS sandbox-agent-builder
+ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
+ARG DEBIAN_SNAPSHOT=20261111T202414Z
+
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS go
+ARG DEBIAN_SNAPSHOT
+RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates golang-go \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+# The snapshot's Go is the Go that builds: a go.mod that asks for a newer one
+# fails here, rather than fetching a toolchain nothing pins (Debian's Go
+# defaults to GOTOOLCHAIN=auto). Moving to it is a bump of the Debian pin.
+ENV GOPATH=/go GOTOOLCHAIN=local
+
+FROM go AS sandbox-agent-builder
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src
@@ -90,7 +110,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # the agent whenever any of that changed. The directories are the root-module
 # packages it imports (go list -deps ./cli/cmd/discobox), then its own module
 # and termpane, which its go.mod replaces with the paths beside it.
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS discobox-cli-builder
+FROM go AS discobox-cli-builder
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src

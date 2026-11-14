@@ -16,9 +16,20 @@
 # krun_set_kernel, plus the config it was built with, so what booted can be read
 # back off the artifact.
 
-FROM public.ecr.aws/docker/library/debian:13-slim AS build
+# The build runs on the repository's one Debian pin, sid like every other
+# Debian stage (see "Debian" in the root DESIGN.md). Only the toolchain is
+# Debian's: the kernel it builds is libkrunfw's, whatever Debian ships.
+ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
+ARG DEBIAN_SNAPSHOT=20261111T202414Z
 
-RUN apt-get update \
+FROM ${DEBIAN_IMAGE} AS build
+ARG DEBIAN_SNAPSHOT
+
+RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         bc \
         binutils \

@@ -22,8 +22,10 @@ paths for exactly that reason.
 
 Publishing is tag-driven only: `vm:publish` / `vm:publish-kernel` push to
 `ghcr.io` and report the digest to pin. The scheduled runs — weekly for the
-guest, monthly for the kernel — build and verify but never publish, so a
-security rebuild is still a release someone deliberately pins.
+guest, monthly for the kernel — build and verify but never publish. With apt
+pinned to a snapshot they install what the last build did, so they prove the
+pinned build still builds (the snapshot and image are still there); security
+fixes reach the guest only by a bump of the Debian pin, then a release.
 
 The server pins digests (`guestimage.DefaultVMImage` for the guest, libkrun's
 `DefaultKernelImage` for the kernel), so the three lines — product, guest,
@@ -104,6 +106,21 @@ The clock timer is the same shape of tolerance: every 30 seconds it steps the
 guest clock from a host-backed RTC, and its service is conditioned on that RTC
 existing, so where there is none it never runs.
 
+## Debian sid, and its kernel
+
+The guest is Debian sid, on the repository's one Debian pin (see
+[Debian](../DESIGN.md#debian)). `vz` boots the kernel that comes with that
+root, sid's `linux-image-<arch>`; trixie's 6.12 was the guest of #1101's hard
+lockup. No apt pin mixes suites, so the kernel moves when the pin does and at
+no other time, and a bump of the pin is a guest release to verify like any
+other.
+
+What the guest needs of that kernel is checked on every build. Assembly fails
+on a kernel built without the soft and hard lockup detectors, which leave
+with `/boot`. `vm:verify` fails on an artifact whose kernel lost a module the
+guest loads on demand: Docker's netfilter (nftables, conntrack, `nft_compat`)
+and bridge, overlay, the VSOCK transport, and the virtio disk and NIC.
+
 ## Why the kernel is not one of them
 
 libkrun boots a kernel directly through libkrunfw's patched entry paths, so no
@@ -111,22 +128,25 @@ distribution kernel boots under it. `vz` is stock virtio and takes Debian's,
 which is why ADR 0062 §8 declined to build one at all.
 
 `kernel/` is therefore a separate artifact with a separate release line, not a
-stage of the guest build. The inputs move on unrelated clocks — this changes
+stage of the guest build. Its build stage follows the Debian pin, so a bump of the pin
+rewrites `kernel/Dockerfile` and rebuilds it (`vm-kernel.yml` builds; it
+publishes only on its own tag), though the kernel it builds does not change. The inputs move on unrelated clocks — this changes
 when libkrunfw or upstream Linux does, the guest when Debian or Docker does —
 and folding them together would make every guest rebuild compile a kernel and
 every kernel bump republish a userland (ADR 0101 §3).
 
 It builds libkrunfw's patched Linux from a checksum-pinned libkrunfw commit and
-kernel tarball. `configure-kernel` then builds in what libkrunfw's compact
-nftables-only baseline leaves out and the guest needs — Docker's `x_tables` /
-`iptables-nft` compatibility, `PACKET` for the DHCP client, macvlan, ipvlan,
-VXLAN and 802.1Q — and turns off the one baseline setting the guest cannot
-live with, `BASE_SMALL`, which caps `pid_max` at 32768 for the whole pool VM
-(boots it at a few thousand) and fails `systemd-sysctl` on Debian's
-`50-pid-max.conf`. It fails the build if `olddefconfig` drops any required
-setting or keeps `BASE_SMALL`. The output is an ELF `vmlinux`, which libkrun
-loads with no initramfs, plus the `kernel.config` it was built from, so what
-booted can be read back off the artifact.
+kernel tarball, with sid's toolchain: only the build stage follows the Debian
+pin, never the kernel. `configure-kernel` then builds in what libkrunfw's
+compact nftables-only baseline leaves out and the guest needs — Docker's
+`x_tables` / `iptables-nft` compatibility, `PACKET` for the DHCP client,
+macvlan, ipvlan, VXLAN and 802.1Q — and turns off the one baseline setting the
+guest cannot live with, `BASE_SMALL`, which caps `pid_max` at 32768 for the
+whole pool VM (boots it at a few thousand) and fails `systemd-sysctl` on
+Debian's `50-pid-max.conf`. It fails the build if `olddefconfig` drops any
+required setting or keeps `BASE_SMALL`. The output is an ELF `vmlinux`, which
+libkrun loads with no initramfs, plus the `kernel.config` it was built from, so
+what booted can be read back off the artifact.
 
 The guest build still installs `linux-image-<arch>` on both architectures, so it
 has no per-backend branch in it. Assembly publishes `vmlinux` only where it can

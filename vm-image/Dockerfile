@@ -19,10 +19,43 @@
 # the libkrunfw-patched kernel, which is a separate artifact with its own
 # release line (kernel/Dockerfile), and it ignores the one this build lifts out
 # of the distribution package.
+#
+# Every stage is Debian sid: the image pinned by digest, apt pinned to a
+# snapshot.debian.org timestamp. They are the repository's one Debian pin, the
+# same two values in every Dockerfile that builds on Debian; see "Debian" in
+# the root DESIGN.md, and `go tool task debian:bump` to move them.
+ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
+ARG DEBIAN_SNAPSHOT=20261111T202414Z
 
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27-trixie AS guest-tools
+# The stages that run on the target architecture start here, with apt reading
+# the pinned snapshot and never the moving archive. Check-Valid-Until is off
+# because a snapshot's Release file expires a week after it was taken.
+FROM ${DEBIAN_IMAGE} AS debian
+ARG DEBIAN_SNAPSHOT
+RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries
+
+# Go is sid's own, at the snapshot: there is no golang image on sid. Built
+# natively on the host platform and cross-compiled, so nothing is emulated.
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS guest-tools
+ARG DEBIAN_SNAPSHOT
 ARG TARGETOS=linux
 ARG TARGETARCH
+
+RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates golang-go \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+# The snapshot's Go is the Go that builds: a go.mod that asks for a newer one
+# fails here, rather than fetching a toolchain nothing pins (Debian's Go
+# defaults to GOTOOLCHAIN=auto). Moving to it is a bump of the Debian pin.
+ENV GOPATH=/go GOTOOLCHAIN=local
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -35,7 +68,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/discobox-vsock-guest ./cmd/discobox-vsock-guest
 
-FROM public.ecr.aws/docker/library/debian:13-slim AS rootfs
+FROM debian AS rootfs
 ARG TARGETARCH
 
 ENV container=discobox-vm
@@ -54,6 +87,11 @@ RUN printf '%s\n' \
 # stock virtio needs no patched kernel (ADR 0062 §8). It is installed on every
 # architecture so this build has no per-backend branch in it, and a backend that
 # brings its own kernel simply does not ask for the one assembly lifts out.
+#
+# It is sid's kernel because the root is sid, the repository's one Debian,
+# with no apt pin taking it from anywhere else. zstd is listed because sid's
+# initramfs-tools no longer pulls it in, and without it COMPRESS=zstd below
+# quietly falls back to gzip.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -68,6 +106,7 @@ RUN apt-get update \
         systemd-resolved \
         systemd-sysv \
         util-linux \
+        zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -125,6 +164,7 @@ RUN set -eux; \
         /etc/initramfs-tools/initramfs.conf; \
     grep -q '^MODULES=list$' /etc/initramfs-tools/initramfs.conf; \
     grep -q '^COMPRESS=zstd$' /etc/initramfs-tools/initramfs.conf; \
+    command -v zstd; \
     if ls /boot/initrd.img-* >/dev/null 2>&1; then \
         update-initramfs -u -k all; \
     else \
@@ -134,6 +174,8 @@ RUN set -eux; \
 # systemd-logind is masked, not merely unused: a headless guest has no seats and
 # no PAM sessions, so it fails and is restarted in a loop that floods the serial
 # console — the one diagnostic available for a guest whose Docker never answers.
+# Its varlink socket goes with it: sid's systemd starts that socket on its own,
+# and with the service masked it fails to listen, a red line on every boot.
 #
 # systemd-networkd-persistent-storage is masked for the same reason and a
 # simpler one: it saves lease state under /var/lib/systemd, the root is
@@ -145,6 +187,7 @@ RUN systemctl mask \
         dev-hugepages.mount \
         getty.target \
         systemd-logind.service \
+        systemd-logind-varlink.socket \
         systemd-firstboot.service \
         systemd-networkd-persistent-storage.service \
         systemd-random-seed.service \
@@ -191,7 +234,7 @@ RUN mkdir -p \
         systemd-networkd-wait-online.service \
         systemd-resolved.service
 
-FROM public.ecr.aws/docker/library/debian:13-slim AS assemble
+FROM debian AS assemble
 ARG TARGETARCH
 ARG ROOT_SLACK_MIB=32
 

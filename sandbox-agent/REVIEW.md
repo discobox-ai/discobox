@@ -37,7 +37,7 @@
   not assume it.
 
 - **A feature that differs on Ubuntu is checked on Ubuntu.** The sandbox base
-  image is Debian 13, so no box of a Docker pool provisions a feature's
+  image is Debian sid, so no box of a Docker pool provisions a feature's
   `ubuntu:` list or a step selected by `when: {distro: [ubuntu]}` — the paths
   exe.dev's and boxd's Ubuntu 24.04 machines take. `task
   build:ubuntu-sandbox-base` builds the base on Ubuntu 24.04; point a pool at

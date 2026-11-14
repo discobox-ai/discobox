@@ -81,3 +81,12 @@ together, where before it broke one".
   depends on the Docker this guest installs, not on current moby: Debian's
   Docker 26 writes `buildkit/history.db` in both stores. Check a list change
   against a guest booted on each store.
+- **The guest's Debian is the repository's one pin.** Every stage is sid, from
+  `DEBIAN_IMAGE` and `DEBIAN_SNAPSHOT`; never add an apt pin, a second suite,
+  or another base to take one package from elsewhere. A broken sid package is
+  answered with a nearer snapshot (`go tool task debian:bump`).
+  `check:debian` catches a literal base, a suite named in a build, and an apt
+  pin, but not a stage that fetches packages some other way (a `.deb` by URL,
+  a tarball): that is still review's to catch. Bumping the pin moves the guest
+  kernel, so it is a guest release: `vm:verify` on both architectures and a
+  boot on each backend.

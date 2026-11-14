@@ -248,11 +248,12 @@ also supply startup cache staging; see
 ## Sandbox Base Image
 
 The Docker driver owns its sandbox base image
-(`dockerworker/sandbox-image/Dockerfile`, ADR 26-10-16-423 §10): Debian 13,
+(`dockerworker/sandbox-image/Dockerfile`, ADR 26-10-16-423 §10): Debian sid,
 systemd, Docker socket-activated, a uid-1000 `discobox` login user and the
 tools exe.dev's and boxd's images share. Those two are Ubuntu; the base is
-Debian because Debian's mirrors are the faster to build from, and the
-platform's features provision onto either. Every sandbox container runs it,
+Debian sid, the repository's one Debian ([Debian](../../DESIGN.md#debian)),
+and the platform's features provision onto either. Docker CE comes from
+Docker's trixie suite, since Docker has none for sid. Every sandbox container runs it,
 with the platform's and its harness's features provisioned on top, and a
 Docker pool's own container runs it too, provisioned as a pool
 ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
