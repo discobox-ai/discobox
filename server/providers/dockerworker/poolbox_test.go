@@ -146,3 +146,21 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 		t.Fatalf("moved bundles under newer intent: err %v, enrolled %v; want begin's error and nothing applied", err, moved.enrolled)
 	}
 }
+
+// A backend whose pools each run their own daemon tells the agent so in its
+// bootstrap, which is what lets it count the daemon's images and layers
+// against the pool's disk; one that does not says nothing, and the agent
+// counts its daemon as shared (ADR 26-11-14-896 §4).
+func TestPoolBootstrapSaysWhetherTheDaemonIsThePools(t *testing.T) {
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
+	for _, dedicated := range []bool{true, false} {
+		engine := &Engine{cfg: Config{DedicatedDaemon: dedicated}}
+		bootstrap, err := engine.poolBootstrap(context.Background(), pool, &fakeMaker{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bootstrap.DedicatedDaemon != dedicated {
+			t.Errorf("an engine with DedicatedDaemon %v wrote a bootstrap with %v", dedicated, bootstrap.DedicatedDaemon)
+		}
+	}
+}

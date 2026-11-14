@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 // FilesystemUsage is one filesystem as statfs describes it.
@@ -42,7 +43,9 @@ func scaleBlocks(blocks, blockSize uint64) int64 {
 	return int64(blocks * blockSize)
 }
 
-// SandboxStorage is one sandbox's durable footprint, by the tree that holds it.
+// SandboxStorage is one sandbox's footprint: everything on the pool's disk
+// that is its own, which nothing else uses and which goes when it is purged
+// (ADR 26-11-14-896 §1).
 //
 // There is deliberately no cache figure here. Cache is one pool-shared tree
 // keyed by the target path a harness declared and, for every path that did not
@@ -58,7 +61,16 @@ type SandboxStorage struct {
 	SourcesBytes int64  `json:"sourcesBytes"`
 	SecretsBytes int64  `json:"secretsBytes"`
 	OriginsBytes int64  `json:"originsBytes"`
-	TotalBytes   int64  `json:"totalBytes"`
+	// LayerBytes is its container's writable layer, where its root
+	// filesystem outside its volumes lives. Nil where the runtime keeps no
+	// box on this pool's disk, or the sweep could not ask its daemon; zero
+	// for a box with no container.
+	LayerBytes *int64 `json:"layerBytes,omitempty"`
+	// RecordingBytes is what the pool proxy recorded of its traffic: its
+	// body and stream spools.
+	RecordingBytes int64 `json:"recordingBytes"`
+	// TotalBytes is every figure above, summed.
+	TotalBytes int64 `json:"totalBytes"`
 }
 
 // PoolStorage is what this pool holds on disk.
@@ -95,11 +107,13 @@ type PoolStorageWalk struct {
 	DurationMillis  int64     `json:"durationMillis"`
 	IntervalSeconds float64   `json:"intervalSeconds"`
 	NextScanAt      time.Time `json:"nextScanAt"`
-	// DataBytes is every sandbox's durable tree, summed. It is the sandboxes'
-	// own storage and nothing shared — each tree holds that sandbox's home,
-	// its sources and its nested container store, which are its own copies
-	// rather than links into anything, so the sum is real disk rather than one
-	// tree counted N times.
+	// DataBytes is every sandbox's own figure (SandboxStorage.TotalBytes),
+	// summed: its trees, its container's writable layer and its recordings.
+	// It is the sandboxes' own storage and nothing shared — each tree holds
+	// that sandbox's home, its sources and its nested container store, which
+	// are its own copies rather than links into anything, so the sum is real
+	// disk rather than one tree counted N times. On a shared daemon its
+	// layers may be on another filesystem (DaemonShared).
 	DataBytes int64 `json:"dataBytes"`
 	// CacheBytes is the pool's shared cache tree, counted once for the pool
 	// because that is exactly what it is.
@@ -107,6 +121,37 @@ type PoolStorageWalk struct {
 	// BuildBytes is buildkitd's store and the pool registry's blobs, which no
 	// sandbox can reach and which no sandbox figure accounts for (ADR 0050).
 	BuildBytes int64 `json:"buildBytes"`
+	// ProxyCacheBytes is the pool proxy's response cache, shared by the
+	// pool's sandboxes as the cache tree is.
+	ProxyCacheBytes int64 `json:"proxyCacheBytes"`
+	// ProxyAuditBytes is the proxy's audit database, with its write-ahead
+	// log and shared-memory files.
+	ProxyAuditBytes int64 `json:"proxyAuditBytes"`
+	// ProxyRecordingBytes is the spools no sandbox in this sweep owns: a
+	// purged sandbox's from before a purge took them, and a client's that is
+	// no sandbox. Every other spool is on its sandbox's row.
+	ProxyRecordingBytes int64 `json:"proxyRecordingBytes"`
+	// ImageBytes is the daemon's images that are Discobox's, each layer
+	// counted once on a dedicated daemon and estimated on a shared one
+	// (DockerSandboxRuntime.DiskUsage), charged to the pool and never split across the sandboxes
+	// that run them (ADR 26-11-14-896 §2). Nil where the runtime has no
+	// daemon on this pool's disk, or its daemon did not answer this sweep:
+	// absent, not zero.
+	ImageBytes *int64 `json:"imageBytes,omitempty"`
+	// OtherLayerBytes is the writable layers of this pool's containers that
+	// are no sandbox's, such as a snapshot build's. Nil as ImageBytes is.
+	OtherLayerBytes *int64 `json:"otherLayerBytes,omitempty"`
+	// OtherFilesystemBytes is how much of the walked figures above is on a
+	// filesystem other than the one Filesystem measures: a VM pool keeps its
+	// cache and build trees on a disk of their own. A reader comparing what
+	// is attributed with the filesystem's used figure leaves it out.
+	OtherFilesystemBytes int64 `json:"otherFilesystemBytes,omitempty"`
+	// DaemonShared is whether the daemon those are measured on is shared with
+	// anything but this pool, so its storage may be on another filesystem
+	// and hold what is not Discobox's: a reader subtracts the images and
+	// layers from the filesystem's used figure only when it is not (ADR
+	// 26-11-14-896 §4).
+	DaemonShared bool `json:"daemonShared,omitempty"`
 	// Sandboxes is this sweep's per-sandbox result. It never leaves the agent
 	// on the pool's own storage record — each entry is attached to its own
 	// sandbox in the report, so the figure lives in one place.
@@ -124,7 +169,9 @@ func poolFilesystem(root layout.Root) PoolStorage {
 }
 
 // walkPoolTrees is the expensive half: one pass over every inode this pool
-// owns, so each tree can be attributed to what put it there.
+// owns, so each tree can be attributed to what put it there, joined with what
+// the runtime's own store holds for it (disk; nil when the runtime could not
+// say this sweep, which leaves those figures absent).
 //
 // sandboxIDs is what the runtime says this pool hosts. A sandbox whose tree has
 // already been reaped contributes zeroes rather than being dropped, so a
@@ -133,12 +180,41 @@ func poolFilesystem(root layout.Root) PoolStorage {
 // A canceled walk returns false and no partial result. A sweep that stopped
 // half way through would report every unvisited tree as empty, which is a
 // wrong answer rather than a missing one.
-func walkPoolTrees(ctx context.Context, root layout.Root, projectID, poolID string, sandboxIDs []string) (*PoolStorageWalk, bool) {
+func walkPoolTrees(ctx context.Context, root layout.Root, projectID, poolID string, sandboxIDs []string, disk *sandboxruntime.DiskUsage) (*PoolStorageWalk, bool) {
 	started := time.Now()
 	walk := &PoolStorageWalk{
-		CacheBytes: treeBytes(ctx, root.PoolCache(projectID, poolID)),
-		BuildBytes: treeBytes(ctx, root.PoolBuild(projectID, poolID)),
-		Sandboxes:  make([]SandboxStorage, 0, len(sandboxIDs)),
+		CacheBytes:      treeBytes(ctx, root.PoolCache(projectID, poolID)),
+		BuildBytes:      treeBytes(ctx, root.PoolBuild(projectID, poolID)),
+		ProxyCacheBytes: treeBytes(ctx, root.ProxyCache(projectID, poolID)),
+		ProxyAuditBytes: auditDatabaseBytes(root.ProxyAuditDB(projectID, poolID)),
+		Sandboxes:       make([]SandboxStorage, 0, len(sandboxIDs)),
+	}
+	// The proxy spools each client's recordings in a directory named by its
+	// ID (proxy/internal/audit: bodies/<client>, streams/<client>), so one
+	// pass over each tree attributes them all.
+	recordings, loose := clientTreeBytes(ctx, filepath.Join(root.ProxyBodies(projectID, poolID), "bodies"))
+	streams, looseStreams := clientTreeBytes(ctx, filepath.Join(root.ProxyStreams(projectID, poolID), "streams"))
+	for client, bytes := range streams {
+		recordings[client] += bytes
+	}
+	walk.ProxyRecordingBytes = loose + looseStreams
+	// A tree on another disk than the root's is not in the filesystem
+	// figure, so what it holds is said to be elsewhere.
+	rootDevice, rootKnown := statDevice(root.Dir())
+	elsewhere := func(path string, bytes int64) {
+		if device, ok := statDevice(path); ok && rootKnown && device != rootDevice {
+			walk.OtherFilesystemBytes += bytes
+		}
+	}
+	elsewhere(root.PoolCache(projectID, poolID), walk.CacheBytes)
+	elsewhere(root.PoolBuild(projectID, poolID), walk.BuildBytes)
+	elsewhere(root.ProxyCache(projectID, poolID), walk.ProxyCacheBytes)
+	elsewhere(filepath.Dir(root.ProxyAuditDB(projectID, poolID)), walk.ProxyAuditBytes)
+	measured := disk != nil && disk.Measured
+	if measured {
+		images, other := disk.ImageBytes, disk.OtherLayerBytes
+		walk.ImageBytes, walk.OtherLayerBytes = &images, &other
+		walk.DaemonShared = disk.DaemonShared
 	}
 	for _, sandboxID := range sandboxIDs {
 		entry := SandboxStorage{
@@ -148,12 +224,44 @@ func walkPoolTrees(ctx context.Context, root layout.Root, projectID, poolID stri
 			SourcesBytes: treeBytes(ctx, root.SandboxSources(projectID, poolID, sandboxID)),
 			SecretsBytes: treeBytes(ctx, root.SandboxSecrets(projectID, poolID, sandboxID)),
 			OriginsBytes: treeBytes(ctx, root.SandboxOrigins(projectID, poolID, sandboxID)),
+			// Taken out of the map, so what is left in it below is the
+			// spools no sandbox of this sweep owns.
+			RecordingBytes: recordings[sandboxID],
 		}
+		delete(recordings, sandboxID)
 		entry.TotalBytes = entry.DataBytes + entry.ConfigBytes + entry.SourcesBytes +
-			entry.SecretsBytes + entry.OriginsBytes
+			entry.SecretsBytes + entry.OriginsBytes + entry.RecordingBytes
+		if measured {
+			layer := disk.Layers[sandboxID]
+			entry.LayerBytes = &layer
+			entry.TotalBytes += layer
+		}
 		walk.DataBytes += entry.TotalBytes
 		walk.Sandboxes = append(walk.Sandboxes, entry)
 	}
+	for _, bytes := range recordings {
+		walk.ProxyRecordingBytes += bytes
+	}
+	// What is left in disk.Layers is containers of the pool's that no
+	// sandbox of this sweep owns: one created since the sandboxes were
+	// listed, or an orphan the reaper has not yet taken. They are not a
+	// row's, so they are the pool's other layers rather than nobody's.
+	var trees, recorded int64
+	rows := make(map[string]struct{}, len(walk.Sandboxes))
+	for _, entry := range walk.Sandboxes {
+		trees += entry.DataBytes + entry.ConfigBytes + entry.SourcesBytes + entry.SecretsBytes + entry.OriginsBytes
+		recorded += entry.RecordingBytes
+		rows[entry.SandboxID] = struct{}{}
+	}
+	if measured {
+		for sandboxID, layer := range disk.Layers {
+			if _, ok := rows[sandboxID]; !ok {
+				*walk.OtherLayerBytes += layer
+			}
+		}
+	}
+	elsewhere(root.PoolSandboxes(projectID, poolID), trees)
+	elsewhere(root.ProxyBodies(projectID, poolID), recorded+walk.ProxyRecordingBytes)
 	if ctx.Err() != nil {
 		return nil, false
 	}
@@ -203,6 +311,40 @@ func treeBytes(ctx context.Context, root string) int64 {
 		total += allocatedBytes(info)
 		return nil
 	})
+	return total
+}
+
+// clientTreeBytes is treeBytes of each directory under dir, by its name, and
+// of whatever lies loose in dir itself. A missing dir is no clients.
+func clientTreeBytes(ctx context.Context, dir string) (map[string]int64, int64) {
+	byClient := map[string]int64{}
+	var loose int64
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return byClient, 0
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if entry.IsDir() {
+			byClient[entry.Name()] += treeBytes(ctx, path)
+			continue
+		}
+		if info, err := entry.Info(); err == nil {
+			loose += allocatedBytes(info)
+		}
+	}
+	return byClient, loose
+}
+
+// auditDatabaseBytes is the proxy's SQLite audit database, which in WAL mode
+// is three files: the database, its write-ahead log and its shared memory.
+func auditDatabaseBytes(path string) int64 {
+	var total int64
+	for _, file := range []string{path, path + "-wal", path + "-shm"} {
+		if info, err := os.Stat(file); err == nil {
+			total += allocatedBytes(info)
+		}
+	}
 	return total
 }
 

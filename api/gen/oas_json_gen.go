@@ -29802,6 +29802,48 @@ func (s *PoolStorageWalk) encodeFields(e *jx.Encoder) {
 		e.FieldStart("buildBytes")
 		e.Int64(s.BuildBytes)
 	}
+	{
+		if s.ProxyCacheBytes.Set {
+			e.FieldStart("proxyCacheBytes")
+			s.ProxyCacheBytes.Encode(e)
+		}
+	}
+	{
+		if s.ProxyAuditBytes.Set {
+			e.FieldStart("proxyAuditBytes")
+			s.ProxyAuditBytes.Encode(e)
+		}
+	}
+	{
+		if s.ProxyRecordingBytes.Set {
+			e.FieldStart("proxyRecordingBytes")
+			s.ProxyRecordingBytes.Encode(e)
+		}
+	}
+	{
+		if s.ImageBytes.Set {
+			e.FieldStart("imageBytes")
+			s.ImageBytes.Encode(e)
+		}
+	}
+	{
+		if s.OtherLayerBytes.Set {
+			e.FieldStart("otherLayerBytes")
+			s.OtherLayerBytes.Encode(e)
+		}
+	}
+	{
+		if s.OtherFilesystemBytes.Set {
+			e.FieldStart("otherFilesystemBytes")
+			s.OtherFilesystemBytes.Encode(e)
+		}
+	}
+	{
+		if s.DaemonShared.Set {
+			e.FieldStart("daemonShared")
+			s.DaemonShared.Encode(e)
+		}
+	}
 	for k, elem := range s.AdditionalProps {
 		e.FieldStart(k)
 
@@ -29811,14 +29853,21 @@ func (s *PoolStorageWalk) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolStorageWalk = [7]string{
-	0: "observedAt",
-	1: "durationMillis",
-	2: "intervalSeconds",
-	3: "nextScanAt",
-	4: "dataBytes",
-	5: "cacheBytes",
-	6: "buildBytes",
+var jsonFieldsNameOfPoolStorageWalk = [14]string{
+	0:  "observedAt",
+	1:  "durationMillis",
+	2:  "intervalSeconds",
+	3:  "nextScanAt",
+	4:  "dataBytes",
+	5:  "cacheBytes",
+	6:  "buildBytes",
+	7:  "proxyCacheBytes",
+	8:  "proxyAuditBytes",
+	9:  "proxyRecordingBytes",
+	10: "imageBytes",
+	11: "otherLayerBytes",
+	12: "otherFilesystemBytes",
+	13: "daemonShared",
 }
 
 // Decode decodes PoolStorageWalk from json.
@@ -29826,7 +29875,7 @@ func (s *PoolStorageWalk) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode PoolStorageWalk to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 	s.AdditionalProps = map[string]jx.Raw{}
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
@@ -29913,6 +29962,76 @@ func (s *PoolStorageWalk) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"buildBytes\"")
 			}
+		case "proxyCacheBytes":
+			if err := func() error {
+				s.ProxyCacheBytes.Reset()
+				if err := s.ProxyCacheBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proxyCacheBytes\"")
+			}
+		case "proxyAuditBytes":
+			if err := func() error {
+				s.ProxyAuditBytes.Reset()
+				if err := s.ProxyAuditBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proxyAuditBytes\"")
+			}
+		case "proxyRecordingBytes":
+			if err := func() error {
+				s.ProxyRecordingBytes.Reset()
+				if err := s.ProxyRecordingBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proxyRecordingBytes\"")
+			}
+		case "imageBytes":
+			if err := func() error {
+				s.ImageBytes.Reset()
+				if err := s.ImageBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"imageBytes\"")
+			}
+		case "otherLayerBytes":
+			if err := func() error {
+				s.OtherLayerBytes.Reset()
+				if err := s.OtherLayerBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"otherLayerBytes\"")
+			}
+		case "otherFilesystemBytes":
+			if err := func() error {
+				s.OtherFilesystemBytes.Reset()
+				if err := s.OtherFilesystemBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"otherFilesystemBytes\"")
+			}
+		case "daemonShared":
+			if err := func() error {
+				s.DaemonShared.Reset()
+				if err := s.DaemonShared.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"daemonShared\"")
+			}
 		default:
 			var elem jx.Raw
 			if err := func() error {
@@ -29933,8 +30052,9 @@ func (s *PoolStorageWalk) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b01101111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -53117,6 +53237,18 @@ func (s *SandboxStorageUsage) encodeFields(e *jx.Encoder) {
 		e.Int64(s.OriginsBytes)
 	}
 	{
+		if s.LayerBytes.Set {
+			e.FieldStart("layerBytes")
+			s.LayerBytes.Encode(e)
+		}
+	}
+	{
+		if s.RecordingBytes.Set {
+			e.FieldStart("recordingBytes")
+			s.RecordingBytes.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("totalBytes")
 		e.Int64(s.TotalBytes)
 	}
@@ -53129,14 +53261,16 @@ func (s *SandboxStorageUsage) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxStorageUsage = [7]string{
+var jsonFieldsNameOfSandboxStorageUsage = [9]string{
 	0: "sandboxId",
 	1: "dataBytes",
 	2: "configBytes",
 	3: "sourcesBytes",
 	4: "secretsBytes",
 	5: "originsBytes",
-	6: "totalBytes",
+	6: "layerBytes",
+	7: "recordingBytes",
+	8: "totalBytes",
 }
 
 // Decode decodes SandboxStorageUsage from json.
@@ -53144,7 +53278,7 @@ func (s *SandboxStorageUsage) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxStorageUsage to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 	s.AdditionalProps = map[string]jx.Raw{}
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
@@ -53221,8 +53355,28 @@ func (s *SandboxStorageUsage) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"originsBytes\"")
 			}
+		case "layerBytes":
+			if err := func() error {
+				s.LayerBytes.Reset()
+				if err := s.LayerBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"layerBytes\"")
+			}
+		case "recordingBytes":
+			if err := func() error {
+				s.RecordingBytes.Reset()
+				if err := s.RecordingBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"recordingBytes\"")
+			}
 		case "totalBytes":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.TotalBytes = int64(v)
@@ -53253,8 +53407,9 @@ func (s *SandboxStorageUsage) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b01111111,
+	for i, mask := range [2]uint8{
+		0b00111111,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

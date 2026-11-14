@@ -244,10 +244,17 @@ type Runtime interface {
 	// keeps its durable tree, so it can be reinstantiated by a later create
 	// (ADR 0022 §6).
 	ArchiveSandbox(ctx context.Context, sandboxID string) error
-	// DeleteSandbox removes the container AND the durable tree, and returns
-	// only once the data is gone: the control plane's delete is confirmed
-	// rather than accepted (ADR 0022 §3).
+	// DeleteSandbox removes the container AND the durable tree, and the
+	// sandbox's audit trail in the pool proxy, and returns only once the data
+	// is gone: the control plane's delete is confirmed rather than accepted
+	// (ADR 0022 §3, ADR 26-11-14-896 §5).
 	DeleteSandbox(ctx context.Context, sandboxID string) error
+	// DiskUsage is what the runtime's own store holds for this pool, which
+	// the pool's storage sweep cannot walk: each box's writable layer, and
+	// the images and other layers (ADR 26-11-14-896 §§1-3). It is called on
+	// the sweep's schedule, never on the reporting tick, since it costs
+	// about what a walk does.
+	DiskUsage(ctx context.Context) (DiskUsage, error)
 	// ExportTree streams the sandbox's durable tree as a tar archive, and
 	// ImportTree restores one for a sandbox this pool does not hold yet. They
 	// are the two halves of moving a discobox between servers (ADR 0123), and
@@ -370,6 +377,9 @@ type DockerSandboxRuntime struct {
 	// sandboxBaseImage is the provider's sandbox base image, which every
 	// sandbox delivered its platform runs (ADR 26-10-16-423 §10).
 	sandboxBaseImage string
+	// dedicatedDaemon is whether the daemon is this pool's alone
+	// (DockerSandboxRuntimeConfig.DedicatedDaemon).
+	dedicatedDaemon bool
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -409,9 +419,21 @@ type DockerSandboxRuntimeConfig struct {
 	// AgentLayers is the pool's asset cache, which a delivered sandbox's
 	// agent layer is read from.
 	AgentLayers AgentLayers
+	// Audit is the pool proxy's audit, which a purge takes the sandbox's
+	// trail from. It is required: a purge that could not take it would
+	// report the sandbox's data gone while its recorded traffic is not.
+	Audit AuditPurger
+	// DedicatedDaemon says the Docker daemon is this pool's own, on the
+	// pool's data disk: every image and container on it is there for this
+	// pool. Otherwise it is shared, with other pools or with the host's own
+	// use, and only what is Discobox's is counted (DiskUsage).
+	DedicatedDaemon bool
 }
 
 func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
+	if cfg.Audit == nil {
+		return nil, errors.New("a Docker runtime needs the pool proxy's audit, which a purge takes a sandbox's trail from")
+	}
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, err
@@ -431,11 +453,13 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 			root:                  cfg.Root,
 			gitCache:              gitcache.New(cfg.Root.PoolGitCache(cfg.ProjectID, cfg.PoolID)),
 			agentLayers:           cfg.AgentLayers,
+			audit:                 cfg.Audit,
 		},
 		client:            cli,
 		sharedMemoryBytes: cfg.SharedMemoryBytes,
 		hostStateRoot:     cfg.HostStateRoot,
 		sandboxBaseImage:  strings.TrimSpace(cfg.SandboxBaseImage),
+		dedicatedDaemon:   cfg.DedicatedDaemon,
 	}
 	r.boxes = r
 	return r, nil
@@ -1939,8 +1963,9 @@ func egressPolicy(opt workerclient.OptEgressPolicy) egress.Policy {
 	return egress.Policy{Allow: allow, DenyByDefault: policy.DenyByDefault.Or(false), Passthrough: passthrough}
 }
 
-// DeleteSandbox removes the sandbox's container, its proxy material, and its
-// durable tree, and returns only once all three are gone.
+// DeleteSandbox removes the sandbox's container, its audit trail in the pool
+// proxy (ADR 26-11-14-896 §5), its proxy material, and its durable tree, and
+// returns only once all of them are gone.
 //
 // The durable removal is the point: the control plane's delete is synchronous
 // and reports success to the user on the strength of this call returning
@@ -1948,6 +1973,18 @@ func egressPolicy(opt workerclient.OptEgressPolicy) egress.Policy {
 // 24-hour retention, so a sandbox could be absent from the API and present on
 // disk — including its resolved secrets — for a day.
 func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID string) error {
+	return r.removeSandbox(ctx, sandboxID, true)
+}
+
+// reapSandbox removes what a delete does but the sandbox's audit trail, for
+// the reapers: a sandbox the control plane no longer holds, or a container
+// no tree names, is not the owner's word that its data should go, and its
+// trail is left to the proxy's age sweep and budget (ADR 26-11-14-896 §5).
+func (r *DockerSandboxRuntime) reapSandbox(ctx context.Context, sandboxID string) error {
+	return r.removeSandbox(ctx, sandboxID, false)
+}
+
+func (r *DockerSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -1958,6 +1995,14 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	}
 	if err == nil {
 		if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
+			return err
+		}
+	}
+	// Once the container is gone, so nothing records more, and before the
+	// tree, so a purge the proxy could not take is retried with the
+	// sandbox still on the pool.
+	if purge {
+		if err := r.purgeAudit(ctx, sandboxID); err != nil {
 			return err
 		}
 	}
@@ -2453,7 +2498,7 @@ func reapUnheldSandboxVolumes(ctx context.Context, root string, held HeldSandbox
 // delete takes a sandbox, its container, proxy material and published images
 // with it; then the containers no tree names.
 func (r *DockerSandboxRuntime) reapUnheldSandboxes(ctx context.Context, logger *slog.Logger, held HeldSandboxes, now time.Time) {
-	reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, now, logger, r.DeleteSandbox)
+	reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, now, logger, r.reapSandbox)
 	r.reapOrphanContainers(ctx, logger, held, now)
 }
 
@@ -2488,7 +2533,7 @@ func (r *DockerSandboxRuntime) reapOrphanContainers(ctx context.Context, logger 
 		markers: filepath.Join(r.root.PoolData(r.projectID, r.poolID), containerOrphanMarkersName),
 		found:   found,
 		nameOf:  orphanContainerName,
-		remove:  r.DeleteSandbox,
+		remove:  r.reapSandbox,
 	})
 }
 
@@ -3007,6 +3052,9 @@ type MemorySandboxRuntime struct {
 	harnessChanges  map[string]harnessChangeFence
 	mu              sync.Mutex
 	sandboxes       map[string]*Sandbox
+	// diskUsage and diskUsageErr are what DiskUsage answers (SetDiskUsage).
+	diskUsage    DiskUsage
+	diskUsageErr error
 	// archived stands in for the on-disk marker: an entry here has no sandbox
 	// in the map (archiving drops the container) but is still held as data.
 	archived   map[string]struct{}

@@ -41,6 +41,9 @@ type sandboxCore struct {
 	agentTLS bool
 	// root is where this pool's state is, as this process sees it.
 	root layout.Root
+	// audit is the pool proxy's audit, which a purge of a sandbox takes its
+	// trail from (ADR 26-11-14-896 §5).
+	audit AuditPurger
 	// gitCache is this pool's cache of Git: one repository per remote, a
 	// namespace per sandbox source (ADR 26-10-10-545 §2).
 	gitCache *gitcache.Store
