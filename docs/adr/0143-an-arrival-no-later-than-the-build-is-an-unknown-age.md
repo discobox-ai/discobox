@@ -1,6 +1,7 @@
 # 0143 — An image arrival no later than its build is an unknown age
 
-- **Status**: Accepted
+- **Status**: Accepted (its "never reclaimed" narrowed to the ordinary pass on
+  the containerd store by [26-11-13-655](26-11-13-655-an-unknown-image-age-is-started-by-the-reaper-and-only-a-kept-repository-keeps-its-newest.md))
 - **Date**: 2026-09-22
 - **Supersedes**: [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md)
   §2's premise that `LastTagTime` is stamped on every build; the rest of 0040

@@ -1,12 +1,13 @@
 # 26-11-13-655 — An unknown image age is started by the reaper, and only a kept repository keeps its newest
 
-- **Status**: Proposed (on acceptance supersedes
+- **Status**: Accepted (supersedes
   [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) §2's
   "an image whose `LastTagTime` is zero is never reclaimed" and §5's newest
   image of *every* repository, and narrows
   [0143](0143-an-arrival-no-later-than-the-build-is-an-unknown-age.md)'s
   "never reclaimed" to the ordinary pass on the containerd store)
 - **Date**: 2026-11-13
+- Accepted by the owner by merging #1099, 2026-11-14
 - **Issue**: [#1094](https://github.com/discobox-ai/discobox/issues/1094)
 - **Relates to**: #1098, a pool whose disk is nearly full reports not-ready,
   which this ADR does not decide.
