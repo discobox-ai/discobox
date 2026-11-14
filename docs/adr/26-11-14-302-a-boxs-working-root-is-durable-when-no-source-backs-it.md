@@ -1,7 +1,8 @@
 # 26-11-14-302 — A box's working root is durable when no source backs it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-14
+- Accepted by the owner by merging #1158, 2026-11-14
 - **Issue**: [#1156](https://github.com/discobox-ai/discobox/issues/1156)
 - **Amends**: [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) §4's
   "including `/workspace` when no source backs it": a rebuild keeps the working
