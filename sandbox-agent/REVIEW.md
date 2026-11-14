@@ -581,6 +581,13 @@ user waits on every single start.
   (`filepath.ToSlash(t.TempDir())`, joined with `path`). `boot` splits
   paths with `path`, which finds no directory in a `filepath.Join` result on
   the Windows CI runner, so a test built on `filepath` fails only there.
+- **A sandbox path is judged through `pkg/sandboxpath`, never `filepath` and
+  never a helper of one package's own.** Containment is
+  `sandboxPaths.Within`, which the pool agent shares. `within`
+  (`filepath.Rel` and a `"../"` check) reads a guest path by the host's rules:
+  on the Windows runner `/srv/code` and `/workspace` are relatives by `..\`,
+  so `/workspace` counted as under `/srv/code`. Production code did this
+  after the note above warned about tests (#1156's `workingRootDurable`).
 - **An overlay's upperdir adopts the target's identity before
   `applyOwnership`, never after.** overlayfs presents the upperdir's owner and
   mode as the merged root's, so `wireVolume` runs `adoptDirIdentity` (setgid

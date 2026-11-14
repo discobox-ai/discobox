@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -82,7 +81,7 @@ func (r *DockerSandboxRuntime) stashWorkingRoot(ctx context.Context, sandboxID, 
 	}
 	root := r.paths.WorkingRoot()
 	for _, m := range inspect.Container.Mounts {
-		if pathWithin(m.Destination, root) {
+		if r.paths.Within(m.Destination, root) {
 			return nil
 		}
 	}
@@ -118,12 +117,6 @@ func (r *DockerSandboxRuntime) stashWorkingRoot(ctx context.Context, sandboxID, 
 // workingRootStashTimeout bounds a stash: a copy of a box's whole working
 // root, which can be large, through this agent onto the pool host's disk.
 const workingRootStashTimeout = 30 * time.Minute
-
-// pathWithin reports whether p is dir or lies below it, as guest paths.
-func pathWithin(dir, p string) bool {
-	dir, p = path.Clean(dir), path.Clean(p)
-	return p == dir || dir == "/" || strings.HasPrefix(p, dir+"/")
-}
 
 // countArchiveEntries reads the whole of a tar stream and says how many
 // entries it holds.

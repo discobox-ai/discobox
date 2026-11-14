@@ -20,12 +20,12 @@ import (
 // own (wireWorkingRoot, ADR 26-11-14-302 §1).
 func workingRootDurable(root string, volumes []harness.ResolvedVolume, sources []sandboxconfig.Source) bool {
 	for _, s := range sources {
-		if within(path.Clean(s.Target), root) {
+		if sandboxPaths.Within(s.Target, root) {
 			return true
 		}
 	}
 	for _, v := range volumes {
-		if within(path.Clean(v.Path), root) {
+		if sandboxPaths.Within(v.Path, root) {
 			return true
 		}
 	}

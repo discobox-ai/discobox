@@ -143,6 +143,31 @@ func (p Paths) Join(elem ...string) string {
 	return p.Clean(strings.Join(parts, sep))
 }
 
+// Within reports whether value is dir or lies below it, both read as paths of
+// this platform and cleaned first, so a trailing separator says nothing and a
+// sibling that only shares a prefix ("/work" beside "/workspace") is not
+// below. It is the one judgement of containment a pool agent and a sandbox
+// agent share, whatever host either runs on: path/filepath would read a
+// sandbox's Linux path by the host's rules, and on a Windows host takes
+// "/srv/code" and "/workspace" for relatives of each other. Paths are
+// compared as spelled; nothing here folds case.
+func (p Paths) Within(dir, value string) bool {
+	dir, value = p.Clean(dir), p.Clean(value)
+	if value == dir {
+		return true
+	}
+	sep := "/"
+	if p.windows {
+		sep = `\`
+	}
+	// A root ends in its separator already ("/", `C:\`); a share's root
+	// (`\\server\share`) does not.
+	if !strings.HasSuffix(dir, sep) {
+		dir += sep
+	}
+	return strings.HasPrefix(value, dir)
+}
+
 // Dir is every element of value but the last, cleaned, the way path.Dir is.
 // A root is its own directory.
 func (p Paths) Dir(value string) string {

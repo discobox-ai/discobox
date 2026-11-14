@@ -240,3 +240,36 @@ func TestIsTarget(t *testing.T) {
 		}
 	}
 }
+
+// Containment is judged by the sandbox's platform, never the host's: the pool
+// agent and the sandbox agent ask it of the same paths from different hosts,
+// and path/filepath on a Windows host read "/srv/code" and "/workspace" as
+// relatives of each other.
+func TestWithinJudgesContainmentByTheSandboxsPlatform(t *testing.T) {
+	linux := For(platform.Platform{OS: "linux"})
+	windows := For(platform.Platform{OS: "windows"})
+	for _, tc := range []struct {
+		paths      Paths
+		dir, value string
+		want       bool
+	}{
+		{linux, "/workspace", "/workspace", true},
+		{linux, "/workspace/", "/workspace", true},
+		{linux, "/workspace", "/workspace/app", true},
+		{linux, "/home/dev", "/home/dev/workspace", true},
+		{linux, "/", "/workspace", true},
+		{linux, "/srv/code", "/workspace", false},
+		{linux, "/work", "/workspace", false},
+		{linux, "/workspace/app", "/workspace", false},
+		{windows, `C:\work`, `C:\work\app`, true},
+		{windows, `C:\`, `C:\work`, true},
+		{windows, `C:/work`, `C:\work\app`, true},
+		{windows, `C:\work`, `C:\workspace`, false},
+		{windows, `\\server\share`, `\\server\share\app`, true},
+		{windows, `\\server\share`, `\\server\shared`, false},
+	} {
+		if got := tc.paths.Within(tc.dir, tc.value); got != tc.want {
+			t.Errorf("%s Within(%q, %q) = %v, want %v", tc.paths.OS(), tc.dir, tc.value, got, tc.want)
+		}
+	}
+}

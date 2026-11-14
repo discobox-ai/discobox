@@ -231,7 +231,7 @@ func TestTheStashIsKeptOutsideTheBoxsVolumes(t *testing.T) {
 	r := (&fakeArchiveDaemon{}).runtime(t)
 	stash := r.workingRootStashPath("sbx_1")
 	for _, volume := range []string{r.sandboxDataRootPath("sbx_1"), r.sandboxConfigRoot("sbx_1"), r.sandboxSourcesRoot("sbx_1"), r.sandboxSecretsRoot("sbx_1")} {
-		if pathWithin(filepath.ToSlash(volume), filepath.ToSlash(stash)) {
+		if rel, err := filepath.Rel(volume, stash); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			t.Fatalf("stash %s is inside the box's volume %s", stash, volume)
 		}
 	}
