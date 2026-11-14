@@ -84,34 +84,23 @@ func createControlKey(path string, replace bool) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	tmp, err := os.CreateTemp(dir, ".control-key-*")
+	staged, err := fsdurable.Create(path, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(base64.StdEncoding.EncodeToString(key.Seed()) + "\n"); err != nil {
-		tmp.Close()
+	defer func() { _ = staged.Discard() }()
+	if _, err := staged.WriteString(base64.StdEncoding.EncodeToString(key.Seed()) + "\n"); err != nil {
 		return nil, err
 	}
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return nil, err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return nil, err
-	}
-	if err := tmp.Close(); err != nil {
+	if err := staged.Chmod(0o600); err != nil {
 		return nil, err
 	}
 	if replace {
-		if err := os.Rename(tmp.Name(), path); err != nil {
-			return nil, err
-		}
-	} else if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
-		return nil, err
+		err = staged.Commit()
+	} else if err = staged.CommitNew(); errors.Is(err, os.ErrExist) {
+		err = nil
 	}
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	return readControlKey(path)

@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/internal/filelock"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 const (
@@ -213,7 +214,7 @@ func (l *Layout) putBlob(d Descriptor, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 func digestOf(data []byte) string {
@@ -301,34 +302,19 @@ func (l *Layout) writeIndex(idx imageIndex) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(l.dir, indexFileName), append(data, '\n'))
+	return fsdurable.WriteFile(filepath.Join(l.dir, indexFileName), append(data, '\n'), 0o600)
 }
 
-// writeFileAtomic writes a file beside its destination and renames it into
-// place, so the name only ever holds a complete file.
-func writeFileAtomic(path string, data []byte) error {
-	temp, err := os.CreateTemp(filepath.Dir(path), tempPrefix+filepath.Base(path)+"-*")
-	if err != nil {
-		return err
-	}
-	name := temp.Name()
-	_, writeErr := temp.Write(data)
-	syncErr := temp.Sync()
-	closeErr := temp.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	if err := os.Rename(name, path); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	return nil
-}
-
-// tempPrefix marks a file that is not yet what its name will be. Nothing reads
-// one, and pruning removes one that is old enough to have been abandoned.
+// tempPrefix marks a file an earlier version staged under, not yet what its
+// name would be: fsdurable.IsStaged is today's. Nothing reads one, and pruning
+// removes one that is old enough to have been abandoned.
 const tempPrefix = ".tmp-"
+
+// isTemp reports whether name, in a layout's blob directory, is a file staged
+// and never put in place.
+func isTemp(name string) bool {
+	return fsdurable.IsStaged(name) || strings.HasPrefix(name, tempPrefix)
+}
 
 func findEntry(idx imageIndex, name string) (int, bool) {
 	for i, entry := range idx.Manifests {

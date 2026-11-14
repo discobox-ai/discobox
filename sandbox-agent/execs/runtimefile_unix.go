@@ -2,12 +2,16 @@
 
 package execs
 
-import "os"
+import (
+	"os"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
+)
 
 // replaceRuntimeFile renames a staged runtime record over the live one. A
 // rename replaces its target atomically, whoever has it open.
-func replaceRuntimeFile(staged, path string) error {
-	return os.Rename(staged, path)
+func replaceRuntimeFile(staged *fsdurable.File) error {
+	return staged.Commit()
 }
 
 // readRuntimeFile reads a runtime record. A reader racing a rename sees the

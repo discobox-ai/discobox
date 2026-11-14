@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 )
 
@@ -158,8 +159,8 @@ func (e Env) ReadState(name string, v any) (bool, error) {
 }
 
 // WriteState writes v whole as the JSON file name in the state directory:
-// under a dot name, then renamed over it, so a run ended part way leaves the
-// last whole state rather than half of a new one.
+// staged and renamed over it durably (fsdurable.WriteFile), so a run ended
+// part way leaves the last whole state rather than half of a new one.
 func (e Env) WriteState(name string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -168,22 +169,5 @@ func (e Env) WriteState(name string, v any) error {
 	if err := os.MkdirAll(e.State, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(e.State, "."+name+".*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(e.State, name)); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	return nil
+	return fsdurable.WriteFile(filepath.Join(e.State, name), append(data, '\n'), 0o600)
 }

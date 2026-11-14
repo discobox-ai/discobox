@@ -349,21 +349,15 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".*")
+	staged, err := fsdurable.Create(target, 0o600)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = staged.Discard() }()
 	hash := sha256.New()
-	_, err = io.Copy(io.MultiWriter(tmp, hash), body)
+	_, err = io.Copy(io.MultiWriter(staged, hash), body)
 	if err == nil {
-		err = tmp.Chmod(fileMode(step.Mode))
-	}
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
+		err = staged.Chmod(fileMode(step.Mode))
 	}
 	if err != nil {
 		return fmt.Errorf("download %s: %w", download.URL, err)
@@ -372,17 +366,16 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 		return fmt.Errorf("download %s: sha256 is %s, want %s", download.URL, got, download.SHA256)
 	}
 	if step.Unpack != nil {
-		if err := unpackInPlace(tmp.Name(), target, *step.Unpack); err != nil {
+		// Read from where it was staged, and never put in place: what is
+		// put in place is what it unpacks to, synced by unpackInPlace.
+		if err := unpackInPlace(staged.Name(), target, *step.Unpack); err != nil {
 			return fmt.Errorf("download %s: %w", download.URL, err)
 		}
 		return fsdurable.SyncDir(dir)
 	}
-	if err := os.Rename(tmp.Name(), target); err != nil {
-		return err
-	}
 	// Durable before the step's record is: a record that outlived the file
 	// it vouches for would skip the step for good.
-	return fsdurable.SyncDir(dir)
+	return staged.Commit()
 }
 
 // applyPackages installs a Debian family box's packages, the list its

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -1112,26 +1113,22 @@ func writeHarnessFile(path, content string, createOnly bool, uid, gid *int64) er
 			}
 		}
 	}
-	// Written beside the file and renamed over it, so whatever reads it sees
-	// the old file or the new one and never half of one: a harness reads these
-	// as it starts.
-	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	// Written beside the file and renamed over it, durably, so whatever reads
+	// it sees the old file or the new one and never half of one: a harness
+	// reads these as it starts.
+	temp, err := fsdurable.Create(path, 0o600)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(temp.Name()) }()
+	defer func() { _ = temp.Discard() }()
 	if _, err := temp.WriteString(content); err != nil {
-		_ = temp.Close()
 		return err
 	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(temp.Name(), 0o644); err != nil {
+	if err := temp.Chmod(0o644); err != nil {
 		return err
 	}
 	if uid != nil && gid != nil {
-		if err := os.Chown(temp.Name(), int(*uid), int(*gid)); err != nil {
+		if err := temp.Chown(int(*uid), int(*gid)); err != nil {
 			return err
 		}
 	}
@@ -1139,13 +1136,15 @@ func writeHarnessFile(path, content string, createOnly bool, uid, gid *int64) er
 		// Linked rather than renamed, because a link does not replace: the
 		// Stat above and this are two steps, and between them another install
 		// — or the harness itself, which rewrites a createOnly file — can have
-		// made the file this must not overwrite.
-		if err := os.Link(temp.Name(), path); err != nil && !errors.Is(err, fs.ErrExist) {
+		// made the file this must not overwrite. Synced, since a file that
+		// exists is never written again: one a hard stop left empty would be
+		// the harness's for good.
+		if err := temp.CommitNew(); err != nil && !errors.Is(err, fs.ErrExist) {
 			return err
 		}
 		return nil
 	}
-	return os.Rename(temp.Name(), path)
+	return temp.Commit()
 }
 
 // mkdirAllTracked behaves like os.MkdirAll but returns the directories it

@@ -396,14 +396,15 @@ durable state asks the same question.
   create that makes it trusted, and its directory after.** That is every
   record, marker (`.discobox-archived`, a Git cache's namespace owners) and
   anything a later start reuses because it is there (an extracted agent, a
-  Git cache). One file is written with `fsdurable.WriteFile`, never
-  `os.WriteFile` and a rename; a staged directory syncs its tree, then is
+  Git cache). One file is written with `fsdurable.WriteFile`, or staged
+  with `fsdurable.Create`/`CreateIn` and committed, never `os.WriteFile` and
+  a rename; a staged directory syncs its tree (`fsdurable.SyncTree`), then is
   renamed and its parent synced (`gitcache` `ensure`). A removal whose
   absence means something uses `fsdurable.Remove`. A hard stop of the pool's
   host (a libkrun VM killed by repair) can keep an unsynced rename and lose
   its data, leaving the file empty for good.
 - **A directory the pool lists skips `fsdurable.WriteFile`'s staged files.**
-  They are named `.<name>.*.tmp` beside the target, and a hard stop can
+  They are named `.<name>.*.tmp` beside the target (`fsdurable.IsStaged`), and a hard stop can
   leave one. A walk that counts or parses entries (the Git cache's namespace
   markers) skips or removes names starting with a dot, or one leftover keeps
   a cache from ever expiring.

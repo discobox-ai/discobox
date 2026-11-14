@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 const (
@@ -219,7 +221,7 @@ func (l *Layout) init() error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	return writeFileAtomic(path, []byte(layoutVersion))
+	return fsdurable.WriteFile(path, []byte(layoutVersion), 0o600)
 }
 
 type stager struct {

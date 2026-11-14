@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
@@ -30,6 +31,11 @@ func unpackInPlace(archive, target string, unpack provisionspec.Unpack) error {
 		return err
 	}
 	if err := unpackArchive(archive, staged, unpack); err != nil {
+		return err
+	}
+	// On disk before it is put in place, and so before the step's record
+	// that vouches for it; the caller syncs the rename.
+	if err := fsdurable.SyncTree(staged); err != nil {
 		return err
 	}
 	old := staged + ".old"

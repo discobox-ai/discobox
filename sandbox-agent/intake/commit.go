@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // op is one file a document replaces or removes.
@@ -18,8 +20,8 @@ type op struct {
 	// zero is 0755.
 	dirMode fs.FileMode
 
-	// staged is the temporary file holding data, beside path.
-	staged string
+	// staged holds data beside path until it is put in place.
+	staged *fsdurable.File
 	// prior is what path held before, to put back if a later op fails.
 	prior *fs.FileMode
 	held  []byte
@@ -73,8 +75,8 @@ func stageAll(ops []op) error {
 // discardStaged removes every staged file that was not put in place.
 func discardStaged(ops []op) {
 	for i := range ops {
-		if ops[i].staged != "" {
-			_ = os.Remove(ops[i].staged)
+		if ops[i].staged != nil {
+			_ = ops[i].staged.Discard()
 		}
 	}
 }
@@ -125,76 +127,50 @@ func (o *op) stage() error {
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	staged, err := writeTemp(dir, o.data, o.mode)
+	staged, err := fsdurable.Create(o.path, 0o600)
 	if err != nil {
 		return fmt.Errorf("stage %s: %w", o.path, err)
 	}
 	o.staged = staged
+	// Chmod rather than relying on the umask, so a public file is public
+	// whatever the agent's umask is; and synced here, so a full disk fails
+	// the stage rather than a replacement.
+	if _, err = staged.Write(o.data); err == nil {
+		err = staged.Chmod(o.mode)
+	}
+	if err == nil {
+		err = staged.Sync()
+	}
+	if err != nil {
+		return fmt.Errorf("stage %s: %w", o.path, err)
+	}
 	return nil
 }
 
 // replace puts the staged file in place, or removes the target.
 func (o *op) replace() error {
 	if o.remove {
-		if err := os.Remove(o.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := fsdurable.Remove(o.path); err != nil {
 			return fmt.Errorf("remove %s: %w", o.path, err)
 		}
 		return nil
 	}
-	if err := os.Rename(o.staged, o.path); err != nil {
+	if err := o.staged.Commit(); err != nil {
 		return fmt.Errorf("replace %s: %w", o.path, err)
 	}
-	o.staged = ""
 	return nil
 }
 
 // restore puts back what stage found at path.
 func (o *op) restore() error {
 	if o.prior == nil {
-		if err := os.Remove(o.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := fsdurable.Remove(o.path); err != nil {
 			return fmt.Errorf("restore %s: %w", o.path, err)
 		}
 		return nil
 	}
-	staged, err := writeTemp(filepath.Dir(o.path), o.held, *o.prior)
-	if err != nil {
-		return fmt.Errorf("restore %s: %w", o.path, err)
-	}
-	if err := os.Rename(staged, o.path); err != nil {
-		_ = os.Remove(staged)
+	if err := fsdurable.WriteFile(o.path, o.held, *o.prior); err != nil {
 		return fmt.Errorf("restore %s: %w", o.path, err)
 	}
 	return nil
-}
-
-// writeTemp writes data to a new file in dir with mode, synced, and returns its
-// path.
-func writeTemp(dir string, data []byte, mode fs.FileMode) (string, error) {
-	file, err := os.CreateTemp(dir, ".runtime-config-*")
-	if err != nil {
-		return "", err
-	}
-	name := file.Name()
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	// CreateTemp makes the file 0600; chmod rather than relying on the umask,
-	// so a public file is public whatever the agent's umask is.
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(name)
-		return "", err
-	}
-	return name, nil
 }

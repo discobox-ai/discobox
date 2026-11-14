@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -333,7 +334,11 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 		return nil, false, fmt.Errorf("libkrun VM %s: %w", poolID, err)
 	}
 	manifestPath := filepath.Join(runtimeDir, manifestName)
-	if err := writeJSONAtomic(manifestPath, manifest, 0o600); err != nil {
+	manifestData, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, false, err
+	}
+	if err := fsdurable.WriteFile(manifestPath, append(manifestData, '\n'), 0o600); err != nil {
 		return nil, false, err
 	}
 
@@ -926,40 +931,6 @@ func ensureSparseImage(path string, size int64) error {
 		_ = os.Remove(path)
 		return fmt.Errorf("size disk %s: %w", path, err)
 	}
-	return nil
-}
-
-func writeJSONAtomic(path string, value any, mode os.FileMode) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	success := false
-	defer func() {
-		_ = tmp.Close()
-		if !success {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(mode); err != nil {
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	success = true
 	return nil
 }
 

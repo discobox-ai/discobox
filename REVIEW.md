@@ -19,6 +19,25 @@ Global review expectations:
   comments, not only the Go callers the compiler finds. Renaming
   `agentlayer.AgentLayer` to `ExtractAgent` left five citations of the old
   name, a review note among them, pointing at code that was gone.
+- A file or tree something trusts after a hard stop (a record, a marker, a
+  key, a cache entry, a harness's settings) is staged and renamed through
+  `pkg/fsdurable`, in every module, and so is any staged write that syncs at
+  all: `fsdurable.WriteFile` for bytes in hand, `fsdurable.Create` (or
+  `CreateIn` through an `os.Root`) and `Commit`/`CommitNew` for one streamed,
+  chmodded, chowned or checked first, `fsdurable.Symlink` for a link; never
+  `os.CreateTemp`, a hand-written `Sync` and `os.Rename`. A staged tree is
+  synced before its rename (`SyncTree`, or `SyncDirs` when its files are
+  durable already), as is whatever a record or marker vouches for before the
+  record. A listing or cleanup of a directory with staged writes in it knows
+  `fsdurable.IsStaged` names. The same write-then-rename was hand-written, and
+  half of the copies synced nothing, in the sandbox agent, the pool agent, the
+  libkrun driver and four `pkg` packages (#1113), and a hard stop of a pool's
+  host keeps an unsynced rename and loses its data. A rename that only keeps
+  a reader from seeing half a file, of something nothing trusts across a hard
+  stop, needs neither. Two staged writes that would otherwise qualify are
+  exempt: a directory on memory (`rawsecrets`, which refuses any other), and
+  a user's own output under an in-progress name the program reports (the
+  CLI's export to `<file>.partial`).
 - Changing how a sandbox is named on screen (`sandboxmeta.Title`,
   `services.SandboxDisplayName`) also updates every place that tells a person
   or an agent the rule, most of them off the change's path: the `SandboxMeta.name`

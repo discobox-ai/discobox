@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/sandbox-agent/sharedfile"
 )
 
@@ -20,8 +21,9 @@ const runtimeMissingTimeout = 20 * time.Millisecond
 // while the agent reads the file fails rather than waits. That read is brief:
 // retry until it is done, as cmd/go's robustio does. Giving up early would
 // drop the write — for the shim, the exit status only it knows.
-func replaceRuntimeFile(staged, path string) error {
-	return sharedfile.Retry(func() error { return os.Rename(staged, path) }, runtimeMissingTimeout)
+// A Commit that failed at its rename can be called again.
+func replaceRuntimeFile(staged *fsdurable.File) error {
+	return sharedfile.Retry(staged.Commit, runtimeMissingTimeout)
 }
 
 // readRuntimeFile reads a runtime record. A read that races a replace can
