@@ -157,7 +157,7 @@ func TestWriteRefusalNamesThePath(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	path := filepath.Join(dir, "f")
 	_, _, err := Do(t.Context(), Request{Op: OpWrite, Path: path}, strings.NewReader("x"))
-	if kindOf(err) != KindPermission || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), ".discobox-") {
+	if kindOf(err) != KindPermission || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), ".tmp") {
 		t.Fatalf("refused write = %v, want a permission error naming %s", err, path)
 	}
 }

@@ -158,40 +158,16 @@ func writeLayout(record string, layout volumeLayout) error {
 	return writeRecord(record, string(layout)+"\n")
 }
 
-// writeRecord writes one of layoutsDir's files durably: a temporary file
-// synced, renamed over the record, and the directory synced, so a boot cut
-// short -- or the host losing power -- leaves no record or a whole one, never
-// an empty one that would fail every later boot. The temporary name is the
-// record's own behind a dot, and no record's name starts with ".." -- a
-// volume's starts with "%2F", a source's with "source:", and adoptedFile is
-// ".adopted" -- so a temporary file cannot be taken for a record.
+// writeRecord writes one of layoutsDir's files durably (fsdurable.WriteFile),
+// so a boot cut short -- or the host losing power -- leaves no record or a
+// whole one, never an empty one that would fail every later boot. The staged
+// name is the record's own behind a dot, and no record's name starts with
+// ".." -- a volume's starts with "%2F", a source's with "source:", and
+// adoptedFile is ".adopted" -- so a staged file cannot be taken for a record.
 func writeRecord(record, content string) error {
 	dir := path.Dir(record)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+path.Base(record)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), record); err != nil {
-		return err
-	}
-	return fsdurable.SyncDir(dir)
+	return fsdurable.WriteFile(record, []byte(content), 0o644)
 }

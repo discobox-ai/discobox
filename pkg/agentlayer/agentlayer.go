@@ -195,8 +195,12 @@ func ExtractAgent(layer io.Reader, path string) error {
 		defer zr.Close()
 		tarStream = zr
 	}
-	tmp := path + ".tmp"
-	defer func() { _ = os.Remove(tmp) }()
+	var out *fsdurable.File
+	defer func() {
+		if out != nil {
+			_ = out.Discard()
+		}
+	}()
 	tr := tar.NewReader(tarStream)
 	found := false
 	for {
@@ -215,17 +219,13 @@ func ExtractAgent(layer io.Reader, path string) error {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				return err
 			}
-			out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755) //nolint:gosec // G302: the agent is an executable.
+			out, err = fsdurable.Create(path, 0o755)
 			if err != nil {
 				return err
 			}
 			// The entry's own size: a layer that holds less fails, not a
 			// short agent.
-			_, copyErr := io.CopyN(out, tr, header.Size)
-			if copyErr == nil {
-				copyErr = out.Sync()
-			}
-			if err := errors.Join(copyErr, out.Close()); err != nil {
+			if _, err := io.CopyN(out, tr, header.Size); err != nil {
 				return fmt.Errorf("extract the agent: %w", err)
 			}
 		default:
@@ -237,10 +237,7 @@ func ExtractAgent(layer io.Reader, path string) error {
 	}
 	// Synced: an agent is extracted once and trusted for existing, so one a
 	// hard stop left empty would be placed in every box after it.
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	return fsdurable.SyncDir(filepath.Dir(path))
+	return out.Commit()
 }
 
 // Agent is an agent layer to place: its digest, and the agent binary it

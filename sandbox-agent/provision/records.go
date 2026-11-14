@@ -168,35 +168,12 @@ func writeField(w interface{ Write([]byte) (int, error) }, data []byte) {
 	_, _ = w.Write(data)
 }
 
-// writeFileAtomic replaces path with data, so a reader never sees it torn and
-// a crash leaves the old content or the new.
+// writeFileAtomic replaces path with data at mode, making its directory if
+// need be, so a reader never sees it torn and a crash leaves the old content
+// or the new.
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return err
-	}
-	return fsdurable.SyncDir(dir)
+	return fsdurable.WriteFile(path, data, mode)
 }

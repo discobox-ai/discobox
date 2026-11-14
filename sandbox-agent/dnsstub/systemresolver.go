@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/fsnotify/fsnotify"
 )
@@ -45,35 +46,13 @@ func (r *systemResolver) restore() error {
 	}
 	if record.Symlink != "" {
 		// Recreate the link without writing through it into the provider's file.
-		temp, err := os.CreateTemp(filepath.Dir(r.path), ".discobox-resolver-*")
-		if err != nil {
+		if err := fsdurable.Symlink(record.Symlink, r.path); err != nil {
 			return err
 		}
-		name := temp.Name()
-		if err := temp.Close(); err != nil {
-			_ = os.Remove(name)
-			return err
-		}
-		if err := os.Remove(name); err != nil {
-			return err
-		}
-		if err := os.Symlink(record.Symlink, name); err != nil {
-			return err
-		}
-		defer func() { _ = os.Remove(name) }()
-		if err := os.Rename(name, r.path); err != nil {
-			return err
-		}
-		if err := syncDir(filepath.Dir(r.path)); err != nil {
-			return err
-		}
-	} else if err := replaceSynced(r.path, []byte(record.Content), 0o644); err != nil {
+	} else if err := fsdurable.WriteFile(r.path, []byte(record.Content), 0o644); err != nil {
 		return err
 	}
-	if err := os.Remove(r.recordPath); err != nil {
-		return err
-	}
-	return syncDir(filepath.Dir(r.recordPath))
+	return fsdurable.Remove(r.recordPath)
 }
 
 // reconcile saves the provider's new resolver before every reclaim. Three
@@ -126,7 +105,7 @@ func (r *systemResolver) reconcile(now time.Time) error {
 	}
 	saved, loadErr := bridge.LoadProviderResolver(r.recordPath)
 	if loadErr != nil || saved != record {
-		if err := replaceSynced(r.recordPath, encoded, 0o600); err != nil {
+		if err := fsdurable.WriteFile(r.recordPath, encoded, 0o600); err != nil {
 			return fmt.Errorf("save provider resolver: %w", err)
 		}
 	}
@@ -155,7 +134,7 @@ func (r *systemResolver) reconcile(now time.Time) error {
 			out.WriteByte('\n')
 		}
 	}
-	if err := replaceSynced(r.path, []byte(out.String()), 0o644); err != nil {
+	if err := fsdurable.WriteFile(r.path, []byte(out.String()), 0o644); err != nil {
 		r.yielded = true
 		return err
 	}
@@ -206,42 +185,4 @@ func (r *systemResolver) run(ctx context.Context, logger *slog.Logger) {
 			logger.Warn("watch system resolver", "error", err)
 		}
 	}
-}
-
-// replaceSynced syncs both content and its rename before callers may point DNS
-// at the stub. A symlink at path is replaced, never followed.
-func replaceSynced(path string, data []byte, mode os.FileMode) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".discobox-resolver-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(file.Name()) }()
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return err
-	}
-	return syncDir(filepath.Dir(path))
-}
-
-func syncDir(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = dir.Close() }()
-	return dir.Sync()
 }

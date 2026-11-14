@@ -19,6 +19,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
@@ -1805,24 +1806,15 @@ func writeRuntimeData(path string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	staged, err := fsdurable.Create(path, 0o600)
 	if err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck // Gone after a successful rename; only a failed write leaves it.
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
+	defer func() { _ = staged.Discard() }()
+	if _, err := staged.Write(data); err != nil {
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return replaceRuntimeFile(tmpPath, path)
+	return replaceRuntimeFile(staged)
 }
 
 func readRuntime(path string) (Exec, error) {

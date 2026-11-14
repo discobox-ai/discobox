@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
 
@@ -161,30 +162,21 @@ func (f *File) write(meta sandboxmeta.Meta) error {
 			return err
 		}
 	}
-	tmp, err := os.CreateTemp(dir, ".meta-*.json")
+	staged, err := fsdurable.Create(f.path, 0o600)
 	if err != nil {
 		return fmt.Errorf("write %s: %w", f.path, err)
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck // Gone after a successful rename; only a failed write leaves it.
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
+	defer func() { _ = staged.Discard() }()
+	if _, err = staged.Write(data); err == nil {
+		err = staged.Chmod(0o644)
+	}
+	if err != nil {
 		return fmt.Errorf("write %s: %w", f.path, err)
 	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write %s: %w", f.path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", f.path, err)
-	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", f.path, err)
-	}
-	if err := f.chown(tmpPath); err != nil {
+	if err := f.chown(staged.Name()); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, f.path); err != nil {
+	if err := staged.Commit(); err != nil {
 		return fmt.Errorf("write %s: %w", f.path, err)
 	}
 	return nil

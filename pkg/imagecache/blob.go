@@ -10,9 +10,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // PutBlob writes the blob r carries under digest, refusing bytes whose digest
@@ -92,7 +93,7 @@ type partialBlob struct {
 	// size is the declared size, or negative when none is.
 	size int64
 	path string
-	file *os.File
+	file *fsdurable.File
 	hash hash.Hash
 	// written is how many bytes the temporary holds, and so where a resumed
 	// transfer starts.
@@ -101,10 +102,10 @@ type partialBlob struct {
 	// report — never more than the declared size, and taken back off when the
 	// temporary is emptied — so a report says what is on disk.
 	held *atomic.Int64
-	// verified marks a temporary checked, synced and closed: all that is left
-	// is the rename, and an attempt after a failed one retries only that.
-	verified  bool
-	committed bool
+	// verified marks a temporary checked and synced: all that is left is
+	// commit's close and rename, and an attempt after a failed one retries
+	// only that.
+	verified bool
 }
 
 // createPartial opens an empty temporary for the blob named by digest.
@@ -113,7 +114,7 @@ func (l *Layout) createPartial(digest string, size int64, held *atomic.Int64) (*
 	if err != nil {
 		return nil, err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), tempPrefix+strings.TrimPrefix(digest, "sha256:")[:16]+"-*")
+	file, err := fsdurable.Create(path, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -167,17 +168,18 @@ func (p *partialBlob) commit() error {
 			return err
 		}
 	}
-	if err := os.Rename(p.file.Name(), p.path); err != nil {
+	// Synced, and its rename, before it is published: a blob is trusted by
+	// its name. A Commit that failed at its rename is called again.
+	if err := p.file.Commit(); err != nil {
 		return fmt.Errorf("write %s: %w", p.digest, err)
 	}
-	p.committed = true
 	return nil
 }
 
-// verify checks that the temporary holds the blob, then syncs and closes it.
-// A sync that fails leaves the file open and whole, for a later attempt to
-// fetch again; a close that fails leaves nothing to write into, so the
-// temporary counts as verified and only the rename is left.
+// verify checks that the temporary holds the blob, then syncs it. A sync that
+// fails leaves the file open and whole, for a later attempt to fetch again;
+// once it has synced, the temporary counts as verified and only commit's
+// close and rename are left, which commit retries without writing.
 func (p *partialBlob) verify() error {
 	if p.size >= 0 && p.written < p.size {
 		return fmt.Errorf("write %s: received %d bytes, not the %d its manifest declares", p.digest, p.written, p.size)
@@ -190,25 +192,18 @@ func (p *partialBlob) verify() error {
 		err := fmt.Errorf("write %s: received bytes with digest %s", p.digest, got)
 		return errors.Join(err, p.restart())
 	}
-	// Sync before the rename that publishes it: on ext4 or xfs the rename can
-	// reach the journal ahead of the data, and a blob is trusted by its name.
+	// Synced here, not only in commit, so a full disk fails the fetch, which
+	// is fetched again, rather than the rename.
 	if err := p.file.Sync(); err != nil {
 		return fmt.Errorf("write %s: %w", p.digest, err)
 	}
 	p.verified = true
-	if err := p.file.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", p.digest, err)
-	}
 	return nil
 }
 
 // discard removes the temporary, unless it was committed.
 func (p *partialBlob) discard() {
-	if p.committed {
-		return
-	}
-	_ = p.file.Close()
-	_ = os.Remove(p.file.Name())
+	_ = p.file.Discard()
 }
 
 // PruneBlobs removes every blob keep does not want that was written before
@@ -228,7 +223,7 @@ func (l *Layout) PruneBlobs(keep func(digest string) bool, cutoff time.Time) (in
 	var failures []error
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasPrefix(name, tempPrefix) && keep("sha256:"+name) {
+		if !isTemp(name) && keep("sha256:"+name) {
 			continue
 		}
 		info, err := entry.Info()
@@ -239,7 +234,7 @@ func (l *Layout) PruneBlobs(keep func(digest string) bool, cutoff time.Time) (in
 			failures = append(failures, err)
 			continue
 		}
-		if !strings.HasPrefix(name, tempPrefix) {
+		if !isTemp(name) {
 			removed++
 		}
 	}

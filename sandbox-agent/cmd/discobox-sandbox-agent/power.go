@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 )
 
@@ -263,27 +264,24 @@ func put(dir, name, note string, when time.Time) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".discobox-power-*")
+	staged, err := fsdurable.Create(filepath.Join(dir, name), 0o600)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = staged.Discard() }()
 	if note != "" {
-		if _, err := tmp.WriteString(note + "\n"); err != nil {
-			tmp.Close()
+		if _, err := staged.WriteString(note + "\n"); err != nil {
 			return err
 		}
 	}
-	if err := tmp.Close(); err != nil {
+	if err := staged.Chmod(0o644); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+	// Dated last, after every write: a write would date it now.
+	if err := os.Chtimes(staged.Name(), when, when); err != nil {
 		return err
 	}
-	if err := os.Chtimes(tmp.Name(), when, when); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, name))
+	return staged.Commit()
 }
 
 func remove(dir, name string) error {

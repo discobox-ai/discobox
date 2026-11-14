@@ -2,8 +2,6 @@ package files
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
@@ -13,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/discobox-ai/discobox/pkg/copyarchive"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // Do performs one operation as whoever this process is. A read's content is
@@ -302,17 +301,13 @@ func writeFile(req Request, body io.Reader) (*Stat, error) {
 			return nil, err
 		}
 	}
-	temp, tempPath, err := createTemp(dir, filepath.Base(target))
+	// Created at 0666 less the umask, as a file a program creates is: the
+	// mode a write leaves when it was not told one.
+	temp, err := fsdurable.Create(target, 0o666)
 	if err != nil {
 		return nil, err
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = temp.Close()
-			_ = os.Remove(tempPath)
-		}
-	}()
+	defer func() { _ = temp.Discard() }()
 	if _, err := io.Copy(temp, body); err != nil {
 		return nil, err
 	}
@@ -325,28 +320,19 @@ func writeFile(req Request, body io.Reader) (*Stat, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := temp.Sync(); err != nil {
-		return nil, err
-	}
-	if err := temp.Close(); err != nil {
-		return nil, err
-	}
 	if req.FailIfExists {
 		// A link fails when the name is taken, which a rename would replace:
 		// a file created since the check above is still not overwritten.
-		err = os.Link(tempPath, target)
-		if err == nil {
-			_ = os.Remove(tempPath)
-		} else if errors.Is(err, fs.ErrExist) {
+		err = temp.CommitNew()
+		if errors.Is(err, fs.ErrExist) {
 			err = errorf(KindPrecondition, "%s already exists", req.Path)
 		}
 	} else {
-		err = os.Rename(tempPath, target)
+		err = temp.Commit()
 	}
 	if err != nil {
 		return nil, err
 	}
-	committed = true
 	return lstat(req.Path)
 }
 
@@ -379,25 +365,6 @@ func writeTarget(path string) (string, error) {
 		path = link
 	}
 	return "", errorf(KindInvalid, "%s is a chain of more than %d links", path, maxLinks)
-}
-
-// createTemp creates a file beside base in dir, under a name nothing else
-// uses. Its mode is 0666 less the umask, as a file a program creates is: the
-// one a write leaves when it was not told a mode.
-func createTemp(dir, base string) (*os.File, string, error) {
-	for range 16 {
-		suffix := make([]byte, 6)
-		if _, err := rand.Read(suffix); err != nil {
-			return nil, "", err
-		}
-		path := filepath.Join(dir, "."+base+".discobox-"+hex.EncodeToString(suffix))
-		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
-		if errors.Is(err, fs.ErrExist) {
-			continue
-		}
-		return file, path, err
-	}
-	return nil, "", errorf(KindInternal, "no free temporary name beside %s", filepath.Join(dir, base))
 }
 
 func mkdir(req Request) (*Stat, error) {

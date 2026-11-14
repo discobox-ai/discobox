@@ -178,13 +178,14 @@ func Stage(ctx context.Context, m Manifest, opts Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(temp, manifestFileName), append(record, '\n'), 0o600); err != nil {
+	if err := fsdurable.WriteFile(filepath.Join(temp, manifestFileName), append(record, '\n'), 0o600); err != nil {
 		return "", fmt.Errorf("stage server: %w", err)
 	}
-
-	// The directory itself, so the entries in it are on disk before the rename
-	// that publishes them.
-	if err := fsdurable.SyncDir(temp); err != nil {
+	// The set's directories, so every entry is on disk before the rename that
+	// publishes them. Not SyncTree: each download synced its own data as it
+	// was written, which is the one flush Windows has, where SyncTree is a
+	// no-op since a file opened only to read cannot be flushed there.
+	if err := fsdurable.SyncDirs(temp); err != nil {
 		return "", err
 	}
 

@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // Dirs is where a box's monitors and events live. Every path is under the run
@@ -322,27 +324,11 @@ func writeJSONFile(path string, v any) error {
 	return writeFileAtomic(path, append(data, '\n'))
 }
 
+// writeFileAtomic writes data whole and durably, making path's directory if
+// need be.
 func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	return nil
+	return fsdurable.WriteFile(path, data, 0o600)
 }

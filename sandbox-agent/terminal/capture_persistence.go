@@ -149,25 +149,7 @@ func writeCaptureSnapshot(path string, value any) error {
 	if err = os.Chmod(dir, 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".capture-")
-	if err != nil {
-		return err
-	}
-	name := f.Name()
-	defer os.Remove(name)
-	if _, err = f.Write(data); err == nil {
-		err = f.Sync()
-	}
-	if e := f.Close(); err == nil {
-		err = e
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(name, path); err != nil {
-		return err
-	}
-	return fsdurable.SyncDir(dir)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 func (m *captureManager) loadCaptureState() error {

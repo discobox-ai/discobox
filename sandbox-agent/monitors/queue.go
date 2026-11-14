@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/sandbox-agent/sharedfile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -128,11 +129,6 @@ func (q *Queue) add(ev Event, capped bool) (Event, error) {
 // write gives ev the next free id and links it into Pending under it.
 func (q *Queue) write(ev Event) (Event, error) {
 	seq := q.highestID() + 1
-	tmp, err := os.CreateTemp(q.Pending, ".event-*")
-	if err != nil {
-		return Event{}, err
-	}
-	defer os.Remove(tmp.Name())
 	for {
 		ev.ID = "e" + strconv.FormatUint(seq, 10)
 		// An id a pop has claimed into Read is taken too: its pending name is
@@ -146,32 +142,26 @@ func (q *Queue) write(ev Event) (Event, error) {
 		}
 		data, err := json.Marshal(ev)
 		if err != nil {
-			tmp.Close()
 			return Event{}, err
 		}
-		if err := tmp.Truncate(0); err != nil {
-			tmp.Close()
+		staged, err := fsdurable.Create(q.path(q.Pending, ev.ID), 0o600)
+		if err != nil {
 			return Event{}, err
 		}
-		if _, err := tmp.WriteAt(append(data, '\n'), 0); err != nil {
-			tmp.Close()
+		if _, err := staged.Write(append(data, '\n')); err != nil {
+			_ = staged.Discard()
 			return Event{}, err
 		}
-		if err := tmp.Sync(); err != nil {
-			tmp.Close()
-			return Event{}, err
-		}
-		err = os.Link(tmp.Name(), q.path(q.Pending, ev.ID))
+		err = staged.CommitNew()
 		if err == nil {
 			break
 		}
+		_ = staged.Discard()
 		if !errors.Is(err, fs.ErrExist) {
-			tmp.Close()
 			return Event{}, err
 		}
 		seq++
 	}
-	tmp.Close()
 	// Best effort: the directories are the authority, and this only keeps an
 	// id from coming back once the events above it are pruned.
 	_ = writeFileAtomic(filepath.Join(q.Pending, seqFile), []byte(strconv.FormatUint(seq, 10)+"\n"))

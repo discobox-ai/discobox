@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 )
 
 // A pool's identity key is kept in a file on the pool's own durable storage
@@ -62,30 +64,15 @@ func PublicKeyOf(key ed25519.PrivateKey) (string, error) {
 	return EncodePublicKey(public)
 }
 
-// storeKey writes key through a temporary file in the same directory, so an
-// interrupted write never leaves a truncated key that the next read refuses.
+// storeKey writes key durably through a file staged in the same directory, so
+// an interrupted write, or a hard stop after it, never leaves a truncated key
+// that the next read refuses.
 func storeKey(path string, key ed25519.PrivateKey) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create pool identity directory: %w", err)
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".agent.key-")
-	if err != nil {
-		return fmt.Errorf("create pool identity key: %w", err)
-	}
-	defer func() { _ = os.Remove(file.Name()) }()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("secure pool identity key: %w", err)
-	}
-	if _, err := file.WriteString(base64.StdEncoding.EncodeToString(key)); err != nil {
-		_ = file.Close()
+	if err := fsdurable.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(key)), 0o600); err != nil {
 		return fmt.Errorf("write pool identity key: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("write pool identity key: %w", err)
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return fmt.Errorf("publish pool identity key: %w", err)
 	}
 	return nil
 }

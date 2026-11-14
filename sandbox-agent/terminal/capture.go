@@ -1022,6 +1022,13 @@ func (m *captureManager) purge(completed hc.Candidate) {
 	m.state.Observed = publicObservation(m.state.Observed)
 }
 
+// abandonedWrite reports whether name, in the capture state's directory, is a
+// staged write a crash left: fsdurable's, or one under the ".capture-" name
+// an earlier agent staged under.
+func abandonedWrite(name string) bool {
+	return fsdurable.IsStaged(name) || strings.HasPrefix(name, ".capture-")
+}
+
 // Interrupted atomic writes are private pending state too. Once a new snapshot
 // is durable, obsolete staging files must not retain an acknowledged secret.
 func (m *captureManager) removeAbandonedWrites() error {
@@ -1030,7 +1037,7 @@ func (m *captureManager) removeAbandonedWrites() error {
 		return err
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".capture-") && !entry.IsDir() {
+		if abandonedWrite(entry.Name()) && !entry.IsDir() {
 			if err = os.Remove(filepath.Join(filepath.Dir(m.path), entry.Name())); err != nil && !os.IsNotExist(err) {
 				return err
 			}
@@ -1114,7 +1121,7 @@ func invalidateCaptureState(dir string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() && (entry.Name() == "state.json" || strings.HasPrefix(entry.Name(), ".capture-")) {
+		if !entry.IsDir() && (entry.Name() == "state.json" || abandonedWrite(entry.Name())) {
 			if err = os.Remove(filepath.Join(dir, entry.Name())); err != nil && !os.IsNotExist(err) {
 				return err
 			}
@@ -1142,29 +1149,18 @@ func (m *captureManager) publishSentinelContext() error {
 		return err
 	}
 	defer root.Close()
-	random := make([]byte, 16)
-	if _, err = rand.Read(random); err != nil {
-		return err
-	}
-	name := ".config/discobox/.sentinels-" + hex.EncodeToString(random)
-	file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	file, err := fsdurable.CreateIn(root, ".config/discobox/harness-sentinels.json", 0o600)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = root.Remove(name) }()
-	if err = chownCapture(file, FileInstaller{User: m.user}); err == nil {
-		_, err = file.Write(data)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	defer func() { _ = file.Discard() }()
+	if err = chownCapture(file.File, FileInstaller{User: m.user}); err != nil {
 		return err
 	}
-	return root.Rename(name, ".config/discobox/harness-sentinels.json")
+	if _, err = file.Write(data); err != nil {
+		return err
+	}
+	return file.Commit()
 }
 
 // Versioned output can still be incomplete: bundle startup or a parser failure
