@@ -296,10 +296,11 @@ func (r *shimRuntime) startProcess(opts procio.Options) error {
 	// The kernel's identity for it, read while it is this process's unreaped
 	// child and so cannot be anything else: what a stop, or the supervisor
 	// collecting a dead shim, checks the pid against before signaling it
-	// (isCommand). One that cannot be read leaves the stop to the process
-	// handle alone, which reaches neither the rest of the session nor a
-	// terminal's shell with a hangup: said in the shim's log, since a stop
-	// that then sits out its whole grace has nothing else to say why.
+	// (isCommand). One that cannot be read means a stop signals nothing in
+	// the session — no SIGHUP to a shell already at its prompt, which a
+	// terminal's hangup alone does not end — and kills only the command
+	// itself, at the grace's end: said in the shim's log, since a stop that
+	// sits out its whole grace has nothing else to say why.
 	identity, err := processIdentity(int(proc.PID()))
 	if err != nil {
 		slog.Warn("read the exec's process identity", "execID", r.cfg.ExecID, "pid", proc.PID(), "error", err)
