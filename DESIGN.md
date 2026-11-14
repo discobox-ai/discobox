@@ -269,7 +269,7 @@ Three layers, and the top one holds no logic (ADR 0066):
 ```mermaid
 flowchart TD
     workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix on Linux<br/>(setup-go on macOS and Windows),<br/>run one target;<br/>Go's and golangci-lint's caches are Depot Cache"]
+    action[".github/actions/task<br/>checkout done, install Nix on Linux<br/>(setup-go on macOS and Windows),<br/>download Go modules with retries,<br/>run one target;<br/>Go's and golangci-lint's caches are Depot Cache"]
     taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
     flake["flake.nix<br/>system tools and environment"]
 
@@ -300,9 +300,12 @@ flowchart TD
   `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
   modules come from the module proxy each run, which measured no slower than
   restoring an `actions/cache` tarball of them. Go does not retry a download
-  the proxy drops, so `ci:check` downloads them first in `ci:mod-download`,
-  which retries and names the module that still fails, then runs the steps
-  that load packages with `GOPROXY=off`.
+  the proxy drops, so the task action downloads them before every job's
+  target with `scripts/go-mod-download.sh` (the workspace's modules, then each
+  module's own graph for `verify`'s standalone tidy), which retries and names
+  the module that still fails. It runs the script itself, not through `go tool task`,
+  which would download Task's own modules first. `ci:check` then runs the
+  steps that load packages with `GOPROXY=off`.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by

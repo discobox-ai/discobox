@@ -1099,7 +1099,10 @@ tasks:
     desc: Download every module the workspace needs, retrying a download the proxy drops
     # The rule is in scripts/go-mod-download.sh. It runs before anything else
     # loads packages, so a dropped download is retried and reported as one,
-    # instead of failing lint as `could not import` typecheck errors.
+    # instead of failing lint as `could not import` typecheck errors. CI runs
+    # the script itself before every job's target (.github/actions/task), since
+    # `go tool task` downloads Task's own modules first; this target is for
+    # ci:check in a terminal, and in CI finds every module already there.
     cmds:
       - scripts/go-mod-download.sh
 

@@ -80,10 +80,12 @@ Global review expectations:
   than by ref, since a dispatched release runs off a branch; a release path
   that skips that action has to turn it off itself.
 - A Taskfile target the macOS or Windows CI job runs (`ci:darwin`, `ci:test`,
-  `release:build`, and what they call) uses only Go, `go tool` dependencies,
-  git, and what the runner image ships. Those jobs have no Nix devShell (ADR
-  26-11-02-173), so a target reaching for jq, shellcheck, bats or node works in
-  a developer's shell and fails, or finds the image's own version, in CI.
+  `release:build`, and what they call), and a script `.github/actions/task`
+  runs on every runner (`scripts/go-mod-download.sh`), uses only Go, `go tool`
+  dependencies, git, and what the runner image ships (on Windows, Git Bash).
+  Those jobs have no Nix devShell (ADR 26-11-02-173), so a target reaching for
+  jq, shellcheck, bats or node works in a developer's shell and fails, or finds
+  the image's own version, in CI.
 - A Taskfile target that must force an environment variable sets it on the
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced

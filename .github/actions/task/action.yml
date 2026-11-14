@@ -14,7 +14,8 @@ description: Run one Taskfile target in the repository's Nix devShell on Linux, 
 #
 # Nothing is cached here but through Depot Cache: Go's build and test cache and
 # golangci-lint's analysis cache are its, fetched per object, and modules come
-# from the module proxy each run. An actions/cache of either was a tarball
+# from the module proxy each run, downloaded with retries before the target. An
+# actions/cache of either was a tarball
 # restored and saved whole, which on main cost 6-11 minutes a job, and without
 # it the jobs measured no slower. The devShell comes from cache.nixos.org.
 
@@ -96,6 +97,25 @@ runs:
           fi
         else
           echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
+        fi
+
+    # Every module the workspace needs, and each module's own graph for verify's
+    # standalone tidy, before anything loads a package. Go does not retry a
+    # module zip the proxy drops partway, so without this the first build, test,
+    # lint or tidy in the target does every download and a reset stream fails it
+    # as a build or test failure. The script retries, and names a module that
+    # still fails in an annotation.
+    #
+    # Run directly, not as `go tool task ci:mod-download`: `go tool task`
+    # downloads Task's own modules before any target runs, unretried. Under
+    # bash, so Windows runs it in Git Bash, which ships the cmp it uses.
+    - name: Download Go modules
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = Linux ]; then
+          nix develop -c bash scripts/go-mod-download.sh
+        else
+          bash scripts/go-mod-download.sh
         fi
 
     - name: go tool task ${{ inputs.target }}
