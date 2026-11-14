@@ -2678,7 +2678,11 @@ repair never having landed (`landedAt` absent), has had its one: `sandboxFailure
 Every narrated wait calls `sandboxcreate.Status` rather than `ProvisionStatus`
 directly: when the discobox's own answer is `StepWaitingForPool` — the longest
 stretch of a cold start — it reads the pool (`PoolReader`) and says what the
-pool host is doing instead (`PoolProvisionStatus`).
+pool host is doing instead (`PoolProvisionStatus`). A pull on that line names a
+layer being fetched again in the image download's words, so a guest image count
+that pauses or steps back reads as the retry it is:
+
+    ⠋ pulling discobox-vm:v1 — 120.0 MiB of 400.0 MiB, 2/9 layers, retrying layer 3 of 9 after its transfer ended at 172.0 MiB
 
 Two waits narrate from it, and the difference between them is only where the
 reads come from. The wait for a source is bounded by silence rather than total

@@ -60,6 +60,30 @@ func TestPoolProvisionStatusRendersAPullWithItsBytes(t *testing.T) {
 	}
 }
 
+// A guest image layer fetched again after its transfer ended is named, so a
+// byte count that pauses for the retry or steps back says why.
+func TestPoolProvisionStatusNamesALayerFetchedAgain(t *testing.T) {
+	pool := poolWith(apimodel.PoolProvisionProgress{
+		Phase: apiclientgen.PoolProvisionPhaseFetchingVMImage,
+		Pull: apiclientgen.NewOptSandboxPullProgress(apimodel.SandboxPullProgress{
+			Image:          "ghcr.io/discobox-ai/discobox-vm:v1",
+			Current:        apiclientgen.NewOptInt64(120 << 20),
+			Total:          apiclientgen.NewOptInt64(400 << 20),
+			Layers:         apiclientgen.NewOptInt(9),
+			LayersComplete: apiclientgen.NewOptInt(2),
+			Retry: apiclientgen.NewOptSandboxPullRetry(apimodel.SandboxPullRetry{
+				Layer:   3,
+				Attempt: apiclientgen.NewOptInt(2),
+				Kept:    apiclientgen.NewOptInt64(172 << 20),
+			}),
+		}),
+	}, time.Now())
+	got := string(PoolProvisionStatus(pool))
+	if want := "2/9 layers, retrying layer 3 of 9 after its transfer ended at 172.0 MiB"; !strings.Contains(got, want) {
+		t.Fatalf("PoolProvisionStatus() = %q, missing %q", got, want)
+	}
+}
+
 // A pool that came up long ago still carries the phase it finished in; the
 // record is never cleared, so age is what makes it history.
 func TestPoolProvisionStatusIgnoresAStalePhase(t *testing.T) {
