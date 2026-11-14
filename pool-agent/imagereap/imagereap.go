@@ -285,7 +285,7 @@ func newestPerKeptRepository(candidates []Candidate, keep map[string]struct{}) m
 			if _, ok := kept[repository]; !ok {
 				continue
 			}
-			newest := false
+			var newest bool
 			if at, ok := arrived[repository]; ok {
 				newest = candidate.knownArrival() && candidate.LastLocal.Equal(at)
 			} else {
