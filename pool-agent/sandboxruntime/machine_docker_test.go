@@ -13,7 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
-// dockerImageEnv names a registry image, such as debian:trixie, that the
+// dockerImageEnv names a registry image, such as debian:sid, that the
 // docker driver's machines are made fresh from in TestMachineNewRootOnDocker,
 // against the daemon $DOCKER_HOST names: the variable disco-vm's own docker
 // conformance suite reads. The driver also needs the disco-vm agent built for
@@ -31,7 +31,7 @@ const dockerImageEnv = "DISCO_VM_DOCKER_IMAGE"
 func TestMachineNewRootOnDocker(t *testing.T) {
 	image := os.Getenv(dockerImageEnv)
 	if image == "" {
-		t.Skipf("set %s (an image, such as debian:trixie) and %s to run a sandbox's machine on disco-vm's docker driver", dockerImageEnv, docker.AgentEnv)
+		t.Skipf("set %s (an image, such as debian:sid) and %s to run a sandbox's machine on disco-vm's docker driver", dockerImageEnv, docker.AgentEnv)
 	}
 	values := machine.ConfigFromEnv("docker")
 	if values["root"] == "" {

@@ -429,7 +429,7 @@ bundle alone for a pool:
 
 ```mermaid
 flowchart TD
-    base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian 13, Docker, systemd unit mask"]
+    base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian sid, Docker, systemd unit mask"]
     agent["sandbox-agent/<br/>discobox-agent<br/>bundle, FROM scratch"]
     platform["sandbox-agent/<br/>discobox-platform<br/>bundle, FROM scratch"]
     bundle["harness/&lt;type&gt;/<br/>discobox-harness-*<br/>bundle, FROM scratch"]
@@ -489,6 +489,48 @@ is one image for every VM backend: `vz` boots its `linux/arm64` variant and
 `libkrun` the `linux/amd64` one (ADR 0101). The libkrunfw-patched kernel libkrun
 needs is the one artifact it cannot take from there, so it has a third line of
 its own, `vm-kernel/v*`.
+
+### Debian
+
+Every Debian stage this repository builds is Debian **sid**: the sandbox base
+image, the pool VM guest and the kernel it boots, the libkrun kernel's build
+stage, and the Go builders (sid's own Go; there is no golang image on sid).
+One Debian, so one version of everything to maintain; the owner chose it, for
+a 7.x guest kernel among other things, in #1133.
+
+- **One pin.** Each Dockerfile carries the same two build arguments:
+  `DEBIAN_IMAGE`, a dated `debian:sid-YYYYMMDD-slim` by digest, and
+  `DEBIAN_SNAPSHOT`, the snapshot.debian.org timestamp apt reads instead of
+  the moving archive. No stage adds another suite or an apt pin. A Dockerfile
+  cannot import another, so `scripts/debian-pin.sh` keeps the copies one:
+  `go tool task check:debian` (in `ci:check`) fails on two values, an image
+  not older than the snapshot's day, a stage built on any other base, another
+  suite named in a build, or an apt pin.
+- **Bumping it** is `go tool task debian:bump SNAPSHOT=<YYYYMMDDTHHMMSSZ>`,
+  a snapshot listed at `https://snapshot.debian.org/archive/debian/`: it moves
+  every copy to that snapshot and to the newest dated sid image from a day
+  before it, since apt never downgrades what the image already holds. Then rebuild
+  and verify what it moves: the guest (`vm:build` / `vm:verify` on both
+  architectures), the sandbox base, and the libkrun kernel, whose
+  `vm-image/kernel/Dockerfile` the bump rewrites too. A broken sid package is
+  answered with the nearest snapshot that works, never with another suite.
+- **When to bump.** Nothing moves without one: a rebuild, scheduled ones
+  included, installs exactly what the last one did. So security fixes in
+  Debian's packages, the guest kernel and runc and containerd among them,
+  reach an image only through a bump, and so does a Go point release: the Go
+  stages run with `GOTOOLCHAIN=local`, so a `go.mod` asking for a newer Go
+  than the snapshot's fails the build until the pin moves.
+- **The risks taken.** sid is unstable and has no security team: a snapshot
+  can catch a transition half done, a bump can bring a regression, and fixes
+  land when its maintainers upload them. Builds depend on snapshot.debian.org,
+  which is slower than the mirrors and has been down for hours at a time;
+  `Acquire::Retries` rides out a short outage, a long one stops builds.
+- **Exceptions.** libkrun boots libkrunfw's patched kernel, never Debian's;
+  only its build toolchain follows the pin. Docker publishes no sid suite, so
+  the sandbox base installs Docker CE from Docker's trixie suite
+  (`DOCKER_DEBIAN_SUITE`), the one place a build names trixie. A box built
+  from the snapshot is handed back the live sid archive, so its own `apt`, and
+  the features provisioned onto it, get today's sid.
 
 ## Local server discovery
 

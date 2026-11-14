@@ -36,11 +36,12 @@ is_kernel_image() {
 case "$arch" in
 arm64)
     # A hypervisor that loads a kernel directly requires an uncompressed one.
-    # Which form Debian ships is not a constant: the trixie arm64 kernel is
-    # already a raw Image, while other flavours and releases are gzipped. Detect
-    # rather than assume, so a Debian change is not a silent boot failure on a
-    # host that cannot be debugged from. Doing it here also means the published
-    # artifact is always bootable and no server carries a kernel decompressor.
+    # Which form Debian ships is not a constant: the sid arm64 kernel, as
+    # trixie's was, is already a raw Image, while other flavours and releases
+    # are gzipped. Detect rather than assume, so a Debian change is not a
+    # silent boot failure on a host that cannot be debugged from. Doing it here
+    # also means the published artifact is always bootable and no server
+    # carries a kernel decompressor.
     if is_kernel_image "$kernel"; then
         echo "assemble-guest-image: $kernel is already an uncompressed kernel Image"
         cp "$kernel" "$out/vmlinux"
@@ -80,6 +81,19 @@ amd64)
 esac
 
 cp "$initrd" "$out/initrd.img"
+
+# The lockup detectors are built into Debian's kernel, not modules, so the
+# kernel's config is the only place to see them, and it leaves with /boot
+# below. A guest whose CPU hard-locks with no detector just stops answering,
+# with nothing on its console (#1101). The modules the guest needs are checked
+# on the artifact by `task vm:verify`.
+config=$(find "$rootfs/boot" -maxdepth 1 -name 'config-*' | sort -V | tail -n 1)
+for required in CONFIG_SOFTLOCKUP_DETECTOR=y CONFIG_HARDLOCKUP_DETECTOR=y; do
+    if [ -z "$config" ] || ! grep -qx "$required" "$config"; then
+        echo "assemble-guest-image: the kernel's config (${config:-none}) lacks $required" >&2
+        exit 1
+    fi
+done
 
 # The kernel and the initrd are artifacts of their own from here on; the guest
 # never reads /boot, because the hypervisor loads both from the host. Leaving

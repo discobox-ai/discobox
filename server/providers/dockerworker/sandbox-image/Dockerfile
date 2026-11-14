@@ -4,18 +4,25 @@
 # boxd's), and holds what those have in common rather than what either alone
 # has. Node, a browser, Nix, brew and the coding agents are features the
 # platform provisions, and stay out of here so the platform cannot come to
-# depend on them unnoticed. It is Debian 13 where those are Ubuntu: Debian's
-# mirrors are the faster ones to build from, and the features provision onto
-# either.
+# depend on them unnoticed. It is Debian sid where those are Ubuntu: sid is
+# the one Debian this repository builds on (see "Debian" in the root
+# DESIGN.md), and the features provision onto either.
 #
 # A Docker pool's container runs it too, provisioned from the pool bundle (ADR
 # 26-10-24-953 §2), so a pool host pulls one image for itself and its
 # sandboxes.
 
+# The repository's one Debian pin: sid's image by digest, and the
+# snapshot.debian.org timestamp apt builds from. `go tool task debian:bump`
+# moves both, here and in every other Dockerfile.
+ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
+ARG DEBIAN_SNAPSHOT=20261111T202414Z
+
 # Another Debian-family distribution can stand in, to provision the platform
-# onto it as onto a provider's own image: `task build:ubuntu-platform`.
-ARG DISTRO_IMAGE=public.ecr.aws/docker/library/debian:13-slim
+# onto it as onto a provider's own image: `task build:ubuntu-sandbox-base`.
+ARG DISTRO_IMAGE=${DEBIAN_IMAGE}
 FROM ${DISTRO_IMAGE}
+ARG DEBIAN_SNAPSHOT
 
 ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,6 +37,20 @@ LABEL io.discobox.reclaimable.v1=true
 # sandbox user's kvm membership grants it only where the two agree, and which
 # GID package installs leave kvm at moves with what they install.
 RUN groupadd --system --gid 992 kvm
+
+# On Debian, apt builds this image from the pinned snapshot, so a rebuild
+# installs what the last one did; the last apt layer below hands the box back
+# to the live sid archive. Check-Valid-Until is off because a snapshot's
+# Release file expires a week after it was taken. A stand-in distribution
+# keeps its own sources.
+RUN set -eux \
+    && . /etc/os-release \
+    && if [ "$ID" = debian ]; then \
+        printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+            'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+            'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries
 
 # Common apt requirements of core, build, cli, python and shells-editors
 # (ADR 26-11-06-664). Keep in sync with their provision.yaml declarations.
@@ -86,13 +107,22 @@ RUN set -eux \
 # socket-activated: the daemon starts when something first connects to it.
 # Kept apart from the layer above so a Docker update does not invalidate it.
 # A pool's container runs none of it: its daemon's socket is bound in.
+#
+# Docker publishes no suite for Debian sid, so on Debian it is Docker's trixie
+# suite: the one thing in this repository's builds that names trixie, and the
+# owner's choice over sid's own older docker.io. Docker's packages are its own
+# builds with few library dependencies, which sid's newer libraries satisfy.
+# Everything else in the image is sid's.
+ARG DOCKER_DEBIAN_SUITE=trixie
 RUN set -eux \
     && install -m 0755 -d /etc/apt/keyrings \
     && . /etc/os-release \
+    && suite="$VERSION_CODENAME" \
+    && if [ "$ID" = debian ]; then suite="$DOCKER_DEBIAN_SUITE"; fi \
     && curl -fsSL --retry 5 --retry-all-errors "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
-        "$ID" "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
+        "$ID" "$suite" "$(dpkg --print-architecture)" \
         > /etc/apt/sources.list.d/docker.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -106,7 +136,10 @@ RUN set -eux \
     && systemctl disable docker.service containerd.service \
     && systemctl enable docker.socket
 
-# gh, from GitHub's own repository, which tracks its releases.
+# gh, from GitHub's own repository, which tracks its releases. The last apt
+# layer, so it is also where Debian's sources go back from the snapshot to the
+# live sid archive: a box's own apt, and the features provisioned onto it,
+# install today's sid.
 RUN set -eux \
     && curl -fsSL --retry 5 --retry-all-errors https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -114,7 +147,13 @@ RUN set -eux \
     && apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && . /etc/os-release \
+    && if [ "$ID" = debian ]; then \
+        printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian' \
+            'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+            > /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # Go and uv, each its upstream release, pinned with its checksum: Debian's Go
 # trails upstream, and Debian packages no uv.

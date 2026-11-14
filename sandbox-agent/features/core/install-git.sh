@@ -1,7 +1,7 @@
 #!/bin/sh
 # A git that takes a bearer credential: the agent hands each source's origin
 # token to git that way (sourceconverge.RunHelper), and only git 2.46 and
-# later can take one. Debian 13's is new enough. Ubuntu 24.04's is 2.43, so
+# later can take one. Debian's (sid, the base image's) is new enough. Ubuntu 24.04's is 2.43, so
 # on Ubuntu and what derives from it git comes from the Ubuntu Git
 # Maintainers' PPA, whose signing key (E1DD270288B4E6030699E45FA1715D88E1DF1F24)
 # is this feature's own copy.

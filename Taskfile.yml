@@ -908,6 +908,21 @@ tasks:
           exit 1
         fi
 
+  check:debian:
+    desc: Every Debian stage builds on the one sid pin, and every copy of it agrees
+    # A Dockerfile cannot import another, so the sid image digest and the
+    # snapshot.debian.org timestamp are written into each one. This is what
+    # keeps them one pin. See "Debian" in DESIGN.md.
+    cmds:
+      - scripts/debian-pin.sh check
+
+  debian:bump:
+    desc: "Move the Debian pin, in every Dockerfile, to SNAPSHOT=<YYYYMMDDTHHMMSSZ> and the newest dated debian:sid-slim from a day before it"
+    requires:
+      vars: [SNAPSHOT]
+    cmds:
+      - scripts/debian-pin.sh bump {{.SNAPSHOT}}
+
   check:dockerfile-deps:
     desc: Every package an image's Go binaries import is copied into its build context
     # The other half of check:dockerfiles. That one catches a COPY naming a path
@@ -1117,6 +1132,7 @@ tasks:
       - task: ci:mod-download
       - GOPROXY=off go tool task check check:deadcode check:windows check:darwin-cross check:dockerfile-deps
       - task: check:dockerfiles
+      - task: check:debian
       - task: check:shell
 
   test:codex-trust:
@@ -2186,7 +2202,18 @@ tasks:
           echo "systemd-networkd-wait-online.service is not enabled" >&2
           exit 1
         fi
-        echo "VM artifacts verified for $arch (hostname $hostname)"
+        # The modules the guest loads on demand, which the build's pruning of
+        # whole driver classes, or a Debian kernel bump, could take away:
+        # Docker's netfilter and bridge, the overlay store, the VSOCK transport
+        # every host channel rides, and the virtio disk and NIC. Each is either
+        # a module (modules.dep) or built in (modules.builtin).
+        modules_dir=$(debugfs -R "ls -p /usr/lib/modules" root.ext4 2>/dev/null | awk -F/ '$6 ~ /^[0-9]/ { print $6; exit }')
+        test -n "$modules_dir" || { echo "root.ext4 has no /usr/lib/modules/<version>" >&2; exit 1; }
+        modules=$(debugfs -R "cat /usr/lib/modules/$modules_dir/modules.dep" root.ext4 2>/dev/null; debugfs -R "cat /usr/lib/modules/$modules_dir/modules.builtin" root.ext4 2>/dev/null)
+        for module in nf_tables nf_conntrack nft_compat nft_ct bridge br_netfilter veth overlay vmw_vsock_virtio_transport virtio_blk virtio_net virtio_pci virtio_mmio; do
+          echo "$modules" | grep -q "/$module\.ko" || { echo "kernel $modules_dir has no $module" >&2; exit 1; }
+        done
+        echo "VM artifacts verified for $arch (hostname $hostname, kernel $modules_dir)"
 
   vm:verify-kernel:
     desc: Verify the built libkrun kernel is one libkrun can load

@@ -5,6 +5,8 @@
 # two artifacts move on unrelated clocks — this one when libkrunfw or upstream
 # does, the guest when Debian or Docker does — and folding them together would
 # mean every guest change waiting on a kernel build that nothing in it touched.
+# The one input they share is the Debian pin its build stage runs on, so a bump
+# of the pin rebuilds this too, without changing the kernel it builds.
 #
 # It publishes as `discobox-vm-kernel`, linux/amd64 only: it exists because no
 # distribution kernel boots under libkrun, and libkrun is the only backend that
@@ -19,9 +21,10 @@ on:
     paths:
       - "vm-image/kernel/**"
       - ".github/workflows/vm-kernel.yml"
-  # Rebuilt on a cadence for upstream security fixes, like the guest. This run
-  # only builds; publishing stays tag-driven so a rebuild is still a deliberate
-  # release someone pins.
+  # Rebuilt on a cadence, like the guest, to prove the pinned build still
+  # builds. The kernel's source is checksum-pinned, so a security fix is a
+  # bump of it. This run only builds; publishing stays tag-driven, a release
+  # someone pins.
   schedule:
     - cron: "0 6 1 * *"
   workflow_dispatch:
