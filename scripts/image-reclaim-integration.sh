@@ -23,7 +23,9 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 sockets=$(mktemp -d /tmp/discobox-reap.XXXXXX)
 containers=
 
-# shellcheck disable=SC2317 # run by the trap below
+# Run only by the trap below: shellcheck 0.10 calls its body unreachable
+# (SC2317), and 0.11 the function never invoked (SC2329).
+# shellcheck disable=SC2317,SC2329
 cleanup() {
 	for name in $containers; do
 		docker rm -f -v "$name" >/dev/null 2>&1 || true
