@@ -1,5 +1,6 @@
-# Every job body is one Taskfile target (ADR 0066 §1). What each target does
-# lives in Taskfile.yml and runs the same way in a terminal.
+# Every job body is one Taskfile target (ADR 0066 §1), but `changes`, which
+# only decides which of them run. What each target does lives in Taskfile.yml
+# and runs the same way in a terminal.
 name: CI
 
 # Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
@@ -25,7 +26,53 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Whether this run has code to check (scripts/ci-changes.sh). A pull request
+  # that changes only docs/ has none: every job below waits on this one, and
+  # all but `docs`, which runs the checks that read docs/, are skipped by their
+  # `if`. A push to main always has code.
+  #
+  # The gate fails closed: a run whose `changes` failed runs everything but
+  # `docs`, which the rest cover. Without `!cancelled()` a failed `needs` would
+  # skip every job, and a skipped job satisfies a required check.
+  #
+  # Skipped by `if` rather than by `on.pull_request.paths-ignore`, because a
+  # job skipped that way reports nothing and a required check waiting on it
+  # never resolves, while a job skipped by `if` reports as skipped.
+  #
+  # Run as a script rather than through .github/actions/task: it needs only git,
+  # and every other job of the run waits on it, so it does not pay for Nix and
+  # the module download.
+  changes:
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # The merge commit and its parents: HEAD^1 is the base branch.
+          fetch-depth: 2
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+        run: scripts/ci-changes.sh "$EVENT"
+
+  # The checks that read docs/, on a pull request that changes nothing else.
+  # Any other run covers them in verify and test.
+  docs:
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:docs
+
   check:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -35,6 +82,8 @@ jobs:
           target: ci:check
 
   test:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -44,6 +93,8 @@ jobs:
           target: ci:test
 
   codex-trust:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 15
     steps:
@@ -53,6 +104,8 @@ jobs:
           target: test:codex-trust
 
   ux-smoke:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -73,6 +126,8 @@ jobs:
   # classic one, which records no arrival for a load or a pull, and no other job
   # has a daemon of that store (ADR 26-11-13-655).
   image-reclaim:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 20
     steps:
@@ -82,6 +137,8 @@ jobs:
           target: test:image-reclaim
 
   verify:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -94,6 +151,8 @@ jobs:
   # The Dagger release module rotted for months precisely because nothing but a
   # tag exercised it (ADR 0066 Context).
   build:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -109,6 +168,8 @@ jobs:
   # Depot's macOS runners are M2 with 8 CPUs, against GitHub's 3-core M1, and
   # come in that one size. The job runs without Nix (ADR 26-11-02-173).
   darwin:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-macos-15
     timeout-minutes: 45
     steps:
@@ -121,6 +182,8 @@ jobs:
   # on. A job of its own so it runs beside ci:darwin's release build rather
   # than after it.
   darwin-test:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-macos-15
     timeout-minutes: 30
     steps:
@@ -135,6 +198,8 @@ jobs:
   # wslc's process handling, and ConPTY are code paths no other runner
   # executes.
   windows:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: depot-windows-2025-8
     timeout-minutes: 45
     steps:
