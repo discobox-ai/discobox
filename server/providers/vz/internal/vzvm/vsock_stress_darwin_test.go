@@ -227,14 +227,26 @@ func TestVSOCKChurnKeepsUnixListenerServing(t *testing.T) {
 
 func startStressGuest(t *testing.T, guestDir, dir string) *VM {
 	t.Helper()
+	vm, err := Start(stressGuestOptions(t, "vz-stress", guestDir, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = vm.Close() })
+	return vm
+}
+
+// stressGuestOptions describes a guest booted from guestDir, with fresh
+// writable disks and its console log in dir.
+func stressGuestOptions(t *testing.T, name, guestDir, dir string) Options {
+	t.Helper()
 	data, cache := filepath.Join(dir, "data.raw"), filepath.Join(dir, "cache.raw")
 	for path, size := range map[string]int64{data: 16 << 30, cache: 4 << 30} {
 		if err := CreateDiskImage(path, size); err != nil {
 			t.Fatal(err)
 		}
 	}
-	vm, err := Start(Options{
-		Name:           "vz-stress",
+	return Options{
+		Name:           name,
 		CPUCount:       4,
 		MemoryBytes:    4 << 30,
 		KernelPath:     filepath.Join(guestDir, "vmlinux"),
@@ -244,12 +256,7 @@ func startStressGuest(t *testing.T, guestDir, dir string) *VM {
 		DataImagePath:  data,
 		CacheImagePath: cache,
 		ConsoleLogPath: filepath.Join(dir, "console.log"),
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = vm.Close() })
-	return vm
 }
 
 // waitStressDocker waits for the guest's Docker daemon to answer through the

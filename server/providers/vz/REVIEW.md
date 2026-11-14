@@ -9,7 +9,15 @@
 - **The framework owns a VSOCK connection's descriptor.** A binding may dup it
   but never close or adopt it: the framework closes it again on dealloc, into
   whatever reused the number. Moving off the `discobox-ai/vz` fork, or bumping
-  it, needs `go tool task test:vz-stress` passing on a real guest first.
+  it, needs `go tool task test:vz-stress` and `go tool task test:vz-teardown`
+  passing on a real guest first.
+- **A started machine is never left to the garbage collector.** `vzvm.Start`
+  hands every machine it started to `keepUntilSettled`, which holds it until the
+  framework reports Stopped or Error. A new path that drops a
+  `*vz.VirtualMachine` — an early return, a replaced field, a second
+  `NewVirtualMachine` — must go through it too, or a late state change panics
+  the server ("misuse of an invalid Handle"). `task test:vz-teardown` is the
+  reproduction on a real guest.
 - **Do not add a `CloseWrite` that does nothing.** A caller that finds the
   method believes the peer saw EOF. If a code path genuinely needs half-close,
   fix it at the binding, not with a method that lies.

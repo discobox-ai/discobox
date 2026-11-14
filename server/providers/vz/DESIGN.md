@@ -45,6 +45,19 @@ reused the number — a connection the Unix listener just accepted, ending
 `task test:vz-stress` is the reproduction: a Unix listener probed on fresh
 connections while a real guest churns VSOCK.
 
+A machine also outlives the server's last reference to it. The binding hands
+the framework's state observer a cgo handle and deletes it when the
+`*vz.VirtualMachine` is finalized, but the observer goes only when the
+framework frees the native machine, which it does not while that machine is
+running, stopping or hung. A state change after the finalizer panics the whole
+server. So `vzvm` keeps every machine it has started reachable until the
+framework reports it Stopped or Error, whatever `Close` or a failed `Start`
+did, and logs one that has not settled 30s after `Close`. A machine that never
+settles is held for the life of the process: one leaked hung VM is cheaper
+than a crash that takes every pool down. The hold stands whatever the binding
+does with the handle: a machine that can still change state is the server's
+to keep.
+
 `internal/vzvm` is the whole cgo/darwin surface, isolated exactly as
 `wslc/internal/wslcsession` is, so the driver, its configuration, and its tests
 compile and run on every platform. The bindings are built `darwin && cgo` —

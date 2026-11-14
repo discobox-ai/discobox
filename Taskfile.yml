@@ -698,6 +698,25 @@ tasks:
         DISCOBOX_VZ_STRESS_ARTIFACTS="$PWD/{{.ARTIFACTS}}"
         ./{{.TEST_BINARY}} -test.run TestVSOCKChurnKeepsUnixListenerServing -test.count=1 -test.v -test.timeout 45m
 
+  test:vz-teardown:
+    desc: "Drop a vz VM whose guest is still powering off and collect garbage until it is released (macOS). GUEST=<dir with vmlinux, initrd.img, root.ext4>"
+    # The regression test for a state change arriving after the binding freed
+    # the machine's state handle, which panics the process. It boots a VM, so
+    # its binary is compiled and signed rather than run through `go test`.
+    platforms: [darwin]
+    vars:
+      TEST_BINARY: build/vzvm-teardown.test
+    requires:
+      vars: [GUEST]
+    cmds:
+      - mkdir -p build
+      - cd server && go test -c -o ../{{.TEST_BINARY}} ./providers/vz/internal/vzvm
+      - task: sign
+        vars: { SIGN_BINARY: '{{.TEST_BINARY}}' }
+      - >-
+        DISCOBOX_VZ_STRESS_GUEST="{{.GUEST}}"
+        ./{{.TEST_BINARY}} -test.run TestDroppedVMIsHeldUntilItStops -test.count=1 -test.v -test.timeout 15m
+
   test:docker:bats:
     desc: Run Docker-backed CLI Bats integration tests (BATS_SUITE=<path> for one file)
     vars:

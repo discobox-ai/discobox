@@ -5,6 +5,7 @@ package vzvm
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -24,6 +25,9 @@ type VM struct {
 	socket    *vz.VirtioSocketDevice
 	listeners []*vz.VirtioSocketListener
 	closed    bool
+	// closing is closed by Close, which starts the clock on how long the
+	// keeper waits for the machine to stop before it says it has not.
+	closing chan struct{}
 }
 
 // Supported reports whether this build can run VMs.
@@ -140,17 +144,24 @@ func Start(opts Options) (*VM, error) {
 	if err != nil {
 		return nil, entitlementHint(fmt.Errorf("vzvm: create virtual machine: %w", err))
 	}
-	if err := machine.Start(); err != nil {
-		return nil, entitlementHint(fmt.Errorf("vzvm: start virtual machine: %w", err))
+	startErr := machine.Start()
+	// From here the framework may change the machine's state at any time, so
+	// it is kept reachable until it settles, whatever this function returns.
+	closing := make(chan struct{})
+	go keepUntilSettled(opts.Name, machine, closing, stopGrace)
+	if startErr != nil {
+		close(closing)
+		return nil, entitlementHint(fmt.Errorf("vzvm: start virtual machine: %w", startErr))
 	}
 
 	devices := machine.SocketDevices()
 	if len(devices) == 0 {
 		_ = machine.Stop()
+		close(closing)
 		return nil, errors.New("vzvm: virtual machine started without a socket device")
 	}
 
-	vm := &VM{name: opts.Name, machine: machine, socket: devices[0]}
+	vm := &VM{name: opts.Name, machine: machine, socket: devices[0], closing: closing}
 	if err := vm.waitRunning(30 * time.Second); err != nil {
 		_ = vm.Close()
 		return nil, err
@@ -344,6 +355,11 @@ func (v *VM) WaitStopped(timeout time.Duration) bool {
 }
 
 // Close force-stops the guest and releases its resources. It is idempotent.
+//
+// Dropping the machine here does not free it: the keeper Start began holds it
+// until the framework reports it stopped, so a machine Close could not stop
+// (one that cannot be stopped in its current state, or whose stop failed) is
+// never left to the garbage collector while it can still change state.
 func (v *VM) Close() error {
 	v.mu.Lock()
 	if v.closed {
@@ -353,6 +369,7 @@ func (v *VM) Close() error {
 	v.closed = true
 	machine, listeners := v.machine, v.listeners
 	v.machine, v.socket, v.listeners = nil, nil, nil
+	close(v.closing)
 	v.mu.Unlock()
 
 	for _, listener := range listeners {
@@ -368,6 +385,72 @@ func (v *VM) Close() error {
 		return fmt.Errorf("vzvm: stop %s: %w", v.name, err)
 	}
 	return nil
+}
+
+// stopGrace is how long after Close a machine may take to reach a settled
+// state before the keeper reports it. A forced stop settles in well under a
+// second; one that has not after this long is a hung guest or framework.
+const stopGrace = 30 * time.Second
+
+// keepUntilSettled holds machine reachable until the framework reports it
+// Stopped or Error, the states it leaves only when started again, which
+// nothing here does.
+//
+// The binding deletes the cgo handle its state observer is called with when
+// the *vz.VirtualMachine is finalized, but the observer itself is removed
+// only when the framework deallocates the native machine — which it does not
+// while the machine is still running, stopping, or hung. A state change after
+// that finalizer runs looks the deleted handle up and panics the whole server
+// ("runtime/cgo: misuse of an invalid Handle"). This goroutine's reference is
+// what keeps the finalizer from running while a state change can still
+// arrive, and it stays whatever the binding does with the handle: a machine
+// that can still change state is the server's to keep.
+//
+// A machine that never settles is held for the life of the process: a leak of
+// one hung VM is better than a crash of every pool. Once closing is closed,
+// grace bounds how long that may take before it is logged.
+func keepUntilSettled(name string, machine *vz.VirtualMachine, closing <-chan struct{}, grace time.Duration) {
+	notify := machine.StateChangedNotify()
+	var overdue <-chan time.Time
+	reported := false
+	for {
+		if settled(machine) {
+			if reported {
+				slog.Info("vz VM settled after it was closed; releasing it", "vm", name, "state", machine.State().String())
+			}
+			return
+		}
+		select {
+		case <-notify:
+		case <-closing:
+			closing = nil
+			overdue = time.After(grace)
+		case <-overdue:
+			overdue = nil
+			reported = true
+			slog.Warn("vz VM did not stop after it was closed; keeping it in memory until it does",
+				"vm", name, "state", machine.State().String(), "waited", grace)
+		}
+	}
+}
+
+// settled reports whether machine has reached Stopped or Error and every state
+// change the framework made before now has been delivered. The binding's state
+// is a copy its observer updates, so a settled copy is confirmed after a
+// synchronous call onto the machine's dispatch queue: the framework changes the
+// state and notifies observers on that queue, so whatever it queued before the
+// call has been delivered by the time the call returns. That also covers a
+// machine that never started, whose copy reads Stopped before any change.
+func settled(machine *vz.VirtualMachine) bool {
+	if !settledState(machine.State()) {
+		return false
+	}
+	_ = machine.CanStart()
+	return settledState(machine.State())
+}
+
+func settledState(state vz.VirtualMachineState) bool {
+	return state == vz.VirtualMachineStateStopped || state == vz.VirtualMachineStateError
 }
 
 func (v *VM) waitRunning(timeout time.Duration) error {
