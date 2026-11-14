@@ -366,7 +366,9 @@ func (a *App) newSandboxPurgeCommand() *cobra.Command {
 		Long: `Destroy discoboxes and their data.
 
 This is not recoverable: the workspace, config, and secrets are removed from
-the pool host along with the container. Unlike the other lifecycle commands it
+the pool host along with the container, and so is the egress audit its pool
+recorded for it, so "discobox audit" no longer shows its traffic. Unlike the
+other lifecycle commands it
 waits for the pool agent to confirm the removal, so when it returns the data is
 actually gone.
 
