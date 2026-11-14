@@ -34,6 +34,8 @@ snapshot_re='DEBIAN_SNAPSHOT=[0-9]{8}T[0-9]{6}Z'
 docker_ce_re='DOCKER_CE_VERSION=[0-9][0-9A-Za-z.+-]*'
 containerd_io_re='CONTAINERD_IO_VERSION=[0-9][0-9A-Za-z.+-]*'
 docker_key_re='DOCKER_APT_KEY_FINGERPRINT=[0-9A-F]{40}'
+# The lines that look up Docker's pinned versions and check Docker's key.
+docker_lookup_re='apt-cache madison (docker-ce|containerd\.io)|gpg --show-keys .*(/etc/apt/keyrings/docker\.asc|/docker\.asc)'
 docker_suite=trixie
 
 # Every tracked file that carries a copy of the pin. ADRs are history and
@@ -181,14 +183,16 @@ check() {
   # one that checks its key, are copied into each Dockerfile that installs
   # Docker, and they depend on how docker-bump writes the pin: every copy is
   # held to the same text, its indentation and its joining `&&` set aside.
+  # Only Docker's key is part of the pin: another key check (the sandbox base's
+  # GitHub CLI key) reads a different keyring and is not compared.
   local lookups
   # The sed program matches the literal text `$gnupg` in the Dockerfiles.
   # shellcheck disable=SC2016
-  lookups=$(git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -hE 'apt-cache madison (docker-ce|containerd\.io)|gpg --show-keys' |
+  lookups=$(git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -hE "$docker_lookup_re" |
     sed -E 's/^[[:space:]]*(&& )?//; s/[[:space:]]*\\$//; s/GNUPGHOME=\$gnupg //; s#/etc/apt/keyrings/docker\.asc|/docker\.asc#KEY#' | sort | uniq -c | awk '{ print $1 }' | sort -u)
   if [ -n "$lookups" ] && [ "$lookups" != "$(git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -l 'download\.docker\.com' | grep -c .)" ]; then
     echo "docker pin: the version lookup or key check differs between the Dockerfiles that install Docker:" >&2
-    git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -nE 'apt-cache madison (docker-ce|containerd\.io)|gpg --show-keys' | sed 's/^/  /' >&2
+    git ls-files '*Dockerfile' '*.Dockerfile' | xargs grep -nE "$docker_lookup_re" | sed 's/^/  /' >&2
     failed=1
   fi
 
