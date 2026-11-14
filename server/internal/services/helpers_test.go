@@ -184,13 +184,13 @@ func TestSandboxToAPIIncludesTheCreatingSandbox(t *testing.T) {
 	}
 }
 
-// A sandbox on a platform without POSIX ids has one account, so its create may
-// name that account and nothing more. A uid or a group set is refused as a bad
-// request saying why, never dropped on the way to a sandbox that cannot honor
-// it (ADR 0145 §5).
-func TestSandboxUserValidateAccountRefusesIDsOffLinux(t *testing.T) {
+// A Windows sandbox has one account and no ids, so its create may name that
+// account and nothing more. A uid or a group set is refused as a bad request
+// saying why, never dropped on the way to a sandbox that cannot honor it (ADR
+// 0145 §5).
+func TestSandboxUserValidateAccountRefusesIDsOnWindows(t *testing.T) {
 	name, uid := "ada", 501
-	if err := (SandboxUserFields{Name: &name}).ValidateAccount("darwin"); err != nil {
+	if err := (SandboxUserFields{Name: &name}).ValidateAccount("windows"); err != nil {
 		t.Fatalf("the account by name = %v, want nil", err)
 	}
 	for _, tc := range []struct {
@@ -200,14 +200,28 @@ func TestSandboxUserValidateAccountRefusesIDsOffLinux(t *testing.T) {
 		{SandboxUserFields{Name: &name, UID: &uid}, "a uid (501)"},
 		{SandboxUserFields{AdditionalGroups: []string{"staff"}}, "a group set (staff)"},
 	} {
-		err := tc.fields.ValidateAccount("darwin")
+		err := tc.fields.ValidateAccount("windows")
 		var statusErr interface{ StatusCode() int }
 		if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest ||
-			!strings.Contains(err.Error(), "no POSIX ids") || !strings.Contains(err.Error(), tc.want) {
+			!strings.Contains(err.Error(), "runs every process as it") || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("ValidateAccount(%+v) = %v, want a 400 naming %q and why", tc.fields, err, tc.want)
 		}
 	}
-	// The same uid is an account a Linux sandbox may be created with.
+}
+
+// A macOS client's own account, 501 in staff, is one a darwin sandbox is
+// created with and a Linux one refuses as a bad request (ADR 26-11-12-060).
+func TestSandboxUserValidateAccountTakesTheGuestsIDs(t *testing.T) {
+	name, uid, gid := "ada", 501, 20
+	macAccount := SandboxUserFields{Name: &name, UID: &uid, GID: &gid}
+	if err := macAccount.ValidateAccount("darwin"); err != nil {
+		t.Fatalf("501/20 on darwin = %v, want nil", err)
+	}
+	err := macAccount.ValidateAccount("linux")
+	var statusErr interface{ StatusCode() int }
+	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "uid 501") {
+		t.Fatalf("501/20 on linux = %v, want a 400 naming uid 501", err)
+	}
 	linuxUID := 1000
 	if err := (SandboxUserFields{Name: &name, UID: &linuxUID}).ValidateAccount("linux"); err != nil {
 		t.Fatalf("a Linux account = %v, want nil", err)

@@ -1,6 +1,9 @@
 package sandboxes
 
 import (
+	"errors"
+	"net/http"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -80,6 +83,55 @@ func TestCreateTakesThePoolsImageKind(t *testing.T) {
 		}
 		if created.PoolID != pool || created.Platform != platform.Pool() || created.HarnessPin().Digest == "" {
 			t.Fatalf("created on %q as %q pinned to %+v, want %s as %q on its bundle", created.PoolID, created.Platform, created.HarnessPin(), pool, platform.Pool())
+		}
+	}
+}
+
+// The account a create names is judged by the ids its pool's guest gives
+// accounts: a macOS client's own 501 in staff is created on a darwin pool and
+// refused on a Linux one, and a pool that has not declared a platform is
+// judged as Linux (ADR 26-11-12-060).
+func TestCreateJudgesTheUserByThePoolsPlatform(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	macAccount := serverapi.SandboxUser{
+		Name: serverapi.NewOptString("ada"),
+		UID:  serverapi.NewOptInt64(501),
+		Gid:  serverapi.NewOptInt64(20),
+	}
+	create := func(name string) error {
+		_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+			HarnessName: serverapi.NewOptString("codex"),
+			Config: serverapi.SandboxCreateConfig{
+				Name: name,
+				User: serverapi.NewOptSandboxUser(macAccount),
+			},
+		})
+		return err
+	}
+
+	if err := create("undeclared"); err == nil || !strings.Contains(err.Error(), "uid 501") {
+		t.Fatalf("501/20 on a pool with no platform = %v, want uid 501 refused as Linux refuses it", err)
+	}
+	for _, tc := range []struct {
+		hosts platform.Platform
+		ok    bool
+	}{
+		{platform.Platform{OS: "linux", Arch: "arm64"}, false},
+		{platform.Platform{OS: "darwin", Arch: "arm64"}, true},
+	} {
+		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", tc.hosts, platform.VM("vz"), store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
+			t.Fatal(err)
+		}
+		err := create("on-" + tc.hosts.OS)
+		if tc.ok && err != nil {
+			t.Fatalf("501/20 on a %s pool: %v", tc.hosts, err)
+		}
+		if !tc.ok {
+			var statusErr interface{ StatusCode() int }
+			if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "uid 501") {
+				t.Fatalf("501/20 on a %s pool = %v, want a 400 naming uid 501", tc.hosts, err)
+			}
 		}
 	}
 }

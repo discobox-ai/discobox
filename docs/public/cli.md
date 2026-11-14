@@ -733,7 +733,7 @@ discobox admin box create --name NAME [flags]
 | --user-group | stringSlice | [] | Groups for the discobox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups |
 | --user-name | string |  | Username to use inside the discobox |
 | --user-skills | bool | false | Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills Value when passed without an argument: true. |
-| --user-uid | int64 | 0 | UID to use inside the discobox: 0 (root) or 1000-60000, and required with --user-name or --home-directory |
+| --user-uid | int64 | 0 | UID to use inside the discobox: 0 (root), or 1000-60000 on Linux and 501-60000 on macOS; required with --user-name or --home-directory |
 | --wait | bool | false | Wait for discobox to reach running or fail Value when passed without an argument: true. |
 | --wait-timeout | duration | 2m0s | Maximum time to wait |
 | --working-directory | string |  | Working directory inside the discobox |

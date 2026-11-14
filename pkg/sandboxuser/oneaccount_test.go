@@ -52,7 +52,7 @@ func TestValidateOneAccountRefusesWhatTheSandboxDoesNotHave(t *testing.T) {
 				t.Errorf("field = %s, want %s", refused.Field, tc.field)
 			}
 			// The reason is the platform's, and the message says so.
-			for _, want := range []string{"darwin", `one account, "dev"`, "no POSIX ids", tc.says} {
+			for _, want := range []string{"darwin", `one account, "dev"`, "runs every process as it", tc.says} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("message %q does not contain %q", err.Error(), want)
 				}
@@ -68,11 +68,11 @@ func TestValidateOneAccountKeepsTheInLayerCheck(t *testing.T) {
 	}
 }
 
-// A sandbox create on a platform without POSIX ids takes the one-account rule,
-// and the Linux account-range rule does not apply: a client's own uid is not
+// A sandbox create on a platform whose account has no ids takes the
+// one-account rule, and no account range applies: a client's own uid is not
 // something such a sandbox can be created with at all.
-func TestValidateAccountOffLinuxIsTheOneAccountRule(t *testing.T) {
-	if err := (&User{Name: "dev"}).ValidateAccount("darwin"); err != nil {
+func TestValidateAccountOnWindowsIsTheOneAccountRule(t *testing.T) {
+	if err := (&User{Name: "dev"}).ValidateAccount("windows"); err != nil {
 		t.Errorf("a named account = %v, want nil", err)
 	}
 	for _, u := range []*User{

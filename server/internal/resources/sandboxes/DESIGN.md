@@ -52,6 +52,16 @@ flowchart LR
   26-10-09-106). The pool's kind is the refusal — `refuseMachinePool` before
   the tree is read, for a pool that has declared one, and
   `poolruntime.Provider.ImportTree` once a pool still coming up has.
+- The account a create names is checked by the ids its pool's guest gives
+  accounts (`sandboxuser.ValidateAccount`, ADR 0141, ADR 26-11-12-060), and,
+  before the pool declares a platform, as Linux, unlike a source's placement
+  below. Every guest that might be would refuse nearly every account: a
+  Windows sandbox's has no ids, so judging by each would refuse a Linux
+  client's 1000 on a new machine's pool, the common case; and Linux is what
+  such a pool has always meant and what the CLI judges it as. Its uids are
+  narrower than macOS's; its gids are not quite (root's 0, which macOS
+  refuses), so root in group 0 passes here and is refused on a macOS guest. An account that lands on a guest whose rule it breaks is
+  refused inside the sandbox as it resolves (ADR 0145 §5), never ignored.
 - A source's placement is checked at create and at import, by the sandbox's
   platform's path rules or, before its pool declares one, by each it may be
   (`sandboxPathRules`): a working directory is an absolute path inside its

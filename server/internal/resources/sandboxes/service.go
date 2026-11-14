@@ -197,16 +197,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if strings.TrimSpace(config.Name) == "" {
 		return nil, fmt.Errorf("sandbox name is required")
 	}
-	// The account boot creates, and the one the pool agent chowns a source tree
-	// to before the sandbox exists; a user it cannot create with a usable uid
-	// is refused here rather than failing, or landing on root, later (ADR 0141).
-	// The rule is the sandbox's platform's, and every sandbox this control plane
-	// records is a Linux one: a platform without POSIX ids refuses any user but
-	// its one account (ADR 0145 §5).
-	user := services.SandboxUserToModel(config.User)
-	if err := user.ValidateAccount("linux"); err != nil {
-		return nil, err
-	}
 	// Names are unique within a project (idx_sandbox_project_name) because they
 	// are an addressable handle, not just a label: `discobox admin ssh-config` emits
 	// one as an ssh_config Host alias, and ssh applies the first matching block,
@@ -287,6 +277,21 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// pool whose agent has not declared its platform yet answers none, and
 	// the sandbox takes it when it is placed (store.SchedulablePoolForSandbox).
 	sandboxPlatform := pool.Platform
+	// The account boot creates, and the one the pool agent chowns a source tree
+	// to before the sandbox exists; a user it cannot create with a usable uid
+	// is refused here rather than failing, or landing on root, later (ADR 0141).
+	// The ids are the sandbox's guest's: Linux's, or macOS's from 501 (ADR
+	// 26-11-12-060); a platform whose account has no ids refuses any user but
+	// its one account (ADR 0145 §5). A pool that has not declared its platform
+	// is judged as Linux, as the CLI judges it.
+	accountOS := sandboxPlatform.OS
+	if accountOS == "" {
+		accountOS = platform.Linux
+	}
+	user := services.SandboxUserToModel(config.User)
+	if err := user.ValidateAccount(accountOS); err != nil {
+		return nil, err
+	}
 	if err := validateSourceWorkingDirectory(source, sandboxPlatform); err != nil {
 		return nil, err
 	}
