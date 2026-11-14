@@ -62,7 +62,7 @@ func Wire(logger *slog.Logger) error {
 		return err
 	}
 	b := newBooter()
-	if err := b.provision(logger, id, &bootstrap, wireContainer); err != nil {
+	if _, err := b.provision(logger, id, &bootstrap, wireContainer); err != nil {
 		return err
 	}
 	if err := wireSecrets(); err != nil {
@@ -178,10 +178,11 @@ func (b *booter) provisionMachine(logger *slog.Logger, path string, atBoot bool)
 	if err := ensureMachineRoots(); err != nil {
 		return err
 	}
-	if err := b.provision(logger, id, &bootstrap, mode); err != nil {
+	workingRoot, err := b.provision(logger, id, &bootstrap, mode)
+	if err != nil {
 		return err
 	}
-	if err := markMachineWired(bootstrap.SandboxID, mode); err != nil {
+	if err := markMachineWired(bootstrap.SandboxID, mode, workingRoot); err != nil {
 		return err
 	}
 	if dirExists("/run/systemd/system") {
@@ -303,7 +304,10 @@ func (b *booter) reloadUserUnits(logger *slog.Logger, id identity) error {
 // launchers. mode says what the declared volumes and the sources are wired
 // from: the primary volumes the pool agent mounted (a pool's container, which
 // also binds its config volume), or a machine's own data and cache roots.
-func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, mode wireMode) error {
+//
+// It reports whether the working root is durable once it returns
+// (wireWorkingRoot), which a machine says on its data volume.
+func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, mode wireMode) (bool, error) {
 	// A skills source's target may be home-relative (ADR 26-11-01-692 §3):
 	// expanded here against the home boot resolved, so the direnv whitelist
 	// and the wiring below see the place it is mounted.
@@ -316,70 +320,77 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 		b.wireFeatures(logger, bootstrap.Features)
 	}
 	if err := b.ensureUser(id); err != nil {
-		return fmt.Errorf("ensure user: %w", err)
+		return false, fmt.Errorf("ensure user: %w", err)
 	}
 	if err := b.ensureAdditionalGroups(id, bootstrap.SandboxGroups()); err != nil {
-		return fmt.Errorf("ensure additional groups: %w", err)
+		return false, fmt.Errorf("ensure additional groups: %w", err)
 	}
 	if mode == wireContainer {
 		if err := b.wireConfig(); err != nil {
-			return fmt.Errorf("wire config: %w", err)
+			return false, fmt.Errorf("wire config: %w", err)
 		}
 	}
 	// Before the volumes and the sources, per seedWorkingRoot: anything wired
 	// onto the working root itself carries its own ownership.
 	if err := b.seedWorkingRoot(bootstrap.WorkingRoot(sandboxPaths), id); err != nil {
-		return fmt.Errorf("seed working root: %w", err)
+		return false, fmt.Errorf("seed working root: %w", err)
 	}
 	volumes, err := loadResolvedVolumes(id, bootstrap.Volumes)
 	if err != nil {
-		return fmt.Errorf("resolve volumes: %w", err)
+		return false, fmt.Errorf("resolve volumes: %w", err)
 	}
 	if mode == wireMachine {
 		if err := adoptLegacyLayouts(bootstrap.SandboxID, volumes, bootstrap.Sources, id.uid); err != nil {
-			return fmt.Errorf("adopt the data volume's layouts: %w", err)
+			return false, fmt.Errorf("adopt the data volume's layouts: %w", err)
 		}
 	}
+	// Before the declared volumes: nothing declared is its parent, or it
+	// would not be wired, and a declared path nested under it is bound onto
+	// its directory (ADR 26-11-14-302 §1).
+	workingRoot, err := b.wireWorkingRoot(bootstrap.WorkingRoot(sandboxPaths), volumes, bootstrap.Sources, id, mode)
+	if err != nil {
+		return false, err
+	}
 	if err := b.wireVolumes(volumes, id, mode); err != nil {
-		return err
+		return false, err
 	}
 	logger.Info("wired sandbox volumes", "count", len(volumes))
 	// Seed the home directory after the home volume (if any) is mounted, so the
 	// skeleton lands on the persistent volume rather than the image layer.
 	if err := b.seedHome(id); err != nil {
-		return fmt.Errorf("seed home: %w", err)
+		return false, fmt.Errorf("seed home: %w", err)
 	}
 	// After seedHome: it fills only an empty home from /etc/skel, so a
 	// .gitconfig written before it would leave the sandbox with no skeleton.
 	if err := b.seedGitConfig(id, bootstrap.Git); err != nil {
-		return fmt.Errorf("seed git config: %w", err)
+		return false, fmt.Errorf("seed git config: %w", err)
 	}
 	// After seedHome for the same reason, and before wireSources only
 	// because it reads the manifest's targets rather than the trees. It
 	// writes straight to its final owner: nothing chowns home afterwards.
 	if !b.off(featureDirenv) {
 		if err := b.seedDirenvConfig(id, bootstrap.Sources); err != nil {
-			return fmt.Errorf("seed direnv config: %w", err)
+			return false, fmt.Errorf("seed direnv config: %w", err)
 		}
 	}
 	// After seedHome for the same reason, and written straight to their
 	// final owner.
 	if !b.off(featureDesktop) {
 		if err := b.seedDesktopLaunchers(id, desktop.LauncherDir); err != nil {
-			return fmt.Errorf("seed desktop launchers: %w", err)
+			return false, fmt.Errorf("seed desktop launchers: %w", err)
 		}
 	}
 	if mode != wireContainer {
 		if err := b.wireMachineSources(bootstrap.Sources, id, mode); err != nil {
-			return err
+			return false, err
 		}
 	} else if err := b.wireSources(bootstrap.Sources, id); err != nil {
-		return err
+		return false, err
 	}
 	if len(bootstrap.Sources) > 0 {
 		logger.Info("wired sandbox sources", "count", len(bootstrap.Sources))
 	}
-	return nil
+	return workingRoot, nil
 }
 
 // wireMode is what provision wires the declared volumes and the sources from.
@@ -438,7 +449,13 @@ var machineDataVolume = func() bool {
 // marks its layouts this agent's (adoptedFile): every path it mounted has
 // its record now. The agent's start, which records nothing for a cache path
 // or a source (decideLayout), does not.
-func markMachineWired(sandboxID string, mode wireMode) error {
+//
+// workingRoot is that the working root is durable this start
+// (wireWorkingRoot): the line then says so as well
+// (sandboxconfig.MachineWorkingRootWired), and only such a line lets the pool
+// give the machine a new root, which would otherwise take a working root still
+// on it (ADR 26-11-14-302 §4).
+func markMachineWired(sandboxID string, mode wireMode, workingRoot bool) error {
 	if mode == wireMachine && machineDataVolume() {
 		if err := markAdopted(); err != nil {
 			return err
@@ -450,7 +467,7 @@ func markMachineWired(sandboxID string, mode wireMode) error {
 	}
 	token := hex.EncodeToString(raw[:])
 	if machineDataVolume() {
-		if err := os.WriteFile(machineDataWiredFile, []byte(sandboxID+" "+token+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
+		if err := os.WriteFile(machineDataWiredFile, []byte(sandboxconfig.MachineDataWiredLine(sandboxID, token, workingRoot)+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
 			return err
 		}
 	}
@@ -510,6 +527,10 @@ func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Co
 			return fmt.Errorf("adopt the data volume's layouts: %w", err)
 		}
 	}
+	workingRoot, err := b.wireWorkingRoot(expanded.WorkingRoot(sandboxPaths), volumes, expanded.Sources, id, mode)
+	if err != nil {
+		return err
+	}
 	if err := b.wireVolumes(volumes, id, mode); err != nil {
 		return err
 	}
@@ -517,5 +538,5 @@ func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Co
 		return err
 	}
 	logger.Info("mounted a machine's volumes", "volumes", len(volumes), "sources", len(expanded.Sources))
-	return markMachineWired(bootstrap.SandboxID, mode)
+	return markMachineWired(bootstrap.SandboxID, mode, workingRoot)
 }

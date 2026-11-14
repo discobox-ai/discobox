@@ -34,7 +34,7 @@ func TestAMachineIsProvisionedAndItsSourcesMounted(t *testing.T) {
 		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
 	}
 
-	if err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
+	if _, err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func TestProvisionWiresFeaturesFirstAndSkipsWhatIsOff(t *testing.T) {
 		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
 		Features:     map[string]sandboxconfig.Feature{"direnv": {Enabled: false}},
 	}
-	if err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
+	if _, err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if runsBefore != 0 || len(wired) != 1 || wired["direnv"].Enabled {
@@ -215,7 +215,7 @@ func TestProvisionExpandsAHomeRelativeSourceTarget(t *testing.T) {
 		AgentRuntime: sandboxconfig.AgentRuntime{WorkingRoot: filepath.Join(root, "workspace")},
 		Sources:      []sandboxconfig.Source{{Slug: "tools", Target: "~/.discobox/skill-sources/tools"}},
 	}
-	if err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
+	if _, err := b.provision(slog.Default(), id, &bootstrap, wireMachine); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	want := filepath.Join(id.home, ".discobox", "skill-sources", "tools")
@@ -277,7 +277,7 @@ func TestAMachinesAgentStartMovesNothingOnItsDisk(t *testing.T) {
 		Sources:      []sandboxconfig.Source{{Slug: "primary", Target: source}},
 		Volumes:      []harness.Volume{{Path: docker, Volume: harness.VolumeData}},
 	}
-	if err := b.provision(slog.Default(), id, &bootstrap, wireMachineStarted); err != nil {
+	if _, err := b.provision(slog.Default(), id, &bootstrap, wireMachineStarted); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if len(*binds) != 0 {

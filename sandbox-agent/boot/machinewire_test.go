@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -81,36 +82,41 @@ func TestWireMachineBootOncePerStart(t *testing.T) {
 // machine whose data root is its driver's volume says on it that the
 // sandbox's data is kept there, naming that token. Roots on the machine's own
 // disk say nothing, so the pool never gives that machine a new root (ADR
-// 26-11-02-023 §1).
+// 26-11-02-023 §1). The line names the working root only when this start kept
+// it durable: a working root left on the machine's root goes with a new one
+// (ADR 26-11-14-302 §4).
 func TestOnlyADataVolumeIsRecordedAsKeepingTheData(t *testing.T) {
 	for name, volume := range map[string]bool{"a data volume": true, "roots on the disk": false} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			savedVolume, savedWired, savedData, savedRoot := machineDataVolume, machineWiredPath, machineDataWiredFile, dataMountPath
-			t.Cleanup(func() {
-				machineDataVolume, machineWiredPath, machineDataWiredFile, dataMountPath = savedVolume, savedWired, savedData, savedRoot
+		for _, workingRoot := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s, working root kept %v", name, workingRoot), func(t *testing.T) {
+				dir := t.TempDir()
+				savedVolume, savedWired, savedData, savedRoot := machineDataVolume, machineWiredPath, machineDataWiredFile, dataMountPath
+				t.Cleanup(func() {
+					machineDataVolume, machineWiredPath, machineDataWiredFile, dataMountPath = savedVolume, savedWired, savedData, savedRoot
+				})
+				machineDataVolume = func() bool { return volume }
+				dataMountPath = filepath.Join(dir, "data")
+				machineWiredPath = filepath.Join(dir, "run", "machine-wired")
+				machineDataWiredFile = filepath.Join(dir, "data-wired")
+				if err := markMachineWired("sbx_1", wireMachine, workingRoot); err != nil {
+					t.Fatal(err)
+				}
+				token, err := os.ReadFile(machineWiredPath)
+				if err != nil || len(strings.TrimSpace(string(token))) != 32 {
+					t.Fatalf("this start's token = %q, %v; want a random one", token, err)
+				}
+				data, err := os.ReadFile(machineDataWiredFile)
+				want := sandboxconfig.MachineDataWiredLine("sbx_1", strings.TrimSpace(string(token)), workingRoot) + "\n"
+				if volume && (err != nil || string(data) != want) {
+					t.Fatalf("the data volume's record = %q, %v; want %q", data, err, want)
+				}
+				if !volume && !os.IsNotExist(err) {
+					t.Fatalf("roots on the disk recorded %q (%v); want nothing", data, err)
+				}
+				if fileExists(adoptedPath()) != volume {
+					t.Fatalf("adopted marker = %v, want %v: a boot's wiring marks a data volume's layouts its own", fileExists(adoptedPath()), volume)
+				}
 			})
-			machineDataVolume = func() bool { return volume }
-			dataMountPath = filepath.Join(dir, "data")
-			machineWiredPath = filepath.Join(dir, "run", "machine-wired")
-			machineDataWiredFile = filepath.Join(dir, "data-wired")
-			if err := markMachineWired("sbx_1", wireMachine); err != nil {
-				t.Fatal(err)
-			}
-			token, err := os.ReadFile(machineWiredPath)
-			if err != nil || len(strings.TrimSpace(string(token))) != 32 {
-				t.Fatalf("this start's token = %q, %v; want a random one", token, err)
-			}
-			data, err := os.ReadFile(machineDataWiredFile)
-			if volume && (err != nil || string(data) != "sbx_1 "+string(token)) {
-				t.Fatalf("the data volume's record = %q, %v; want the sandbox's ID and this start's token %q", data, err, token)
-			}
-			if !volume && !os.IsNotExist(err) {
-				t.Fatalf("roots on the disk recorded %q (%v); want nothing", data, err)
-			}
-			if fileExists(adoptedPath()) != volume {
-				t.Fatalf("adopted marker = %v, want %v: a boot's wiring marks a data volume's layouts its own", fileExists(adoptedPath()), volume)
-			}
-		})
+		}
 	}
 }
