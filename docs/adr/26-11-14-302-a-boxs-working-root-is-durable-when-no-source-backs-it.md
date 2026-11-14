@@ -1,6 +1,7 @@
 # 26-11-14-302 — A box's working root is durable when no source backs it
 
 - **Status**: Accepted
+- **Amended**: 2026-11-14, before anything shipped against it, in the delivering PR: §2's every-boot move and set-aside, §3's stash placement and failure
 - **Date**: 2026-11-14
 - Accepted by the owner by merging #1158, 2026-11-14
 - **Issue**: [#1156](https://github.com/discobox-ai/discobox/issues/1156)
@@ -93,6 +94,17 @@ This is also the migration for a box that restarts on the new agent without
 being rebuilt (the platform follows its server from the next start, ADR
 26-10-16-423): its `/workspace` moves onto the volume at that boot.
 
+Unlike a declared path's, the move is not once. Every boot moves in whatever
+it finds at the working root, record or not: work the pool carries into a
+container (§3) can reach one whose box booted before it, and a bind over it
+would hide it under the volume for good. A name the volume already has is set
+aside beside it (`<name>.carried`, then `-2` and on) and moved in, not
+refused as ADR 26-11-02-023 §2 refuses one: a refused name fails the boot,
+which ends the container or powers the machine off, over a clash in the
+user's own files that keeping both settles. At an agent's start (no boot)
+nothing is moved, as nowhere else: a working root with entries is left where
+it is and reported not durable (§4) for the next boot.
+
 ### 3. A container rebuilt from one made before this carries its working root over
 
 A container's working root from before this is in its writable layer, which
@@ -107,6 +119,14 @@ before it starts; boot then moves it onto the volume (§2).
 
 - Both copies are Docker's: nothing the box wrote is extracted on the pool
   host, whose agent runs as root.
+- The stash is the pool's: at the root of the sandbox's tree, beside its
+  volumes, never in them, since the box can write those. An export carries
+  the volumes only, so a stash still waiting does not travel.
+- A container with a Docker mount at or above the working root has nothing
+  of its own there, and stashes nothing.
+- A failed copy fails the removal and leaves the container: the work goes
+  only where the next container can get it. The copy runs apart from its
+  caller's cancellation, bounded on its own, and a retry runs it again.
 - A layer with nothing at the working root stashes nothing. One whose working
   root was moved onto the volume is empty, so a box migrates once.
 - An existing stash is never overwritten: it holds what no container has been
