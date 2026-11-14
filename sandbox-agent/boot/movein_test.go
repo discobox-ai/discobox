@@ -340,7 +340,7 @@ func TestAPathNewlyDeclaredOnAWiredVolumeIsMovedIn(t *testing.T) {
 	savedWired := machineWiredPath
 	t.Cleanup(func() { machineWiredPath = savedWired })
 	machineWiredPath = filepath.Join(t.TempDir(), "run", "machine-wired")
-	if err := markMachineWired("sbx_1", wireMachine); err != nil {
+	if err := markMachineWired("sbx_1", wireMachine, true); err != nil {
 		t.Fatal(err)
 	}
 	target, _, _ := moveInFixture(t)
@@ -367,7 +367,7 @@ func TestTheAgentsStartDoesNotMarkAVolumeAdopted(t *testing.T) {
 	savedWired := machineWiredPath
 	t.Cleanup(func() { machineWiredPath = savedWired })
 	machineWiredPath = filepath.Join(t.TempDir(), "run", "machine-wired")
-	if err := markMachineWired("sbx_1", wireMachineStarted); err != nil {
+	if err := markMachineWired("sbx_1", wireMachineStarted, true); err != nil {
 		t.Fatal(err)
 	}
 	if fileExists(adoptedPath()) {

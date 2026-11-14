@@ -526,6 +526,8 @@ user waits on every single start.
   tmpfs: a tmpfs has its own device, which is the case that was never the
   problem.
 - **A data volume's layout is decided once and recorded, never re-judged.**
+  (The working root's record is dropped and written again when a boot moves
+  carried work in, still as a bind: ADR 26-11-14-302 §2, and the note below.)
   `wireVolume` takes bind or overlay from `decideLayout`, which keeps the
   layout in `/.discobox/data/.layouts`; `useOverlay`'s look at the target is
   only for a volume with no record. Choosing from the target on every boot is
@@ -546,7 +548,13 @@ user waits on every single start.
   never `mv`, whose cut-short copy is a partial entry every later boot
   refuses;
   refuse a name the volume has rather than overwrite it; and keep a layout
-  already recorded, a data-volume machine's overlay among them. Parents go
+  already recorded, a data-volume machine's overlay among them. The working
+  root is the one exception (`wireWorkingRoot`, ADR 26-11-14-302 §2): every
+  boot moves in what is at it, recorded or not, and sets a clashing name
+  aside as `<name>.carried` instead of refusing it, because what the pool
+  carries from a removed container reaches it after its first boot and a
+  refused name fails the boot over the user's own files. Don't "fix" it back
+  to moving once and refusing. Parents go
   first (`sortVolumesByDepth`), so a cache path in the home moves out of the
   home's volume at its own turn; a path that is its volume directory
   already, reached through a parent's bind, moves nothing.
