@@ -311,6 +311,9 @@ func recordedPhase(runtime apimodel.SandboxRuntime) Step {
 // manifest is walked — so this reports them as the pair of counts they are and
 // never as a percentage, which would visibly go backwards.
 //
+// A layer being fetched again after its transfer ended is named on the line
+// for as long as it is.
+//
 // An image loaded from the image cache is read into the daemon whole before
 // any of it is extracted, so once extraction is reported the line counts that
 // instead: the bytes read are already all of them, and the minutes left are in
@@ -331,6 +334,18 @@ func pullLine(pull apimodel.SandboxPullProgress) Step {
 	}
 	if layers := pull.Layers.Or(0); layers > 0 {
 		line += fmt.Sprintf(", %d/%d layers", layersComplete, layers)
+	}
+	if retry, ok := pull.Retry.Get(); ok {
+		// Said for as long as the layer is being fetched again, in the words
+		// the server's image download uses, so a count that pauses or steps
+		// back reads as the retry it is.
+		line += fmt.Sprintf(", retrying layer %d", retry.Layer)
+		if layers := pull.Layers.Or(0); layers > 0 {
+			line += fmt.Sprintf(" of %d", layers)
+		}
+		if kept := retry.Kept.Or(0); kept > 0 {
+			line += " after its transfer ended at " + humanBytes(kept)
+		}
 	}
 	return Step(line)
 }
