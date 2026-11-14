@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	osexec "os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,6 +22,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
+	"github.com/discobox-ai/discobox/sandbox-agent/shimruntime"
 )
 
 // TestMain lets this test binary be its own exec shim. Both unit managers
@@ -135,15 +139,17 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 			t.Skip("bash not available")
 		}
 		agent := startContractAgent(t, newUnits, contractRuntimeDir(t), newContractAudit())
-		// The rc file says when the shell is interactive. bash sets itself to
-		// ignore SIGTERM as it initializes, before it reads its rc file, so a
-		// stop that lands after the sentinel meets the shell a terminal
-		// really holds; one that landed earlier would kill a shell that had
-		// not got that far, and pass without the hangup.
-		dir := t.TempDir()
-		ready := filepath.Join(dir, "interactive")
-		rc := filepath.Join(dir, "rc")
-		if err := os.WriteFile(rc, fmt.Appendf(nil, ": > %q\n", ready), 0o600); err != nil {
+		// The stop lands on the shell a terminal really holds: one at its
+		// prompt, readline's handlers in place, with nothing more to write.
+		// There only the SIGHUP can end it: the master's close (Hangup) waits
+		// on output that never comes. Its rc file is too early for that: bash
+		// only records a SIGHUP until readline has installed its handlers,
+		// which it does after the rc file, and a stop landing there is the
+		// hangup's case, StopATerminalAsItsShellStarts. The prompt is drawn
+		// after those handlers are in place, so the test waits to see it.
+		const prompt = "stop-me$ "
+		rc := filepath.Join(t.TempDir(), "rc")
+		if err := os.WriteFile(rc, fmt.Appendf(nil, "PS1=%q\n", prompt), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -163,16 +169,32 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		running := agent.waitFor(t, exec.ID, "running", func(exec Exec) bool {
 			return exec.Status == StatusRunning && exec.PID > 0
 		})
-		waitUntil(t, "the shell to be interactive", func() bool {
-			_, err := os.Stat(ready)
-			return err == nil
-		})
+		// Each read bounded on its own, so a slow prompt is reported with the
+		// last screen read, not a context that ran out under the poll.
+		var screen []string
+		var screenErr error
+		waitUntilSaying(t, "the shell's prompt", func() bool {
+			readCtx, cancelRead := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancelRead()
+			read, err := shimproxy.CallJSON[shimruntime.ScreenText](readCtx, running.SocketPath, http.MethodGet, "/screen", nil)
+			if screenErr = err; err != nil {
+				return false
+			}
+			screen = read.Lines
+			return slices.ContainsFunc(screen, func(line string) bool {
+				return strings.HasPrefix(line, strings.TrimSpace(prompt))
+			})
+		}, func() string { return fmt.Sprintf("screen %q, last error %v", screen, screenErr) })
 		began := time.Now()
 		if _, err := agent.manager.Stop(context.Background(), exec.ID); err != nil {
 			t.Fatalf("stop: %v", err)
 		}
 		if took := time.Since(began); took >= shimStopGrace/2 {
-			t.Fatalf("stopping a terminal took %s; an interactive shell has to be hung up, not waited out", took)
+			// The shim's log says whether it could read the shell's identity
+			// and list its session; the shell's version, which one this was.
+			version, _ := osexec.CommandContext(context.Background(), bash, "--version").Output()
+			t.Fatalf("stopping a terminal took %s; an interactive shell has to be hung up, not waited out\n%s: %s\n%s",
+				took, bash, firstLine(version), shimLog(agent.units, exec.Unit))
 		}
 		waitUntil(t, "the terminal's session to exit", func() bool {
 			return sessionGone(int(running.PID))
@@ -279,6 +301,29 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 			return sessionGone(int(survivorCommand))
 		})
 	})
+}
+
+// shimLog is what a unit's shim logged, for a failure to show. Only the
+// Supervisor keeps it in a file; it removes one the shim wrote nothing to.
+func shimLog(units UnitManager, unit string) string {
+	supervisor, ok := units.(*Supervisor)
+	if !ok {
+		return "shim log: in the journal of unit " + unit
+	}
+	data, err := os.ReadFile(supervisor.logPath(unit))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "shim log: empty (the shim logged nothing)"
+	case err != nil:
+		return "shim log: " + err.Error()
+	}
+	return "shim log:\n" + string(data)
+}
+
+// firstLine is the first line of out.
+func firstLine(out []byte) string {
+	line, _, _ := strings.Cut(string(out), "\n")
+	return line
 }
 
 // sessionGone reports whether nothing in session sid is alive.
