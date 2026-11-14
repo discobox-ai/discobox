@@ -15848,6 +15848,52 @@ func (o OptSandboxPullProgress) Or(d SandboxPullProgress) SandboxPullProgress {
 	return d
 }
 
+// NewOptSandboxPullRetry returns new OptSandboxPullRetry with value set to v.
+func NewOptSandboxPullRetry(v SandboxPullRetry) OptSandboxPullRetry {
+	return OptSandboxPullRetry{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxPullRetry is optional SandboxPullRetry.
+type OptSandboxPullRetry struct {
+	Value SandboxPullRetry
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxPullRetry was set.
+func (o OptSandboxPullRetry) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxPullRetry) Reset() {
+	var v SandboxPullRetry
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxPullRetry) SetTo(v SandboxPullRetry) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxPullRetry) Get() (v SandboxPullRetry, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxPullRetry) Or(d SandboxPullRetry) SandboxPullRetry {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeConfigAgentTLS returns new OptSandboxRuntimeConfigAgentTLS with value set to v.
 func NewOptSandboxRuntimeConfigAgentTLS(v SandboxRuntimeConfigAgentTLS) OptSandboxRuntimeConfigAgentTLS {
 	return OptSandboxRuntimeConfigAgentTLS{
@@ -29697,7 +29743,8 @@ type SandboxPullProgress struct {
 	LayersComplete OptInt `json:"layersComplete"`
 	// For an image loaded from the image cache, layers the daemon has extracted into its store, counting
 	// layers it already held.
-	LayersExtracted OptInt `json:"layersExtracted"`
+	LayersExtracted OptInt              `json:"layersExtracted"`
+	Retry           OptSandboxPullRetry `json:"retry"`
 	// Total bytes of the layers whose size has been reported.
 	Total OptInt64 `json:"total"`
 }
@@ -29735,6 +29782,11 @@ func (s *SandboxPullProgress) GetLayersComplete() OptInt {
 // GetLayersExtracted returns the value of LayersExtracted.
 func (s *SandboxPullProgress) GetLayersExtracted() OptInt {
 	return s.LayersExtracted
+}
+
+// GetRetry returns the value of Retry.
+func (s *SandboxPullProgress) GetRetry() OptSandboxPullRetry {
+	return s.Retry
 }
 
 // GetTotal returns the value of Total.
@@ -29777,9 +29829,58 @@ func (s *SandboxPullProgress) SetLayersExtracted(val OptInt) {
 	s.LayersExtracted = val
 }
 
+// SetRetry sets the value of Retry.
+func (s *SandboxPullProgress) SetRetry(val OptSandboxPullRetry) {
+	s.Retry = val
+}
+
 // SetTotal sets the value of Total.
 func (s *SandboxPullProgress) SetTotal(val OptInt64) {
 	s.Total = val
+}
+
+// A layer being fetched again after its transfer ended early, present for as long as it
+// is. A registry that sends the layer whole again counts it from zero again, so current
+// can step back while this is present; this is what says why.
+// Ref: #/components/schemas/SandboxPullRetry
+type SandboxPullRetry struct {
+	// The layer's position among the pull's layers, from 1.
+	Layer int `json:"layer"`
+	// Which try this is, from 2.
+	Attempt OptInt `json:"attempt"`
+	// Bytes of the layer the earlier attempts left, which is where the transfer that ended stopped;
+	// absent when none were kept.
+	Kept OptInt64 `json:"kept"`
+}
+
+// GetLayer returns the value of Layer.
+func (s *SandboxPullRetry) GetLayer() int {
+	return s.Layer
+}
+
+// GetAttempt returns the value of Attempt.
+func (s *SandboxPullRetry) GetAttempt() OptInt {
+	return s.Attempt
+}
+
+// GetKept returns the value of Kept.
+func (s *SandboxPullRetry) GetKept() OptInt64 {
+	return s.Kept
+}
+
+// SetLayer sets the value of Layer.
+func (s *SandboxPullRetry) SetLayer(val int) {
+	s.Layer = val
+}
+
+// SetAttempt sets the value of Attempt.
+func (s *SandboxPullRetry) SetAttempt(val OptInt) {
+	s.Attempt = val
+}
+
+// SetKept sets the value of Kept.
+func (s *SandboxPullRetry) SetKept(val OptInt64) {
+	s.Kept = val
 }
 
 // One sandbox's consumption, as the pool agent computed it from the counters that sandbox reported.

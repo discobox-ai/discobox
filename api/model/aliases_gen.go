@@ -227,6 +227,7 @@ type SandboxProviderInstance = apigen.SandboxProviderInstance
 type SandboxProvisionPhase = apigen.SandboxProvisionPhase
 type SandboxProvisionProgress = apigen.SandboxProvisionProgress
 type SandboxPullProgress = apigen.SandboxPullProgress
+type SandboxPullRetry = apigen.SandboxPullRetry
 type SandboxResourceConsumption = apigen.SandboxResourceConsumption
 type SandboxRuntime = apigen.SandboxRuntime
 type SandboxRuntimeConfig = apigen.SandboxRuntimeConfig

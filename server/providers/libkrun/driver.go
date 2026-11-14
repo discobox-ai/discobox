@@ -373,14 +373,7 @@ func (d *Driver) resolveArtifacts(ctx context.Context, poolID string) (*guestima
 	report := func(fetch guestimage.Progress) {
 		d.progress.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
 			Phase: sandbox.PoolPhaseFetchingVMImage,
-			Pull: &sandbox.PoolPullProgress{
-				Image:          fetch.Reference,
-				Current:        fetch.Current,
-				Total:          fetch.Total,
-				Layers:         fetch.Layers,
-				LayersComplete: fetch.LayersComplete,
-				Done:           fetch.Done,
-			},
+			Pull:  fetch.PoolPull(),
 		})
 	}
 	// Both failures name the local build that answers them. Both artifacts are

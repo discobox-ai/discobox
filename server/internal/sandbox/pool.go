@@ -119,7 +119,22 @@ type PoolPullProgress struct {
 	LayersComplete  int    `json:"layersComplete,omitempty"`
 	Extracted       int64  `json:"extracted,omitempty"`
 	LayersExtracted int    `json:"layersExtracted,omitempty"`
-	Done            bool   `json:"done,omitempty"`
+	// Retry is the layer being fetched again after its transfer ended early,
+	// for as long as it is. A registry that sends the layer whole again takes
+	// its bytes back off Current, and this is what says why.
+	Retry *PoolPullRetry `json:"retry,omitempty"`
+	Done  bool           `json:"done,omitempty"`
+}
+
+// PoolPullRetry is a layer of an image fetch being fetched again.
+type PoolPullRetry struct {
+	// Layer is the layer's position among PoolPullProgress.Layers, from 1.
+	Layer int `json:"layer"`
+	// Attempt is which try this is, from 2.
+	Attempt int `json:"attempt,omitempty"`
+	// Kept is how many of the layer's bytes the earlier attempts left, which
+	// is where the transfer that ended stopped. Zero when none were kept.
+	Kept int64 `json:"kept,omitempty"`
 }
 
 // PoolProgressReporter is how a driver reports its progress without holding the
