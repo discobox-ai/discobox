@@ -123,7 +123,7 @@ func WriteRecord(sandboxRoot string, d Delivery) error {
 	if err := os.MkdirAll(sandboxRoot, 0o755); err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // ReadRecord is what the sandbox whose tree is sandboxRoot is delivered.

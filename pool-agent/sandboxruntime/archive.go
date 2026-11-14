@@ -132,5 +132,5 @@ func clearSandboxArchiveMarker(root string) error {
 // writeSandboxArchiveMarker archives a tree, durably: a marker a hard stop
 // lost would have the next start undo the archive rather than refuse it.
 func writeSandboxArchiveMarker(root string, at time.Time) error {
-	return fsdurable.WriteFile(sandboxArchiveMarkerPath(root), []byte(at.UTC().Format(time.RFC3339)+"\n"))
+	return fsdurable.WriteFile(sandboxArchiveMarkerPath(root), []byte(at.UTC().Format(time.RFC3339)+"\n"), 0o600)
 }

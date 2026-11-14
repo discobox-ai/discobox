@@ -534,7 +534,7 @@ func writeJSONAtomic(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // secretResolver implements proxy.SecretResolver by calling the control-plane

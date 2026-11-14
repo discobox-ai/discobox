@@ -49,7 +49,7 @@ func (r *sandboxCore) recordAgentTLS(sandboxID string, serves bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // agentServesTLS reports whether the sandbox's bootstrap told its agent to

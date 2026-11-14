@@ -105,5 +105,5 @@ func writeSuspendCompletion(path string, receipt suspendCompletion) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }

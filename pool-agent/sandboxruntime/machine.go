@@ -268,7 +268,7 @@ func (r *MachineSandboxRuntime) writeMachineRecord(sandboxID string, record mach
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // instance is the sandbox's machine, by its name alone, and ErrNotFound when
@@ -1359,7 +1359,7 @@ func (r *MachineSandboxRuntime) markSnapshotProven(sandboxID string) error {
 	if err != nil || !ok || record.Snapshot == "" || r.snapshotProven(sandboxID) {
 		return err
 	}
-	return fsdurable.WriteFile(r.snapshotProvenPath(sandboxID), nil)
+	return fsdurable.WriteFile(r.snapshotProvenPath(sandboxID), nil, 0o600)
 }
 
 // stopRefusedSandbox stops a machine whose agent refused the pool's

@@ -313,7 +313,7 @@ func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time) error {
 	}
 	r.snapshots.records.Lock()
 	defer r.snapshots.records.Unlock()
-	return fsdurable.WriteFile(path, []byte(at.UTC().Format(time.RFC3339)+"\n"))
+	return fsdurable.WriteFile(path, []byte(at.UTC().Format(time.RFC3339)+"\n"), 0o600)
 }
 
 func (r *sandboxCore) forgetSnapshotFailure(key string) error {
