@@ -231,7 +231,7 @@ func startPoolResourceReporter(
 			return nil
 		}
 		return ids
-	})
+	}, runtime.DiskUsage)
 	reporter.storage.start(ctx)
 	go func() {
 		ticker := time.NewTicker(resourceReportInterval)

@@ -235,21 +235,31 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		Snapshots: root.PoolSnapshots(bootstrap.ProjectID, bootstrap.PoolID),
 		Fetch:     assetClient.Fetch,
 	})
+	// The proxy's control client, built once: the runtime purges a deleted
+	// sandbox's audit trail through it (ADR 26-11-14-896 §5), and Serve
+	// relays audit reads through it. It reads the key PrepareControlKey made
+	// or repaired above, so a key it cannot read fails the start as that
+	// would have: a pool that could not purge would confirm deletes that
+	// left the sandbox's recorded traffic behind.
+	audit, err := proxyagent.NewAuditClient(root, bootstrap.ProjectID, bootstrap.PoolID)
+	if err != nil {
+		return fmt.Errorf("proxy audit client: %w", err)
+	}
 	if machines != nil {
-		runtime, err := newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets, client)
+		runtime, err := newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets, client, audit)
 		if err != nil {
 			return err
 		}
-		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front)
+		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit)
 	}
-	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets, client)
+	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets, client, audit)
 	if err != nil {
 		return err
 	}
 	// Image reclamation is the Docker pool's alone: the images are its daemon's,
 	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
 	go runtime.WatchImages(ctx, logger)
-	return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front)
+	return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit)
 }
 
 // newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
@@ -259,7 +269,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 // is why the runtime is built only once the key is known to be this pool's.
 // Its asset cache is where the agent layer it places in a delivered sandbox
 // comes from.
-func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, identityKey ed25519.PrivateKey, assets *assetcache.Cache, client *HTTPClient) (*sandboxruntime.DockerSandboxRuntime, error) {
+func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, identityKey ed25519.PrivateKey, assets *assetcache.Cache, client *HTTPClient, audit sandboxruntime.AuditPurger) (*sandboxruntime.DockerSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
@@ -284,6 +294,8 @@ func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop,
 		Platform:              bootstrap.HostedPlatform(),
 		SandboxBaseImage:      os.Getenv(sandboxruntime.EnvSandboxBaseImage),
 		AgentLayers:           assets,
+		Audit:                 audit,
+		DedicatedDaemon:       bootstrap.DedicatedDaemon,
 	})
 }
 
@@ -458,7 +470,7 @@ func ExecSystemdChildIfRequested() error {
 // A nil reporter runs no loop that reports to the control plane: no state
 // channel, tree reaper, status poll or resource report. A nil assets serves
 // no assets.discobox.internal.
-func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache, front *poolserver.Front) error {
+func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache, front *poolserver.Front, audit poolserver.AuditReader) error {
 	if reporter != nil {
 		if identity == nil {
 			return errors.New("the pool's identity is required for sandbox state reporting")
@@ -566,14 +578,6 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
-	// Audit stays a nil interface when the key cannot be read, so the relay
-	// answers 503 rather than the agent failing to serve anything at all.
-	var audit poolserver.AuditReader
-	if auditClient, err := proxyagent.NewAuditClient(root, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
-		logger.Warn("proxy audit relay disabled", "error", err)
-	} else {
-		audit = auditClient
-	}
 	// The git-origins route verifies the tokens this pool issues its sandboxes
 	// against its own identity key (ADR 0126 §4).
 	var sandboxTokenKey ed25519.PublicKey

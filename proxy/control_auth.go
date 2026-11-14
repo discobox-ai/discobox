@@ -14,8 +14,13 @@ import (
 )
 
 const (
-	ControlAudience  = "discobox-proxy-control"
-	ScopeAuditRead   = "audit:read"
+	ControlAudience = "discobox-proxy-control"
+	ScopeAuditRead  = "audit:read"
+	// ScopeAuditPurge is the scope of the one control route that deletes:
+	// a purge of one client's audit (ADR 26-11-14-896 §5). It is its own,
+	// so a token signed for a read can never delete, and a purge token must
+	// name the client it purges.
+	ScopeAuditPurge  = "audit:purge"
 	controlClockSkew = time.Minute
 	controlTokenTTL  = 5 * time.Minute
 )
@@ -163,6 +168,16 @@ func (a *controlAuthenticator) authorize(r *http.Request, claims ControlTokenCla
 	}
 	if a.workerID != "" && claims.WorkerID != a.workerID {
 		return errors.New("proxy control token worker does not match")
+	}
+	if r.Method == http.MethodDelete {
+		if !claims.hasScope(ScopeAuditPurge) {
+			return errors.New("proxy control token missing audit purge scope")
+		}
+		client, ok := strings.CutPrefix(r.URL.Path, controlPurgePath)
+		if !ok || claims.SandboxID == "" || client != claims.SandboxID {
+			return errors.New("proxy control token does not name the client it purges")
+		}
+		return nil
 	}
 	if !claims.hasScope(ScopeAuditRead) {
 		return errors.New("proxy control token missing audit read scope")

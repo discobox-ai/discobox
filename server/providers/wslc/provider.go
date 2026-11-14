@@ -120,6 +120,9 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// prompt — is ever needed. The scheme is the entire configuration.
 		ControlPlaneURL: effectiveControlPlaneURL(cfg.ControlPlaneURL),
 		RelaySocketDir:  GuestSocketDir,
+		// Each pool's own VM runs its daemon, on the one disk it persists,
+		// which holds the pool's state too.
+		DedicatedDaemon: true,
 		// wslc persists only /var/lib/docker, so pool state is placed inside it.
 		// The container still sees layout.ContainerRoot; only the daemon-side
 		// location moves, which is exactly what HostStateRoot expresses.

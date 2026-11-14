@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 const (
@@ -39,6 +40,10 @@ const (
 	// intervals. One Docker daemon hosts every local pool (ADR 0003), and after
 	// a host reboot every agent on it would otherwise sweep in lockstep.
 	storageScanStagger = 0.15
+	// storageDiskUsageTimeout bounds the sweep's call to the runtime's own
+	// store, the Docker daemon's disk usage. Past it the sweep goes on with
+	// those figures absent.
+	storageDiskUsageTimeout = 2 * time.Minute
 )
 
 // storageScanner walks the pool's trees on an interval it sets from what the
@@ -65,6 +70,10 @@ type storageScanner struct {
 	// sweep rather than held, so a sandbox created since the last one is
 	// measured on this one.
 	sandboxIDs func(context.Context) []string
+	// diskUsage is what the runtime's own store holds for the pool, asked
+	// once per sweep, since it costs about what the walk does (ADR
+	// 26-11-14-896 §3).
+	diskUsage func(context.Context) (sandboxruntime.DiskUsage, error)
 
 	dutyCycle   float64
 	minInterval time.Duration
@@ -74,7 +83,7 @@ type storageScanner struct {
 	last *PoolStorageWalk
 }
 
-func newStorageScanner(logger *slog.Logger, root layout.Root, bootstrap Bootstrap, sandboxIDs func(context.Context) []string) *storageScanner {
+func newStorageScanner(logger *slog.Logger, root layout.Root, bootstrap Bootstrap, sandboxIDs func(context.Context) []string, diskUsage func(context.Context) (sandboxruntime.DiskUsage, error)) *storageScanner {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -84,6 +93,7 @@ func newStorageScanner(logger *slog.Logger, root layout.Root, bootstrap Bootstra
 		poolID:      bootstrap.PoolID,
 		logger:      logger,
 		sandboxIDs:  sandboxIDs,
+		diskUsage:   diskUsage,
 		dutyCycle:   storageScanDutyCycle,
 		minInterval: storageScanMinInterval,
 		maxInterval: storageScanMaxInterval,
@@ -123,10 +133,29 @@ func (s *storageScanner) run(ctx context.Context) {
 // next. It reports false only when the context ended, which is the one case
 // where there is no next.
 func (s *storageScanner) sweep(ctx context.Context) (time.Duration, bool) {
-	walk, ok := walkPoolTrees(ctx, s.root, s.projectID, s.poolID, s.sandboxIDs(ctx))
+	// A daemon that does not answer costs its figures, not the sweep: they
+	// are reported absent rather than zero, as a canceled walk is discarded
+	// rather than reported as empty.
+	// The call has a deadline of its own: a daemon under disk pressure can
+	// hang rather than fail, and a sweep that waited on it would record no
+	// walk at all.
+	asked := time.Now()
+	usageCtx, cancel := context.WithTimeout(ctx, storageDiskUsageTimeout)
+	var disk *sandboxruntime.DiskUsage
+	if usage, err := s.diskUsage(usageCtx); err != nil {
+		s.logger.Warn("read the runtime's disk usage for the storage sweep", "poolId", s.poolID, "error", err)
+	} else {
+		disk = &usage
+	}
+	cancel()
+	asking := time.Since(asked)
+	walk, ok := walkPoolTrees(ctx, s.root, s.projectID, s.poolID, s.sandboxIDs(ctx), disk)
 	if !ok {
 		return 0, false
 	}
+	// The call is part of the sweep's cost, which the duty cycle spaces
+	// sweeps by: on a large daemon it costs about what the walk does.
+	walk.DurationMillis += asking.Milliseconds()
 	interval := s.nextInterval(time.Duration(walk.DurationMillis) * time.Millisecond)
 	walk.IntervalSeconds = interval.Seconds()
 	walk.NextScanAt = walk.ObservedAt.Add(interval)

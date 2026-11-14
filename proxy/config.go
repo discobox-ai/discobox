@@ -111,10 +111,10 @@ type SecretClient struct {
 	Generations map[string]string
 }
 
-// ControlConfig controls the optional read-only control API, which
-// ListenAndServeControl serves when ListenAddress is set. The pool agent sets
-// no ListenAddress and does not call it, so a pool's proxy serves no control
-// API.
+// ControlConfig controls the optional control API — audit reads, and the purge
+// of one client's audit — which ListenAndServeControl serves when
+// ListenAddress is set. A pool's proxy serves it on loopback, with the trust
+// key always set beside the listener (pool-agent/proxyagent controlConfig).
 type ControlConfig struct {
 	ListenAddress  string
 	TrustPublicKey string

@@ -88,6 +88,13 @@ type Bootstrap struct {
 	// Empty means no relocation. Only paths handed to the daemon are translated;
 	// everything the agent reads and writes stays in container terms.
 	HostStateRoot string `json:"hostStateRoot,omitempty"`
+	// DedicatedDaemon says the Docker daemon the pool runs on is its own, on
+	// the pool's data disk, as a VM provider's daemon in the pool's own VM
+	// is; false is a daemon shared with other pools or with the host, or an
+	// older server that does not say. It decides which of the daemon's
+	// images and layers are the pool's, and whether they are on the same
+	// filesystem as its trees (ADR 26-11-14-896 §4).
+	DedicatedDaemon bool `json:"dedicatedDaemon,omitempty"`
 	// Runtime is the pool's sandbox runtime; empty is RuntimeDocker.
 	Runtime Runtime `json:"runtime,omitempty"`
 	// Driver is the disco-vm driver a RuntimeMachine pool's sandboxes run on,

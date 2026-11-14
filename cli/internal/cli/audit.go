@@ -124,9 +124,9 @@ and with non-printing characters escaped when it is. "audit get" prints the
 rest of what was recorded about one request.
 
 A request lives on the pool that proxied it for the audit retention window,
-after the discobox is gone. A pool that cannot be read is named on stderr
-(and under unavailablePools with -o json), and its requests are missing from
-the list.
+after the discobox is removed, unless it is purged: a purge takes its requests
+with it. A pool that cannot be read is named on stderr (and under
+unavailablePools with -o json), and its requests are missing from the list.
 
 The method, URL and host are what the discobox sent, and are shown as data,
 with non-printing characters escaped.`,

@@ -130,7 +130,10 @@ func driverConfigFrom(cfg Config) DriverConfig {
 // interfaces so the control plane reaches it at the droplet's public address.
 func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	return dockerworker.Config{
-		ControlPlaneURL:     cfg.ControlPlaneURL,
+		ControlPlaneURL: cfg.ControlPlaneURL,
+		// Each pool's own droplet runs its daemon, on the disk that holds
+		// the pool's state.
+		DedicatedDaemon:     true,
 		SandboxBaseImage:    dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,

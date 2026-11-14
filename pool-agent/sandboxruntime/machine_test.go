@@ -78,6 +78,7 @@ func newMachineFixture(t *testing.T, config json.RawMessage) *machineFixture {
 	}
 	agents.poolKey = identity.Public().(ed25519.PublicKey)
 	r, err := NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{
+		Audit:       &fakeAuditPurger{},
 		ProjectID:   "proj_1",
 		PoolID:      "pool_1",
 		Root:        layout.ContainerAt(t.TempDir()),
@@ -231,6 +232,10 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	}
 	if _, err := f.owner.Instance(ctx, "sbx-1"); !errors.Is(err, machine.ErrNotFound) {
 		t.Fatalf("machine after delete: %v, want it gone", err)
+	}
+	// And its audit trail in the pool proxy (ADR 26-11-14-896 §5).
+	if purged := r.audit.(*fakeAuditPurger).purges(); !slices.Equal(purged, []string{"sbx_1"}) {
+		t.Fatalf("audit trails purged = %v, want the sandbox's", purged)
 	}
 	if r.hostsSandbox("sbx_1") {
 		t.Fatal("the sandbox's tree outlived its delete")
@@ -959,7 +964,7 @@ func TestMachineRuntimeRefusesADriverThatCannotIsolate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Engine: e, Isolate: true, Network: "pool-net", Root: layout.ContainerAt(t.TempDir())})
+	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, Isolate: true, Network: "pool-net", Root: layout.ContainerAt(t.TempDir())})
 	if err == nil || !strings.Contains(err.Error(), "cannot isolate") {
 		t.Fatalf("runtime on the fake driver, isolated = %v, want refused", err)
 	}
@@ -1523,6 +1528,10 @@ func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(proxyagent.PoolSandboxMaterialRoot(f.runtime.root, f.runtime.projectID, f.runtime.poolID), "sbx_dead000000000000")); !os.IsNotExist(err) {
 		t.Fatalf("orphan's proxy material after it was removed: stat err = %v, want it gone", err)
 	}
+	// Its audit trail is left to the proxy's age sweep (ADR 26-11-14-896 §5).
+	if purged := f.runtime.audit.(*fakeAuditPurger).purges(); len(purged) != 0 {
+		t.Fatalf("the orphan sweep purged audit trails %v, want none", purged)
+	}
 }
 
 // A start whose placement fails stops the machine it started: left running
@@ -1635,7 +1644,7 @@ func TestMachineCreateFencesTheMachine(t *testing.T) {
 		}
 	})
 	fence := &machine.Egress{}
-	r, err := NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Engine: e, Egress: fence, Root: layout.ContainerAt(t.TempDir())})
+	r, err := NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, Egress: fence, Root: layout.ContainerAt(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1666,7 +1675,7 @@ func TestMachineRuntimeRefusesADriverThatCannotFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Engine: e, Egress: &machine.Egress{}, Root: layout.ContainerAt(t.TempDir())})
+	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, Egress: &machine.Egress{}, Root: layout.ContainerAt(t.TempDir())})
 	if err == nil || !strings.Contains(err.Error(), "cannot fence") {
 		t.Fatalf("runtime on the fake driver, fenced = %v, want refused", err)
 	}

@@ -321,16 +321,19 @@ durable state asks the same question.
   from its CA each reopens cross-sandbox reads and writes without touching the
   binding.
 - **Every runtime's `DeleteSandbox` runs every shared purge step.** The
-  sandbox's policy, its proxy material, its registry namespace
+  sandbox's audit trail in the proxy (`sandboxCore.purgeAudit`), its policy,
+  its proxy material, its registry namespace
   (`sandboxCore.removePublishedImages`) and its tree are each removed by both
   the Docker and the machine runtime; a step added for one is added to the
   other. The machine runtime once skipped the registry namespace the Docker
   runtime removed, though both pools build.
-- **A reaper removes a sandbox through `DeleteSandbox`.** The tree reaper's
+- **A reaper removes a sandbox through `reapSandbox`.** The tree reaper's
   release and the orphan container and machine sweeps are deletes that never
-  reached the pool, so they take everything a delete takes. Removing only the
-  container or machine leaves its proxy material and registry namespace with
-  nothing left to collect them. Both runtimes' reapers once did that (#1095).
+  reached the pool, so they take everything a delete takes but the audit
+  trail, which only a purge is the owner's word to take (ADR 26-11-14-896 §5).
+  Removing only the container or machine leaves its proxy material and
+  registry namespace with nothing left to collect them. Both runtimes' reapers
+  once did that (#1095).
 
 ## Snapshots
 
@@ -713,3 +716,23 @@ does (its unexported `defaultGateway`, `pkg/machine/boxd/vmtoken.go`). When
 the disco-vm pin moves, compare the two. Why: the address fenced must be the
 one the driver asks; until disco-vm exports the resolution, they are two
 copies.
+
+## Storage accounting
+
+- **A figure subtracted from the filesystem line is on that filesystem.**
+  The remainder a reader shows is `filesystem.usedBytes` less what the sweep
+  attributed, and statfs measures one filesystem: a VM pool's cache disk
+  (`vm-image/discobox-mount-storage`), or a shared daemon's storage, is not in
+  it. A new walked tree is passed to the walk's `elsewhere`, and a new figure
+  from another store says which filesystem it is on, or the remainder is
+  understated by it and its clamp at zero hides the gap the report exists to
+  show (ADR 26-11-14-896 §4).
+- **The machine runtime measures nothing because no registered driver keeps
+  a machine on the pool's disk.** Registering one that does (disco-vm's
+  `local`, which keeps machines under `machine.Config.Dir`, `layout.
+  PoolMachines`) must make `MachineSandboxRuntime.DiskUsage` measure them as
+  each box's `layerBytes`, or those disks are counted nowhere and nothing
+  errors (ADR 26-11-14-896 §1).
+- **The proxy control client has one construction.** `RunAgent` builds it
+  for the runtime's purge and the relay alike; a second construction with its
+  own policy for an unreadable key once made the documented one unreachable.

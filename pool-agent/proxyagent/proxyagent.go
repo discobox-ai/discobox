@@ -298,8 +298,8 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	if err := ConfigureAuditSpoolBudget(&cfg.Recording); err != nil {
 		return err
 	}
-	// The read-only control API the pool agent relays audit reads through
-	// (ADR 0130 §4). The agent prepared its key before systemd started this
+	// The control API the pool agent relays audit reads through (ADR 0130
+	// §4) and purges a deleted sandbox's audit through (ADR 26-11-14-896 §5). The agent prepared its key before systemd started this
 	// unit; this only reads it.
 	cfg.Control = proxyControlConfig(root, projectID, poolID, logger)
 	// The discobox API's host, which this proxy never sends to the internet:

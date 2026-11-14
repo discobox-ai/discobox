@@ -1,6 +1,9 @@
 # 0071. Resource accounting is a pool-agent-differenced report
 
-Status: Accepted
+Status: Accepted (§5's list of what a per-sandbox report carries superseded in
+part by [26-11-14-896](26-11-14-896-pool-storage-accounts-for-the-whole-disk-and-a-purge-takes-a-boxs-recordings.md):
+a sandbox's figure also carries its container's writable layer and its proxy
+recordings, and images are a pool-level figure)
 
 ## Context
 

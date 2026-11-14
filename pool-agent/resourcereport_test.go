@@ -328,7 +328,7 @@ func TestWalkPoolTreesReportsEveryRequestedSandbox(t *testing.T) {
 	// The trees are under an empty root, so every figure is zero — but the
 	// shape must still name every sandbox asked about rather than dropping the
 	// ones with nothing on disk.
-	walk, ok := walkPoolTrees(context.Background(), layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a", "sbx_b"})
+	walk, ok := walkPoolTrees(context.Background(), layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a", "sbx_b"}, nil)
 	if !ok {
 		t.Fatal("sweep reported cancellation")
 	}
@@ -587,7 +587,7 @@ func TestTotalUsageIsAbsentWithoutAServicesRate(t *testing.T) {
 // the parts land on different rows — each sandbox's own — and a reader joining
 // them can catch one refreshed and another not.
 func TestWalkPoolTreesSumsEverySandboxIntoTheDataTotal(t *testing.T) {
-	walk, ok := walkPoolTrees(context.Background(), layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a", "sbx_b"})
+	walk, ok := walkPoolTrees(context.Background(), layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a", "sbx_b"}, nil)
 	if !ok {
 		t.Fatal("sweep reported cancellation")
 	}

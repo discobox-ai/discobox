@@ -9,3 +9,9 @@ import "os"
 func statBlocks(os.FileInfo) (int64, bool) {
 	return 0, false
 }
+
+// statDevice has no answer off unix: every tree is taken to be on the
+// filesystem statfs measured.
+func statDevice(string) (uint64, bool) {
+	return 0, false
+}

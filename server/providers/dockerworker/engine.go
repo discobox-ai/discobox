@@ -125,6 +125,13 @@ type Config struct {
 	// translate. Empty for backends whose agent dials the control plane
 	// directly.
 	RelaySocketDir string
+	// DedicatedDaemon says the Docker daemon hosting each pool is that pool's
+	// own, in its own VM, with its data on the same disk as the pool's state:
+	// every image and container on it is there for the pool, and they are
+	// counted against that disk (ADR 26-11-14-896 §4). False is a daemon
+	// shared with other pools or the host, or one the engine cannot vouch
+	// for.
+	DedicatedDaemon bool
 	// HostStateRoot is where this pool's Docker daemon sees
 	// layout.ContainerRoot. Empty means the daemon sees the same paths the
 	// container does, which is the case for every backend whose guest keeps
@@ -786,6 +793,7 @@ func (e *Engine) poolBootstrap(ctx context.Context, pool *model.Pool, maker pool
 	// filesystem, which is why this prefix survives for those.
 	bootstrap.HostMountPrefix = hostMountTargetRoot
 	bootstrap.HostStateRoot = e.cfg.HostStateRoot
+	bootstrap.DedicatedDaemon = e.cfg.DedicatedDaemon
 	return bootstrap, nil
 }
 

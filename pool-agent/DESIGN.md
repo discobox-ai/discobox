@@ -29,7 +29,7 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It pulls remote sources over HTTPS (ADR 26-10-23-948). See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MachineSandboxRuntime`, a machine pool's, see [Machine Sandboxes](#machine-sandboxes); `MemorySandboxRuntime` for tests). What does not depend on what a sandbox runs as is `sandboxCore`, which both real runtimes embed: the per-sandbox records in its tree, the runtime-config document and its delivery, the power lock and boot mark, the state and progress sinks, sources' settling, proxy policy staging and the credentials broker's environment (`publishCredentialEnvironment`, from the pool's file-secrets record), the Git cache and the agent layer's extraction. It asks the runtime it is embedded in, through the unexported `boxes` interface, only what that runtime alone knows: how to find, reach, wait for and rebuild a sandbox's box. `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MachineSandboxRuntime`, a machine pool's, see [Machine Sandboxes](#machine-sandboxes); `MemorySandboxRuntime` for tests). What does not depend on what a sandbox runs as is `sandboxCore`, which both real runtimes embed: the per-sandbox records in its tree, the runtime-config document and its delivery, the power lock and boot mark, the state and progress sinks, sources' settling, proxy policy staging and the credentials broker's environment (`publishCredentialEnvironment`, from the pool's file-secrets record), the Git cache and the agent layer's extraction. It asks the runtime it is embedded in, through the unexported `boxes` interface, only what that runtime alone knows: how to find, reach, wait for and rebuild a sandbox's box. `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power (a delete also taking the sandbox's audit trail from the proxy, through the `AuditPurger` `sandboxCore` holds), the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, what its own store holds of the pool's disk (`DiskUsage`), and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint (ADR 0031) with a sandbox's credential environment and its read of its own egress audit (ADR 26-10-02-678), route checking for every sentinel the proxy swaps (ADR 26-10-02-924), the discobox API gate (ADR 0140), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -253,11 +253,41 @@ lockstep. A hash rather than a random jitter keeps each pool's schedule
 reproducible. A canceled sweep is discarded rather than reported partially:
 half a walk reports every unvisited tree as empty.
 
-The sweep also sums the per-sandbox trees into `dataBytes`, so a reader has the
+The sweep also sums the per-sandbox figures into `dataBytes`, so a reader has the
 three buckets — data, cache, free — without joining across the sandbox rows,
 where one can be refreshed and another not. The sum is real disk rather than one
 tree counted N times: each sandbox's tree holds its own home, sources and nested
 container store, which are its own copies rather than links into anything shared.
+
+**The sweep accounts for the whole disk**
+([ADR 26-11-14-896](../docs/adr/26-11-14-896-pool-storage-accounts-for-the-whole-disk-and-a-purge-takes-a-boxs-recordings.md)).
+A sandbox's figure is everything that is its own, which nothing else uses and
+a purge frees: its trees, its container's writable layer (`layerBytes`) and its
+proxy recordings (`recordingBytes`, its `bodies/<id>` and `streams/<id>`
+spools). What is shared is charged once, to the pool: the proxy's response
+cache and audit database, the spools no sandbox of the sweep owns, and the
+images, a snapshot included, since a snapshot belongs to its plan and splitting
+an image would move a sandbox's figure as others start and stop. The images and
+layers come from the runtime (`Runtime.DiskUsage`), asked once per sweep: the
+Docker runtime asks its daemon what `docker system df` shows, a machine
+runtime measures nothing since its machines are on its driver's provider. A
+daemon that does not answer, or not within its own deadline, leaves those
+figures absent, not zero, and the call's time is counted in the sweep's cost,
+which the duty cycle spaces sweeps by. A tree the sweep finds on another
+device than the root's (a VM pool's cache disk) is in `otherFilesystemBytes`,
+so a reader leaves it out of what it subtracts from the filesystem's used
+figure; a layer of a container no listed sandbox owns is in
+`otherLayerBytes`, never dropped.
+
+Whether the daemon is the pool's own is the bootstrap's `dedicatedDaemon`,
+which a provider that runs each pool in its own VM, its daemon on the pool's
+data disk, sets (libkrun, vz, wslc, DigitalOcean). On such a daemon every image
+and container is the pool's, and a reader subtracts them from the filesystem's
+used figure to show what is not attributed. Otherwise (the host's daemon, or a
+backend that cannot vouch) only images carrying `harness.ReclaimLabel` or run
+by the pool's containers count, as an estimate (the daemon names no image's
+layers, so shared bytes are taken as the largest share among them), and the
+report says the daemon is shared, so a reader does not subtract them.
 
 Cache gets exactly one figure, at the pool. It is one shared tree keyed by the
 target path a harness declared — with the sandbox user's uid above it for every
@@ -1249,10 +1279,13 @@ proxy's loopback control API, with a token it signs itself.
   rather than refused: the key lives in the host tree, so a refusal would
   survive recreating the container and leave the pool without its proxy.
 - **The audit read cannot cost the pool its egress.** A proxy unit that cannot
-  read the key runs with no control API (`proxyControlConfig`), a control
-  listener that fails is logged rather than stopping the proxy, and an agent
-  that cannot build its audit client answers the relay with 503 instead of
-  failing to start.
+  read the key runs with no control API (`proxyControlConfig`), and a control
+  listener that fails is logged rather than stopping the proxy. The agent
+  builds its control client once (`RunAgent`), for the relay and for the
+  runtime's purge, and a key it cannot read there fails its start, as
+  `PrepareControlKey` failing just before does: a pool that cannot purge would
+  confirm deletes that left the sandbox's recorded traffic behind (ADR
+  26-11-14-896 §5).
 - **Loopback, and both halves together.** The proxy serves the control API on
   `proxyagent.ControlListenAddress` (`127.0.0.1:17084`), which a sandbox cannot
   reach. `controlConfig` sets the listener and the trust key from one key, so a
@@ -1283,6 +1316,19 @@ proxy's loopback control API, with a token it signs itself.
   so the content type is what lets the control plane tell "this pool recorded
   no such body" from "this agent cannot serve one" and name the pool as
   unreadable instead (ADR 0130).
+- **A purge takes the trail, and only a purge.** Each runtime's
+  `DeleteSandbox` purges the sandbox's audit from the proxy
+  (`sandboxCore.purgeAudit`, through `proxy.ControlClient.PurgeClient`) once
+  its container or machine is gone and before its tree, as part of the removal
+  the delete confirms: a proxy that cannot take it fails the delete, which the
+  purge's reconcile retries
+  ([ADR 26-11-14-896](../docs/adr/26-11-14-896-pool-storage-accounts-for-the-whole-disk-and-a-purge-takes-a-boxs-recordings.md)
+  §5). The token for it is signed here with `audit:purge` and the sandbox, and
+  nothing else signs that scope, so a read relayed from the control plane can
+  never delete. An archive leaves the trail, and so do the reapers
+  (`reapSandbox`): a sandbox the control plane stopped holding is not the
+  owner's word that its data should go, and its trail is left to the proxy's
+  age sweep and budget.
 
 ## Worker-Local HTTP Server
 
