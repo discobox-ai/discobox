@@ -241,3 +241,37 @@ func TestControlSOCKSRefusesAnHTTPCursor(t *testing.T) {
 		t.Fatalf("GET /audit/socks?after_id= = %d, want 400", resp.StatusCode)
 	}
 }
+
+// A purge through the control API takes the sandbox's rows and leaves every
+// other sandbox's, and the reads the same client signs cannot be turned into
+// one: they carry the read scope alone (ADR 26-11-14-896 §5).
+func TestControlClientPurgesOneSandboxsAudit(t *testing.T) {
+	url, key, _ := controlClientFixture(t)
+	client := NewControlClient(url, key, "project-1", "pool-1", nil)
+	ctx := context.Background()
+
+	result, err := client.PurgeClient(ctx, "sandbox-2")
+	if err != nil {
+		t.Fatalf("PurgeClient() error = %v", err)
+	}
+	if result.HTTPRows != 2 {
+		t.Errorf("PurgeClient() removed %d HTTP rows, want sandbox-2's 2", result.HTTPRows)
+	}
+	gone, err := client.ListHTTP(ctx, "sandbox-2", AuditQuery{})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(gone) != 0 {
+		t.Errorf("sandbox-2 still has %d rows after its purge", len(gone))
+	}
+	kept, err := client.ListHTTP(ctx, "sandbox-1", AuditQuery{})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(kept) != 1 {
+		t.Errorf("sandbox-1 has %d rows after another sandbox's purge, want its 1", len(kept))
+	}
+	if _, err := client.PurgeClient(ctx, ""); err == nil {
+		t.Error("a purge naming no sandbox was sent")
+	}
+}
