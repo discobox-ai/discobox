@@ -1267,30 +1267,20 @@ func writeSandboxManifest(configDir string, data []byte) error {
 // over it, so a link the sandbox planted at either name is replaced rather
 // than followed, and root refuses one on the way to it that leaves it.
 func writeRootFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
-	tmp := name + ".tmp"
-	if err := root.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	f, err := fsdurable.CreateIn(root, name, mode)
 	if err != nil {
 		return err
 	}
-	_, werr := f.Write(data)
-	if werr == nil {
-		werr = f.Sync()
-	}
-	if err := errors.Join(werr, f.Close()); err != nil {
+	defer func() { _ = f.Discard() }()
+	if _, err := f.Write(data); err != nil {
 		return err
 	}
 	// The create's mode is masked by the umask.
-	if err := root.Chmod(tmp, mode); err != nil {
-		return err
-	}
-	if err := root.Rename(tmp, name); err != nil {
+	if err := f.Chmod(mode); err != nil {
 		return err
 	}
 	// Synced, so a hard stop of the pool's host leaves the file whole.
-	return fsdurable.SyncIn(root, ".")
+	return f.Commit()
 }
 
 // documentHarnessSecrets carries the harness's declared credentials onto the
@@ -1856,7 +1846,7 @@ func (r *sandboxCore) recordFileSecrets(sandboxID string, secrets []harness.Secr
 		return fmt.Errorf("record file secrets: %w", err)
 	}
 	path := r.fileSecretsRecordPath(sandboxID)
-	if err := fsdurable.WriteFile(path, data); err != nil {
+	if err := fsdurable.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("record file secrets: %w", err)
 	}
 	return nil

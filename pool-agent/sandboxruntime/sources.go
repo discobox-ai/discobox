@@ -749,7 +749,7 @@ func (r *sandboxCore) writeProjectLayerRecord(sandboxID string, record projectLa
 	if err := os.MkdirAll(r.sandboxRoot(sandboxID), 0o755); err != nil {
 		return fmt.Errorf("record project layer: %w", err)
 	}
-	if err := fsdurable.WriteFile(path, data); err != nil {
+	if err := fsdurable.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("record project layer: %w", err)
 	}
 	return nil

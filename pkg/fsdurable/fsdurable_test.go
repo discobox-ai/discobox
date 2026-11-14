@@ -7,15 +7,15 @@ import (
 	"testing"
 )
 
-// WriteFile replaces what path held with data, whole and private to its
-// owner, and leaves nothing of its own beside it.
+// WriteFile replaces what path held with data, whole and at exactly the mode
+// it is given, and leaves nothing of its own beside it.
 func TestWriteFileReplacesWholeAndLeavesNothingBeside(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "record.json")
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteFile(path, []byte(`{"new":true}`)); err != nil {
+	if err := WriteFile(path, []byte(`{"new":true}`), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -26,8 +26,8 @@ func TestWriteFileReplacesWholeAndLeavesNothingBeside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o600 {
-		t.Errorf("mode %v, want 0600", mode)
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o640 {
+		t.Errorf("mode %v, want 0640", mode)
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {

@@ -44,7 +44,7 @@ func (r *sandboxCore) writeHarnessFence(id string, f harnessChangeFence) error {
 		return err
 	}
 	path := r.harnessFencePath(id)
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // reserveHarnessChange holds the same lock as every power transition. Retrying

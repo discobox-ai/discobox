@@ -59,30 +59,23 @@ func SyncIn(root *os.Root, name string) error {
 	return nil
 }
 
-// WriteFile writes data to path by a rename of a file of its own, synced,
-// at mode 0600: once it returns, path holds data whole after a crash, and a
-// reader never sees part of it. The directory path is in must exist.
-func WriteFile(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+// WriteFile writes data to path at exactly mode, by a rename of a file of
+// its own, synced (File.Commit, and its one exception): once it returns, path
+// holds data whole after a crash, and a reader never sees part of it. The
+// directory path is in must exist.
+func WriteFile(path string, data []byte, mode fs.FileMode) error {
+	f, err := Create(path, mode)
 	if err != nil {
 		return err
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp) // gone once renamed; left only by a failure
-	_, err = f.Write(data)
-	if err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	defer func() { _ = f.Discard() }()
+	if err := f.Chmod(mode); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if _, err := f.Write(data); err != nil {
 		return err
 	}
-	return SyncDir(filepath.Dir(path))
+	return f.Commit()
 }
 
 // Remove removes path, synced: once it returns, path is gone after a crash

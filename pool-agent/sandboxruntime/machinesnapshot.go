@@ -115,7 +115,7 @@ func (r *MachineSandboxRuntime) writeSnapshotRecord(key string, record snapshotR
 	if err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(r.snapshotRecordPath(key), data)
+	return fsdurable.WriteFile(r.snapshotRecordPath(key), data, 0o600)
 }
 
 // unpublishSnapshot unpublishes the snapshot keyed key, durably, before

@@ -122,7 +122,7 @@ func (r *sandboxCore) writeRuntimeConfig(sandboxID string, doc sandboxconfig.Run
 	}
 	// The record names sentinels, never resolved values, but it is still the
 	// pool's alone: WriteFile writes it 0600.
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // decideRuntimeConfig settles the sandbox's document: the record as it stands

@@ -291,7 +291,7 @@ func (r *sandboxCore) writePlaced(sandboxID string, record placedRecord) error {
 		return err
 	}
 	path := r.placedRecordPath(sandboxID)
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // deliveredMove is what moved under a delivered sandbox's container since

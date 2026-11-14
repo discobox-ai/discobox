@@ -91,7 +91,7 @@ func (r *sandboxCore) writeSourceCaches(sandboxID string, sources []sandboxSourc
 	if err != nil {
 		return err
 	}
-	return fsdurable.WriteFile(path, data)
+	return fsdurable.WriteFile(path, data, 0o600)
 }
 
 // readSourceCaches is the sandbox's cache-delivered sources and the cache
