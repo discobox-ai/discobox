@@ -201,11 +201,19 @@ func TestMonitorPopWaitReturnsWhenAnEventArrivesOrItsTimeEnds(t *testing.T) {
 	if err != nil || !strings.Contains(out, "no events in 200ms") || time.Since(start) < 200*time.Millisecond {
 		t.Fatalf("pop --wait=200ms = %q, %v after %v", out, err, time.Since(start))
 	}
+	// Add goes on writing into events/pending (its .seq file) after the event
+	// it links in wakes the pop, so the test waits for it to return: a writer
+	// still there when t.TempDir is removed fails the cleanup on Windows.
+	added := make(chan error, 1)
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		_, _ = env.dirs.Queue().Add(monitors.Event{Instance: "a", Title: "arrived"})
+		_, err := env.dirs.Queue().Add(monitors.Event{Instance: "a", Title: "arrived"})
+		added <- err
 	}()
 	out, err = runMonitorCmd(t, env, "pop", "--wait")
+	if addErr := <-added; addErr != nil {
+		t.Fatalf("add: %v", addErr)
+	}
 	if err != nil || !strings.Contains(out, "arrived") {
 		t.Fatalf("pop --wait = %q, %v", out, err)
 	}
