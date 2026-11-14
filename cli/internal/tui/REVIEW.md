@@ -458,3 +458,16 @@
   never sends a grant; the summary and part cards show replacement consequences
   at that lifetime and keep the read-to-end gate. Repeating the whole approval
   on a final lifetime screen made a simple time choice unnecessarily long.
+
+- A credential request's summary card is lines, never route tables: each
+  part's routes, and a new credential's uncovered routes, are drawn on the
+  part cards behind Review…. Repeating them on the summary made the first
+  screen as long as Review and left Review nothing to add.
+- **A summary line never reads narrower than what Accept sends from it**
+  (`partSummary`). With no table beside it, a blocked host counted among the
+  hosts reached, or an any-method, any-path row counted as one operation like
+  a single `GET`, was the approver's whole picture of a grant the box wrote.
+  Open hosts only, blocked rows counted apart, every method named, and
+  breadth taken from `secretroute`'s own reading of a pattern
+  (`secretroute.AnyPath`), never from how it is spelled or drawn: the box
+  writes the routes, and `/*/**` is any path as much as `/**` is.

@@ -192,6 +192,71 @@ func TestTheSummaryDeniesEveryPart(t *testing.T) {
 	}
 }
 
+// The summary is each part in a line and lists no routes: each route, with
+// its paths, is behind Review…, on its part's card (issue #1172).
+func TestTheSummaryListsNoRoutes(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	req := waitingRequest()
+	req.Use.Routes = []secretroute.Route{ghRoute("/user/repos"), {Hosts: []string{"github.com"}, Methods: []string{"POST"}, Paths: []string{"/o/r.git/git-receive-pack"}}}
+	req.Delegate = &RequestPart{Routes: []secretroute.Route{ghRoute("/repos/o/r/pulls")}}
+	ds.projectSecrets[0].Routes = append(ds.projectSecrets[0].Routes, secretroute.Route{Hosts: []string{"github.com"}})
+	ds.requests = []CredentialRequest{req}
+	send(t, m, tickMsg{})
+
+	toSummary(t, m, "sec_gh")
+	text := plainFrame(m)
+	for _, want := range []string{"api.github.com, github.com · 2 operations · GET, POST", "api.github.com · 1 operation · GET"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary = %q, want %q", text, want)
+		}
+	}
+	for _, route := range []string{"/user/repos", "git-receive-pack", "/repos/o/r/pulls", "── its own use", "── its workers"} {
+		if strings.Contains(text, route) {
+			t.Fatalf("summary = %q, lists %q: routes are Review…'s", text, route)
+		}
+	}
+	answerApproval(t, m, "review")
+	if text := plainFrame(m); !onStep(m, "its own use") || !strings.Contains(text, "/user/repos") || !strings.Contains(text, "git-receive-pack") {
+		t.Fatalf("review = %q, want the use part's routes", text)
+	}
+}
+
+// With no table beside it, a part's line never reads narrower than what
+// Accept sends: a blocked host is not one it reaches, every method is named,
+// and any path is what secretroute matches as one, however it is written;
+// any method, path or operation is a warning (issue #1172).
+func TestAPartsLineSaysWhatItBlocksAndHowBroadItIs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		routes []secretroute.Route
+		want   string
+		broad  bool
+	}{
+		{"narrow", []secretroute.Route{ghRoute("/user")}, "api.github.com · 1 operation · GET", false},
+		{"a blocked host is not reached", []secretroute.Route{ghRoute("/user"), {Hosts: []string{"*"}, Blocked: true}},
+			"api.github.com · 1 operation · GET · 1 blocked", false},
+		{"any method and path", []secretroute.Route{{Hosts: []string{"github.com"}}}, "github.com · 1 operation · any method · any path", true},
+		{"any path under a method", []secretroute.Route{{Hosts: []string{"github.com"}, Methods: []string{"POST"}, Paths: []string{"/**"}}},
+			"github.com · 1 operation · POST · any path", true},
+		{"any path however written, every method named", []secretroute.Route{{Hosts: []string{"github.com"}, Methods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"}, Paths: []string{"/*/**"}}},
+			"github.com · 1 operation · GET, POST, PUT, PATCH, DELETE · any path", true},
+		{"one segment is not any path", []secretroute.Route{{Hosts: []string{"github.com"}, Methods: []string{"GET"}, Paths: []string{"/*"}}},
+			"github.com · 1 operation · GET · paths with wildcards", false},
+		{"a wildcard deeper in", []secretroute.Route{ghRoute("/repos/**")}, "api.github.com · 1 operation · GET · paths with wildcards", false},
+		{"any GraphQL operation", []secretroute.Route{{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/graphql"}, GraphQL: &secretroute.GraphQL{}}},
+			"api.github.com · 1 operation · POST · any operation", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text, broad := partSummary(&RequestPart{Routes: tc.routes})
+			if text != tc.want || broad != tc.broad {
+				t.Fatalf("partSummary = %q, %v; want %q, %v", text, broad, tc.want, tc.broad)
+			}
+		})
+	}
+}
+
 // Review answers each part on a card of its own, with its routes and the
 // roles it asked for; Modify approves one on its hosts, anywhere, or routes
 // typed in, and the answer carries each part's own.
@@ -777,11 +842,11 @@ func TestANewCredentialsGapIsOfWhatIsApproved(t *testing.T) {
 		d := &dialog{sections: sections}
 		return strings.Join(d.sectionLines(newStyles(false), 120), "\n")
 	}
-	if got := text(approvalConsequences(req, ans)); strings.Contains(got, "will not be sent on") {
+	if got := text(approvalConsequences(req, ans, false)); strings.Contains(got, "will not be sent on") {
 		t.Fatalf("a denied part's routes are listed as a gap:\n%s", got)
 	}
 	ans.useChoice = partChoice{scope: "edited", routes: []secretroute.Route{{Hosts: []string{"uploads.github.com"}}}}
-	if got := text(approvalConsequences(req, ans)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
+	if got := text(approvalConsequences(req, ans, false)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
 		t.Fatalf("a host added by an edit is not listed as a gap:\n%s", got)
 	}
 }

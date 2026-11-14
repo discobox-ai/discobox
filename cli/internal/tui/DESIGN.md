@@ -618,11 +618,17 @@ flowchart LR
   leave uncovered (`uncovered`, as a saved secret's ✗): the grant holds the box to the
   routes it asked for, so the credential stays usable for the next request on
   those hosts.
-- **Summary.** Each part in a line — the hosts it reaches and how many
-  operations, a row of its route table each — with Accept and Deny answering
+- **Summary.** Each part in a line — the hosts its open routes reach, how
+  many operations (a row of its route table each), the methods they take,
+  whether their paths are any path or hold wildcards, and how many rows it
+  blocks; any method, path or operation left open is a warning
+  (`partSummary`) — with Accept and Deny answering
   every part at once at the selected lifetime, and Review… walking them.
-  Each part's route table and the consequences of replacing or shortening a
-  standing grant are shown before Accept can send.
+  It lists no routes: every route, with its methods, paths and constraints,
+  is behind Review…, on its part's card. What Accept sends is still said
+  before it can, each consequence summary-level (`approvalConsequences`,
+  brief): a new credential's hosts, the requested hosts and operations it
+  will not be sent on, and what approving replaces or shortens.
 - **Review.** One card per part the request has, use then delegation, each
   with its routes (`approvalRouteSection`) and the roles it asked for as the
   discobox's words (ADR 26-11-02-022 §3). Approve, Deny or Modify…: as
