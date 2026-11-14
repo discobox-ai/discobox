@@ -452,3 +452,54 @@ wait_for_sandbox_running() {
   wait_for_sandbox_running "$sandbox_id"
   [ "$(sandbox_container_id "$sandbox_id")" = "$after_container" ]
 }
+
+# #1156: a box with no source works in its working root, and an upgrade
+# rebuilds its container. The working root is a data volume of the box's own
+# (ADR 26-11-14-302 §1), so what the box wrote there crosses the rebuild. And a
+# box from before that, whose work is still in its container's own layer, has
+# it carried into the new container and moved onto the volume (§§2-3): the
+# file put straight into the layer below, where an older agent left the box's
+# work, stands in for one.
+@test "an upgrade keeps a no-source box's working root" {
+  local pool_id sandbox_id before_container after_container
+  pool_id="$(ensure_pool)"
+  [ -n "$pool_id" ]
+
+  build_upgrade_stub workspace-v1
+  run cli admin harness create --bundle "$UPGRADE_STUB_BUNDLE" --slug workspace-stub --name "Workspace Stub"
+  [ "$status" -eq 0 ]
+
+  run cli admin box create --name "upgrade-workspace-e2e" --harness workspace-stub --wait --wait-timeout 120s
+  [ "$status" -eq 0 ]
+  sandbox_id="$(printf '%s' "$output" | json_get id)"
+  [ -n "$sandbox_id" ]
+  before_container="$(sandbox_container_id "$sandbox_id")"
+  [ -n "$before_container" ]
+
+  # Written by the box, through the mount its boot made.
+  docker exec "$before_container" sh -c 'echo ws-marker > /workspace/ws.txt && mkdir -p /workspace/project && echo nested > /workspace/project/main.txt'
+  # Written into the container's own layer, as a box from before the fix kept it.
+  printf 'layer-marker\n' >"$BATS_TEST_TMPDIR/layer.txt"
+  docker cp "$BATS_TEST_TMPDIR/layer.txt" "$before_container:/workspace/layer.txt"
+
+  build_upgrade_stub workspace-v2
+  run cli admin harness refresh workspace-stub
+  [ "$status" -eq 0 ]
+  run cli admin box upgrade "$sandbox_id"
+  [ "$status" -eq 0 ]
+  for _ in {1..90}; do
+    after_container="$(sandbox_container_id "$sandbox_id" || true)"
+    [ -n "$after_container" ] && [ "$after_container" != "$before_container" ] && break
+    sleep 1
+  done
+  [ "$after_container" != "$before_container" ]
+  wait_for_sandbox_running "$sandbox_id"
+
+  run docker exec "$after_container" cat /workspace/ws.txt /workspace/project/main.txt /workspace/layer.txt
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'ws-marker\nnested\nlayer-marker')" ]
+  # The carried-over work is on the volume now, not left in the new layer
+  # for the next rebuild to drop.
+  run docker exec "$after_container" test -f /.discobox/data/.working-root/layer.txt
+  [ "$status" -eq 0 ]
+}
