@@ -66,6 +66,11 @@ Global review expectations:
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced
   `GOPROXY=off` there was silently ignored on any machine that exports one.
+- A client's patience with something the server bounds comes from the
+  server's bound plus a margin (`health.PoolUpgradeWait`), never from a
+  constant that happens to equal it: with no margin the client times out on
+  the eve of the server's own answer (ADR 0069 recorded the same mismatch the
+  other way round).
 - A constructor that starts a goroutine reading into an object takes its own
   claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
   reader before claiming its stream, so a server closing at once left nothing

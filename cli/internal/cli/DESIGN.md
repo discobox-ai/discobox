@@ -171,6 +171,8 @@ The local-server launch health handshake carries `health.Status.Warnings`
 through readiness. The CLI prints each distinct warning once above its startup
 progress line, escaping server text. `--quiet` suppresses startup narration.
 Connecting to an already-ready server does not replay its first-start warnings.
+A server whose wait for its pools ran out warns how many are still upgrading
+(ADR 26-11-14-624 §3); a launch that sees it prints it like any other.
 
 ## Pool outbound status
 

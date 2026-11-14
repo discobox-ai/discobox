@@ -130,8 +130,9 @@ type Diagnosis struct {
 	// Transport describes that scheme in a phrase a reader can act on.
 	Transport string `json:"transport,omitempty"`
 	// ServerStatus is what the server said about itself, from [health.Status]:
-	// "ready", or "starting" for one that has bound its listeners and is still
-	// initializing. Empty when no server answered.
+	// "ready", "starting" for one that has bound its listeners and is still
+	// initializing, or "upgrading_pools" for one that has started and is
+	// bringing its pools onto its agent. Empty when no server answered.
 	//
 	// It is carried separately from the server step's summary because a caller
 	// above this package branches on it — a server that is starting answers
@@ -870,6 +871,28 @@ func reportHealth(diagnosis *Diagnosis, started time.Time, status health.Status)
 		})
 		return
 	}
+	if status.UpgradingPools() {
+		diagnosis.add(DiagnosisStep{
+			Layer:      DiagnosisLayerServer,
+			Status:     DiagnosisWarn,
+			Summary:    "upgrading pools",
+			Detail:     healthDetail(status),
+			Hint:       "The server is serving, and is bringing the pools it had onto this version's agent. It reports ready once they are, or after " + health.PoolUpgradeWait.String() + " with a warning. The server's log names each pool and what it is waiting on; `discobox admin pool ls` shows each pool's state.",
+			DurationMS: millis(started),
+		})
+		return
+	}
+	if status.PoolsUpgrading > 0 {
+		diagnosis.add(DiagnosisStep{
+			Layer:      DiagnosisLayerServer,
+			Status:     DiagnosisWarn,
+			Summary:    summary,
+			Detail:     healthDetail(status),
+			Hint:       "The server is ready, but some pools have not been brought onto this version's agent. The server's log names them, and `discobox admin pool ls` shows each pool's state.",
+			DurationMS: millis(started),
+		})
+		return
+	}
 	diagnosis.ok(DiagnosisLayerServer, started, summary, healthDetail(status)...)
 }
 
@@ -878,8 +901,13 @@ func healthDetail(status health.Status) []string {
 	if status.UptimeSeconds > 0 {
 		uptime = "up " + (time.Duration(status.UptimeSeconds) * time.Second).String()
 	}
+	pools := ""
+	if status.PoolsUpgrading > 0 {
+		pools = fmt.Sprintf("%d pool(s) upgrading", status.PoolsUpgrading)
+	}
 	return details(
 		phaseDetail(status.Phase),
+		pools,
 		versionDetail(status.Version),
 		uptime,
 	)

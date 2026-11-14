@@ -189,7 +189,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	sandboxService.SetReleaseBundles(assetService)
 	poolControlPlane.SetPoolBoxes(assetService)
 	assetService.OnReleaseMoved(func(ctx context.Context) {
-		reconcileEveryPool(ctx, store, poolControlPlane)
+		reconcileEveryPool(ctx, store, poolControlPlane, "a release bundle moved")
 		if err := sandboxService.UpgradeReleaseSandboxes(ctx); err != nil {
 			slog.WarnContext(ctx, "a release bundle moved but stopped sandboxes were not upgraded", "error", err)
 		}
@@ -247,6 +247,12 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.store.BeginPoolHealthChecks(ctx); err != nil {
 		return err
 	}
+	// The pools to wait on before the server reports ready (ADR
+	// 26-11-14-624): every one registered before this start, fixed now, after
+	// their health checks began and before anything reconciles one.
+	if err := s.poolControlPlane.Upgrades().Begin(ctx); err != nil {
+		return fmt.Errorf("list the pools to upgrade: %w", err)
+	}
 	// Before anything resolves or mints a sentinel for one: a secret of the
 	// retired exchange type becomes a token secret sent nowhere. It is here
 	// rather than in the database migration because its value is sealed, and
@@ -270,6 +276,10 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.engine.Start(ctx); err != nil {
 		return err
 	}
+	// Every pool reconciles once in this run, so a restart with no release
+	// move settles its pools without waiting for the drift scan, and the
+	// upgrade watch has a reconcile from this run to go on.
+	reconcileEveryPool(ctx, s.store, s.poolControlPlane, "the server started")
 	s.assets.Start(ctx)
 	s.StartPinningUndelivered(ctx)
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
@@ -331,26 +341,34 @@ func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.Service.SandboxProviderManager()
 }
 
+// PoolsUpgrading counts the pools this run has not yet brought onto its agent,
+// which the health endpoint waits on (ADR 26-11-14-624).
+func (s *Service) PoolsUpgrading(ctx context.Context) int {
+	return len(s.poolControlPlane.Upgrades().Pending(ctx))
+}
+
 // Assets is the asset API's service, which only a pool reaches.
 func (s *Service) Assets() *assets.Service { return s.assets }
 
 // reconcileEveryPool marks every pool for a reconcile, which provisions a
 // pool's box again in place when its bundles moved (ADR 26-10-24-953 §5).
-func reconcileEveryPool(ctx context.Context, store *store.Store, pools *pools.ControlPlane) {
+// why says what asked for it, in the warnings when a pool is not marked; the
+// drift scan marks it later in any case.
+func reconcileEveryPool(ctx context.Context, store *store.Store, pools *pools.ControlPlane, why string) {
 	projects, err := store.ListProjects(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "a release bundle moved but pools were not reconciled", "error", err)
+		slog.WarnContext(ctx, why+" but pools were not reconciled", "error", err)
 		return
 	}
 	for _, project := range projects {
 		listed, err := store.ListPools(ctx, project.ID)
 		if err != nil {
-			slog.WarnContext(ctx, "a release bundle moved but a project's pools were not reconciled", "projectId", project.ID, "error", err)
+			slog.WarnContext(ctx, why+" but a project's pools were not reconciled", "projectId", project.ID, "error", err)
 			continue
 		}
 		for _, pool := range listed {
 			if err := pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
-				slog.WarnContext(ctx, "a release bundle moved but a pool was not reconciled", "poolId", pool.ID, "error", err)
+				slog.WarnContext(ctx, why+" but a pool was not reconciled", "poolId", pool.ID, "error", err)
 			}
 		}
 	}

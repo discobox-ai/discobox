@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/health"
@@ -50,7 +52,7 @@ func TestStartupHandlerHandsOverToTheRouter(t *testing.T) {
 	handler := newStartupHandler("starting services")
 	handler.setReady(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
-	}))
+	}), nil)
 
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/anything", nil))
@@ -79,7 +81,7 @@ func TestStartupWarningsSurviveReadiness(t *testing.T) {
 	h.addWarning("KVM unavailable; using Docker without VM isolation")
 	for _, ready := range []bool{false, true} {
 		if ready {
-			h.setReady(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { t.Error("health bypassed startup warning status") }))
+			h.setReady(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { t.Error("health bypassed startup warning status") }), nil)
 		}
 		resp := httptest.NewRecorder()
 		h.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodGet, health.Path, nil))
@@ -147,5 +149,72 @@ func TestStartupSaveChangesUsesProblemJSON(t *testing.T) {
 	}
 	if body.Detail.Value != "server is starting: starting services" {
 		t.Fatalf("detail = %q", body.Detail.Value)
+	}
+}
+
+// fakePoolUpgrades counts what its test sets.
+type fakePoolUpgrades struct{ n int }
+
+func (f *fakePoolUpgrades) PoolsUpgrading(context.Context) int { return f.n }
+
+func readHealth(t *testing.T, handler http.Handler) (int, health.Status, string) {
+	t.Helper()
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodGet, health.Path, nil))
+	body := resp.Body.String()
+	var status health.Status
+	if err := json.Unmarshal([]byte(body), &status); err != nil {
+		t.Fatal(err)
+	}
+	return resp.Code, status, body
+}
+
+// After an upgrade the server serves at once, and its health says it is
+// upgrading pools — 503, with how many — until every pool it had is on its
+// agent; then ready. While it says so the API serves: a pool reports through
+// it.
+func TestHealthReportsUpgradingPoolsUntilTheyAreUpgraded(t *testing.T) {
+	pools := &fakePoolUpgrades{n: 2}
+	h := newStartupHandler("starting services")
+	h.setReady(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) }), pools)
+
+	code, status, _ := readHealth(t, h)
+	if code != http.StatusServiceUnavailable || !status.UpgradingPools() || !status.Waiting() || status.Settled() || status.PoolsUpgrading != 2 {
+		t.Fatalf("health = %d %+v, want 503 upgrading 2 pools", code, status)
+	}
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/projects", nil))
+	if resp.Code != http.StatusTeapot {
+		t.Fatalf("API while upgrading pools = %d, want the router's answer", resp.Code)
+	}
+
+	pools.n = 0
+	code, status, body := readHealth(t, h)
+	if code != http.StatusOK || !status.Settled() || strings.Contains(body, "poolsUpgrading") {
+		t.Fatalf("health = %d %s, want settled ready", code, body)
+	}
+}
+
+// A pool that does not upgrade holds health at 503 only for the wait; then the
+// server is ready, warning how many pools are still upgrading, until none is.
+func TestHealthIsReadyWithAWarningOnceTheUpgradeWaitRunsOut(t *testing.T) {
+	pools := &fakePoolUpgrades{n: 1}
+	h := newStartupHandler("starting services")
+	h.setReady(http.NotFoundHandler(), pools)
+	h.mu.Lock()
+	h.readyAt = time.Now().Add(-health.PoolUpgradeWait - time.Second)
+	h.mu.Unlock()
+
+	code, status, _ := readHealth(t, h)
+	if code != http.StatusOK || status.Status != health.StatusReady || status.Settled() || status.PoolsUpgrading != 1 {
+		t.Fatalf("health = %d %+v, want ready and not settled", code, status)
+	}
+	if len(status.Warnings) != 1 || !strings.Contains(status.Warnings[0], "1 pool not upgraded after 5m0s") {
+		t.Fatalf("warnings = %q", status.Warnings)
+	}
+
+	pools.n = 0
+	if code, status, _ = readHealth(t, h); code != http.StatusOK || !status.Settled() || len(status.Warnings) != 0 {
+		t.Fatalf("health = %d %+v, want settled with no warning", code, status)
 	}
 }

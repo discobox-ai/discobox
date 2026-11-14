@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
@@ -92,9 +93,16 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	began := false
 	begin := func(context.Context) error { began = true; return nil }
 	unresolvable := &fakeMaker{boxErr: errors.New("registry unreachable")}
-	got, err := engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, unresolvable, recorded, begin)
+	// Kept, and said so: the reconcile settles cleanly, and only this tells
+	// the server the pool still runs its previous agent.
+	var kept error
+	keptCtx := sandbox.WithBoxKeptReporter(context.Background(), func(reason error) { kept = reason })
+	got, err := engine.applyMovedPoolBundles(keptCtx, cli, "container-1", pool, unresolvable, recorded, begin)
 	if err != nil || began || got.Agent != recorded.Agent || len(got.Bundles) != 1 {
 		t.Fatalf("an unresolvable release: record %+v, began %v, err %v; want the box kept as it is", got, began, err)
+	}
+	if kept == nil || !strings.Contains(kept.Error(), "registry unreachable") {
+		t.Fatalf("an unresolvable release reported kept %v; want it reported with its cause", kept)
 	}
 
 	// Unresolved assets cannot certify a requested outbound revision as applied.
@@ -118,8 +126,9 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, same, recorded, begin); err != nil || began {
-		t.Fatalf("unmoved bundles and placement: began %v, err %v; want nothing done", began, err)
+	kept = nil
+	if _, err := engine.applyMovedPoolBundles(keptCtx, cli, "container-1", pool, same, recorded, begin); err != nil || began || kept != nil {
+		t.Fatalf("unmoved bundles and placement: began %v, kept %v, err %v; want nothing done", began, kept, err)
 	}
 
 	// The same bundles under a moved placement — a pool setting its agent is

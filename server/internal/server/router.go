@@ -265,6 +265,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*ch
 		Gateways:       appServices,
 		Peers:          appServices,
 		Assets:         appServices.Assets(),
+		PoolUpgrades:   appServices,
 	}
 	authenticators := []auth.Authenticator{
 		// First, so a forwarded sandbox call can never reach the default user.

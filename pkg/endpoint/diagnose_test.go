@@ -168,6 +168,26 @@ func TestDiagnoseCarriesTheServerStatus(t *testing.T) {
 	}
 }
 
+// A server upgrading pools, or ready with pools it gave up waiting on, is a
+// warning saying how many, and the API above it is still asked: it serves.
+func TestDiagnoseCountsThePoolsStillUpgrading(t *testing.T) {
+	for _, status := range []health.Status{
+		{Status: health.StatusUpgradingPools, PoolsUpgrading: 2},
+		{Status: health.StatusReady, PoolsUpgrading: 2},
+	} {
+		server, client := irohPair(t, admitAll)
+		serveHealth(t, server, status)
+		diagnosis := client.Diagnose(t.Context(), irohTestURL(t, server), fastDiagnose())
+		if !diagnosis.OK() || diagnosis.ServerStatus != status.Status {
+			t.Fatalf("%s: OK = %v, ServerStatus = %q", status.Status, diagnosis.OK(), diagnosis.ServerStatus)
+		}
+		step := stepFor(t, diagnosis, DiagnosisLayerServer)
+		if step.Status != DiagnosisWarn || !strings.Contains(strings.Join(step.Detail, " "), "2 pool(s) upgrading") {
+			t.Fatalf("%s: server step = %+v, want a warning counting the pools", status.Status, step)
+		}
+	}
+}
+
 // The report is printed by one command and consumed by another, so it has to
 // survive the round trip through JSON that -o json makes.
 func TestDiagnosisSerializes(t *testing.T) {

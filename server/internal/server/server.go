@@ -314,7 +314,7 @@ func Run(ctx context.Context) error {
 	// From here the endpoints serve the API instead of a startup status. The
 	// listeners have been accepting since before the database was opened, so
 	// nothing rebinds and no client is dropped.
-	startup.setReady(handler)
+	startup.setReady(handler, appServices.PoolUpgrades)
 	for _, listener := range listeners {
 		log.Printf("listening on %s", listener.display)
 		// Beside the address, not instead of it: the address is what an

@@ -760,21 +760,29 @@ answering every request with the same error. Any harness config satisfies it,
 so a server whose images are briefly unreachable still starts on a project that
 seeded on an earlier boot.
 
-Handing over is becoming ready. There are two states
-(`health.StatusStarting`, `health.StatusReady`):
+Handing over is not yet being ready. There are three states
+(`health.StatusStarting`, `health.StatusUpgradingPools`, `health.StatusReady`):
 
 | State | API | `/healthz` | Meaning |
 | --- | --- | --- | --- |
 | `starting` | `503` with a contract-compatible error | `503` | no router yet: the database is being opened or migrated, the services built, or the built-in harnesses checked; `phase` names the step |
-| `ready` | every route serves | `200` | the real router is serving |
+| `upgrading_pools` | every route serves | `503` | a pool registered before this start has not yet been brought onto this server's agent; `poolsUpgrading` counts them |
+| `ready` | every route serves | `200` | the router is serving and every such pool is upgraded — or `health.PoolUpgradeWait` (5m) ran out, and `poolsUpgrading` and a warning count those still upgrading until none is |
 
-`startupHandler` answers every route itself until handover. The router's own
-`/healthz` (`RegisterHealthRoutes`) answers `ready` unconditionally, because
-that router serves only once startup has finished. Nothing that runs after
-handover — image staging included (ADR 0069) — holds readiness back.
+`/healthz` answers anyone, before authentication, so it counts pools and never
+names them; the log names each and what it waits on.
+
+`startupHandler` answers every route itself until handover, and `/healthz`
+after it, from `pools.UpgradeWatch` (ADR 26-11-14-624; see
+[pools](internal/resources/pools/DESIGN.md)). The router's own `/healthz`
+(`RegisterHealthRoutes`) answers `ready` unconditionally and is reached only
+by a router built without the startup handler, in tests. Nothing else that runs
+after handover — image staging included (ADR 0069) — holds readiness back.
 
 `health` in the root module owns the payload, because the CLI that polls it is
-in another module. `Status.Starting()` is what a client waits out.
+in another module. `Status.Waiting()` is what a client waits out;
+`Status.Settled()` — ready, no pool still upgrading — is what a test waits for
+after starting or upgrading a server.
 
 ## Staging a Pool's Images
 
@@ -1100,7 +1108,9 @@ cross-package flow.
 Default-provider seeding reports a fallback through `AppOptions.StartupWarning`.
 The running server keeps it in `pkg/health.Status.Warnings` both while starting
 and when ready. These are process-local first-start warnings, not repeated on
-a restart of an already seeded database. The CLI receives them through the
+a restart of an already seeded database. The only other warning there is the
+count of pools still upgrading once the wait for them ran out, which leaves
+when none is (ADR 26-11-14-624 §3). The CLI receives them through the
 normal launch health probe; no server log parsing is involved.
 
 ## Pool outbound configuration

@@ -750,6 +750,16 @@ type Services struct {
 	// Assets answers a pool's reads of the bundles in its scope (ADR
 	// 26-10-16-423 §13). Only a pool reaches it.
 	Assets AssetService
+	// PoolUpgrades answers the pools the server is still bringing onto its
+	// agent, which its health endpoint reports (ADR 26-11-14-624).
+	PoolUpgrades PoolUpgradeService
+}
+
+// PoolUpgradeService counts the pools registered before this server started
+// that it has not yet brought onto its agent. Which they are is logged, not
+// answered: the count is all the unauthenticated health endpoint gives.
+type PoolUpgradeService interface {
+	PoolsUpgrading(ctx context.Context) int
 }
 
 // AssetService serves bundles to a pool by blob (ADR 26-10-16-423 §13): only

@@ -191,6 +191,37 @@ def start_server():
     eventually("server ready", ready, seconds=30)
 
 
+def wait_settled(label, seconds=330):
+    """Wait for the server to report ready with no pool still upgrading.
+
+    After an upgrade or restart the server serves at once and reports
+    upgrading_pools (503) until every pool it had is on its agent, then ready;
+    a pool it gave up on stays counted on a ready answer. Nothing here uses a
+    box before that, and the time it took is its own number.
+    """
+    started = time.time()
+    last = {}
+
+    def settled():
+        nonlocal last
+        try:
+            with urllib.request.urlopen(URL + "/healthz", timeout=2) as response:
+                last = json.load(response)
+        except urllib.error.HTTPError as error:
+            last = json.load(error)
+            return False
+        except OSError:
+            return False
+        return last.get("status") == "ready" and not last.get("poolsUpgrading")
+    try:
+        eventually(label, settled, seconds=seconds)
+    finally:
+        (ARTIFACTS / "health-settled.json").write_text(json.dumps(last, indent=2))
+    elapsed = time.time() - started
+    print(f"TIME {label}: {elapsed:.1f}s", flush=True)
+    return elapsed
+
+
 def restart_control_plane(box):
     pool = obj("admin", "box", "get", box)["poolId"]
     container = "discobox-vm-" + pool
@@ -217,6 +248,7 @@ def restart_control_plane(box):
     (ARTIFACTS / "pool-failed-heartbeat.log").write_text(failed_beat)
     assert "report pool status" in failed_beat, "no failed pool heartbeat observed during outage"
     start_server()
+    wait_settled("server settled after restart")
 
     def recovered():
         status = obj("admin", "pool", "get", pool)

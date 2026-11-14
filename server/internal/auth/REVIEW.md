@@ -23,6 +23,12 @@
   key inside its own protocol before any channel exists. Do not widen this list
   further without the same "must work pre-auth and reveals nothing sensitive,
   or authenticates in-band" justification.
+- What a public path answers is held to the same bar as adding one. `/healthz`
+  is read by anyone, before authentication, on every listener — pool carrier
+  streams included — so it carries the server's own state and counts, never a
+  project's resources: no pool or sandbox names, IDs, or error text (pool
+  errors wrap provider and pool-agent responses). Detail goes to the log or an
+  authenticated route (ADR 26-11-14-624 §2).
 - A pool's carrier stream is held to its pool's routes only because the
   server's `connContext` sees a `*carrierhub.Conn` and tags it
   (`WithCarrierPool`); a connection it does not recognize is served untagged,

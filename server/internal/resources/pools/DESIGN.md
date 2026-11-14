@@ -199,6 +199,33 @@ failures older than `HealthCheckStartedAt`, including legacy rows without this
 nullable timestamp; current runtime failures still terminate the wait. Telemetry
 cannot refresh a runtime verdict.
 
+## The server waits for its pools to upgrade
+
+`UpgradeWatch` (`upgrade.go`, ADR 26-11-14-624) is what the server's health
+reports `upgrading_pools` from; `ControlPlane` owns it, so the reconciler can
+tell it how a pass settled. At startup, after `BeginPoolHealthChecks`, it
+fixes the pools to wait on: every present pool already registered, each
+pending until a pass reads it. Startup then marks every pool for a reconcile.
+A watched pool is upgraded once `ReconciledAt` is at or after its
+`HealthCheckStartedAt`, with no `ErrorMessage` and its generation observed;
+its provider did not keep the previous box in that pass; and a ready
+`StatusReportedAt` follows that `ReconciledAt` — a report from before it may
+be the old agent's.
+
+A provider keeps a running pool's box on purpose when the release does not
+resolve or apply (ADR 26-10-24-953 §5) and the pass still settles cleanly, so
+it says so with `sandbox.ReportBoxKept`; the reconciler hands that to the
+watch with the settle's time, and a later settle supersedes it. That record is
+in memory only, as the run it describes is.
+
+A pool deleted, or on a removed or disabled provider instance
+(`convergedProvider`, which the reconciler decides the same by), drops out.
+Once none is left the watch has cleared for the run. It reads rows and writes
+nothing, resolves no provider, and runs one pass at a time under its own
+bounded context, at most once a second; a probe that cannot wait, or a pass
+that fails, is answered the last answer. Its count is what health serves;
+the names and reasons go to the log when they change.
+
 Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks
 every pool as the drift and lost-mark backstop.
