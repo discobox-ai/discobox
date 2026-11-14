@@ -1,12 +1,14 @@
 # 26-11-12-060 — A macOS sandbox's account takes uids from 501
 
-- **Status**: Proposed. On acceptance it supersedes, for a darwin sandbox
-  only, [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)
+- **Status**: Accepted. Supersedes, for a darwin sandbox only,
+  [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)
   §1's single `[1000, 60000]` range and §2's normalization of a macOS
-  client's ids, and 0141's status line says so. It settles
+  client's ids. It settles
   [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)
   §5's "ADR 0141's range becomes per guest OS".
 - **Date**: 2026-11-12
+
+  Accepted by the owner by merging #1083, 2026-11-14.
 - **Decided**: by the owner, 2026-10-24, on
   [#121](https://github.com/discobox-ai/discobox/issues/121): a macOS
   sandbox's account takes uids from 501 up; Linux sandboxes are unchanged
