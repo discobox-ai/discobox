@@ -109,3 +109,25 @@ func TestProveContainedBudgetsLongPaths(t *testing.T) {
 		t.Fatalf("long-path budget=%v", err)
 	}
 }
+
+// AnyPath is every path below the root, as matching reads a pattern: no
+// paths, `/**` or `/*/**`; never one segment, a prefix, or a literal.
+func TestAnyPath(t *testing.T) {
+	for _, tc := range []struct {
+		paths []string
+		want  bool
+	}{
+		{nil, true},
+		{[]string{"/**"}, true},
+		{[]string{"/*/**"}, true},
+		{[]string{"/user", "/**"}, true},
+		{[]string{"/*"}, false},
+		{[]string{"/*/*"}, false},
+		{[]string{"/repos/**"}, false},
+		{[]string{"/user"}, false},
+	} {
+		if got := AnyPath(tc.paths); got != tc.want {
+			t.Errorf("AnyPath(%q) = %v, want %v", tc.paths, got, tc.want)
+		}
+	}
+}

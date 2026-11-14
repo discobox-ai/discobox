@@ -584,25 +584,29 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	d.titleRight = "summary"
 	d.body = m.credentialSentence(req) + " Answering with “" + ans.credential + "” for " + lifetime.Label(ans.ttl) + "."
 	what := section{label: ans.credential + " would be"}
+	summarize := func(label string, part *RequestPart) {
+		text, broad := partSummary(part)
+		tone := toneAccent
+		if broad {
+			tone = toneAlert
+		}
+		what.fields = append(what.fields, field{label: label, value: text, tone: tone})
+	}
 	if req.Use != nil {
-		what.fields = append(what.fields, field{label: "used by this box", value: partSummary(req.Use), tone: toneAccent})
+		summarize("used by this box", req.Use)
 	}
 	if req.Delegate != nil {
-		what.fields = append(what.fields, field{label: "delegated to its workers", value: partSummary(req.Delegate), tone: toneAccent})
+		summarize("delegated to its workers", req.Delegate)
 	}
 	if note := ans.additionNote(req); note != "" {
 		what.lines = append(what.lines, line{text: note, tone: toneDim})
 	}
 	preview := ans
 	preview.use, preview.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
-	d.sections = []section{what}
-	if req.Use != nil {
-		d.sections = append(d.sections, choiceSection("its own use", req.Use, preview.useChoice, preview))
-	}
-	if req.Delegate != nil {
-		d.sections = append(d.sections, choiceSection("its workers", req.Delegate, preview.delegateChoice, preview))
-	}
-	d.sections = append(d.sections, approvalConsequences(req, preview)...)
+	// The summary is lines, never route tables: each part's routes are
+	// Review…'s to show (issue #1172). What Accept sends from here is still
+	// said before it can: the consequences, each in a line.
+	d.sections = append([]section{what}, approvalConsequences(req, preview, true)...)
 	d.keys = []hint{says("←→ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
 	m.withRawRequest(d, req)
 	d.onCancel = back
@@ -619,21 +623,62 @@ func partAnswer(part *RequestPart, decision string) string {
 	return decision
 }
 
-// partSummary is a part in a line: the hosts it reaches and how many
-// operations, an operation being a row of its route table.
-func partSummary(part *RequestPart) string {
-	rows := approvalRouteCells(part.Routes)
-	var hosts []string
-	for _, r := range rows {
+// partSummary is a part in a line: the hosts its open routes reach, how many
+// operations (a row of its route table each), the methods they take, what
+// their paths leave open, and how many rows it blocks. With no table beside
+// it on the summary, it never reads narrower than what Accept sends: a host
+// blocked is not one reached, every method is named (a write among them),
+// and any path is what secretroute matches as one (`AnyPath`), however it is
+// written. broad is whether any method, path or
+// GraphQL or MCP operation is open, for the line to be drawn as a warning.
+func partSummary(part *RequestPart) (text string, broad bool) {
+	var hosts, methods []string
+	var open, blocked int
+	var anyMethod, anyPath, wildPath, anyOperation bool
+	for _, r := range approvalRouteCells(part.Routes) {
+		if r.blocked {
+			blocked++
+			continue
+		}
+		open++
 		if !slices.Contains(hosts, r.host) {
 			hosts = append(hosts, r.host)
 		}
+		for _, method := range strings.Split(r.method, ",") {
+			anyMethod = anyMethod || method == "*"
+			if method != "*" && !slices.Contains(methods, method) {
+				methods = append(methods, method)
+			}
+		}
+		// A body route's names are the places it is swapped at, never a wildcard.
+		anyOperation = anyOperation || r.operation == "*" || (r.protocol != 3 && r.names == "*")
 	}
-	n := "1 operation"
-	if len(rows) != 1 {
-		n = itoa(len(rows)) + " operations"
+	for _, r := range part.Routes {
+		if !r.Blocked {
+			anyPath = anyPath || secretroute.AnyPath(r.Paths)
+			wildPath = wildPath || slices.ContainsFunc(r.Paths, func(p string) bool { return strings.Contains(p, "*") })
+		}
 	}
-	return strings.Join(hosts, ", ") + " · " + n
+	parts := []string{strings.Join(hosts, ", "), plural(open, "operation", "operations")}
+	switch {
+	case anyMethod:
+		parts = append(parts, "any method")
+	case len(methods) > 0:
+		parts = append(parts, strings.Join(methods, ", "))
+	}
+	switch {
+	case anyPath:
+		parts = append(parts, "any path")
+	case wildPath:
+		parts = append(parts, "paths with wildcards")
+	}
+	if anyOperation {
+		parts = append(parts, "any operation")
+	}
+	if blocked > 0 {
+		parts = append(parts, itoa(blocked)+" blocked")
+	}
+	return strings.Join(parts, " · "), anyMethod || anyPath || anyOperation
 }
 
 // askParts asks about each part the request has, use then delegation, on a
@@ -721,7 +766,7 @@ func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool,
 	} else {
 		preview.use, preview.useChoice = PartApprove, *choice
 	}
-	d.sections = append(d.sections, approvalConsequences(req, preview)...)
+	d.sections = append(d.sections, approvalConsequences(req, preview, false)...)
 	if len(part.Roles) > 0 {
 		roles := section{label: "the roles it asked for · the discobox's words"}
 		for _, role := range part.Roles {
@@ -976,7 +1021,10 @@ func (m *Model) customHowLong(maxTTL time.Duration, limit string, back func() te
 
 // approvalConsequences shows only information needed at consent: a new
 // credential's own ceiling and gaps, and what approving replaces or shortens.
-func approvalConsequences(req CredentialRequest, ans requestAnswer) []section {
+// brief is the summary's form: a new credential's gap in a line, its hosts
+// and how many operations, as partSummary says a part, rather than its
+// route table.
+func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) []section {
 	var out []section
 	if ans.fresh {
 		out = append(out, routesSection("new credential stored for", ans.credentialRoutes))
@@ -986,7 +1034,12 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer) []section {
 	// secret's ✗ says it (uncovered), before it is stored.
 	if ans.fresh {
 		if missing := gaps(Secret{Routes: ans.credentialRoutes}, approvedRoutes(req, ans)); len(missing) > 0 {
-			gap := approvalRouteSection("requested, but this credential will not be sent on", &RequestPart{Routes: missing})
+			label := "requested, but this credential will not be sent on"
+			gap := approvalRouteSection(label, &RequestPart{Routes: missing})
+			if brief {
+				text, _ := partSummary(&RequestPart{Routes: missing})
+				gap = section{label: label, lines: []line{{text: text + " · Review… lists them", tone: toneAccent}}}
+			}
 			gap.labelTone = toneAlert
 			out = append(out, gap)
 		}
