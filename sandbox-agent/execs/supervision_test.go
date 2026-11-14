@@ -192,7 +192,7 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		if took := time.Since(began); took >= shimStopGrace/2 {
 			// The shim's log says whether it could read the shell's identity
 			// and list its session; the shell's version, which one this was.
-			version, _ := osexec.CommandContext(context.Background(), bash, "--version").Output()
+			version, _ := osexec.CommandContext(context.Background(), bash, "--version").Output() //nolint:gosec // the bash this test ran, asked its version.
 			t.Fatalf("stopping a terminal took %s; an interactive shell has to be hung up, not waited out\n%s: %s\n%s",
 				took, bash, firstLine(version), shimLog(agent.units, exec.Unit))
 		}
