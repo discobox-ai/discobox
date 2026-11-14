@@ -149,6 +149,15 @@ func hostContained(g, d string) bool {
 func nameContained(g, d string) bool {
 	return g == d || strings.HasSuffix(d, "*") && strings.HasPrefix(g, strings.TrimSuffix(d, "*"))
 }
+
+// AnyPath is whether a route's paths reach every path below the root: no
+// paths at all, or a pattern containing `/*/**` (`/**` and `/*/**` do; `/*`,
+// one segment, does not). It reads patterns as matching does, so a summary
+// of a route never takes its breadth from how a path is spelled.
+func AnyPath(paths []string) bool {
+	return len(paths) == 0 || slices.ContainsFunc(paths, func(p string) bool { return pathContained("/*/**", p) })
+}
+
 func pathContained(g, d string) bool {
 	if g == d {
 		return true
