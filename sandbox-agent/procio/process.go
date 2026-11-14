@@ -159,6 +159,22 @@ func (p *Process) CloseInput() {
 	_ = p.stdin.Close()
 }
 
+// Hangup closes the PTY master, which is what a terminal going away is: the
+// kernel hangs up the slave, so a read the program has blocked on it ends in
+// EOF or EIO instead of waiting for a key. It is a no-op for a pipe process,
+// and Close still releases everything else.
+//
+// The master is a blocking descriptor (the pty package's ioctls put it in
+// blocking mode), and Go closes a blocking descriptor only once a read
+// pending on it returns: the hangup lands with the next output the program
+// writes, or at once when nothing is reading.
+func (p *Process) Hangup() {
+	if p.tty == nil {
+		return
+	}
+	_ = p.tty.Close()
+}
+
 // Close releases every descriptor the parent holds, and its hold on the
 // process.
 func (p *Process) Close() {

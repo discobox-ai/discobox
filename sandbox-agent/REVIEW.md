@@ -389,6 +389,15 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   anything** (`execs.HoldLifetime`). A command that inherited it would hold
   the lock past the shim's exit, and the exec would read as running for as
   long as anything it started did.
+- **A terminal's stop hangup is a close of a blocking PTY master.** The pty
+  package's ioctls go through `Fd()`, which puts the master in blocking mode,
+  and Go closes a blocking descriptor only once the read pending on it
+  (`copyOutput`'s) returns. So `procio.Process.Hangup` takes effect with the
+  program's next output, not at once: a starting shell's prompt is what lands
+  it (#1142). Do not move the hangup later in the stop (after a delay, or
+  after the grace's first part) on the belief that it is immediate: a shell
+  that has already drawn its prompt writes nothing more, and the close would
+  then wait out the grace with it.
 - **A stop ends the command's session, not its process group.** An
   interactive shell gives every job its own group; a group kill leaves a
   terminal's background jobs running after the exec reads stopped.

@@ -217,6 +217,41 @@ func TestCloseInputIsANoOpForTTY(t *testing.T) {
 	}
 }
 
+// Hangup is a real hangup, not a signal: a program that ignores SIGHUP and is
+// waiting on its terminal for input sees the read end, as it would when a
+// terminal emulator's window closes.
+func TestHangupEndsAReadOnTheTerminal(t *testing.T) {
+	dir := t.TempDir()
+	ready, ended := dir+"/ready", dir+"/ended"
+	p := start(t, Options{
+		Command: []string{"sh", "-c", fmt.Sprintf(`trap "" HUP; : > %q; read line; : > %q`, ready, ended)},
+		Env:     os.Environ(),
+		TTY:     true,
+		Winsize: &pty.Winsize{Rows: 24, Cols: 80},
+	})
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the program to start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	p.Hangup()
+	exited := make(chan Status, 1)
+	go func() { exited <- p.Wait() }()
+	select {
+	case <-exited:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the program was still waiting for input after the terminal hung up")
+	}
+	if _, err := os.Stat(ended); err != nil {
+		t.Fatalf("the program did not get past its read: %v", err)
+	}
+}
+
 // The size a caller asks for reaches the program.
 func TestResizeAppliesToTheTTY(t *testing.T) {
 	p := start(t, Options{
