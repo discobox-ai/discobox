@@ -110,6 +110,32 @@ check() {
     fi
   done < <(git ls-files '*Dockerfile' '*.Dockerfile')
 
+  # The hook is written out wherever a snapshot source is, since a Dockerfile
+  # cannot import another; a fix to one copy has to reach them all. Each copy,
+  # from the line that computes the snapshot's time to the line that installs
+  # the hook, is compared with the first once indentation and the `&&` or `;`
+  # joining its commands are set aside.
+  local hooks
+  # The awk program matches the literal text `$DEBIAN_SNAPSHOT` in the
+  # Dockerfiles, so nothing in it is meant to expand.
+  # shellcheck disable=SC2016
+  hooks=$(git ls-files '*Dockerfile' '*.Dockerfile' | xargs awk '
+    /s=\$\(date -u -d "\$\(echo "\$DEBIAN_SNAPSHOT"/ { copy = 1; body = "" }
+    copy {
+      line = $0
+      sub(/^[[:space:]]*(&& )?/, "", line)
+      sub(/[[:space:]]*\\$/, "", line)
+      sub(/;$/, "", line)
+      body = body line "\n"
+    }
+    copy && /81-discobox-snapshot/ { copy = 0; printf "%s:%d\t", FILENAME, FNR; system(""); print body | "sha256sum"; close("sha256sum") }
+  ')
+  if [ "$(printf '%s\n' "$hooks" | awk -F'\t' 'NF { print $2 }' | sort -u | grep -c .)" -gt 1 ]; then
+    echo "debian pin: the discobox-apt-snapshot hook differs between its copies:" >&2
+    printf '%s\n' "$hooks" | sed 's/^/  /' >&2
+    failed=1
+  fi
+
   if [ "$failed" -ne 0 ]; then
     echo "debian pin: every Debian stage builds on the one pin; see \"Debian\" in DESIGN.md" >&2
     exit 1
