@@ -40,15 +40,28 @@ RUN groupadd --system --gid 992 kvm
 
 # On Debian, apt builds this image from the pinned snapshot, so a rebuild
 # installs what the last one did; the last apt layer below hands the box back
-# to the live sid archive. Check-Valid-Until is off because a snapshot's
-# Release file expires a week after it was taken. A stand-in distribution
-# keeps its own sources.
+# to the live sid archive, and takes away the snapshot's check below. The
+# snapshot is read over http: the image has no CA certificates to check TLS
+# with until apt installs them. apt verifies every index against Debian's
+# archive key, but with Check-Valid-Until off (a snapshot's Release expires a
+# week after it was taken) any older signed index would pass for it, so an
+# apt hook fails every update whose sid index is not dated within the day
+# before the snapshot. A stand-in distribution keeps its own sources.
 RUN set -eux \
     && . /etc/os-release \
     && if [ "$ID" = debian ]; then \
-        printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+        printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
             'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
             'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources; \
+        s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s); \
+        printf '%s\n' '#!/bin/sh' \
+            "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease)" \
+            "d=\$(date -u -d \"\$released\" +%s)" \
+            "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
+            "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
+            'exit 1' > /usr/local/sbin/discobox-apt-snapshot; \
+        chmod 0755 /usr/local/sbin/discobox-apt-snapshot; \
+        echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot; \
     fi \
     && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries
 
@@ -153,6 +166,7 @@ RUN set -eux \
         printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian' \
             'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
             > /etc/apt/sources.list.d/debian.sources; \
+        rm -f /etc/apt/apt.conf.d/81-discobox-snapshot /usr/local/sbin/discobox-apt-snapshot; \
     fi
 
 # Go and uv, each its upstream release, pinned with its checksum: Debian's Go

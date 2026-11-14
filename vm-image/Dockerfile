@@ -28,14 +28,28 @@ ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:0
 ARG DEBIAN_SNAPSHOT=20261111T202414Z
 
 # The stages that run on the target architecture start here, with apt reading
-# the pinned snapshot and never the moving archive. Check-Valid-Until is off
-# because a snapshot's Release file expires a week after it was taken.
+# the pinned snapshot and never the moving archive. The snapshot is read over
+# http: the sid image has no CA certificates to check TLS with before apt
+# installs them. apt verifies every index against Debian's archive key, but
+# with Check-Valid-Until off (a snapshot's Release expires a week after it was
+# taken) any older signed index would pass for it, so an apt hook fails every
+# update whose sid index is not dated within the day before the snapshot. The
+# Go stage below and every Dockerfile on the Debian pin do the same.
 FROM ${DEBIAN_IMAGE} AS debian
 ARG DEBIAN_SNAPSHOT
-RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
         'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
         'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
-    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
+    && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
+    && printf '%s\n' '#!/bin/sh' \
+        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease)" \
+        "d=\$(date -u -d \"\$released\" +%s)" \
+        "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
+        "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
+        'exit 1' > /usr/local/sbin/discobox-apt-snapshot \
+    && chmod 0755 /usr/local/sbin/discobox-apt-snapshot \
+    && echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot
 
 # Go is sid's own, at the snapshot: there is no golang image on sid. Built
 # natively on the host platform and cross-compiled, so nothing is emulated.
@@ -44,10 +58,19 @@ ARG DEBIAN_SNAPSHOT
 ARG TARGETOS=linux
 ARG TARGETARCH
 
-RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
         'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
         'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
     && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
+    && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
+    && printf '%s\n' '#!/bin/sh' \
+        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease)" \
+        "d=\$(date -u -d \"\$released\" +%s)" \
+        "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
+        "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
+        'exit 1' > /usr/local/sbin/discobox-apt-snapshot \
+    && chmod 0755 /usr/local/sbin/discobox-apt-snapshot \
+    && echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates golang-go \
     && apt-get clean \

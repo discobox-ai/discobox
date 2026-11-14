@@ -7,10 +7,19 @@ ARG DEBIAN_SNAPSHOT=20261111T202414Z
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS go
 ARG DEBIAN_SNAPSHOT
-RUN printf '%s\n' 'Types: deb' "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
         'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
         'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
     && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
+    && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
+    && printf '%s\n' '#!/bin/sh' \
+        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease)" \
+        "d=\$(date -u -d \"\$released\" +%s)" \
+        "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
+        "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
+        'exit 1' > /usr/local/sbin/discobox-apt-snapshot \
+    && chmod 0755 /usr/local/sbin/discobox-apt-snapshot \
+    && echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates golang-go \
     && apt-get clean \

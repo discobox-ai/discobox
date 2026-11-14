@@ -85,13 +85,23 @@ check() {
           && $0 !~ /^ARG DOCKER_DEBIAN_SUITE=trixie$/ && $0 !~ /stable main/ && $0 !~ /Components: stable/ {
         printf "%s:%d: names a Debian suite other than sid: %s\n", FILENAME, FNR, $0
       }
+      # The image has no CA certificates before apt installs them, so an https
+      # snapshot source fails on every machine that does not inject its own.
+      /https:\/\/snapshot\.debian\.org/ {
+        printf "%s:%d: read the snapshot over http, which apt verifies by signature: %s\n", FILENAME, FNR, $0
+      }
       /debian:[0-9]|golang:|rust:|preferences\.d|Pin-Priority|Pin:|APT::Default-Release|-t [a-z]+-backports/ {
         printf "%s:%d: another Debian, or an apt pin: %s\n", FILENAME, FNR, $0
       }
+      /URIs: http:\/\/snapshot\.debian\.org/ { sources++ }
+      /APT::Update::Post-Invoke-Success \{ "\/usr\/local\/sbin\/discobox-apt-snapshot"; \}/ { hooks++ }
       toupper($1) == "ARG" && $2 ~ /^DEBIAN_IMAGE=/ { has_image = 1 }
       toupper($1) == "ARG" && $2 ~ /^DEBIAN_SNAPSHOT=/ { has_snapshot = 1 }
       END {
         if (has_image != has_snapshot) printf "%s: pins the sid image or the snapshot, not both\n", FILENAME
+        # Over http with Check-Valid-Until off, any older signed index would
+        # pass for the snapshot; the hook binds what apt accepts to it.
+        if (sources != hooks) printf "%s: %d snapshot sources but %d discobox-apt-snapshot hooks; each needs one\n", FILENAME, sources, hooks
       }
     ' "$dockerfile")
     if [ -n "$bad" ]; then
