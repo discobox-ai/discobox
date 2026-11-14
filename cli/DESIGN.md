@@ -629,7 +629,8 @@ is an error rather than a lost convenience.
   server uses), and asks every server for an ID, full or short, which says
   which server answered an ambiguous short ID (`selectSandboxOnEveryServer`).
   A full ID no server lists is taken on the primary as it stands, as with one
-  server, so a deleted discobox's audit trail stays readable. `cp`
+  server, so a removed (archived) discobox's audit trail stays readable; a
+  purged one's is gone with it. `cp`
   matches what stands before its colon against the cross-server candidates
   (`matchServerSandboxArg`). The picker is `pickServerSandbox`, over
   candidates the caller has already listed, in the caller's words.

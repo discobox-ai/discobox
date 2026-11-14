@@ -135,13 +135,15 @@ type Resources struct {
 	// about whether the next discobox will fit.
 	DiskFreeBytes int64
 	// DiskDataBytes is what the discoboxes themselves hold, summed — each
-	// one's home, sources and nested container store, which are its own copies
-	// rather than links into anything shared.
+	// one's home, sources and nested container store, its container's
+	// writable layer and its recorded traffic, which are its own rather than
+	// links into anything shared.
 	DiskDataBytes int64
 	// DiskCacheBytes is what Discobox holds that no discobox owns: the cache
-	// every discobox shares and the builder's own store. Both are disposable
-	// and rebuild themselves, which is what makes them worth telling apart
-	// from the data — it is the half you can reclaim.
+	// every discobox shares, the builder's own store and the proxy's
+	// response cache. All are disposable and rebuild themselves, which is
+	// what makes them worth telling apart from the data — it is the half
+	// you can reclaim.
 	DiskCacheBytes int64
 	DiskKnown      bool
 }

@@ -99,9 +99,9 @@ names itself. What appears is what software in the discobox resolved on its
 own.
 
 A lookup lives on the pool that answered it for the audit retention window,
-after the discobox is gone. A pool that cannot be read is named on stderr (and
-under unavailablePools with -o json), and its lookups are missing from the
-list.
+after the discobox is removed, unless it is purged: a purge takes its lookups
+with it. A pool that cannot be read is named on stderr (and under
+unavailablePools with -o json), and its lookups are missing from the list.
 
 The name is what the discobox asked, and is shown as data, with non-printing
 characters escaped.
@@ -259,9 +259,9 @@ and with non-printing characters escaped when it is. "audit get" prints the
 rest of what was recorded about one request.
 
 A request lives on the pool that proxied it for the audit retention window,
-after the discobox is gone. A pool that cannot be read is named on stderr
-(and under unavailablePools with -o json), and its requests are missing from
-the list.
+after the discobox is removed, unless it is purged: a purge takes its requests
+with it. A pool that cannot be read is named on stderr (and under
+unavailablePools with -o json), and its requests are missing from the list.
 
 The method, URL and host are what the discobox sent, and are shown as data,
 with non-printing characters escaped.
@@ -878,7 +878,9 @@ Aliases: list.
 Destroy discoboxes and their data.
 
 This is not recoverable: the workspace, config, and secrets are removed from
-the pool host along with the container. Unlike the other lifecycle commands it
+the pool host along with the container, and so is the egress audit its pool
+recorded for it, so "discobox audit" no longer shows its traffic. Unlike the
+other lifecycle commands it
 waits for the pool agent to confirm the removal, so when it returns the data is
 actually gone.
 
@@ -2445,8 +2447,14 @@ Memory is reported twice because both numbers are true. CHARGED is what the
 host bills the discobox, including page cache; RESIDENT is what its processes
 hold, summed, which double-counts shared pages and routinely exceeds CHARGED.
 
-Disk is walked fresh on every report. The cache is shared by every discobox in
-the pool, so it is counted once here and never per discobox.
+Disk is walked on a schedule of its own, which the disk line says. A
+discobox's DISK is everything that is its own: its workspace and other trees,
+its container's writable layer, and the traffic the proxy recorded for it.
+What is shared is counted once, against the pool: the cache, the builder's
+store, the proxy's response cache and audit database, and the images every
+discobox runs from. "Not attributed" is what the filesystem holds beyond all of
+that; on a Docker host shared with other pools or other uses it is the
+filesystem's rather than the pool's, and the images are not subtracted from it.
 
 Without POOL the project's default pool is used.
 ~~~~

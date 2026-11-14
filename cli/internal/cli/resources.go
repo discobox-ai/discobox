@@ -45,8 +45,14 @@ Memory is reported twice because both numbers are true. CHARGED is what the
 host bills the discobox, including page cache; RESIDENT is what its processes
 hold, summed, which double-counts shared pages and routinely exceeds CHARGED.
 
-Disk is walked fresh on every report. The cache is shared by every discobox in
-the pool, so it is counted once here and never per discobox.
+Disk is walked on a schedule of its own, which the disk line says. A
+discobox's DISK is everything that is its own: its workspace and other trees,
+its container's writable layer, and the traffic the proxy recorded for it.
+What is shared is counted once, against the pool: the cache, the builder's
+store, the proxy's response cache and audit database, and the images every
+discobox runs from. "Not attributed" is what the filesystem holds beyond all of
+that; on a Docker host shared with other pools or other uses it is the
+filesystem's rather than the pool's, and the images are not subtracted from it.
 
 Without POOL the project's default pool is used.`,
 		Example: `  discobox admin pool resources
@@ -227,7 +233,9 @@ func (a *App) writePoolResources(cmd *cobra.Command, pool *apimodel.Pool, sandbo
 	fmt.Fprintf(tw, "CPU\t%s\n", formatPoolCPULine(report.CPU))
 	fmt.Fprintf(tw, "MEMORY\t%s\n", formatPoolMemoryLine(report.Memory))
 	fmt.Fprintf(tw, "DISK\t%s\n", formatFilesystemLine(report.Storage))
-	fmt.Fprintf(tw, "\t%s\n", formatPoolTreesLine(report.Storage, sandboxes))
+	for _, line := range formatPoolDiskLines(report.Storage, sandboxes) {
+		fmt.Fprintf(tw, "\t%s\n", line)
+	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
@@ -258,6 +266,7 @@ func (a *App) writePoolResources(cmd *cobra.Command, pool *apimodel.Pool, sandbo
 	// cells just draws trailing whitespace. The labels carry it instead.
 	total := sumSandboxRows(rows)
 	services := poolServicesRow(report)
+	images := poolImagesRow(report)
 	fmt.Fprintf(table, "discoboxes (%d)\t\t%s\t%s\t%s\t%s\t%s\t\n",
 		len(rows),
 		formatVCPUs(total.vcpus),
@@ -271,10 +280,15 @@ func (a *App) writePoolResources(cmd *cobra.Command, pool *apimodel.Pool, sandbo
 		formatOptBytes(services.chargedBytes),
 		formatOptBytes(services.diskBytes),
 	)
+	// Images and the layers that are no discobox's are neither a service
+	// the pool runs nor a discobox, so they are a line of their own.
+	if images.diskBytes.set {
+		fmt.Fprintf(table, "images and layers\t\t\t\t\t%s\t\t\n", formatOptBytes(images.diskBytes))
+	}
 	fmt.Fprintf(table, "total\t\t%s\t%s\t\t%s\t\t\n",
 		formatVCPUs(total.vcpus.add(services.vcpus)),
 		formatOptBytes(total.chargedBytes.add(services.chargedBytes)),
-		formatOptBytes(total.diskBytes.add(services.diskBytes)),
+		formatOptBytes(total.diskBytes.add(services.diskBytes).add(images.diskBytes)),
 	)
 	if err := table.Flush(); err != nil {
 		return err
@@ -296,8 +310,9 @@ func (a *App) writePoolResources(cmd *cobra.Command, pool *apimodel.Pool, sandbo
 	// individual services in it are not broken out yet — so name what is in it
 	// rather than leaving a number nobody can act on.
 	fmt.Fprintln(out, "\nPool services are the pool container itself: the pool agent, the shared BuildKit")
-	fmt.Fprintln(out, "builder, the pool registry, and the proxy. A build in flight lands there, not on")
-	fmt.Fprintln(out, "any discobox.")
+	fmt.Fprintln(out, "builder, the pool registry, and the proxy, with its response cache and audit")
+	fmt.Fprintln(out, "trail. A build in flight lands there, not on any discobox. Images are charged to")
+	fmt.Fprintln(out, "the pool, never split across the discoboxes that run them.")
 	return nil
 }
 
@@ -518,26 +533,94 @@ func formatFilesystemLine(storage apimodel.PoolStorageUsage) string {
 		formatBytes(fs.UsedBytes), formatBytes(fs.FreeBytes), formatBytes(fs.TotalBytes), storage.Root)
 }
 
-// formatPoolTreesLine is the walked attribution, which is deliberately older
+// formatPoolDiskLines is the walked attribution, which is deliberately older
 // than the filesystem line above it. It says how old, and when it will be
 // refreshed, because a reader who cannot tell a stale figure from a live one
-// will read the stale one as live.
-func formatPoolTreesLine(storage apimodel.PoolStorageUsage, sandboxes []apimodel.Sandbox) string {
+// will read the stale one as live. It names every consumer the sweep measured
+// and then what the filesystem holds beyond them, so a full disk is never
+// mostly unexplained.
+func formatPoolDiskLines(storage apimodel.PoolStorageUsage, sandboxes []apimodel.Sandbox) []string {
 	walk, ok := storage.Walk.Get()
 	if !ok {
-		return "per-tree usage not walked yet (the first sweep runs shortly after the agent starts)"
+		return []string{"per-tree usage not walked yet (the first sweep runs shortly after the agent starts)"}
 	}
-	var sandboxBytes int64
+	disk := poolDiskBreakdown(walk, sandboxes)
+	lines := []string{
+		fmt.Sprintf("discoboxes %s, cache %s (shared), build %s   %s",
+			formatBytes(disk.sandboxes), formatBytes(walk.CacheBytes), formatBytes(walk.BuildBytes),
+			formatWalkSchedule(walk)),
+		fmt.Sprintf("proxy %s: response cache %s (shared), audit %s, recordings of no discobox %s",
+			formatBytes(disk.proxy), formatBytes(walk.ProxyCacheBytes.Or(0)), formatBytes(walk.ProxyAuditBytes.Or(0)),
+			formatBytes(walk.ProxyRecordingBytes.Or(0))),
+	}
+	if images, ok := walk.ImageBytes.Get(); ok {
+		line := fmt.Sprintf("images %s, other layers %s", formatBytes(images), formatBytes(walk.OtherLayerBytes.Or(0)))
+		if walk.DaemonShared.Or(false) {
+			line += "   [on a Docker daemon shared with more than this pool]"
+		}
+		lines = append(lines, line)
+	}
+	used := storage.Filesystem.UsedBytes
+	if used <= 0 {
+		return lines
+	}
+	remainder := max(used-disk.attributed, 0)
+	if disk.shared {
+		// The daemon's storage may be on another filesystem, and this one
+		// holds whatever else the host keeps on it: the remainder is the
+		// filesystem's, not the pool's.
+		return append(lines, fmt.Sprintf("not attributed %s (the filesystem's: the Docker daemon is shared, so its images and layers are not subtracted)", formatBytes(remainder)))
+	}
+	return append(lines, fmt.Sprintf("not attributed %s", formatBytes(remainder)))
+}
+
+// poolDisk is the walked attribution added up, for the disk lines.
+type poolDisk struct {
+	// sandboxes is every discobox's own, their layers and recordings
+	// included.
+	sandboxes int64
+	// proxy is the proxy's store that no discobox owns.
+	proxy int64
+	// attributed is everything above and the pool's own trees, plus the
+	// images and layers where they are on this filesystem: what the
+	// filesystem's used figure is compared with.
+	attributed int64
+	// shared is whether the images and layers were measured on a daemon
+	// shared with more than this pool, and so are not in attributed.
+	shared bool
+}
+
+func poolDiskBreakdown(walk apimodel.PoolStorageWalk, sandboxes []apimodel.Sandbox) poolDisk {
+	var rows, layers int64
 	for _, sandbox := range sandboxes {
 		if consumption, ok := sandboxResourceConsumption(sandbox); ok {
-			if disk, ok := consumption.Storage.Get(); ok {
-				sandboxBytes += disk.TotalBytes
+			if storage, ok := consumption.Storage.Get(); ok {
+				rows += storage.TotalBytes
+				layers += storage.LayerBytes.Or(0)
 			}
 		}
 	}
-	return fmt.Sprintf("discoboxes %s, cache %s (shared), build %s   %s",
-		formatBytes(sandboxBytes), formatBytes(walk.CacheBytes), formatBytes(walk.BuildBytes),
-		formatWalkSchedule(walk))
+	disk := poolDisk{
+		// The sweep's own total, summed at one instant, where the agent sent
+		// one; joined from the rows for an agent that predates it.
+		sandboxes: walk.DataBytes.Or(rows),
+		proxy:     walk.ProxyCacheBytes.Or(0) + walk.ProxyAuditBytes.Or(0) + walk.ProxyRecordingBytes.Or(0),
+		shared:    walk.DaemonShared.Or(false),
+	}
+	// What the sweep found on another disk (a VM pool's cache disk) is not
+	// in the filesystem's used figure, so it is not subtracted from it.
+	disk.attributed = disk.sandboxes + walk.CacheBytes + walk.BuildBytes + disk.proxy - walk.OtherFilesystemBytes.Or(0)
+	images, measured := walk.ImageBytes.Get()
+	switch {
+	case measured && !disk.shared:
+		disk.attributed += images + walk.OtherLayerBytes.Or(0)
+	case disk.shared:
+		// The discoboxes' layers are on their rows, and so in the sweep's
+		// total, but on a shared daemon they are on its storage, which may
+		// not be this filesystem.
+		disk.attributed -= layers
+	}
+	return disk
 }
 
 // formatWalkSchedule explains the adaptive interval in the terms that make it
@@ -626,13 +709,20 @@ func formatSandboxDiskLine(consumption apimodel.SandboxResourceConsumption) stri
 	if !ok {
 		return "not reported"
 	}
-	return fmt.Sprintf("%s total   data %s, sources %s, config %s, secrets %s, origins %s",
+	line := fmt.Sprintf("%s total   data %s, sources %s, config %s, secrets %s, origins %s",
 		formatBytes(storage.TotalBytes),
 		formatBytes(storage.DataBytes),
 		formatBytes(storage.SourcesBytes),
 		formatBytes(storage.ConfigBytes),
 		formatBytes(storage.SecretsBytes),
 		formatBytes(storage.OriginsBytes))
+	if layer, ok := storage.LayerBytes.Get(); ok {
+		line += fmt.Sprintf(", container layer %s", formatBytes(layer))
+	}
+	if recordings, ok := storage.RecordingBytes.Get(); ok {
+		line += fmt.Sprintf(", proxy recordings %s", formatBytes(recordings))
+	}
+	return line
 }
 
 // poolServicesRow is what the pool runs that is not a discobox: the pool agent,
@@ -652,10 +742,26 @@ func poolServicesRow(report apimodel.PoolResourceReport) sandboxResourceRow {
 		row.vcpus = optFloat{value: vcpus, set: true}
 	}
 	row.chargedBytes = optInt64{value: report.Memory.CurrentBytes, set: true}
-	// The pool's own disk is the shared cache and the build state, which no
-	// discobox accounts for.
+	// The pool's own disk is the shared cache, the build state and the
+	// proxy's store, which no discobox accounts for.
 	if walk, ok := report.Storage.Walk.Get(); ok {
-		row.diskBytes = optInt64{value: walk.CacheBytes + walk.BuildBytes, set: true}
+		row.diskBytes = optInt64{value: walk.CacheBytes + walk.BuildBytes +
+			walk.ProxyCacheBytes.Or(0) + walk.ProxyAuditBytes.Or(0) + walk.ProxyRecordingBytes.Or(0), set: true}
+	}
+	return row
+}
+
+// poolImagesRow is the daemon's images that are Discobox's and the layers of
+// the pool's containers that are no discobox's, charged to the pool once
+// rather than split across the discoboxes that run them. Unset where the
+// sweep did not measure them: a machine pool has none, and an agent that
+// predates them does not say.
+func poolImagesRow(report apimodel.PoolResourceReport) sandboxResourceRow {
+	row := sandboxResourceRow{}
+	if walk, ok := report.Storage.Walk.Get(); ok {
+		if images, ok := walk.ImageBytes.Get(); ok {
+			row.diskBytes = optInt64{value: images + walk.OtherLayerBytes.Or(0), set: true}
+		}
 	}
 	return row
 }
