@@ -13,7 +13,6 @@ import (
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
-	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -210,24 +209,21 @@ func checkRawBinding(ctx context.Context, binding *model.SecretBinding, secret *
 // is granted (#1097). The binding's own list is among them, and always
 // allows its own places.
 func checkSecretBodyPlaces(binding *model.SecretBinding, secret *model.Secret, parent *model.SecretBinding) error {
-	for i, list := range store.RouteLists(secret, binding, parent) {
-		err := secretroute.BodyPlacesAllowed(binding.Routes, list)
-		if err == nil {
-			continue
-		}
-		switch {
-		case i == 0:
-			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-				"secret %s's routes: %v, so the credential would never be sent there; the secret needs a route naming that body place first", secret.Name, err))
-		case i <= len(secret.RouteConstraints):
-			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-				"secret %s's harness route constraints: %v, so the credential would never be sent there", secret.Name, err))
-		default:
-			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-				"the delegation this is handed on under (%s): %v, so the credential would never be sent there", parent.ID, err))
-		}
+	i, err := store.BodyPlaceRefusal(binding.Routes, store.RouteLists(secret, binding, parent))
+	if err == nil {
+		return nil
 	}
-	return nil
+	switch {
+	case i == 0:
+		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+			"secret %s's routes: %v, so the credential would never be sent there; the secret needs a route naming that body place first", secret.Name, err))
+	case i <= len(secret.RouteConstraints):
+		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+			"secret %s's harness route constraints: %v, so the credential would never be sent there", secret.Name, err))
+	default:
+		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
+			"the delegation this is handed on under (%s): %v, so the credential would never be sent there", parent.ID, err))
+	}
 }
 
 // UpdateSecretBinding changes a binding's routes, lifetime, variable, or what

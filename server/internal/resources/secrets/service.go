@@ -228,75 +228,84 @@ func (s *Service) GetSecret(ctx context.Context, projectID, secretID string) (*m
 }
 
 func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, input services.UpdateSecretBody) (*model.Secret, error) {
-	sec, err := s.store.GetSecret(ctx, projectID, secretID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "secret not found")
-	}
-	if nameVal, ok := input.Name.Get(); ok {
-		name := strings.TrimSpace(nameVal)
-		if name == "" {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret name is required")
-		}
-		sec.Name = name
-	}
-	if input.Format.IsSet() {
-		// Cleared, the store reads the shape from the value again on this
-		// write, the way it does for a value nobody described.
-		if sec.Format, sec.FormatSet, err = sentinelFormat(input.Format); err != nil {
-			return nil, err
-		}
-	}
-	if ttl, ok := input.MaxBindingTTLSeconds.Get(); ok {
-		if ttl < 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding limit is a number of seconds; 0 allows bindings that never expire")
-		}
-		// Lowering the limit binds the bindings made after it, not the ones
-		// already standing: a live binding is an authorization somebody made,
-		// and it is removed deliberately rather than shortened behind their
-		// back.
-		sec.MaxBindingTTL = ttl
-	}
-	if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
-		return nil, err
-	}
-	rawRevoked := false
-	if allowRaw, ok := input.AllowRaw.Get(); ok {
-		if err := guardAllowRaw(ctx, allowRaw); err != nil {
-			return nil, err
-		}
-		rawRevoked = sec.AllowRaw && !allowRaw
-		sec.AllowRaw = allowRaw
-	}
-	routesChanged := false
-	if routes, ok := input.Routes.Get(); ok {
-		if routesChanged, err = replaceRoutes(sec, routes); err != nil {
-			return nil, err
-		}
-	}
-	if valueVal, ok := input.Value.Get(); ok {
-		valueBytes, err := marshalSecretValue(valueVal)
-		if err != nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
-		}
-		sec.EncryptedValue = valueBytes
-	}
-	// A replaced value retracts what was recorded about the credential it
-	// replaced (ADR 0132 §4). The store does it, for every writer at once —
-	// this one and harness save-back's update-in-place — rather than
-	// each of them remembering to.
-	//
-	// A running discobox's proxy holds its swaps to the routes it was last
-	// handed, and keeps the value it last resolved, so a change to either
-	// marks the sentinel delivery of every discobox holding the secret in the
-	// same transaction: each is sent the routes as written and the value's new
-	// generation, which drops the value its pool holds (#1022), and one that
-	// cannot be reached now is retried.
-	generation := sec.ValueGeneration()
+	// Read locked, in the write's transaction: the routes it replaces decide
+	// whether the edit strands a binding, and a harness writer's constraint
+	// committed in between would otherwise be both misjudged and written over.
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		sec, err := txStore.LockSecret(ctx, projectID, secretID)
+		if err != nil {
+			return apperrors.NotFound(err, "secret not found")
+		}
+		if nameVal, ok := input.Name.Get(); ok {
+			name := strings.TrimSpace(nameVal)
+			if name == "" {
+				return apperrors.NewStatusError(http.StatusBadRequest, "secret name is required")
+			}
+			sec.Name = name
+		}
+		if input.Format.IsSet() {
+			// Cleared, the store reads the shape from the value again on this
+			// write, the way it does for a value nobody described.
+			if sec.Format, sec.FormatSet, err = sentinelFormat(input.Format); err != nil {
+				return err
+			}
+		}
+		if ttl, ok := input.MaxBindingTTLSeconds.Get(); ok {
+			if ttl < 0 {
+				return apperrors.NewStatusError(http.StatusBadRequest, "a binding limit is a number of seconds; 0 allows bindings that never expire")
+			}
+			// Lowering the limit binds the bindings made after it, not the ones
+			// already standing: a live binding is an authorization somebody made,
+			// and it is removed deliberately rather than shortened behind their
+			// back.
+			sec.MaxBindingTTL = ttl
+		}
+		if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
+			return err
+		}
+		rawRevoked := false
+		if allowRaw, ok := input.AllowRaw.Get(); ok {
+			if err := guardAllowRaw(ctx, allowRaw); err != nil {
+				return err
+			}
+			rawRevoked = sec.AllowRaw && !allowRaw
+			sec.AllowRaw = allowRaw
+		}
+		routesChanged := false
+		prior := *sec
+		if routes, ok := input.Routes.Get(); ok {
+			if routesChanged, err = replaceRoutes(sec, routes); err != nil {
+				return err
+			}
+		}
+		if valueVal, ok := input.Value.Get(); ok {
+			valueBytes, err := marshalSecretValue(valueVal)
+			if err != nil {
+				return apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
+			}
+			sec.EncryptedValue = valueBytes
+		}
+		// A replaced value retracts what was recorded about the credential it
+		// replaced (ADR 0132 §4). The store does it, for every writer at once —
+		// this one and harness save-back's update-in-place — rather than
+		// each of them remembering to.
+		//
+		// A running discobox's proxy holds its swaps to the routes it was last
+		// handed, and keeps the value it last resolved, so a change to either
+		// marks the sentinel delivery of every discobox holding the secret in the
+		// same transaction: each is sent the routes as written and the value's new
+		// generation, which drops the value its pool holds (#1022), and one that
+		// cannot be reached now is retried.
+		generation := sec.ValueGeneration()
 		if err := txStore.UpdateSecret(ctx, sec); err != nil {
 			return secretCollision(err, sec)
 		}
 		valueReplaced := sec.ValueGeneration() != generation
+		if routesChanged {
+			if err := refuseStrandingBindingsTx(ctx, txStore, &prior, sec); err != nil {
+				return err
+			}
+		}
 		if rawRevoked {
 			if err := s.deleteRawBindingsTx(ctx, txStore, txDB, sec); err != nil {
 				return err
@@ -311,7 +320,28 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	}
 	// Through the service's own read, so a create and an update answer with the
 	// same summary a get does rather than a bare row.
-	return s.GetSecret(ctx, projectID, sec.ID)
+	return s.GetSecret(ctx, projectID, secretID)
+}
+
+// refuseStrandingBindingsTx refuses a person's edit of a secret's routes
+// that strands a standing binding: one with a route naming a body place the
+// new routes allow nowhere, which the proxy would refuse on every use while it
+// stood reported as granted (#1105). Whoever edits is there to read why, so
+// the edit is refused, naming each binding, rather than made. Read in the
+// edit's transaction, after the secret's row is written, so a discobox's
+// handoff (which locks that row) is either seen or sees the new routes.
+func refuseStrandingBindingsTx(ctx context.Context, txStore *store.Store, prior, sec *model.Secret) error {
+	stranded, err := txStore.StrandedBodyPlaceBindings(ctx, prior, sec, time.Now().UTC())
+	if err != nil || len(stranded) == 0 {
+		return err
+	}
+	lines := make([]string, 0, len(stranded))
+	for _, s := range stranded {
+		lines = append(lines, fmt.Sprintf("binding %s on %s %s: %v", s.Binding.ID, s.Binding.TargetKind, s.Binding.TargetID, s.Reason))
+	}
+	return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+		"secret %s's new routes would leave %d standing binding(s) the credential is never sent for (%s); keep a route naming each body place, or remove those bindings first",
+		sec.Name, len(stranded), strings.Join(lines, "; ")))
 }
 
 // guardAllowRaw keeps letting a value be handed over raw a person's (ADR
