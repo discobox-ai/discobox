@@ -7,17 +7,39 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/creack/pty"
 )
 
+// lockedBuffer is a bytes.Buffer one goroutine can write while another reads
+// it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // readFor collects a process's output for a while, so a test can look at what
-// a terminal would have shown.
+// a terminal would have shown. The reader is the process's terminal, which the
+// test's cleanup closes, so on the timeout path the copy is still running when
+// readFor returns: the buffer is locked so that what it returns is not torn.
 func readFor(t *testing.T, r io.Reader, d time.Duration) string {
 	t.Helper()
-	var out bytes.Buffer
+	var out lockedBuffer
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
