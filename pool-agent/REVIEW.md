@@ -413,12 +413,16 @@ durable state asks the same question.
   later start skip the layer. `placeAgent` flushes Docker's copy
   (`fsdurable.SyncAll`) before recording it. A machine forced off on its way
   to booting on a placement records it only once its agent has answered
-  (`restartedForced`), which proves the layer only on a first placement:
-  an older agent can answer over a lost new one until the agent reports
-  the layer it runs from. The pool runs nothing in a guest to flush it, and
-  never leaves a running machine's placement unrecorded once its agent is
-  up, since that reads as a start that did not finish (`answersRunning`) and
-  restarts the machine on its next request.
+  (`restartedForced`) naming that layer on its `/healthz`
+  (`recordForcedPlacement`): an agent merely answering proves nothing on a
+  move, since the older agent, still on the disk, answers over a lost new
+  layer. An agent that names none is taken at its answer only where the
+  instance held no other layer. The pool runs nothing in a guest to flush
+  it. A running machine's placement left unrecorded reads as a start that
+  did not finish (`answersRunning`) and restarts the machine on its next
+  request, so leave one unrecorded only where the record could be false —
+  a layer the agent does not name, or a read that failed — never as a
+  shortcut.
 - **Only a record whose absence means "do it again" reads a cut-short one as
   absent.** `agent-placed.json` may (the agent is placed again), and only for
   an empty or non-JSON file; JSON of another shape still fails. Any other

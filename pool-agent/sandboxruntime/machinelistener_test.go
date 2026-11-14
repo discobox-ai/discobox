@@ -43,7 +43,7 @@ func TestFakeMachineAgentOwnsItsEndpointAcrossBoots(t *testing.T) {
 				t.Fatal(err)
 			}
 			for range 5 {
-				if err := agents.start("machine", cfg); err != nil {
+				if err := agents.start("machine", cfg, ""); err != nil {
 					t.Fatal(err)
 				}
 				assertOwned()

@@ -1121,10 +1121,10 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 		return false, nil, err
 	}
 	if after == restartedForced {
-		// Recorded once its agent answers. On a first placement only this
-		// layer's agent can answer, so that proves it reached the machine's
-		// disk; on a move from another layer, the older agent answering
-		// proves nothing of the new one (#1115).
+		// Recorded once its agent answers naming this layer, or naming none
+		// where the instance held no other (recordForcedPlacement): were
+		// this layer's copy lost, an older agent would answer, naming its
+		// own.
 		return false, &placement, nil
 	}
 	return false, nil, r.writePlaced(sandboxID, placement)
@@ -1338,7 +1338,7 @@ func (r *MachineSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandbox
 			return errors.Join(errAgentNeverUp, err)
 		} else if dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort); err != nil {
 			lastErr = err
-		} else if lastErr = sandboxAgentHealthy(ctx, dial); lastErr == nil {
+		} else if _, lastErr = sandboxAgentHealth(ctx, dial); lastErr == nil {
 			return r.markSnapshotProven(sandboxID)
 		}
 		select {

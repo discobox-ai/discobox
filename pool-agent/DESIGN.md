@@ -992,7 +992,7 @@ flowchart LR
     start --> place{"place: sandbox.json,\nagentlayer.Archive"}
     place -->|"placed as before"| apply["discobox-provision apply"]
     place -->|"never placed in this instance,\nor placed before with something else:\nnothing applied or recorded"| restart["restart the machine"]
-    restart --> again["place again: nothing applied\n(its agent starts at boot), recorded;\nafter a forced stop, once its agent answers"]
+    restart --> again["place again: nothing applied\n(its agent starts at boot), recorded;\nafter a forced stop, once its agent\nanswers on that layer"]
     apply --> boot["finishBoot: wait at the URL,\ndeliver runtime config"]
     again --> boot
 ```
@@ -1029,11 +1029,16 @@ flowchart LR
   recorded; a pool agent gone in between leaves the old record, so the next
   start restarts the machine again. A restart whose stop was forced off may
   have lost the copy made before it, so that placement is recorded only once
-  `finishBoot` has seen the agent answer: on a first placement no other
-  agent could have, so a lost layer is placed again at the next start. A
-  move from an older layer is not covered yet, since its agent says nothing
-  of the layer it runs from. A first placement is one more guest boot
-  in a create.
+  `finishBoot` has seen the agent answer and its `/healthz` names the layer
+  placed (`agentlayer.Health`, the layer of the file it was started from).
+  Were the new copy lost, an older agent would answer naming its own, and
+  nothing is recorded. An agent too old to name one is taken at its answer
+  only where the instance held no other layer (a first placement, or a move
+  of pins or bootstrap alone), since there a lost copy leaves no agent to
+  answer; on a move from another layer it proves nothing, and nothing is
+  recorded: the running machine's placement
+  is not current, and its next request places the layer again and restarts
+  it onto it. A first placement is one more guest boot in a create.
 - **The agent listens where the driver's service says**
   (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into
   sandbox.json as the agent's listen address, since the driver gives an

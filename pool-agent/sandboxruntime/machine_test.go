@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -182,7 +183,7 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sandboxAgentHealthy(ctx, dial); err != nil {
+	if _, err := sandboxAgentHealth(ctx, dial); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	if _, err := r.SandboxDialer(ctx, "sbx_1", 8080); !errors.Is(err, ErrUnsupported) {
@@ -299,6 +300,101 @@ func TestAMachinesFirstPlacementRestartsItBeforeAnythingRuns(t *testing.T) {
 	}
 	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
 		t.Fatalf("start onto a new agent = %v, want %v: a restart before anything is applied", got, want)
+	}
+}
+
+// A machine moved onto a new agent layer is restarted onto it; one whose
+// orderly shutdown times out is forced off, and the copy made before the
+// restart may never have reached its disk. The older agent, still on that
+// disk, boots and answers. The pool must not then record the new layer as
+// placed: every later start would trust that record, skip copying the layer,
+// and start no agent. It records nothing, or the layer the answering agent
+// runs from, so its next request places the new layer again.
+func TestAMachineForcedOffOntoANewAgentLayerIsNotRecordedAsPlacedOnIt(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_6")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StopSandbox(ctx, "sbx_6", nil); err != nil {
+		t.Fatal(err)
+	}
+	f.driver.takeEvents("sbx-6")
+	older := r.agentLayers.(*fakeAgentLayers).digest
+	newer := "sha256:" + strings.Repeat("d", 64)
+	r.agentLayers = &fakeAgentLayers{digest: newer, layer: gzippedAgentLayer(t, "agent-v2")}
+
+	// The forced stop loses the copy of the newer layer: its directory, and
+	// the link that would have the machine boot from it.
+	f.driver.forcedOff = func(ctx context.Context, guest machine.Machine) error {
+		script := `root="$DISCO_VM_GUEST_ROOT"; rm -rf "$root` + agentlayer.LayerDir(newer) + `" "$root` + agentlayer.LayerComplete(newer) + `" && ln -sfn bundles/layers/` + agentlayer.Hex(older) + ` "$root` + agentlayer.CurrentLink + `"`
+		process, err := guest.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", script}})
+		if err != nil {
+			return err
+		}
+		if code, err := process.Wait(io.Discard, io.Discard); err != nil || code != 0 {
+			return fmt.Errorf("lose the newer layer: exit %d: %w", code, err)
+		}
+		return nil
+	}
+	// The start succeeds: the older agent answers.
+	if err := r.StartSandbox(ctx, "sbx_6", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-6"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+		t.Fatalf("start onto the newer layer = %v, want %v: a restart onto it", got, want)
+	}
+
+	placed, ok, err := r.readPlaced("sbx_6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok && placed.Layer == newer {
+		t.Fatalf("placement record says layer %s, which the forced-off machine lost; the older agent answered from %s", newer, older)
+	}
+
+	// Its placement is not current, so the next request places the newer
+	// layer again, restarts onto it in order, and records it once its agent
+	// runs from it.
+	if err := r.EnsureSandboxRunning(ctx, "sbx_6"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-6"), []string{"boot"}; !slices.Equal(got, want) {
+		t.Fatalf("next request = %v, want %v: the newer layer placed again and restarted onto", got, want)
+	}
+	if got := f.agents.get(t, "sbx_6").layer; got != newer {
+		t.Fatalf("the agent after the next start runs from %s, want %s", got, newer)
+	}
+	if placed, ok, err := r.readPlaced("sbx_6"); err != nil || !ok || placed.Layer != newer {
+		t.Fatalf("placement record after the next start = %+v, %v, %v; want layer %s", placed, ok, err, newer)
+	}
+}
+
+// On a first placement an agent answering after a forced restart proves the
+// layer, since a lost copy would leave none to answer: an agent too old to
+// name its layer is recorded there all the same, so its machine is not
+// restarted at every request.
+func TestAForcedFirstPlacementIsRecordedThoughItsAgentNamesNoLayer(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	f.driver.shutdownRefused.Store(true)
+	f.agents.unnamed = true
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_8")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-8"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+		t.Fatalf("create = %v, want %v", got, want)
+	}
+	if placed, ok, err := r.readPlaced("sbx_8"); err != nil || !ok || placed.Layer != r.agentLayers.(*fakeAgentLayers).digest {
+		t.Fatalf("placement record = %+v, %v, %v; want the layer placed", placed, ok, err)
+	}
+	if err := r.EnsureSandboxRunning(ctx, "sbx_8"); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.driver.takeEvents("sbx-8"); len(got) != 0 {
+		t.Fatalf("a request after the forced first placement = %v, want nothing", got)
 	}
 }
 
@@ -477,7 +573,7 @@ func TestMachineSpecChangeGivesANewRootAndKeepsItsVolumes(t *testing.T) {
 	if bootstrap.Description != "moved" {
 		t.Fatalf("bootstrap description = %q, want the new spec's", bootstrap.Description)
 	}
-	if err := sandboxAgentHealthy(ctx, mustDialer(t, r, "sbx_7")); err != nil {
+	if _, err := sandboxAgentHealth(ctx, mustDialer(t, r, "sbx_7")); err != nil {
 		t.Fatalf("the agent on the new root: %v", err)
 	}
 
@@ -827,6 +923,10 @@ type agentDriver struct {
 	mu              sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
+	// forcedOff, when set, is a machine whose orderly shutdown times out, so
+	// it is forced off, and loses what forcedOff undoes in its guest: what
+	// was copied in and never reached its disk.
+	forcedOff func(ctx context.Context, guest machine.Machine) error
 }
 
 func (d *agentDriver) record(name, event string) {
@@ -967,11 +1067,20 @@ func (m *agentMachine) Shutdown(ctx context.Context, reboot bool) error {
 	if m.driver.shutdownRefused.Load() {
 		return errors.New("the guest refused to power off")
 	}
+	if m.driver.forcedOff != nil {
+		return errors.New("the guest did not power off in time")
+	}
 	m.driver.agents.stop(m.inst.Name)
 	return m.Machine.Shutdown(ctx, reboot)
 }
 
 func (m *agentMachine) Kill(ctx context.Context) error {
+	if lose := m.driver.forcedOff; lose != nil {
+		m.driver.forcedOff = nil
+		if err := lose(ctx, m.Machine); err != nil {
+			return err
+		}
+	}
 	m.driver.agents.stop(m.inst.Name)
 	return m.Machine.Kill(ctx)
 }
@@ -1019,7 +1128,26 @@ func (m *agentMachine) startAgent(bootstrap string) error {
 			return err
 		}
 	}
-	return m.driver.agents.start(m.inst.Name, cfg)
+	layer, err := m.agentLayer()
+	if err != nil {
+		return err
+	}
+	return m.driver.agents.start(m.inst.Name, cfg, layer)
+}
+
+// agentLayer is the layer an agent started now runs from: where the current
+// link points, as the real agent names it by the file it was started from.
+func (m *agentMachine) agentLayer() (string, error) {
+	process, err := m.Machine.Exec(context.Background(), machine.ExecRequest{Argv: []string{"sh", "-c", `readlink "$DISCO_VM_GUEST_ROOT` + agentlayer.CurrentLink + `"`}})
+	if err != nil {
+		return "", err
+	}
+	var target strings.Builder
+	if code, err := process.Wait(&target, io.Discard); err != nil || code != 0 {
+		return "", fmt.Errorf("read the current link: exit %d: %w", code, err)
+	}
+	layer, _ := agentlayer.RunningLayer(path.Join(path.Dir(agentlayer.CurrentLink), strings.TrimSpace(target.String()), agentlayer.AgentFile))
+	return layer, nil
 }
 
 // fakeMachineAgents are the sandbox agents of a test's machines, by machine
@@ -1031,8 +1159,11 @@ type fakeMachineAgents struct {
 	// sealedBroken makes an agent never come up in a box made from a
 	// snapshot.
 	snapshotFails, sealedBroken bool
-	servers                     map[string]*fakeMachineAgent
-	endpoints                   map[string]*fakeMachineEndpoint
+	// unnamed has every agent name no layer on /healthz, as one older than
+	// agentlayer.Health's layer does.
+	unnamed   bool
+	servers   map[string]*fakeMachineAgent
+	endpoints map[string]*fakeMachineEndpoint
 	// last is each sandbox's agent that ran last, kept after its machine
 	// stops, so a test reads what it was told.
 	last map[string]*fakeMachineAgent
@@ -1080,7 +1211,7 @@ func (a *fakeMachineAgents) service(ctx context.Context, name string) (machine.S
 	return machine.Service{Listen: "tcp:" + address, URL: "http://" + address, PrivateURL: "http://" + address}, nil
 }
 
-func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config) error {
+func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config, layer string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ep := a.endpoints[name]
@@ -1092,7 +1223,10 @@ func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config) error {
 		return fmt.Errorf("fake agent of %s cannot start: %w", name, ep.err)
 	default:
 	}
-	agent := &fakeMachineAgent{sandboxID: cfg.SandboxID, poolKey: a.poolKey}
+	if a.unnamed {
+		layer = ""
+	}
+	agent := &fakeMachineAgent{sandboxID: cfg.SandboxID, poolKey: a.poolKey, layer: layer}
 	if a.servers == nil {
 		a.servers = map[string]*fakeMachineAgent{}
 	}
@@ -1158,6 +1292,8 @@ func (a *fakeMachineAgents) closeAll() {
 type fakeMachineAgent struct {
 	sandboxID string
 	poolKey   ed25519.PublicKey
+	// layer is the agent layer it runs from, which its /healthz names.
+	layer string
 
 	mu        sync.Mutex
 	delivered []int64
@@ -1180,7 +1316,9 @@ func (a *fakeMachineAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	prefix := "/api/projects/proj_1/sandboxes/" + a.sandboxID
 	switch {
 	case r.URL.Path == "/healthz":
-		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(agentlayer.Health{OK: true, Layer: a.layer}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	case r.Method == http.MethodPut && r.URL.Path == prefix+"/runtime-config":
 		if !a.authorized(r, sandboxconfig.RuntimeConfigScope) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -1329,7 +1467,7 @@ func TestMachineRunningWithoutItsPlacementIsPlacedAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sandboxAgentHealthy(ctx, dial); err != nil {
+	if _, err := sandboxAgentHealth(ctx, dial); err != nil {
 		t.Fatalf("agent after the machine was placed again: %v", err)
 	}
 	if _, ok, err := r.readPlaced("sbx_7"); err != nil || !ok {
