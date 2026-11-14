@@ -342,8 +342,10 @@ them, and then the pool empties:
   - its docker build cache
   - its registry of images discoboxes pushed to build from
   - its proxy's cache of downloaded packages and image layers
-  - discobox images no discobox uses, other than the newest of each and any
-    that arrived in the last hour
+  - discobox images no discobox uses, other than the pool's sandbox base
+    image, the newest image of its repository, and any that arrived in the
+    last hour. An image whose arrival the pool's Docker daemon did not record
+    is removed whenever it arrived
 
 The command returns once they are empty. Nothing is started again afterwards: a
 stopped discobox starts the next time it is used. Images a discobox pushed to

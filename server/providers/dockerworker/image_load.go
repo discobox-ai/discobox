@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/client/pkg/stringid"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -106,6 +107,13 @@ func (e *Engine) importCachedImage(ctx context.Context, cli *client.Client, pool
 	}
 	if err := verifyLoaded(ctx, cli, image, cached.Digest()); err != nil {
 		return err
+	}
+	// The classic store records no arrival for a load, nor for the pull by
+	// digest above, so the image is given one here. A failure only leaves the
+	// image's age unknown until the next reclaim pass stamps it, which is no
+	// reason to fail a load that worked (ADR 26-11-13-655 §2).
+	if err := imagereap.Stamp(ctx, cli, image); err != nil {
+		slog.WarnContext(ctx, "image cache: could not start the loaded image's age", "pool", poolID, "image", image, "error", err)
 	}
 	slog.InfoContext(ctx, "loaded image from the image cache", "pool", poolID, "image", image,
 		"digest", cached.Digest(), "bytes", cached.Size(), "duration", time.Since(started))

@@ -11,6 +11,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -146,6 +147,11 @@ func (e *Engine) ensureImageRef(ctx context.Context, lease *DockerClientLease, p
 	// spends most of its wait right here on a cold host.
 	if err := e.consumePoolImagePull(ctx, pull, poolID, image, sandbox.PoolPhasePullingPoolImage); err != nil {
 		return fmt.Errorf("pull image %q: %w", image, err)
+	}
+	// A pull on the classic image store records no arrival, so the image is
+	// given one here (ADR 26-11-13-655 §2).
+	if err := imagereap.Stamp(ctx, cli, image); err != nil {
+		logger.Warn("could not start the pulled image's age", "image", image, "pool", poolID, "error", err)
 	}
 	logger.Info("pulled image", "image", image, "pool", poolID, "duration", time.Since(started))
 	return nil

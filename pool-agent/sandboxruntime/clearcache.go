@@ -191,8 +191,9 @@ func (r *DockerSandboxRuntime) clearCache(drainCtx context.Context, run *cacheCl
 //   - The pool registry's storage is emptied underneath the running registry,
 //     which keeps no descriptor cache that could go on vouching for a blob.
 //   - Unused Discobox images are removed from the daemon once they are older
-//     than clearImageFloor. Stopped sandboxes still use theirs, and the newest
-//     image of each repository stays.
+//     than clearImageFloor, or at once when the daemon recorded no arrival
+//     for one. Stopped sandboxes still use theirs, and the sandbox base image
+//     and the newest image of its repository stay (ADR 26-11-13-655).
 //
 // The two that ask another process to do the work are bounded (buildPruneTimeout
 // and imageReclaimTimeout): the start gate is closed for as long as this runs,
@@ -216,11 +217,12 @@ func (r *DockerSandboxRuntime) clearCaches(ctx context.Context) error {
 	}
 	reclaimCtx, cancelReclaim := context.WithTimeout(ctx, imageReclaimTimeout)
 	defer cancelReclaim()
-	if _, err := imagereap.Reclaim(reclaimCtx, r.client, imagereap.Options{Retention: clearImageFloor}); err != nil {
+	if _, err := imagereap.Reclaim(reclaimCtx, r.client, imagereap.Options{Retention: clearImageFloor, Keep: r.imageKeepReferences(), Clear: true}); err != nil {
 		errs = append(errs, fmt.Errorf("remove unused images: %w", err))
 	}
-	// The reclaim keeps the newest of a repository, and every snapshot is in
-	// one, so the snapshots are cleared by name: every one no container runs.
+	// The reclaim keeps what arrived within its floor, and a snapshot taken a
+	// moment ago is no less a cache, so the snapshots are cleared by name:
+	// every one no container runs.
 	if err := r.clearSnapshots(reclaimCtx); err != nil {
 		errs = append(errs, fmt.Errorf("remove unused snapshots: %w", err))
 	}
@@ -237,7 +239,10 @@ func (r *DockerSandboxRuntime) clearCaches(ctx context.Context) error {
 // daemon is shared, and another pool's create in that window would lose the
 // image it had just pulled and fail on "No such image". An hour covers that
 // window even behind a slow clone, and what a clear leaves behind is only what
-// arrived in the hour before it.
+// arrived in the hour before it. A pull or load stamps the image it brings
+// (imagereap.Stamp), so such an image has an arrival for the floor to see even
+// on a daemon that records none itself; one with no arrival at all is older
+// than the floor (ADR 26-11-13-655 §4).
 const clearImageFloor = time.Hour
 
 // buildPruneTimeout and imageReclaimTimeout bound the steps of a clear that

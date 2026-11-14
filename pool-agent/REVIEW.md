@@ -660,3 +660,21 @@ bundle, or the previous release's. A server writes a new field only when it
 means something the older agent could not do anyway, and leaves it out
 otherwise: `sandboxOs` is written only for a pool whose sandboxes are not
 linux, since an agent that is given none declares linux (#1010).
+
+## Image reclamation (`imagereap`)
+
+- A stamp's order only ranks the images stamped together. An image that
+  already has an arrival (the current sandbox base, stamped as it landed)
+  falls behind every image a later pass stamps, so a pass must never rank an
+  older build above the floor's holder: it stamps the holder again at its own
+  build (`stampOrder`), or the floor moves to an obsolete build (ADR
+  26-11-13-655). After a pass, the floor is on the newest build among the
+  images it stamped and the holder, whatever order they arrived in.
+- A keep reference and an image's references are compared in one normalized
+  form (`normalizedReferences`, `repositoryOf`). Matching one of them by the
+  raw string lets a `name:tag@digest` or fully-qualified keep entry protect a
+  repository's floor but not the image it names.
+- `discobox admin pool clear-cache`'s help (`cli/internal/cli/pool.go`,
+  regenerated into `docs/public/cli.md`) states what a clear keeps. A change
+  to the reaper's rules changes that text in the same change: it is the only
+  description a user reads, and it went stale once already.

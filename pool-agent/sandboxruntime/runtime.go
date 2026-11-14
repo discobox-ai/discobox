@@ -1024,6 +1024,12 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", imageName, err)
 	}
+	// A pull on the classic image store leaves the image no arrival time, so
+	// it is given one here, before anything can take it for unused
+	// (ADR 26-11-13-655 §2).
+	if err := imagereap.Stamp(ctx, r.client, imageName); err != nil {
+		slog.WarnContext(ctx, "could not start the age of a pulled image", "image", imageName, "error", err)
+	}
 	return nil
 }
 
@@ -2222,13 +2228,23 @@ func (r *DockerSandboxRuntime) WatchImages(ctx context.Context, logger *slog.Log
 	}
 }
 
+// imageKeepReferences names the images this pool's daemon must keep whether or
+// not a container runs one: the sandbox base image, which every box it starts
+// runs. Naming it also keeps the newest image of its repository, and only of
+// that one (ADR 26-11-13-655 §3). Every other image this daemon still needs
+// is one a container refers to, which imagereap counts whether the container
+// runs or not.
+func (r *DockerSandboxRuntime) imageKeepReferences() []string {
+	if r.sandboxBaseImage == "" {
+		return nil
+	}
+	return []string{r.sandboxBaseImage}
+}
+
 func (r *DockerSandboxRuntime) reclaimImages(ctx context.Context, logger *slog.Logger, retention time.Duration) {
-	// Every image this daemon still needs is one a container refers to, and
-	// imagereap already treats a stopped container as usage, so this pool needs
-	// no keep set of its own. An image synced or pulled but not yet run is
-	// covered by retention, and re-synced or re-pulled on demand if it does age
-	// out.
-	if _, err := imagereap.Reclaim(ctx, r.client, imagereap.Options{Retention: retention, Logger: logger}); err != nil {
+	// An image synced or pulled but not yet run is covered by retention, and
+	// re-synced or re-pulled on demand if it does age out.
+	if _, err := imagereap.Reclaim(ctx, r.client, imagereap.Options{Retention: retention, Keep: r.imageKeepReferences(), Logger: logger}); err != nil {
 		logger.Warn("reclaim unused Discobox images", "error", err)
 	}
 	// The agents extracted for delivered sandboxes go on the same pace, once
