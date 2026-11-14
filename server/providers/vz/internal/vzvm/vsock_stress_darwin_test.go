@@ -45,6 +45,10 @@ const (
 	// stressDockerPort is the guest's Docker socket relay. It answers as soon
 	// as the guest's daemon is up, with no pool agent needed.
 	stressDockerPort = 3004
+	// stressLifecyclePort is the guest's lifecycle service, which powers it
+	// off on POST /shutdown: the vz driver's lifecycleVSOCKPort, which this
+	// package cannot import.
+	stressLifecyclePort = 3003
 	// stressKernelCmdline mirrors the vz driver's kernelCmdline, which this
 	// package cannot import.
 	stressKernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4"
