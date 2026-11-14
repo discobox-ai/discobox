@@ -9,12 +9,21 @@
 //
 // "Arrived" is the daemon's own LastTagTime, not the image's Created timestamp.
 // Created is when whoever published the image built it, so a release image built
-// weeks before it shipped would be stale the instant it was pulled. LastTagTime
-// is stamped on build, pull (including a re-pull that only re-applies an
-// unchanged tag), load, and tag — every way an image gets here — except that a
-// build clamped to SOURCE_DATE_EPOCH takes that epoch for both, on the
-// containerd image store. An arrival no later than the build is that clamp, not
-// an arrival, and is an unknown age (ADR 0143).
+// weeks before it shipped would be stale the instant it was pulled. Which
+// operations set LastTagTime depends on the image store. The containerd store
+// sets it on build, pull, load and tag, except that a build clamped to
+// SOURCE_DATE_EPOCH takes that epoch for both, and an arrival no later than the
+// build is that clamp, not an arrival: an unknown age (ADR 0143). The classic
+// store (overlay2) sets it only on a tag, so every image it loaded or pulled has
+// an unknown age, and applying a tag to itself again sets it to now.
+//
+// That is how an unknown age gets a clock (ADR 26-11-13-655). The image cache
+// load and the pulls that bring a pool its sandbox base image stamp it as it
+// lands (Stamp), and every pass stamps each labeled image still without one,
+// whatever brought it, so its retention window starts at the first pass that
+// sees it. On the containerd store the stamp changes nothing,
+// and a clamped build stays kept by the ordinary pass. An explicit clear
+// (Options.Clear) counts an unknown age as older than its window instead.
 //
 // The package is split the way the volume reaper is: Reclaimable decides from
 // plain data and is where the rules are tested, while Reclaim does the daemon
@@ -27,10 +36,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/distribution/reference"
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -129,8 +140,8 @@ type Candidate struct {
 	RepoTags    []string
 	RepoDigests []string
 	// LastLocal is the daemon's LastTagTime: when this image last arrived here.
-	// Zero means the daemon did not report one, which is treated as an unknown
-	// age and never reclaimed.
+	// Zero means the daemon did not report one, which is an unknown age: an
+	// ordinary pass keeps it, and only a clear removes it.
 	LastLocal time.Time
 	// Created is when the image was built. It is never an age, only the floor
 	// an arrival has to be after to be one (knownArrival).
@@ -149,23 +160,48 @@ func (c Candidate) knownArrival() bool {
 }
 
 // references returns every way this image can be named, so a keep entry matches
-// whether it was written as an ID, a tag, or a digest reference.
+// whether it was written as an ID, a tag, or a digest reference. Tags and
+// digests are normalized (normalizedReferences), as keep entries are.
 func (c Candidate) references() []string {
-	refs := make([]string, 0, len(c.RepoTags)+len(c.RepoDigests)+1)
+	refs := make([]string, 0, 2*(len(c.RepoTags)+len(c.RepoDigests))+1)
 	refs = append(refs, c.ID)
-	refs = append(refs, c.RepoTags...)
-	refs = append(refs, c.RepoDigests...)
+	for _, ref := range append(append([]string{}, c.RepoTags...), c.RepoDigests...) {
+		refs = append(refs, normalizedReferences(ref)...)
+	}
 	return refs
+}
+
+// normalizedReferences returns the forms a reference matches an image by: as
+// written, and, when it parses, its tag and its digest each on the
+// fully-qualified repository. So a keep entry written `name:tag@digest`, or
+// `docker.io/library/name:tag`, matches the image a daemon reports as
+// `name:tag` or `name@digest`, as the floor's repositoryOf already does.
+func normalizedReferences(ref string) []string {
+	forms := []string{ref}
+	named, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return forms
+	}
+	if tagged, ok := named.(reference.Tagged); ok {
+		forms = append(forms, named.Name()+":"+tagged.Tag())
+	}
+	if digested, ok := named.(reference.Digested); ok {
+		forms = append(forms, named.Name()+"@"+digested.Digest().String())
+	}
+	return forms
 }
 
 // Reclaimable returns the candidates that may be removed.
 //
-// inUse holds the image IDs containers refer to, keep holds references and IDs
-// that must survive regardless of age, and now is the clock. An image is
-// reclaimable only when it is in neither set, is not the newest of its
-// repository, and its local age exceeds retention.
-func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retention time.Duration, now time.Time) []Candidate {
-	newest := newestPerRepository(candidates)
+// inUse holds the image IDs containers refer to, keepReferences names images
+// that must survive regardless of age by ID or any reference, and now is the clock. An image is
+// reclaimable only when it is in neither set, is not the newest of a repository
+// keep names, and its local age exceeds retention. An image with no known age
+// is kept, unless clearing is set: an explicit clear counts it as older than any
+// window (ADR 26-11-13-655 §4).
+func Reclaimable(candidates []Candidate, inUse map[string]struct{}, keepReferences []string, retention time.Duration, now time.Time, clearing bool) []Candidate {
+	keep := keepSet(keepReferences)
+	newest := newestPerKeptRepository(candidates, keep)
 	reclaimable := make([]Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
 		if candidate.ID == "" {
@@ -180,10 +216,14 @@ func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retent
 		if _, current := newest[candidate.ID]; current {
 			continue
 		}
-		// No knowable local age. Reclaiming on a guess here would mean deleting
-		// an image the daemon simply declined to describe, or one built a moment
-		// ago under a clamped timestamp.
 		if !candidate.knownArrival() {
+			// No knowable local age. An ordinary pass waits for its stamp to
+			// start the clock rather than guess: on the containerd store this is
+			// a build clamped a moment ago (ADR 0143). A clear is asked to remove
+			// what is unused, and does.
+			if clearing {
+				reclaimable = append(reclaimable, candidate)
+			}
 			continue
 		}
 		if now.Sub(candidate.LastLocal) < retention {
@@ -194,44 +234,85 @@ func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retent
 	return reclaimable
 }
 
-// newestPerRepository returns the IDs of the most recently arrived image in
-// each repository.
+// newestPerKeptRepository returns the IDs of the newest image in each
+// repository a keep reference names.
 //
-// This is the floor under every other rule, and it exists because deletion is
-// irreversible while "what is current" is not something this pass can know
-// reliably. A keep set is a snapshot somebody else took: the server loads the
-// development manifest once at startup, so an image built after that is in no
-// keep set at all, and during a rebuild pass — which takes far longer than the
-// development window — the manifest on disk still names the *previous* build.
-// Age then makes the freshly built image look like garbage precisely because it
-// is the one being built on, and reclaiming it strands the watcher, which only
-// rebuilds when a source file changes.
+// This is the floor under the keep set, and it exists because deletion is
+// irreversible while a keep set is a snapshot somebody else took: the server
+// loads the development manifest once at startup, so an image built after that
+// is in no keep set at all, and during a rebuild pass — which takes far longer
+// than the development window — the manifest on disk still names the
+// *previous* build. Age then makes the freshly built image look like garbage
+// precisely because it is the one being built on, and reclaiming it strands
+// the watcher, which only rebuilds when a source file changes.
 //
-// The newest image in a repository is the current one by construction: that is
-// what the mutable tag (`:local`, `:latest`) points at and what the next build
-// layers on. Keeping it costs one image per repository — the one you would keep
-// anyway — and every superseded build is still reclaimed.
-func newestPerRepository(candidates []Candidate) map[string]struct{} {
-	newest := map[string]time.Time{}
+// The newest image of such a repository is the current one by construction:
+// that is what the mutable tag (`:local`, `:latest`) points at and what the
+// next build layers on. A repository no keep reference names gets no floor
+// (ADR 26-11-13-655 §3): nothing current is in it, as with every per-harness
+// repository since every box runs the sandbox base, and its newest image is
+// reclaimed on usage and age like any other.
+//
+// Newest is by known arrival. A repository with none is ranked by Created
+// instead, so an unknown age still leaves its latest build. A tie protects
+// every image in it rather than picking one.
+func newestPerKeptRepository(candidates []Candidate, keep map[string]struct{}) map[string]struct{} {
+	kept := keptRepositories(keep)
+	if len(kept) == 0 {
+		return nil
+	}
+	arrived := map[string]time.Time{}
+	built := map[string]time.Time{}
 	for _, candidate := range candidates {
 		for _, repository := range repositories(candidate) {
-			if at, ok := newest[repository]; !ok || candidate.LastLocal.After(at) {
-				newest[repository] = candidate.LastLocal
+			if _, ok := kept[repository]; !ok {
+				continue
+			}
+			if at, ok := built[repository]; !ok || candidate.Created.After(at) {
+				built[repository] = candidate.Created
+			}
+			if !candidate.knownArrival() {
+				continue
+			}
+			if at, ok := arrived[repository]; !ok || candidate.LastLocal.After(at) {
+				arrived[repository] = candidate.LastLocal
 			}
 		}
 	}
-	current := make(map[string]struct{}, len(newest))
+	current := map[string]struct{}{}
 	for _, candidate := range candidates {
 		for _, repository := range repositories(candidate) {
-			// Equal rather than identical, so a tie protects both rather than
-			// picking one and reclaiming the other.
-			if candidate.LastLocal.Equal(newest[repository]) {
+			if _, ok := kept[repository]; !ok {
+				continue
+			}
+			newest := false
+			if at, ok := arrived[repository]; ok {
+				newest = candidate.knownArrival() && candidate.LastLocal.Equal(at)
+			} else {
+				newest = candidate.Created.Equal(built[repository])
+			}
+			if newest {
 				current[candidate.ID] = struct{}{}
 				break
 			}
 		}
 	}
 	return current
+}
+
+// keptRepositories returns the repository of each keep reference that names
+// one. A keep entry that is an image ID names no repository.
+func keptRepositories(keep map[string]struct{}) map[string]struct{} {
+	repositories := map[string]struct{}{}
+	for reference := range keep {
+		if reference == "" || strings.HasPrefix(reference, "sha256:") {
+			continue
+		}
+		if name := repositoryOf(reference); name != "" {
+			repositories[name] = struct{}{}
+		}
+	}
+	return repositories
 }
 
 // repositories returns the repository of each of an image's tags. An untagged
@@ -246,14 +327,37 @@ func repositories(candidate Candidate) []string {
 	return names
 }
 
-// repositoryOf strips the tag from a reference, leaving the repository. The
+// repositoryOf is a reference's repository, without its tag or digest.
+//
+// It is normalized, so the short name a daemon reports a Docker Hub image by
+// and the fully qualified one a configuration may name it by compare equal. A
+// reference that does not parse falls back to stripping the tag, where the
 // colon must come after the last slash or it is a registry port, not a tag.
-func repositoryOf(reference string) string {
-	slash := strings.LastIndex(reference, "/")
-	if colon := strings.LastIndex(reference, ":"); colon > slash {
-		return reference[:colon]
+func repositoryOf(ref string) string {
+	if named, err := reference.ParseNormalizedNamed(ref); err == nil {
+		return named.Name()
 	}
-	return reference
+	ref, _, _ = strings.Cut(ref, "@")
+	slash := strings.LastIndex(ref, "/")
+	if colon := strings.LastIndex(ref, ":"); colon > slash {
+		return ref[:colon]
+	}
+	return ref
+}
+
+// keepSet indexes keep references by every form they match an image by
+// (normalizedReferences).
+func keepSet(references []string) map[string]struct{} {
+	keep := make(map[string]struct{}, 2*len(references))
+	for _, ref := range references {
+		if ref = strings.TrimSpace(ref); ref == "" {
+			continue
+		}
+		for _, form := range normalizedReferences(ref) {
+			keep[form] = struct{}{}
+		}
+	}
+	return keep
 }
 
 func keepsAny(keep map[string]struct{}, references []string) bool {
@@ -277,6 +381,11 @@ type Options struct {
 	// configured pool image, and a development base image that only other images
 	// are built FROM.
 	Keep []string
+	// Clear marks an explicit clear (`discobox admin pool clear-cache`): an
+	// image with no known age counts as older than Retention and is removed if
+	// nothing uses or keeps it, and the pass stamps nothing, since a stamp
+	// would only make such an image fresh (ADR 26-11-13-655 §4).
+	Clear bool
 	// Now defaults to time.Now.
 	Now time.Time
 	// Logger defaults to slog.Default.
@@ -295,6 +404,10 @@ type Result struct {
 
 // Reclaim removes the labeled images on cli that nothing uses and that have
 // outlived the retention window.
+//
+// An ordinary pass first stamps every labeled image the daemon reports no
+// arrival for (stampUnknownAges), so an image that arrived on the classic
+// store starts its window here instead of being kept forever.
 //
 // A removal failure is not a pass failure. The common one is an image other
 // images were built FROM, which the classic graph driver refuses to delete while
@@ -325,27 +438,191 @@ func Reclaim(ctx context.Context, cli *client.Client, opts Options) (Result, err
 	if err != nil {
 		return Result{}, err
 	}
-	keep := make(map[string]struct{}, len(opts.Keep))
-	for _, reference := range opts.Keep {
-		if reference = strings.TrimSpace(reference); reference != "" {
-			keep[reference] = struct{}{}
-		}
+
+	if !opts.Clear {
+		stampUnknownAges(ctx, cli, candidates, keepSet(opts.Keep), logger)
 	}
 
 	result := Result{Scanned: len(candidates)}
-	for _, candidate := range Reclaimable(candidates, inUse, keep, retention, now) {
+	for _, candidate := range Reclaimable(candidates, inUse, opts.Keep, retention, now, opts.Clear) {
 		if err := remove(ctx, cli, candidate); err != nil {
 			logger.DebugContext(ctx, "retained Discobox image that could not be reclaimed",
 				"image", candidate.ID, "tags", candidate.RepoTags, "error", err)
 			continue
 		}
-		logger.InfoContext(ctx, "reclaimed unused Discobox image",
-			"image", candidate.ID, "tags", candidate.RepoTags,
-			"age", now.Sub(candidate.LastLocal).Truncate(time.Minute))
+		if candidate.knownArrival() {
+			logger.InfoContext(ctx, "reclaimed unused Discobox image",
+				"image", candidate.ID, "tags", candidate.RepoTags,
+				"age", now.Sub(candidate.LastLocal).Truncate(time.Minute))
+		} else {
+			logger.InfoContext(ctx, "reclaimed unused Discobox image of unknown age",
+				"image", candidate.ID, "tags", candidate.RepoTags)
+		}
 		result.Removed = append(result.Removed, candidate.ID)
 	}
 	result.Retained = result.Scanned - len(result.Removed)
 	return result, nil
+}
+
+// Stamp starts image's age on a daemon that did not record its arrival, by
+// applying one of its tags to itself again. The image cache load and the
+// server's and pool agent's pulls call it as an image lands (ADR 26-11-13-655
+// §2): the classic image store sets
+// LastTagTime only on a tag, so without it an image loaded or pulled there has
+// no age until a pass stamps it, and an explicit clear removes it at once.
+//
+// On the containerd store, which records the arrival itself, the call changes
+// nothing. An image with no tag cannot be stamped and is left as it is. A
+// caller logs a failure and carries on: an unknown age only keeps the image
+// longer.
+func Stamp(ctx context.Context, cli *client.Client, image string) error {
+	inspect, err := cli.ImageInspect(ctx, image)
+	if err != nil {
+		return fmt.Errorf("inspect image %s: %w", image, err)
+	}
+	return stamp(ctx, cli, stampTag(image, inspect.RepoTags))
+}
+
+// stampTag is the tag Stamp applies: the reference the image arrived under
+// when that is one of its tags, and otherwise its first, as for a reference
+// pinned by digest.
+func stampTag(image string, tags []string) string {
+	for _, tag := range tags {
+		if tag == image {
+			return tag
+		}
+	}
+	if len(tags) == 0 {
+		return ""
+	}
+	return tags[0]
+}
+
+func stamp(ctx context.Context, cli *client.Client, tag string) error {
+	if tag == "" {
+		return nil
+	}
+	if _, err := cli.ImageTag(ctx, client.ImageTagOptions{Source: tag, Target: tag}); err != nil {
+		return fmt.Errorf("apply tag %s to itself: %w", tag, err)
+	}
+	return nil
+}
+
+// stampUnknownAges stamps every candidate with a tag and no known arrival, and
+// records the arrival the daemon then reports (ADR 26-11-13-655 §1).
+//
+// They are stamped oldest Created first, so within a repository the latest
+// build gets the latest arrival and the floor keeps the right one. Release
+// images are built clamped and share a Created, so among equal builds a kept
+// one goes last and the floor lands on the image the keep set already names.
+//
+// That order only ranks the images stamped together. An image that already had
+// an arrival — the current sandbox base, stamped as it landed, beside the older
+// bases an upgraded pool still holds with none — would otherwise fall behind
+// every image stamped after it, and the floor would move to an older build. So
+// in a repository the floor covers, the image holding its newest arrival
+// (stampOrder) is stamped again in the same order, at its own build: a pass
+// ranks it above the builds older than it, and below one newer than it, as the
+// floor would have had the newer build arrived stamped. That restarts only that
+// image's clock, and it is the one the floor keeps anyway.
+//
+// On the containerd store a stamp changes nothing, and the candidate keeps its
+// unknown age. A failure is logged and leaves the candidate as it was, until
+// the next pass.
+func stampUnknownAges(ctx context.Context, cli *client.Client, candidates []Candidate, keep map[string]struct{}, logger *slog.Logger) {
+	for _, i := range stampOrder(candidates, keep) {
+		candidate := &candidates[i]
+		if err := stamp(ctx, cli, candidate.RepoTags[0]); err != nil {
+			logger.WarnContext(ctx, "could not start the age of a Discobox image",
+				"image", candidate.ID, "tags", candidate.RepoTags, "error", err)
+			continue
+		}
+		inspect, err := cli.ImageInspect(ctx, candidate.ID)
+		if err != nil {
+			logger.WarnContext(ctx, "inspect a stamped Discobox image",
+				"image", candidate.ID, "error", err)
+			continue
+		}
+		candidate.LastLocal = inspect.Metadata.LastTagTime
+	}
+}
+
+// stampOrder returns the candidates a pass stamps, by index, in the order it
+// stamps them: every tagged image with no known arrival, and the floor's
+// holders of each kept repository one of those is in, ordered by Created.
+// Among equal builds a holder goes last, then a kept image, so the floor stays
+// where it was or on the image the keep set names.
+func stampOrder(candidates []Candidate, keep map[string]struct{}) []int {
+	unknown := make([]int, 0, len(candidates))
+	for i, candidate := range candidates {
+		if !candidate.knownArrival() && len(candidate.RepoTags) > 0 {
+			unknown = append(unknown, i)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	holders := floorHolders(candidates, unknown, keep)
+	holder := make(map[int]bool, len(holders))
+	for _, i := range holders {
+		holder[i] = true
+	}
+	order := append(unknown, holders...)
+	slices.SortStableFunc(order, func(a, b int) int {
+		if c := candidates[a].Created.Compare(candidates[b].Created); c != 0 {
+			return c
+		}
+		if c := cmpBool(holder[a], holder[b]); c != 0 {
+			return c
+		}
+		return cmpBool(keepsAny(keep, candidates[a].references()), keepsAny(keep, candidates[b].references()))
+	})
+	return order
+}
+
+// floorHolders returns, for each kept repository one of the stamped images
+// (the indexes in stamped) is in, the candidates that hold its newest known
+// arrival now, before the stamps: the images the floor protects, which
+// stampOrder stamps again at their own build.
+func floorHolders(candidates []Candidate, stamped []int, keep map[string]struct{}) []int {
+	kept := keptRepositories(keep)
+	touched := map[string]struct{}{}
+	for _, i := range stamped {
+		for _, repository := range repositories(candidates[i]) {
+			if _, ok := kept[repository]; ok {
+				touched[repository] = struct{}{}
+			}
+		}
+	}
+	if len(touched) == 0 {
+		return nil
+	}
+	current := newestPerKeptRepository(candidates, keep)
+	holders := []int{}
+	for i, candidate := range candidates {
+		if _, ok := current[candidate.ID]; !ok || !candidate.knownArrival() || len(candidate.RepoTags) == 0 {
+			continue
+		}
+		for _, repository := range repositories(candidate) {
+			if _, ok := touched[repository]; ok {
+				holders = append(holders, i)
+				break
+			}
+		}
+	}
+	return holders
+}
+
+// cmpBool orders false before true.
+func cmpBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	default:
+		return -1
+	}
 }
 
 // imagesInUse collects the image IDs every container on the daemon refers to.

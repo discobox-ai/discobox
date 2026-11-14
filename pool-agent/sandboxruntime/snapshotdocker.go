@@ -32,8 +32,8 @@ import (
 
 const (
 	// snapshotRepository holds every snapshot, each tagged with its key, so
-	// a snapshot is found by name and the image reclaim, which keeps the
-	// newest of a repository, keeps the one built last whatever its age.
+	// a snapshot is found by name. No keep reference names it, so the image
+	// reclaim ages every unused snapshot out alike (ADR 26-11-13-655).
 	snapshotRepository = "discobox-snapshot"
 	// snapshotBaseLabel is, on a snapshot, the ID of the sandbox base image
 	// it was built from: a container started from it runs that base.

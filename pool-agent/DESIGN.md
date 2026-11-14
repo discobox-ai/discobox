@@ -39,7 +39,7 @@ from the in-sandbox `sandbox-agent` API.
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a container's as `ContainerGuest`, with the daemon's platform from `ContainerPlatform`), a tar tree, a command and its stdin, it places the tree with the guest's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code beyond that container's guest, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree — or on `Plan.Stdin` where they must never touch the box's disk, as a snapshot build's plan (ADR 26-11-03-986 §1). It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
 | `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver and the shim that holds a fake machine, and `FakeDriver` is that driver, with one base, any key source and the driver configuration the test gives it and its shims (the driver reads none from the environment), so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
-| `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
+| `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040, ADR 26-11-13-655), and `Stamp`, which starts a just-arrived image's age on a daemon that records none. Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
 
@@ -1181,8 +1181,8 @@ until they return:
 | BuildKit state | `buildkitagent.PruneBuildCache`: a prune-all through buildkitd, which holds its store open. |
 | Proxy response cache | Contents removed under the running proxy, which reads an entry whose file is gone as a miss and forgets its size ([proxy/DESIGN.md](../proxy/DESIGN.md#response-cache)). |
 | Pool registry | Contents removed under the running registry, which is configured with no blob descriptor cache that could go on vouching for a deleted blob. |
-| Snapshots | Every snapshot of this pool no container runs is removed by name, since all of them share one repository, whose newest the image pass keeps; and the plans whose builds failed are forgotten. A box that came up wrong from one starts from scratch next. |
-| Unused images | `imagereap` with a one-hour retention (`clearImageFloor`) instead of a day's. Stopped sandboxes still use theirs, and the newest image of each repository stays. The floor protects a create between its pull and its container, which the start gate covers for this pool but not for another pool on the shared local Docker daemon. |
+| Snapshots | Every snapshot of this pool no container runs is removed by name, however recently it was taken; and the plans whose builds failed are forgotten. A box that came up wrong from one starts from scratch next. |
+| Unused images | `imagereap` with a one-hour retention (`clearImageFloor`) instead of a day's, and an image the daemon recorded no arrival for counts as older than that (ADR 26-11-13-655 §4). Stopped sandboxes still use theirs, and the sandbox base image and the newest of its repository stay. The floor protects a create between its pull and its container, which the start gate covers for this pool but not for another pool on the shared local Docker daemon. |
 
 An agent that predates the route answers with its router's plain-text 404,
 which the control plane reports as an agent too old for the operation rather
@@ -2514,7 +2514,18 @@ daemon pool containers run *on* the same way. An image goes when it carries
 ago than the retention window. Arrival is the daemon's `LastTagTime`, not
 `Created`, which is when whoever published the image built it; see ADR 0040.
 An arrival no later than `Created` is a build clamped to `SOURCE_DATE_EPOCH`,
-not an arrival, and is kept as an unknown age; see ADR 0143.
+not an arrival, and is an unknown age; see ADR 0143.
+
+The classic image store (overlay2), which a VM pool's guest runs, records no
+arrival for a load or a pull, only for a tag. So an unknown age is started
+rather than kept forever (ADR 26-11-13-655): this agent's pull, and the
+server's image cache load and pull of the sandbox base image, apply the image's
+tag to itself again as it lands (`imagereap.Stamp`), and each pass does the
+same for every labeled image still without one, whatever brought it, oldest
+build first. The image that already held a kept repository's newest arrival
+is stamped again in that order at its own build, so a pass never ranks an older
+build above it. On the containerd store the stamp
+changes nothing, and a clamped build stays kept by the ordinary pass.
 
 The window arrives as `DISCOBOX_IMAGE_RETENTION` in the container environment,
 defaulting to 24h to match `sandboxVolumeRetention`. The loop's own interval is
@@ -2523,16 +2534,18 @@ the only thing that tells a development pool it is one: the control plane hands
 this agent a retention, never a mode, so a short window is what makes the sweep
 keep pace with a rebuild loop that supersedes an image every few minutes.
 
-Usage counts stopped containers, so a stopped sandbox keeps its image. This
-pool needs no keep set of its own: everything it still needs has a container,
-and an image synced or pulled but not yet run is covered by retention, by the
-rule that the newest image of a repository is never reclaimed (ADR 0040 §5), and
-by simply being re-fetched if it does age out.
+Usage counts stopped containers, so a stopped sandbox keeps its image. The keep
+set is the sandbox base image (`DISCOBOX_SANDBOX_BASE_IMAGE`), which every box
+runs and which may have no container while every box is stopped. Naming it
+also keeps the newest image of its repository; a repository no keep reference
+names has no such floor, so a whole obsolete image line, such as the
+per-harness images before every box ran the sandbox base, is reclaimed like
+any superseded build (ADR 26-11-13-655 §3). An image pulled but not yet run is
+covered by retention, and simply re-fetched if it does age out.
 
 A snapshot carries the reclaim label and is an image like any other here: one
-no container runs goes after the retention window, except that the newest of
-the one repository every snapshot shares stays ([Snapshots](#snapshots)). The
-same loop sweeps what an interrupted snapshot build left.
+no container runs goes after the retention window ([Snapshots](#snapshots)).
+The same loop sweeps what an interrupted snapshot build left.
 
 ## Boundary Rules
 
