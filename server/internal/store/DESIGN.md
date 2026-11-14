@@ -331,6 +331,9 @@ The secret request owner filter reads `parent_sandbox_id`.
 `RouteLists` includes the secret's persisted `RouteConstraints` between its
 original routes and binding/parent restrictions. These lists are enforced
 together on resolve and in pool publication; no flattening or union is safe.
+`StrandedBodyPlaceBindings` reads, in a secret write's transaction, the live
+bindings whose body places that write left no list allowing, for the writer to
+refuse or remove.
 
 ## Successful suspend receipts
 

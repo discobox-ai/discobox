@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -114,7 +116,10 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 		if !configured[binding.SecretID] {
 			continue
 		}
-		secret, err := txStore.GetSecret(ctx, config.ProjectID, binding.SecretID)
+		// Locked: the routes read are written back with the constraint, and
+		// judge which bindings it strands, so a person's edit committed in
+		// between would be written over and misjudged.
+		secret, err := txStore.LockSecret(ctx, config.ProjectID, binding.SecretID)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				continue
@@ -139,6 +144,7 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 		if !found {
 			continue
 		}
+		prior := *secret
 		changed, err := secret.RestrictRoutes(routes)
 		if err != nil {
 			return fmt.Errorf("routes of configured secret %q: %w", binding.EnvName, err)
@@ -148,6 +154,9 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 		}
 		if err := txStore.UpdateSecret(ctx, secret); err != nil {
 			return fmt.Errorf("write routes of configured secret %q: %w", binding.EnvName, err)
+		}
+		if err := s.removeStrandedBindingsTx(ctx, txStore, txDB, &prior, secret, "the routes harness config "+config.ID+" declares"); err != nil {
+			return fmt.Errorf("remove the bindings configured secret %q's routes strand: %w", binding.EnvName, err)
 		}
 		if s.sandboxes != nil {
 			if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, config.ProjectID, secret.ID); err != nil {
@@ -166,4 +175,77 @@ func declaredRoutesByEnv(config *model.HarnessConfig) map[string][]model.SecretR
 		declared[secret.Name] = secret.Routes
 	}
 	return declared
+}
+
+// removeStrandedBindingsTx takes from the standing bindings of secret the
+// routes that the route constraint a harness writer just added to it, from
+// prior's, strands (store.StrandedBodyPlaceBindings, #1105): a body place no
+// list allows any more, which the proxy would refuse on every use while the
+// binding stood reported as granted. A config apply and a login save-back run
+// with nobody to read a refusal, and refusing would fail the apply or lose the
+// login, so the stranded routes go instead: a binding keeps the routes that
+// still work, and one left with no open route is removed, each change
+// recorded with what caused it, as taking raw away removes raw bindings. The
+// discobox that used a removed route asks again, and a person's new grant is
+// checked against the routes as they now are. Each binding is read locked and
+// changed as it now stands, so a person's edit to it is kept. Their holders
+// are marked in the same transaction.
+func (s *Service) removeStrandedBindingsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, prior, secret *model.Secret, by string) error {
+	stranded, err := txStore.StrandedBodyPlaceBindings(ctx, prior, secret, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	for _, sb := range stranded {
+		change := store.BindingChange{
+			Actor: auth.ActorFromContext(ctx),
+			Cause: fmt.Sprintf("%s strand a route of it on secret %s: %v", by, secret.ID, sb.Reason),
+		}
+		// The binding as it stands now, locked: a person's edit to it since
+		// it was listed is kept, and only the stranded routes still on it go.
+		current, err := txStore.LockSecretBinding(ctx, secret.ProjectID, sb.Binding.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		kept, took := withoutRoutes(current.Routes, sb.Stranded)
+		if !took {
+			continue
+		}
+		var changed []model.SecretBinding
+		if slices.ContainsFunc(kept, func(r model.SecretRoute) bool { return !r.Blocked }) {
+			current.Routes = kept
+			if err := txStore.UpdateSecretBinding(ctx, current, change); err != nil {
+				return err
+			}
+			changed = []model.SecretBinding{*current}
+		} else {
+			if changed, err = txStore.DeleteSecretBinding(ctx, secret.ProjectID, current.ID, change); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		if s.sandboxes != nil && len(changed) > 0 {
+			if err := s.sandboxes.MarkBindingHoldersDirtyTx(ctx, txStore, txDB, secret.ProjectID, changed); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// withoutRoutes is routes less those in drop, compared by canonical form, and
+// whether any went.
+func withoutRoutes(routes, drop []model.SecretRoute) ([]model.SecretRoute, bool) {
+	dropped := make(map[string]bool, len(drop))
+	for _, route := range drop {
+		dropped[secretroute.Format(route)] = true
+	}
+	var kept []model.SecretRoute
+	for _, route := range routes {
+		if !dropped[secretroute.Format(route)] {
+			kept = append(kept, route)
+		}
+	}
+	return kept, len(kept) < len(routes)
 }

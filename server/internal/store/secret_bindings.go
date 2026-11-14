@@ -109,6 +109,26 @@ func (s *Store) UpdateSecretBinding(ctx context.Context, binding *model.SecretBi
 	})
 }
 
+// LockSecretBinding reads a binding by its whole ID FOR UPDATE, on the
+// caller's transaction: a writer that changes a binding on someone else's
+// behalf (a harness writer taking a stranded route) writes the row as it now
+// stands, so a person's edit committed in between is neither written over nor
+// undone.
+func (s *Store) LockSecretBinding(ctx context.Context, projectID, bindingID string) (*model.SecretBinding, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var binding model.SecretBinding
+	if err := write.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", projectID, bindingID).First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &binding, nil
+}
+
 // GetSecretBinding reads one binding of a project by ID or unique ID prefix.
 func (s *Store) GetSecretBinding(ctx context.Context, projectID, bindingID string) (*model.SecretBinding, error) {
 	read, err := s.getRead(ctx)
