@@ -199,6 +199,14 @@ Global review expectations:
   next attempt's `.partial.tar`. `WaitDelay` only bounds pipe draining; it
   does not kill descendants. Keep a non-exec child exporter in deadline tests.
 
+- A watcher test that lowers the Docker deadline (`dockerCommandTimeout`)
+  lowers it for every inspection and tag command, not only the one meant to
+  stall; builds have their own `buildCommandTimeout`. Set it to seconds a
+  loaded runner meets, never milliseconds, and wait on what the watcher
+  published rather than reading after one tick. The stall itself outlasts the
+  test's own time limit, or a command the deadline never cut off ends on its
+  own and passes as a recovery.
+
 - A real-box restart regression keeps its fixtures and progress markers off
   `/tmp`, which Docker sandboxes mount as tmpfs and clear on restart. Keep
   markers on the persistent root filesystem, and give a marker written by a

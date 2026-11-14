@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,8 +66,13 @@ func TestWatcherRecoversFromStalledInspectionAndPublishesChangedHarness(t *testi
 		t.Skip("shell script on PATH")
 	}
 	t.Setenv(buildModeEnv, "false")
+	// The one stalling "docker image ls" is cut off by the watcher's Docker
+	// deadline, which every other inspection and tag command shares (builds
+	// have their own). Keep it long enough that a loaded runner still starts
+	// and finishes those in time.
+	const deadline = 2 * time.Second
 	old := *dockerCommandTimeout
-	*dockerCommandTimeout = 100 * time.Millisecond
+	*dockerCommandTimeout = deadline
 	t.Cleanup(func() { *dockerCommandTimeout = old })
 	dir := t.TempDir()
 	script := `#!/bin/sh
@@ -74,7 +80,7 @@ case "$1 $2" in
  'image inspect') echo sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef ;;
  'image ls')
    echo check >> checks
-   if test ! -f stalled; then touch stalled; exec sleep 60; fi
+   if test ! -f stalled; then touch stalled; exec sleep 3600; fi
    echo base:local
    ;;
  'build test') cp "$(cat fixture)" .partial.tar ;;
@@ -96,7 +102,11 @@ esac
 	write("image.json", before)
 	write("fixture", harnessLayout(t, before))
 	spec := imageSpec{name: "harness-test", bundle: true, devPrefix: "test:dev-", buildDir: dir, layoutDir: dir, files: []string{metadata}, metadataFile: metadata, metadataArg: "HARNESS_METADATA", buildArgs: []string{"build", "test", "--build-arg", "HARNESS_METADATA="}}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	// Only a bound on a hung watcher: a build that still misses its deadline
+	// is retried after imageBuildRetryInterval, and the waits below allow that.
+	// The stub's stall must outlast it, or a presence check the deadline never
+	// cut off would end on its own and pass as a recovered one.
+	ctx, cancel := context.WithTimeout(t.Context(), 4*imageBuildRetryInterval)
 	ticks, presence := make(chan time.Time), make(chan time.Time)
 	done := make(chan error, 1)
 	base := imageSpec{name: "base", baseImage: "base:local", devPrefix: "base:dev-", buildDir: dir, files: []string{metadata}, buildArgs: []string{"build", "base"}}
@@ -113,46 +123,68 @@ esac
 	manifest := func() (devimage.Manifest, error) {
 		return devimage.Read(filepath.Join(dir, developmentImageManifestFile))
 	}
-	send(ticks) // initial publication completed
-	initial, err := manifest()
-	if err != nil {
-		t.Fatal(err)
+	checks := func() int {
+		data, _ := os.ReadFile(filepath.Join(dir, "checks"))
+		return strings.Count(string(data), "check\n")
 	}
-	send(presence)
-	wait := func(ch chan time.Time, condition func() bool) {
+	// wait sends on ch until condition holds, and says whether it did: the
+	// watcher, not the clock, says when it has done the work.
+	wait := func(ch chan time.Time, condition func() bool) bool {
 		t.Helper()
 		beat := time.NewTicker(10 * time.Millisecond)
 		defer beat.Stop()
 		for !condition() {
 			select {
 			case <-ctx.Done():
-				t.Fatal("watcher did not recover")
+				return false
 			case <-beat.C:
 				send(ch)
 			}
 		}
+		return true
 	}
-	wait(ticks, func() bool { _, err := os.Stat(filepath.Join(dir, "stalled")); return err == nil })
+	var initial devimage.Manifest
+	if !wait(ticks, func() bool {
+		var err error
+		initial, err = manifest()
+		return err == nil
+	}) {
+		t.Fatal("watcher did not publish the initial images")
+	}
+	// A presence check is dropped while another runs, and one cut off before
+	// it marks the stall is simply retried, so keep asking until it stalls.
+	if !wait(presence, func() bool {
+		_, err := os.Stat(filepath.Join(dir, "stalled"))
+		return err == nil
+	}) {
+		t.Fatal("watcher did not stall inspecting presence")
+	}
+	// Every check logs itself before it can stall, so this includes the stalled one.
+	stalledChecks := checks()
 	// Edit the declaration while Docker presence inspection is still stalled.
 	write("fixture", harnessLayout(t, after))
 	write("image.json", after)
-	send(ticks)
-	send(ticks) // rebuild and publication completed
-	updated, err := manifest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if initial.Bundles[0].Reference == updated.Bundles[0].Reference {
-		t.Fatal("changed harness reused stale layout reference")
+	updated := initial
+	if !wait(ticks, func() bool {
+		if read, err := manifest(); err == nil {
+			updated = read
+		}
+		return updated.Bundles[0].Reference != initial.Bundles[0].Reference
+	}) {
+		t.Fatalf("changed harness reused stale layout reference %s", updated.Bundles[0].Reference)
 	}
 	if _, err := os.Stat(initial.Bundles[0].Layout); err != nil {
 		t.Fatalf("previous layout was not retained: %v", err)
 	}
 	// The timed-out inspection must release its slot so a later tick can retry.
-	wait(presence, func() bool {
-		data, _ := os.ReadFile(filepath.Join(dir, "checks"))
-		return len(data) >= len("check\ncheck\n")
-	})
+	if !wait(presence, func() bool { return checks() > stalledChecks }) {
+		t.Fatal("watcher did not retry the stalled presence check")
+	}
+	// A further check starts only once the retry's result has been handled,
+	// and the tick after it only once any rebuild that result asked for ran.
+	if !wait(presence, func() bool { return checks() > stalledChecks+1 }) {
+		t.Fatal("watcher did not finish the retried presence check")
+	}
 	send(ticks)
 	final, err := manifest()
 	if err != nil {
