@@ -1,6 +1,6 @@
 # 26-11-15-602 — An in-place restart is recorded before it begins, and the new agent's first report counts
 
-- **Status**: Accepted (supersedes [26-11-15-294](26-11-15-294-a-report-after-the-reconcile-started-the-pools-agent-is-the-new-agents.md) §1's restart row, "once the restart has returned", §3's "the agent changes in no way", and the Consequences line that a boot report landing before the restart returns is still missed)
+- **Status**: Accepted (supersedes [26-11-15-294](26-11-15-294-a-report-after-the-reconcile-started-the-pools-agent-is-the-new-agents.md) §1's restart row, "once the restart has returned", §3's "the agent changes in no way", and the Consequences line that a boot report landing before the restart returns is still missed; Consequences amended before implementation landed: a first report from an agent booted just before the in-place start counts, and is in the narrow case left open)
 - **Date**: 2026-11-15
 - Accepted by the owner by merging #1204, 2026-11-15
 - **Issue**: [#1203](https://github.com/discobox-ai/discobox/issues/1203)
@@ -161,6 +161,17 @@ clears the pool's upgrade. The settle still waits for the restart to return
 cleanly, the old agent was running moments before, and the pool's health
 then tracks the failing agent on its own. Closing this would need the
 agent's identity, rejected above.
+
+The same holds for a machine this run booted and then restarts in place in
+the same pass, or a later one before its booted agent has reported: that
+agent's first report can land after the recorded in-place start. If it is
+marked, it counts. It is from the agent the boot started moments before, and
+it clears the upgrade early only if the restarted agent then fails its own
+first report, which is the case above. A booted agent from before this field
+sends no mark, so it never counts, and the restarted agent's first report
+does. *Amended before implementation landed (#1203): refusing every first
+report in this case would hold the first upgrade of every stopped VM pool a
+heartbeat, since its booted agent never marks one.*
 
 A restart whose pool agent stayed up still waits up to one heartbeat after
 the settle (26-11-14-624's Consequences, unchanged for that case).
