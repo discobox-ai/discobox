@@ -83,6 +83,15 @@
   filesystem: its intake's record is `agentlayer.SnapshotStateFile`, under the
   directory it empties before it seals.
 
+- **What a snapshot build's bridge does to the box outside its directory is
+  undone before it seals.** The build reaches its pool by its sandboxes' hop,
+  so on a machine pool its DNS stub takes over `/etc/resolv.conf` and records
+  the provider's resolver in `bridge.ProviderResolverPath`, both on the
+  committed disk. `cleanMachine` stops the bridge, then restores both; a step
+  that makes the build's bridge write anything else to the root filesystem
+  needs the same. Otherwise every box made from the snapshot boots naming the
+  build's stub and carrying its resolver record (#1197's review).
+
 - **Work a snapshot build does in its exec must be work systemd sees.** A
   taker's exec need not share systemd's mount namespace (boxd gives each a
   private one), so the snapshot command runs itself again in PID 1's first.

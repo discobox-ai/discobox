@@ -24,6 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/runcca"
 	"github.com/discobox-ai/discobox/sandbox-agent/bundlestore"
+	"github.com/discobox-ai/discobox/sandbox-agent/dnsstub"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
@@ -460,10 +461,16 @@ func sshdInstalled() bool {
 // cleanMachine removes what is one machine's, so no two boxes made from a
 // snapshot share it: its machine ID, which is left empty, and which each box
 // is given anew when its bootstrap arrives (takeIdentity); its SSH host keys, which a package that
-// installed sshd generated; and the trust of the build's own proxy CA, at
+// installed sshd generated; the trust of the build's own proxy CA, at
 // buildCA, which discobox-trust-ca.service anchored for the build and each
-// box anchors its own of at its boot.
+// box anchors its own of at its boot; and the system resolver the build's
+// DNS stub took over (ADR 26-11-12-355), given back with the record of it
+// once the bridge that runs the stub is stopped — each box's own takes it
+// over again at its boot.
 func cleanMachine(ctx context.Context, buildCA string) error {
+	if err := releaseSystemResolver(ctx); err != nil {
+		return err
+	}
 	if err := untrustCA(buildCA); err != nil {
 		return err
 	}
@@ -471,6 +478,22 @@ func cleanMachine(ctx context.Context, buildCA string) error {
 		return fmt.Errorf("empty the machine ID: %w", err)
 	}
 	return removeSSHHostKeys()
+}
+
+// releaseSystemResolver stops the build's bridge, whose DNS stub would
+// otherwise take the resolver back, and restores the provider's resolver it
+// recorded. A box whose init is not systemd runs no bridge unit.
+func releaseSystemResolver(ctx context.Context) error {
+	if systemdIsInit() {
+		//nolint:gosec // G204: a fixed command on a constant unit.
+		if out, err := exec.CommandContext(ctx, "systemctl", "stop", agentlayer.ProxyBridgeUnit).CombinedOutput(); err != nil {
+			return fmt.Errorf("stop %s: %w: %s", agentlayer.ProxyBridgeUnit, err, out)
+		}
+	}
+	if err := dnsstub.RestoreSystemResolver(); err != nil {
+		return fmt.Errorf("give back the provider's resolver: %w", err)
+	}
+	return nil
 }
 
 // writeMachineID writes id as the box's machine ID, the file itself: systemd

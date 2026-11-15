@@ -381,9 +381,12 @@ func (r *sandboxCore) prepareSnapshotBuild(ctx context.Context, plan snapshotPla
 	if !ok {
 		return nil, agentlayer.Agent{}, errors.New("this pool has no asset cache to place the agent from")
 	}
-	// The proxy and DNS alone: a build asks for no credentials and builds
-	// nothing through the pool's builder.
-	endpoints := sandboxconfig.PoolEndpoints{Proxy: r.poolEndpoints.Proxy, DNS: r.poolEndpoints.DNS, ServerName: r.poolEndpoints.ServerName}
+	// The pool's sandboxes' hop, all of it — on a machine pool its address
+	// and resolver are what reach the pool at all (#1197) — less the
+	// credentials endpoint and the builder's: a build asks for no
+	// credentials and builds nothing through the pool's builder.
+	endpoints := r.poolEndpoints
+	endpoints.Credentials, endpoints.BuildKit = "", ""
 	proxy := material.Proxy
 	doc := agentlayer.SnapshotPlan{
 		ID:            id,

@@ -324,7 +324,9 @@ func runProxyBridge(args []string) int {
 	defer stop()
 
 	if dns && !cfg.DNSSystemResolver {
-		dnsstub.RestoreSystemResolver(slog.Default())
+		if err := dnsstub.RestoreSystemResolver(); err != nil {
+			slog.Warn("restore provider resolver", "error", err)
+		}
 	}
 
 	// The sandbox's DNS stub rides the sandbox's own instance (--dns), not the

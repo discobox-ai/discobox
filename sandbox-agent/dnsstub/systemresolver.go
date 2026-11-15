@@ -27,13 +27,15 @@ type systemResolver struct {
 	yielded          bool
 }
 
-// RestoreSystemResolver gives back the provider's file when the pool no longer
-// requests system DNS. Only the --dns instance calls it, never sibling bridges.
-func RestoreSystemResolver(logger *slog.Logger) {
+// RestoreSystemResolver gives back the provider's file, and removes the
+// record of it, when nothing is to take it over again: the --dns instance
+// when the pool no longer requests system DNS (never sibling bridges), and a
+// snapshot build once its bridge is stopped, so no box made from it carries
+// the build's resolver. A box that never handed it over has nothing to
+// restore.
+func RestoreSystemResolver() error {
 	r := systemResolver{path: "/etc/resolv.conf", recordPath: bridge.ProviderResolverPath}
-	if err := r.restore(); err != nil {
-		logger.Warn("restore provider resolver", "error", err)
-	}
+	return r.restore()
 }
 
 func (r *systemResolver) restore() error {

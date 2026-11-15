@@ -1755,7 +1755,8 @@ flowchart LR
   `/etc/discobox`, which is never on the committed disk either — a Docker
   build's bind, a VM build's tmpfs the command mounts in systemd's own mount
   namespace, entering it first where the exec runs in another (boxd's) — and which the
-  command empties before it returns. It empties `machine-id`, removes SSH host keys, takes the build's
+  command empties before it returns. It empties `machine-id`, removes SSH host keys, gives back the
+  provider's resolver its DNS stub took over (and the record of it), takes the build's
   proxy CA back out of the trust store, and writes the seal
   (`agentlayer.SealedFile`): a box made from a snapshot gives itself a new
   machine ID and SSH host keys when its bootstrap arrives, before anything

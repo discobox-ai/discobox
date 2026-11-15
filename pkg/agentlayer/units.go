@@ -37,6 +37,10 @@ func (u Unit) Link() (string, bool) {
 // place.
 const AgentStartUnit = "discobox-sandbox-agent.path"
 
+// ProxyBridgeUnit is the sandbox's egress bridge, which also runs its DNS
+// stub.
+const ProxyBridgeUnit = "discobox-proxy-bridge.service"
+
 func (u Unit) linkDir() string {
 	kind := ".wants"
 	if u.required {
@@ -55,7 +59,7 @@ var Units = []Unit{
 	{Name: "discobox-wire.service", Path: "/etc/systemd/system/discobox-wire.service", target: "sysinit.target", required: true},
 	{Name: "discobox-sandbox-agent.service", Path: "/etc/systemd/system/discobox-sandbox-agent.service"},
 	{Name: "discobox-sandbox-agent.path", Path: "/etc/systemd/system/discobox-sandbox-agent.path", target: "paths.target"},
-	{Name: "discobox-proxy-bridge.service", Path: "/etc/systemd/system/discobox-proxy-bridge.service", target: "multi-user.target"},
+	{Name: ProxyBridgeUnit, Path: "/etc/systemd/system/" + ProxyBridgeUnit, target: "multi-user.target"},
 	{Name: "discobox-trust-ca.service", Path: "/etc/systemd/system/discobox-trust-ca.service", target: "sysinit.target"},
 	{Name: "discobox-render-proxy-env.service", Path: "/etc/systemd/system/discobox-render-proxy-env.service", target: "sysinit.target"},
 	{Name: "journald-console.conf", Path: "/etc/systemd/journald.conf.d/discobox-console.conf"},
