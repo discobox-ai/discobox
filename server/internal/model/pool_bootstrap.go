@@ -33,6 +33,14 @@ type PoolBootstrap struct {
 	// The executor clears it once the replacement succeeds, so a pass that
 	// dies first leaves it owed.
 	Repair string
+	// Waiting is the error the attempt's last pass waited on rather than
+	// failed with: a provider service or host that did not answer
+	// (sandbox.ErrPoolNotReachable). It is display, not work evidence: it
+	// renews no budget and ends nothing. Progress clears it, and so does a
+	// pass that ends without waiting (WaitEnded). An attempt that expires
+	// names it, so the pool's error says why there was no progress (ADR
+	// 26-11-15-089 §5).
+	Waiting string `json:",omitempty"`
 }
 
 type BootstrapOperation struct {
@@ -60,6 +68,11 @@ type BootstrapEvidence struct {
 	// Repaired reports that the replacement the attempt owed succeeded. It
 	// is not work evidence: it renews no budget.
 	Repaired bool
+	// Waiting is what the pass waited on (PoolBootstrap.Waiting), and
+	// WaitEnded a pass that waited on nothing, which clears it. Like Repaired
+	// neither is work evidence.
+	Waiting   string
+	WaitEnded bool
 }
 
 // NewPoolBootstrap starts a pool's first attempt for generation: a fresh
@@ -119,19 +132,34 @@ func (b *PoolBootstrap) Expired(now time.Time) string {
 	if now.Before(b.Allowance()) {
 		return ""
 	}
+	reason := "bootstrap stopped making progress"
 	if !b.RegistrationDeadline.IsZero() {
-		return "pool agent did not register before timeout"
+		reason = "pool agent did not register before timeout"
+	} else if !b.Deadline.IsZero() {
+		reason = "bootstrap operation timed out"
 	}
-	if !b.Deadline.IsZero() {
-		return "bootstrap operation timed out"
+	if b.Waiting != "" {
+		reason += " (last waiting on: " + b.Waiting + ")"
 	}
-	return "bootstrap stopped making progress"
+	return reason
 }
 
 func (b *PoolBootstrap) Accept(e BootstrapEvidence, now time.Time) {
 	if b.Failure != "" {
 		return
 	}
+	// What a pass waited on is recorded even past the budget: it ends
+	// nothing, and the expiry pass that does names it.
+	if e.Waiting != "" || e.WaitEnded {
+		b.Waiting = e.Waiting
+		return
+	}
+	marker := b.Marker
+	defer func() {
+		if b.Marker != marker {
+			b.Waiting = ""
+		}
+	}()
 	if reason := b.Expired(now); reason != "" {
 		b.Failure, b.EndedAt = reason, now
 		return

@@ -383,6 +383,11 @@ marks, fixed deadlines, first-registration deadline and the attempt's failure
 attempt, not the pool: `Next` builds the attempt that replaces an ended one,
 owing a runtime repair (`Repair`, cleared by `Repaired` evidence) and counting
 the failed attempts before it (`Failed`) for pacing (ADR 26-11-09-593).
+`Waiting` is what the attempt's last pass waited on rather than failed with
+(an error marked `sandbox.ErrPoolNotReachable`): display, not work evidence.
+`Waiting` evidence is taken even past the budget and renews nothing;
+progress or `WaitEnded` evidence (a pass that waited on nothing) clears it;
+and `Expired` names it, `… (last waiting on: …)` (ADR 26-11-15-089 §5).
 First registration permanently ends eligibility. `BootstrapWait` pins a caller
 to its admitted attempt and applies the same evidence policy at every gate
 (ADR 26-11-07-306). Whole-row lifecycle and manifest writers omit this column.

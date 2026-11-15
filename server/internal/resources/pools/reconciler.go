@@ -151,6 +151,20 @@ func (r *PoolReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// noteWaiting keeps what a never-registered attempt's pass waited on, an
+// error marked sandbox.ErrPoolNotReachable, or clears it when the pass waited
+// on nothing, so that an attempt that expires names only a wait it never got
+// past (ADR 26-11-15-089 §5). It writes only when that changes: a host
+// waited on is asked again every few seconds. A write that fails loses only
+// the display.
+func (r *PoolReconciler) noteWaiting(ctx context.Context, pool *model.Pool, generation int64, waiting string) {
+	b := pool.BootstrapFacts()
+	if b == nil || pool.RegisteredAt != nil || b.Ended(generation) || b.Waiting == waiting {
+		return
+	}
+	_, _ = sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Waiting: waiting, WaitEnded: waiting == ""})
+}
+
 func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, generation int64) (reconcile.Result, error) {
 	// An attempt that expired without saying so ends on this pass: record why,
 	// show the pool failed, and settle with the error. The next attempt starts
@@ -276,6 +290,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// the state it had, and this generation is not marked observed over a
 		// runtime the reconcile never reached.
 		if errors.Is(err, sandbox.ErrPoolNotReachable) {
+			r.noteWaiting(ctx, pool, generation, err.Error())
 			return reconcile.RequeueAfter(poolHostComingUpRequeue), nil
 		}
 		// begin's guarded write lost to newer intent mid-call: repairing now
@@ -291,6 +306,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 			return reconcile.Result{}, err
 		}
 	}
+	// The pass waited on nothing: a wait an earlier pass recorded is past.
+	r.noteWaiting(ctx, pool, generation, "")
 	// A repair's error is never read as a host coming up: it may come before
 	// the repair replaced anything (discovm's first lookup), and reconciling
 	// in place would then trust the runtime the repair was owed for.

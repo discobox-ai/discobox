@@ -18,4 +18,11 @@
 - Bootstrap lifecycle changes update all four places that describe it: this
   package's `DESIGN.md` ("Initial bootstrap waits"), `server/internal/model`
   and `server/internal/store` `DESIGN.md`, and `server/providers/DESIGN.md`
-  ("Pool Failure and Recovery").
+  ("Pool Failure and Recovery"). A new field on `PoolBootstrap` or
+  `BootstrapEvidence` is such a change, even one that is display only; a
+  place with nothing to add says so to its reviewer. A display-only field
+  once updated this package's doc alone.
+- Display state a pass writes on the attempt (`PoolBootstrap.Waiting`) is
+  cleared by the pass that ends it, not only by progress: a pass can get
+  past a wait and report no evidence, and an expiry would then blame the
+  wait it got past.
