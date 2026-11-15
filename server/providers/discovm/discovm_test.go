@@ -426,8 +426,8 @@ func TestPoolHostFollowsTheDriversKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host, ok := newPoolHost(remote, settings{}).(*poolMachine); !ok {
-		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, settings{}))
+	if host, ok := newPoolHost(remote, settings{}, nil).(*poolMachine); !ok {
+		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, settings{}, nil))
 	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
 		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
 	}

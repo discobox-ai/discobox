@@ -103,3 +103,10 @@
   Why: an adopted running machine, or one recorded unprovisioned, may run
   an older agent, and a start reported before it is placed counts that
   agent's reports as the new one's (ADR 26-11-15-294 §1).
+- Every pool host's `removePoolHost` empties the pool's own disco-vm scope
+  (`machinePool`), not only the host: `poolMachine` does (`emptyPoolScope`),
+  and `hostAgent`, which removes only its directory while its served engine
+  is not staged (#64), must when it is, through whatever engine the server
+  then opens on that scope. Why: the pool agent makes its snapshots and its
+  sandboxes' machines there, the server's engine sees only the provider's
+  scope, and once the pool's host is gone nothing else removes them (#1208).

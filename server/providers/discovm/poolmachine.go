@@ -50,6 +50,9 @@ const (
 // the pool agent is what refuses to come up.
 type poolMachine struct {
 	engine *engine.Engine
+	// scopeEngine opens the provider's driver in another disco-vm scope
+	// (engineIn): removal opens the pool's own, to empty it.
+	scopeEngine func(scope string) (*engine.Engine, error)
 	// base is the driver's base the machine, and its sandboxes' machines, are
 	// created fresh from (Config.Base), which the driver is made with and the
 	// pool's agent makes its own with; empty is the driver's default.
@@ -71,9 +74,10 @@ type poolMachine struct {
 	logSource string
 }
 
-func newPoolMachine(e *engine.Engine, cfg settings) *poolMachine {
+func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope string) (*engine.Engine, error)) *poolMachine {
 	return &poolMachine{
 		engine:          e,
+		scopeEngine:     scopeEngine,
 		base:            strings.TrimSpace(cfg.Base),
 		driverConfig:    cfg.driverConfig,
 		controlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
@@ -558,6 +562,10 @@ func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) 
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url, "/"), nil), nil
 }
 
+// removePoolHost removes the pool's machine, then the pool's keys, then
+// everything in the pool's own scope. The machine and the keys go first, so
+// neither its agent nor anything holding a copy of its key is left to make
+// more in the scope while it is emptied; the provider's own key empties it.
 func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) error {
 	inst, err := h.instance(ctx, pool)
 	switch {
@@ -571,7 +579,44 @@ func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) erro
 	}
 	// Every key of the pool is revoked once the machine that held them is
 	// gone (ADR 26-10-23-551 §4).
-	return h.keys.revokeAll(ctx, pool, decodeRuntimeState(pool).Key)
+	if err := h.keys.revokeAll(ctx, pool, decodeRuntimeState(pool).Key); err != nil {
+		return err
+	}
+	return h.emptyPoolScope(ctx, pool)
+}
+
+// emptyPoolScope force-removes every machine in the pool's own disco-vm scope
+// (machinePool), where its agent makes its sandboxes' machines and its
+// snapshots (ADR 26-11-11-963 §2): a committed snapshot, and a build's machine
+// still running, are left there by a pool's removal otherwise, since the
+// server's engine sees only the provider's scope and the agent that would
+// have removed them went with the pool's machine. The driver is opened in
+// that scope with the provider's settings, key and dial (scopeEngine). A
+// scope that is already empty is emptied; a listing that fails, or a machine
+// that is not removed, is an error, so the pool's removal is tried again
+// rather than finished over what is left. It removes what the driver lists:
+// boxd lists a snapshot only once it is ready, so one whose commit was in
+// flight is not seen here.
+func (h *poolMachine) emptyPoolScope(ctx context.Context, pool *model.Pool) error {
+	scope, err := machinePool(pool.ID)
+	if err != nil {
+		return err
+	}
+	e, err := h.scopeEngine(scope)
+	if err != nil {
+		return err
+	}
+	insts, err := e.List(ctx)
+	if err != nil {
+		return fmt.Errorf("pool %s's scope %s cannot be listed: %w", pool.ID, scope, notReachable(err))
+	}
+	var errs []error
+	for _, inst := range insts {
+		if err := e.Remove(ctx, inst, true); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s from pool %s's scope %s: %w", inst.Name, pool.ID, scope, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // writeState records the machine on the pool row, and the credential its

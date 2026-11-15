@@ -178,7 +178,14 @@ as ADR 26-10-09-106 §1 places it:
   name is not seen by the pool's snapshot key: clear the pool's cache.
   Repair stops
   and starts the same machine, keeping its disk, and provisions it again;
-  remove deletes it and revokes the pool's keys.
+  remove deletes it, revokes the pool's keys, then force-removes every
+  machine the driver lists in the pool's own scope (`emptyPoolScope`: its
+  committed snapshots, a snapshot build's machine, any sandbox machine
+  left), on the provider's driver opened in that scope (`engineIn`). The
+  machine and keys go first, so nothing of the pool's makes more while the
+  scope is emptied; a scope that cannot be listed, or a machine not
+  removed, fails the removal, which is tried again. boxd lists a snapshot
+  only once it is ready, so one whose commit was in flight is not seen.
 - The pool's machine is created on a network of the pool's own (its scope's
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated
