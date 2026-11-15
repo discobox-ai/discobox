@@ -813,7 +813,10 @@ fi
 # service already ahead of 8000 may answer 502 itself, or boxd for it, so a
 # 502 then is for a person to read. 80 and 443 need root, which the box's
 # user may not have without a password: unbound and not busy, nothing is
-# there for a proxy to pick.
+# there for a proxy to pick. disco-vm turns boxd's bot protection off on the
+# proxy it closes, or boxd would answer every non-browser client with a
+# challenge (x-boxd-proxy: challenge) in place of its 502: that answer names
+# a disco-vm pin from before it did.
 if [ "$driver" = boxd ]; then
 	proxy=https://dvm-$(scope "$pool_id")--$machine.boxd.sh
 	marker="discobox-live-run-listener"
@@ -886,7 +889,13 @@ listening 8080 8000 3000 5000 5173" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} 
 		else
 			check closed-proxy "$proxy answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: ${listening:-none}; already held: ${busy:-none}; $(tr '\n' ' ' <"$work/listen.out" | head -c 200) $(tail -c 200 "$work/listen.err")), so the 502 does not tell a closed proxy from an open one"
 		fi ;;
-	*) guest closed-proxy "$proxy" "$code" ||
-		check closed-proxy "$proxy answers HTTP $code (server '$server'): $body; read it: boxd's own refusal passes, anything from the guest fails" ;;
+	*)
+		proxied=$(awk -F': *' 'tolower($1) == "x-boxd-proxy" { print $2 }' "$evidence/closed-proxy.headers" | tr -d '\r')
+		if guest closed-proxy "$proxy" "$code"; then :
+		elif [ "$proxied" = challenge ]; then
+			check closed-proxy "$proxy answers boxd's bot-protection challenge (HTTP $code, x-boxd-proxy: challenge), which hides whether it forwards to the guest: the disco-vm this server pins keeps bot protection on at a closed proxy, so is older than discobox-ai/vm#167 (#1216)"
+		else
+			check closed-proxy "$proxy answers HTTP $code (server '$server'): $body; read it: boxd's own refusal passes, anything from the guest fails"
+		fi ;;
 	esac
 fi
