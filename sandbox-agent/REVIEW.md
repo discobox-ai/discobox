@@ -83,6 +83,13 @@
   filesystem: its intake's record is `agentlayer.SnapshotStateFile`, under the
   directory it empties before it seals.
 
+- **Work a snapshot build does in its exec must be work systemd sees.** A
+  taker's exec need not share systemd's mount namespace (boxd gives each a
+  private one), so the snapshot command runs itself again in PID 1's first.
+  Any other exec that mounts something a unit then reads has the same trap:
+  the unit sees nothing, and a `ConditionPathExists` on it skips the unit
+  with `systemctl start` still returning 0 (#1197).
+
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has
   and the source does not name, which is what keeps a provider's settings; it
