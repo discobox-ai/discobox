@@ -117,7 +117,11 @@ archil), sealed in the row as any secret field is. Every driver field is
 `Advanced` and marked `Privileged`, which the providers service checks on
 the write that sets it and which needs the key in the same write (§§3–4).
 A field disco-vm adds shows up with no change here, but for a `Privileged`
-one, which `TestPrivilegedFieldsAreTheCheckedEndpoints` holds back.
+one, which `TestPrivilegedFieldsAreTheCheckedEndpoints` holds back. A field
+disco-vm makes `Required` (boxd's `region`) is required at create, and a row
+stored before it was required is not migrated: it fails to resolve, each
+reconcile of its pools fails on it, and its owner disables it, deletes its
+pools and it, and makes them again (ADR 26-11-15-507).
 
 The server reads no driver's environment (ADR 26-11-11-080 §2): a variable a
 linked driver names, set in the server's environment, is warned of at start,

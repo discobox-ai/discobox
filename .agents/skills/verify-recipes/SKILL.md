@@ -547,7 +547,7 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   with the loop's pools, which share its IDs.
 - A pool of a VM kind (`vm/boxd`) with no boxd reachable, for what create or
   import decides by a pool's kind: on that DB copy, `admin provider create
-  --type boxd --config '{"driver":{"apiKey":"x"}}'` and `admin pool create`,
+  --type boxd --config '{"driver":{"apiKey":"x","region":"fra"}}'` and `admin pool create`,
   stop the server, then `sqlite3 … "UPDATE pools SET image_kind='vm/boxd',
   platform='linux/amd64', state='active'"`. Create and import are judged
   against that row; the box then fails on boxd being unreachable, which is

@@ -1285,6 +1285,7 @@ func TestFakePoolMachineMovesToInMachineAfterItsPlacementApplies(t *testing.T) {
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
 	host := r.host.(*poolMachine)
 	driver.name = "boxd"
+	host.driverConfig = json.RawMessage(`{"region":"fra"}`)
 	maker := newTestMaker()
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatal(err)

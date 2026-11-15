@@ -61,8 +61,8 @@ discobox admin provider check boxd
 | Field | Flag | What it is |
 | --- | --- | --- |
 | `driver.apiKey` | `--secret driver.apiKey=@FILE` | The boxd API key. Required. |
-| `driver.region` | `--driver-region` | The region the provider's machines and snapshots are in, such as `fra` or `nyc`. Empty is the home endpoint's own region; name it, so the machines go where you expect. The org must have it enabled. |
-| `driver.addr`, `driver.tokenUrl` | `--driver-addr`, `--driver-token-url` | Advanced: the boxd cluster's endpoints, where the key is sent. Leave them empty for boxd's own. |
+| `driver.region` | `--driver-region` | The region the provider's machines and snapshots are in, such as `fra` or `nyc`. Required. The server asks boxd for the region's endpoint. The org must have the region enabled. |
+| `driver.addr`, `driver.tokenUrl` | `--driver-addr`, `--driver-token-url` | Advanced: the boxd cluster's endpoints, where the key is sent. Leave them empty for boxd's own. `driver.addr` is the cluster's home endpoint: the region's endpoint is the one it lists for `driver.region`. |
 | `base` | `--base` | Advanced: the boxd image a machine is made from; empty is boxd's default. It must have `nft`. Name only an image your account controls: it runs as root on every pool machine. |
 | `controlPlaneUrl` | `--control-plane-url` | Where pool machines reach the server. Leave it empty and the server opens a channel to each pool machine instead. |
 
@@ -187,11 +187,32 @@ machines and snapshots with the provider's key, and a provider cannot be
 deleted while it still has the pool. Delete the key in boxd only after the
 provider is gone.
 
+## Upgrading a provider without a region
+
+A boxd provider made before the region was required has none, and it stops
+working: `admin provider check` answers `refused`, `region is required`, and
+its pools stay `pending`. The region cannot be added while the provider has
+pools, and the server cannot reach boxd to delete them, so disable the
+provider first, then delete its pools and the provider, and create them
+again with `--driver-region`, as above:
+
+```sh
+discobox admin provider update boxd --disabled
+discobox admin pool rm boxd
+discobox admin provider rm boxd
+```
+
+A disabled provider's pools are deleted without calling boxd, so their
+machines and snapshots are left there. Delete them in boxd: their names
+start with `dvm-prov-` and `dvm-pool-`, followed by the provider's or the
+pool's ID in lower case, with `-` for `_`.
+
 ## Upgrading a `vm` provider
 
 On upgrade, a `vm` provider on boxd becomes a `boxd` provider with the same
 ID, pools and key. If the server's environment set `BOXD_GRPC_ADDR` or
-`BOXD_TOKEN_URL`, those values move into the provider's `driver` fields. See
+`BOXD_TOKEN_URL`, those values move into the provider's `driver` fields. It
+has no region, so it is then a provider without a region (above). See
 [Concepts](concepts.md#vm-providers-boxd-archil-and-hcs) for `vm` providers
 on other drivers.
 

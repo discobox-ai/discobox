@@ -24,14 +24,15 @@ import (
 func TestValidateWhatADriverNeeds(t *testing.T) {
 	isolateStateRoot(t)
 	for _, tc := range []struct{ driver, config, want string }{
-		{"boxd", `{}`, "driver.apiKey"},
-		{"boxd", `{"driver":{"apiKey":"k"}}`, ""},
+		{"boxd", `{}`, "region is required"},
+		{"boxd", `{"driver":{"region":"fra"}}`, "driver.apiKey"},
+		{"boxd", `{"driver":{"apiKey":"k"}}`, "region is required"},
 		{"boxd", `{"driver":"boxd"}`, "driver is the driver's configuration, a JSON object"},
 		{"boxd", `{"driver":{"apiKey":"k","region":"fra","nope":1}}`, "nope"},
-		{"boxd", `{"driver":{"apiKey":"k","tokenUrl":"http://app.example.com/t"}}`, "tokenUrl"},
-		{"boxd", `{"driver":{"apiKey":"k"},"controlPlaneUrl":"unix:///run/discobox.sock"}`, "http or https"},
-		{"boxd", `{"driver":{"apiKey":"k"},"controlPlaneUrl":"https://discobox.example.com","base":"ubuntu"}`, ""},
-		{"boxd", `{"driver":{"apiKey":"k","inMachine":true}}`, "discobox's to set"},
+		{"boxd", `{"driver":{"apiKey":"k","region":"fra","tokenUrl":"http://app.example.com/t"}}`, "tokenUrl"},
+		{"boxd", `{"driver":{"apiKey":"k","region":"fra"},"controlPlaneUrl":"unix:///run/discobox.sock"}`, "http or https"},
+		{"boxd", `{"driver":{"apiKey":"k","region":"fra"},"controlPlaneUrl":"https://discobox.example.com","base":"ubuntu"}`, ""},
+		{"boxd", `{"driver":{"apiKey":"k","region":"fra","inMachine":true}}`, "discobox's to set"},
 		{"archil", `{"driver":{"apiKey":"key-k","region":"aws-eu-west-1"}}`, ""},
 		{"archil", `{"driver":{"apiKey":"key-k","region":"mars"}}`, "region"},
 		{"fake", `{"controlPlaneUrl":"https://discobox.example.com"}`, "control plane URL"},
@@ -194,7 +195,7 @@ func TestTheEnginesDialIsChecked(t *testing.T) {
 			_ = conn.Close()
 		}
 	}()
-	config := fmt.Sprintf(`{"driver":{"apiKey":"bxd_k","tokenUrl":"http://%s/token"}}`, listener.Addr())
+	config := fmt.Sprintf(`{"driver":{"apiKey":"bxd_k","region":"fra","tokenUrl":"http://%s/token"}}`, listener.Addr())
 	instance := &model.SandboxProviderInstance{ID: "prov_dial", ProjectID: "project-1", Type: "boxd", Config: model.RawJSON(config)}
 	list := func() error {
 		t.Helper()

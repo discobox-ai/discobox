@@ -124,9 +124,13 @@ while [ "$#" -gt 0 ]; do
 done
 
 # The variable is disco-vm's own name for the driver's key, so the binding
-# serves the provider's config and disco-vm's listing alike.
+# serves the provider's config and disco-vm's listing alike. boxd requires a
+# region, in the provider's config and in disco-vm's (BOXD_REGION): the run's
+# is the home region, fra, whose machines' default proxies are in boxd.sh's
+# zone, which the ingress probe below reaches them at.
+region=
 case $driver in
-boxd) key_var=BOXD_API_KEY ;;
+boxd) key_var=BOXD_API_KEY; region=fra ;;
 archil) key_var=ARCHIL_API_KEY ;;
 '') echo "--driver is required: boxd or archil" >&2; exit 2 ;;
 *) echo "--driver $driver: the live run takes boxd or archil" >&2; exit 2 ;;
@@ -251,7 +255,7 @@ dcout() {
 }
 # dvm STATUS CANNED SCOPE ... calls disco-vm in a scope of the driver: the
 # pool's (its sandboxes' machines) or the provider's (the pool's machine).
-dvm() { local status=$1 canned=$2 scope=$3; shift 3; ext "$status" "$canned" "$discovm" --driver "$driver" --pool "$scope" "$@"; }
+dvm() { local status=$1 canned=$2 scope=$3; shift 3; BOXD_REGION=$region ext "$status" "$canned" "$discovm" --driver "$driver" --pool "$scope" "$@"; }
 # pause SECONDS waits between polls; a dry run does not.
 pause() { [ "$dry" = 1 ] || sleep "$1"; }
 
@@ -479,10 +483,10 @@ echo "--- provider" >&2
 # Q2).
 config=$work/provider.json
 if [ "$dry" = 1 ]; then
-	jq -n --arg var "$key_var" '{driver: {apiKey: ("<$" + $var + ">")}}' >"$config"
+	jq -n --arg var "$key_var" --arg region "$region" '{driver: ({apiKey: ("<$" + $var + ">")} + (if $region == "" then {} else {region: $region} end))}' >"$config"
 	note "config: $(jq -c . "$config")"
 else
-	KEY_VAR=$key_var jq -n '{driver: {apiKey: $ENV[$ENV.KEY_VAR]}}' >"$config"
+	KEY_VAR=$key_var jq -n --arg region "$region" '{driver: ({apiKey: $ENV[$ENV.KEY_VAR]} + (if $region == "" then {} else {region: $region} end))}' >"$config"
 fi
 if ! dcout out 0 '{"id":"prov_dryrun"}' -o json admin provider create --type "$driver" --name "$name" --config "@$config"; then
 	rm -f "$config"
@@ -801,7 +805,7 @@ fi
 # whatever disco-vm url said: a check of only the URL the driver reports
 # cannot see a proxy it stopped reporting. The machine is
 # dvm-<pool>--<name> (the same file, Create), in the home region's zone,
-# boxd.sh: the provider is made with no region.
+# boxd.sh: the provider is made in the home region, fra.
 #
 # boxd answers 502 too where a proxy left open forwards to a port nothing
 # listens on, which it picks from the ports below (the first the guest

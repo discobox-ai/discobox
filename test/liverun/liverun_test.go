@@ -87,6 +87,7 @@ esac
 const stubDiscoVM = `#!/usr/bin/env bash
 set -eu
 printf '%s\n' "disco-vm $*" >>"$STUB/calls"
+[ "$2" != boxd ] || [ "${BOXD_REGION:-}" = fra ] || { echo 'disco-vm: boxd: configuration: region is required' >&2; exit 1; }
 [ "$1 $3" = "--driver --pool" ] || { echo "stub disco-vm: no driver and scope: $*" >&2; exit 3; }
 scope=$4; shift 4
 case "$1 ${2:-}" in
@@ -360,6 +361,9 @@ func TestLiveRunKeyOnlyInProviderConfig(t *testing.T) {
 	}
 	if want := `"apiKey": "` + key + `"`; !strings.Contains(string(config), want) || !strings.Contains(string(config), `"driver": {`) {
 		t.Fatalf("provider config %s does not hold the key", config)
+	}
+	if !strings.Contains(string(config), `"region": "fra"`) {
+		t.Fatalf("provider config %s names no region, which boxd requires", config)
 	}
 	if strings.Contains(string(config), "deliverProviderKey") {
 		t.Fatalf("provider config %s puts the key on the pool's machine", config)
@@ -773,7 +777,7 @@ func TestDryRun(t *testing.T) {
 	}
 	for _, want := range []string{
 		"+ discobox --server http://server.test -o json admin provider create --type boxd --name live-boxd-",
-		`config: {"driver":{"apiKey":"<$BOXD_API_KEY>"}}`,
+		`config: {"driver":{"apiKey":"<$BOXD_API_KEY>","region":"fra"}}`,
 		"+ disco-vm --driver boxd --pool pool-dryrun ls -a",
 		"| DRY | left-provider-scope |",
 	} {

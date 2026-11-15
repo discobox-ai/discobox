@@ -54,6 +54,10 @@ func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 
 // openRuntime is newRuntime for the provider instance prov_test, closed when
 // the test ends as the server closes it.
+// boxdSettings is a boxd provider's settings with the region the driver
+// requires and no key.
+var boxdSettings = settings{name: "boxd", driverConfig: json.RawMessage(`{"region":"fra"}`)}
+
 func openRuntime(t *testing.T, cfg settings) *Runtime {
 	t.Helper()
 	r, err := newRuntime(cfg, "prov_test", nil)
@@ -255,7 +259,7 @@ func fakeBasesMade(t *testing.T) []string {
 // says which, before reading anything.
 func TestBuildGuestImageIsUnsupported(t *testing.T) {
 	isolateStateRoot(t)
-	r := openRuntime(t, settings{name: "boxd"})
+	r := openRuntime(t, boxdSettings)
 	if isLocal(r.engine.Driver) {
 		t.Fatal("boxd is a local driver")
 	}
@@ -357,7 +361,7 @@ func TestTheServerReadsNoDriverEnvironment(t *testing.T) {
 	if err != nil || cfg.DriverConfig != nil {
 		t.Fatalf("boxd's configuration = %s, %v; want none from the environment", cfg.DriverConfig, err)
 	}
-	if err := validate("boxd", json.RawMessage(`{"driver":{"apiKey":"k"}}`)); err != nil {
+	if err := validate("boxd", json.RawMessage(`{"driver":{"apiKey":"k","region":"fra"}}`)); err != nil {
 		t.Fatalf("a boxd provider under a refused environment value = %v, want accepted", err)
 	}
 }
@@ -366,10 +370,10 @@ func TestTheServerReadsNoDriverEnvironment(t *testing.T) {
 // boxd, which refuses darwin, and darwin on a driver that reports it, which is
 // vz's report, without a vz in this build (ADR 26-11-11-963 §1).
 func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
-	if err := PoolOSValidator("boxd")(json.RawMessage(`{}`), "linux"); err != nil {
+	if err := PoolOSValidator("boxd")(json.RawMessage(`{"driver":{"region":"fra"}}`), "linux"); err != nil {
 		t.Fatalf("a linux pool on boxd: %v", err)
 	}
-	if err := PoolOSValidator("boxd")(json.RawMessage(`{}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
+	if err := PoolOSValidator("boxd")(json.RawMessage(`{"driver":{"region":"fra"}}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
 		t.Fatalf("a darwin pool on boxd = %v, want refused", err)
 	}
 	// archil fences nothing, so its pools are refused when made, saying so
@@ -418,7 +422,7 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 // name: a remote driver's pool is a machine, a local one's is a host agent in
 // the driver's own state directory.
 func TestPoolHostFollowsTheDriversKind(t *testing.T) {
-	driver, err := boxd.New(machine.Config{Pool: "prov-test"})
+	driver, err := boxd.New(machine.Config{Pool: "prov-test", DriverConfig: json.RawMessage(`{"region":"fra"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +457,7 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 		t.Fatal("openDriver accepted an ID outside disco-vm's scope rule")
 	}
 	isolateStateRoot(t)
-	remote := openRuntime(t, settings{name: "boxd"})
+	remote := openRuntime(t, boxdSettings)
 	if remote.engine.Pool != "prov-test" {
 		t.Fatalf("boxd engine scope = %q, want the provider's", remote.engine.Pool)
 	}

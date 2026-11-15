@@ -164,7 +164,7 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		{name: "machine on a driver configuration its driver refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"apiKey":"bxd_k"}`, wantErr: "driver configuration"},
 		{name: "docker with a driver configuration", runtime: poolagent.RuntimeDocker, config: `{"region":"fra"}`, wantErr: "machine pool"},
 		{name: "docker with in-machine auth", runtime: poolagent.RuntimeDocker, config: `{"inMachine":true}`, wantErr: "machine pool"},
-		{name: "machine authenticating in-machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"inMachine":true}`},
+		{name: "machine authenticating in-machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"region":"fra","inMachine":true}`},
 		{name: "machine turning in-machine auth on with a value that is not a boolean", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"inMachine":"yes"}`, wantErr: "driver configuration"},
 		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, pool: "pool-1", wantErr: "needs a driver"},
 		{name: "machine without a pool", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine pool"},
