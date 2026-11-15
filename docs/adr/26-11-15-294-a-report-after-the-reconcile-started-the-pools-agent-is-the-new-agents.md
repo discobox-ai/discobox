@@ -1,7 +1,8 @@
 # 26-11-15-294 — A report after the reconcile started the pool's agent is the new agent's
 
-- **Status**: Proposed (would supersede [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md) §1's "its agent has sent a ready status report since that reconcile settled. A report from before the reconcile may be the old agent's, so it does not count", for a pool whose agent this run's reconciles started, and the Consequences line that puts a plain restart's hold at about one heartbeat interval)
+- **Status**: Accepted (supersedes [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md) §1's "its agent has sent a ready status report since that reconcile settled. A report from before the reconcile may be the old agent's, so it does not count", for a pool whose agent this run's reconciles started, and the Consequences line that puts a plain restart's hold at about one heartbeat interval)
 - **Date**: 2026-11-15
+- Accepted by the owner by merging #1195, 2026-11-15
 - **Issue**: [#1194](https://github.com/discobox-ai/discobox/issues/1194)
 - **Preserves**: 26-11-14-624 §1's set of watched pools, its kept-box rule (`sandbox.ReportBoxKept`) and its clean, current-generation settle; §§2–5 whole; [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §5; the pool agent's 30s status heartbeat and its first report before it serves ([0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md)).
 
