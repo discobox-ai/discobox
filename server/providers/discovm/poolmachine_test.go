@@ -590,6 +590,83 @@ func TestFakePoolMachineIsReadopted(t *testing.T) {
 	}
 }
 
+// Every pass that makes or starts the pool's machine, or replaces the agent
+// in it, tells the reconcile when the agent started (ADR 26-11-15-294 §1): a
+// made or started machine from just before, so its agent's first report
+// counts even when the pass that settles is a later one; an agent its moved
+// bundles or placement restart from once that has returned. A pass that
+// replaces nothing tells nothing.
+func TestFakePoolMachineReportsWhenItStartsTheAgent(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	pool := &model.Pool{ID: "pool-7", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	var starts []time.Time
+	var appliedBefore []int // how many applies had run when each start was told
+	ctx := sandbox.WithAgentStartReporter(context.Background(), func(at time.Time) {
+		starts = append(starts, at)
+		appliedBefore = append(appliedBefore, driver.applies())
+	})
+	maker := newTestMaker()
+	ensure := func(what string) (time.Time, time.Time) {
+		t.Helper()
+		starts, appliedBefore = nil, nil
+		before := time.Now()
+		if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		return before, time.Now()
+	}
+
+	before, after := ensure("a new machine")
+	if len(starts) != 1 || starts[0].Before(before) || starts[0].After(after) || len(driver.created) != 1 {
+		t.Fatalf("a new machine reported starts %v, want one, during the pass", starts)
+	}
+	made := starts[0]
+
+	pool.SetState(model.PoolStateActive)
+	ensure("an unmoved machine")
+	if len(starts) != 0 {
+		t.Fatalf("an unmoved machine reported starts %v, want none", starts)
+	}
+
+	maker.digest = "sha256:" + strings.Repeat("2", 64)
+	_, after = ensure("moved bundles")
+	if len(starts) != 1 || !starts[0].After(made) || starts[0].After(after) || driver.applies() != 2 {
+		t.Fatalf("moved bundles reported starts %v, want one once they applied", starts)
+	}
+	applied := starts[0]
+
+	inst, err := r.host.(*poolMachine).instance(context.Background(), pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.engine.Stop(context.Background(), inst, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	// The fake driver's URLs move at every start, so the started machine is
+	// placed again and its agent restarted on the URLs it moved to: the
+	// agent it booted with is replaced, and the restart is the later start.
+	before, after = ensure("a stopped machine")
+	if len(starts) != 2 || !starts[0].After(applied) || starts[0].Before(before) || !starts[1].After(starts[0]) || starts[1].After(after) {
+		t.Fatalf("a stopped machine reported starts %v, want its start and then its agent's restart", starts)
+	}
+
+	// A running machine under the pool's name that the record does not name
+	// is adopted, not made: it may already run an agent, so the start counts
+	// only from once it is placed again, never from before.
+	stale := slices.Clone(pool.RuntimeState)
+	if err := r.engine.Remove(context.Background(), inst, true); err != nil {
+		t.Fatal(err)
+	}
+	ensure("a lost machine")
+	pool.RuntimeState = stale
+	applies := driver.applies()
+	before, after = ensure("an adopted machine")
+	if len(starts) != 1 || starts[0].Before(before) || starts[0].After(after) || len(driver.created) != 2 || appliedBefore[0] != applies+1 {
+		t.Fatalf("an adopted machine reported starts %v with %v applies run (was %d); want one, once it was placed again", starts, appliedBefore, applies)
+	}
+}
+
 // A pass that makes the pool a new machine and stops before its record is
 // saved — a server restarted mid-reconcile — leaves the row naming the machine
 // that was lost. The next pass finds a machine under the same name, but not
