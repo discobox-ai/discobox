@@ -1267,3 +1267,65 @@ func TestFakePoolMachineGuestWhileTheServiceDrops(t *testing.T) {
 		t.Errorf("EnsurePool() once the service is back = %v, want nil", err)
 	}
 }
+
+// Removing a pool removes what its agent made in the pool's own disco-vm
+// scope (machinePool): a committed snapshot, and a snapshot build still
+// running, which no agent is left to remove once the pool's machine is gone.
+func TestFakePoolMachineRemovalEmptiesThePoolsScope(t *testing.T) {
+	r, _ := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool_scope1", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("EnsurePool() error = %v", err)
+	}
+
+	// What the pool agent makes, in the pool's scope, on the same driver.
+	scope, err := machinePool(pool.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver, err := newDriver(fakeConfig(t), scope, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := engine.Open(driver, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := agent.Create(ctx, engine.CreateOptions{Name: "snap-committed"})
+	if err != nil {
+		t.Fatalf("create the snapshot's machine: %v", err)
+	}
+	if _, err := agent.Commit(ctx, committed); err != nil {
+		t.Fatalf("commit the snapshot: %v", err)
+	}
+	building, err := agent.Create(ctx, engine.CreateOptions{Name: "snap-building"})
+	if err != nil {
+		t.Fatalf("create the build's machine: %v", err)
+	}
+	if err := agent.Start(ctx, building, engine.StartOptions{}); err != nil {
+		t.Fatalf("start the build's machine: %v", err)
+	}
+	t.Cleanup(func() {
+		left, _ := agent.List(context.Background())
+		for _, inst := range left {
+			_ = agent.Remove(context.Background(), inst, true)
+		}
+	})
+
+	if err := r.RemovePool(ctx, nil, nil, pool); err != nil {
+		t.Fatalf("RemovePool() error = %v", err)
+	}
+	left, err := agent.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, inst := range left {
+		names = append(names, fmt.Sprintf("%s (%s)", inst.Name, agent.State(ctx, inst)))
+	}
+	if len(names) > 0 {
+		t.Fatalf("after RemovePool the pool's scope %s still holds %v, want nothing", scope, names)
+	}
+}

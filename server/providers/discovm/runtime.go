@@ -46,11 +46,11 @@ type poolHost interface {
 // machines belong to a service (boxd's API), not to the process that booted
 // them, so the pool agent runs in a Linux machine of its own there, booted
 // from the driver's base (ADR 26-10-23-551 §1).
-func newPoolHost(e *engine.Engine, s settings) poolHost {
+func newPoolHost(e *engine.Engine, s settings, scopeEngine func(scope string) (*engine.Engine, error)) poolHost {
 	if d, ok := e.Driver.(*local.Driver); ok {
 		return &hostAgent{root: d.Dir()}
 	}
-	return newPoolMachine(e, s)
+	return newPoolMachine(e, s, scopeEngine)
 }
 
 // isLocal reports whether driver's provider is this host's disk: a disco-vm
@@ -75,7 +75,8 @@ var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 // newRuntime opens the engine for the provider instance providerID, every
 // connection its driver makes to its service through dial.
 func newRuntime(s settings, providerID string, dial machine.DialFunc) (*Runtime, error) {
-	driver, scope, err := openDriver(s, providerID, providerKeys(s), dial)
+	keys := providerKeys(s)
+	driver, scope, err := openDriver(s, providerID, keys, dial)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +84,20 @@ func newRuntime(s settings, providerID string, dial machine.DialFunc) (*Runtime,
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{engine: e, host: newPoolHost(e, s)}, nil
+	return &Runtime{engine: e, host: newPoolHost(e, s, engineIn(s, keys, dial))}, nil
+}
+
+// engineIn opens an engine on the configured driver in a given disco-vm
+// scope, made as newRuntime makes its own (newDriver), with keys through
+// dial: how a remote pool's host reaches the pool's own scope.
+func engineIn(s settings, keys machine.KeySource, dial machine.DialFunc) func(scope string) (*engine.Engine, error) {
+	return func(scope string) (*engine.Engine, error) {
+		driver, err := newDriver(s, scope, keys, dial)
+		if err != nil {
+			return nil, err
+		}
+		return engine.Open(driver, scope)
+	}
 }
 
 // providerKeys is the key a driver reached at its URLs calls its service
