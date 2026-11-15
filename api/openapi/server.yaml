@@ -7294,6 +7294,9 @@ components:
                 conditions: {}
                 degraded:
                     type: boolean
+                firstReport:
+                    description: "This is the first report the agent process has sent since it started; its later reports leave it out. A server upgrading the pool counts the restarted agent's first report as the new agent's, even when it arrives before the restart has finished. An agent from before this field sends none, which reads as false."
+                    type: boolean
                 imageKind:
                     description: The kind of image the pool runs, oci or vm/<driver>, declared on every report beside the platform. An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
                     pattern: ^(oci|vm/[a-z0-9]+)$

@@ -322,10 +322,13 @@ never against anything the machine reports (551 §1):
   keeps what it last provisioned and is tried again, as a Docker pool is
   (953 §5), and says so with `sandbox.ReportBoxKept`, since the reconcile
   still settles cleanly (26-11-14-624 §1); a new or restarted machine's failure fails the reconcile.
-  A created or started machine, and an agent the apply or a moved placement
-  replaced in a machine the pass did not create, are reported with
-  `sandbox.ReportAgentStarted` (26-11-15-294 §1); the start before the
-  machine answers, as the pass that settles is a later one.
+  A created or started machine is reported with `sandbox.ReportAgentStarted`
+  as a box start before the machine answers, as the pass that settles is a
+  later one (26-11-15-294 §1); a machine the pass did not create, as an
+  in-place start once `gate` has closed placement and before the apply,
+  which with a moved placement's `RestartPoolUnits` may restart its agent
+  (26-11-15-602 §1), unless the pass booted it and places it again with
+  nothing moved (a repair), which keeps its box start (`replacesAgent`).
 
 The record is written as each step lands, so a reconcile that fails part way
 still records a key it placed. The bundle's `pool-agent` feature lays a

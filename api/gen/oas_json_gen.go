@@ -62330,6 +62330,12 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Degraded)
 	}
 	{
+		if s.FirstReport.Set {
+			e.FieldStart("firstReport")
+			s.FirstReport.Encode(e)
+		}
+	}
+	{
 		if s.ImageKind.Set {
 			e.FieldStart("imageKind")
 			s.ImageKind.Encode(e)
@@ -62369,20 +62375,21 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdatePoolStatusBody = [13]string{
+var jsonFieldsNameOfUpdatePoolStatusBody = [14]string{
 	0:  "$schema",
 	1:  "availableCpuVcpus",
 	2:  "availableMemoryBytes",
 	3:  "availableStorageBytes",
 	4:  "conditions",
 	5:  "degraded",
-	6:  "imageKind",
-	7:  "platform",
-	8:  "ready",
-	9:  "schedulable",
-	10: "sentinelBodyPlaces",
-	11: "sentinelGenerations",
-	12: "sentinelGrants",
+	6:  "firstReport",
+	7:  "imageKind",
+	8:  "platform",
+	9:  "ready",
+	10: "schedulable",
+	11: "sentinelBodyPlaces",
+	12: "sentinelGenerations",
+	13: "sentinelGrants",
 }
 
 // Decode decodes UpdatePoolStatusBody from json.
@@ -62463,6 +62470,16 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
+		case "firstReport":
+			if err := func() error {
+				s.FirstReport.Reset()
+				if err := s.FirstReport.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"firstReport\"")
+			}
 		case "imageKind":
 			if err := func() error {
 				s.ImageKind.Reset()
@@ -62484,7 +62501,7 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platform\"")
 			}
 		case "ready":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -62496,7 +62513,7 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -62548,7 +62565,7 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00101110,
-		0b00000011,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -320,7 +320,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		// Told now, not once the machine answers: a booting machine does
 		// not, this pass then fails as not reachable, and the pass that
 		// settles starts nothing.
-		sandbox.ReportAgentStarted(ctx, startedAt)
+		sandbox.ReportAgentStarted(ctx, startedAt, sandbox.AgentStartBox)
 	}
 	guest, err := h.engine.Guest(ctx, inst)
 	if err != nil {
@@ -362,6 +362,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err := gate(ctx); err != nil {
 		return err
 	}
+	if replacesAgent(created, started, provisioned, !current) {
+		// Recorded before the apply, and a moved placement's restart after
+		// it: the new agent's first report lands before they return (ADR
+		// 26-11-15-602 §1).
+		sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartInPlace)
+	}
 	box, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
 	if err != nil {
 		if provisioned && !force && !made && !started {
@@ -377,22 +383,10 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
 	}
-	moved := !record.Box.SameBundles(placement.Box)
 	if provisioned && record.Box.Placement != box.Placement {
 		if err := poolruntime.RestartPoolUnits(ctx, guest, false); err != nil {
 			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
-		moved = true
-	}
-	// The apply, and a moved placement's restart, replace whatever agent ran
-	// in a machine this pass did not create, so a report counts only from
-	// once they have returned: one running before this pass, adopted or
-	// recorded unprovisioned included, and one this pass booted from a disk
-	// whose placement moved or that no record says was provisioned. Only a
-	// booted machine placed again with nothing moved (a repair) keeps the
-	// agent it booted, and its start above.
-	if !created && (!started || !provisioned || moved) {
-		sandbox.ReportAgentStarted(ctx, time.Now())
 	}
 	record.Box = box
 	pool.OutboundAppliedRevision = pool.Outbound.Revision()
@@ -876,4 +870,16 @@ func (p *guestProcess) Close() error {
 		<-p.done
 	})
 	return nil
+}
+
+// replacesAgent is whether a pass's apply may restart an agent already
+// running in the pool's machine, so the agent's start is recorded in place
+// before it: one running before this pass (started false), adopted or
+// recorded unprovisioned included, and one this pass booted from a disk no
+// record says was provisioned or whose bundles or placement moved. A machine
+// this pass created ran no agent before its box start, and one it booted and
+// places again with nothing moved (a repair) restarts nothing: it keeps the
+// box start its boot recorded, and its booted agent's report counts.
+func replacesAgent(created, started, provisioned, moved bool) bool {
+	return !created && (!started || !provisioned || moved)
 }

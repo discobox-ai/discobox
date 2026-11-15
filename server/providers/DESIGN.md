@@ -701,14 +701,17 @@ effort to reconcile it back to health instead of abandoning it.
   agent, which its health waits on after an upgrade (ADR 26-11-14-624 §1).
   It is a report, not an error, because an error is a pool failure: it ends
   every start waiting on the pool and repairs a pool with sandboxes.
-- Every place a provider makes or starts a pool's box, or replaces the agent
-  in a running one, reports when with `sandbox.ReportAgentStarted`, as soon
-  as it does, so the upgrade watch counts the new agent's first report
-  (ADR 26-11-15-294 §1): a Docker pool's new container just before it
-  starts, and its moved bundles or placement once applied; a VM pool's
-  machine just before it is created or started, and, on any machine this
-  pass did not create, its agent once the apply or `RestartPoolUnits` has
-  returned.
+- Every place a provider makes or starts a pool's box, or may restart the
+  agent in a running one, reports when with `sandbox.ReportAgentStarted`, as
+  soon as it does, so the upgrade watch counts the new agent's first report:
+  a box start (`AgentStartBox`) just before a Docker pool's new container
+  starts, or a VM pool's machine is created or started (ADR 26-11-15-294
+  §1); an in-place start (`AgentStartInPlace`) once placement is closed and
+  before the apply that may restart the running agent, on a Docker pool's
+  running container and on any machine the pass did not create
+  (ADR 26-11-15-602 §1). One in-place start covers the apply's restart and
+  `RestartPoolUnits` after it: the new agent's first report lands before
+  either returns.
 
 ## Pool Agent HTTP Routing
 

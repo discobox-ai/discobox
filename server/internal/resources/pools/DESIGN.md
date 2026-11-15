@@ -208,22 +208,32 @@ fixes the pools to wait on: every present pool already registered, each
 pending until a pass reads it. Startup then marks every pool for a reconcile.
 A watched pool is upgraded once `ReconciledAt` is at or after its
 `HealthCheckStartedAt`, with no `ErrorMessage` and its generation observed;
-its provider did not keep the previous box in that pass; and a ready
-`StatusReportedAt` follows the latest start of its agent this run recorded,
-or, with none, that `ReconciledAt` — a report from before it may be the old
-agent's (ADR 26-11-15-294 §2).
+its provider did not keep the previous box in that pass; and its agent has
+reported ready since it is the current one (`agentReported`), by the latest
+start of its agent this run recorded:
 
-A provider that makes or starts the pool's box, or restarts its agent in it,
-says when with `sandbox.ReportAgentStarted`; the reconciler hands that to the
-watch at once, not at the settle, since the pass that starts an agent (a VM
-booting, which fails not reachable) is often not the one that settles, and
-the new agent's first report comes before that settle. A later start
-replaces an earlier one.
+| Latest start | A ready report counts when |
+| --- | --- |
+| box (`AgentStartBox`: made, or started from stopped) | `StatusReportedAt` follows it (ADR 26-11-15-294 §2) |
+| in place (`AgentStartInPlace`: before an apply that may restart a running agent) | a ready **first** report was received after it, or `StatusReportedAt` follows `ReconciledAt` (ADR 26-11-15-602 §3) |
+| none | `StatusReportedAt` follows `ReconciledAt` |
+
+The old agent may report after an in-place start until the restart stops it,
+so only the new agent's first report counts from that start: the agent marks
+it (`firstReport`), and `Service.UpdatePoolStatus` hands a ready one to the
+watch at the time it was stored with.
+
+A provider that makes or starts the pool's box, or is about to restart its
+agent in it, says when and which with `sandbox.ReportAgentStarted`; the
+reconciler hands that to the watch at once, not at the settle, since the pass
+that starts an agent (a VM booting, which fails not reachable) is often not
+the one that settles, and the new agent's first report comes before that
+settle. A later start replaces an earlier one.
 
 A provider keeps a running pool's box on purpose when the release does not
 resolve or apply (ADR 26-10-24-953 §5) and the pass still settles cleanly, so
 it says so with `sandbox.ReportBoxKept`; the reconciler hands that to the
-watch with the settle's time, and a later settle supersedes it. Both records
+watch with the settle's time, and a later settle supersedes it. These records
 are in memory only, as the run they describe is.
 
 A pool deleted, or on a removed or disabled provider instance

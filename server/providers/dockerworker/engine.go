@@ -724,6 +724,10 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
+	// Recorded before the apply, which with a moved placement's restart may
+	// restart the running agent: the new agent's first report lands before
+	// either returns (ADR 26-11-15-602 §1).
+	sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartInPlace)
 	guest := provisioner.ContainerGuest{Client: cli, Container: containerID, Env: pool.RuntimeOutbound.Environment()}
 	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
 	if err != nil {
@@ -744,10 +748,6 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 			return recorded, nil
 		}
 	}
-	// The apply restarted the agent the moved bundles carry, or the moved
-	// placement restarted it above: no report from the agent before can come
-	// after this (ADR 26-11-15-294 §1).
-	sandbox.ReportAgentStarted(ctx, time.Now())
 	if !pool.OutboundRestartRequired {
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	}
@@ -932,7 +932,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// A new container runs no agent until it is provisioned, so the pool's
 	// agent counts as started from just before it starts (ADR 26-11-15-294
 	// §1), told now: its first report can land before this pass settles.
-	sandbox.ReportAgentStarted(ctx, time.Now())
+	sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartBox)
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
