@@ -38,7 +38,11 @@
   An API error the sandbox agent answered with is that text too: moving a
   step off an exec onto an API call (the files API, ADR 26-10-22-499) moves
   the box's words out of a stderr that was escaped into an error message that
-  is not, unless the call's error is (`sandboxFileResponse`).
+  is not, unless the call's error is (`sandboxFileResponse`). A discobox's
+  recorded failure is that text as well: `runtime.errorMessage` carries the
+  provisioning's stderr, and `agentStatus.provision.error` is the agent's own
+  words, so `sandboxFailureReason` escapes them for every caller that prints
+  it (#1198).
 - **A line built from several box values is escaped as it is written.**
   Escaping each field of a struct misses the error later built from another
   one: `discobox proxy` escaped a port's service name and ID, while a failed
@@ -387,3 +391,21 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 
 - One-off pool console commands require an explicit exit status. Interactive
   attach EOF means detach, so its default success cannot prove command completion.
+
+## Observing a terminal
+
+- **A terminal observe does not wait out a start; the command does.** The
+  screen, wait and events routes are observes (ADR 26-10-12-711 §1): refused
+  while the discobox is not running, with whatever the refusing hop says —
+  the pool's 404 "sandbox not found" for a box it has not made, the agent's
+  409 for a primary terminal it has not started yet, which lasts past the box
+  first reading `running`. A command that waits on one reads the box when
+  refused and waits only through `starting`/`repairing` (`awaitTerminalBox`)
+  and that 409 (`primaryTerminalNotUp`), within its own limit; it never
+  starts a stopped box (#1198). The agent's 409 also means a terminal that
+  has ended, and neither the message nor the terminal listing tells them
+  apart: a restarted box lists its last run's primary, ended, until the new
+  one is up. Retry it bounded instead of guessing it final. The pool's 404 is
+  plain text, which the transport returns as an error (`plainStatusError`),
+  not a response: tests serve it that way, and serve the 409 after
+  `running` rather than accepting the call the moment the box reads running.

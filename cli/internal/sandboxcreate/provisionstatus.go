@@ -133,6 +133,18 @@ func RecordedProvision(runtime apimodel.SandboxRuntime) (provisionspec.Status, b
 	return status, true
 }
 
+// ProvisionFailure is why a discobox's provisioning failed, from its agent's
+// report, or "" when it has not. It is the server's rule for a running
+// discobox reading `error`: provisioning not ready, with an error. The text is
+// the box's, unescaped; every caller escapes it for where it prints.
+func ProvisionFailure(runtime apimodel.SandboxRuntime) string {
+	status, ok := RecordedProvision(runtime)
+	if !ok || status.Ready || strings.TrimSpace(status.Error) == "" {
+		return ""
+	}
+	return "discobox preparation failed: " + strings.TrimSpace(status.Error)
+}
+
 // agentPreparation describes the readiness gate from the agent's own report.
 // Pending precedes the feature plan, while the agent loads its pinned bundles.
 // Async features do not delay a harness, and must not appear to hold attach up.
@@ -144,8 +156,8 @@ func agentPreparation(runtime apimodel.SandboxRuntime) Step {
 	if status.Ready {
 		return "connecting to the terminal"
 	}
-	if status.Error != "" {
-		return Step("discobox preparation failed: " + OneLine(status.Error))
+	if failed := ProvisionFailure(runtime); failed != "" {
+		return Step(OneLine(failed))
 	}
 	if status.State == provisionspec.StatePending && len(status.Features) == 0 {
 		return "loading provisioning bundles"
