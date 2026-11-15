@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 // PoolResourceType is the reconcile-engine resource type for pools. A pool is
@@ -79,10 +80,14 @@ type PoolReconciler struct {
 	store   *store.Store
 	manager *sandbox.ProviderManager
 	pools   *ControlPlane
+	// sandboxes is handed the pool as each settle found it and left it, so a
+	// pool this reconcile makes active while it reports ready sends its
+	// sandboxes' due wakes (ADR 26-11-15-829 §2).
+	sandboxes SandboxDelivery
 }
 
-func NewPoolReconciler(appStore *store.Store, manager *sandbox.ProviderManager, controlPlane *ControlPlane) *PoolReconciler {
-	return &PoolReconciler{store: appStore, manager: manager, pools: controlPlane}
+func NewPoolReconciler(appStore *store.Store, manager *sandbox.ProviderManager, controlPlane *ControlPlane, sandboxes SandboxDelivery) *PoolReconciler {
+	return &PoolReconciler{store: appStore, manager: manager, pools: controlPlane, sandboxes: sandboxes}
 }
 
 // Reconcile loads the latest project + pool + provider state and converges
@@ -323,6 +328,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	found := *current
 	// Ready/Schedulable/Degraded and RegisteredAt are agent-reported fields,
 	// written by the agent's UpdatePoolStatus over its own HTTP calls, which
 	// can land concurrently with EnsurePool/RepairPool waiting on container
@@ -376,7 +382,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		r.pools.Upgrades().settled(current.ID, settledAt, kept)
 		keptMu.Unlock()
 	}
-	if err := r.update(ctx, current, generation); err != nil {
+	if err := r.settle(ctx, &found, current, generation); err != nil {
 		return reconcile.Result{}, err
 	}
 	return armRegistrationTimeout(current), nil
@@ -556,6 +562,26 @@ func convergedProvider(ctx context.Context, appStore *store.Store, pool *model.P
 		return nil, nil
 	}
 	return provider, nil
+}
+
+// settle writes a successful reconcile's pool and hands the sandbox service
+// the pool as this reconcile found it and as it leaves it, in one
+// transaction. A pool back from `offline` turns `active` here, after the
+// report that earned it, so it is here that its due wakes are sent: no report
+// sees that turn (ADR 26-11-15-829 §2).
+func (r *PoolReconciler) settle(ctx context.Context, found, pool *model.Pool, generation int64) error {
+	if r.sandboxes == nil {
+		return r.update(ctx, pool, generation)
+	}
+	return r.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if err := txStore.UpdatePoolWithGeneration(ctx, pool, generation); err != nil {
+			if errors.Is(err, store.ErrGenerationConflict) {
+				return reconcile.Superseded("pool generation changed")
+			}
+			return err
+		}
+		return r.sandboxes.MarkPoolDueWakesTx(ctx, txStore, txDB, found, pool)
+	})
 }
 
 func (r *PoolReconciler) update(ctx context.Context, pool *model.Pool, generation int64) error {

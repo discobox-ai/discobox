@@ -308,7 +308,15 @@ before any of them sends none, recorded as false. A
 report that changes one marks every present sandbox on the pool for sentinel
 delivery, as drift, in the transaction that records it
 (`SandboxDelivery.MarkPoolSentinelsTx`): nothing else changed, so nothing else
-would send them in the shape the agent now takes.
+would send them in the shape the agent now takes. A report that turns the pool
+active and ready, judged against the pool as the report found it, also marks
+in the same transaction the power reconcile of each present sandbox on it
+whose scheduled wake is due (`SandboxDelivery.MarkPoolDueWakesTx`, ADR
+26-11-15-829 §2): a wake is not sent to a pool that is not, so that report is
+what sends the wakes that fell due while the server or the pool was down. A
+pool back from `offline` turns `active` in its reconcile, after that report,
+so the reconcile's settle hands over the pool it found and the pool it
+writes in the same way (`PoolReconciler.settle`).
 
 The kind is the pool's alone: a harness names none (ADR 26-11-01-122), so a
 sandbox is whatever kind of box its pool runs, and placement checks no kind.

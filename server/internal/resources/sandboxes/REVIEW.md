@@ -41,7 +41,26 @@
   running. The wake is spent on a start whatever the row says, because a start
   on a running sandbox is a no-op and one skipped on a stopping sandbox loses
   the wake (ADR 26-10-16-337 §6).
-- **A wake is written and claimed only on the `WakeEpoch` the reconcile read**,
+- **A wake is spent only after its pool answered the start, never before the
+  send.** Clear `WakeAt` with `SpendSandboxWake` once the pool accepted or
+  refused the start; `ErrPoolNotReachable`, a canceled context, every
+  failure before the send (`errInstructionNotSent`) and a fence refusal
+  (`ErrStartNotAuthorized`) keep it (`startNotTaken`). A fence refusal looks
+  like the pool's answer, but the pool agent folds a failed authorization
+  callback into it, and a wake really superseded was cleared when its epoch
+  moved. A claim before the send loses the wake to
+  any failure between the two, a crash included, and a pool is unreachable for
+  a while after every server restart, which is when wakes that fell due while
+  the server was down are sent (#1192, ADR 26-11-15-829 §1).
+- **A confirmed power-down writes `WakeAt` whatever it carried, none
+  included.** The confirmation reads the sandbox's wake files at that moment;
+  a row kept from before it can name a wake a boot already handed over, and
+  would start the sandbox again for it (ADR 26-10-16-337 §§5, 7).
+- **The wake's start is always fenced** (`ref.StartEpoch` set to the
+  `WakeEpoch` read with the wake). It is sent again until the pool takes it,
+  and only the fence stops a lost attempt from running after a person's stop
+  (ADR 26-11-15-829 §3).
+- **A wake is written and spent only on the `WakeEpoch` the reconcile read**,
   and every outside power instruction moves it, wake or no wake. A write that
   skips the guard lets a person's stop be undone by the wake it raced. Suspend
   is the one instruction that moves it after it is sent, and only when the
@@ -68,6 +87,15 @@
   §3) marks every present sandbox's sentinel delivery, as drift, in the
   transaction that records the report (`MarkPoolSentinelsTx`); the next
   field of this kind does the same.
+- **The one intent mark a pool observation earns is its turn to active and
+  ready, for its due wakes** (`MarkPoolDueWakesTx`, ADR 26-11-15-829 §2): it
+  must cut a failing wake's backoff, which drift cannot. It is safe only
+  because it fires on the transition, computed from the pool as its writer
+  found it; marked on every ready report it would be the retry at every poll
+  the drift rule above exists to prevent. Every write that can complete that
+  turn hands it over, the pool reconcile's settle as well as the status
+  report: a pool back from `offline` turns `active` in the reconcile, after
+  the report, and a check on reports alone never sees it.
 
 ## The spec fingerprint
 

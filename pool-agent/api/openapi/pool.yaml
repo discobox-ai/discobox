@@ -1700,7 +1700,7 @@ components:
                     type: string
                     maxLength: 128
                 startEpoch:
-                    description: Admission epoch of an explicit start. The pool validates it with the control plane under its power lock before executing; omitted for scheduled wakes and actions.
+                    description: Admission epoch of an explicit start, or the wake epoch of a scheduled wake. The pool validates it with the control plane under its power lock before executing; omitted for actions.
                     type: integer
                     format: int64
                 force:

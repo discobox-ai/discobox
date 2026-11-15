@@ -41,7 +41,7 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 	}
 	return &upgradeFixture{
 		t: t, store: appStore, db: db, watch: watch,
-		reconciler: NewPoolReconciler(appStore, manager, controlPlane),
+		reconciler: NewPoolReconciler(appStore, manager, controlPlane, nil),
 	}
 }
 

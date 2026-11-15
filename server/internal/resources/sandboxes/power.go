@@ -2,6 +2,8 @@ package sandboxes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -39,8 +41,13 @@ func (i sandboxInstruction) String() string {
 	}
 }
 
+// errInstructionNotSent wraps a failure before the instruction reached the
+// runtime: nothing was sent, so nothing can have run. The scheduled wake keeps
+// itself on it (ADR 26-11-15-829 §1).
+var errInstructionNotSent = errors.New("instruction not sent")
+
 // instructSandbox forwards one power operation to the runtime hosting the
-// sandbox.
+// sandbox. A failure before the send wraps errInstructionNotSent.
 //
 // A sandbox with no resolvable provider is a no-op rather than an error: the
 // instruction has nowhere to go, and refusing it would turn a
@@ -51,7 +58,7 @@ func instructSandbox(ctx context.Context, st *store.Store, provider Provider, sb
 	}
 	secretState, err := st.OpenSandboxSecretState(ctx, sb)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errInstructionNotSent, err)
 	}
 	ref := sandboxRefFromSandbox(sb)
 	ref.StartEpoch = startEpoch

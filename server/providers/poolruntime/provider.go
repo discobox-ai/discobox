@@ -897,10 +897,12 @@ func (p *Provider) EnsureRunning(ctx context.Context, ref sandbox.SandboxRef, st
 // failed with only "EOF" to say why.
 //
 // It is not sent again here, as a create is (createOnPool). Every caller of an
-// instruction would wait then, the power reconciler's wake among them, whose
-// start must not land after a stop a person sent while it waited
-// (ADR 26-10-16-337 §6), and whose reconcile slot must not wait on a host; and
-// a restart is two steps, which a resend could run twice.
+// instruction would wait then, and each has its own policy for a pool that is
+// not there: an explicit start waits in its request (ADR 26-11-04-167), and
+// the power reconciler's wake keeps the wake and is sent again under the
+// engine's backoff, fenced on its epoch so it cannot land after a stop
+// (ADR 26-11-15-829), with no reconcile slot waiting on a host. A restart is
+// two steps, which a resend could run twice.
 func (p *Provider) instruct(ctx context.Context, ref sandbox.SandboxRef, state []byte, operation string, call func(*poolAgentClient) ([]byte, error)) ([]byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {

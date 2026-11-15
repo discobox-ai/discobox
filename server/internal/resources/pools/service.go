@@ -30,11 +30,18 @@ import (
 
 // SandboxDelivery converges a pool's discoboxes onto what changed about the
 // pool, in the transaction that changes it: its egress level (ADR
-// 26-10-01-032 §5), and whether its agent holds sentinels to grants, which
-// changes what each discobox's sentinels are sent as (ADR 26-11-03-329 §3).
+// 26-10-01-032 §5), whether its agent holds sentinels to grants, which
+// changes what each discobox's sentinels are sent as (ADR 26-11-03-329 §3),
+// and whether it can take the scheduled wakes that fell due while it could
+// not (ADR 26-11-15-829 §2).
 type SandboxDelivery interface {
 	MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
 	MarkPoolSentinelsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID string) error
+	// MarkPoolDueWakesTx marks the power reconcile of the pool's sandboxes
+	// whose scheduled wake is due, when the pool's report turns it from one
+	// that cannot take them (before) into one that can (after) (ADR
+	// 26-11-15-829 §2).
+	MarkPoolDueWakesTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, before, after *model.Pool) error
 }
 
 type Service struct {

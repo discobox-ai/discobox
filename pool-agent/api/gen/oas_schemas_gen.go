@@ -6512,8 +6512,8 @@ type PoolSandboxOperationRequest struct {
 	SuspendEpoch OptInt64 `json:"suspendEpoch"`
 	// Identity of the successful suspend completion, recorded once under the runtime power lock.
 	SuspendId OptString `json:"suspendId"`
-	// Admission epoch of an explicit start. The pool validates it with the control plane under its power
-	// lock before executing; omitted for scheduled wakes and actions.
+	// Admission epoch of an explicit start, or the wake epoch of a scheduled wake. The pool validates it
+	// with the control plane under its power lock before executing; omitted for actions.
 	StartEpoch OptInt64 `json:"startEpoch"`
 	Force      OptBool  `json:"force"`
 }

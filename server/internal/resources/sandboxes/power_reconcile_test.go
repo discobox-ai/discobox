@@ -3,6 +3,8 @@ package sandboxes
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 // powerProvider records power-downs and starts, and answers a power-down with
@@ -22,8 +25,18 @@ type powerProvider struct {
 	starts     int
 	suspends   int
 	suspendErr error
-	wake       sandbox.Wake
-	refuse     bool
+	// startErr is what Start answers with; a start that errs is not counted.
+	startErr error
+	// startEpochs records the epoch each start was fenced on, nil unfenced.
+	startEpochs []*int64
+	// blockStart holds a start until its context ends, as one in flight
+	// when the server stops is.
+	blockStart bool
+	// duringStart runs inside a start, as something landing while it is in
+	// flight would.
+	duringStart func()
+	wake        sandbox.Wake
+	refuse      bool
 	// during runs inside the power-down, as an outside instruction landing
 	// while it is in flight would.
 	during func()
@@ -45,7 +58,18 @@ func (p *powerProvider) Suspend(_ context.Context, _ sandbox.SandboxRef, state [
 	return state, p.suspendErr
 }
 
-func (p *powerProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+func (p *powerProvider) Start(ctx context.Context, ref sandbox.SandboxRef, _ []byte) ([]byte, error) {
+	p.startEpochs = append(p.startEpochs, ref.StartEpoch)
+	if p.duringStart != nil {
+		p.duringStart()
+	}
+	if p.blockStart {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	if p.startErr != nil {
+		return nil, p.startErr
+	}
 	p.starts++
 	return nil, nil
 }
@@ -85,6 +109,19 @@ func newPowerFixture(t *testing.T) *powerFixture {
 	f := &powerFixture{svc: svc, st: st, provider: provider, now: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC), sandboxID: sb.ID, id: SandboxDirtyID("project-1", sb.ID)}
 	f.reconciler = &sandboxPowerReconciler{store: st, providers: manager, now: func() time.Time { return f.now }}
 	return f
+}
+
+// poolReady records a ready report from the sandbox's pool at the fixture's
+// clock, which leaves it active and ready: a wake is sent only to such a
+// pool (ADR 26-11-15-829 §2).
+func (f *powerFixture) poolReady(t *testing.T) {
+	t.Helper()
+	if err := f.st.Transaction(context.Background(), func(_ *store.Store, tx *gorm.DB) error {
+		return tx.Model(&model.Pool{}).Where("id = ?", "pool-t").
+			Updates(map[string]any{"state": model.PoolStateActive, "ready": true, "status_reported_at": f.now}).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f *powerFixture) setRuntime(t *testing.T, state string) {
@@ -212,6 +249,7 @@ func TestTheWakeStartsAStoppedSandboxOnce(t *testing.T) {
 	}
 	f.setRuntime(t, model.SandboxRuntimeStateStopped)
 	f.now = f.now.Add(time.Hour)
+	f.poolReady(t)
 	for range 2 {
 		if result, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil || !result.RequeueAt.IsZero() {
 			t.Fatalf("reconcile at the wake = %+v, %v, want settled with no timer", result, err)
@@ -241,6 +279,7 @@ func TestTheWakeOfASandboxReportedRunningIsSpentOnOneStart(t *testing.T) {
 	// Started early by use, still running when the wake comes due.
 	f.report(t, map[string]any{"idle": false})
 	f.now = f.now.Add(time.Hour)
+	f.poolReady(t)
 	if result, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil || !result.RequeueAt.IsZero() {
 		t.Fatalf("reconcile = %+v, %v, want settled", result, err)
 	}
@@ -313,6 +352,7 @@ func TestASuspendedSandboxIsNotPoweredDownAndItsWakeStartsIt(t *testing.T) {
 		t.Fatalf("power-downs = %v, want the one that froze it", f.provider.powerDowns)
 	}
 	f.now = f.now.Add(time.Hour)
+	f.poolReady(t)
 	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
 		t.Fatal(err)
 	}
@@ -342,4 +382,211 @@ func TestARefusedSuspendKeepsTheWake(t *testing.T) {
 
 func (p *powerProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
+}
+
+// sleptWithDueWake has the fixture's sandbox stopped on its own request with a
+// wake that is now due, and its pool ready.
+func (f *powerFixture) sleptWithDueWake(t *testing.T) time.Time {
+	t.Helper()
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"idle": true})
+	wakeAt := f.now.Add(time.Hour)
+	f.provider.wake = sandbox.Wake{At: wakeAt}
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.setRuntime(t, model.SandboxRuntimeStateStopped)
+	f.now = wakeAt
+	f.poolReady(t)
+	return wakeAt
+}
+
+// A start the pool answered with a refusal of its own spends the wake, and
+// nothing sends it again: retrying a start the runtime refused is the loop
+// ADR 26-10-12-711 rejects (ADR 26-11-15-829 §1).
+func TestAWakeWhoseStartThePoolRefusedIsSpent(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	f.provider.startErr = errors.New("container failed to start")
+	for range 2 {
+		if result, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil || !result.RequeueAt.IsZero() {
+			t.Fatalf("reconcile at the wake = %+v, %v, want settled", result, err)
+		}
+	}
+	if len(f.provider.startEpochs) != 1 {
+		t.Fatalf("start attempts = %d, want the one the pool refused", len(f.provider.startEpochs))
+	}
+	if f.load(t).WakeAt != nil {
+		t.Fatal("a wake whose start the pool refused was kept")
+	}
+}
+
+// A due wake is not sent while its pool is not active and ready: it is kept
+// and looked at again on a requeue, which is no failure (§2).
+func TestAWakeIsNotSentToAPoolThatIsNotReady(t *testing.T) {
+	f := newPowerFixture(t)
+	wakeAt := f.sleptWithDueWake(t)
+	// The server restarted: the pool has not reported to it yet.
+	if err := f.st.Transaction(context.Background(), func(_ *store.Store, tx *gorm.DB) error {
+		return tx.Model(&model.Pool{}).Where("id = ?", "pool-t").Update("health_check_started_at", f.now.Add(time.Second)).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.reconciler.Reconcile(context.Background(), f.id)
+	if err != nil {
+		t.Fatalf("reconcile = %v, want a wait, not a failure", err)
+	}
+	if !result.RequeueAt.Equal(f.now.Add(wakePoolWait)) {
+		t.Fatalf("requeue at %v, want %v", result.RequeueAt, f.now.Add(wakePoolWait))
+	}
+	if len(f.provider.startEpochs) != 0 {
+		t.Fatalf("start attempts = %d to a pool that is not ready, want none", len(f.provider.startEpochs))
+	}
+	if got := f.load(t).WakeAt; got == nil || !got.Equal(wakeAt) {
+		t.Fatalf("wake = %v, want %v kept", got, wakeAt)
+	}
+}
+
+// A wake whose start is in flight when the server stops is kept: the pool did
+// not take it, so the next server sends it (§1).
+func TestAWakeInFlightWhenTheServerStopsIsKept(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	f.provider.blockStart = true
+	ctx, stop := context.WithCancel(context.Background())
+	f.provider.duringStart = stop
+	if _, err := f.reconciler.Reconcile(ctx, f.id); err == nil {
+		t.Fatal("a wake cut off by the server stopping settled; want it kept and retried")
+	}
+	if f.load(t).WakeAt == nil {
+		t.Fatal("the wake was spent on a start the server stopped before the pool took")
+	}
+}
+
+// The wake's start is fenced at the pool on the epoch read with it, and is
+// sent again on that epoch until the pool takes it. A person's stop after a
+// lost first attempt moves the epoch, so that attempt, replayed, is refused at
+// the pool, and the reconcile sends nothing more (§3).
+func TestTheWakeStartIsFencedOnItsEpoch(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	epoch := f.load(t).WakeEpoch
+	f.provider.startErr = fmt.Errorf("pool pool-t: %w", sandbox.ErrPoolNotReachable)
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err == nil {
+		t.Fatal("a wake the pool did not take settled; want it retried")
+	}
+	if len(f.provider.startEpochs) != 1 || f.provider.startEpochs[0] == nil || *f.provider.startEpochs[0] != epoch {
+		t.Fatalf("start fenced on %v, want epoch %d", f.provider.startEpochs, epoch)
+	}
+	if f.load(t).WakeAt == nil {
+		t.Fatal("the wake was spent on a start the pool never took")
+	}
+	if _, err := f.svc.cancelSandboxWake(context.Background(), "project-1", f.sandboxID); err != nil {
+		t.Fatal(err)
+	}
+	if moved := f.load(t).WakeEpoch; moved == epoch {
+		t.Fatal("a person's stop did not move the epoch the lost attempt was fenced on")
+	}
+	f.provider.startErr = nil
+	if result, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil || !result.RequeueAt.IsZero() {
+		t.Fatalf("reconcile after the stop = %+v, %v, want settled", result, err)
+	}
+	if len(f.provider.startEpochs) != 1 {
+		t.Fatalf("start attempts = %d after a person's stop overrode the wake, want none more", len(f.provider.startEpochs))
+	}
+}
+
+// Spending a wake clears only the wake the start was sent for: a later one,
+// written by a power-down that landed while the start was in flight, stands.
+func TestSpendingAWakeKeepsALaterOne(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	later := f.now.Add(2 * time.Hour).UTC()
+	f.provider.duringStart = func() {
+		if _, err := f.st.SetSandboxWakeIfEpoch(context.Background(), "project-1", f.sandboxID, f.load(t).WakeEpoch, &later); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.load(t).WakeAt; got == nil || !got.Equal(later) {
+		t.Fatalf("wake = %v, want the later %v kept", got, later)
+	}
+}
+
+// A fence refusal that finds the wake still recorded is the pool's
+// authorization callback failing — a server busy or just restarted — not the
+// wake being superseded, which would have cleared it: the wake is kept and
+// sent again (§1).
+func TestAWakeRefusedByAFailingFenceIsKept(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	f.provider.startErr = fmt.Errorf("%w: authorize start: 503", sandbox.ErrStartNotAuthorized)
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err == nil {
+		t.Fatal("a wake the fence could not authorize settled; want it kept and retried")
+	}
+	if f.load(t).WakeAt == nil {
+		t.Fatal("the wake was spent on a start the pool never ran")
+	}
+	f.provider.startErr = nil
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	if f.provider.starts != 1 || f.load(t).WakeAt != nil {
+		t.Fatalf("starts = %d, wake = %v; want one start and the wake spent", f.provider.starts, f.load(t).WakeAt)
+	}
+}
+
+// A wake its pool keeps not taking does not hold the sandbox up: a sandbox a
+// use started that reports itself idle is still powered down, and the wake is
+// kept for its pool.
+func TestAKeptWakeDoesNotHoldUpAPowerDown(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	// Started by use, and idle again; the pool's agent cannot take a fenced
+	// start yet.
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"idle": true})
+	f.provider.startErr = fmt.Errorf("%w: waiting for pool pool-t to upgrade its agent for explicit starts", sandbox.ErrPoolNotReachable)
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err == nil {
+		t.Fatal("a wake the pool did not take settled; want it kept and retried")
+	}
+	if len(f.provider.powerDowns) != 2 {
+		t.Fatalf("power-downs = %v, want the idle sandbox powered down again", f.provider.powerDowns)
+	}
+	if f.load(t).WakeAt == nil {
+		t.Fatal("the wake was dropped")
+	}
+}
+
+// A sandbox a use started while its wake was kept for its pool boots and is
+// handed that wake, which moves it aside; its next power-down's confirmation
+// then carries no wake, and that clears the row, so the wake its boot already
+// delivered is not sent again once the pool takes starts (ADR 26-10-16-337
+// §§5, 7).
+func TestAWakeItsBootDeliveredIsNotSentAgain(t *testing.T) {
+	f := newPowerFixture(t)
+	f.sleptWithDueWake(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"idle": true})
+	f.provider.wake = sandbox.Wake{}
+	f.provider.startErr = fmt.Errorf("%w: waiting for pool pool-t to upgrade its agent for explicit starts", sandbox.ErrPoolNotReachable)
+	if result, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil || !result.RequeueAt.IsZero() {
+		t.Fatalf("reconcile = %+v, %v, want settled once the confirmation cleared the wake", result, err)
+	}
+	if len(f.provider.powerDowns) != 2 {
+		t.Fatalf("power-downs = %v, want the idle sandbox powered down", f.provider.powerDowns)
+	}
+	if got := f.load(t).WakeAt; got != nil {
+		t.Fatalf("wake = %v after a confirmation that carried none, want it cleared", got)
+	}
+	f.provider.startErr = nil
+	f.setRuntime(t, model.SandboxRuntimeStateStopped)
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	if f.provider.starts != 0 {
+		t.Fatalf("starts = %d for a wake already delivered, want none", f.provider.starts)
+	}
 }

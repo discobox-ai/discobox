@@ -95,9 +95,15 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	// generations, or no longer does, is sent its sandboxes' sentinels again in
 	// the shape it takes, in the transaction that records it: nothing else
 	// about them has changed, so nothing else would send them (ADR
-	// 26-11-03-329 §3).
+	// 26-11-03-329 §3). A report that turns the pool active and ready has
+	// its sandboxes' due wakes sent, in the same transaction (ADR
+	// 26-11-15-829 §2), which is why the pool is read before it is written.
 	var pool *model.Pool
 	err = s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		before, err := txStore.GetPoolByID(ctx, poolID)
+		if err != nil {
+			return err
+		}
 		reported, sentinelsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, store.AgentSentinels{
 			Grants:      input.SentinelGrants.Or(false),
 			Generations: input.SentinelGenerations.Or(false),
@@ -107,10 +113,15 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 			return err
 		}
 		pool = reported
-		if !sentinelsChanged || s.sandboxes == nil {
+		if s.sandboxes == nil {
 			return nil
 		}
-		return s.sandboxes.MarkPoolSentinelsTx(ctx, txStore, txDB, pool.ProjectID, pool.ID)
+		if sentinelsChanged {
+			if err := s.sandboxes.MarkPoolSentinelsTx(ctx, txStore, txDB, pool.ProjectID, pool.ID); err != nil {
+				return err
+			}
+		}
+		return s.sandboxes.MarkPoolDueWakesTx(ctx, txStore, txDB, before, pool)
 	})
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")

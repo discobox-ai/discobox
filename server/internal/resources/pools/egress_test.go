@@ -2,6 +2,7 @@ package pools
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -13,10 +14,15 @@ import (
 
 // recordedDelivery stands in for the sandbox service, recording which pools an
 // egress change was converged for.
-type recordedDelivery struct{ marked, sentinels []string }
+type recordedDelivery struct{ marked, sentinels, wakes []string }
 
 func (r *recordedDelivery) MarkPoolSentinelsTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID string) error {
 	r.sentinels = append(r.sentinels, projectID+"/"+poolID)
+	return nil
+}
+
+func (r *recordedDelivery) MarkPoolDueWakesTx(_ context.Context, _ *store.Store, _ *gorm.DB, before, after *model.Pool) error {
+	r.wakes = append(r.wakes, fmt.Sprintf("%s/%s %s,ready=%t -> %s,ready=%t", after.ProjectID, after.ID, before.State, before.Ready, after.State, after.Ready))
 	return nil
 }
 

@@ -917,3 +917,22 @@ func TestStartAuthorizationUsesCurrentEpochAndPoolOwnership(t *testing.T) {
 		t.Fatal("user authorized as a pool")
 	}
 }
+
+// Every report hands the sandbox service the pool as the report found it and
+// as it left it, in the transaction that records it: the turn from one to the
+// other is what sends the wakes that fell due while the server or the pool
+// was down (ADR 26-11-15-829 §2), and the sandbox service judges it.
+func TestAPoolReportHandsOnItsReadinessForDueWakes(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	for range 2 {
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{Ready: true, Schedulable: true}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	want := []string{"project-1/pool-a pending,ready=false -> pending,ready=true", "project-1/pool-a pending,ready=true -> pending,ready=true"}
+	if strings.Join(recorded.wakes, ",") != strings.Join(want, ",") {
+		t.Fatalf("handed %v, want %v", recorded.wakes, want)
+	}
+}
