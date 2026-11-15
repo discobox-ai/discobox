@@ -44,8 +44,86 @@ func runSnapshot(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	switch entered, err := inInitMountNamespace(ctx, systemdIsInit(), procSelfMountNamespace, procInitMountNamespace); {
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "discobox-sandbox-agent snapshot:", err)
+		return 1
+	case entered != nil:
+		return runEntered(entered)
+	}
 	if err := takeSnapshot(ctx, os.Stdin); err != nil {
 		fmt.Fprintln(os.Stderr, "discobox-sandbox-agent snapshot:", err)
+		return 1
+	}
+	return 0
+}
+
+// The mount namespaces the snapshot command compares: its own, and that of
+// the box's init.
+const (
+	procSelfMountNamespace = "/proc/self/ns/mnt"
+	procInitMountNamespace = "/proc/1/ns/mnt"
+)
+
+// inInitMountNamespace returns the command that runs this snapshot command
+// again in the mount namespace of the box's init, or nil when it already runs
+// there, or the box's init is not systemd (systemd false). The command mounts a tmpfs over
+// agentlayer.SnapshotDir and starts units that read what it puts there, so
+// it and systemd must see one set of mounts. A taker's exec need not run in
+// systemd's: boxd runs each in a private mount namespace of its own, where a
+// mount neither reaches PID 1 nor comes back from it, so the units saw none of
+// the plan's material and a bridge conditioned on it never ran (#1197).
+// selfNS and initNS are the two namespaces' /proc links.
+func inInitMountNamespace(ctx context.Context, systemd bool, selfNS, initNS string) (*exec.Cmd, error) {
+	if !systemd {
+		return nil, nil
+	}
+	self, err := os.Readlink(selfNS)
+	if err != nil {
+		return nil, fmt.Errorf("read the command's mount namespace: %w", err)
+	}
+	systemdNS, err := os.Readlink(initNS)
+	if err != nil {
+		return nil, fmt.Errorf("read systemd's mount namespace: %w", err)
+	}
+	if self == systemdNS {
+		return nil, nil
+	}
+	// A Go process cannot join another mount namespace itself (setns
+	// refuses a process whose threads share its filesystem attributes), so
+	// it starts again inside it.
+	nsenter, err := exec.LookPath("nsenter")
+	if err != nil {
+		return nil, fmt.Errorf("the command runs outside systemd's mount namespace (%s, not %s), and there is no nsenter to enter it: %w", self, systemdNS, err)
+	}
+	agent, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("find the agent to run again in systemd's mount namespace: %w", err)
+	}
+	return enterCommand(ctx, nsenter, agent), nil
+}
+
+// enterCommand is the snapshot command run again by agent, through nsenter,
+// in PID 1's mount namespace alone. The plan arrives on its standard input,
+// and its standard error, which says what went wrong, is the taker's.
+func enterCommand(ctx context.Context, nsenter, agent string) *exec.Cmd {
+	//nolint:gosec // G204: nsenter from PATH and the agent's own executable, with fixed arguments.
+	cmd := exec.CommandContext(ctx, nsenter, "--target", "1", "--mount", "--", agent, agentlayer.SnapshotCommand)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	// Ended as the taker ends this one: the command winds down on SIGTERM.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = time.Minute
+	return cmd
+}
+
+// runEntered runs cmd and is its exit status: the build's result.
+func runEntered(cmd *exec.Cmd) int {
+	err := cmd.Run()
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode() > 0 {
+		return exit.ExitCode()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "discobox-sandbox-agent snapshot: run it in systemd's mount namespace:", err)
 		return 1
 	}
 	return 0
