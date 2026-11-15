@@ -1,7 +1,8 @@
 # 26-11-15-602 — An in-place restart is recorded before it begins, and the new agent's first report counts
 
-- **Status**: Proposed (would supersede [26-11-15-294](26-11-15-294-a-report-after-the-reconcile-started-the-pools-agent-is-the-new-agents.md) §1's restart row, "once the restart has returned", §3's "the agent changes in no way", and the Consequences line that a boot report landing before the restart returns is still missed)
+- **Status**: Accepted (supersedes [26-11-15-294](26-11-15-294-a-report-after-the-reconcile-started-the-pools-agent-is-the-new-agents.md) §1's restart row, "once the restart has returned", §3's "the agent changes in no way", and the Consequences line that a boot report landing before the restart returns is still missed)
 - **Date**: 2026-11-15
+- Accepted by the owner by merging #1204, 2026-11-15
 - **Issue**: [#1203](https://github.com/discobox-ai/discobox/issues/1203)
 - **Preserves**: 26-11-15-294 §1's other row (making or starting the box) and its in-process, per-run record; §2's later-of rule and every other condition of [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md) §1 (the clean, current-generation settle in this run, the kept-box rule); the agent's first report before it serves and its 30s heartbeat ([0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md)); the single `try-restart` that restarts the agent and its proxy together.
 
