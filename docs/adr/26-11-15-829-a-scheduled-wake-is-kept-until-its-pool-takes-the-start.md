@@ -87,14 +87,15 @@ send.
 ### 2. A wake is not sent while its pool is not ready
 
 Before sending, the power reconcile reads the sandbox's pool. Unless the
-pool's health is `ready` (`model.Pool.Health`: a heartbeat from this server
-run, reporting ready, within the heartbeat timeout), it sends nothing. It
+pool's state is `active` (`model.PoolStateActive`) and its health is `ready`
+(`model.Pool.Health`: a heartbeat from this server run, reporting ready,
+within the heartbeat timeout), it sends nothing. It
 keeps `wake_at` and returns a requeue on a backstop interval, no longer than
 the engine's backoff ceiling. The value is left to implementation. A wait for
 the pool is not a failure, so it accrues no backoff, and it holds no reconcile
 slot.
 
-When a pool's health becomes `ready`, the server marks the power reconcile of
+When a pool becomes active and ready, the server marks the power reconcile of
 each present sandbox on that pool whose `wake_at` is due, in the transaction
 that records the report, as `UpdatePoolStatus` already marks sentinels
 (`MarkPoolSentinelsTx`). The mark pulls the row forward from its backstop or
@@ -130,8 +131,11 @@ holds. Actions keep their own policy.
 
 ### 4. No limit
 
-A kept wake is retried until the pool takes its start, or an outside
-instruction cancels it. Archive and delete already cancel it. A pool that
+Retries are unlimited as long as `wake_at` is not cleared and the pool is
+active (owner, #1192). A kept wake is retried until the pool takes its start,
+or an outside instruction cancels it. Archive and delete already cancel it.
+While the pool is not active and ready (offline, registering, being replaced
+or deleted), nothing is sent and the wake stays recorded (§2). A pool that
 never comes back costs one requeue per backstop interval per sandbox with a
 due wake, and no host call. This keeps 337's position that a wake may be any
 time and that the agent is woken late rather than never (§7).
