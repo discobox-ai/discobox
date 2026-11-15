@@ -50,7 +50,9 @@
   `discobox-installers` (stamps the install scripts a release uploads with that
   release and its binaries' digests), `discobox-installer-logo` (draws the console's
   mark into those scripts, from the console's own cell data), `discobox-winres` (the
-  Windows version resource a release executable links, and the check that it did).
+  Windows version resource a release executable links, and the check that it did),
+  `discobox-vm-pins` (the release's refusal of a pool VM guest or kernel pin older
+  than `vm-image/`).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.
 - `.agents/skills` (`.claude/skills` links to it): this repository's own skills
   (`add-harness`, `release`, `verify-recipes`). The shared SDLC skills

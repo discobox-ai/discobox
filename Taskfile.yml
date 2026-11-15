@@ -1689,9 +1689,37 @@ tasks:
         # Until then GitHub's own "Latest release" header keeps pointing at the
         # last blessed one, which is the right answer for someone landing on the
         # repository.
+        #
+        # A release:check-vm-pins override is recorded at the top of the
+        # notes: gh puts what --notes-file gives it ahead of the generated ones.
+        set -- --generate-notes
+        if [ -s build/release/notes/vm-pins.md ]; then
+          set -- "$@" --notes-file build/release/notes/vm-pins.md
+        fi
         gh release view "$tag" >/dev/null 2>&1 ||
-          gh release create "$tag" --verify-tag --title "$tag" --generate-notes --prerelease
+          gh release create "$tag" --verify-tag --title "$tag" --prerelease "$@"
         gh release upload "$tag" build/release/bin/* --clobber
+
+  release:check-vm-pins:
+    desc: Fail unless the pinned pool VM guest and kernel include vm-image/ at the release tag
+    # The server pins both images by digest, and they publish from their own
+    # tag lines (vm/vN, vm-kernel/vN), so nothing else notices a vm-image/
+    # change that was never published and pinned. Reads the tag's commit
+    # rather than the checkout, which a workflow_dispatch run takes from a
+    # branch, and needs the full history and every vm/ and vm-kernel/ tag.
+    # A Release-Stale-VM-Pin: <reason> trailer in the tag's annotation (never
+    # a commit message) releases anyway; the record of it lands in
+    # build/release/notes, which release:publish puts in the release notes.
+    cmds:
+      - |
+        set -eu
+        tag="{{.TAG}}"
+        case "$tag" in
+          v*) ;;
+          *) echo "release:check-vm-pins: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
+        esac
+        mkdir -p build/release/notes
+        go run ./internal/cmd/discobox-vm-pins -rev "$tag" -notes build/release/notes/vm-pins.md
 
   release:manifest:
     desc: Assemble every platform's CLI, server, and image metadata into release.json
