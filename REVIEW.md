@@ -239,6 +239,11 @@ Global review expectations:
   under test expects. The live run's first stand-ins had the proxy answer a
   denied CONNECT with 403, which it never does (it closes the connection),
   and so passed a check the real proxy would fail.
+- A live-run branch keyed on a response header (`x-boxd-proxy`, `server`)
+  has a case whose curl stand-in writes that header, CRLF-ended as curl's
+  `-D` file is. The stand-in once wrote no headers, so the header branch for
+  boxd's bot-protection challenge was never reached in a test, and `server`
+  carried curl's trailing CR in every real report unseen.
 
 - A watcher build deadline stops the whole process tree before cleanup and
   retry. Docker starts buildx as a child, and builder setup is go → task →

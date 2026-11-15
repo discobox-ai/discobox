@@ -115,7 +115,9 @@ esac
 `
 
 // stubCurl is a probe of the machine's ingress URL, from outside: it prints
-// $STUB/ingress-code as the status, and $STUB/ingress-body as the body. With
+// $STUB/ingress-code as the status, $STUB/ingress-body as the body, and
+// writes $STUB/ingress-headers, as an HTTP response's header lines, where -D
+// asks for them. With
 // none it answers 502, as boxd does at a default proxy locked to port 0
 // (disco-vm docs/drivers/boxd.md). On boxd the URL disco-vm reports and the
 // default proxy are one host, so both probes get the same answer. The body
@@ -124,8 +126,10 @@ esac
 const stubCurl = `#!/usr/bin/env bash
 printf '%s\n' "curl $*" >>"$STUB/calls"
 out=
-while [ "$#" -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; *) shift ;; esac; done
+headers=
+while [ "$#" -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; -D) headers=$2; shift 2 ;; *) shift ;; esac; done
 cat "$STUB/ingress-body" >"$out" 2>/dev/null || : >"$out"
+[ -z "$headers" ] || cat "$STUB/ingress-headers" >"$headers" 2>/dev/null || : >"$headers"
 code=$(cat "$STUB/ingress-code" 2>/dev/null || echo 502)
 printf '%s' "$code"
 [ "$code" != 000 ] || exit 7
@@ -534,26 +538,32 @@ func TestLiveRunIngressURL(t *testing.T) {
 func TestLiveRunProbesClosedProxy(t *testing.T) {
 	const host = "https://dvm-pool-t1--sbx-t1.boxd.sh"
 	for _, tc := range []struct {
-		name, code, body, listener, want string
+		name, code, body, listener, headers, want string
 	}{
-		{"boxd refuses", "502", "", "", "| PASS | closed-proxy | " + host + " answers 502 while the guest listened on 8080 8000 3000 5000 5173: forwarded nowhere, closed"},
+		{"boxd refuses", "502", "", "", "", "| PASS | closed-proxy | " + host + " answers 502 while the guest listened on 8080 8000 3000 5000 5173: forwarded nowhere, closed"},
 		// An open proxy forwards to the guest's listener.
-		{"listener answers", "200", "discobox-live-run-listener\n", "", "| FAIL | closed-proxy | " + host + " forwards to the guest: HTTP 200, its listener's marker came back"},
-		{"guest answers", "200", "ok\n", "", "| FAIL | closed-proxy | " + host + " answers 200"},
-		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "", "| FAIL | closed-proxy | " + host + " reaches the guest's listener"},
+		{"listener answers", "200", "discobox-live-run-listener\n", "", "", "| FAIL | closed-proxy | " + host + " forwards to the guest: HTTP 200, its listener's marker came back"},
+		{"guest answers", "200", "ok\n", "", "", "| FAIL | closed-proxy | " + host + " answers 200"},
+		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "", "", "| FAIL | closed-proxy | " + host + " reaches the guest's listener"},
 		// With nothing listening on 8000, an open proxy answers 502 too.
-		{"no listener", "502", "", "busy 8000\nlistening 3000\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000"},
-		{"no python", "502", "", "no-python3\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000"},
+		{"no listener", "502", "", "busy 8000\nlistening 3000\n", "", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000"},
+		{"no python", "502", "", "no-python3\n", "", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000"},
 		// Something already on a port ahead of 8000 is where an open proxy
 		// forwards, and it, or boxd for it, may answer 502.
-		{"busy ahead", "502", "", "busy 443\nlistening 8080 8000 3000 5000 5173\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: 8080 8000 3000 5000 5173; already held: 443"},
+		{"busy ahead", "502", "", "busy 443\nlistening 8080 8000 3000 5000 5173\n", "", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: 8080 8000 3000 5000 5173; already held: 443"},
 		// What listens could not be read, so a port ahead of 8000 may be held.
-		{"unknown", "502", "", "busy unknown\nlistening 8080 8000 3000 5000 5173\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: 8080 8000 3000 5000 5173; already held: unknown"},
+		{"unknown", "502", "", "busy unknown\nlistening 8080 8000 3000 5000 5173\n", "", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: 8080 8000 3000 5000 5173; already held: unknown"},
 		// Without root, 80 and 443 are unbound; with nothing listening there
 		// (on any address), they are no one's.
-		{"no root", "502", "", "busy \nlistening 8080 8000 3000 5000 5173\n", "| PASS | closed-proxy |"},
-		{"unplaced", "404", "not found\n", "", "| CHECK | closed-proxy | " + host + " answers HTTP 404"},
-		{"not reached", "000", "", "", "| CHECK | closed-proxy | " + host + " was not reached"},
+		{"no root", "502", "", "busy \nlistening 8080 8000 3000 5000 5173\n", "", "| PASS | closed-proxy |"},
+		{"unplaced", "404", "not found\n", "", "", "| CHECK | closed-proxy | " + host + " answers HTTP 404"},
+		{"not reached", "000", "", "", "", "| CHECK | closed-proxy | " + host + " was not reached"},
+		// boxd's bot protection answers a challenge in place of the closed
+		// proxy's 502, which a disco-vm pin from before it turned that off
+		// there leaves on: named, so a stale pin reads as one.
+		{"bot challenge", "503", "<!DOCTYPE html><title>Just a moment</title>\n", "", "HTTP/2 503\r\nx-boxd-proxy: challenge\r\nserver: boxd\r\n\r\n", "| CHECK | closed-proxy | " + host + " answers boxd's bot-protection challenge (HTTP 503, x-boxd-proxy: challenge)"},
+		// Any other 503 is for a person to read.
+		{"unavailable", "503", "busy\n", "", "HTTP/2 503\r\nserver: boxd\r\n\r\n", "| CHECK | closed-proxy | " + host + " answers HTTP 503 (server 'boxd'): busy"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := liveRun(t, func(stub string) {
@@ -561,6 +571,9 @@ func TestLiveRunProbesClosedProxy(t *testing.T) {
 				write(t, filepath.Join(stub, "ingress-body"), tc.body, 0o644)
 				if tc.listener != "" {
 					write(t, filepath.Join(stub, "listener"), tc.listener, 0o644)
+				}
+				if tc.headers != "" {
+					write(t, filepath.Join(stub, "ingress-headers"), tc.headers, 0o644)
 				}
 			})
 			if !strings.Contains(r.report, tc.want) {

@@ -665,8 +665,9 @@ func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) erro
 // scope that is already empty is emptied; a listing that fails, or a machine
 // that is not removed, is an error, so the pool's removal is tried again
 // rather than finished over what is left. It removes what the driver lists:
-// boxd lists a snapshot only once it is ready, so one whose commit was in
-// flight is not seen here.
+// on boxd, a build machine's Destroy takes its commit's snapshot with it while
+// that is still pending, and a failed snapshot with no machine is listed, so
+// no snapshot of the scope is left unseen.
 func (h *poolMachine) emptyPoolScope(ctx context.Context, pool *model.Pool) error {
 	scope, err := machinePool(pool.ID)
 	if err != nil {

@@ -755,7 +755,8 @@ reach() {
 	: >"$headers"
 	code=$(ext 0 "$3" curl -sS -o "$evidence/$step.body" -D "$headers" -w '%{http_code}' --max-time 20 "$url/discobox-live-run-$nonce" 2>"$work/$step.err" || true)
 	body=$(head -c 300 "$evidence/$step.body" 2>/dev/null || true)
-	server=$(awk -F': *' 'tolower($1) == "server" { print $2 }' "$headers")
+	# curl keeps each header line's CR.
+	server=$(awk -F': *' 'tolower($1) == "server" { print $2 }' "$headers" | tr -d '\r')
 	code=${code:-000}
 }
 # guest STEP URL CODE fails STEP on an answer only the guest gives, and
@@ -893,7 +894,7 @@ listening 8080 8000 3000 5000 5173" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} 
 		proxied=$(awk -F': *' 'tolower($1) == "x-boxd-proxy" { print $2 }' "$evidence/closed-proxy.headers" | tr -d '\r')
 		if guest closed-proxy "$proxy" "$code"; then :
 		elif [ "$proxied" = challenge ]; then
-			check closed-proxy "$proxy answers boxd's bot-protection challenge (HTTP $code, x-boxd-proxy: challenge), which hides whether it forwards to the guest: the disco-vm this server pins keeps bot protection on at a closed proxy, so is older than discobox-ai/vm#167 (#1216)"
+			check closed-proxy "$proxy answers boxd's bot-protection challenge (HTTP $code, x-boxd-proxy: challenge), which hides whether it forwards to the guest: the disco-vm the pool agent was built with keeps bot protection on at a closed proxy, so pins one from before discobox-ai/vm#167 (#1216)"
 		else
 			check closed-proxy "$proxy answers HTTP $code (server '$server'): $body; read it: boxd's own refusal passes, anything from the guest fails"
 		fi ;;
