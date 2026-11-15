@@ -323,6 +323,15 @@
   said only when the two lists are equal. A summary narrower than the rule
   tells the approver a widening is nothing — a first draft of `routeDiff`
   hid a split delegation's new routes that way.
+- **A use part granted to replace is said by the whole `bindingplan.Use`
+  plan, every variable included** (`replaces` through `replacedFields`):
+  the server replaces the box's use of the secret wherever it is delivered.
+  The grants held in the asked variable say only what the plan cannot — other
+  secrets' additions, a harness config's or project's grant set aside — and a
+  shortened lifetime is said of `plan.Keep`, the binding that takes the
+  approval, never of a held grant that only loses its use. A card built from
+  the asked variable's grants alone hid a binding in another variable that
+  approving deleted, the second time a card said less than the server's rule.
 
 ## The leader
 

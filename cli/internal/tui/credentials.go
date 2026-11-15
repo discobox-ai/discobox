@@ -332,14 +332,10 @@ func lifetimeChoices(asked time.Duration) []time.Duration {
 // leave them to find the difference themselves.
 func replacedFields(standing []SecretBinding, delegate bool, envVar string, useAs bindingplan.As, asked, secretRoutes []secretroute.Route) []field {
 	held := map[string]SecretBinding{}
-	var mine []bindingplan.Binding
 	for _, b := range standing {
 		held[b.ID] = b
-		mine = append(mine, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, Adds: b.Adds, EnvName: b.EnvVar, Created: b.Created})
 	}
-	if !delegate && useAs == "" {
-		useAs = bindingplan.Replace
-	}
+	mine := planBindings(standing)
 	use, delegatePlan := bindingplan.Answer(mine, envVar, useAs, delegate)
 	plan := use
 	if delegate {
@@ -368,6 +364,9 @@ func replacedFields(standing []SecretBinding, delegate bool, envVar string, useA
 		switch step.Fate {
 		case bindingplan.Updated:
 			fate = "kept, takes this approval"
+			if step.Binding.Use && step.Binding.EnvName != envVar {
+				fate = "kept, moves to " + envVar + " and takes this approval"
+			}
 		case bindingplan.Deleted:
 			fate = "goes"
 		case bindingplan.LosesUse:
@@ -397,6 +396,15 @@ func replacedFields(standing []SecretBinding, delegate bool, envVar string, useA
 		add("and a new binding is made", toneAlert)
 	}
 	return fields
+}
+
+// planBindings is a box's bindings of a secret as bindingplan reads them.
+func planBindings(standing []SecretBinding) []bindingplan.Binding {
+	out := make([]bindingplan.Binding, 0, len(standing))
+	for _, b := range standing {
+		out = append(out, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, Adds: b.Adds, EnvName: b.EnvVar, Created: b.Created})
+	}
+	return out
 }
 
 // routeDiff is was set against now as diff rows: "- " for each route of was

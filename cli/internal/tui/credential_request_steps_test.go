@@ -978,3 +978,91 @@ func TestCancellingUseModeReturnsToFirstDecision(t *testing.T) {
 		})
 	}
 }
+
+// Approving a use part to replace takes the box's use-only bindings of the
+// secret in every variable (bindingplan.Use), so what it says it replaces
+// names the one in another variable that goes, not only the asked variable's.
+func TestReplacingSaysTheBindingInAnotherVariableGoes(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	created := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	ds.projectBindings = []SecretBinding{
+		{ID: "sbd_here", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GH_TOKEN", Created: created},
+		{ID: "sbd_other", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GITHUB_TOKEN", Created: created.Add(time.Hour)},
+	}
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_here", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
+	toSummary(t, m, "sec_gh")
+	text := plainFrame(m)
+	for _, want := range []string{
+		"this replaces",
+		"“GitHub token” in GH_TOKEN — lasts only 1 hour",
+		"the one in GITHUB_TOKEN — goes",
+		"the one in GH_TOKEN — kept, takes this approval",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary = %q, want %q", text, want)
+		}
+	}
+}
+
+// The use part's own card says the same of the box's bindings of the secret
+// as the summary, in the asked variable and the others: one that also
+// delegates loses only its use, and with no use-only binding in the asked
+// variable the oldest elsewhere is the one kept, moved into it — and it, not
+// the one losing its use, is cut to the approval's lifetime.
+func TestTheUseCardSaysWhatReplacingDoesInEveryVariable(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	created := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	ds.projectBindings = []SecretBinding{
+		{ID: "sbd_old", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GITHUB_TOKEN", Created: created},
+		{ID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: created.Add(time.Hour)},
+	}
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
+	toSummary(t, m, "sec_gh")
+	want := []string{
+		"the one in GITHUB_TOKEN — kept, moves to GH_TOKEN and takes this approval",
+		"“GitHub token” in GH_TOKEN — lasts only 1 hour",
+		"the one in GH_TOKEN — loses its use; its delegation stays",
+	}
+	check := func(card string) {
+		t.Helper()
+		text := plainFrame(m)
+		for _, w := range want {
+			if !strings.Contains(text, w) {
+				t.Fatalf("%s = %q, want %q", card, text, w)
+			}
+		}
+		if strings.Contains(text, "new binding") {
+			t.Fatalf("%s = %q, says a new binding is made though one is kept", card, text)
+		}
+	}
+	check("summary")
+	answerApproval(t, m, "review")
+	if !onStep(m, "its own use") {
+		t.Fatalf("dialog = %s, want the use part", describe(m.dialog))
+	}
+	check("use card")
+}
+
+// A binding that uses and delegates loses only its use to a replacement: its
+// delegation keeps its lifetime, so the card never says it is cut short, and a
+// new binding is made for the use.
+func TestReplacingNeverShortensTheDelegationThatLosesItsUse(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.projectBindings = []SecretBinding{
+		{ID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)},
+	}
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
+	toSummary(t, m, "sec_gh")
+	text := plainFrame(m)
+	for _, want := range []string{"the one in GH_TOKEN — loses its use; its delegation stays", "and a new binding is made"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary = %q, want %q", text, want)
+		}
+	}
+	if strings.Contains(text, "lasts only") {
+		t.Fatalf("summary = %q, says the delegation is cut short", text)
+	}
+}

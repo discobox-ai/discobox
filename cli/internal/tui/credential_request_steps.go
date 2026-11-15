@@ -1071,9 +1071,11 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) 
 
 // replaces is what approving takes away or cuts short of what the box holds
 // (ADR 26-11-03-329 §5, 26-11-04-616 §4), by bindingplan's rules, the ones
-// the server applies: for the use part, each grant in the variable that goes,
-// is shadowed or is shortened at ttl; for the delegate part, the box's own
-// delegation of the secret.
+// the server applies: for the use part, each of the box's bindings of the
+// secret, in any variable, as bindingplan.Use plans it, the one it keeps
+// shortened at ttl, and each other grant in the variable that goes or is
+// shadowed; for the
+// delegate part, the box's own delegation of the secret.
 func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known bool) []line {
 	var out []line
 	if ans.use == PartApprove && ans.useAs(req) == bindingplan.Replace {
@@ -1090,6 +1092,10 @@ func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known
 			fates[step.Held.ID] = step.Fate
 		}
 		for _, grant := range ans.held {
+			// The secret's own bindings are said by the plan below.
+			if slices.ContainsFunc(ans.standing, func(b SecretBinding) bool { return b.ID == grant.BindingID }) {
+				continue
+			}
 			name := grant.SecretName
 			if name == "" {
 				name = grant.SecretID
@@ -1101,18 +1107,33 @@ func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known
 			case BindingProject:
 				what += ", from its project"
 			}
-			span := "the time you choose"
-			if known {
-				span = lifetime.Label(ttl)
-			}
 			switch fates[grant.BindingID] {
 			case bindingplan.Goes:
 				out = append(out, line{text: what + " — goes", tone: toneAlert, bullet: true})
 			case bindingplan.Shadowed:
-				out = append(out, line{text: what + " — is set aside for " + span, tone: toneAlert, bullet: true})
+				out = append(out, line{text: what + " — is set aside for " + approvalSpan(ttl, known), tone: toneAlert, bullet: true})
 			case bindingplan.Shortened:
-				out = append(out, line{text: what + " — lasts only " + span, tone: toneAlert, bullet: true})
+				out = append(out, line{text: what + " — lasts only " + approvalSpan(ttl, known), tone: toneAlert, bullet: true})
 			}
+		}
+		// The server replaces the box's use of the secret in every variable
+		// (bindingplan.Use), so each of its bindings of it is said by that plan.
+		// The one it keeps takes the approval's lifetime, wherever it was.
+		if keep := bindingplan.Use(planBindings(ans.standing), req.EnvVar).Keep; keep != "" {
+			for _, b := range ans.standing {
+				if b.ID != keep {
+					continue
+				}
+				if steps := bindingplan.Replacing([]bindingplan.Held{{ID: b.ID, Own: true, Expires: b.Expires}}, until); len(steps) > 0 && steps[0].Fate == bindingplan.Shortened {
+					out = append(out, line{text: "“" + ans.credential + "” in " + variableOf(req) + " — lasts only " + approvalSpan(ttl, known), tone: toneAlert, bullet: true})
+				}
+			}
+		}
+		for _, f := range replacedFields(ans.standing, false, req.EnvVar, bindingplan.Replace, partRoutes(req.Use, ans.useChoice), ans.secret.Routes) {
+			if f.tone == toneDim {
+				continue
+			}
+			out = append(out, line{text: f.value, tone: f.tone})
 		}
 	}
 	if ans.delegate == PartApprove {
@@ -1128,6 +1149,15 @@ func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known
 		}
 	}
 	return out
+}
+
+// approvalSpan is how long an approval lasts as a card says it: ttl when it is
+// known, else the time still to be chosen.
+func approvalSpan(ttl time.Duration, known bool) string {
+	if known {
+		return lifetime.Label(ttl)
+	}
+	return "the time you choose"
 }
 
 // approvedRoutes is the routes the answer grants: each approved part's, as
