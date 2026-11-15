@@ -71,6 +71,17 @@ func toSummary(t *testing.T, m *Model, id string) {
 	pickItem(t, m, id)
 }
 
+// toUseCard answers the request with the saved secret id and opens Review…
+// on the use part's card, which says what approving it replaces.
+func toUseCard(t *testing.T, m *Model, id string) {
+	t.Helper()
+	toSummary(t, m, id)
+	answerApproval(t, m, "review")
+	if !onStep(m, "its own use") {
+		t.Fatalf("dialog = %s, want the use part", describe(m.dialog))
+	}
+}
+
 // fakeGitHubToken has a classic GitHub token's shape, ghp_ and 36 of alnum,
 // and is assembled so no literal in the tree looks like a credential.
 var fakeGitHubToken = "ghp_" + strings.Repeat("A1b2", 9)
@@ -253,6 +264,47 @@ func TestTheSummarySaysWhetherEachPartAddsOrReplaces(t *testing.T) {
 			}
 			if strings.Contains(text, "edited from the ask") {
 				t.Fatalf("summary = %q, marks the ask as edited", text)
+			}
+		})
+	}
+}
+
+// A part that replaces something the box holds says so on the summary and
+// points at Review… for what; one that replaces nothing has no pointer. The
+// summary itself names no binding.
+func TestTheSummaryPointsAtReviewForWhatAPartReplaces(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		held     []SecretBinding
+		use, del bool
+	}{
+		{"nothing held", nil, false, false},
+		{"a delegation held", []SecretBinding{{ID: "sbd_lead", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Delegate: true}}, false, true},
+		{"a use held elsewhere", []SecretBinding{{ID: "sbd_use", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GITHUB_TOKEN"}}, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, ds := sourceWithRequest(t)
+			req := waitingRequest()
+			req.Delegate = &RequestPart{Routes: []secretroute.Route{ghRoute("/repos/**")}}
+			ds.requests = []CredentialRequest{req}
+			ds.projectBindings = tc.held
+			send(t, m, tickMsg{})
+			toSummary(t, m, "sec_gh")
+			text := plainFrame(m)
+			for want, pointed := range map[string]bool{
+				"in every variable · Review… lists them":                 tc.use,
+				"replaces its workers' rules for GitHub token · Review…": tc.del,
+			} {
+				if strings.Contains(text, want) != pointed {
+					t.Fatalf("summary = %q, has %q = %v, want %v", text, want, !pointed, pointed)
+				}
+			}
+			for _, detail := range []string{"this replaces", "the delegation —", "the one in"} {
+				if strings.Contains(text, detail) {
+					t.Fatalf("summary = %q, shows Review…'s detail %q", text, detail)
+				}
 			}
 		})
 	}
@@ -472,12 +524,17 @@ func TestEscOnHowLongGoesBackToTheDecision(t *testing.T) {
 	}
 }
 
-// Consent says what the approval replaces at the selected lifetime.
+// Consent says what the approval replaces at the selected lifetime: the use
+// part's card in full, the summary only that there is something.
 func TestHowLongSaysWhatTheApprovalReplaces(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_old", SecretName: "old token", From: BindingProject}}
 	toSummary(t, m, "sec_gh")
+	if text := plainFrame(m); !strings.Contains(text, "in every variable · Review… lists them") {
+		t.Fatalf("summary = %q, want it to point at Review… for what it replaces", text)
+	}
+	answerApproval(t, m, "review")
 	text := plainFrame(m)
 	for _, want := range []string{"this replaces", "“old token” in GH_TOKEN, from its project — is set aside for 1 hour", "api.github.com"} {
 		if !strings.Contains(text, want) {
@@ -697,7 +754,7 @@ func TestApprovalConsequencesAreReadToTheEndBeforeSending(t *testing.T) {
 	for i := range 20 {
 		ds.heldGrants = append(ds.heldGrants, HeldGrant{BindingID: "sbd_" + strconv.Itoa(i), SecretID: "old", SecretName: "old token " + strconv.Itoa(i), From: BindingProject})
 	}
-	toSummary(t, m, "sec_gh")
+	toUseCard(t, m, "sec_gh")
 	if !m.dialog.decisionsBlocked || !strings.Contains(plainFrame(m), "more below") {
 		t.Fatal("long approval not gated")
 	}
@@ -817,8 +874,9 @@ func TestACustomLifetimeShowsWhatItReplaces(t *testing.T) {
 	m.dialog.form.set("ttl", "90m")
 	send(t, m, keyPress("enter"))
 	pickItem(t, m, "sec_gh")
+	answerApproval(t, m, "review")
 	if !strings.Contains(plainFrame(m), "is set aside for 90 minutes") {
-		t.Fatal("summary omitted selected lifetime's consequences")
+		t.Fatal("use card omitted selected lifetime's consequences")
 	}
 	answerApproval(t, m, "accept")
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 5400 {
@@ -980,8 +1038,10 @@ func TestCancellingUseModeReturnsToFirstDecision(t *testing.T) {
 }
 
 // Approving a use part to replace takes the box's use-only bindings of the
-// secret in every variable (bindingplan.Use), so what it says it replaces
-// names the one in another variable that goes, not only the asked variable's.
+// secret in every variable (bindingplan.Use), so what the use card says it
+// replaces names the one in another variable that goes, not only the asked
+// variable's. The summary names none of them: it says the part replaces, and
+// that Review… lists what.
 func TestReplacingSaysTheBindingInAnotherVariableGoes(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
@@ -991,22 +1051,33 @@ func TestReplacingSaysTheBindingInAnotherVariableGoes(t *testing.T) {
 		{ID: "sbd_other", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GITHUB_TOKEN", Created: created.Add(time.Hour)},
 	}
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_here", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
-	toSummary(t, m, "sec_gh")
-	text := plainFrame(m)
-	for _, want := range []string{
+	detail := []string{
 		"this replaces",
 		"“GitHub token” in GH_TOKEN — lasts only 1 hour",
 		"the one in GITHUB_TOKEN — goes",
 		"the one in GH_TOKEN — kept, takes this approval",
-	} {
+	}
+	toSummary(t, m, "sec_gh")
+	text := plainFrame(m)
+	if !strings.Contains(text, "replaces its rules for GitHub token, in every variable · Review… lists them") {
+		t.Fatalf("summary = %q, want the use part to say it replaces and point at Review…", text)
+	}
+	for _, d := range append(detail, "GITHUB_TOKEN", "api.github.com/") {
+		if strings.Contains(text, d) {
+			t.Fatalf("summary = %q, shows Review…'s detail %q", text, d)
+		}
+	}
+	answerApproval(t, m, "review")
+	text = plainFrame(m)
+	for _, want := range detail {
 		if !strings.Contains(text, want) {
-			t.Fatalf("summary = %q, want %q", text, want)
+			t.Fatalf("use card = %q, want %q", text, want)
 		}
 	}
 }
 
-// The use part's own card says the same of the box's bindings of the secret
-// as the summary, in the asked variable and the others: one that also
+// The use part's own card says what replacing does to each of the box's
+// bindings of the secret, in the asked variable and the others: one that also
 // delegates loses only its use, and with no use-only binding in the asked
 // variable the oldest elsewhere is the one kept, moved into it — and it, not
 // the one losing its use, is cut to the approval's lifetime.
@@ -1019,30 +1090,20 @@ func TestTheUseCardSaysWhatReplacingDoesInEveryVariable(t *testing.T) {
 		{ID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: created.Add(time.Hour)},
 	}
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
-	toSummary(t, m, "sec_gh")
-	want := []string{
+	toUseCard(t, m, "sec_gh")
+	text := plainFrame(m)
+	for _, w := range []string{
 		"the one in GITHUB_TOKEN — kept, moves to GH_TOKEN and takes this approval",
 		"“GitHub token” in GH_TOKEN — lasts only 1 hour",
 		"the one in GH_TOKEN — loses its use; its delegation stays",
-	}
-	check := func(card string) {
-		t.Helper()
-		text := plainFrame(m)
-		for _, w := range want {
-			if !strings.Contains(text, w) {
-				t.Fatalf("%s = %q, want %q", card, text, w)
-			}
-		}
-		if strings.Contains(text, "new binding") {
-			t.Fatalf("%s = %q, says a new binding is made though one is kept", card, text)
+	} {
+		if !strings.Contains(text, w) {
+			t.Fatalf("use card = %q, want %q", text, w)
 		}
 	}
-	check("summary")
-	answerApproval(t, m, "review")
-	if !onStep(m, "its own use") {
-		t.Fatalf("dialog = %s, want the use part", describe(m.dialog))
+	if strings.Contains(text, "new binding") {
+		t.Fatalf("use card = %q, says a new binding is made though one is kept", text)
 	}
-	check("use card")
 }
 
 // A binding that uses and delegates loses only its use to a replacement: its
@@ -1055,14 +1116,14 @@ func TestReplacingNeverShortensTheDelegationThatLosesItsUse(t *testing.T) {
 		{ID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)},
 	}
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
-	toSummary(t, m, "sec_gh")
+	toUseCard(t, m, "sec_gh")
 	text := plainFrame(m)
 	for _, want := range []string{"the one in GH_TOKEN — loses its use; its delegation stays", "and a new binding is made"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("summary = %q, want %q", text, want)
+			t.Fatalf("use card = %q, want %q", text, want)
 		}
 	}
 	if strings.Contains(text, "lasts only") {
-		t.Fatalf("summary = %q, says the delegation is cut short", text)
+		t.Fatalf("use card = %q, says the delegation is cut short", text)
 	}
 }

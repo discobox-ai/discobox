@@ -464,14 +464,21 @@
   it. Workspace, selection and tool-cache identities include the server too.
 
 - Choose lifetime alongside the credential, before consent. A lifetime picker
-  never sends a grant; the summary and part cards show replacement consequences
-  at that lifetime and keep the read-to-end gate. Repeating the whole approval
+  never sends a grant; the part cards show replacement consequences at that
+  lifetime, and the summary and part cards keep the read-to-end gate. Repeating the whole approval
   on a final lifetime screen made a simple time choice unnecessarily long.
 
 - A credential request's summary card is lines, never route tables: each
-  part's routes, and a new credential's uncovered routes, are drawn on the
-  part cards behind Review…. Repeating them on the summary made the first
-  screen as long as Review and left Review nothing to add.
+  part's routes, a new credential's uncovered routes, and what a part
+  replaces (the bindings, variables, route diffs and lifetimes of "this
+  replaces") are drawn on the part cards behind Review…. The summary says
+  only whether each part adds or replaces, and "Review… lists them" when it
+  replaces something. Repeating them on the summary made the first screen as
+  long as Review and left Review nothing to add. That short note is all ADR
+  26-11-02-022 §5 and 26-11-04-616 §4 ask of the summary, though Accept sends
+  from it: their intent is to say whether a request adds to or replaces what
+  the box holds; the details are Review…'s (owner, 2026-11-15). Do not ask
+  for a loss list on the summary, or for Accept to be withheld there.
 - **A summary line never reads narrower than what Accept sends from it**
   (`partSummary`). With no table beside it, a blocked host counted among the
   hosts reached, or an any-method, any-path row counted as one operation like
