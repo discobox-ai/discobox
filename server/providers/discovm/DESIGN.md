@@ -184,8 +184,10 @@ as ADR 26-10-09-106 §1 places it:
   left), on the provider's driver opened in that scope (`engineIn`). The
   machine and keys go first, so nothing of the pool's makes more while the
   scope is emptied; a scope that cannot be listed, or a machine not
-  removed, fails the removal, which is tried again. boxd lists a snapshot
-  only once it is ready, so one whose commit was in flight is not seen.
+  removed, fails the removal, which is tried again. On boxd, removing a
+  build's machine takes its commit's snapshot with it while that is still
+  pending, and a failed snapshot with no machine is listed, so it is
+  removed too (disco-vm `docs/drivers/boxd.md`, Destroy).
 - The pool's machine is created on a network of the pool's own (its scope's
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated
