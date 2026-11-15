@@ -36700,6 +36700,11 @@ type UpdatePoolStatusBody struct {
 	AvailableStorageBytes int64   `json:"availableStorageBytes"`
 	Conditions            jx.Raw  `json:"conditions"`
 	Degraded              bool    `json:"degraded"`
+	// This is the first report the agent process has sent since it started; its later reports leave it
+	// out. A server upgrading the pool counts the restarted agent's first report as the new agent's,
+	// even when it arrives before the restart has finished. An agent from before this field sends none,
+	// which reads as false.
+	FirstReport OptBool `json:"firstReport"`
 	// The kind of image the pool runs, oci or vm/<driver>, declared on every report beside the platform.
 	// An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
 	ImageKind OptString `json:"imageKind"`
@@ -36751,6 +36756,11 @@ func (s *UpdatePoolStatusBody) GetConditions() jx.Raw {
 // GetDegraded returns the value of Degraded.
 func (s *UpdatePoolStatusBody) GetDegraded() bool {
 	return s.Degraded
+}
+
+// GetFirstReport returns the value of FirstReport.
+func (s *UpdatePoolStatusBody) GetFirstReport() OptBool {
+	return s.FirstReport
 }
 
 // GetImageKind returns the value of ImageKind.
@@ -36816,6 +36826,11 @@ func (s *UpdatePoolStatusBody) SetConditions(val jx.Raw) {
 // SetDegraded sets the value of Degraded.
 func (s *UpdatePoolStatusBody) SetDegraded(val bool) {
 	s.Degraded = val
+}
+
+// SetFirstReport sets the value of FirstReport.
+func (s *UpdatePoolStatusBody) SetFirstReport(val OptBool) {
+	s.FirstReport = val
 }
 
 // SetImageKind sets the value of ImageKind.

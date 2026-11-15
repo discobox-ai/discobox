@@ -100,6 +100,30 @@ func TestStatusReporterKeepsReporting(t *testing.T) {
 	}
 }
 
+// Only the report sent at start is marked first: a server upgrading the pool
+// counts it as a restarted agent's, while a heartbeat could be the old
+// agent's, sent as it stops (ADR 26-11-15-602 §2).
+func TestStatusReporterMarksOnlyItsFirstReport(t *testing.T) {
+	client := newRecordingStatusClient()
+	bootstrap, identity, logger := testReporterArgs()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, identity, client, dockerPoolStatus(), time.Millisecond); err != nil {
+		t.Fatalf("start status reporter: %v", err)
+	}
+
+	client.waitForCalls(t, 3)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	for i, call := range client.calls {
+		if call.FirstReport != (i == 0) {
+			t.Fatalf("report %d marked first %t, want only report 0 marked", i, call.FirstReport)
+		}
+	}
+}
+
 // The first report gates the agent's boot: a pool that cannot mark itself ready
 // must fail loudly rather than serve while the control plane believes it is
 // unschedulable.

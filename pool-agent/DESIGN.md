@@ -101,7 +101,9 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    5-minute TTL). The control plane issues no runtime token.
 6. The first status report is synchronous, so a pool that cannot mark itself
    ready fails its boot. It is also what registers the pool: the control
-   plane stamps `RegisteredAt` on a pool's first heartbeat.
+   plane stamps `RegisteredAt` on a pool's first heartbeat. It alone carries
+   `firstReport`, which is how a server upgrading the pool tells a restarted
+   agent's report from the old agent's heartbeat (ADR 26-11-15-602 §2).
 7. The agent starts the proxy unit's resolve-token refresher. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
    loop. A machine pool opens its own disco-vm engine before its first report,

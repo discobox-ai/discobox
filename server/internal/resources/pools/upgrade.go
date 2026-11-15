@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -44,14 +45,17 @@ type PendingPool struct {
 // the box holds this server's release (ADR 26-10-24-953 §5) — and its agent
 // has reported ready since: since the latest time this run's reconciles
 // started its agent (sandbox.ReportAgentStarted), or since the settle when
-// none did (ADR 26-11-15-294 §2). A pool deleted, or whose provider instance is
+// none did (ADR 26-11-15-294 §2). After a start in a running box the old
+// agent may still report, so only the new agent's first report counts from
+// that start, and any report from the settle (ADR 26-11-15-602 §3). A pool deleted, or whose provider instance is
 // removed or disabled, drops out. Once none is left the watch has cleared,
 // and stays clear for the rest of the run: a pool that fails later is that
 // pool's health, not an upgrade.
 //
 // It reads pool and provider rows and writes nothing. What the reconciler
-// tells it of a kept box and of an agent started lives only in this process,
-// as the run it describes does.
+// tells it of a kept box and of an agent started, and what the pools' agents
+// tell it of their first reports, lives only in this process, as the run it
+// describes does.
 type UpgradeWatch struct {
 	store *store.Store
 	now   func() time.Time
@@ -61,15 +65,19 @@ type UpgradeWatch struct {
 	// kept is, by pool, when a reconcile settled that kept the pool's
 	// previous box, and why. A later settle of the pool supersedes it.
 	kept map[string]keptBox
-	// started is, by pool, the latest moment a reconcile in this run started
-	// the pool's agent: no report after it can be the agent's before. It is
-	// recorded when the provider reports it, not at the settle: the pass
-	// that starts the agent is often not the one that settles.
-	started    map[string]time.Time
-	begun      bool
-	checked    time.Time
-	refreshing chan struct{}
-	last       []PendingPool
+	// started is, by pool, the latest start of the pool's agent a reconcile
+	// in this run recorded. It is recorded when the provider reports it, not
+	// at the settle: the pass that starts the agent is often not the one
+	// that settles.
+	started map[string]agentStart
+	// firstReport is, by pool, when the server last received a ready first
+	// report from a pool agent process (ADR 26-11-15-602 §2), on the clock
+	// StatusReportedAt is stamped with.
+	firstReport map[string]time.Time
+	begun       bool
+	checked     time.Time
+	refreshing  chan struct{}
+	last        []PendingPool
 }
 
 type keptBox struct {
@@ -77,9 +85,19 @@ type keptBox struct {
 	reason    string
 }
 
+// agentStart is one start of a pool's agent a reconcile recorded: when, and
+// whether it started a box or may restart the agent in a running one.
+type agentStart struct {
+	at   time.Time
+	kind sandbox.AgentStartKind
+}
+
 // NewUpgradeWatch watches nothing until Begin.
 func NewUpgradeWatch(appStore *store.Store) *UpgradeWatch {
-	return &UpgradeWatch{store: appStore, now: time.Now, kept: map[string]keptBox{}, started: map[string]time.Time{}}
+	return &UpgradeWatch{
+		store: appStore, now: time.Now, kept: map[string]keptBox{},
+		started: map[string]agentStart{}, firstReport: map[string]time.Time{},
+	}
 }
 
 // Begin fixes the pools to wait on: every present pool registered before this
@@ -123,13 +141,23 @@ func (w *UpgradeWatch) settled(poolID string, settledAt time.Time, kept error) {
 	w.kept[poolID] = keptBox{settledAt: settledAt, reason: firstLine(kept.Error())}
 }
 
-// agentStarted records that a reconcile started the pool's agent at at. A
-// later start replaces an earlier one.
-func (w *UpgradeWatch) agentStarted(poolID string, at time.Time) {
+// agentStarted records that a reconcile started the pool's agent at at, as
+// kind says. A later start replaces an earlier one.
+func (w *UpgradeWatch) agentStarted(poolID string, at time.Time, kind sandbox.AgentStartKind) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if at.After(w.started[poolID]) {
-		w.started[poolID] = at
+	if at.After(w.started[poolID].at) {
+		w.started[poolID] = agentStart{at: at, kind: kind}
+	}
+}
+
+// firstReported records that the pool's agent sent a ready first report,
+// received at at (ADR 26-11-15-602 §2).
+func (w *UpgradeWatch) firstReported(poolID string, at time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if at.After(w.firstReport[poolID]) {
+		w.firstReport[poolID] = at
 	}
 }
 
@@ -183,9 +211,13 @@ func (w *UpgradeWatch) refresh(ctx context.Context, now time.Time) {
 	for id, box := range w.kept {
 		kept[id] = box
 	}
-	started := make(map[string]time.Time, len(w.started))
-	for id, at := range w.started {
-		started[id] = at
+	started := make(map[string]agentStart, len(w.started))
+	for id, start := range w.started {
+		started[id] = start
+	}
+	firsts := make(map[string]time.Time, len(w.firstReport))
+	for id, at := range w.firstReport {
+		firsts[id] = at
 	}
 	w.mu.Unlock()
 
@@ -194,7 +226,7 @@ func (w *UpgradeWatch) refresh(ctx context.Context, now time.Time) {
 	var err error
 	for _, id := range ids {
 		var waiting *PendingPool
-		waiting, err = w.waitingOn(ctx, id, kept[id], started[id], now)
+		waiting, err = w.waitingOn(ctx, id, kept[id], started[id], firsts[id], now)
 		if err != nil {
 			break
 		}
@@ -229,7 +261,7 @@ func (w *UpgradeWatch) refresh(ctx context.Context, now time.Time) {
 
 // waitingOn is what one watched pool is still waiting on, or nil once it is
 // upgraded or no longer watched.
-func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, started time.Time, now time.Time) (*PendingPool, error) {
+func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, started agentStart, first time.Time, now time.Time) (*PendingPool, error) {
 	pool, err := w.store.GetPoolByID(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
@@ -247,7 +279,7 @@ func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, s
 	if provider == nil {
 		return nil, nil
 	}
-	reason := upgradeWaitingOn(pool, kept, started, now)
+	reason := upgradeWaitingOn(pool, kept, started, first, now)
 	if reason == "" {
 		return nil, nil
 	}
@@ -259,9 +291,8 @@ const waitingForReconcile = "waiting for its reconcile"
 // upgradeWaitingOn is what pool has yet to do in this run, empty once it is
 // upgraded: a reconcile of its current generation settled cleanly since the
 // run's health checks began, its provider did not keep the previous box in
-// it, and a ready status report since its agent was last started in this run
-// (started), or, when it was not, since that settle.
-func upgradeWaitingOn(pool *model.Pool, kept keptBox, started time.Time, now time.Time) string {
+// it, and a ready status report that is its current agent's (agentReported).
+func upgradeWaitingOn(pool *model.Pool, kept keptBox, started agentStart, first time.Time, now time.Time) string {
 	began := pool.CreatedAt
 	if pool.HealthCheckStartedAt != nil {
 		began = *pool.HealthCheckStartedAt
@@ -278,7 +309,7 @@ func upgradeWaitingOn(pool *model.Pool, kept keptBox, started time.Time, now tim
 	// truncated by the database, never later.
 	case kept.reason != "" && !pool.ReconciledAt.After(kept.settledAt):
 		return "keeping its previous agent: " + kept.reason
-	case pool.StatusReportedAt == nil || pool.StatusReportedAt.Before(reportsSince(pool, started)):
+	case !agentReported(pool, started, first):
 		return "waiting for its agent to report"
 	case pool.Health(now) != model.PoolHealthReady:
 		return "its agent reports " + pool.Health(now)
@@ -286,18 +317,34 @@ func upgradeWaitingOn(pool *model.Pool, kept keptBox, started time.Time, now tim
 	return ""
 }
 
-// reportsSince is when a status report starts to be the current agent's
-// (ADR 26-11-15-294 §2). After a start this run recorded, it is that start:
-// no agent ran before it, or the one that did had exited, so the new agent's
-// first report — often sent before the pass that settles — counts. With no
-// start recorded the agent stayed up through the server's restart, and the
-// settle is the only boundary there is: a report from before it may be the
-// old agent's.
-func reportsSince(pool *model.Pool, started time.Time) time.Time {
-	if !started.IsZero() {
-		return started
+// agentReported is whether the pool's agent has reported since it is the
+// current one, given its latest start this run recorded (started) and its
+// latest ready first report (first). pool has settled (ReconciledAt is set).
+//
+//   - After a box start, any report counts (ADR 26-11-15-294 §2): no agent
+//     ran before it, so the new agent's first report counts however soon it
+//     lands, often before the pass that settles.
+//   - After an in-place start the old agent may still report until the
+//     restart stops it, so a report counts if it is a first report received
+//     after the start (ADR 26-11-15-602 §3): the old agent's first report was
+//     long before, and its heartbeats are not marked. An agent a box start
+//     booted just before may send its first report after it; that counts
+//     only if the restarted agent then fails its own, which 602's
+//     Consequences accept.
+//   - Otherwise, and as an in-place start's fallback (a restart that
+//     restarted nothing, a first report lost), a report from the settle on
+//     counts: a report from before it may be the old agent's.
+func agentReported(pool *model.Pool, started agentStart, first time.Time) bool {
+	if pool.StatusReportedAt == nil {
+		return false
 	}
-	return *pool.ReconciledAt
+	if started.kind == sandbox.AgentStartBox {
+		return !pool.StatusReportedAt.Before(started.at)
+	}
+	if started.kind == sandbox.AgentStartInPlace && !first.IsZero() && !first.Before(started.at) {
+		return true
+	}
+	return !pool.StatusReportedAt.Before(*pool.ReconciledAt)
 }
 
 func sortPending(pending []PendingPool) {

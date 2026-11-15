@@ -340,7 +340,13 @@ type StatusRequest struct {
 	// body block, and its proxy swaps a sentinel at the body places it names
 	// (#1012). Always true from an agent that has them; one from before sends
 	// none, and is sent no route with one, which its decoder would refuse.
-	SentinelBodyPlaces    bool    `json:"sentinelBodyPlaces"`
+	SentinelBodyPlaces bool `json:"sentinelBodyPlaces"`
+	// FirstReport marks the one report this agent process sends at start,
+	// before it serves; its heartbeats leave it out. A server upgrading the
+	// pool counts a marked report received after it recorded the agent's
+	// in-place restart as the new agent's, though it lands before the
+	// restart returns (ADR 26-11-15-602 §2).
+	FirstReport           bool    `json:"firstReport,omitempty"`
 	Ready                 bool    `json:"ready"`
 	Schedulable           bool    `json:"schedulable"`
 	Degraded              bool    `json:"degraded"`

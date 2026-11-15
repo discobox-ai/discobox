@@ -126,6 +126,13 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
+	// A ready first report of an agent process is what tells the upgrade
+	// watch a restarted agent is the new one, however soon after the
+	// recorded restart it lands (ADR 26-11-15-602 §2). It is read at the
+	// time the report was stamped with, after the report is stored.
+	if input.FirstReport.Or(false) && input.Ready && s.pools != nil && pool.StatusReportedAt != nil {
+		s.pools.Upgrades().firstReported(pool.ID, *pool.StatusReportedAt)
+	}
 	// A pool that names its sandboxes' OS takes no sandbox while its agent
 	// declares another (store.recordPoolPlatform, ADR 26-11-11-963 §1). Say
 	// why, since nothing else on the pool does: an agent from before the

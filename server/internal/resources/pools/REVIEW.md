@@ -12,13 +12,18 @@
   line. The reconcile still settles cleanly, so nothing else tells the
   upgrade watch the pool runs its previous agent, and the server would report
   itself settled over it (ADR 26-11-14-624 §1).
-- A provider that makes or starts a pool's box, or replaces the agent in a
-  running one (moved bundles' apply, `RestartPoolUnits`), reports it with
-  `sandbox.ReportAgentStarted`: before the make or start, after the restart
-  has returned, never later. Missing one makes the upgrade watch reject the
-  new agent's first report and hold health a heartbeat longer; reporting a
-  restart before it returns could count the old agent's last report
-  (ADR 26-11-15-294 §1).
+- A provider that makes or starts a pool's box, or may restart the agent in
+  a running one (moved bundles' apply, `RestartPoolUnits`), reports it with
+  `sandbox.ReportAgentStarted`: a box start before the make or start, an
+  in-place start before the apply, never later, and never a box start for a
+  box an agent may already run in. Missing one makes the upgrade watch reject
+  the new agent's first report and hold health a heartbeat longer; a box
+  start for a running agent counts the old agent's heartbeats
+  (ADR 26-11-15-294 §1, 26-11-15-602 §1).
+- After an in-place start only a report marked `firstReport` counts before
+  the settle. Never count an unmarked report from after the start: the old
+  agent's heartbeat can land between the record and the restart
+  (ADR 26-11-15-602 §3).
 - Do not pace anything that spans clean passes with the engine's failure
   count: a pass that settles without error resets it. Bootstrap attempts keep
   their own count (`PoolBootstrap.Failed`).

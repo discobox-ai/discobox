@@ -269,14 +269,14 @@ func TestUpgradeWatchWaitsOnAPoolWhoseProviderKeptItsBox(t *testing.T) {
 type agentStartingPoolProvider struct {
 	stubPoolProvider
 	passes      *int
-	start       map[int]bool
+	start       map[int]sandbox.AgentStartKind
 	unreachable map[int]bool
 }
 
 func (p agentStartingPoolProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, _ func(context.Context) error) error {
 	*p.passes++
-	if p.start[*p.passes] {
-		sandbox.ReportAgentStarted(ctx, time.Now())
+	if kind := p.start[*p.passes]; kind != 0 {
+		sandbox.ReportAgentStarted(ctx, time.Now(), kind)
 	}
 	if p.unreachable[*p.passes] {
 		return sandbox.ErrPoolNotReachable
@@ -300,7 +300,7 @@ func (f *upgradeFixture) useProvider(name string, provider sandbox.Provider) {
 func TestUpgradeWatchCountsTheReportOfAnAgentStartedBeforeTheSettle(t *testing.T) {
 	f := newUpgradeFixture(t)
 	f.addPool("pool-1", true)
-	f.useProvider("starts", agentStartingPoolProvider{passes: new(int), start: map[int]bool{1: true}, unreachable: map[int]bool{1: true}})
+	f.useProvider("starts", agentStartingPoolProvider{passes: new(int), start: map[int]sandbox.AgentStartKind{1: sandbox.AgentStartBox}, unreachable: map[int]bool{1: true}})
 	f.start()
 	f.reconcile("pool-1")
 	f.report("pool-1", true)
@@ -319,7 +319,7 @@ func TestUpgradeWatchCountsTheReportOfAnAgentStartedBeforeTheSettle(t *testing.T
 func TestUpgradeWatchCountsOnlyReportsAfterTheLatestStart(t *testing.T) {
 	f := newUpgradeFixture(t)
 	f.addPool("pool-1", true)
-	f.useProvider("starts", agentStartingPoolProvider{passes: new(int), start: map[int]bool{1: true, 2: true}, unreachable: map[int]bool{1: true}})
+	f.useProvider("starts", agentStartingPoolProvider{passes: new(int), start: map[int]sandbox.AgentStartKind{1: sandbox.AgentStartBox, 2: sandbox.AgentStartBox}, unreachable: map[int]bool{1: true}})
 	f.start()
 	f.reconcile("pool-1")
 	f.report("pool-1", true)
@@ -330,5 +330,94 @@ func TestUpgradeWatchCountsOnlyReportsAfterTheLatestStart(t *testing.T) {
 	f.report("pool-1", true)
 	if got := f.pending(); len(got) != 0 {
 		t.Fatalf("restarted agent's report did not count: %v", got)
+	}
+}
+
+// firstReport is the pool's agent sending its first report, ready, now, as
+// the agent service records it: stored, then told to the watch.
+func (f *upgradeFixture) firstReport(id string) {
+	f.t.Helper()
+	f.report(id, true)
+	pool, err := f.store.GetPoolByID(context.Background(), id)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.watch.firstReported(id, *pool.StatusReportedAt)
+}
+
+// An agent restarted in a running box sends its first report before the
+// restart returns, so before the pass settles. Recorded from before the
+// restart, that marked report counts, while the old agent's heartbeat in the
+// same window does not (ADR 26-11-15-602 §3, #1203).
+func TestUpgradeWatchCountsTheFirstReportOfAnAgentRestartedInPlace(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	starts := map[int]sandbox.AgentStartKind{1: sandbox.AgentStartInPlace}
+	f.useProvider("restarts", agentStartingPoolProvider{passes: new(int), start: starts, unreachable: map[int]bool{1: true}})
+	f.start()
+	f.reconcile("pool-1")
+	// The old agent's heartbeat, sent after the start was recorded but
+	// before the restart stopped it.
+	f.report("pool-1", true)
+	f.reconcile("pool-1")
+	if got := f.pending()["pool-1"]; got != "waiting for its agent to report" {
+		t.Fatalf("the old agent's heartbeat after the in-place start counted: %q", got)
+	}
+
+	g := newUpgradeFixture(t)
+	g.addPool("pool-1", true)
+	g.useProvider("restarts", agentStartingPoolProvider{passes: new(int), start: starts, unreachable: map[int]bool{1: true}})
+	g.start()
+	g.reconcile("pool-1")
+	g.firstReport("pool-1")
+	g.reconcile("pool-1")
+	if got := g.pending(); len(got) != 0 {
+		t.Fatalf("the restarted agent's first report, before the settle, did not count: %v", got)
+	}
+}
+
+// A first report from before the in-place start is the old agent's, sent
+// when it started; it never counts. A restart that restarted nothing sends no
+// first report, and the pool waits for a report from the settle on.
+func TestUpgradeWatchFallsBackToTheSettleAfterAnInPlaceStart(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	f.useProvider("restarts", agentStartingPoolProvider{passes: new(int), start: map[int]sandbox.AgentStartKind{1: sandbox.AgentStartInPlace}})
+	f.start()
+	f.firstReport("pool-1")
+	f.reconcile("pool-1")
+	if got := f.pending()["pool-1"]; got != "waiting for its agent to report" {
+		t.Fatalf("a first report from before the in-place start counted: %q", got)
+	}
+	f.report("pool-1", true)
+	if got := f.pending(); len(got) != 0 {
+		t.Fatalf("a report after the settle did not count: %v", got)
+	}
+}
+
+// A box this run started and a later pass then restarts in place, whose
+// booted agent is from before the first-report mark and reported unmarked:
+// the restarted agent's marked first report counts, as it does for an agent
+// that was running before the server started (#1203).
+func TestUpgradeWatchCountsTheFirstReportOfAnAgentRestartedAfterABoot(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	f.useProvider("restarts", agentStartingPoolProvider{
+		passes:      new(int),
+		start:       map[int]sandbox.AgentStartKind{1: sandbox.AgentStartBox, 2: sandbox.AgentStartInPlace},
+		unreachable: map[int]bool{1: true, 2: true},
+	})
+	f.start()
+	f.reconcile("pool-1")
+	// The booted agent, from the previous release, reports unmarked.
+	f.report("pool-1", true)
+	f.reconcile("pool-1")
+	if got := f.pending()["pool-1"]; got != waitingForReconcile {
+		t.Fatalf("restarting, not yet settled: %q", got)
+	}
+	f.firstReport("pool-1")
+	f.reconcile("pool-1")
+	if got := f.pending(); len(got) != 0 {
+		t.Fatalf("the restarted agent's first report did not count: %v", got)
 	}
 }

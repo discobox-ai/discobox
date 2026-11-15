@@ -605,51 +605,59 @@ func TestFakePoolMachineIsReadopted(t *testing.T) {
 	}
 }
 
-// Every pass that makes or starts the pool's machine, or replaces the agent
-// in it, tells the reconcile when the agent started (ADR 26-11-15-294 §1): a
-// made or started machine from just before, so its agent's first report
-// counts even when the pass that settles is a later one; an agent its moved
-// bundles or placement restart from once that has returned. A pass that
-// replaces nothing tells nothing.
+// Every pass that makes or starts the pool's machine, or may restart the
+// agent in it, tells the reconcile when the agent started, and how: a made or
+// started machine from just before, so its agent's first report counts even
+// when the pass that settles is a later one (ADR 26-11-15-294 §1); an agent
+// in a machine the pass did not create from just before the apply that may
+// restart it, since the new agent's first report lands before the apply
+// returns (ADR 26-11-15-602 §1). A pass that applies nothing tells nothing.
 func TestFakePoolMachineReportsWhenItStartsTheAgent(t *testing.T) {
 	r, driver := newFakePool(t, "")
 	pool := &model.Pool{ID: "pool-7", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
-	var starts []time.Time
-	var appliedBefore []int // how many applies had run when each start was told
-	ctx := sandbox.WithAgentStartReporter(context.Background(), func(at time.Time) {
-		starts = append(starts, at)
-		appliedBefore = append(appliedBefore, driver.applies())
+	type start struct {
+		at   time.Time
+		kind sandbox.AgentStartKind
+		// applied is how many applies had run when the start was told.
+		applied int
+	}
+	var starts []start
+	ctx := sandbox.WithAgentStartReporter(context.Background(), func(at time.Time, kind sandbox.AgentStartKind) {
+		starts = append(starts, start{at: at, kind: kind, applied: driver.applies()})
 	})
 	maker := newTestMaker()
-	ensure := func(what string) (time.Time, time.Time) {
+	ensure := func(what string) (time.Time, time.Time, int) {
 		t.Helper()
-		starts, appliedBefore = nil, nil
+		starts = nil
+		applies := driver.applies()
 		before := time.Now()
 		if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 			t.Fatalf("%s: %v", what, err)
 		}
-		return before, time.Now()
+		return before, time.Now(), applies
+	}
+	during := func(s start, before, after time.Time) bool {
+		return !s.at.Before(before) && !s.at.After(after)
 	}
 
-	before, after := ensure("a new machine")
-	if len(starts) != 1 || starts[0].Before(before) || starts[0].After(after) || len(driver.created) != 1 {
-		t.Fatalf("a new machine reported starts %v, want one, during the pass", starts)
+	before, after, _ := ensure("a new machine")
+	if len(starts) != 1 || starts[0].kind != sandbox.AgentStartBox || !during(starts[0], before, after) || len(driver.created) != 1 {
+		t.Fatalf("a new machine reported starts %+v, want one box start, during the pass", starts)
 	}
-	made := starts[0]
 
 	pool.SetState(model.PoolStateActive)
 	ensure("an unmoved machine")
 	if len(starts) != 0 {
-		t.Fatalf("an unmoved machine reported starts %v, want none", starts)
+		t.Fatalf("an unmoved machine reported starts %+v, want none", starts)
 	}
 
 	maker.digest = "sha256:" + strings.Repeat("2", 64)
-	_, after = ensure("moved bundles")
-	if len(starts) != 1 || !starts[0].After(made) || starts[0].After(after) || driver.applies() != 2 {
-		t.Fatalf("moved bundles reported starts %v, want one once they applied", starts)
+	before, after, applies := ensure("moved bundles")
+	if len(starts) != 1 || starts[0].kind != sandbox.AgentStartInPlace || !during(starts[0], before, after) ||
+		starts[0].applied != applies || driver.applies() != applies+1 {
+		t.Fatalf("moved bundles reported starts %+v with %d applies before the pass, want one in-place start before the apply", starts, applies)
 	}
-	applied := starts[0]
 
 	inst, err := r.host.(*poolMachine).instance(context.Background(), pool)
 	if err != nil {
@@ -660,25 +668,53 @@ func TestFakePoolMachineReportsWhenItStartsTheAgent(t *testing.T) {
 	}
 	// The fake driver's URLs move at every start, so the started machine is
 	// placed again and its agent restarted on the URLs it moved to: the
-	// agent it booted with is replaced, and the restart is the later start.
-	before, after = ensure("a stopped machine")
-	if len(starts) != 2 || !starts[0].After(applied) || starts[0].Before(before) || !starts[1].After(starts[0]) || starts[1].After(after) {
-		t.Fatalf("a stopped machine reported starts %v, want its start and then its agent's restart", starts)
+	// agent it booted with may be replaced, so the apply records an
+	// in-place start after the box start.
+	before, after, applies = ensure("a stopped machine")
+	if len(starts) != 2 || starts[0].kind != sandbox.AgentStartBox || starts[1].kind != sandbox.AgentStartInPlace ||
+		!during(starts[0], before, after) || !starts[1].at.After(starts[0].at) || !during(starts[1], before, after) ||
+		starts[1].applied != applies || driver.applies() != applies+1 {
+		t.Fatalf("a stopped machine reported starts %+v, want its box start and then an in-place start before its apply", starts)
 	}
 
 	// A running machine under the pool's name that the record does not name
-	// is adopted, not made: it may already run an agent, so the start counts
-	// only from once it is placed again, never from before.
+	// is adopted, not made: it may already run an agent, so its start is an
+	// in-place one, before it is placed again, never a box start.
 	stale := slices.Clone(pool.RuntimeState)
 	if err := r.engine.Remove(context.Background(), inst, true); err != nil {
 		t.Fatal(err)
 	}
 	ensure("a lost machine")
 	pool.RuntimeState = stale
-	applies := driver.applies()
-	before, after = ensure("an adopted machine")
-	if len(starts) != 1 || starts[0].Before(before) || starts[0].After(after) || len(driver.created) != 2 || appliedBefore[0] != applies+1 {
-		t.Fatalf("an adopted machine reported starts %v with %v applies run (was %d); want one, once it was placed again", starts, appliedBefore, applies)
+	before, after, applies = ensure("an adopted machine")
+	if len(starts) != 1 || starts[0].kind != sandbox.AgentStartInPlace || !during(starts[0], before, after) ||
+		len(driver.created) != 2 || starts[0].applied != applies || driver.applies() != applies+1 {
+		t.Fatalf("an adopted machine reported starts %+v with %d applies before the pass; want one in-place start, before it was placed again", starts, applies)
+	}
+}
+
+// The apply records an in-place start only where it may restart an agent
+// that was already running: never in a machine the pass created, and in one
+// it booted only when no record says it was provisioned or something moved.
+// A repair boots the machine and places it again with nothing moved, so it
+// keeps its box start, and its booted agent's report counts.
+func TestReplacesAgent(t *testing.T) {
+	for _, c := range []struct {
+		name                                 string
+		created, started, provisioned, moved bool
+		want                                 bool
+	}{
+		{name: "created", created: true, started: true, moved: true, want: false},
+		{name: "running, moved", provisioned: true, moved: true, want: true},
+		{name: "running, forced with nothing moved", provisioned: true, want: true},
+		{name: "running, unprovisioned", want: true},
+		{name: "booted, moved", started: true, provisioned: true, moved: true, want: true},
+		{name: "booted, unprovisioned", started: true, want: true},
+		{name: "booted, repaired with nothing moved", started: true, provisioned: true, want: false},
+	} {
+		if got := replacesAgent(c.created, c.started, c.provisioned, c.moved); got != c.want {
+			t.Errorf("%s: replacesAgent = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

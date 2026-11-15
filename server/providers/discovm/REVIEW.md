@@ -98,11 +98,16 @@
   nowhere while the pool reads as converged.
 - An adopted pool machine is not a created one, though `converge` calls both
   `made`: only a machine this pass created from the base, or started, may
-  report its agent's start from before (`sandbox.ReportAgentStarted`), and
-  any machine it did not create reports again once the apply has returned.
-  Why: an adopted running machine, or one recorded unprovisioned, may run
-  an older agent, and a start reported before it is placed counts that
-  agent's reports as the new one's (ADR 26-11-15-294 §1).
+  report a box start (`sandbox.AgentStartBox`). Any other machine reports an
+  in-place start (`sandbox.AgentStartInPlace`) before the apply, and so does
+  one it booted unless `replacesAgent` says nothing will restart (a repair
+  with nothing moved). Decide that from what is known before the apply
+  (bundles and placement fingerprint against the record), never "any machine
+  not created". Why: an adopted running machine, or one recorded
+  unprovisioned, may run an older agent, and a box start counts that agent's
+  heartbeats as the new one's; and a repair's in-place start would replace
+  its box start with no first report to follow, holding the pool a heartbeat
+  after the settle (ADR 26-11-15-294 §1, 26-11-15-602 §1).
 - Every pool host's `removePoolHost` empties the pool's own disco-vm scope
   (`machinePool`), not only the host: `poolMachine` does (`emptyPoolScope`),
   and `hostAgent`, which removes only its directory while its served engine

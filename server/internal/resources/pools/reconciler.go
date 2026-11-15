@@ -231,13 +231,14 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		defer keptMu.Unlock()
 		kept = reason
 	})
-	// A provider that starts the pool's agent says when, and the watch hears
-	// it at once, not at the settle: the pass that starts it is often not the
-	// one that settles (ADR 26-11-15-294 §1).
+	// A provider that starts the pool's agent, or is about to restart it in a
+	// running box, says when and which, and the watch hears it at once, not
+	// at the settle: the pass that starts it is often not the one that
+	// settles (ADR 26-11-15-294 §1, 26-11-15-602 §1).
 	poolID := pool.ID
-	ctx = sandbox.WithAgentStartReporter(ctx, func(at time.Time) {
+	ctx = sandbox.WithAgentStartReporter(ctx, func(at time.Time, kind sandbox.AgentStartKind) {
 		if r.pools != nil {
-			r.pools.Upgrades().agentStarted(poolID, at)
+			r.pools.Upgrades().agentStarted(poolID, at, kind)
 		}
 	})
 	// repair names why this pass replaces the runtime rather than reconciling

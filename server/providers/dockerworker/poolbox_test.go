@@ -3,10 +3,12 @@ package dockerworker
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
@@ -140,10 +142,29 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 		t.Fatalf("a moved placement: err %v; want it provisioned again, which begin stopped", err)
 	}
 
+	// The agent's in-place start is recorded once placement is closed, and
+	// only then: before the apply, since the restarted agent's first report
+	// lands before the apply returns (ADR 26-11-15-602 §1).
+	var starts []sandbox.AgentStartKind
+	startCtx := sandbox.WithAgentStartReporter(keptCtx, func(_ time.Time, kind sandbox.AgentStartKind) { starts = append(starts, kind) })
 	moved := &fakeMaker{box: sandbox.PoolBox{Bundles: []sandbox.BundlePin{{Name: "discobox-pool-agent-bundle", Digest: "sha256:c"}}}}
-	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, moved, recorded, func(context.Context) error { return superseded })
-	if !errors.Is(err, superseded) || moved.enrolled {
-		t.Fatalf("moved bundles under newer intent: err %v, enrolled %v; want begin's error and nothing applied", err, moved.enrolled)
+	_, err = engine.applyMovedPoolBundles(startCtx, cli, "container-1", pool, moved, recorded, func(context.Context) error { return superseded })
+	if !errors.Is(err, superseded) || moved.enrolled || len(starts) != 0 {
+		t.Fatalf("moved bundles under newer intent: err %v, enrolled %v, starts %v; want begin's error and nothing applied or recorded", err, moved.enrolled, starts)
+	}
+	kept = nil
+	pool.OutboundStatus = nil
+	moved.box.OpenBlob = func(context.Context, string) (io.ReadCloser, int64, error) {
+		return nil, 0, errors.New("blob store unreachable")
+	}
+	got, err = engine.applyMovedPoolBundles(startCtx, cli, "container-1", pool, moved, recorded, func(context.Context) error {
+		if len(starts) != 0 {
+			t.Errorf("an in-place start %v was recorded before placement closed", starts)
+		}
+		return nil
+	})
+	if err != nil || kept == nil || got.Agent != recorded.Agent || len(starts) != 1 || starts[0] != sandbox.AgentStartInPlace {
+		t.Fatalf("moved bundles whose apply fails: record %+v, kept %v, starts %v, err %v; want one in-place start before the apply, and the box kept", got, kept, starts, err)
 	}
 }
 

@@ -889,6 +889,46 @@ func TestAReportThatAnAgentTakesBodyPlacesResendsItsSentinels(t *testing.T) {
 	}
 }
 
+// A ready report the agent marks as its process's first is told to the
+// upgrade watch, at the time the report was stored with; a heartbeat, and a
+// first report that is not ready, are not (ADR 26-11-15-602 §2).
+func TestAReadyFirstReportIsToldToTheUpgradeWatch(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	watch := svc.pools.Upgrades()
+	report := func(first, ready bool) *model.Pool {
+		t.Helper()
+		body := services.UpdatePoolStatusBody{Ready: ready, Schedulable: ready}
+		if first {
+			body.FirstReport = serverapi.NewOptBool(true)
+		}
+		pool, err := svc.UpdatePoolStatus(ctx, "pool-a", body)
+		if err != nil {
+			t.Fatalf("report: %v", err)
+		}
+		return pool
+	}
+	told := func() time.Time {
+		watch.mu.Lock()
+		defer watch.mu.Unlock()
+		return watch.firstReport["pool-a"]
+	}
+
+	report(false, true)
+	report(true, false)
+	if at := told(); !at.IsZero() {
+		t.Fatalf("a heartbeat or a first report not ready was told as a first report, at %v", at)
+	}
+	pool := report(true, true)
+	if at := told(); !at.Equal(*pool.StatusReportedAt) {
+		t.Fatalf("a ready first report was told at %v; want the time it was stored with, %v", at, *pool.StatusReportedAt)
+	}
+	report(false, true)
+	if at := told(); !at.Equal(*pool.StatusReportedAt) {
+		t.Fatalf("a heartbeat moved the first report to %v", at)
+	}
+}
+
 func TestStartAuthorizationUsesCurrentEpochAndPoolOwnership(t *testing.T) {
 	svc, _ := newAgentServiceTestFixture(t)
 	principal := auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"}

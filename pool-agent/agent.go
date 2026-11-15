@@ -361,7 +361,10 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 	if status.runtime != nil {
 		conditions["runtime"] = status.runtime
 	}
-	report := func(ctx context.Context) error {
+	// first marks the report sent at start, and only it (ADR 26-11-15-602
+	// §2): a first report that fails fails the start, so this process
+	// sends at most one that is accepted.
+	report := func(ctx context.Context, first bool) error {
 		ctx, cancel := context.WithTimeout(ctx, statusReportTimeout)
 		defer cancel()
 		var cpus float64
@@ -379,6 +382,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			SentinelGrants:       true,
 			SentinelGenerations:  true,
 			SentinelBodyPlaces:   true,
+			FirstReport:          first,
 			Ready:                true,
 			Schedulable:          status.schedulable,
 			Degraded:             false,
@@ -391,7 +395,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			Conditions:            conditions,
 		})
 	}
-	if err := report(ctx); err != nil {
+	if err := report(ctx, true); err != nil {
 		return err
 	}
 	logger.Info("pool marked ready", "poolID", bootstrap.PoolID)
@@ -407,7 +411,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 				// A failed beat is transient by assumption: the next tick
 				// re-reports, and that retry is exactly what recovers a pool
 				// whose readiness was cleared while the control plane was down.
-				if err := report(ctx); err != nil && ctx.Err() == nil {
+				if err := report(ctx, false); err != nil && ctx.Err() == nil {
 					logger.Warn("report pool status", "poolID", bootstrap.PoolID, "error", err)
 				}
 			}
