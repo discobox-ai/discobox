@@ -31,9 +31,20 @@ case "$1 ${2:-} ${3:-}" in
 "admin provider create")
 	for a in "$@"; do case $a in @*) cp "${a#@}" "$STUB/provider.json" ;; esac; done
 	echo '{"id":"prov_T1"}' ;;
+"admin provider check")
+	# The server answers a failed check 200 with its outcome; the CLI prints
+	# it and exits non-zero.
+	if [ -e "$STUB/provider-unreachable" ]; then
+		echo '{"outcome":"unreachable","message":"boxd: exchange API key: Post \"https://app.boxd.sh/api/v1/auth/token\": dial tcp 1.2.3.4:443: connect: network is unreachable: pool agent is not reachable","checkedAt":"2026-11-15T10:00:00Z"}'
+		echo 'Error: provider prov_T1 check: unreachable' >&2; exit 1
+	fi
+	echo '{"outcome":"ok","checkedAt":"2026-11-15T10:00:00Z"}' ;;
 "admin pool create") echo '{"id":"pool_T1"}' ;;
 "admin pool update") ;;
 "admin pool get")
+	if [ -e "$STUB/provider-unreachable" ] && [ ! -e "$STUB/pool.deleted" ]; then
+		echo '{"state":"failed","errorMessage":"pool pool_T1 bootstrap provision: bootstrap stopped making progress"}'; exit 0
+	fi
 	[ ! -e "$STUB/pool.deleted" ] || { echo 'request failed: 404 Not Found' >&2; exit 1; }
 	cat "$STUB/pool.state" 2>/dev/null || echo '{"state":"active","ready":true,"schedulable":true}' ;;
 "admin pool rm") touch "$STUB/pool.deleted" ;;
@@ -43,6 +54,9 @@ case "$1 ${2:-} ${3:-}" in
 "admin provider rm") touch "$STUB/provider.deleted" ;;
 "admin box purge") ;;
 run*)
+	if [ -e "$STUB/no-default-harness" ] && ! printf '%s\n' "$@" | grep -qx -- -H; then
+		echo 'request failed: 409 Conflict: no harness given and this project has no default; pass --harness, or set one with ` + "`discobox admin harness set-default <harness>`" + `' >&2; exit 1
+	fi
 	prompt=$(printf '%s\n' "$@" | grep -o 'string [0-9a-f]* written' | awk '{ print $2 }')
 	printf '%s' "$prompt" | rev >"$STUB/answer"
 	# The CLI's progress goes to stderr, beside the JSON.
