@@ -481,10 +481,9 @@ func (s *Store) CancelSandboxWakeTx(ctx context.Context, tx *gorm.DB, projectID,
 		UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1")}).Error
 }
 
-// SetSandboxWakeIfEpoch records the wake a confirmed power-down carried, unless
-// an outside power instruction has moved the epoch since the caller read it.
-// It reports whether it wrote. A nil at clears the wake under the same guard,
-// which is how the reconcile spends one.
+// SetSandboxWakeIfEpoch records the wake a confirmed power-down carried — nil
+// when it carried none — unless an outside power instruction has moved the
+// epoch since the caller read it. It reports whether it wrote.
 func (s *Store) SetSandboxWakeIfEpoch(ctx context.Context, projectID, sandboxID string, epoch int64, at *time.Time) (bool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -493,6 +492,26 @@ func (s *Store) SetSandboxWakeIfEpoch(ctx context.Context, projectID, sandboxID 
 	result := write.WithContext(ctx).Model(&model.Sandbox{}).
 		Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).
 		UpdateColumn("wake_at", at)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// SpendSandboxWake clears the wake the power reconcile sent a start for, once
+// the pool took it (ADR 26-11-15-829 §1). It clears only that wake, on the
+// epoch it was read on: an outside instruction that moved the epoch has
+// already cleared it, and a later wake a new power-down wrote is not this one.
+// The epoch is not moved: the wake's own start is no outside instruction. It
+// reports whether it cleared.
+func (s *Store) SpendSandboxWake(ctx context.Context, projectID, sandboxID string, epoch int64, at time.Time) (bool, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return false, err
+	}
+	result := write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ? AND wake_epoch = ? AND wake_at = ?", projectID, sandboxID, epoch, at).
+		UpdateColumn("wake_at", nil)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -882,6 +901,21 @@ func (s *Store) ListPresentSandboxIDs(ctx context.Context, projectID, poolID, ha
 	}
 	var out []string
 	err = query.Order("id ASC").Pluck("id", &out).Error
+	return out, err
+}
+
+// ListSandboxIDsWithDueWake lists the present sandboxes on a pool whose
+// scheduled wake is due at now: what a pool coming back ready marks for their
+// power reconcile (ADR 26-11-15-829 §2).
+func (s *Store) ListSandboxIDsWithDueWake(ctx context.Context, projectID, poolID string, now time.Time) ([]string, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	err = read.Model(&model.Sandbox{}).
+		Where("project_id = ? AND pool_id = ? AND desired_state = ? AND wake_at IS NOT NULL AND wake_at <= ?", projectID, poolID, model.DesiredStatePresent, now.UTC()).
+		Order("id ASC").Pluck("id", &out).Error
 	return out, err
 }
 

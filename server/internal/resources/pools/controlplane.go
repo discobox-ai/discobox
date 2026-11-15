@@ -61,13 +61,14 @@ func (s *ControlPlane) SetPoolBoxes(boxes PoolBoxes) {
 }
 
 // RegisterJobs installs the pool reconciler on the level-triggered reconcile
-// engine.
-func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager) error {
+// engine. sandboxes is what the reconciler hands a pool it makes able to take
+// its sandboxes' due wakes.
+func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager, sandboxes SandboxDelivery) error {
 	if s.engine == nil {
 		return errors.New("reconcile engine is required")
 	}
 
-	return s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s))
+	return s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s, sandboxes))
 }
 
 func (s *ControlPlane) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {

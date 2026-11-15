@@ -176,8 +176,10 @@ after any queues, the pool asks `authorize-pool-sandbox-start` whether that
 epoch is still current and the sandbox still present on this pool. This closes
 the unanswered-dispatch race even when a newer stop never reaches the pool.
 The callback reads primary state without taking the service admission lock;
-no database transaction spans network I/O. Unfenced scheduled wakes and action
-starts keep their existing single-send policy.
+no database transaction spans network I/O. A scheduled wake's start is fenced
+the same way, on the wake epoch it was read with (see
+[the scheduled start](#sleep-idle-and-the-scheduled-start)). Action starts
+keep their existing single-send policy.
 
 Successful explicit suspend is completed at the execution boundary too: while
 still holding the pool power lock, the pool calls `sandbox-suspend-completion`.
@@ -223,12 +225,46 @@ a dirty row no other reconcile returns over.
   409 that says why). Every start and every use's `ensureRunning` thaws a
   suspended sandbox; `SandboxIsLive` counts it, so nothing rebuilds under it.
 - **The scheduled start.** The confirmation carries the sandbox's earliest
-  pending wake, recorded as `WakeAt` and armed as `RequeueAt`. At that time the
-  reconcile claims it — clears it on the `WakeEpoch` it read — and sends one
-  start whatever the row says the sandbox is doing; nothing retries a failed
-  one (ADR 26-10-12-711). The row lags the power-down this reconcile just sent,
-  so a sandbox reported running may be on its way down; a start on one that
-  really is running is a no-op at the pool.
+  pending wake, recorded as `WakeAt` and armed as `RequeueAt`; both the column
+  and the dirty row are in the database, so a server restart before the wake
+  is due loses nothing. At that time the reconcile sends a start whatever the
+  row says the sandbox is doing: the row lags the power-down this reconcile
+  just sent, so a sandbox reported running may be on its way down, and a start
+  on one that really is running is a no-op at the pool.
+- **The wake is kept until its pool takes the start**
+  ([ADR 26-11-15-829](../../../../docs/adr/26-11-15-829-a-scheduled-wake-is-kept-until-its-pool-takes-the-start.md)).
+  - *Not sent to a pool that is not active and ready* (`poolTakesWakes`):
+    every pool reads `unknown` after a server start until it reports again,
+    and a VM pool's agent is away while its machine boots. The wake waits on a
+    `RequeueAt` backstop (`wakePoolWait`), which is no failure and holds no
+    slot. The write that turns the pool active and ready marks its due wakes
+    (`MarkPoolDueWakesTx`, handed the pool before and after) as intent, so it
+    cuts a failing wake's backoff too; a pool turns once per return, so this
+    is no retry at every poll. Both writers hand it over: the pools service's
+    status write (a report turning it ready) and the pool reconcile's settle
+    (a pool back from `offline` turned active after its report). The reconcile reads from the
+    primary, so it sees the report that marked it.
+  - *Fenced*: the start carries the `WakeEpoch` read with the wake
+    (`SandboxRef.StartEpoch`), so the pool refuses it once an outside
+    instruction has moved the epoch, a lost attempt replayed included.
+  - *Spent once the pool answered*: accepted, or refused with an answer of its
+    own, which is never retried (ADR 26-10-12-711).
+    `SpendSandboxWake` clears it on the epoch and the `WakeAt` read, so neither
+    a cancellation nor a later wake is cleared. `ErrPoolNotReachable`, a
+    canceled context, anything failing before the send
+    (`errInstructionNotSent`) and a fence refusal (`ErrStartNotAuthorized`)
+    keep it and fail the reconcile, so the engine's backoff sends it again;
+    there is no limit while the pool stays active. A fence refusal is kept
+    because a real supersession cleared the wake in the same write as it moved
+    the epoch, so a refusal that finds it still recorded is the pool's
+    authorization callback failing.
+  - *Not holding the sandbox up*: a reconcile whose wake was kept still powers
+    down a running sandbox that asks for it, so a sandbox started by use on a
+    pool that cannot take the start yet still sleeps and idles out.
+  - *The confirmation is the sandbox's word on its wakes*: a power-down
+    records the wake its confirmation carried, or clears `WakeAt` when it
+    carried none (on the epoch read). A wake a use-started boot already
+    handed over, or one the agent removed, is then not sent again.
 - **Outside instructions win.** Every start, stop or restart from a caller
   (`instructSandboxOnce`, which repair goes through) and every archive or delete
   (`recordSandboxIntent`) cancels the wake and moves `WakeEpoch`, wake or no

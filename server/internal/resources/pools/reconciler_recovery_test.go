@@ -62,7 +62,7 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 		t.Fatalf("create pool: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestReconcilePromotesAPoolThatRegisteredAfterConverging(t *testing.T) {
 		t.Fatalf("create pool: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestFailedReconcileKeepsALiveCreatedPoolActive(t *testing.T) {
 		t.Fatalf("create pool: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err == nil {
 		t.Fatal("reconcile succeeded, want the provider's failure")
 	}
@@ -228,7 +228,7 @@ func TestStaleHeartbeatReadsOffline(t *testing.T) {
 		t.Fatalf("create pool: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestReconcileRequeuesAPoolHostThatIsStillComingUp(t *testing.T) {
 		t.Fatalf("get pool: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	result, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -550,7 +550,7 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 		}
 		return nil
 	}})
-	r := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	r := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	if _, err := r.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
 		t.Fatal(err)
 	}
@@ -580,7 +580,7 @@ func TestStartupReconcileDoesNotRenewPreviousOfflineFailure(t *testing.T) {
 	if err := st.BeginPoolHealthChecks(ctx); err != nil {
 		t.Fatal(err)
 	}
-	rec := NewPoolReconciler(st, manager, NewControlPlane(st, nil))
+	rec := NewPoolReconciler(st, manager, NewControlPlane(st, nil), nil)
 	if _, err := rec.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
 		t.Fatal(err)
 	}
@@ -633,7 +633,7 @@ func TestSupersededPoolReconcileSettlesCleanly(t *testing.T) {
 		t.Fatalf("create pool: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	result, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID))
 	if !runtime.superseded {
 		t.Fatal("the runtime call never wrote newer intent; this test proves nothing")
@@ -699,7 +699,7 @@ func TestPoolSupersededInsideReconcilePoolIsNotRepaired(t *testing.T) {
 		t.Fatalf("create sandbox: %v", err)
 	}
 
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	result, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID))
 	if !runtime.superseded {
 		t.Fatal("begin never lost to newer intent; this test proves nothing")
@@ -775,7 +775,7 @@ func TestReconcilePersistsTheHostCredential(t *testing.T) {
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -798,4 +798,41 @@ func TestReconcilePersistsTheHostCredential(t *testing.T) {
 
 func (stubPoolProvider) CheckCreateCompatibility(context.Context, sandbox.SandboxRef) error {
 	return nil
+}
+
+// A pool back from `offline` is made `active` by its reconcile, after the
+// report that earned it, so no report sees it turn able to take its
+// sandboxes' due wakes: the reconcile hands the sandbox service the pool as it
+// found it and as it leaves it, in the transaction that writes it (ADR
+// 26-11-15-829 §2).
+func TestReconcileHandsOnAPoolItBringsBackForDueWakes(t *testing.T) {
+	ctx := context.Background()
+	appStore, _ := newPoolReconcilerTestStore(t)
+	manager := sandbox.NewProviderManager(appStore)
+	manager.RegisterProvider("stub", stubPoolProvider{})
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	reportedAt := time.Now().UTC()
+	pool := &model.Pool{
+		ID: "pool-1", ProjectID: "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		Ready:        true, Schedulable: true,
+		RegisteredAt: &reportedAt, LastSeenAt: &reportedAt, StatusReportedAt: &reportedAt,
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported", "")
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	recorded := &recordedDelivery{}
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), recorded)
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	want := "project-1/pool-1 offline,ready=true -> active,ready=true"
+	if len(recorded.wakes) != 1 || recorded.wakes[0] != want {
+		t.Fatalf("handed %v, want %q", recorded.wakes, want)
+	}
 }

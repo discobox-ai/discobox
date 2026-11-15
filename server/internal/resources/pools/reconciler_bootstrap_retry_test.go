@@ -67,7 +67,7 @@ func newBootstrapRetryFixture(t *testing.T) *bootstrapRetryFixture {
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	return &bootstrapRetryFixture{t: t, store: appStore, db: db, runtime: runtime, reconciler: NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))}
+	return &bootstrapRetryFixture{t: t, store: appStore, db: db, runtime: runtime, reconciler: NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)}
 }
 
 func (f *bootstrapRetryFixture) reconcile() error {

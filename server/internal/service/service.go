@@ -345,7 +345,7 @@ func (s *Service) registerReconcilers() error {
 	if err := s.engine.Register(store.BindingExpiryResourceType, s.secrets.NewBindingExpiryReconciler()); err != nil {
 		return err
 	}
-	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())
+	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager(), s.Service)
 }
 
 func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {

@@ -131,8 +131,9 @@ type Provider interface {
 // ProjectID is required because many providers use project scope for placement,
 // shared caches, VM selection, resource settings, and cleanup.
 type SandboxRef struct {
-	// StartEpoch fences an explicit start at the pool execution boundary. Nil
-	// for single-send scheduled wakes and actions, which have their own policy.
+	// StartEpoch fences a start at the pool execution boundary: an explicit
+	// start's admission epoch, or the wake epoch a scheduled wake was read on
+	// (ADR 26-11-15-829 §3). Nil for actions, which have their own policy.
 	StartEpoch *int64
 	// SuspendID identifies one successful-freeze completion across lost responses.
 	SuspendID    string

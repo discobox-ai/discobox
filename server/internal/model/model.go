@@ -1190,9 +1190,11 @@ type Sandbox struct {
 	// which must not tear anything down.
 	RepairGeneration int64 `gorm:"column:repair_generation;not null;default:0" json:"-" doc:"Generation whose ensure rebuilds from a teardown"`
 	// WakeAt is the sandbox's one scheduled start: the wake its last confirmed
-	// power-down carried, which the sandbox power reconcile sends a start at,
-	// once (ADR 26-10-16-337 §6). It is not desired state — nothing retries
-	// it — and any power instruction from outside clears it. Null is no wake.
+	// power-down carried, which the sandbox power reconcile sends a start at
+	// (ADR 26-10-16-337 §6), and keeps until its pool takes that start (ADR
+	// 26-11-15-829 §1). It is not desired state — a start the pool answered is
+	// never sent again — and any power instruction from outside clears it. Null
+	// is no wake.
 	WakeAt *time.Time `gorm:"column:wake_at" json:"-" doc:"When the sandbox asked to be started again after the power-down it asked for"`
 	// WakeEpoch guards WakeAt against a power instruction from outside that
 	// lands while the power reconcile is between reading the sandbox and
