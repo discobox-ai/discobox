@@ -6373,6 +6373,9 @@ for whichever comes first. By default only what happens after the last input
 sent to the terminal counts, so "send" then "wait" never misses the answer.
 Without --for, wait has no time limit; with it, wait exits 124 when DURATION
 passes. It prints what held, then the point a later --after resumes from.
+
+A discobox still starting is waited on until it runs, within --for, and one
+whose start fails ends the wait with why. wait never starts a stopped one.
 ~~~~
 
 ```text
