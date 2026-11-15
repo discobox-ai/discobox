@@ -387,10 +387,13 @@ func (h *poolMachine) retireKey(ctx context.Context, pool *model.Pool, guest mac
 // off the org's default one, so no other machine of the provider's reaches it
 // (ADR 26-10-23-551 §4). It is not isolated: boxd peers an isolated machine
 // only with machines that are not, so the pool's machine keeps what the
-// driver gives a machine (the pool's HostCredential says so). It asks for a
-// public URL, which the server reaches its agent at, not strictly: a driver
-// that gives none fails where the server dials it. A sandbox's machine asks
-// for none, strictly (disco-vm ADR 26-11-12-604).
+// driver gives a machine (the pool's HostCredential says so). It asks for its
+// ingress URL, where the server, the pool's controller, reaches its agent,
+// strictly: a driver that cannot give one refuses the machine here rather
+// than at the server's first dial. Its pool URL is the driver's default,
+// which every driver that carries a pool gives. A sandbox's machine asks for
+// its pool URL on and its ingress URL off, both strictly (disco-vm ADR
+// 26-11-14-610).
 func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string) (engine.Instance, error) {
 	// The driver checks its account through its provider's API first (boxd's
 	// Check: that the key is accepted, and the region enabled), so an
@@ -402,7 +405,7 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string
 		}
 		return engine.Instance{}, fmt.Errorf("pool %s: the %s driver refuses its account: %w", pool.ID, h.engine.Driver.Name(), err)
 	}
-	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Public: machine.URLRequest{Mode: machine.URLOn}}})
+	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}})
 	if err != nil {
 		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))
 	}
@@ -445,15 +448,17 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 		bootstrap.DriverConfig = config
 	}
 	bootstrap.MachineNetwork = scope
-	// Where the server reaches the pool's agent, and where its sandboxes'
-	// machines reach the pool, from which the agent derives their endpoints
-	// and their fence (ADR 26-10-29-481 §§1–2). A driver with no path between
-	// its machines has no private URL, and carries no pool.
-	if bootstrap.PublicURL, err = h.engine.URL(ctx, inst); err != nil {
-		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's public URL: %w", pool.ID, notReachable(err))
+	// Where the server reaches the pool's agent, its ingress URL, and where
+	// its sandboxes' machines, its peers, reach the pool, its pool URL, from
+	// which the agent derives their endpoints and their fence (ADR
+	// 26-10-29-481 §§1–2, disco-vm ADR 26-11-14-610). Neither stands in for
+	// the other. A driver with no path between its machines has no pool URL,
+	// and carries no pool.
+	if bootstrap.IngressURL, err = h.engine.URL(ctx, inst, machine.URLIngress); err != nil {
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's ingress URL: %w", pool.ID, notReachable(err))
 	}
-	if bootstrap.PrivateURL, err = h.engine.PrivateURL(ctx, inst); err != nil {
-		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's private URL: %w", pool.ID, notReachable(err))
+	if bootstrap.PoolURL, err = h.engine.URL(ctx, inst, machine.URLPool); err != nil {
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's pool URL: %w", pool.ID, notReachable(err))
 	}
 	if err := bootstrap.Validate(); err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's bootstrap: %w", pool.ID, err)
@@ -481,9 +486,10 @@ func held(caps machine.Capabilities) bool {
 }
 
 // agentListenURL is where the pool agent listens in its machine: where the
-// driver's service for the machine listens (Service.Listen), which its one
-// URL reaches, as a machine sandbox's agent does (ADR 26-10-27-345 §2). Only
-// TCP is taken: no remote driver serves an instance on anything else.
+// driver's service for the machine listens (Service.Listen), which its
+// ingress and pool URLs reach, as a machine sandbox's agent does (ADR
+// 26-10-27-345 §2). Only TCP is taken: no remote driver serves an instance on
+// anything else.
 func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) (string, error) {
 	service, err := h.engine.Driver.Service(ctx, inst)
 	if err != nil {
@@ -496,9 +502,11 @@ func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) 
 	return "http://" + address, nil
 }
 
-// acquireAgentClient reaches the pool agent at its machine's one URL (ADR
-// 26-10-09-106 §3): boxd's public HTTPS URL, the same across stop and start.
-// The URL needs no credential of the driver's; the agent authenticates every
+// acquireAgentClient reaches the pool agent at its machine's ingress URL
+// alone (ADR 26-10-09-106 §3, disco-vm ADR 26-11-14-610): where the pool's
+// controller reaches it, boxd's HTTPS URL, the same across stop and start.
+// It never falls back to the pool URL, which only the pool's peers reach. The
+// URL needs no credential of the driver's; the agent authenticates every
 // caller but its health and metadata.
 //
 // A pool whose machine is gone is one its reconcile creates again, so on this
@@ -513,7 +521,7 @@ func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) 
 	if err != nil {
 		return nil, err
 	}
-	url, err := h.engine.URL(ctx, inst)
+	url, err := h.engine.URL(ctx, inst, machine.URLIngress)
 	if err != nil {
 		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, notReachable(err))
 	}

@@ -61,8 +61,9 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    (the default) or `machine`, with its disco-vm driver, the disco-vm pool
    its sandboxes' machines are made in, the base they boot, the driver's
    configuration as the provider's (no secret; ADR 26-11-11-080 §6), the provider
-   network they share with the pool's machine, and that machine's public and
-   private URLs. Every pool's bootstrap says whether it reaches its sandboxes'
+   network they share with the pool's machine, and that machine's ingress
+   and pool URLs (disco-vm ADR 26-11-14-610: where the server, the pool's
+   controller, reaches it, and where its sandboxes' machines, its peers, do). Every pool's bootstrap says whether it reaches its sandboxes'
    agents over TLS (`disableAgentEndpointTls`; [The Agent's
    TLS](#the-agents-tls)).
 2. The agent settles how its sandboxes reach it (`resolvePoolHop`, see
@@ -1044,7 +1045,7 @@ cost.
 
 ```mermaid
 flowchart LR
-    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool, no public URL)"]
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool,\npool URL on, no ingress URL)"]
     inst --> newroot{"machine.json asks\na new root?"}
     newroot -->|yes| upgrade["upgradeMachine:\nengine.Upgrade, keeping\nits data and cache volumes"]
     newroot -->|no| start["startLocked: engine.Start"]
@@ -1062,10 +1063,11 @@ flowchart LR
   is made `Isolated` on `MachineNetwork` (ADR 26-10-23-551 §4) and fenced to
   what the pool's hop reaches (`Egress`; [The Hop](#the-hop)), which the
   driver sets and reads back before the create returns, so the fence holds
-  before anything is placed. It asks for no public URL, strictly, so boxd
-  gives it none beyond its private one, `http://<machine>.boxd:7302`, and a
-  driver that cannot withhold one refuses it (disco-vm ADR 26-11-12-604;
-  [REVIEW.md](REVIEW.md#a-machines-public-port)). The driver is trusted to
+  before anything is placed. It asks for its pool URL on and its ingress URL
+  off, both strictly, so boxd gives it only its pool URL,
+  `http://<machine>.boxd:7302`, and a driver that cannot give the one or
+  withhold the other refuses it (disco-vm ADR 26-11-14-610;
+  [REVIEW.md](REVIEW.md#a-machines-ingress-port)). The driver is trusted to
   keep to that: nothing re-checks a machine for a URL. A driver that cannot
   isolate or fence is refused, and a machine found by name whose fence its
   driver reports otherwise — made before the fence, or by hand — is refused
@@ -1103,9 +1105,10 @@ flowchart LR
   (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into
   sandbox.json as the agent's listen address, since the driver gives an
   instance the same one at every boot, and the
-  pool reaches the agent at the instance's private URL (`SandboxDialer`,
-  `Engine.PrivateURL`: TLS for an `https` URL), on the pool's network rather
-  than through the provider's edge. No other port of a machine is reached.
+  pool, the machine's peer, reaches the agent at the instance's pool URL
+  (`SandboxDialer`, `Engine.URL` with `machine.URLPool`: TLS for an `https`
+  URL), on the pool's network rather than through the provider's edge, and
+  never at an ingress URL. No other port of a machine is reached.
 - **Power is the engine's.** State is read from the driver; one it cannot be
   asked for keeps the state last seen, since a lost connection is not a stop.
   The state channel polls (no event stream), and a poll that cannot read every
@@ -1192,13 +1195,16 @@ A machine pool is reached the way a Docker pool is
 its agent and proxy unit run on its box, and its sandboxes reach the proxy,
 credentials, DNS and the mediator over mTLS with their client certificates,
 verified as `discobox-pool-proxy`. Only the address under them is the
-driver's: the server writes the pool machine's public and private URLs into
-the bootstrap, and `resolvePoolHop` derives from them, once, at start:
+driver's: the server writes the pool machine's ingress and pool URLs into
+the bootstrap (`ingressUrl`, `poolUrl`; disco-vm ADR 26-11-14-610), and
+`resolvePoolHop` derives from them, once, at start. Neither stands in for the
+other: the server reaches the agent at the ingress URL alone, and the
+sandboxes reach the pool at its pool URL.
 
-| the pool's private URL | its sandboxes' endpoints | a sandbox machine's fence |
+| the pool's pool URL | its sandboxes' endpoints | a sandbox machine's fence |
 | --- | --- | --- |
-| not its public URL: a direct path | `https://discobox-pool-proxy:<port>`, as on a Docker pool, with the private URL's host as discobox's answer for the name (`PoolEndpoints.Address`), which the sandbox's bridges dial in its place and resolve through the provider at each dial | nothing beyond the pool's network |
-| its public URL: an edge (no driver reaches it: it would reach each sandbox at its machine's public URL, which a sandbox's machine asks off, strictly; #1053) | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone |
+| not its ingress URL: a direct path | `https://discobox-pool-proxy:<port>`, as on a Docker pool, with the pool URL's host as discobox's answer for the name (`PoolEndpoints.Address`), which the sandbox's bridges dial in its place and resolve through the provider at each dial | nothing beyond the pool's network |
+| its ingress URL: an edge (no driver reaches it: it would reach each sandbox at its machine's ingress URL, which a sandbox's machine asks off, strictly; #1053) | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone |
 
 The names are discobox's own, as a private DNS would answer them: the
 provider's name for the pool's machine, and its address, are never in an
@@ -1929,7 +1935,7 @@ flowchart LR
   turns it on. No provider sets it on a Docker pool yet: the one that places a
   pool's sandboxes off its network sets it, per pool, and exposes the
   listener to the edge. A machine pool whose driver gives its machines no
-  path but its public URL takes the URL from its bootstrap instead
+  path but its ingress URL takes the URL from its bootstrap instead
   ([The Hop](#the-hop)). The agent reads it once: `proxyagent.PoolEndpoints` then names
   `<url>/tunnel/<service>` for every endpoint in each bootstrap, and nothing
   else, and the unit environment file hands it to the proxy unit.

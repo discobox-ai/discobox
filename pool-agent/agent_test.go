@@ -85,8 +85,8 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 		Runtime:         poolagent.RuntimeMachine,
 		Driver:          "boxd",
 		MachinePool:     "pool-1",
-		PublicURL:       "https://pool-1.boxd.sh",
-		PrivateURL:      "http://pool-1.boxd:7302",
+		IngressURL:      "https://pool-1.boxd.sh",
+		PoolURL:         "http://pool-1.boxd:7302",
 	})
 	t.Setenv(poolagent.EnvBootstrapFile, path)
 	t.Setenv(poolagent.EnvControlPlaneURL, "")
@@ -140,41 +140,41 @@ func TestLoadRefusesAnUnknownBootstrapField(t *testing.T) {
 func TestBootstrapValidatesItsRuntime(t *testing.T) {
 	base := poolagent.Bootstrap{ControlPlaneURL: "http://control.example", PoolID: "pool-1"}
 	for _, tc := range []struct {
-		name    string
-		runtime poolagent.Runtime
-		driver  string
-		pool    string
-		public  string
-		private string
-		config  string
-		wantErr string
+		name       string
+		runtime    poolagent.Runtime
+		driver     string
+		pool       string
+		ingressURL string
+		poolURL    string
+		config     string
+		wantErr    string
 	}{
 		{name: "none is docker", runtime: ""},
 		{name: "docker", runtime: poolagent.RuntimeDocker},
 		{name: "docker with a driver", runtime: poolagent.RuntimeDocker, driver: "boxd", wantErr: "driver"},
-		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302"},
-		{name: "machine behind an edge alone", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "https://pool-1.boxd.sh"},
-		{name: "machine without a private URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", wantErr: "private URL"},
-		{name: "machine without a public URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
-		{name: "machine with a URL that is not http", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "tcp://pool-1.boxd:7302", wantErr: "private URL"},
-		{name: "machine with a URL that names a path", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh/agent", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
-		{name: "machine on the provider's driver configuration", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302", config: `{"region":"fra","tokenUrl":"https://app.example.com/token"}`},
-		{name: "machine on a driver configuration its driver refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302", config: `{"apiKey":"bxd_k"}`, wantErr: "driver configuration"},
+		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302"},
+		{name: "machine behind an edge alone", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "https://pool-1.boxd.sh"},
+		{name: "machine without a pool URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", wantErr: "pool URL"},
+		{name: "machine without an ingress URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", poolURL: "http://pool-1.boxd:7302", wantErr: "ingress URL"},
+		{name: "machine with a URL that is not http", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "tcp://pool-1.boxd:7302", wantErr: "pool URL"},
+		{name: "machine with a URL that names a path", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh/agent", poolURL: "http://pool-1.boxd:7302", wantErr: "ingress URL"},
+		{name: "machine on the provider's driver configuration", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"region":"fra","tokenUrl":"https://app.example.com/token"}`},
+		{name: "machine on a driver configuration its driver refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"apiKey":"bxd_k"}`, wantErr: "driver configuration"},
 		{name: "docker with a driver configuration", runtime: poolagent.RuntimeDocker, config: `{"region":"fra"}`, wantErr: "machine pool"},
 		{name: "docker with in-machine auth", runtime: poolagent.RuntimeDocker, config: `{"inMachine":true}`, wantErr: "machine pool"},
-		{name: "machine authenticating in-machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302", config: `{"inMachine":true}`},
-		{name: "machine turning in-machine auth on with a value that is not a boolean", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302", config: `{"inMachine":"yes"}`, wantErr: "driver configuration"},
+		{name: "machine authenticating in-machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"inMachine":true}`},
+		{name: "machine turning in-machine auth on with a value that is not a boolean", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", config: `{"inMachine":"yes"}`, wantErr: "driver configuration"},
 		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, pool: "pool-1", wantErr: "needs a driver"},
 		{name: "machine without a pool", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine pool"},
 		{name: "machine in a pool disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool_1", wantErr: "machine pool"},
 		{name: "docker with a machine pool", runtime: poolagent.RuntimeDocker, pool: "pool-1", wantErr: "machine pool"},
-		{name: "docker with a URL", runtime: poolagent.RuntimeDocker, private: "http://pool-1.boxd:7302", wantErr: "URLs"},
+		{name: "docker with a URL", runtime: poolagent.RuntimeDocker, poolURL: "http://pool-1.boxd:7302", wantErr: "URLs"},
 		{name: "unknown", runtime: "podman", wantErr: "unknown pool runtime"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bootstrap := base
 			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachinePool = tc.runtime, tc.driver, tc.pool
-			bootstrap.PublicURL, bootstrap.PrivateURL = tc.public, tc.private
+			bootstrap.IngressURL, bootstrap.PoolURL = tc.ingressURL, tc.poolURL
 			if tc.config != "" {
 				bootstrap.DriverConfig = json.RawMessage(tc.config)
 			}
@@ -200,7 +200,7 @@ func TestBootstrapNamesTheHostedOS(t *testing.T) {
 	machine := poolagent.Bootstrap{
 		ControlPlaneURL: "http://control.example", PoolID: "pool-1",
 		Runtime: poolagent.RuntimeMachine, Driver: "boxd", MachinePool: "pool-1",
-		PublicURL: "https://pool-1.boxd.sh", PrivateURL: "http://pool-1.boxd:7302",
+		IngressURL: "https://pool-1.boxd.sh", PoolURL: "http://pool-1.boxd:7302",
 	}
 	if got := machine.HostedPlatform(); got != platform.Current() {
 		t.Fatalf("a bootstrap naming no OS hosts %q, want the agent's own %q", got, platform.Current())

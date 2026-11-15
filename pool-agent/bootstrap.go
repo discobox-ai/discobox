@@ -121,14 +121,16 @@ type Bootstrap struct {
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551
 	// §4). A driver that isolates machines needs one.
 	MachineNetwork string `json:"machineNetwork,omitempty"`
-	// PublicURL and PrivateURL are where the pool's own machine is reached,
-	// as its driver gives them (disco-vm ADR 26-10-29-129): the public URL
-	// from outside the provider, the private one by the pool's sandboxes'
-	// machines. A RuntimeMachine pool derives its sandboxes' endpoints from
-	// them (ADR 26-10-29-481 §2): a private URL that differs from the public
-	// one is a direct path, one that does not is an edge.
-	PublicURL  string `json:"publicUrl,omitempty"`
-	PrivateURL string `json:"privateUrl,omitempty"`
+	// IngressURL and PoolURL are where the pool's own machine is reached,
+	// named by who reaches it as its driver gives them (disco-vm ADR
+	// 26-11-14-610 §1): the ingress URL by the pool's controller, this
+	// server, and the pool URL by the pool's sandboxes' machines, its peers.
+	// A RuntimeMachine pool derives its sandboxes' endpoints from them (ADR
+	// 26-10-29-481 §2): a pool URL that differs from the ingress one is a
+	// direct path, one that does not is an edge. Neither stands in for the
+	// other.
+	IngressURL string `json:"ingressUrl,omitempty"`
+	PoolURL    string `json:"poolUrl,omitempty"`
 	// DisableAgentEndpointTLS has the pool reach its sandboxes' agents over
 	// plain HTTP rather than TLS its CA issues, the pool's own setting (ADR
 	// 26-10-29-481 §3). The pool tells each sandbox in its bootstrap.
@@ -161,10 +163,11 @@ func (b Bootstrap) EffectiveRuntime() Runtime {
 }
 
 // reachedThroughEdge reports a machine pool whose sandboxes reach it only at
-// its public URL, an edge: its driver gives its machines no other path (ADR
-// 26-10-29-481 §2).
+// its ingress URL, an edge: its driver gives its machines no other path to
+// each other, so its pool URL is its ingress URL (ADR 26-10-29-481 §2,
+// disco-vm ADR 26-11-14-610 §1).
 func (b Bootstrap) reachedThroughEdge() bool {
-	return b.EffectiveRuntime() == RuntimeMachine && b.PrivateURL == b.PublicURL
+	return b.EffectiveRuntime() == RuntimeMachine && b.PoolURL == b.IngressURL
 }
 
 // Validate checks the required pool bootstrap fields.
@@ -203,7 +206,7 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
-		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.MachineNetwork != "" || b.PublicURL != "" || b.PrivateURL != "" {
+		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.MachineNetwork != "" || b.IngressURL != "" || b.PoolURL != "" {
 			return fmt.Errorf("a machine pool, base, network and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
 		}
 	case RuntimeMachine:
@@ -218,9 +221,10 @@ func (b Bootstrap) Validate() error {
 				return fmt.Errorf("the %s runtime's driver configuration: %w", RuntimeMachine, err)
 			}
 		}
-		// A driver with no path between its machines cannot carry a machine
-		// pool: its sandboxes could not reach it (ADR 26-10-29-481 §1).
-		for _, u := range []struct{ name, value string }{{"public", b.PublicURL}, {"private", b.PrivateURL}} {
+		// The server reaches the agent at its ingress URL, and a driver with
+		// no pool URL cannot carry a machine pool: its sandboxes could not
+		// reach it (ADR 26-10-29-481 §1).
+		for _, u := range []struct{ name, value string }{{"ingress", b.IngressURL}, {"pool", b.PoolURL}} {
 			if err := validateMachineURL(u.value); err != nil {
 				return fmt.Errorf("the %s runtime's %s URL: %w", RuntimeMachine, u.name, err)
 			}

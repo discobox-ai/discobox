@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The one live run of a remote driver, end to end (docs/tasks/947, R2): make a
 # provider and a pool on DRIVER, start a discobox on it running a harness,
-# attach to it, probe its egress and its machine's public URL (on boxd, its
+# attach to it, probe its egress and its machine's ingress URL (on boxd, its
 # closed default proxy too), keep the evidence, delete everything it made,
 # check that nothing is left, and report.
 #
@@ -57,7 +57,7 @@
 # server beforehand, so the discobox sees only its sentinel.
 #
 # A check passes only on what it observed. One whose probe could not reach
-# its target (the public URL from a box whose egress does not name its host,
+# its target (the ingress URL from a box whose egress does not name its host,
 # say) is CHECK, for a person to read in the evidence, and never PASS.
 #
 # Whatever happens, the evidence is kept and the cleanup runs, in the plan's
@@ -631,8 +631,8 @@ else
 	done
 fi
 
-echo "--- public URL" >&2
-# The machine's public URL, probed from here: outside the pool. Nothing the
+echo "--- ingress URL" >&2
+# The machine's ingress URL, probed from here: outside the pool. Nothing the
 # guest runs may answer there (the plan's B11), since the guest's root owns
 # every port the URL could forward to. Only an answer observed decides it: a
 # probe that reached nothing proves nothing, and is for a person to read.
@@ -672,17 +672,17 @@ guest() {
 # refuses (machine.ErrUnsupported); a URL it does report is probed.
 if ! url=$(dvm 1 "disco-vm: instance $machine has no ingress URL: machine: not supported by this driver" "$(scope "$pool_id")" url "$machine" 2>&1); then
 	case $url in
-	*"not supported by this driver"*) pass public-url "the driver reports no URL for $machine: $url" ;;
-	*) check public-url "the driver gives $machine no URL it could read: $url" ;;
+	*"not supported by this driver"*) pass ingress-url "the driver reports no URL for $machine: $url" ;;
+	*) check ingress-url "the driver gives $machine no URL it could read: $url" ;;
 	esac
 elif [ -z "$url" ]; then
-	pass public-url "the driver reports no URL for $machine"
+	pass ingress-url "the driver reports no URL for $machine"
 else
-	reach public "$url" 404
+	reach ingress "$url" 404
 	case $code in
-	000) check public-url "$url was not reached ($(tail -c 300 "$work/public.err")); nothing is known of what answers there" ;;
-	*) guest public-url "$url" "$code" ||
-		check public-url "$url answers HTTP $code (server '$server'): $body; read it: the provider's own refusal passes, anything from the guest fails" ;;
+	000) check ingress-url "$url was not reached ($(tail -c 300 "$work/ingress.err")); nothing is known of what answers there" ;;
+	*) guest ingress-url "$url" "$code" ||
+		check ingress-url "$url answers HTTP $code (server '$server'): $body; read it: the provider's own refusal passes, anything from the guest fails" ;;
 	esac
 fi
 

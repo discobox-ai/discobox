@@ -38,7 +38,7 @@ func TestFakeMachineAgentOwnsItsEndpointAcrossBoots(t *testing.T) {
 			cfg.AgentRuntime.ListenAddress = address
 			client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
 			defer client.CloseIdleConnections()
-			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, service.URL+"/healthz", nil)
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, service.PoolURL+"/healthz", nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -183,11 +183,14 @@ as ADR 26-10-09-106 §1 places it:
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated
   machine only with machines that are not, so it keeps what the driver gives
-  a machine (its machine token, shown on the pool). It asks the driver for a
-  public URL, not strictly (`CreateOptions.URLs`), which the server reaches
-  its agent at. The pool agent makes every sandbox's machine isolated on that
-  network (ADR 26-10-23-551 §4) with its public URL off, strictly, so boxd
-  gives it no URL beyond its private one (disco-vm ADR 26-11-12-604). A driver that cannot isolate
+  a machine (its machine token, shown on the pool). It asks the driver for
+  its ingress URL, strictly (`CreateOptions.URLs`), which the server, the
+  pool's controller, reaches its agent at, so a driver that gives none
+  refuses the machine at create rather than at the server's first dial; its
+  pool URL is the driver's default. The pool agent makes every sandbox's
+  machine isolated on that network (ADR 26-10-23-551 §4) with its pool URL
+  on and its ingress URL off, both strictly, so boxd gives it no URL beyond
+  its pool one (disco-vm ADR 26-11-14-610). A driver that cannot isolate
   (`Capabilities.Isolation`) makes no pool machine.
 - A remote machine whose service does not answer reads `Unknown`, which is
   neither running nor stopped. The engine reads `Unknown` for any failure to
@@ -257,15 +260,26 @@ the machine runtime, the driver, the pool's scope as the scope and
 network its sandboxes' machines are made in, the provider's base and its
 driver configuration without the secret (ADR 26-11-11-080 §6), the
 provider's `controlPlaneUrl` or, with none, the channel's socket, and where
-the agent listens: the driver's `Service.Listen` for the machine, which its one URL reaches (ADR
-26-10-27-345 §2's rule, for the pool agent). The pool agent is reached at that
-URL (`acquireAgentClient`, `Engine.URL`): boxd's public HTTPS URL, the same
-across stop and start. The bootstrap also names the machine's public and
-private URLs (`Engine.URL`, `Engine.PrivateURL`), from which the agent derives
-where its sandboxes reach it and what fences them (ADR 26-10-29-481 §§1–2);
-a driver whose machines have no private URL carries no pool. They are in the
-placement's fingerprint, so a machine whose URLs moved with a start — a local
-driver's loopback port — is placed again with its new ones; boxd's stay put.
+the agent listens: the driver's `Service.Listen` for the machine, which its
+URLs reach (ADR 26-10-27-345 §2's rule, for the pool agent).
+
+A service's two URLs are named by who reaches them (disco-vm ADR
+26-11-14-610), and discobox never chooses between them:
+
+| scope | who reaches it | discobox uses it for |
+| --- | --- | --- |
+| ingress | the pool's controller, this server | server → pool agent (`acquireAgentClient`, `Engine.URL` with `machine.URLIngress`): boxd's HTTPS URL, the same across stop and start; asked on, strictly |
+| pool | the pool's machines, as peers on its network | sandbox ↔ pool (the agent's hop, [../../../pool-agent/DESIGN.md](../../../pool-agent/DESIGN.md#the-hop)); a sandbox's machine asks for it on and for ingress off, both strictly |
+
+"Ingress" says nothing of how public the network under it is: on boxd it is
+an internet HTTPS URL, in an enterprise install it may be a VLAN address.
+The server never dials a pool URL, which only peers reach and which is plain
+HTTP on boxd. The bootstrap names both (`ingressUrl`, `poolUrl`), from which
+the agent derives where its sandboxes reach it and what fences them (ADR
+26-10-29-481 §§1–2); a driver whose machines have no pool URL carries no
+pool. They are in the placement's fingerprint, so a machine whose URLs moved
+with a start — a local driver's loopback port — is placed again with its new
+ones; boxd's stay put.
 
 `converge` runs on every reconcile, against the provider's own record on the
 pool's row (`poolRuntimeState` in `RuntimeState`: the machine, the pool's

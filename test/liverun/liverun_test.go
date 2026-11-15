@@ -93,8 +93,8 @@ case "$1 ${2:-}" in
 esac
 `
 
-// stubCurl is a probe of the machine's public URL, from outside: it prints
-// $STUB/public-code as the status, and $STUB/public-body as the body. With
+// stubCurl is a probe of the machine's ingress URL, from outside: it prints
+// $STUB/ingress-code as the status, and $STUB/ingress-body as the body. With
 // none it answers 502, as boxd does at a default proxy locked to port 0
 // (disco-vm docs/drivers/boxd.md). On boxd the URL disco-vm reports and the
 // default proxy are one host, so both probes get the same answer. The body
@@ -104,8 +104,8 @@ const stubCurl = `#!/usr/bin/env bash
 printf '%s\n' "curl $*" >>"$STUB/calls"
 out=
 while [ "$#" -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; *) shift ;; esac; done
-cat "$STUB/public-body" >"$out" 2>/dev/null || : >"$out"
-code=$(cat "$STUB/public-code" 2>/dev/null || echo 502)
+cat "$STUB/ingress-body" >"$out" 2>/dev/null || : >"$out"
+code=$(cat "$STUB/ingress-code" 2>/dev/null || echo 502)
 printf '%s' "$code"
 [ "$code" != 000 ] || exit 7
 `
@@ -181,7 +181,7 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	}
 	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach",
 		"egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-unlisted-direct", "egress-ip-direct",
-		"public-url", "closed-proxy", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
+		"ingress-url", "closed-proxy", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
 		if !strings.Contains(r.report, "| PASS | "+step+" |") {
 			t.Errorf("report has no passing %s row:\n%s", step, r.report)
 		}
@@ -291,24 +291,24 @@ func TestLiveRunEgressWithoutCurlFails(t *testing.T) {
 	}
 }
 
-func TestLiveRunPublicURL(t *testing.T) {
+func TestLiveRunIngressURL(t *testing.T) {
 	for _, tc := range []struct {
 		name, code, body, want string
 	}{
 		// The request reached the guest's own TLS listener.
-		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "| FAIL | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh reaches the guest's listener"},
-		{"guest answers", "200", "ok\n", "| FAIL | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers 200"},
+		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "| FAIL | ingress-url | https://dvm-pool-t1--sbx-t1.boxd.sh reaches the guest's listener"},
+		{"guest answers", "200", "ok\n", "| FAIL | ingress-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers 200"},
 		// An answer the script cannot place is for a person to read.
-		{"provider answers", "502", "bad gateway\n", "| CHECK | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers HTTP 502"},
+		{"provider answers", "502", "bad gateway\n", "| CHECK | ingress-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers HTTP 502"},
 		// Nothing reached is nothing known: this box's own egress, DNS or a
 		// timeout may have stopped the probe.
-		{"not reached", "000", "", "| CHECK | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh was not reached"},
+		{"not reached", "000", "", "| CHECK | ingress-url | https://dvm-pool-t1--sbx-t1.boxd.sh was not reached"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := liveRun(t, func(stub string) {
 				write(t, filepath.Join(stub, "url"), "", 0o644)
-				write(t, filepath.Join(stub, "public-code"), tc.code, 0o644)
-				write(t, filepath.Join(stub, "public-body"), tc.body, 0o644)
+				write(t, filepath.Join(stub, "ingress-code"), tc.code, 0o644)
+				write(t, filepath.Join(stub, "ingress-body"), tc.body, 0o644)
 			})
 			if r.exit == 0 || !strings.Contains(r.report, tc.want) {
 				t.Fatalf("exit %d, want %q:\n%s", r.exit, tc.want, r.report)
@@ -349,8 +349,8 @@ func TestLiveRunProbesClosedProxy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := liveRun(t, func(stub string) {
-				write(t, filepath.Join(stub, "public-code"), tc.code, 0o644)
-				write(t, filepath.Join(stub, "public-body"), tc.body, 0o644)
+				write(t, filepath.Join(stub, "ingress-code"), tc.code, 0o644)
+				write(t, filepath.Join(stub, "ingress-body"), tc.body, 0o644)
 				if tc.listener != "" {
 					write(t, filepath.Join(stub, "listener"), tc.listener, 0o644)
 				}
@@ -363,8 +363,8 @@ func TestLiveRunProbesClosedProxy(t *testing.T) {
 			}
 			// disco-vm url refused, as it does for a machine with its
 			// ingress URL off, and that is no failure of its own.
-			if !strings.Contains(r.report, "| PASS | public-url | the driver reports no URL for sbx-t1") {
-				t.Fatalf("public-url does not pass on disco-vm's refusal:\n%s", r.report)
+			if !strings.Contains(r.report, "| PASS | ingress-url | the driver reports no URL for sbx-t1") {
+				t.Fatalf("ingress-url does not pass on disco-vm's refusal:\n%s", r.report)
 			}
 			// The probe goes from outside, while the guest listens.
 			if i, j := indexOf(r.calls, "discobox-live-run-listener"), indexOf(r.calls, "curl -sS -o "+filepath.Join(r.stub, "evidence", "closed-proxy.body")); i < 0 || j < 0 || i > j {
@@ -384,10 +384,10 @@ func TestLiveRunProbesClosedProxy(t *testing.T) {
 func TestLiveRunReportedURLIsTheProxy(t *testing.T) {
 	r := liveRun(t, func(stub string) {
 		write(t, filepath.Join(stub, "url"), "", 0o644)
-		write(t, filepath.Join(stub, "public-code"), "200", 0o644)
-		write(t, filepath.Join(stub, "public-body"), "discobox-live-run-listener\n", 0o644)
+		write(t, filepath.Join(stub, "ingress-code"), "200", 0o644)
+		write(t, filepath.Join(stub, "ingress-body"), "discobox-live-run-listener\n", 0o644)
 	})
-	for _, want := range []string{"| FAIL | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers 200", "| FAIL | closed-proxy | https://dvm-pool-t1--sbx-t1.boxd.sh forwards to the guest"} {
+	for _, want := range []string{"| FAIL | ingress-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers 200", "| FAIL | closed-proxy | https://dvm-pool-t1--sbx-t1.boxd.sh forwards to the guest"} {
 		if !strings.Contains(r.report, want) {
 			t.Errorf("report has no %q:\n%s", want, r.report)
 		}
@@ -399,7 +399,7 @@ func TestLiveRunURLUnread(t *testing.T) {
 	r := liveRun(t, func(stub string) {
 		write(t, filepath.Join(stub, "url-err"), "disco-vm: boxd: exchange API key: 401 Unauthorized\n", 0o644)
 	})
-	if r.exit == 0 || !strings.Contains(r.report, "| CHECK | public-url | the driver gives sbx-t1 no URL it could read: disco-vm: boxd: exchange API key: 401") {
+	if r.exit == 0 || !strings.Contains(r.report, "| CHECK | ingress-url | the driver gives sbx-t1 no URL it could read: disco-vm: boxd: exchange API key: 401") {
 		t.Fatalf("exit %d:\n%s", r.exit, r.report)
 	}
 }
@@ -408,9 +408,9 @@ func TestLiveRunURLUnread(t *testing.T) {
 func TestLiveRunEscapesWhatTheGuestWrote(t *testing.T) {
 	r := liveRun(t, func(stub string) {
 		write(t, filepath.Join(stub, "url"), "", 0o644)
-		write(t, filepath.Join(stub, "public-code"), "502", 0o644)
+		write(t, filepath.Join(stub, "ingress-code"), "502", 0o644)
 		// ESC sequences, a C1 CSI sent as UTF-8, and a bidi override.
-		write(t, filepath.Join(stub, "public-body"), "\x1b[2K\x1b[1A\xc2\x9b2Kall\u202e clear\r\n", 0o644)
+		write(t, filepath.Join(stub, "ingress-body"), "\x1b[2K\x1b[1A\xc2\x9b2Kall\u202e clear\r\n", 0o644)
 	})
 	for _, bad := range []string{"\x1b", "\xc2\x9b", "\u202e", "\r"} {
 		if strings.Contains(r.out, bad) || strings.Contains(r.report, bad) {

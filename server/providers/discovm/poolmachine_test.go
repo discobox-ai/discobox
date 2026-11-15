@@ -70,6 +70,9 @@ type poolTestDriver struct {
 	// fences is each machine's isolation and networks, by ID, as Create was
 	// asked for them: the fake driver under this one keeps neither.
 	fences map[string]machine.InstanceSpec
+	// noIngress is a driver that gives no instance an ingress URL, so its
+	// caller cannot reach the machine.
+	noIngress bool
 }
 
 func (d *poolTestDriver) Name() string {
@@ -82,6 +85,9 @@ func (d *poolTestDriver) Name() string {
 func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	caps := d.Driver.Capabilities()
 	caps.Isolation = true
+	if d.noIngress {
+		caps.URLs.Ingress = machine.URLNever
+	}
 	return caps
 }
 
@@ -419,6 +425,27 @@ func recordOf(t *testing.T, pool *model.Pool) poolRuntimeState {
 	return state
 }
 
+// A pool's machine on a driver that gives no ingress URL is refused when it
+// is made, naming that URL: the server reaches the pool's agent there alone,
+// and never at the pool URL its peers reach (disco-vm ADR 26-11-14-610).
+func TestFakePoolMachineNeedsAnIngressURL(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	driver.noIngress = true
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool_0123456789abcdef", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
+	if err == nil || !strings.Contains(err.Error(), "ingress URL") || !errors.Is(err, machine.ErrUnsupported) {
+		t.Fatalf("EnsurePool() on a driver with no ingress URL = %v, want it refused, naming the ingress URL", err)
+	}
+	if errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("EnsurePool() = %v, want the pool's error, not one the reconciler waits on", err)
+	}
+	if len(driver.created) != 0 || driver.applies() != 0 {
+		t.Fatalf("created %d machines and applied %d times, want none", len(driver.created), driver.applies())
+	}
+}
+
 // A new pool's machine is made from the base on the pool's network alone, not
 // isolated; given a key issued for the pool, placed before anything else; and
 // made the pool's box with a bootstrap naming its own engine. The pool
@@ -433,8 +460,8 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
 	const scope = "pool-0123456789abcdef"
-	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{scope}) || driver.created[0].URLs.Public != (machine.URLRequest{Mode: machine.URLOn}) {
-		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone, with a public URL", driver.created, scope, scope)
+	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{scope}) || driver.created[0].URLs != (machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}) {
+		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone, with its ingress URL asked on, strictly", driver.created, scope, scope)
 	}
 	if len(maker.enrolled) != 1 || maker.enrolled[0] != testPoolKey {
 		t.Fatalf("enrolled %q, want the key the box made", maker.enrolled)
@@ -449,10 +476,10 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("bootstrap = %+v, want the machine runtime on the pool's scope and network, listening where the service does", bootstrap)
 	}
 	// Both of the machine's URLs, as its driver gives them: the fake
-	// driver's machines share a loopback, so its private URL is its public
+	// driver's machines share a loopback, so its pool URL is its ingress
 	// one (ADR 26-10-29-481 §1).
-	if !strings.HasPrefix(bootstrap.PublicURL, "http://127.0.0.1:") || bootstrap.PrivateURL != bootstrap.PublicURL {
-		t.Fatalf("bootstrap URLs = public %q private %q, want the fake machine's loopback URL as both", bootstrap.PublicURL, bootstrap.PrivateURL)
+	if !strings.HasPrefix(bootstrap.IngressURL, "http://127.0.0.1:") || bootstrap.PoolURL != bootstrap.IngressURL {
+		t.Fatalf("bootstrap URLs = ingress %q pool %q, want the fake machine's loopback URL as both", bootstrap.IngressURL, bootstrap.PoolURL)
 	}
 	key := driver.lastKey(t)
 	if !key.Issued || key.Driver != "fake" || key.Secret == "" || !strings.HasPrefix(key.Name, scope+"-") {
@@ -473,13 +500,13 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("pool state = %q, want registering", pool.State)
 	}
 
-	// The pool agent is reached at the machine's one URL.
+	// The pool agent is reached at the machine's ingress URL.
 	lease, err := r.AcquirePoolAgentClient(ctx, pool)
 	if err != nil {
 		t.Fatalf("AcquirePoolAgentClient() error = %v", err)
 	}
 	inst, _ := r.host.(*poolMachine).instance(ctx, pool)
-	if url, _ := r.engine.URL(ctx, inst); lease.BaseURL != url {
+	if url, _ := r.engine.URL(ctx, inst, machine.URLIngress); lease.BaseURL != url {
 		t.Fatalf("lease base URL = %q, want the machine's %q", lease.BaseURL, url)
 	}
 

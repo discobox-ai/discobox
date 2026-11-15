@@ -947,7 +947,7 @@ d admin pool create krunpool --provider <prov_id>
   discobox-sandbox-base:dev-… /v/run.sh`). The script installs a `0600`
   bootstrap file and runs the binary with `DISCOBOX_POOL_BOOTSTRAP_FILE`. A
   machine bootstrap needs `runtime: machine`, a `driver`, a `machinePool`
-  and `publicUrl`/`privateUrl`; `machinePool` and the URLs are file-only,
+  and `ingressUrl`/`poolUrl`; `machinePool` and the URLs are file-only,
   while `runtime` and `driver` may also come from `DISCOBOX_POOL_RUNTIME` and
   `DISCOBOX_POOL_DRIVER`, which override the file.
   The agent stops at `pool identity key … is not there`, since nothing
