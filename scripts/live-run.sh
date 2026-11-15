@@ -14,14 +14,18 @@
 #                       (required, except on a dry run)
 #   --harness SLUG      the harness the discobox runs (default: claude-code;
 #                       a fresh server's project has no default harness)
-#   --allow HOST        the one host the pool's egress allows, which the proxy
-#                       must answer for (default: example.com)
+#   --allow HOST        the one host the discobox's own egress allows, which
+#                       the proxy must answer for (default: example.com)
 #   --unlisted HOST     a host no level allows, which must not answer
 #                       (default: example.net)
-#   --pool-timeout DUR  how long the pool may take to come up, and anything
-#                       deleted to go (default: 20m)
+#   --pool-timeout DUR  how long the pool may take to come up, the discobox to
+#                       finish provisioning, and anything deleted to go
+#                       (default: 20m)
 #   --harness-timeout DUR
 #                       how long the harness may take to answer (default: 15m)
+#   --egress-timeout DUR
+#                       how long the discobox's narrowed egress may take to
+#                       reach its proxy before it is judged (default: 5m)
 #   --attach-for DUR    how long to stay attached to the discobox's terminal
 #                       (default: 10s)
 #   --evidence DIR      where what the run saw is kept, the report among it
@@ -81,6 +85,7 @@ allow_host=example.com
 unlisted_host=example.net
 pool_timeout=20m
 harness_timeout=15m
+egress_timeout=5m
 attach_for=10s
 evidence=
 dry=0
@@ -88,7 +93,7 @@ discobox=${DISCOBOX:-discobox}
 discovm=${DISCO_VM:-disco-vm}
 dc_flags=()
 
-usage() { sed -n '2,73p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0" | sed 's/^# \{0,1\}//'; }
 need() { [ "$#" -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }; }
 while [ "$#" -gt 0 ]; do
 	case $1 in
@@ -106,6 +111,8 @@ while [ "$#" -gt 0 ]; do
 	--pool-timeout=*) pool_timeout=${1#*=}; shift ;;
 	--harness-timeout) need "$@"; harness_timeout=$2; shift 2 ;;
 	--harness-timeout=*) harness_timeout=${1#*=}; shift ;;
+	--egress-timeout) need "$@"; egress_timeout=$2; shift 2 ;;
+	--egress-timeout=*) egress_timeout=${1#*=}; shift ;;
 	--attach-for) need "$@"; attach_for=$2; shift 2 ;;
 	--attach-for=*) attach_for=${1#*=}; shift ;;
 	--evidence) need "$@"; evidence=$2; shift 2 ;;
@@ -143,6 +150,7 @@ seconds() {
 }
 pool_wait=$(seconds "$pool_timeout")
 seconds "$harness_timeout" >/dev/null
+egress_wait=$(seconds "$egress_timeout")
 attach_wait=$(seconds "$attach_for")
 [ "$dry" = 0 ] || attach_wait=0
 
@@ -402,7 +410,7 @@ finish() {
 		echo "- This box's egress narrowed before the key came in: $narrowed"
 		echo "- Started: $started; ended: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		echo "- Provider: \`${provider_id:-none}\`, pool: \`${pool_id:-none}\`, discobox: \`${box_id:-none}\` (named \`$name\`)"
-		echo "- Egress: the pool allows \`$allow_host\` alone; \`$unlisted_host\` and \`1.1.1.1\` are unlisted"
+		echo "- Egress: the discobox allows \`$allow_host\` alone; \`$unlisted_host\` and \`1.1.1.1\` are unlisted"
 		echo "- Evidence: \`$evidence\`"
 		echo
 		echo "| Result | Step | Detail |"
@@ -505,13 +513,12 @@ if ! dcout out 0 '{"id":"pool_dryrun"}' -o json admin pool create "$name" --prov
 fi
 pool_id=$(field "$out" '.id // empty')
 [ -n "$pool_id" ] || { fail pool "create printed no id: $out $err"; exit 1; }
-# Every discobox of the pool may reach the one allowed host, and the
-# harness's own (its model API), and nothing else.
-if ! dcout out 0 '' admin pool update "$pool_id" --egress-deny-by-default --egress-allow "$allow_host"; then
-	fail pool "could not restrict egress: $err"
-	exit 1
-fi
-pass pool "created $pool_id, egress restricted to $allow_host"
+# The pool's egress level is left open: it holds its plan's snapshot build
+# (every level but the discobox's own, store.ProvisionEgress), and a box
+# started from the base provisions under every level, so a pool narrowed to
+# the allowed host could provision nothing. The discobox's own level is
+# narrowed instead, once it has provisioned (--- egress).
+pass pool "created $pool_id"
 
 waited=0
 while :; do
@@ -575,7 +582,47 @@ else
 	fail attach "attach streamed nothing: $(tail -c 300 "$work/attach.err")"
 fi
 
+# Provisioning goes on past readiness (a feature marked async), and a box
+# started from the base provisions under its own level too: it is narrowed
+# only once nothing more will be provisioned, so no feature is cut off by it.
+# What failed is reported; a box whose features could not be fetched is the
+# failure this run is meant to see.
+waited=0
+while :; do
+	if ! dcout out 0 '{"id":"sbx_dryrun","runtime":{"agentStatus":{"provision":{"state":"ready"}}}}' -o json admin box get "$box_id"; then
+		fail provision "could not read the discobox: $err"
+		break
+	fi
+	provisioned=$(field "$out" '.runtime.agentStatus.provision.state // "unknown"')
+	case $provisioned in
+	ready) pass provision "every feature is ready after ${waited}s"; break ;;
+	failed)
+		# Failed is a feature that failed, or readiness itself, which only
+		# the document's own error names.
+		fail provision "failed: $(field "$out" '.runtime.agentStatus.provision | [(.error // empty), (.features // {} | to_entries[] | select(.value.state == "failed") | "\(.key) (\(.value.error // "no error"))")] | if length == 0 then "no error given" else join("; ") end')"
+		break ;;
+	esac
+	if [ "$waited" -ge "$pool_wait" ]; then
+		fail provision "still $provisioned after $pool_timeout"
+		break
+	fi
+	pause 10
+	waited=$((waited + 10))
+done
+
 echo "--- egress" >&2
+# The discobox's own level: it may reach the one allowed host, and the
+# harness's own (its model API), and nothing else. It is set only now, so the
+# harness above answered while the box was open: a box made with its level
+# already narrowed (admin box create takes the flags, run does not) would
+# provision under it, as the plan's first box does from the base, and fail.
+box_narrowed=0
+if dcout out 0 '' admin box update "$box_id" --egress-deny-by-default --egress-allow "$allow_host"; then
+	box_narrowed=1
+	pass egress-level "the discobox's own egress is restricted to $allow_host"
+else
+	fail egress-level "could not restrict the discobox's egress to $allow_host, so nothing is probed: $err"
+fi
 # One exec runs every probe from inside the discobox, as its user, with its
 # login environment (the proxy's variables). Each prints
 # NAME HTTP_CODE CONNECT_CODE CURL_EXIT TIME_CONNECT FIRST_LINE_OF_BODY.
@@ -616,13 +663,37 @@ fence-direct 000 000 28 0.000000
 allowed-direct 000 000 6 0.000000
 unlisted-direct 000 000 6 0.000000
 ip-direct 000 000 28 0.000000"
-if ! dcout answers 0 "$canned" exec "$box_id" -- sh -lc "$probe" probe "$allow_host" "$unlisted_host"; then
+# line NAME is the probe NAME's line of $answers.
+line() { printf '%s\n' "$answers" | awk -v n="$1" '$1 == n'; }
+# The discobox converges onto its level while running, so the probes run
+# again until its proxy refuses the unlisted host, for at most
+# --egress-timeout; the last answers are the ones judged.
+waited=0
+probed=0
+while [ "$box_narrowed" = 1 ]; do
+	probed=0
+	dcout answers 0 "$canned" exec "$box_id" -- sh -lc "$probe" probe "$allow_host" "$unlisted_host" || break
+	probed=1
+	[ "$answers" != no-curl ] || break
+	if [ "$(line unlisted-proxy | awk '{ print $2 }')" = 403 ]; then
+		[ "$waited" = 0 ] || note "the narrowed level reached the discobox's proxy after ${waited}s"
+		break
+	fi
+	if [ "$waited" -ge "$egress_wait" ]; then
+		note "the proxy still answers for $unlisted_host $egress_timeout after the discobox was narrowed"
+		break
+	fi
+	pause 5
+	waited=$((waited + 5))
+done
+if [ "$box_narrowed" = 0 ]; then
+	:
+elif [ "$probed" = 0 ]; then
 	fail egress "the probes did not run: $answers $err"
 elif [ "$answers" = no-curl ]; then
 	fail egress "the discobox has no curl to probe with"
 else
 	printf '%s\n' "$answers" >"$evidence/egress.txt"
-	line() { printf '%s\n' "$answers" | awk -v n="$1" '$1 == n'; }
 	proxy_env=$(line proxy-env | awk '{ print $2 }')
 	case $proxy_env in ''|none) note "the discobox has no HTTPS_PROXY; the proxy probes below fail" ;; esac
 	# An allowed host: the pool's proxy answers with the origin's response.

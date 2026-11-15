@@ -26,7 +26,9 @@ for a in "$@"; do case $a in --server|--server=*|http://*|-o|json) ;; *) args+=(
 set -- "${args[@]}"
 case "$1 ${2:-} ${3:-}" in
 "admin provider list") echo '[]' ;;
-"admin box get") echo '{"id":"sbx_T1"}' ;;
+"admin box get")
+	# $STUB/provision, when there, is the discobox's provisioning state.
+	cat "$STUB/provision" 2>/dev/null || echo '{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"ready"}}}}' ;;
 "admin pool logs") echo "pool journal" ;;
 "admin provider create")
 	for a in "$@"; do case $a in @*) cp "${a#@}" "$STUB/provider.json" ;; esac; done
@@ -53,6 +55,8 @@ case "$1 ${2:-} ${3:-}" in
 	echo '{}' ;;
 "admin provider rm") touch "$STUB/provider.deleted" ;;
 "admin box purge") ;;
+"admin box update")
+	[ ! -e "$STUB/box-update-refused" ] || { echo 'request failed: 403 Forbidden' >&2; exit 1; } ;;
 run*)
 	if [ -e "$STUB/no-default-harness" ] && ! printf '%s\n' "$@" | grep -qx -- -H; then
 		echo 'request failed: 409 Conflict: no harness given and this project has no default; pass --harness, or set one with ` + "`discobox admin harness set-default <harness>`" + `' >&2; exit 1
@@ -69,7 +73,10 @@ exec*)
 	# The listener the closed-proxy step starts prints the ports it bound.
 	case "$*" in
 	*discobox-live-run-listener*) cat "$STUB/listener" 2>/dev/null || printf 'busy \nlistening 8080 8000 3000 5000 5173\n' ;;
-	*) cat "$STUB/probes" ;;
+	*)
+		# $STUB/probes-before, while it is there, is what the probes see
+		# once, before the discobox's narrowed level reaches its proxy.
+		if [ -e "$STUB/probes-before" ]; then cat "$STUB/probes-before"; rm "$STUB/probes-before"; else cat "$STUB/probes"; fi ;;
 	esac ;;
 *) echo "stub discobox: unexpected call: $*" >&2; exit 3 ;;
 esac
@@ -165,7 +172,7 @@ func liveRun(t *testing.T, setup func(stub string)) run {
 	}
 	evidence := filepath.Join(stub, "evidence")
 	report := filepath.Join(evidence, "report.md")
-	args := []string{script(t), "--driver", "boxd", "--egress-narrowed", "yes", "--evidence", evidence, "--attach-for", "0s", "--server", "http://server.test"}
+	args := []string{script(t), "--driver", "boxd", "--egress-narrowed", "yes", "--evidence", evidence, "--attach-for", "0s", "--egress-timeout", "0s", "--server", "http://server.test"}
 	if extra, err := os.ReadFile(filepath.Join(stub, "args")); err == nil {
 		args = append(args, strings.Fields(string(extra))...)
 	}
@@ -195,16 +202,16 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	if !strings.Contains(r.report, "Every check passed, and nothing is left.") {
 		t.Fatalf("report does not say it passed:\n%s", r.report)
 	}
-	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach",
-		"egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-allowed-direct", "egress-unlisted-direct", "egress-ip-direct",
+	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach", "provision",
+		"egress-level", "egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-allowed-direct", "egress-unlisted-direct", "egress-ip-direct",
 		"ingress-url", "closed-proxy", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
 		if !strings.Contains(r.report, "| PASS | "+step+" |") {
 			t.Errorf("report has no passing %s row:\n%s", step, r.report)
 		}
 	}
-	// The pool is restricted to the allowed host, and the egress probes run
-	// against the hosts the run names.
-	assertCall(t, r, "discobox --server http://server.test admin pool update pool_T1 --egress-deny-by-default --egress-allow example.com")
+	// The discobox is restricted to the allowed host, and the egress probes
+	// run against the hosts the run names.
+	assertCall(t, r, "discobox --server http://server.test admin box update sbx_T1 --egress-deny-by-default --egress-allow example.com")
 	// The cleanup's order: the discobox, the pool (its grant of the key goes
 	// with it), the provider, then what the provider holds, in each scope.
 	order := []string{"admin box purge sbx_T1", "admin pool rm pool_T1", "admin provider rm prov_T1",
@@ -216,6 +223,126 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 			t.Fatalf("%q is not called in order %v:\n%s", want, order, strings.Join(r.calls, "\n"))
 		}
 		last = i
+	}
+}
+
+// The run narrows the discobox's own egress level, never the pool's: a
+// pool's level holds the box's provisioning and the snapshot build too
+// (store.ProvisionEgress leaves out only the sandbox's own level), so a pool
+// restricted to the allowed host alone cannot provision anything. The box is
+// narrowed before its egress is probed.
+func TestLiveRunNarrowsTheDiscoboxNotThePool(t *testing.T) {
+	r := liveRun(t, nil)
+	for _, c := range r.calls {
+		if strings.Contains(c, "admin pool update") && strings.Contains(c, "--egress") {
+			t.Errorf("the pool's egress level is restricted, which holds provisioning to it: %q", c)
+		}
+	}
+	narrow := indexOf(r.calls, "admin box update sbx_T1 --egress-deny-by-default --egress-allow example.com")
+	if narrow < 0 {
+		t.Fatalf("the discobox's own egress level is never restricted:\n%s", strings.Join(r.calls, "\n"))
+	}
+	if probe := indexOf(r.calls, "exec"); probe >= 0 && probe < narrow {
+		t.Fatalf("egress is probed before the discobox is narrowed:\n%s", strings.Join(r.calls, "\n"))
+	}
+}
+
+// A box started from the base provisions under its own level as well, and
+// some features after readiness, so the discobox is narrowed only once its
+// provisioning is done; a feature that failed is reported.
+func TestLiveRunNarrowsOnceProvisioned(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "provision"),
+			`{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"failed","features":{"core":{"state":"ready"},"go":{"state":"failed","error":"step go failed: exit status 56"}}}}}}`, 0o644)
+	})
+	if r.exit == 0 {
+		t.Fatalf("exit 0 with a feature that failed to provision:\n%s", r.out)
+	}
+	if !strings.Contains(r.report, "| FAIL | provision | failed: go (step go failed: exit status 56) |") {
+		t.Fatalf("report does not name the failed feature:\n%s", r.report)
+	}
+	read := indexOf(r.calls, "admin box get sbx_T1")
+	narrow := indexOf(r.calls, "admin box update sbx_T1")
+	if read < 0 || narrow < 0 || narrow < read {
+		t.Fatalf("the discobox is not narrowed after its provisioning is read:\n%s", strings.Join(r.calls, "\n"))
+	}
+}
+
+// Provisioning failed on readiness, with no feature failed: the document's
+// own error is what says why.
+func TestLiveRunReportsAFailedReadiness(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "provision"),
+			`{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"failed","error":"harness requires git, which is not ready","features":{"core":{"state":"ready"}}}}}}`, 0o644)
+	})
+	if !strings.Contains(r.report, "| FAIL | provision | failed: harness requires git, which is not ready |") {
+		t.Fatalf("report does not carry readiness's error:\n%s", r.report)
+	}
+}
+
+// The discobox converges onto its narrowed level while running, so probes
+// that still see the unlisted host answered run again, and only the answers
+// after the proxy refuses it are judged.
+func TestLiveRunProbesAgainUntilTheNarrowingHolds(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "args"), "--egress-timeout 5s", 0o644)
+		write(t, filepath.Join(stub, "probes-before"), strings.Replace(passingProbes,
+			"unlisted-proxy 403 000 0 0.001 blocked by proxy", "unlisted-proxy 200 000 0 0.010 <!doctype html>", 1), 0o644)
+	})
+	if r.exit != 0 {
+		t.Fatalf("exit %d, want 0:\n%s", r.exit, r.out)
+	}
+	if !strings.Contains(r.report, "| PASS | egress-unlisted-proxy |") {
+		t.Fatalf("report has no passing egress-unlisted-proxy row:\n%s", r.report)
+	}
+	if !strings.Contains(r.out, "the narrowed level reached the discobox's proxy after 5s") {
+		t.Fatalf("the run does not say when the narrowing held:\n%s", r.out)
+	}
+	probes := 0
+	for _, c := range r.calls {
+		if strings.Contains(c, " exec sbx_T1 -- sh -lc") {
+			probes++
+		}
+	}
+	if probes != 2 {
+		t.Fatalf("the probes ran %d times, want 2:\n%s", probes, strings.Join(r.calls, "\n"))
+	}
+}
+
+// Probes whose proxy never refuses the unlisted host are judged once
+// --egress-timeout is up, and fail; the run does not say the narrowing held.
+func TestLiveRunJudgesTheProbesWhenTheNarrowingNeverHolds(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "probes"), strings.Replace(passingProbes,
+			"unlisted-proxy 403 000 0 0.001 blocked by proxy", "unlisted-proxy 200 000 0 0.010 <!doctype html>", 1), 0o644)
+	})
+	if !strings.Contains(r.report, "| FAIL | egress-unlisted-proxy |") {
+		t.Fatalf("report has no failing egress-unlisted-proxy row:\n%s", r.report)
+	}
+	if strings.Contains(r.out, "reached the discobox's proxy") {
+		t.Fatalf("the run says the narrowing held when it never did:\n%s", r.out)
+	}
+}
+
+// A discobox whose own level cannot be narrowed fails the run, and its
+// egress is not probed: open, the probes would prove nothing.
+func TestLiveRunFailsWhenTheDiscoboxCannotBeNarrowed(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "box-update-refused"), "", 0o644)
+	})
+	if r.exit == 0 {
+		t.Fatalf("exit 0 with the discobox's egress open:\n%s", r.out)
+	}
+	if !strings.Contains(r.report, "| FAIL | egress-level | could not restrict the discobox's egress to example.com") {
+		t.Fatalf("report does not say the narrowing failed:\n%s", r.report)
+	}
+	if strings.Contains(r.report, "| PASS | egress-") {
+		t.Fatalf("egress was judged on an open discobox:\n%s", r.report)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(c, " exec sbx_T1 -- sh -lc") {
+			t.Fatalf("egress was probed on an open discobox: %q", c)
+		}
 	}
 }
 
