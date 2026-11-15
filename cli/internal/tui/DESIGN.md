@@ -654,7 +654,10 @@ The summary and use-part card offer an independent add/replace choice, marked
 edited when it differs from the ask. A person's approval has no parent; any
 standing use binding under a lead's delegation disables replacement and
 defaults to addition. Add is unavailable for a different secret in the
-variable. Placeholder delivery is the guided dialog's only one; raw delivery
+variable. A replacement is the box's whole use of the secret in every
+variable (`bindingplan.Use`), so the cards' "this replaces" says what that
+plan does to each of its bindings of it, in any variable: kept (moved into
+the asked variable when it was elsewhere), gone, or losing its use. Placeholder delivery is the guided dialog's only one; raw delivery
 is `discobox secret request approve --raw` (ADR 26-11-11-857). A new credential is held to
 the request's hosts (same ADR).
 
