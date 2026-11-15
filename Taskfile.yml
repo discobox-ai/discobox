@@ -17,6 +17,11 @@ vars:
   ACCESS_BINARY: build/discobox-access{{.EXE}}
   ACCESS_MAIN: ./cmd/discobox-access
   PACKAGES: ./...
+  # The oldest macOS a release's darwin binaries run on: the LC_BUILD_VERSION
+  # minos release:binary links them for and release:verify holds them to.
+  # Without it clang links a cgo binary for the macOS of the machine building
+  # it, so moving CI to a newer runner would silently drop every older Mac.
+  MACOS_MIN: "15.0"
   # Every module go.work uses, as one `go` invocation's packages: one command
   # over all of them schedules their packages together rather than module by
   # module. The list is go.work's; a module added there is added here.
@@ -1307,6 +1312,14 @@ tasks:
       # cgo only where the platform's hypervisor bindings need it: Code-Hex/vz
       # on darwin. Everywhere else a static binary is the better artifact.
       CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
+      # The deployment target as cgo flags rather than MACOSX_DEPLOYMENT_TARGET:
+      # Go's build cache keys cgo objects on CGO_CFLAGS and CGO_LDFLAGS but not
+      # on that variable, so a cached runtime/cgo compiled for the runner's own
+      # macOS would be linked in unchanged. CGO_CFLAGS replaces Go's default,
+      # so it keeps -g -O2. The flags also reach clang as Go's external linker.
+      DEPLOYMENT_TARGET: >-
+        {{if eq .TARGET_OS "darwin"}}CGO_CFLAGS="-g -O2 -mmacosx-version-min={{.MACOS_MIN}}"
+        CGO_LDFLAGS="-mmacosx-version-min={{.MACOS_MIN}}"{{end}}
       # Every image this release publishes is pinned to the release's own tag:
       # the two agent images, and the registry and tag the built-in harness
       # images resolve through. They reach the server's link and not the
@@ -1380,7 +1393,7 @@ tasks:
       # built until the file it describes is final.
       - >-
         cd server &&
-        GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}}
+        GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} {{.DEPLOYMENT_TARGET}}
         go build -trimpath -ldflags="{{.LDFLAGS}} {{.SERVER_LDFLAGS}}" -o ../{{.SERVER_OUT}} {{.SERVER_MAIN}}
       # After the link and after stripping, and before the digest is taken:
       # signing rewrites the binary, so nothing may touch it afterwards
@@ -1415,7 +1428,7 @@ tasks:
             ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
           manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
         fi
-        cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
+        cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} {{.DEPLOYMENT_TARGET}} \
           go build -trimpath \
           -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/pkg/serverstage.DefaultManifest=$manifest}" \
           -o "../{{.OUT}}" {{.CLI_MAIN}}
@@ -1558,6 +1571,24 @@ tasks:
                 *) echo "$name: interpreter $interp exists only where this was built" >&2; exit 1 ;;
               esac
               echo "$name: interpreter ${interp:-none (static)}"
+              ;;
+          esac
+
+          # The oldest macOS each darwin binary loads on. The CLI links
+          # without clang and carries the Go toolchain's own minimum, which may
+          # be lower; neither may be higher than MACOS_MIN.
+          case "$name" in
+            *-darwin-*)
+              minos=$(otool -l "$binary" | awk '$1 == "minos" { print $2; exit }')
+              [ -n "$minos" ] || { echo "$name: no LC_BUILD_VERSION minos" >&2; exit 1; }
+              want="{{.MACOS_MIN}}"
+              m=${minos%%.*} r=${minos#*.}; r=${r%%.*}; [ "$r" != "$minos" ] || r=0
+              w=${want%%.*} s=${want#*.}; s=${s%%.*}; [ "$s" != "$want" ] || s=0
+              if [ $((m * 100 + r)) -gt $((w * 100 + s)) ]; then
+                echo "$name: needs macOS $minos, above the supported minimum $want: -mmacosx-version-min is not reaching the link" >&2
+                exit 1
+              fi
+              echo "$name: minimum macOS $minos"
               ;;
           esac
 

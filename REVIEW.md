@@ -99,6 +99,13 @@ Global review expectations:
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced
   `GOPROXY=off` there was silently ignored on any machine that exports one.
+- A darwin build that must target a macOS older than its build host says so in
+  `CGO_CFLAGS`/`CGO_LDFLAGS` (`-mmacosx-version-min`), never with
+  `MACOSX_DEPLOYMENT_TARGET` alone. Go's build cache keys cgo objects on the
+  flags but not on that variable, so a cached `runtime/cgo` built for the
+  runner's own macOS is linked in unchanged. `release:verify` cannot catch it:
+  the binary's `minos` comes from the link, which still says the older macOS.
+  `MACOS_MIN` in the Taskfile is the value.
 - A client's patience with something the server bounds comes from the
   server's bound plus a margin (`health.PoolUpgradeWait`), never from a
   constant that happens to equal it: with no margin the client times out on
