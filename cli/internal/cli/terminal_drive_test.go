@@ -248,3 +248,238 @@ func TestWaitForGivesUpAndExits124(t *testing.T) {
 		t.Fatalf("wait with no --until: err = %v, want it refused", err)
 	}
 }
+
+// wait on a discobox that is still starting waits for it to start, within
+// --for, and then waits on its terminal; one whose start fails exits with why;
+// one stopped is named, not started; one still starting when --for passes
+// exits 124. The terminal's wait is an observe and refuses a discobox not yet
+// running (ADR 26-10-12-711 §1), so the waiting for the start is the CLI's.
+func TestWaitOnAStartingDiscoboxWaitsForItToStart(t *testing.T) {
+	sandboxID := testSandboxID(t)
+	sandboxJSON := func(state, display, errorMessage string, more ...string) string {
+		extra, runtimeState := strings.Join(more, ""), display
+		if display == "error" {
+			runtimeState = "stopped" // runtimeState is the container's; a failed start left none running
+		}
+		if errorMessage != "" {
+			extra += `,"errorMessage":` + jsonString(errorMessage)
+		}
+		return `{"id":"` + sandboxID + `","displayName":"box","projectId":"project-1","createdByUserId":"user-1","config":{"name":"box","image":""},` +
+			`"runtime":{"state":"` + state + `","runtimeState":"` + runtimeState + `","displayState":"` + display + `","desiredState":"present","generation":1,"observedGeneration":1` + extra + `},` +
+			`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
+	}
+	serve := func(started func(gets int) string) (*httptest.Server, *int) {
+		var mu sync.Mutex
+		gets, waits := 0, new(int)
+		running := false
+		return httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			switch {
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sandboxes/"+sandboxID):
+				gets++
+				body := started(gets)
+				running = strings.Contains(body, `"displayState":"running"`)
+				_, _ = w.Write([]byte(body))
+			case strings.HasSuffix(r.URL.Path, "/execs/primary/wait"):
+				*waits++
+				if !running {
+					// What the pool answers for a box it has not made yet:
+					// plain text, which the transport hands back as an error.
+					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte("sandbox not found\n"))
+					return
+				}
+				_, _ = w.Write([]byte(`{"reason":"program","programStatus":{"state":"idle","reportedAt":"2026-11-04T00:01:30Z"},"resumeAfter":"P"}`))
+			default:
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"unexpected ` + r.Method + ` ` + r.URL.Path + `"}`))
+			}
+		})), waits
+	}
+	run := func(serverURL string, args ...string) (string, string, error) {
+		out, errOut := new(strings.Builder), new(strings.Builder)
+		cmd := NewRootCommand()
+		cmd.SetOut(out)
+		cmd.SetErr(errOut)
+		cmd.SetArgs(append([]string{"--server", serverURL, "--project", "project-1"}, args...))
+		err := cmd.Execute()
+		return out.String(), errOut.String(), err
+	}
+
+	t.Run("starts", func(t *testing.T) {
+		server, waits := serve(func(gets int) string {
+			if gets < 3 {
+				return sandboxJSON("pending", "starting", "")
+			}
+			return sandboxJSON("ready", "running", "")
+		})
+		defer server.Close()
+		out, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "30s")
+		if err != nil {
+			t.Fatalf("wait on a starting discobox: %v, want it to wait for the start", err)
+		}
+		if out != "finished P\n" {
+			t.Fatalf("wait printed %q, want the agent's state once started", out)
+		}
+		if *waits != 2 {
+			t.Fatalf("wait called the terminal %d times, want once refused and once after the start", *waits)
+		}
+	})
+
+	t.Run("fails to start", func(t *testing.T) {
+		server, _ := serve(func(gets int) string {
+			if gets < 2 {
+				return sandboxJSON("pending", "starting", "")
+			}
+			return sandboxJSON("failed", "error", "feature node: install failed")
+		})
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "30s")
+		if err == nil || !strings.Contains(err.Error(), "feature node: install failed") {
+			t.Fatalf("wait on a discobox that fails to start: err = %v, want the start's failure", err)
+		}
+	})
+
+	t.Run("stopped", func(t *testing.T) {
+		server, waits := serve(func(int) string { return sandboxJSON("ready", "stopped", "") })
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "30s")
+		if err == nil || !strings.Contains(err.Error(), "is stopped") || strings.Contains(err.Error(), "not found") {
+			t.Fatalf("wait on a stopped discobox: err = %v, want it to say the box is stopped", err)
+		}
+		if *waits != 1 {
+			t.Fatalf("wait called the terminal %d times on a stopped discobox, want once", *waits)
+		}
+	})
+
+	t.Run("still starting when --for passes", func(t *testing.T) {
+		server, _ := serve(func(int) string { return sandboxJSON("pending", "starting", "") })
+		defer server.Close()
+		out, errOut, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "1s")
+		var exit client.ExitError
+		if !errors.As(err, &exit) || exit.Code != 124 {
+			t.Fatalf("wait --for 1s on a box that does not start: err = %v, want exit 124", err)
+		}
+		if out != "" || !strings.Contains(errOut, "still starting") {
+			t.Fatalf("wait printed %q and %q, want nothing and that the box is still starting", out, errOut)
+		}
+	})
+
+	t.Run("provisioning fails with no message of the server's", func(t *testing.T) {
+		server, _ := serve(func(int) string {
+			return sandboxJSON("ready", "error", "", `,"agentStatus":{"provision":{"ready":false,"error":"feature node: install failed"}}`)
+		})
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "30s")
+		if err == nil || !strings.Contains(err.Error(), "discobox preparation failed: feature node: install failed") {
+			t.Fatalf("wait on a discobox whose provisioning failed: err = %v, want the agent's reason", err)
+		}
+	})
+
+	t.Run("a failure the box wrote is escaped", func(t *testing.T) {
+		server, _ := serve(func(int) string { return sandboxJSON("failed", "error", "install failed\n\u001b]52;c;cHduZWQ=\u0007") })
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished")
+		if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") || !strings.Contains(err.Error(), "install failed\n") {
+			t.Fatalf("wait on a discobox that failed: err = %q, want its reason with the escape sequence escaped and its lines kept", err)
+		}
+	})
+
+	// The agent starts the primary terminal once provisioning is ready, and
+	// refuses it until then even though the discobox reads running.
+	// refusals < 0 refuses every call; ended has the refusal say the terminal
+	// ended, as the agent says of a restarted box's previous primary.
+	primaryNotUp := func(refusals int, ended bool) (*httptest.Server, *int) {
+		var mu sync.Mutex
+		waits := new(int)
+		return httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(sandboxJSON("ready", "running", "")))
+				return
+			}
+			*waits++
+			if refusals < 0 || *waits <= refusals {
+				w.WriteHeader(http.StatusConflict)
+				if ended {
+					_, _ = w.Write([]byte(`{"error":"sandbox exec has ended"}`))
+				} else {
+					_, _ = w.Write([]byte(`{"error":"discobox primary terminal is not available; it may still be preparing; retry or attach to start it"}`))
+				}
+				return
+			}
+			_, _ = w.Write([]byte(`{"reason":"program","programStatus":{"state":"idle","reportedAt":"2026-11-04T00:01:30Z"},"resumeAfter":"P"}`))
+		})), waits
+	}
+
+	t.Run("running, with its terminal not up yet", func(t *testing.T) {
+		server, waits := primaryNotUp(2, false)
+		defer server.Close()
+		out, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "30s")
+		if err != nil || out != "finished P\n" || *waits != 3 {
+			t.Fatalf("wait while the terminal comes up: out %q, err %v, %d calls; want it to wait the terminal out", out, err, *waits)
+		}
+	})
+
+	t.Run("running, with its terminal never up", func(t *testing.T) {
+		server, _ := primaryNotUp(-1, false)
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "2s")
+		if err == nil || !strings.Contains(err.Error(), "primary terminal is not available") {
+			t.Fatalf("wait on a terminal that never comes up: err = %v, want the refusal once --for passes", err)
+		}
+	})
+
+	// A restarted box still lists its previous run's primary, ended, until it
+	// launches the new one, and the agent answers that it has ended: the
+	// refusal is waited out as for one not yet started.
+	t.Run("restarted, with its previous terminal listed", func(t *testing.T) {
+		server, waits := primaryNotUp(2, true)
+		defer server.Close()
+		out, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "30s")
+		if err != nil || out != "finished P\n" || *waits != 3 {
+			t.Fatalf("wait on a restarted box: out %q, err %v, %d calls; want it to wait for the new terminal", out, err, *waits)
+		}
+	})
+
+	t.Run("running, with its terminal ended", func(t *testing.T) {
+		server, waits := primaryNotUp(-1, true)
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished", "--for", "2s")
+		if err == nil || !strings.Contains(err.Error(), "has ended") || *waits < 2 {
+			t.Fatalf("wait on a terminal that ended: err = %v after %d calls, want the refusal once --for passes", err, *waits)
+		}
+	})
+
+	t.Run("running leaves the refusal", func(t *testing.T) {
+		var gets int
+		server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == http.MethodGet {
+				gets++
+				_, _ = w.Write([]byte(sandboxJSON("ready", "running", "")))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"exec not found"}`))
+		}))
+		defer server.Close()
+		_, _, err := run(server.URL, "wait", sandboxID, "--until", "finished")
+		if err == nil || !strings.Contains(err.Error(), "exec not found") || gets != 1 {
+			t.Fatalf("wait refused on a running discobox: err = %v after %d reads, want the refusal after one", err, gets)
+		}
+	})
+}
+
+func jsonString(value string) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}

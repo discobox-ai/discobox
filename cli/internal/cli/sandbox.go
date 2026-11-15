@@ -926,12 +926,20 @@ func (a *App) waitForSandboxCtx(ctx context.Context, client *apiclientgen.Client
 // A failure that is an automatic repair's own says that too, with the failure
 // the repair was answering and the command that tries again: there is one
 // automatic repair per failure (ADR 26-10-12-711 §4), so nothing else will.
+//
+// A box whose provisioning failed may have no message of its own: the agent's
+// report is what says so, and its error is the reason then. Either was written
+// in the discobox, the provisioning's stderr among it, so the reason is escaped
+// for the terminal it is printed to.
 func sandboxFailureReason(sandbox *apimodel.Sandbox) string {
-	message, ok := sandbox.Runtime.ErrorMessage.Get()
-	if !ok || strings.TrimSpace(message) == "" {
+	message := sandbox.Runtime.ErrorMessage.Or("")
+	if strings.TrimSpace(message) == "" {
+		message = sandboxcreate.ProvisionFailure(sandbox.Runtime)
+	}
+	if strings.TrimSpace(message) == "" {
 		return fmt.Sprintf("state=%s", sandbox.Runtime.State) + failedAutomaticRepairHint(sandbox, "")
 	}
-	message = strings.TrimSpace(message)
+	message = terminalSafeMultiline(strings.TrimSpace(message))
 	if sandbox.Runtime.ErrorReason.Or("") != apiclientgen.SandboxRuntimeErrorReasonImageUnavailable {
 		return message + failedAutomaticRepairHint(sandbox, message)
 	}

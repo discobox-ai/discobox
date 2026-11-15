@@ -1909,7 +1909,23 @@ take `DISCOBOX` first and always — none picks a box — and the terminal by
   (`fromLastInput`) unless `--after` names a point; one that runs out its 60s
   is made again from the resume point it answered, until something holds or
   `--for` passes (exit 124). It prints what held as `--until` would write it,
-  then the resume point (`waitAnswer`).
+  then the resume point (`waitAnswer`). The route is an observe, refused
+  while the box is not running ([ADR 26-10-12-711](../docs/adr/26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md)
+  §1), so a refused call reads the box (`awaitTerminalBox`): `starting` or
+  `repairing` is waited out by `waitForSandboxCtx` within `--for` (exit 124,
+  and the state on stderr, when it passes) and the call made again; `error`
+  ends with `sandboxFailureReason`; any other state not running is named,
+  never started. A refusal is read from either form it comes in — the
+  agent's JSON, or a hop's plain text such as the pool's 404, which the
+  transport returns as `plainStatusError` (`waitTerminalOnce`). On a running
+  box only a 409 on the primary terminal is called again
+  (`primaryTerminalNotUp`), each second for at most `terminalStartGrace` and
+  within `--for`: it is the primary not started yet, or one that ended, and
+  nothing tells those apart (a restarted box still lists its last run's
+  primary, ended), so an ended one costs the grace rather than a start
+  failing the wait. Any other refusal stands. A failure is the server's
+  `errorMessage`, or else the agent's report by the server's own rule
+  (`sandboxcreate.ProvisionFailure`).
 
 **The raw commands** (`internal/cli/sandbox_terminal_io.go`), one API call
 each, under `admin terminal` beside `attach` and `logs` and taking the same
@@ -2668,7 +2684,8 @@ one, and otherwise — for a repair nobody typed — by what set it off and the
 failure it answers (`sandboxcreate.AutomaticRepairCause`). Every wait that takes
 `failed` for its answer asks `sandboxcreate.Repairing` first, or reads
 `displayState`, where `repairing` is neither `running` nor `error` and is
-waited through: `awaitSourceRequested`, `waitForSandboxCtx`, and the attach's reconnect decision
+waited through: `awaitSourceRequested`, `waitForSandboxCtx` (and `wait`'s
+`awaitTerminalBox` through it), and the attach's reconnect decision
 (`sandboxStoppedAttachDone`), which reconnects across the rebuild. `discobox ls`
 shows the state as `repairing` and that cause in its ERROR column
 (`sandboxMessage`), since recording the repair cleared the error the row had.

@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -315,7 +318,10 @@ reports nothing is waited on by a HOOK, idle or exit. Repeat --until to wait
 for whichever comes first. By default only what happens after the last input
 sent to the terminal counts, so "send" then "wait" never misses the answer.
 Without --for, wait has no time limit; with it, wait exits 124 when DURATION
-passes. It prints what held, then the point a later --after resumes from.`,
+passes. It prints what held, then the point a later --after resumes from.
+
+A discobox still starting is waited on until it runs, within --for, and one
+whose start fails ends the wait with why. wait never starts a stopped one.`,
 		Example: `  discobox send mybox 'run the tests again' && discobox send-key mybox Enter
   discobox wait mybox --until finished --until blocked
   discobox wait mybox --until idle=10s --for 5m || echo timed out
@@ -338,7 +344,7 @@ passes. It prints what held, then the point a later --after resumes from.`,
 			if limit > 0 {
 				deadline = time.Now().Add(limit)
 			}
-			result, err := a.waitTerminal(cmd.Context(), api, apiclientgen.WaitSandboxExecParams{ProjectId: projectID, SandboxId: sandboxID, ExecId: terminalID}, until, after, deadline)
+			result, err := a.waitTerminal(cmd.Context(), cmd.ErrOrStderr(), api, apiclientgen.WaitSandboxExecParams{ProjectId: projectID, SandboxId: sandboxID, ExecId: terminalID}, until, after, deadline)
 			if err != nil {
 				return err
 			}
@@ -367,7 +373,7 @@ passes. It prints what held, then the point a later --after resumes from.`,
 // (ADR 0137 §3), each call resuming where the last left off. The first call
 // counts from the terminal's last input unless after names a point
 // (ADR 26-11-04-204 §4). A zero deadline waits without limit.
-func (a *App) waitTerminal(ctx context.Context, api *apiclientgen.Client, params apiclientgen.WaitSandboxExecParams, until waitUntil, after string, deadline time.Time) (*apimodel.SandboxExecWaitResult, error) {
+func (a *App) waitTerminal(ctx context.Context, stderr io.Writer, api *apiclientgen.Client, params apiclientgen.WaitSandboxExecParams, until waitUntil, after string, deadline time.Time) (*apimodel.SandboxExecWaitResult, error) {
 	body := &apimodel.SandboxExecWaitBody{Until: apimodel.SandboxExecWaitUntil{
 		HookEvents:    until.hooks,
 		ProgramStates: until.program,
@@ -383,6 +389,7 @@ func (a *App) waitTerminal(ctx context.Context, api *apiclientgen.Client, params
 	} else {
 		body.Until.FromLastInput = apiclientgen.NewOptBool(true)
 	}
+	var notUpSince time.Time
 	for {
 		timeout := maxTerminalWait
 		if !deadline.IsZero() {
@@ -391,13 +398,38 @@ func (a *App) waitTerminal(ctx context.Context, api *apiclientgen.Client, params
 			timeout = min(timeout, max(time.Second, left))
 		}
 		body.TimeoutSeconds = int64(timeout / time.Second)
-		res, err := api.WaitSandboxExec(ctx, body, params)
-		if err != nil {
-			return nil, err
-		}
-		result, err := expectResponse[apimodel.SandboxExecWaitResult](res)
-		if err != nil {
-			return nil, err
+		result, status, refused := waitTerminalOnce(ctx, api, body, params)
+		if refused != nil {
+			if status == 0 {
+				return nil, refused
+			}
+			started, err := a.awaitTerminalBox(ctx, stderr, api, params, deadline, refused)
+			if err != nil {
+				return nil, err
+			}
+			if started {
+				notUpSince = time.Time{} // a new start: its terminal gets its own grace
+				continue
+			}
+			// The discobox runs. Its agent starts the primary terminal once
+			// provisioning is ready, which is also when the discobox first
+			// reads running, and refuses the terminal (409, "retry") until it
+			// is up. That gap is waited out, for terminalStartGrace at most.
+			if !primaryTerminalNotUp(status, params) {
+				return nil, refused
+			}
+			if notUpSince.IsZero() {
+				notUpSince = time.Now()
+			}
+			if time.Since(notUpSince) >= terminalStartGrace || (!deadline.IsZero() && !time.Now().Before(deadline)) {
+				return nil, refused
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Second):
+			}
+			continue
 		}
 		if result.Reason != apiclientgen.SandboxExecWaitResultReasonTimeout {
 			return result, nil
@@ -408,6 +440,96 @@ func (a *App) waitTerminal(ctx context.Context, api *apiclientgen.Client, params
 		body.Until.After = apiclientgen.NewOptString(result.ResumeAfter)
 		body.Until.FromLastInput = apiclientgen.OptBool{}
 	}
+}
+
+// waitTerminalOnce makes one call of the terminal's wait. A refusal comes back
+// with its HTTP status, whichever way it was answered: the agent's JSON error,
+// or plain text from a hop on the way — the pool's 404 for a box it has not
+// made is plain, and the transport hands that back as an error, escaped here
+// since anything on the way may have written it. Status 0 is no answer at all,
+// the transport's own failure.
+func waitTerminalOnce(ctx context.Context, api *apiclientgen.Client, body *apimodel.SandboxExecWaitBody, params apiclientgen.WaitSandboxExecParams) (*apimodel.SandboxExecWaitResult, int, error) {
+	res, err := api.WaitSandboxExec(ctx, body, params)
+	if err != nil {
+		var plain *plainStatusError
+		if errors.As(err, &plain) {
+			return nil, plain.code, errors.New(terminalSafe(plain.Error()))
+		}
+		return nil, 0, err
+	}
+	result, err := expectResponse[apimodel.SandboxExecWaitResult](res)
+	if problem, ok := res.(*apiclientgen.ErrorResponseStatusCode); ok {
+		return nil, problem.StatusCode, err
+	}
+	return result, 0, err
+}
+
+// terminalStartGrace is how long wait keeps calling a primary terminal its
+// agent says is not up yet, on a discobox that runs.
+const terminalStartGrace = 30 * time.Second
+
+// primaryTerminalNotUp reports whether a refused terminal wait on a running
+// discobox may be its primary terminal not started yet: the agent's 409 for
+// the primary. The agent answers 409 for a terminal that has ended too, which
+// is final, and nothing it answers tells the two apart — not the terminals it
+// lists either, since a previous run's primary stays listed, ended, until a
+// restarted box launches its new one. So every such 409 is called again, for
+// terminalStartGrace at most: an ended terminal costs that long before its
+// refusal, where taking the not-yet-started one for final is the very
+// failure of a wait right after a start.
+func primaryTerminalNotUp(status int, params apiclientgen.WaitSandboxExecParams) bool {
+	return status == http.StatusConflict && params.ExecId == primaryExecID
+}
+
+// awaitTerminalBox answers a terminal wait the pool refused, from the
+// discobox's own state. The terminal's wait is an observe, and an observe
+// neither starts a discobox nor waits out its start (ADR 26-10-12-711 §1): the
+// pool refuses it with "sandbox not found" until the box is made. So a
+// discobox still starting, or being repaired, is waited on until it runs,
+// within the deadline, and started is true: make the wait again. One that
+// fails says why; one in any other state that is not running says that state,
+// and is not started, since wait only observes. A running discobox, or one
+// that cannot be read, returns neither: the box is not why.
+func (a *App) awaitTerminalBox(ctx context.Context, stderr io.Writer, api *apiclientgen.Client, params apiclientgen.WaitSandboxExecParams, deadline time.Time, refused error) (started bool, err error) {
+	if ctx.Err() != nil {
+		return false, refused
+	}
+	res, err := api.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: params.ProjectId, SandboxId: params.SandboxId})
+	if err != nil {
+		return false, refused
+	}
+	sandbox, err := expectResponse[apimodel.Sandbox](res)
+	if err != nil {
+		return false, refused
+	}
+	switch state := sandbox.Runtime.DisplayState.Or(""); state {
+	case "running", "":
+		return false, nil
+	case "error":
+		return false, fmt.Errorf("discobox failed: %s", sandboxFailureReason(sandbox))
+	case "starting", "repairing":
+	default:
+		return false, fmt.Errorf("discobox %s is %s; wait does not start it", params.SandboxId, state)
+	}
+	var limit time.Duration
+	if !deadline.IsZero() {
+		if limit = time.Until(deadline); limit <= 0 {
+			return false, stillStarting(stderr, sandbox)
+		}
+	}
+	waited, err := a.waitForSandboxCtx(ctx, api, params.ProjectId, params.SandboxId, limit)
+	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		return false, stillStarting(stderr, cmp.Or(waited, sandbox))
+	}
+	return err == nil, err
+}
+
+// stillStarting is the end of a wait whose --for passed before its discobox
+// started: said on stderr, since there is no resume point to print, and exit
+// 124 as for any wait that ran out.
+func stillStarting(stderr io.Writer, sandbox *apimodel.Sandbox) error {
+	fmt.Fprintf(stderr, "discobox %s is still %s\n", sandbox.ID, sandbox.Runtime.DisplayState.Or("starting"))
+	return client.ExitError{Code: 124}
 }
 
 // waitAnswer is the line wait prints: what held, written as --until would
