@@ -22,6 +22,7 @@ func TestASnapshotPlanIsRefusedAnythingOfASandbox(t *testing.T) {
 	}
 	for name, change := range map[string]func(*SnapshotPlan){
 		"a credentials endpoint": func(p *SnapshotPlan) { p.Pool.Credentials = "discobox-pool-proxy:17090" },
+		"a builder endpoint":     func(p *SnapshotPlan) { p.Pool.BuildKit = "https://discobox-pool-proxy:17081" },
 		"secrets":                func(p *SnapshotPlan) { p.RuntimeConfig.SecretEnv = map[string]string{"TOKEN": "sentinel"} },
 		"sources":                func(p *SnapshotPlan) { p.RuntimeConfig.Sources = []sandboxconfig.RuntimeSource{{Slug: "x"}} },
 		"no proxy material":      func(p *SnapshotPlan) { p.RuntimeConfig.Proxy = nil },

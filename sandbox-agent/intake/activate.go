@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
@@ -41,7 +42,7 @@ type proxyUnit struct {
 // come up is not used by a client that does not yet trust what it intercepts.
 var proxyUnits = []proxyUnit{
 	{name: "discobox-trust-ca.service", config: mitmCAFile, inputs: []string{mitmCAFile}},
-	{name: "discobox-proxy-bridge.service", config: egressBridgeFile, inputs: bridgeInputs(egressBridgeFile), reloads: bridgeMaterial, listen: sandboxconfig.SandboxEgressListenAddress},
+	{name: agentlayer.ProxyBridgeUnit, config: egressBridgeFile, inputs: bridgeInputs(egressBridgeFile), reloads: bridgeMaterial, listen: sandboxconfig.SandboxEgressListenAddress},
 	{name: "discobox-buildkit-bridge.service", config: buildKitBridgeFile, inputs: bridgeInputs(buildKitBridgeFile), reloads: bridgeMaterial, listen: sandboxconfig.SandboxBuildKitListenAddress},
 	{name: "discobox-proxy-bridge-docker.service", config: nestedDockerBridgeFile, inputs: bridgeInputs(nestedDockerBridgeFile), reloads: bridgeMaterial, withDocker: true},
 }

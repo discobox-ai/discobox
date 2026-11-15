@@ -14,6 +14,8 @@ import (
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -450,5 +452,45 @@ func TestAMachineStartedBeforeIsNeverMadeAgainFresh(t *testing.T) {
 	}
 	if _, ok, _ := r.readSnapshotRecord(key); !ok {
 		t.Error("a start of a machine started before dropped its snapshot")
+	}
+}
+
+// A build reaches its pool as the pool's sandboxes do, by the same hop: on a
+// machine pool reached directly, the pool's name with the provider's host as
+// discobox's answer for it, resolved through the provider, and the stub made
+// the box's resolver; through an edge, the tunnel. Only the credentials
+// endpoint and the builder's are left out, which a build does not use. A
+// plan without the address dialed the pool's name through the provider's
+// resolver, which boxd does not answer, so nothing it fetched arrived (#1197).
+func TestASnapshotBuildReachesItsPoolByTheSandboxesHop(t *testing.T) {
+	direct := proxyagent.PoolEndpoints("")
+	direct.Address = "dvm-prov-1--pool-1.boxd"
+	direct.DNSSystemResolver = true
+	edge := proxyagent.PoolEndpoints("wss://dvm-pool-1.boxd.sh")
+	edge.DNSSystemResolver = true
+	for name, endpoints := range map[string]sandboxconfig.PoolEndpoints{"direct": direct, "edge": edge} {
+		f := newMachineFixture(t, nil)
+		r := f.runtime
+		r.poolEndpoints = endpoints
+		plan, err := r.newSnapshotPlan(r.snapshotBase(), machineSnapshotCreate("sbx_1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _, err := r.prepareSnapshotBuild(context.Background(), plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc agentlayer.SnapshotPlan
+		if err := json.Unmarshal(data, &doc); err != nil {
+			t.Fatal(err)
+		}
+		want := endpoints
+		want.Credentials, want.BuildKit = "", ""
+		if doc.Pool != want {
+			t.Errorf("%s: the build's plan names the pool as %+v, want %+v", name, doc.Pool, want)
+		}
+		if err := r.removeSnapshotBuildMaterial(plan.buildID()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

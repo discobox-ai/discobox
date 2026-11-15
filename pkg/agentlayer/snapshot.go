@@ -59,8 +59,9 @@ type SnapshotPlan struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"projectId"`
 	PoolID    string `json:"poolId"`
-	// Pool is where the pool serves the build: its proxy and DNS alone, so
-	// the build has no credentials endpoint to ask.
+	// Pool is where the pool serves the build: its sandboxes' hop, the name,
+	// address and resolver they reach it by included, with no credentials
+	// endpoint to ask and no builder to build through.
 	Pool sandboxconfig.PoolEndpoints `json:"pool"`
 	// Env is the proxy-trust environment the build provisions under, as a
 	// sandbox's bootstrap names it in Env and ProxyEnvs.
@@ -82,6 +83,8 @@ func (p SnapshotPlan) Validate() error {
 		return errors.New("snapshot plan: names no pool proxy")
 	case p.Pool.Credentials != "":
 		return errors.New("snapshot plan: names a credentials endpoint, and a snapshot is built with no credentials")
+	case p.Pool.BuildKit != "":
+		return errors.New("snapshot plan: names the pool's builder, and a snapshot builds nothing through it")
 	case p.RuntimeConfig.Proxy == nil:
 		return errors.New("snapshot plan: carries no proxy material")
 	case len(p.RuntimeConfig.SecretEnv) > 0 || len(p.RuntimeConfig.Sources) > 0:
