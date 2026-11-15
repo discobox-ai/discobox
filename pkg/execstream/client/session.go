@@ -97,6 +97,17 @@ type Options struct {
 	// OtherErr inspects a non-output error before it ends the session,
 	// reporting whether it was handled.
 	OtherErr func(error) (bool, error)
+	// Detaches reports that the remote outlives the session: an attach to a
+	// terminal that keeps running once the caller lets go, not a command the
+	// caller runs. A signal addressed to this process is then this process's
+	// and never reaches the remote. Every signal the console names but
+	// suspend — interrupt, terminate, hangup, quit — ends the session locally
+	// with a SignalError, the terminal handed back as on any other way out,
+	// and suspend stops this process alone. Forwarding them
+	// would make `timeout`'s SIGTERM, or a closed window's SIGHUP, a signal to
+	// the program the attach was only watching. A raw terminal's Ctrl-C and
+	// Ctrl-Z are bytes, not signals, and still reach the remote.
+	Detaches bool
 	// InterruptNotice is called on the interrupt that arms the local escape:
 	// the remote has not answered the ones before it, and one more ends the
 	// session with ErrInterrupted. It runs on the goroutine that carried the
@@ -398,12 +409,24 @@ func (s *Session) proxySignals(ctx context.Context) error {
 			if !ok {
 				continue
 			}
+			if s.opts.Detaches {
+				return SignalError{Signal: sig}
+			}
 			if err := s.WriteFrame(frame.Signal, []byte(name)); err != nil {
 				return err
 			}
 		}
 	}
 }
+
+// SignalError reports that a signal addressed to this process ended a session
+// that Detaches. The remote is still running. Which exit status that makes is
+// the caller's to decide, as it is for ErrInterrupted.
+type SignalError struct {
+	Signal os.Signal
+}
+
+func (e SignalError) Error() string { return "ended by signal: " + e.Signal.String() }
 
 // Interrupt escape. A stalled stream swallows Ctrl-C: in raw mode it is a byte
 // for the remote line discipline, and cooked-mode SIGINT is forwarded as a
@@ -544,9 +567,14 @@ func (s *Session) recordInterruptPosition() {
 // shell that regains it expects cooked mode, and taken again on resume. The
 // remote may also have missed resizes while this process was stopped, so the
 // current size is re-sent.
+//
+// A session that Detaches leaves the remote running instead: the caller's job
+// stopping is no reason to stop a terminal that outlives the attach.
 func (s *Session) suspend() error {
-	if err := s.WriteFrame(frame.Signal, []byte("TSTP")); err != nil {
-		return err
+	if !s.opts.Detaches {
+		if err := s.WriteFrame(frame.Signal, []byte("TSTP")); err != nil {
+			return err
+		}
 	}
 	if s.rawRestore != nil {
 		s.rawRestore()
@@ -559,8 +587,10 @@ func (s *Session) suspend() error {
 			return err
 		}
 	}
-	if err := s.WriteFrame(frame.Signal, []byte("CONT")); err != nil {
-		return err
+	if !s.opts.Detaches {
+		if err := s.WriteFrame(frame.Signal, []byte("CONT")); err != nil {
+			return err
+		}
 	}
 	if s.opts.Terminal {
 		return s.WriteInitialResize()

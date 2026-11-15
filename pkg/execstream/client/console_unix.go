@@ -8,8 +8,9 @@ import (
 	"syscall"
 )
 
-// proxiedSignals are the signals handled here and delivered to the remote
-// process rather than acted on locally. They matter only when the terminal is
+// proxiedSignals are the signals handled here and, for a command the caller
+// runs, delivered to the remote process rather than acted on locally; a
+// session that Detaches acts on them here instead. They matter only when the terminal is
 // not in raw mode: a raw terminal passes Ctrl-C and Ctrl-Z through as the bytes
 // 0x03 and 0x1a, and the remote line discipline turns those into signals for
 // the remote foreground job — which is why an attached terminal never sees them
@@ -25,7 +26,7 @@ func (c *OSConsole) StopSignals(ch chan<- os.Signal) { signal.Stop(ch) }
 // IsSuspendSignal reports whether sig means "stop this job" (Ctrl-Z). Suspend is
 // handled rather than merely forwarded: the remote job stops *and* this process
 // stops, so the user gets their shell back and fg resumes both, exactly as a
-// local command behaves.
+// local command behaves. A session that Detaches stops only this process.
 func (c *OSConsole) IsSuspendSignal(sig os.Signal) bool { return sig == syscall.SIGTSTP }
 
 func (c *OSConsole) SignalName(sig os.Signal) (string, bool) {

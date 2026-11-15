@@ -635,6 +635,12 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 type execAttachOptions struct {
 	// replay repaints the session's current screen on connect.
 	replay bool
+	// detachAtInputEnd makes the end of stdin a detach. The attach commands
+	// ask for the terminal and nothing else, so input ending is the caller
+	// letting go (a script's `attach --raw < <(sleep N)`); run is different,
+	// since its stdin may already have given it the prompt and what is left
+	// to do is watch the harness work on it.
+	detachAtInputEnd bool
 	// event receives transport lifecycle changes.
 	event func(resume.Event)
 	// timing receives transport heartbeat and positioned-action RTT samples from

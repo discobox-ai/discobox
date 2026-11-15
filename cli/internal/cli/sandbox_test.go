@@ -319,7 +319,7 @@ func TestTerminalInputSendsALoneEscapeAfterTheEscapeTime(t *testing.T) {
 	conn := &recordingConn{}
 	s := client.New(client.Options{Conn: conn, Stdin: stdin})
 	done := make(chan error, 1)
-	go func() { done <- copyTerminalInput(context.Background(), s, newDetachFilter("alt+g")) }()
+	go func() { done <- copyTerminalInput(context.Background(), s, newDetachFilter("alt+g"), false) }()
 
 	if _, err := typed.Write([]byte{'i', 0x1b}); err != nil {
 		t.Fatal(err)
@@ -351,11 +351,23 @@ func TestTerminalInputSendsALoneEscapeAfterTheEscapeTime(t *testing.T) {
 func TestTerminalInputSendsWhatIsHeldWhenInputEnds(t *testing.T) {
 	conn := &recordingConn{}
 	s := client.New(client.Options{Conn: conn, Stdin: bytes.NewReader([]byte{'q', 0x1b})})
-	if err := copyTerminalInput(context.Background(), s, newDetachFilter("alt+g")); err != nil {
+	if err := copyTerminalInput(context.Background(), s, newDetachFilter("alt+g"), false); err != nil {
 		t.Fatal(err)
 	}
 	if got := conn.sent(); got != "q\x1b" {
 		t.Fatalf("sent %q, want q and the Escape", got)
+	}
+}
+
+// The end of input is a detach only where the attach asks for it: an attach
+// command's stdin is the caller, while run's may have been the prompt.
+func TestTerminalInputEndDetachesOnlyWhenAsked(t *testing.T) {
+	for _, detach := range []bool{false, true} {
+		s := client.New(client.Options{Conn: &recordingConn{}, Stdin: bytes.NewReader(nil)})
+		err := copyTerminalInput(context.Background(), s, newDetachFilter("ctrl+a"), detach)
+		if got := errors.Is(err, errTerminalDetached); got != detach {
+			t.Fatalf("detachAtInputEnd=%t: copyTerminalInput = %v, want detached %t", detach, err, detach)
+		}
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"syscall"
 
 	"github.com/discobox-ai/discobox/pkg/execstream/client"
 )
@@ -58,4 +59,21 @@ func interruptNotice(stderr io.Writer, raw bool, what string) func() {
 // from a remote command that exited 130 itself.
 func interruptedExit() error {
 	return fmt.Errorf("%w: %w", client.ErrInterrupted, client.ExitError{Code: 130})
+}
+
+// signaledExit ends a command whose attach a signal ended locally
+// (client.SignalError): the status a shell reports for a command that signal
+// killed, 128+N, exited silently through ExitCode. Every signal a session ends
+// on is a syscall.Signal — on Windows too, where os.Interrupt is SIGINT — so
+// the fallback is never expected to be reached. Other errors pass through.
+func signaledExit(err error) error {
+	var signaled client.SignalError
+	if !errors.As(err, &signaled) {
+		return err
+	}
+	code := 1
+	if number, ok := signaled.Signal.(syscall.Signal); ok {
+		code = 128 + int(number)
+	}
+	return fmt.Errorf("%w: %w", err, client.ExitError{Code: code})
 }

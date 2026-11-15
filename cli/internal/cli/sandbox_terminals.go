@@ -112,7 +112,7 @@ func (a *App) newSandboxTerminalCreateCommand() *cobra.Command {
 				return err
 			}
 			if opts.attach {
-				return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, execAttachOptions{detachAtInputEnd: true}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
 			started, err := a.startSandboxExec(cmd.Context(), projectID, resolvedSandboxID, terminal.ID)
 			if err != nil {
@@ -153,7 +153,7 @@ detaches without ending the session. Set DISCOBOX_LEADER to change the Ctrl-A.`,
 			if err != nil {
 				return err
 			}
-			return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, execAttachOptions{detachAtInputEnd: true}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 }
@@ -396,8 +396,11 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		RawMode:     true,
 		Terminal:    true,
 		SignalReady: true,
+		// The terminal keeps running after the attach: a signal sent to this
+		// process ends the attach, and is never the harness's.
+		Detaches: true,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
-			return copyTerminalInput(ctx, s, chord)
+			return copyTerminalInput(ctx, s, chord, opts.detachAtInputEnd)
 		},
 		InterruptNotice: interruptNotice(stderr, true, "the discobox"),
 		ErrorFrame:      printAttachErrorFrame(stderr),
@@ -421,7 +424,7 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	if errors.Is(err, client.ErrInterrupted) {
 		return interruptedExit()
 	}
-	return err
+	return signaledExit(err)
 }
 
 // escapeTime is how long a raw attach holds back the start of an Alt leader —
@@ -438,7 +441,10 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 // its sequence and is sent on at once.
 const escapeTime = 50 * time.Millisecond
 
-func copyTerminalInput(ctx context.Context, s *client.Session, chord *detachFilter) error {
+// copyTerminalInput types stdin into an attached terminal until the detach
+// chord, which detaches, or the end of stdin, which detaches when
+// detachAtInputEnd says so and otherwise leaves the stream running.
+func copyTerminalInput(ctx context.Context, s *client.Session, chord *detachFilter, detachAtInputEnd bool) error {
 	// A leader's first byte that ends a read is held until either the next
 	// read says what it was or escapeTime does. mu orders the timer's flush
 	// against the next read, so a keystroke is never sent ahead of one typed
@@ -506,6 +512,9 @@ func copyTerminalInput(ctx context.Context, s *client.Session, chord *detachFilt
 		}
 		mu.Unlock()
 		if errors.Is(err, io.EOF) {
+			if detachAtInputEnd {
+				return errTerminalDetached
+			}
 			return nil
 		}
 		if err != nil {
