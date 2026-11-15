@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The one live run of a remote driver, end to end (docs/tasks/947, R2): make a
 # provider and a pool on DRIVER, start a discobox on it running a harness,
-# attach to it, probe its egress and its machine's public URL, keep the
-# evidence, delete everything it made, check that nothing is left, and report.
+# attach to it, probe its egress and its machine's public URL (on boxd, its
+# closed default proxy too), keep the evidence, delete everything it made,
+# check that nothing is left, and report.
 #
 # Usage: scripts/live-run.sh --driver DRIVER [flags] [discobox flags...]
 #
@@ -86,7 +87,7 @@ discobox=${DISCOBOX:-discobox}
 discovm=${DISCO_VM:-disco-vm}
 dc_flags=()
 
-usage() { sed -n '2,69p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,73p' "$0" | sed 's/^# \{0,1\}//'; }
 need() { [ "$#" -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }; }
 while [ "$#" -gt 0 ]; do
 	case $1 in
@@ -631,32 +632,155 @@ else
 fi
 
 echo "--- public URL" >&2
-# The machine's public URL, as the driver gives it, probed from here: outside
-# the pool. Nothing the guest runs may answer there (the plan's B11), since
-# the guest's root owns every port the URL could forward to. Only an answer
-# observed decides it: a probe that reached nothing proves nothing, and is
-# for a person to read.
+# The machine's public URL, probed from here: outside the pool. Nothing the
+# guest runs may answer there (the plan's B11), since the guest's root owns
+# every port the URL could forward to. Only an answer observed decides it: a
+# probe that reached nothing proves nothing, and is for a person to read.
 machine=$(scope "$box_id")
-if ! url=$(dvm 0 "https://$machine.dryrun.invalid" "$(scope "$pool_id")" url "$machine" 2>&1); then
-	check public-url "the driver gives $machine no URL it could read: $url"
-elif [ -z "$url" ]; then
-	pass public-url "the driver gives $machine no public URL"
-else
-	headers=$evidence/public.headers
+# reach NAME URL CANNED probes URL from here, keeping what answered in the
+# evidence as NAME.headers and NAME.body: the HTTP status in $code (000:
+# nothing answered), what answered in $body and $server, and curl's error
+# in $work/NAME.err.
+code=
+body=
+server=
+reach() {
+	local step=$1 url=$2 headers=$evidence/$1.headers
 	: >"$headers"
-	code=$(ext 0 '404' curl -sS -o "$evidence/public.body" -D "$headers" -w '%{http_code}' --max-time 20 "$url/discobox-live-run-$nonce" 2>"$work/public.err" || true)
-	code=${code:-000}
-	body=$(head -c 300 "$evidence/public.body" 2>/dev/null || true)
+	code=$(ext 0 "$3" curl -sS -o "$evidence/$step.body" -D "$headers" -w '%{http_code}' --max-time 20 "$url/discobox-live-run-$nonce" 2>"$work/$step.err" || true)
+	body=$(head -c 300 "$evidence/$step.body" 2>/dev/null || true)
 	server=$(awk -F': *' 'tolower($1) == "server" { print $2 }' "$headers")
-	case $code in
-	000) check public-url "$url was not reached ($(tail -c 300 "$work/public.err")); nothing is known of what answers there" ;;
-	2??|401) fail public-url "$url answers $code, as the guest's service would: server '$server': $body" ;;
+	code=${code:-000}
+}
+# guest STEP URL CODE fails STEP on an answer only the guest gives, and
+# returns 1 for any other.
+guest() {
+	case $3 in
+	2??|401) fail "$1" "$2 answers $3, as the guest's service would: server '$server': $body" ;;
 	*)
 		# Go's TLS server answers plain HTTP with this: the request reached
 		# the guest's own listener.
 		case $body in
-		*"HTTP request to an HTTPS server"*) fail public-url "$url reaches the guest's listener: HTTP $code: $body" ;;
-		*) check public-url "$url answers HTTP $code (server '$server'): $body; read it: the provider's own refusal passes, anything from the guest fails" ;;
+		*"HTTP request to an HTTPS server"*) fail "$1" "$2 reaches the guest's listener: HTTP $3: $body" ;;
+		*) return 1 ;;
 		esac ;;
+	esac
+}
+
+# The URL the driver reports. A sandbox machine is made with its ingress URL
+# off, so a driver that can withhold one reports none, and disco-vm url
+# refuses (machine.ErrUnsupported); a URL it does report is probed.
+if ! url=$(dvm 1 "disco-vm: instance $machine has no ingress URL: machine: not supported by this driver" "$(scope "$pool_id")" url "$machine" 2>&1); then
+	case $url in
+	*"not supported by this driver"*) pass public-url "the driver reports no URL for $machine: $url" ;;
+	*) check public-url "the driver gives $machine no URL it could read: $url" ;;
+	esac
+elif [ -z "$url" ]; then
+	pass public-url "the driver reports no URL for $machine"
+else
+	reach public "$url" 404
+	case $code in
+	000) check public-url "$url was not reached ($(tail -c 300 "$work/public.err")); nothing is known of what answers there" ;;
+	*) guest public-url "$url" "$code" ||
+		check public-url "$url answers HTTP $code (server '$server'): $body; read it: the provider's own refusal passes, anything from the guest fails" ;;
+	esac
+fi
+
+# What the driver stopped reporting is still there on boxd: every machine
+# keeps its default proxy, at its name in its region's zone, which boxd
+# cannot delete. For a machine whose ingress URL is off, disco-vm locks it to
+# port 0, which no guest can listen on, and boxd answers 502 there (disco-vm
+# docs/drivers/boxd.md, The ingress URL). That proxy is probed itself,
+# whatever disco-vm url said: a check of only the URL the driver reports
+# cannot see a proxy it stopped reporting. The machine is
+# dvm-<pool>--<name> (the same file, Create), in the home region's zone,
+# boxd.sh: the provider is made with no region.
+#
+# boxd answers 502 too where a proxy left open forwards to a port nothing
+# listens on, which it picks from the ports below (the first the guest
+# listens on, else 8000). So while the probe runs, the guest listens on each
+# of them it can bind, answering a marker, and says which of them
+# something already listens on, on any address (busy, read from
+# /proc/net/tcp and tcp6 before it binds anything). With 8000 ours and nothing else on a port
+# ahead of it (80, 443, 8080), an open proxy forwards to our listener, whose
+# marker comes back: only a proxy that forwards nowhere still answers 502. A
+# service already ahead of 8000 may answer 502 itself, or boxd for it, so a
+# 502 then is for a person to read. 80 and 443 need root, which the box's
+# user may not have without a password: unbound and not busy, nothing is
+# there for a proxy to pick.
+if [ "$driver" = boxd ]; then
+	proxy=https://dvm-$(scope "$pool_id")--$machine.boxd.sh
+	marker="discobox-live-run-listener"
+	listen=$(cat <<'EOF'
+command -v python3 >/dev/null 2>&1 || { echo "no-python3"; exit 0; }
+run=; ! sudo -n true 2>/dev/null || run="sudo -n"
+exec $run python3 -c '
+import http.server, sys, threading, time
+marker, secs = sys.argv[1], int(sys.argv[2])
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        b = (marker + "\n").encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def log_message(self, *a): pass
+ports = (80, 443, 8080, 8000, 3000, 5000, 5173)
+# What already listens, on any address, before anything is bound: state 0A
+# in /proc/net/tcp and tcp6, which any user can read.
+held, read = set(), False
+for f in ("/proc/net/tcp", "/proc/net/tcp6"):
+    try: rows = open(f).read().splitlines()[1:]
+    except OSError: continue
+    read = True
+    for r in rows:
+        c = r.split()
+        if len(c) > 3 and c[3] == "0A": held.add(int(c[1].rsplit(":", 1)[1], 16))
+# Not known is not free: what holds a port ahead of 8000 then is unknown.
+busy = [str(p) for p in ports if p in held] if read else ["unknown"]
+up = []
+for p in ports:
+    if p in held: continue
+    try: s = http.server.ThreadingHTTPServer(("0.0.0.0", p), H)
+    except OSError: continue
+    threading.Thread(target=s.serve_forever, daemon=True).start(); up.append(str(p))
+print("busy " + " ".join(busy), flush=True)
+print("listening " + " ".join(up), flush=True)
+time.sleep(secs)
+' "$1" "$2"
+EOF
+)
+	# It listens for 60s, long enough for the probe's 20s, and then ends on
+	# its own; the purge in the cleanup ends it too.
+	ext 0 "busy
+listening 8080 8000 3000 5000 5173" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$box_id" -- sh -c "$listen" listen "$marker" 60 </dev/null >"$work/listen.out" 2>"$work/listen.err" &
+	listener=$!
+	for _ in $(seq 30); do
+		grep -q '^listening\|^no-python3' "$work/listen.out" 2>/dev/null && break
+		kill -0 "$listener" 2>/dev/null || break
+		pause 1
+	done
+	listening=$(awk '$1 == "listening" { $1 = ""; print }' "$work/listen.out" | sed 's/^ *//')
+	busy=$(awk '$1 == "busy" { $1 = ""; print }' "$work/listen.out" | sed 's/^ *//')
+	cp "$work/listen.out" "$evidence/closed-proxy.listener" 2>/dev/null || true
+	reach closed-proxy "$proxy" 502
+	kill "$listener" 2>/dev/null || true
+	wait "$listener" 2>/dev/null || true
+	heard=
+	case " $listening " in
+	*" 8000 "*) heard="while the guest listened on $listening" ;;
+	esac
+	case " $busy " in
+	*" 80 "*|*" 443 "*|*" 8080 "*|*" unknown "*) heard= ;;
+	esac
+	case $code:$body in
+	000:*) check closed-proxy "$proxy was not reached ($(tail -c 300 "$work/closed-proxy.err")); nothing is known of what answers there" ;;
+	*:*"$marker"*) fail closed-proxy "$proxy forwards to the guest: HTTP $code, its listener's marker came back: $body" ;;
+	502:*)
+		if guest closed-proxy "$proxy" "$code"; then :
+		elif [ -n "$heard" ]; then
+			pass closed-proxy "$proxy answers 502 $heard: forwarded nowhere, closed (server '$server'): $body"
+		else
+			check closed-proxy "$proxy answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: ${listening:-none}; already held: ${busy:-none}; $(tr '\n' ' ' <"$work/listen.out" | head -c 200) $(tail -c 200 "$work/listen.err")), so the 502 does not tell a closed proxy from an open one"
+		fi ;;
+	*) guest closed-proxy "$proxy" "$code" ||
+		check closed-proxy "$proxy answers HTTP $code (server '$server'): $body; read it: boxd's own refusal passes, anything from the guest fails" ;;
 	esac
 fi

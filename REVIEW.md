@@ -220,6 +220,14 @@ Global review expectations:
   holding untested. No connection passes only where the probe runs inside
   the boundary under test, as the guest's probes around its fence do, and
   then only when the probe shows no connection was made.
+- A live check of an inbound path probes where the path is, not only the
+  URL the driver reports. A driver stops reporting a URL it has closed, but
+  what it closed can still answer there: boxd keeps a sandbox machine's
+  default proxy, locked to port 0, at its name in its zone. Probing only what
+  `disco-vm url` printed never reached it, and the step could not tell a
+  closed proxy from an open one. A proxy's refusal (boxd's 502) passes only
+  while the guest listens where an open proxy would forward: an open proxy
+  forwarding to a port nothing listens on answers the same 502.
 - A test's stand-in for a real component (a stub CLI, a canned probe answer)
   answers what that component sends, read from its code, never what the code
   under test expects. The live run's first stand-ins had the proxy answer a

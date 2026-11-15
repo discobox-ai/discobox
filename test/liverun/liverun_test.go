@@ -51,7 +51,12 @@ run*)
 wait*) echo finished ;;
 capture*) echo "> reply"; cat "$STUB/answer"; echo ;;
 attach*) echo "the screen" ;;
-exec*) cat "$STUB/probes" ;;
+exec*)
+	# The listener the closed-proxy step starts prints the ports it bound.
+	case "$*" in
+	*discobox-live-run-listener*) cat "$STUB/listener" 2>/dev/null || printf 'busy \nlistening 8080 8000 3000 5000 5173\n' ;;
+	*) cat "$STUB/probes" ;;
+	esac ;;
 *) echo "stub discobox: unexpected call: $*" >&2; exit 3 ;;
 esac
 `
@@ -77,19 +82,30 @@ case "$1 ${2:-}" in
 	cat "$STUB/keys-$scope" 2>/dev/null || { echo 'boxd: list keys: rpc error: code = PermissionDenied desc = this operation requires an interactive session' >&2; exit 1; } ;;
 "key revoke") echo '[]' >"$STUB/keys-$scope" ;;
 "rm --force") grep -vx "$3" "$STUB/left-$scope" >"$STUB/left.tmp" || true; mv "$STUB/left.tmp" "$STUB/left-$scope" ;;
-"url "*) [ ! -e "$STUB/url" ] || echo "https://$2.zone.test" ;;
+"url "*)
+	[ ! -e "$STUB/url-err" ] || { cat "$STUB/url-err" >&2; exit 1; }
+	# A sandbox machine's ingress URL is off, and disco-vm url refuses it
+	# (its Engine.URL), unless $STUB/url says the driver reports one: on
+	# boxd, its default proxy's domain.
+	[ -e "$STUB/url" ] || { echo "disco-vm: instance $2 has no ingress URL: the boxd driver gives none to an instance whose ingress URL is asked off: machine: not supported by this driver" >&2; exit 1; }
+	echo "https://dvm-$scope--$2.boxd.sh" ;;
 *) echo "stub disco-vm: unexpected call: $*" >&2; exit 3 ;;
 esac
 `
 
-// stubCurl is the probe of the public URL, from outside: it prints
-// $STUB/public-code as the status, and $STUB/public-body as the body.
+// stubCurl is a probe of the machine's public URL, from outside: it prints
+// $STUB/public-code as the status, and $STUB/public-body as the body. With
+// none it answers 502, as boxd does at a default proxy locked to port 0
+// (disco-vm docs/drivers/boxd.md). On boxd the URL disco-vm reports and the
+// default proxy are one host, so both probes get the same answer. The body
+// is not boxd's, which no run has recorded yet; the script reads it only for
+// what the guest would send.
 const stubCurl = `#!/usr/bin/env bash
 printf '%s\n' "curl $*" >>"$STUB/calls"
 out=
 while [ "$#" -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; *) shift ;; esac; done
 cat "$STUB/public-body" >"$out" 2>/dev/null || : >"$out"
-code=$(cat "$STUB/public-code" 2>/dev/null || echo 000)
+code=$(cat "$STUB/public-code" 2>/dev/null || echo 502)
 printf '%s' "$code"
 [ "$code" != 000 ] || exit 7
 `
@@ -165,7 +181,7 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	}
 	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach",
 		"egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-unlisted-direct", "egress-ip-direct",
-		"public-url", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
+		"public-url", "closed-proxy", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
 		if !strings.Contains(r.report, "| PASS | "+step+" |") {
 			t.Errorf("report has no passing %s row:\n%s", step, r.report)
 		}
@@ -280,13 +296,13 @@ func TestLiveRunPublicURL(t *testing.T) {
 		name, code, body, want string
 	}{
 		// The request reached the guest's own TLS listener.
-		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "| FAIL | public-url | https://sbx-t1.zone.test reaches the guest's listener"},
-		{"guest answers", "200", "ok\n", "| FAIL | public-url | https://sbx-t1.zone.test answers 200"},
+		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "| FAIL | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh reaches the guest's listener"},
+		{"guest answers", "200", "ok\n", "| FAIL | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers 200"},
 		// An answer the script cannot place is for a person to read.
-		{"provider answers", "502", "bad gateway\n", "| CHECK | public-url | https://sbx-t1.zone.test answers HTTP 502"},
+		{"provider answers", "502", "bad gateway\n", "| CHECK | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers HTTP 502"},
 		// Nothing reached is nothing known: this box's own egress, DNS or a
 		// timeout may have stopped the probe.
-		{"not reached", "000", "", "| CHECK | public-url | https://sbx-t1.zone.test was not reached"},
+		{"not reached", "000", "", "| CHECK | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh was not reached"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := liveRun(t, func(stub string) {
@@ -298,6 +314,93 @@ func TestLiveRunPublicURL(t *testing.T) {
 				t.Fatalf("exit %d, want %q:\n%s", r.exit, tc.want, r.report)
 			}
 		})
+	}
+}
+
+// A sandbox machine's ingress URL is off, so disco-vm reports none, but boxd
+// keeps its default proxy, locked to port 0, at the machine's name in its
+// zone. The run probes that host itself, whatever disco-vm url said, while
+// the guest listens where an open proxy would forward: boxd's 502 then
+// passes, an answer from the guest fails, and anything else is for a person
+// to read.
+func TestLiveRunProbesClosedProxy(t *testing.T) {
+	const host = "https://dvm-pool-t1--sbx-t1.boxd.sh"
+	for _, tc := range []struct {
+		name, code, body, listener, want string
+	}{
+		{"boxd refuses", "502", "", "", "| PASS | closed-proxy | " + host + " answers 502 while the guest listened on 8080 8000 3000 5000 5173: forwarded nowhere, closed"},
+		// An open proxy forwards to the guest's listener.
+		{"listener answers", "200", "discobox-live-run-listener\n", "", "| FAIL | closed-proxy | " + host + " forwards to the guest: HTTP 200, its listener's marker came back"},
+		{"guest answers", "200", "ok\n", "", "| FAIL | closed-proxy | " + host + " answers 200"},
+		{"guest listener", "400", "Client sent an HTTP request to an HTTPS server.\n", "", "| FAIL | closed-proxy | " + host + " reaches the guest's listener"},
+		// With nothing listening on 8000, an open proxy answers 502 too.
+		{"no listener", "502", "", "busy 8000\nlistening 3000\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000"},
+		{"no python", "502", "", "no-python3\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000"},
+		// Something already on a port ahead of 8000 is where an open proxy
+		// forwards, and it, or boxd for it, may answer 502.
+		{"busy ahead", "502", "", "busy 443\nlistening 8080 8000 3000 5000 5173\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: 8080 8000 3000 5000 5173; already held: 443"},
+		// What listens could not be read, so a port ahead of 8000 may be held.
+		{"unknown", "502", "", "busy unknown\nlistening 8080 8000 3000 5000 5173\n", "| CHECK | closed-proxy | " + host + " answers 502, but the guest did not hold 8000 with nothing else ahead of it (listening on: 8080 8000 3000 5000 5173; already held: unknown"},
+		// Without root, 80 and 443 are unbound; with nothing listening there
+		// (on any address), they are no one's.
+		{"no root", "502", "", "busy \nlistening 8080 8000 3000 5000 5173\n", "| PASS | closed-proxy |"},
+		{"unplaced", "404", "not found\n", "", "| CHECK | closed-proxy | " + host + " answers HTTP 404"},
+		{"not reached", "000", "", "", "| CHECK | closed-proxy | " + host + " was not reached"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := liveRun(t, func(stub string) {
+				write(t, filepath.Join(stub, "public-code"), tc.code, 0o644)
+				write(t, filepath.Join(stub, "public-body"), tc.body, 0o644)
+				if tc.listener != "" {
+					write(t, filepath.Join(stub, "listener"), tc.listener, 0o644)
+				}
+			})
+			if !strings.Contains(r.report, tc.want) {
+				t.Fatalf("exit %d, want %q:\n%s", r.exit, tc.want, r.report)
+			}
+			if pass := strings.Contains(tc.want, "| PASS |"); pass != (r.exit == 0) {
+				t.Fatalf("exit %d with %q:\n%s", r.exit, tc.want, r.report)
+			}
+			// disco-vm url refused, as it does for a machine with its
+			// ingress URL off, and that is no failure of its own.
+			if !strings.Contains(r.report, "| PASS | public-url | the driver reports no URL for sbx-t1") {
+				t.Fatalf("public-url does not pass on disco-vm's refusal:\n%s", r.report)
+			}
+			// The probe goes from outside, while the guest listens.
+			if i, j := indexOf(r.calls, "discobox-live-run-listener"), indexOf(r.calls, "curl -sS -o "+filepath.Join(r.stub, "evidence", "closed-proxy.body")); i < 0 || j < 0 || i > j {
+				t.Fatalf("the proxy is not probed after the guest's listener starts:\n%s", strings.Join(r.calls, "\n"))
+			}
+			if tc.code != "000" {
+				if _, err := os.Stat(filepath.Join(r.stub, "evidence", "closed-proxy.headers")); err != nil {
+					t.Fatalf("the proxy's answer is not kept: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// A URL the driver does report is its default proxy, open: that it answers
+// fails both steps.
+func TestLiveRunReportedURLIsTheProxy(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "url"), "", 0o644)
+		write(t, filepath.Join(stub, "public-code"), "200", 0o644)
+		write(t, filepath.Join(stub, "public-body"), "discobox-live-run-listener\n", 0o644)
+	})
+	for _, want := range []string{"| FAIL | public-url | https://dvm-pool-t1--sbx-t1.boxd.sh answers 200", "| FAIL | closed-proxy | https://dvm-pool-t1--sbx-t1.boxd.sh forwards to the guest"} {
+		if !strings.Contains(r.report, want) {
+			t.Errorf("report has no %q:\n%s", want, r.report)
+		}
+	}
+}
+
+// disco-vm failing for any other reason is not a machine with no URL.
+func TestLiveRunURLUnread(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "url-err"), "disco-vm: boxd: exchange API key: 401 Unauthorized\n", 0o644)
+	})
+	if r.exit == 0 || !strings.Contains(r.report, "| CHECK | public-url | the driver gives sbx-t1 no URL it could read: disco-vm: boxd: exchange API key: 401") {
+		t.Fatalf("exit %d:\n%s", r.exit, r.report)
 	}
 }
 
