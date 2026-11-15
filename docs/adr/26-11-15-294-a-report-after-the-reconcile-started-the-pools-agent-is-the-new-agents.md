@@ -1,6 +1,6 @@
 # 26-11-15-294 — A report after the reconcile started the pool's agent is the new agent's
 
-- **Status**: Accepted (supersedes [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md) §1's "its agent has sent a ready status report since that reconcile settled. A report from before the reconcile may be the old agent's, so it does not count", for a pool whose agent this run's reconciles started, and the Consequences line that puts a plain restart's hold at about one heartbeat interval)
+- **Status**: Accepted (supersedes [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md) §1's "its agent has sent a ready status report since that reconcile settled. A report from before the reconcile may be the old agent's, so it does not count", for a pool whose agent this run's reconciles started, and the Consequences line that puts a plain restart's hold at about one heartbeat interval; §1's restart row "once the restart has returned", §3's "the agent changes in no way" and the Consequences line that a boot report landing before the restart returns is still missed superseded by [26-11-15-602](26-11-15-602-an-in-place-restart-is-recorded-before-it-begins-and-the-new-agents-first-report-counts.md): an in-place restart is recorded before it begins, and the new agent's marked first report counts)
 - **Date**: 2026-11-15
 - Accepted by the owner by merging #1195, 2026-11-15
 - **Issue**: [#1194](https://github.com/discobox-ai/discobox/issues/1194)
