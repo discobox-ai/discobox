@@ -1,7 +1,9 @@
 # 26-11-15-089 — A provider instance is checked on request, without making anything
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-15
+
+Accepted by the owner by merging #1207, 2026-11-15.
 - **Issue**: [#1200](https://github.com/discobox-ai/discobox/issues/1200)
 - **Preserves**: [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §2's work evidence (nothing here renews a silence budget); [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md) §2's expiry pass; [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md) §§3, 8, every dial checked against the operator's endpoint policy; provider create checking only the config.
 
