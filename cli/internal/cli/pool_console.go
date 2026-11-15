@@ -128,13 +128,9 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, a
 		ErrorFrame:  func(payload []byte) error { return fmt.Errorf("pool console: %s", terminalSafe(string(payload))) },
 		RawMode:     tty,
 		Terminal:    tty,
-		// The admin shell is attached to, not run: a signal sent to this
-		// process ends the attach, and is never the shell's. A one-off
-		// command is the caller's to signal, as with exec.
-		Detaches: len(argv) == 0,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			if len(argv) == 0 {
-				return copyTerminalInput(ctx, s, chord, false)
+				return copyTerminalInput(ctx, s, chord)
 			}
 			return copySandboxExecInput(ctx, s, true)
 		},
@@ -156,7 +152,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, a
 	if errors.Is(err, client.ErrInterrupted) {
 		return interruptedExit()
 	}
-	return signaledExit(err)
+	return err
 }
 
 // openPoolConsoleAttach dials the console websocket. The size travels as query

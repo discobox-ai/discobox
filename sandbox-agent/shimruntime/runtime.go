@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/pkg/execstream/host"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/sandbox-agent/procio"
 )
 
 // Runtime owns the terminal side of one exec and delegates the stream to
@@ -78,7 +79,7 @@ func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int, tty *os.F
 	screen := newScreenBuffer(rows, cols, scrollbackLines)
 	// Both run inside the emulator, so under r.mu: the foreground read may use
 	// the handle, which is only a handle until ReleaseTTY.
-	screen.foreground = func() int { return foregroundGroup(r.tty) }
+	screen.foreground = func() int { return procio.ForegroundGroup(r.tty) }
 	// The reply goes out the way the emulator's own answers do, through its
 	// response pipe, so it reaches the program in the order the queries came:
 	// a program that follows its probe with DA1 and reads an answer to DA1

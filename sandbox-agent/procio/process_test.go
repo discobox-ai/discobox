@@ -292,6 +292,12 @@ func readAvailable(r io.Reader, d time.Duration) []byte {
 // stopped).
 func waitForState(t *testing.T, p *Process, want string) {
 	t.Helper()
+	waitForPIDState(t, int(p.PID()), want)
+}
+
+// waitForPIDState waits for the process pid to reach the /proc state want.
+func waitForPIDState(t *testing.T, pid int, want string) {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		time.Sleep(100 * time.Millisecond)
 		return
@@ -299,7 +305,7 @@ func waitForState(t *testing.T, p *Process, want string) {
 	deadline := time.Now().Add(5 * time.Second)
 	var got string
 	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", p.PID()))
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 		if err == nil {
 			// The state field follows the parenthesized comm, which may itself
 			// contain spaces or parentheses.

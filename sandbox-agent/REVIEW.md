@@ -394,6 +394,15 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   mechanism and recorded as an exec event. A new mapping goes in `procio`'s
   delivery tables with a `Reason`; one with no reason is a signal delivered as
   itself.
+- **On a PTY, only a signal that ends a program goes to the terminal's
+  foreground group (`procio.ForegroundGroup`); suspend and resume stay on the
+  exec's own.** A primary terminal is a shell running the harness as a job, so
+  a terminating signal sent to the exec's own group reaches only the shell,
+  which ignores it (#1217). Stopping that job instead hands the terminal back
+  to the shell, and a `SIGCONT` from outside resumes it in the background,
+  where its next terminal read stops it again: only the shell's `fg` puts it
+  back in front. A test of a suspend that reaches a job uses a job that reads
+  its terminal; a `sleep` reads `S` whether it is in front or not.
 
 ## Supervision
 
