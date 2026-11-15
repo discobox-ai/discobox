@@ -627,11 +627,17 @@ flowchart LR
   its whole use of the credential, in every variable; a delegate part always
   replaces the box's delegation of it, `delegateMode`), with Accept and Deny answering
   every part at once at the selected lifetime, and Review… walking them.
-  It lists no routes: every route, with its methods, paths and constraints,
-  is behind Review…, on its part's card. What Accept sends is still said
+  It lists no routes and no bindings: every route, with its methods, paths
+  and constraints, and what a part replaces — which bindings, in which
+  variables, their route diffs and shortened lifetimes — is behind Review…,
+  on its part's card; a part that replaces something says only "Review…
+  lists them" after its add/replace line. That line is the replacement
+  notice ADR 26-11-02-022 §5 and 26-11-04-616 §4 ask of the screen Accept
+  sends from: whether the part adds to or replaces what the box holds, not
+  the details (owner, 2026-11-15). What Accept sends is still said
   before it can, each consequence summary-level (`approvalConsequences`,
-  brief): a new credential's hosts, the requested hosts and operations it
-  will not be sent on, and what approving replaces or shortens.
+  brief): a new credential's hosts and the requested hosts and operations it
+  will not be sent on.
 - **Review.** One card per part the request has, use then delegation, each
   with its routes (`approvalRouteSection`) and the roles it asked for as the
   discobox's words (ADR 26-11-02-022 §3). Approve, Deny or Modify…: as
@@ -655,7 +661,7 @@ edited when it differs from the ask. A person's approval has no parent; any
 standing use binding under a lead's delegation disables replacement and
 defaults to addition. Add is unavailable for a different secret in the
 variable. A replacement is the box's whole use of the secret in every
-variable (`bindingplan.Use`), so the cards' "this replaces" says what that
+variable (`bindingplan.Use`), so the part cards' "this replaces" says what that
 plan does to each of its bindings of it, in any variable: kept (moved into
 the asked variable when it was elsewhere), gone, or losing its use. Placeholder delivery is the guided dialog's only one; raw delivery
 is `discobox secret request approve --raw` (ADR 26-11-11-857). A new credential is held to
@@ -679,8 +685,8 @@ read (`reviewState`). A card that fits its window opens on its first frame,
 so this keeps consequences from being sent from below the fold; it does not
 stop a key typed ahead of a card that fits. The API access,
 adoption, trust and refresh cards use it as they are; the request dialog's
-summary and part cards use it, so what an approval replaces is never sent
-from below the fold (ADR 26-11-04-616 §4). The API
+summary and part cards use it, so neither a part's add/replace line nor the
+part card's "this replaces" is sent from below the fold (ADR 26-11-04-616 §4). The API
 access card says what turning the discobox API on gives (discovery, the
 boxes it leads, and its limits) and grants no credential.
 

@@ -611,17 +611,26 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 		}
 		what.fields = append(what.fields, field{label: label, value: text, tone: tone}, field{value: mode})
 	}
-	if req.Use != nil {
-		summarize("used by this box", req.Use, ans.useMode(req))
-	}
-	if req.Delegate != nil {
-		summarize("delegated to its workers", req.Delegate, ans.delegateMode())
-	}
 	preview := ans
 	preview.use, preview.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
-	// The summary is lines, never route tables: each part's routes are
-	// Review…'s to show (issue #1172). What Accept sends from here is still
-	// said before it can: the consequences, each in a line.
+	// What a replacement takes, binding by binding and route by route, is
+	// Review…'s to say; the summary says only that there is something.
+	lists := func(mode string, lines []line) string {
+		if len(lines) > 0 {
+			mode += " · Review… lists them"
+		}
+		return mode
+	}
+	if req.Use != nil {
+		summarize("used by this box", req.Use, lists(ans.useMode(req), useReplaces(req, preview, preview.ttl, true)))
+	}
+	if req.Delegate != nil {
+		summarize("delegated to its workers", req.Delegate, lists(ans.delegateMode(), delegateReplaces(req, preview)))
+	}
+	// The summary is lines, never route tables: each part's routes, and what
+	// it replaces, are Review…'s to show (issue #1172). What Accept sends from
+	// here is still said before it can: a new credential's hosts and gaps,
+	// each in a line, and whether each part adds or replaces.
 	d.sections = append([]section{what}, approvalConsequences(req, preview, true)...)
 	d.keys = []hint{says("←→ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
 	m.withRawRequest(d, req)
@@ -1041,7 +1050,8 @@ func (m *Model) customHowLong(maxTTL time.Duration, limit string, back func() te
 // credential's own ceiling and gaps, and what approving replaces or shortens.
 // brief is the summary's form: a new credential's gap in a line, its hosts
 // and how many operations, as partSummary says a part, rather than its
-// route table.
+// route table, and nothing of what approving replaces, which the summary's
+// add/replace lines point at Review… for.
 func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) []section {
 	var out []section
 	if ans.fresh {
@@ -1062,6 +1072,12 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) 
 			out = append(out, gap)
 		}
 	}
+	// The summary says only whether each part adds or replaces, and points at
+	// Review… when it replaces something (askSummary): which bindings, in
+	// which variables, their route diffs and lifetimes are the cards' to say.
+	if brief {
+		return out
+	}
 	if lines := replaces(req, ans, ans.ttl, true); len(lines) > 0 {
 		out = append(out, section{label: "this replaces", labelTone: toneAlert, lines: lines})
 	}
@@ -1077,6 +1093,12 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) 
 // shadowed; for the
 // delegate part, the box's own delegation of the secret.
 func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known bool) []line {
+	return append(useReplaces(req, ans, ttl, known), delegateReplaces(req, ans)...)
+}
+
+// useReplaces is what approving the use part as a replacement takes away or
+// cuts short (replaces).
+func useReplaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known bool) []line {
 	var out []line
 	if ans.use == PartApprove && ans.useAs(req) == bindingplan.Replace {
 		var until time.Time
@@ -1136,6 +1158,14 @@ func replaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, known
 			out = append(out, line{text: f.value, tone: f.tone})
 		}
 	}
+	return out
+}
+
+// delegateReplaces is what approving the delegate part takes of the box's
+// own delegation of the secret (replaces), after the use part if that is
+// approved too.
+func delegateReplaces(req CredentialRequest, ans requestAnswer) []line {
+	var out []line
 	if ans.delegate == PartApprove {
 		useAs := bindingplan.As("")
 		if ans.use == PartApprove {
