@@ -622,7 +622,10 @@ flowchart LR
   many operations (a row of its route table each), the methods they take,
   whether their paths are any path or hold wildcards, and how many rows it
   blocks; any method, path or operation left open is a warning
-  (`partSummary`) — with Accept and Deny answering
+  (`partSummary`) — and under it whether approving it adds to the rules the
+  box holds of the credential or replaces them (`useMode`: a replacement is
+  its whole use of the credential, in every variable; a delegate part always
+  replaces the box's delegation of it, `delegateMode`), with Accept and Deny answering
   every part at once at the selected lifetime, and Review… walking them.
   It lists no routes: every route, with its methods, paths and constraints,
   is behind Review…, on its part's card. What Accept sends is still said
