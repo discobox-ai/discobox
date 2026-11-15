@@ -111,6 +111,9 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 	if err != nil {
 		return err
 	}
+	// Secrets are locked in ID order, as every writer locking more than one
+	// does, so none waits on another in the opposite order.
+	slices.SortStableFunc(bindings, func(a, b model.SecretBinding) int { return strings.Compare(a.SecretID, b.SecretID) })
 	for _, binding := range bindings {
 		// A manually bound secret is a person's policy, never the bundle's to rewrite.
 		if !configured[binding.SecretID] {

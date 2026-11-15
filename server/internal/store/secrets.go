@@ -188,6 +188,24 @@ func (s *Store) LockSecret(ctx context.Context, projectID, secretID string) (*mo
 	return firstByID[model.Secret](write.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID), "id", secretID)
 }
 
+// ShareBindingSecret reads a binding's target and then its secret FOR SHARE,
+// on the caller's transaction, refusing a target the project does not hold.
+// A person's binding write checks its routes against the secret it returns
+// (#1171): a route edit (UpdateSecret, a harness writer) takes the secret FOR
+// UPDATE, so the two serialize and whichever commits second sees the other.
+// The target goes first, as a discobox's handoff locks its sandboxes before
+// the secret, so the two never wait on each other in opposite orders.
+func (s *Store) ShareBindingSecret(ctx context.Context, projectID, secretID, targetKind, targetID string) (*model.Secret, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := lockBindingTarget(write, projectID, targetKind, targetID); err != nil {
+		return nil, err
+	}
+	return firstByID[model.Secret](write.Clauses(clause.Locking{Strength: "SHARE"}).Where("project_id = ?", projectID), "id", secretID)
+}
+
 // GetSecretByName reads a project's secret by its name, which is unique in
 // the project.
 func (s *Store) GetSecretByName(ctx context.Context, projectID, name string) (*model.Secret, error) {

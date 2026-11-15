@@ -371,6 +371,18 @@ Revocation locks each parent binding before discovering children, so an insert
 that wins the lock is included in deletion and every child is marked dirty.
 The service refreshes its clock after these potentially blocking reads.
 
+## Secret row locks
+
+Every writer that decides from a secret what it writes reads the row locked
+in its own transaction. A writer that changes what the secret allows takes it
+`FOR UPDATE` (`LockSecret`: a person's route or allow-raw edit, the harness
+writers; `LockHandoffDelegations`: a discobox's handoff); a person's binding
+write takes it `FOR SHARE` (`ShareBindingSecret`), so bindings written
+together do not queue, and an edit and a binding write each see the other
+(#1171). Lock order is the binding's target (sandbox or harness config)
+before its secret, as the handoff's sandboxes come before its secret; a
+transaction that locks several secrets locks them in ID order.
+
 ## Upgrade provenance
 
 Whole-row sandbox writes omit `upgrade_generation` and

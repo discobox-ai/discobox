@@ -641,10 +641,19 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 				return err
 			}
 		}
+		// A person's approval reads the secret FOR SHARE, after the sandbox
+		// that asked, so a route edit or allow-raw taken away serializes with
+		// it (#1171); a discobox's locks it FOR UPDATE in fitDelegation, and
+		// takes no share first that two approvals would then both upgrade.
 		var secret *model.Secret
 		if a.use != nil || a.delegate != nil {
 			var err error
-			if secret, err = txStore.GetSecret(ctx, projectID, a.secret.ID); err != nil {
+			if a.approverID == "" {
+				secret, err = txStore.ShareBindingSecret(ctx, projectID, a.secret.ID, model.SecretBindingTargetSandbox, req.SandboxID)
+			} else {
+				secret, err = txStore.GetSecret(ctx, projectID, a.secret.ID)
+			}
+			if err != nil {
 				return apperrors.NotFound(err, "secret not found")
 			}
 		}

@@ -297,9 +297,17 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 		if err != nil {
 			return err
 		}
+		// Every secret bound here, locked in ID order: a person's binding
+		// write and a sync of configured routes lock secrets in that order
+		// too, so none waits on another in the opposite order.
+		secretIDs := make([]string, 0, len(bindings))
 		for _, binding := range bindings {
+			secretIDs = append(secretIDs, binding.SecretID)
+		}
+		slices.Sort(secretIDs)
+		for _, secretID := range slices.Compact(secretIDs) {
 			var sec model.Secret
-			if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", p, binding.SecretID).First(&sec).Error; err != nil {
+			if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", p, secretID).First(&sec).Error; err != nil {
 				return err
 			}
 		}

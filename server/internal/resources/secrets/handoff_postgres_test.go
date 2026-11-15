@@ -3,13 +3,10 @@ package secrets_test
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -18,28 +15,10 @@ import (
 )
 
 func TestPostgresHandoffLockRaces(t *testing.T) {
-	dsn := os.Getenv("DISCOBOX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set DISCOBOX_TEST_POSTGRES_DSN for real row-lock races")
-	}
 	for _, scenario := range []string{"expiry", "revoke", "revision"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
-			admin, err := database.New(database.Config{DSN: dsn})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer admin.Close()
-			schema := fmt.Sprintf("handoff_%s_%d", scenario, time.Now().UnixNano())
-			if err := admin.Write.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-				t.Fatal(err)
-			}
-			defer admin.Write.Exec("DROP SCHEMA " + schema + " CASCADE")
-			sep := "?"
-			if strings.Contains(dsn, "?") {
-				sep = "&"
-			}
-			svc, st := newAgentCredentialService(t, dsn+sep+"search_path="+schema)
+			svc, st, admin := postgresSchemaService(t, "handoff_"+scenario)
 			secret := createBearerSecret(testPrincipalContext(), t, svc)
 			parent := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
 			var req *model.SecretRequest
@@ -94,27 +73,14 @@ func TestPostgresHandoffLockRaces(t *testing.T) {
 				result <- err
 			}()
 			// Observe the real waiter, rather than guessing whether it reached the lock.
-			deadline := time.Now().Add(5 * time.Second)
-			waiting := false
-			for time.Now().Before(deadline) {
-				var count int64
-				err = admin.Read.Raw("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%secret%'").Scan(&count).Error
-				if err != nil {
-					break
-				}
-				if count > 0 {
-					waiting = true
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
+			waiting := waitForLockWaiter(t, admin, "secret")
 			close(release)
 			if e := <-blocker; e != nil {
 				t.Fatal(e)
 			}
 			got := <-result
 			if !waiting {
-				t.Fatalf("no row-lock waiter observed: %v", err)
+				t.Fatalf("no row-lock waiter observed: %v", got)
 			}
 			if scenario == "expiry" {
 				if !isStatus(got, 403) {
