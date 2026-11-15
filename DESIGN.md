@@ -305,14 +305,11 @@ flowchart TD
   a pull request can write what it would read.
   golangci-lint's analysis cache is Depot Cache too, through the
   `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
-  modules come from the module proxy each run, which measured no slower than
-  restoring an `actions/cache` tarball of them. Go does not retry a download
-  the proxy drops, so the task action downloads them before every job's
-  target with `scripts/go-mod-download.sh` (the workspace's modules, then each
-  module's own graph for `verify`'s standalone tidy), which retries and names
-  the module that still fails. It runs the script itself, not through `go tool task`,
-  which would download Task's own modules first. `ci:check` then runs the
-  steps that load packages with `GOPROXY=off`.
+  modules come from the module proxy each run, on demand as the target loads
+  packages, which measured no slower than restoring an `actions/cache` tarball
+  of them. Go does not retry a download the proxy drops, so the task action
+  runs a target that failed with output that looks like a network failure once
+  more, and fails any other failure at once.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by

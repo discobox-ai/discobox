@@ -5,8 +5,9 @@ name: CI
 
 # Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
 # gave us (4 CPU / 16 GB) rather than Depot's 2-CPU default; raise the suffix to
-# -8 or -16 to trade money for wall-clock. Windows is -8: with Depot Cache warm,
-# -8 cut its work from 223s on -4 to 165s and -16 was no faster. Depot's
+# -8 or -16 to trade money for wall-clock. Windows is -4: -8 was 165s against
+# 223s on -4 with Depot Cache warm, but bills twice the rate, so -4 costs about
+# a third less overall. Depot's
 # runners also start every job with GOCACHEPROG pointing Go's build and test
 # cache at Depot Cache, which is fetched object by object rather than restored
 # and saved whole; see .github/actions/task for when it is turned off, and that
@@ -14,6 +15,9 @@ name: CI
 
 on:
   pull_request:
+    # `labeled`: adding the `macos` label starts the darwin jobs, which a pull
+    # request otherwise skips (they run on every push to main).
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches:
       - main
@@ -169,7 +173,7 @@ jobs:
   # come in that one size. The job runs without Nix (ADR 26-11-02-173).
   darwin:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) }}
     runs-on: depot-macos-15
     timeout-minutes: 45
     steps:
@@ -183,7 +187,7 @@ jobs:
   # than after it.
   darwin-test:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) }}
     runs-on: depot-macos-15
     timeout-minutes: 30
     steps:
@@ -200,7 +204,7 @@ jobs:
   windows:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
-    runs-on: depot-windows-2025-8
+    runs-on: depot-windows-2025-4
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2

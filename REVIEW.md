@@ -80,8 +80,7 @@ Global review expectations:
   than by ref, since a dispatched release runs off a branch; a release path
   that skips that action has to turn it off itself.
 - A Taskfile target the macOS or Windows CI job runs (`ci:darwin`, `ci:test`,
-  `release:build`, and what they call), and a script `.github/actions/task`
-  runs on every runner (`scripts/go-mod-download.sh`), uses only Go, `go tool`
+  `release:build`, and what they call) uses only Go, `go tool`
   dependencies, git, and what the runner image ships (on Windows, Git Bash).
   Those jobs have no Nix devShell (ADR 26-11-02-173), so a target reaching for
   jq, shellcheck, bats or node works in a developer's shell and fails, or finds
