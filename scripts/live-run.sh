@@ -12,7 +12,8 @@
 #                       whether this box's egress was narrowed to the plan's
 #                       hosts before the key came in; the report says which
 #                       (required, except on a dry run)
-#   --harness SLUG      the harness the discobox runs (default: the project's)
+#   --harness SLUG      the harness the discobox runs (default: claude-code;
+#                       a fresh server's project has no default harness)
 #   --allow HOST        the one host the pool's egress allows, which the proxy
 #                       must answer for (default: example.com)
 #   --unlisted HOST     a host no level allows, which must not answer
@@ -75,7 +76,7 @@ set -euo pipefail
 
 driver=
 narrowed=
-harness=
+harness=claude-code
 allow_host=example.com
 unlisted_host=example.net
 pool_timeout=20m
@@ -484,6 +485,18 @@ rm -f "$config"
 provider_id=$(field "$out" '.id // empty')
 [ -n "$provider_id" ] || { fail provider "create printed no id: $out $err"; exit 1; }
 pass provider "created $provider_id"
+
+# A create checks only the config, so whether the server reaches the
+# provider's service (its proxy environment, its egress) is asked here,
+# before a pool is made: a pool on a provider the server cannot reach only
+# fails later, as a bootstrap that stopped making progress. The cleanup
+# removes the provider.
+if ! dcout out 0 '{"outcome":"ok"}' -o json admin provider check "$provider_id"; then
+	message=$(field "$out" '.message // empty')
+	fail preflight "the server cannot use provider $provider_id ($(field "$out" '.outcome // "no answer"')): ${message:-$err}"
+	exit 1
+fi
+pass preflight "the server reaches the $driver provider $provider_id"
 
 echo "--- pool" >&2
 if ! dcout out 0 '{"id":"pool_dryrun"}' -o json admin pool create "$name" --provider "$provider_id"; then

@@ -1410,6 +1410,15 @@ agent's published port, or the pool never registers.
   is copied from what the real component sends (the proxy refuses a denied
   CONNECT by closing it, and a plain-HTTP request with 403 "blocked by
   proxy"), never written from what the script expects.
+  The run's own server reaches the provider's API through this box's proxy,
+  so one started under `env -i` (the isolated server, above) needs this
+  box's `HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` in its
+  env file, as the upgrade recipe's does. Without them the script's
+  preflight stops after the provider is made: `admin provider check` answers
+  `unreachable`, `network is unreachable`. With no `--harness` the run uses
+  `claude-code`, since a fresh server's project has no default harness.
+  `go test ./test/liverun` needs `rev` on `PATH` (its stand-in reverses the
+  prompt with it), which this box's shell may lack.
 - On an isolated server (above) with `controlPlaneUrl` a host boxd cannot
   reach, a pool gets as far as its agent's first call to the control plane:
   the machine is made, keyed, placed, enrolled and provisioned (`provision
