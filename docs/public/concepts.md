@@ -114,13 +114,12 @@ secret `driver.apiKey`. The catalog reads them from the driver, so
 | `hcs` (Windows) | none | refused until Windows pools |
 
 `boxd` and `archil` also take `controlPlaneUrl`, `base` and the pool policy.
-Every `driver` field is fixed while the provider has pools.
-
-```sh
-discobox admin provider create --type boxd --name boxd --driver-region fra \
-  --secret driver.apiKey=@boxd-key
-discobox admin provider check boxd
-```
+Every `driver` field is fixed while the provider has pools. An endpoint field
+is where the driver sends your key, so the server checks it: it must be a
+public host over https, or a public `HOST:PORT`, and a write that sets or
+changes one must carry `driver.apiKey` in the same request. To allow a private
+endpoint, the server's operator lists it in `providerEndpoints`
+(`DISCOBOX_PROVIDER_ENDPOINTS`).
 
 Creating a provider checks only its config. `discobox admin provider check`
 asks the server whether it can reach what the provider's pools need, and
@@ -129,47 +128,17 @@ such as a key it does not accept or a region not enabled: fix the provider's
 config), or `unreachable` (nothing answered: fix the server's network or
 proxy). Each check calls the provider's service with the key.
 
-An endpoint field is where the driver sends your key, so the server checks it.
-It must be a public host over https, or a public `HOST:PORT`. A write that sets
-or changes one must carry `driver.apiKey` in the same request. To allow a
-private endpoint, such as your own boxd cluster, the server's operator lists it
-in `providerEndpoints` (`DISCOBOX_PROVIDER_ENDPOINTS`).
+A provider's key never goes on a pool's machine. A pool's machine
+authenticates as itself where its driver allows it (boxd), or uses a key the
+driver issues the pool; a pool on a driver that does neither is refused.
+[Running boxes on boxd](boxd.md) sets up a `boxd` provider, step by step, and
+says what its key and its pool machines can reach, and how to rotate or
+remove the key.
 
-On upgrade, a `vm` provider on boxd becomes a `boxd` provider with the same ID,
-pools and key. If the server's environment set `BOXD_GRPC_ADDR` or
-`BOXD_TOKEN_URL`, those values move into the provider's `driver` fields. A
-`vm` provider on any other driver (vz, for example) is disabled and left for
+On upgrade, a `vm` provider on boxd becomes a `boxd` provider with the same
+ID, pools and key (see [Running boxes on boxd](boxd.md#upgrading-a-vm-provider)).
+A `vm` provider on any other driver (vz, for example) is disabled and left for
 you to delete, with its pools. Those pools never ran.
-
-A provider's key never goes on a pool's machine. A boxd pool's machine
-authenticates as itself, with the token boxd gives the machine's owner, and
-is given no key. That token reaches every machine the owner has in the org,
-other pools' included, as the key would; give discobox a boxd account of its
-own. The pool keeps its boxes and their builds from the endpoint that mints
-that token, with an nftables rule set on its machine, so a boxd provider's
-`base` needs `nft`. A pool on a driver that neither does this nor issues a
-pool a key of its own is refused.
-
-A boxd account carries discobox's pools only if:
-
-- **neither its org nor the key's owner holds a host-bound secret.** boxd
-  lets every machine in their scope reach the hosts such a secret is bound
-  to, whatever the machine's egress fence says, so a sandbox could reach them
-  too. Keep those secrets out of the org discobox uses, and out of the key
-  owner's personal scope.
-- **its org's machine limit has room.** Each pool runs one machine for itself
-  and one per running sandbox, and a new org without a payment method may
-  run only 2.
-
-Before it makes a pool's machine, the server checks the account through
-boxd's API: that the key is accepted, that the org has the provider's region
-enabled, and that no host-bound secret is in the org or the key owner's
-personal scope. The pool fails with the reason if boxd refuses it, and waits
-if boxd does not answer. A running pool's account is checked again every ten
-minutes, which reads the org's machine limit: the pool's `runtime` condition
-shows it as `maxMachines`, counting every machine billed to the org, stopped
-ones and other members' included. A check that fails then is logged, and
-the pool keeps running.
 
 Behind an egress proxy (`HTTPS_PROXY`, or a SOCKS5 `ALL_PROXY`), the server
 reaches a VM provider's endpoints through the proxy by name, and the proxy
