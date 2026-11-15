@@ -299,6 +299,9 @@ func (r *registry) manifest(ctx context.Context, ref Reference, pinned string) (
 		return nil, Descriptor{}, fmt.Errorf("fetch %s: %w", ref.Name(), err)
 	}
 	defer drainAndClose(resp)
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, Descriptor{}, fmt.Errorf("fetch %s: %s: %w", ref.Name(), resp.Status, ErrNoManifest)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, Descriptor{}, fmt.Errorf("fetch %s: %s", ref.Name(), resp.Status)
 	}
@@ -321,6 +324,27 @@ func (r *registry) manifest(ctx context.Context, ref Reference, pinned string) (
 		return nil, Descriptor{}, fmt.Errorf("fetch %s: unsupported manifest type %q", ref.Name(), mediaType)
 	}
 	return data, Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}, nil
+}
+
+// ErrNoManifest is a registry answering that it has no manifest for a
+// reference: a tag that was never pushed, or was deleted.
+var ErrNoManifest = errors.New("the registry has no such manifest")
+
+// Resolve returns the digest reference's tag names in its registry now — the
+// digest of the manifest or index it serves, checked against the bytes, so the
+// digest an image pinned from that tag would carry. Anonymous, like a CLI's
+// staging; nil client is the default one. A tag the registry does not have is
+// ErrNoManifest.
+func Resolve(ctx context.Context, reference string, client *http.Client) (string, error) {
+	ref, err := ParseReference(reference)
+	if err != nil {
+		return "", err
+	}
+	_, top, err := newRegistry(client, nil).manifest(ctx, ref, ref.pinned())
+	if err != nil {
+		return "", err
+	}
+	return top.Digest, nil
 }
 
 // manifestMediaType is what a manifest says it is, or what the response said
