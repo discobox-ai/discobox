@@ -1,7 +1,9 @@
 # 26-11-15-831 — The server reads a driver's machine limit, and the pool's agent reports it
 
-- **Status**: Proposed (would supersede [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md) §4's "boxd's org quota is not reported by disco-vm", and the Context line that boxd "does not report the org's machine quota"; its "a create past it fails at the provider and is reported as that failure" stands)
+- **Status**: Accepted (supersedes [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md) §4's "boxd's org quota is not reported by disco-vm", and the Context line that boxd "does not report the org's machine quota"; its "a create past it fails at the provider and is reported as that failure" stands)
 - **Date**: 2026-11-15
+
+Accepted by the owner by merging #1202, 2026-11-15.
 - **Issue**: [#1196](https://github.com/discobox-ai/discobox/issues/1196)
 - **Depends on**: discobox-ai/vm#160 (disco-vm ADR 26-11-15-274), which adds `machine.Capabilities.MaxMachines`; this is built once discobox's disco-vm pin is past it
 - **Preserves**: [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md) §9 (a pool's machine authenticates in-machine where its driver can, and the provider's key is never placed on it); [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §4; [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §5 (a placement that moved is applied in place); the pool agent as the one writer of its conditions.
