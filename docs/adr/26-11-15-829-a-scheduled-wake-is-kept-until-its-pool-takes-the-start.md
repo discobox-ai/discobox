@@ -1,7 +1,9 @@
 # 26-11-15-829 — A scheduled wake is kept until its pool takes the start
 
-- **Status**: Proposed (would supersede [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §6's claim before the send and its "the start is sent once", and its rejected alternative "Wake retried until it succeeds" for a start the pool never took; would supersede [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §1's "The power reconciler's scheduled wake remains single-send, including when the pool is unreachable", and narrow [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md)'s preservation of single-send scheduled wakes to match)
+- **Status**: Accepted (supersedes [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §6's claim before the send and its "the start is sent once", and its rejected alternative "Wake retried until it succeeds" for a start the pool never took; supersedes [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §1's "The power reconciler's scheduled wake remains single-send, including when the pool is unreachable", and narrows [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md)'s preservation of single-send scheduled wakes to match)
 - **Date**: 2026-11-15
+
+Accepted by the owner by merging #1193, 2026-11-15.
 - **Issue**: [#1192](https://github.com/discobox-ai/discobox/issues/1192)
 - **Preserves**: 26-10-16-337 §§1–5 and 7–8 (sleep and wake files, confirmation, handover at boot), §6's `wakeAt`/`wakeEpoch` columns, their guarded writers and cancellation by every outside instruction; [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) §9 (a start is an instruction, never desired state); 26-11-04-167 §§2–4 for explicit starts; [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md)'s refusal to loop on a start the runtime answered with a failure; [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md) whole.
 

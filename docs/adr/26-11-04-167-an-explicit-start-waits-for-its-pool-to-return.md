@@ -1,6 +1,6 @@
 # 26-11-04-167 — An explicit start waits for its pool to return
 
-- **Status**: Accepted (supersedes [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6 only for an explicit start refused with `ErrPoolNotReachable`; narrows [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's statement that a start instruction waits for nothing, without changing its source-delivery refusal)
+- **Status**: Accepted (supersedes [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6 only for an explicit start refused with `ErrPoolNotReachable`; narrows [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's statement that a start instruction waits for nothing, without changing its source-delivery refusal; §1's single-send scheduled wake superseded by [26-11-15-829](26-11-15-829-a-scheduled-wake-is-kept-until-its-pool-takes-the-start.md))
 - **Date**: 2026-11-04
 
 Accepted by the owner by merging #585, 2026-11-04.

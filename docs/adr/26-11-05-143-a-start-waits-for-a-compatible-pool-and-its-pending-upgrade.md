@@ -1,6 +1,6 @@
 # 26-11-05-143 — A start waits for a compatible pool and its pending upgrade
 
-- **Status**: Accepted (narrows [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §1's missing-runtime exclusion and its statement that restored connectivity does not authorize further waits, and extends §2's ceiling to compatibility waits; further narrows [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's instruction wait and [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's no-wait statement only for that upgrade case; source-delivery refusals remain)
+- **Status**: Accepted (narrows [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §1's missing-runtime exclusion and its statement that restored connectivity does not authorize further waits, and extends §2's ceiling to compatibility waits; further narrows [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's instruction wait and [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's no-wait statement only for that upgrade case; source-delivery refusals remain; its preservation of single-send scheduled wakes narrowed by [26-11-15-829](26-11-15-829-a-scheduled-wake-is-kept-until-its-pool-takes-the-start.md))
 - **Date**: 2026-11-05
 - Accepted by the owner by merging #688, 2026-11-05
 - **Issue**: [#684](https://github.com/discobox-ai/discobox/issues/684)
