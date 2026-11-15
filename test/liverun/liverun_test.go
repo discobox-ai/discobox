@@ -133,6 +133,8 @@ const passingProbes = `proxy-env http://discobox-pool-proxy:3128
 allowed-proxy 200 200 0 0.012 <!doctype html>
 unlisted-proxy 403 000 0 0.001 blocked by proxy
 ip-proxy 403 000 0 0.001 blocked by proxy
+fence-direct 000 000 28 0.000000
+allowed-direct 000 000 6 0.000000
 unlisted-direct 000 000 6 0.000000
 ip-direct 000 000 28 0.000000
 `
@@ -194,7 +196,7 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 		t.Fatalf("report does not say it passed:\n%s", r.report)
 	}
 	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach",
-		"egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-unlisted-direct", "egress-ip-direct",
+		"egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-allowed-direct", "egress-unlisted-direct", "egress-ip-direct",
 		"ingress-url", "closed-proxy", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
 		if !strings.Contains(r.report, "| PASS | "+step+" |") {
 			t.Errorf("report has no passing %s row:\n%s", step, r.report)
@@ -282,16 +284,81 @@ func TestLiveRunEgressFailures(t *testing.T) {
 			// A refused CONNECT looks like a closed connection, which a
 			// network failure does too: not the proxy's refusal.
 			"ip-proxy 403 000 0 0.001 blocked by proxy", "ip-proxy 000 000 56 0.000000",
-			// curl failed, but after a connection was made around the proxy.
-			"ip-direct 000 000 28 0.000000", "ip-direct 000 000 35 0.031").Replace(passingProbes)
+			// An origin answered around the proxy, over TLS.
+			"ip-direct 000 000 28 0.000000", "ip-direct 200 000 0 0.031 <html>").Replace(passingProbes)
 		write(t, filepath.Join(stub, "probes"), probes, 0o644)
 	})
 	if r.exit == 0 {
 		t.Fatalf("exit 0 with open egress:\n%s", r.out)
 	}
 	for _, want := range []string{"| FAIL | egress-unlisted-proxy |", "| FAIL | egress-ip-proxy |",
-		"| FAIL | egress-ip-direct | 1.1.1.1 around the proxy: HTTP 000, curl 35, connected after 0.031s", "| PASS | egress-allowed |", "| PASS | egress-unlisted-direct |"} {
+		"| FAIL | egress-ip-direct | 1.1.1.1 answered around the proxy: HTTP 200, curl 0, connected after 0.031s: <html>", "| PASS | egress-allowed |", "| PASS | egress-unlisted-direct |"} {
 		if !strings.Contains(r.report, want) {
+			t.Errorf("report has no %q:\n%s", want, r.report)
+		}
+	}
+}
+
+// boxd's fence accepts the TCP connection around the proxy and refuses it
+// there: TLS closes at the ClientHello (curl 35), whatever the host, the
+// allowed one included. Nothing reached an origin, so the probes pass.
+func TestLiveRunDirectEgressRefusedByAcceptingFence(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "probes"), boxdFenceProbes, 0o644)
+	})
+	for _, want := range []string{"| PASS | egress-allowed-direct |", "| PASS | egress-unlisted-direct |", "| PASS | egress-ip-direct |"} {
+		if !strings.Contains(r.report, want) {
+			t.Errorf("report has no %q:\n%s", want, r.report)
+		}
+	}
+}
+
+// boxdFenceProbes are boxd's answers around the proxy: its fence accepts
+// every connection and closes TLS at the ClientHello. The real hosts'
+// answers are #1050's B6 re-run's. No run has probed 192.0.2.1 yet: its
+// answer here is assumed to be the same refusal, which the next live run on
+// boxd confirms (a CHECK row if it is not).
+var boxdFenceProbes = strings.NewReplacer(
+	"fence-direct 000 000 28 0.000000", "fence-direct 000 000 35 0.000310",
+	"allowed-direct 000 000 6 0.000000", "allowed-direct 000 000 35 0.023210",
+	"unlisted-direct 000 000 6 0.000000", "unlisted-direct 000 000 35 0.073857",
+	"ip-direct 000 000 28 0.000000", "ip-direct 000 000 35 0.000302").Replace(passingProbes)
+
+// Behind a fence that accepts, what may be an origin's answer still fails:
+// a certificate presented, or a reset after the connection.
+func TestLiveRunDirectEgressOriginBehindAcceptingFence(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		probes := strings.NewReplacer(
+			"unlisted-direct 000 000 35 0.073857", "unlisted-direct 000 000 60 0.073857",
+			"ip-direct 000 000 35 0.000302", "ip-direct 000 000 56 0.000302").Replace(boxdFenceProbes)
+		write(t, filepath.Join(stub, "probes"), probes, 0o644)
+	})
+	if r.exit == 0 {
+		t.Fatalf("exit 0 with an origin reached:\n%s", r.out)
+	}
+	for _, want := range []string{"| PASS | egress-allowed-direct |",
+		"| FAIL | egress-unlisted-direct | example.net around the proxy: HTTP 000, curl 60, connected after 0.073857s",
+		"| FAIL | egress-ip-direct | 1.1.1.1 around the proxy: HTTP 000, curl 56, connected after 0.000302s"} {
+		if !strings.Contains(r.report, want) {
+			t.Errorf("report has no %q:\n%s", want, r.report)
+		}
+	}
+}
+
+// A fence that forwards connections to any host, and an origin that closes
+// TLS, look like boxd's refusal at a real host. Only 192.0.2.1, where no
+// server answers, tells them apart: when it does not connect, curl 35 at a
+// real host passes nothing and is for a person to read.
+func TestLiveRunDirectEgressRefusalWithoutFenceBaseline(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		probes := strings.NewReplacer("fence-direct 000 000 35 0.000310", "fence-direct 000 000 28 0.000000").Replace(boxdFenceProbes)
+		write(t, filepath.Join(stub, "probes"), probes, 0o644)
+	})
+	if r.exit == 0 {
+		t.Fatalf("exit 0 with the fence's refusal unproven:\n%s", r.out)
+	}
+	for _, step := range []string{"egress-allowed-direct", "egress-unlisted-direct", "egress-ip-direct"} {
+		if want := "| CHECK | " + step + " |"; !strings.Contains(r.report, want) {
 			t.Errorf("report has no %q:\n%s", want, r.report)
 		}
 	}

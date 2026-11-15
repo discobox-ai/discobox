@@ -582,9 +582,11 @@ echo "--- egress" >&2
 # Through the proxy a refused host is asked for over plain HTTP, where the
 # proxy answers 403 "blocked by proxy"; a refused CONNECT is only a closed
 # connection (proxy/DESIGN.md), which a network failure looks like too.
-# Around it, time_connect stays 0 only when no connection was made at all:
-# curl's own error on a connection the fence let through (a TLS failure, an
-# empty reply) is not a refusal.
+# Around it, a fence that drops the connection leaves time_connect 0. boxd's
+# fence accepts it and then refuses: TLS closes at the ClientHello (curl 35),
+# whatever the host. So 192.0.2.1 (TEST-NET-1, where no server answers) is
+# probed around the proxy too: a connection there is the fence's own, and its
+# refusal is what the fence's refusal of a real host looks like.
 probe=$(cat <<'EOF'
 command -v curl >/dev/null 2>&1 || { echo "no-curl"; exit 0; }
 probe() {
@@ -600,6 +602,8 @@ printf 'proxy-env %s\n' "${HTTPS_PROXY:-${https_proxy:-none}}"
 probe allowed-proxy "https://$1/"
 probe unlisted-proxy "http://$2/"
 probe ip-proxy "http://1.1.1.1/"
+probe fence-direct --noproxy '*' "https://192.0.2.1/"
+probe allowed-direct --noproxy '*' "https://$1/"
 probe unlisted-direct --noproxy '*' "https://$2/"
 probe ip-direct --noproxy '*' "https://1.1.1.1/"
 EOF
@@ -608,6 +612,8 @@ canned="proxy-env http://discobox-pool-proxy:3128
 allowed-proxy 200 200 0 0.012 <!doctype html>
 unlisted-proxy 403 000 0 0.001 blocked by proxy
 ip-proxy 403 000 0 0.001 blocked by proxy
+fence-direct 000 000 28 0.000000
+allowed-direct 000 000 6 0.000000
 unlisted-direct 000 000 6 0.000000
 ip-direct 000 000 28 0.000000"
 if ! dcout answers 0 "$canned" exec "$box_id" -- sh -lc "$probe" probe "$allow_host" "$unlisted_host"; then
@@ -633,13 +639,29 @@ else
 		*) fail "egress-${p%%:*}" "${p#*:} through the proxy: HTTP ${code:-none}, curl $status: $body" ;;
 		esac
 	done
-	# Around the proxy nothing is reached at all: the fence drops it.
-	for p in unlisted-direct:"$unlisted_host" ip-direct:1.1.1.1; do
+	# Around the proxy nothing is reached at all. The fence drops the
+	# connection (no time_connect), or accepts it and closes TLS at the
+	# ClientHello (curl 35) as it does at 192.0.2.1, where only the fence can
+	# accept: no handshake completed, so no origin answered. Any other
+	# failure after a connection (a certificate, an empty reply, a reset, a
+	# timeout) may be an origin's, and an answer is one.
+	fence=no
+	read -r _ code _ status tconnect _ <<<"$(line fence-direct)"
+	if [ "${code:-}" = 000 ] && [ "${status:-}" = 35 ] && ! awk -v t="${tconnect:-x}" 'BEGIN { exit !(t ~ /^[0.]+$/) }'; then
+		fence=yes
+	fi
+	for p in allowed-direct:"$allow_host" unlisted-direct:"$unlisted_host" ip-direct:1.1.1.1; do
 		read -r _ code connect status tconnect body <<<"$(line "${p%%:*}")"
-		if [ "${code:-}" = 000 ] && [ -n "${status:-}" ] && [ "$status" != 0 ] && awk -v t="${tconnect:-x}" 'BEGIN { exit !(t ~ /^[0.]+$/) }'; then
+		if [ "${code:-}" != 000 ] || [ -z "${status:-}" ] || [ "$status" = 0 ]; then
+			fail "egress-${p%%:*}" "${p#*:} answered around the proxy: HTTP ${code:-none}, curl ${status:-none}, connected after ${tconnect:-?}s: $body"
+		elif awk -v t="${tconnect:-x}" 'BEGIN { exit !(t ~ /^[0.]+$/) }'; then
 			pass "egress-${p%%:*}" "${p#*:} is not reached around the proxy (curl $status, no connection)"
+		elif [ "$status" != 35 ]; then
+			fail "egress-${p%%:*}" "${p#*:} around the proxy: HTTP $code, curl $status, connected after ${tconnect}s: $body"
+		elif [ $fence = yes ]; then
+			pass "egress-${p%%:*}" "${p#*:} is refused around the proxy before TLS completes (curl 35), as 192.0.2.1, where no server answers, is"
 		else
-			fail "egress-${p%%:*}" "${p#*:} around the proxy: HTTP ${code:-none}, curl ${status:-none}, connected after ${tconnect:-?}s: $body"
+			check "egress-${p%%:*}" "${p#*:} closed TLS around the proxy (curl 35, connected after ${tconnect}s), but 192.0.2.1 did not connect and refuse it the same way ($(line fence-direct)): read egress.txt; only the fence's refusal passes"
 		fi
 	done
 fi

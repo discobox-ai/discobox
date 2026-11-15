@@ -219,7 +219,13 @@ Global review expectations:
   never a pass: otherwise the run meant to show the boundary holds reports it
   holding untested. No connection passes only where the probe runs inside
   the boundary under test, as the guest's probes around its fence do, and
-  then only when the probe shows no connection was made.
+  then only when the probe shows no connection was made, or that the fence
+  refused it: boxd's fence accepts TCP and closes TLS at the ClientHello
+  (curl 35), so that refusal passes, and only while an address no server
+  answers from (192.0.2.1) is refused the same way. A baseline that can be an
+  origin (the allowed host) cannot tell the fence from a fence that forwards
+  every connection; and any other failure after a connection (a certificate,
+  an empty reply, a reset, a timeout) may be an origin's, never a pass.
 - A live check of an inbound path probes where the path is, not only the
   URL the driver reports. A driver stops reporting a URL it has closed, but
   what it closed can still answer there: boxd keeps a sandbox machine's
