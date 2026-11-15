@@ -3,10 +3,11 @@
 # boxd CLI, create (or update) a boxd provider named boxd with it, and create a
 # pool named boxd on that provider.
 #
-# Usage: scripts/boxd-pool.sh [--name NAME] [--base ID] [discobox flags...]
+# Usage: scripts/boxd-pool.sh [--name NAME] [--region REGION] [--base ID] [discobox flags...]
 #
-#   scripts/boxd-pool.sh                                  # provider and pool "boxd"
+#   scripts/boxd-pool.sh                                  # provider and pool "boxd", in fra
 #   scripts/boxd-pool.sh --server http://127.0.0.1:8080
+#   scripts/boxd-pool.sh --region nyc                     # the boxd region, which the provider requires
 #   scripts/boxd-pool.sh --base <boxd image or snapshot ID>
 #
 # Run `boxd login` first: boxd makes API keys only for an interactive session.
@@ -24,6 +25,7 @@
 set -eu
 
 name=boxd
+region=fra
 base=
 discobox=${DISCOBOX:-discobox}
 boxd=${BOXD:-boxd}
@@ -33,13 +35,18 @@ n=$#
 while [ "$n" -gt 0 ]; do
 	arg=$1; shift; n=$((n - 1))
 	case $arg in
-	--name|--base)
+	--name|--region|--base)
 		[ "$n" -gt 0 ] || { echo "$arg needs a value" >&2; exit 2; }
 		val=$1; shift; n=$((n - 1))
-		if [ "$arg" = --name ]; then name=$val; else base=$val; fi ;;
+		case $arg in
+		--name) name=$val ;;
+		--region) region=$val ;;
+		*) base=$val ;;
+		esac ;;
 	--name=*) name=${arg#*=} ;;
+	--region=*) region=${arg#*=} ;;
 	--base=*) base=${arg#*=} ;;
-	-h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+	-h|--help) sed -n '2,24p' "$0"; exit 0 ;;
 	*) set -- "$@" "$arg" ;;
 	esac
 done
@@ -68,8 +75,8 @@ echo "made boxd API key $key_name" >&2
 config=$(mktemp)
 trap 'rm -f "$config"' EXIT
 chmod 600 "$config"
-jq -n --arg key "$key" --arg base "$base" \
-	'{driver: {apiKey: $key}} + (if $base == "" then {} else {base: $base} end)' >"$config"
+jq -n --arg key "$key" --arg region "$region" --arg base "$base" \
+	'{driver: {apiKey: $key, region: $region}} + (if $base == "" then {} else {base: $base} end)' >"$config"
 
 if "$discobox" "$@" admin provider get "$name" >/dev/null 2>&1; then
 	"$discobox" "$@" admin provider update "$name" --config "@$config" >/dev/null

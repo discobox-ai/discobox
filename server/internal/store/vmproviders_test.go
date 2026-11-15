@@ -79,8 +79,9 @@ func TestMigrateVMProvidersMakesEachALinkedDriversType(t *testing.T) {
 	}
 }
 
-// With no endpoint in the environment no driver object is written, and boxd
-// takes the defaults it took before.
+// With no endpoint in the environment no driver object is written: boxd takes
+// its default endpoints, and the row has no region, which the driver now
+// requires, so its owner makes it again (ADR 26-11-15-507).
 func TestMigrateVMProvidersCarriesNothingUnset(t *testing.T) {
 	ctx := context.Background()
 	st, db := newTestStoreWithDB(t, true)
