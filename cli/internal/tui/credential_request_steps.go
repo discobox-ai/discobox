@@ -491,20 +491,37 @@ func (ans requestAnswer) useAs(req CredentialRequest) bindingplan.As {
 	return bindingplan.Replace
 }
 
+// useMode is what approving the use part does to the rules the box holds of
+// the credential: adds beside them, or replaces them (bindingplan.As), and
+// whether that differs from what the box asked. A replacement is named by
+// the credential, never the asked variable: it makes the approved binding
+// the box's whole use of the secret, in every variable (bindingplan.Use).
+func (ans requestAnswer) useMode(req CredentialRequest) string {
+	mode := ans.useAs(req)
+	text := "replaces its rules for " + ans.credential + ", in every variable"
+	if mode == bindingplan.Add {
+		text = "adds to its rules for " + ans.credential + " · replaces nothing"
+	}
+	if (mode == bindingplan.Add) != req.Use.Add {
+		text += " · edited from the ask"
+	}
+	return text
+}
+
+// delegateMode is what approving the delegate part does: it is always the
+// box's whole delegation of the credential (bindingplan.Delegate), never an
+// addition beside one it holds.
+func (ans requestAnswer) delegateMode() string {
+	return "replaces its workers' rules for " + ans.credential
+}
+
+// additionNote is the use part's mode as a sentence, for the cards that say
+// it beside their own body.
 func (ans requestAnswer) additionNote(req CredentialRequest) string {
 	if req.Use == nil {
 		return ""
 	}
-	mode := ans.useAs(req)
-	edited := (mode == bindingplan.Add) != req.Use.Add
-	note := "Its own use is granted as a replacement."
-	if mode == bindingplan.Add {
-		note = "Its own use is granted as an addition: it replaces nothing."
-	}
-	if edited {
-		note += " · edited from the ask"
-	}
-	return note
+	return "Its own use " + ans.useMode(req) + "."
 }
 
 // chooseUseAs restores the independent add/replace choice on the summary
@@ -584,22 +601,21 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	d.titleRight = "summary"
 	d.body = m.credentialSentence(req) + " Answering with “" + ans.credential + "” for " + lifetime.Label(ans.ttl) + "."
 	what := section{label: ans.credential + " would be"}
-	summarize := func(label string, part *RequestPart) {
+	// Each part's line, then what approving it does to the rules the box
+	// holds: added beside them or replacing them.
+	summarize := func(label string, part *RequestPart, mode string) {
 		text, broad := partSummary(part)
 		tone := toneAccent
 		if broad {
 			tone = toneAlert
 		}
-		what.fields = append(what.fields, field{label: label, value: text, tone: tone})
+		what.fields = append(what.fields, field{label: label, value: text, tone: tone}, field{value: mode})
 	}
 	if req.Use != nil {
-		summarize("used by this box", req.Use)
+		summarize("used by this box", req.Use, ans.useMode(req))
 	}
 	if req.Delegate != nil {
-		summarize("delegated to its workers", req.Delegate)
-	}
-	if note := ans.additionNote(req); note != "" {
-		what.lines = append(what.lines, line{text: note, tone: toneDim})
+		summarize("delegated to its workers", req.Delegate, ans.delegateMode())
 	}
 	preview := ans
 	preview.use, preview.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
@@ -755,6 +771,8 @@ func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool,
 	if !delegate {
 		d.formActions = append(d.formActions, action{key: "use-as", label: "Add or replace…", enabled: true})
 		body += " " + ans.additionNote(req)
+	} else {
+		body += " Approving it " + ans.delegateMode() + "."
 	}
 	d.titleRight = step
 	d.body = body

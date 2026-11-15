@@ -222,6 +222,42 @@ func TestTheSummaryListsNoRoutes(t *testing.T) {
 	}
 }
 
+// The summary says, under each part's line, whether approving it adds to
+// the rules the box holds or replaces them (PR #1177 review): the use part as
+// it will be granted, marked when that differs from the ask, and the
+// delegate part, which always replaces the box's delegation.
+func TestTheSummarySaysWhetherEachPartAddsOrReplaces(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		add  bool
+		want []string
+	}{
+		{"replace", false, []string{"replaces its rules for GitHub token, in every variable", "replaces its workers' rules for GitHub token"}},
+		{"add", true, []string{"adds to its rules for GitHub token · replaces nothing", "replaces its workers' rules for GitHub token"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, ds := sourceWithRequest(t)
+			req := waitingRequest()
+			req.Use.Add = tc.add
+			req.Delegate = &RequestPart{Routes: []secretroute.Route{ghRoute("/repos/**")}}
+			ds.requests = []CredentialRequest{req}
+			send(t, m, tickMsg{})
+			toSummary(t, m, "sec_gh")
+			text := plainFrame(m)
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Fatalf("summary = %q, want %q", text, want)
+				}
+			}
+			if strings.Contains(text, "edited from the ask") {
+				t.Fatalf("summary = %q, marks the ask as edited", text)
+			}
+		})
+	}
+}
+
 // With no table beside it, a part's line never reads narrower than what
 // Accept sends: a blocked host is not one it reaches, every method is named,
 // and any path is what secretroute matches as one, however it is written;
@@ -488,7 +524,7 @@ func TestAnAdditionWithAnotherSecretIsGrantedAsAReplacement(t *testing.T) {
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_base", SecretName: "base token", From: BindingProject}}
 	m := newTestModel(t, ds)
 	toSummary(t, m, "sec_gh")
-	if !strings.Contains(plainFrame(m), "granted as a replacement") {
+	if !strings.Contains(plainFrame(m), "replaces its rules for GitHub token, in every variable · edited from the ask") {
 		t.Fatalf("summary = %q, want it to say the addition is granted as a replacement", plainFrame(m))
 	}
 	grantFor(t, m, time.Hour)
@@ -872,7 +908,7 @@ func TestRequestAdditionBesideDelegatedBase(t *testing.T) {
 	ds.heldGrants = []HeldGrant{{BindingID: base.ID, SecretID: base.SecretID, SecretName: "GitHub token", From: BindingSandbox}}
 	toSummary(t, m, "sec_gh")
 	text := plainFrame(m)
-	for _, want := range []string{"asked for", "Answering with", "addition", "edited from the ask"} {
+	for _, want := range []string{"asked for", "Answering with", "adds to its rules for GitHub token", "edited from the ask"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q: %s", want, text)
 		}

@@ -471,3 +471,8 @@
   breadth taken from `secretroute`'s own reading of a pattern
   (`secretroute.AnyPath`), never from how it is spelled or drawn: the box
   writes the routes, and `/*/**` is any path as much as `/**` is.
+- **An add/replace line names the scope `bindingplan` replaces, never just
+  the asked variable** (`useMode`, `delegateMode`). A use part's replacement
+  is the box's whole use of the credential, in every variable
+  (`bindingplan.Use`): worded by the asked variable, it hid that a binding
+  of the same secret in another variable goes.
