@@ -13,6 +13,8 @@ factory. Work comes home through Git.
   and collect the work.
 - [Concepts](concepts.md): boxes and sources, harnesses, skills, boxes that
   lead other boxes, providers, lifecycle and credentials.
+- [Running boxes on boxd](boxd.md): set up a boxd provider, and what its key
+  can reach.
 - [Console guide](console.md): workflows, navigation and keybindings.
 - [CLI reference](cli.md): generated public commands and flags.
 

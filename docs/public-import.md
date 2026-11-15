@@ -14,6 +14,7 @@ The complete initial import is these exact files, with no assets:
 | `docs/public/index.md` | `index` |
 | `docs/public/getting-started.md` | `getting-started` |
 | `docs/public/concepts.md` | `concepts` |
+| `docs/public/boxd.md` | `boxd` |
 | `docs/public/console.md` | `console` |
 | `docs/public/cli.md` | `cli` |
 | `docs/public/repository-scripts.md` | `repository-scripts` |
