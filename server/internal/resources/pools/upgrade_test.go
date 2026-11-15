@@ -18,6 +18,7 @@ type upgradeFixture struct {
 	t          *testing.T
 	store      *store.Store
 	db         *gorm.DB
+	manager    *sandbox.ProviderManager
 	reconciler *PoolReconciler
 	watch      *UpgradeWatch
 }
@@ -40,7 +41,7 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 		return clock
 	}
 	return &upgradeFixture{
-		t: t, store: appStore, db: db, watch: watch,
+		t: t, store: appStore, db: db, watch: watch, manager: manager,
 		reconciler: NewPoolReconciler(appStore, manager, controlPlane, nil),
 	}
 }
@@ -258,5 +259,76 @@ func TestUpgradeWatchWaitsOnAPoolWhoseProviderKeptItsBox(t *testing.T) {
 	f.report("pool-1", true)
 	if got := f.pending(); len(got) != 0 {
 		t.Fatalf("placed box still pending: %v", got)
+	}
+}
+
+// agentStartingPoolProvider starts the pool's agent on the passes start names, as a
+// provider does that makes or starts the pool's box or restarts its agent;
+// a pass that comes up names unreachable answers ErrPoolNotReachable after it
+// started the agent, as a VM pool's machine does while it boots.
+type agentStartingPoolProvider struct {
+	stubPoolProvider
+	passes      *int
+	start       map[int]bool
+	unreachable map[int]bool
+}
+
+func (p agentStartingPoolProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, _ func(context.Context) error) error {
+	*p.passes++
+	if p.start[*p.passes] {
+		sandbox.ReportAgentStarted(ctx, time.Now())
+	}
+	if p.unreachable[*p.passes] {
+		return sandbox.ErrPoolNotReachable
+	}
+	return nil
+}
+
+func (f *upgradeFixture) useProvider(name string, provider sandbox.Provider) {
+	f.t.Helper()
+	f.manager.RegisterProvider(name, provider)
+	if err := f.db.Model(&model.SandboxProviderInstance{}).Where("id = ?", "provider-1").Update("type", name).Error; err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// A pass that starts the pool's agent is often not the one that settles: a
+// VM pool's machine is started, does not answer while it boots, and the pass
+// that settles starts nothing. The new agent's first report, sent at boot
+// before that settle, is the new agent's, so the pool is upgraded without
+// waiting for its next heartbeat (#1194).
+func TestUpgradeWatchCountsTheReportOfAnAgentStartedBeforeTheSettle(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	f.useProvider("starts", agentStartingPoolProvider{passes: new(int), start: map[int]bool{1: true}, unreachable: map[int]bool{1: true}})
+	f.start()
+	f.reconcile("pool-1")
+	f.report("pool-1", true)
+	if got := f.pending()["pool-1"]; got != waitingForReconcile {
+		t.Fatalf("started, not yet settled: %q", got)
+	}
+	f.reconcile("pool-1")
+	if got := f.pending(); len(got) != 0 {
+		t.Fatalf("the started agent's boot report did not count: %v", got)
+	}
+}
+
+// A report from before the latest start is the agent's that start replaced:
+// a booted machine whose moved bundles then restart its agent waits for the
+// restarted agent's report.
+func TestUpgradeWatchCountsOnlyReportsAfterTheLatestStart(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	f.useProvider("starts", agentStartingPoolProvider{passes: new(int), start: map[int]bool{1: true, 2: true}, unreachable: map[int]bool{1: true}})
+	f.start()
+	f.reconcile("pool-1")
+	f.report("pool-1", true)
+	f.reconcile("pool-1")
+	if got := f.pending()["pool-1"]; got != "waiting for its agent to report" {
+		t.Fatalf("restarted agent, earlier agent's report only: %q", got)
+	}
+	f.report("pool-1", true)
+	if got := f.pending(); len(got) != 0 {
+		t.Fatalf("restarted agent's report did not count: %v", got)
 	}
 }

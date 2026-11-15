@@ -96,3 +96,10 @@
   Why: the agent rereads the file on every call, and a placement that fails
   on a running pool keeps the old agent, which would then authenticate
   nowhere while the pool reads as converged.
+- An adopted pool machine is not a created one, though `converge` calls both
+  `made`: only a machine this pass created from the base, or started, may
+  report its agent's start from before (`sandbox.ReportAgentStarted`), and
+  any machine it did not create reports again once the apply has returned.
+  Why: an adopted running machine, or one recorded unprovisioned, may run
+  an older agent, and a start reported before it is placed counts that
+  agent's reports as the new one's (ADR 26-11-15-294 §1).

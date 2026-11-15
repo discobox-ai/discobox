@@ -249,6 +249,13 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return err
 	}
 	made, started := false, false
+	// created is a machine this pass made from the base, which no agent ran
+	// in before; a machine adopted under the pool's name is made in the
+	// record's eyes, but may already run one. startedAt is the moment the
+	// pool's agent counts as started from when this pass creates or starts
+	// the machine: just before it does (ADR 26-11-15-294 §1).
+	created := false
+	var startedAt time.Time
 	// A machine that is not the one the record names was made in its place —
 	// by a pass that made it and stopped before its record was saved, or by
 	// anyone else under the pool machine's name — so nothing the record says
@@ -274,9 +281,11 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		record = poolRuntimeState{}
 		if !replaced {
+			startedAt = time.Now()
 			if inst, err = h.create(ctx, pool, scope); err != nil {
 				return err
 			}
+			created = true
 		}
 		made = true
 	}
@@ -292,6 +301,9 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		if err := gate(ctx); err != nil {
 			return err
 		}
+		if startedAt.IsZero() {
+			startedAt = time.Now()
+		}
 		if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {
 			return fmt.Errorf("start pool %s's machine: %w", pool.ID, err)
 		}
@@ -299,6 +311,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	if made || started {
 		markStarted(pool)
+	}
+	if created || started {
+		// Told now, not once the machine answers: a booting machine does
+		// not, this pass then fails as not reachable, and the pass that
+		// settles starts nothing.
+		sandbox.ReportAgentStarted(ctx, startedAt)
 	}
 	guest, err := h.engine.Guest(ctx, inst)
 	if err != nil {
@@ -355,10 +373,22 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
 	}
+	moved := !record.Box.SameBundles(placement.Box)
 	if provisioned && record.Box.Placement != box.Placement {
 		if err := poolruntime.RestartPoolUnits(ctx, guest, false); err != nil {
 			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
+		moved = true
+	}
+	// The apply, and a moved placement's restart, replace whatever agent ran
+	// in a machine this pass did not create, so a report counts only from
+	// once they have returned: one running before this pass, adopted or
+	// recorded unprovisioned included, and one this pass booted from a disk
+	// whose placement moved or that no record says was provisioned. Only a
+	// booted machine placed again with nothing moved (a repair) keeps the
+	// agent it booted, and its start above.
+	if !created && (!started || !provisioned || moved) {
+		sandbox.ReportAgentStarted(ctx, time.Now())
 	}
 	record.Box = box
 	pool.OutboundAppliedRevision = pool.Outbound.Revision()

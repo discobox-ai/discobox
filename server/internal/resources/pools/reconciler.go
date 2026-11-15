@@ -217,6 +217,15 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		defer keptMu.Unlock()
 		kept = reason
 	})
+	// A provider that starts the pool's agent says when, and the watch hears
+	// it at once, not at the settle: the pass that starts it is often not the
+	// one that settles (ADR 26-11-15-294 §1).
+	poolID := pool.ID
+	ctx = sandbox.WithAgentStartReporter(ctx, func(at time.Time) {
+		if r.pools != nil {
+			r.pools.Upgrades().agentStarted(poolID, at)
+		}
+	})
 	// repair names why this pass replaces the runtime rather than reconciling
 	// it in place; empty means reconcile. An attempt owes a repair until one
 	// succeeds, so a pass that dies before it leaves it owed (§3).
