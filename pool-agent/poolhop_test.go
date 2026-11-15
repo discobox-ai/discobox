@@ -9,15 +9,15 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
-func machineBootstrap(public, private string) Bootstrap {
+func machineBootstrap(ingress, pool string) Bootstrap {
 	return Bootstrap{
 		ControlPlaneURL: "http://control.example",
 		PoolID:          "pool-1",
 		Runtime:         RuntimeMachine,
 		Driver:          "boxd",
 		MachinePool:     "pool-1",
-		PublicURL:       public,
-		PrivateURL:      private,
+		IngressURL:      ingress,
+		PoolURL:         pool,
 	}
 }
 
@@ -40,7 +40,7 @@ func TestPoolHopOfADockerPoolIsItsName(t *testing.T) {
 	}
 }
 
-// A machine pool reached at a private URL its public one is not is reached
+// A machine pool reached at a pool URL its ingress one is not is reached
 // directly, by its own name, with the provider's host as discobox's answer
 // for it, and its sandboxes' machines reach nothing beyond its network (ADR
 // 26-10-29-481 §§2, 4).
@@ -66,7 +66,7 @@ func TestPoolHopOfAMachinePoolOnANetworkIsDirect(t *testing.T) {
 	}
 }
 
-// A machine pool reached only at its public URL, an edge, is tunneled to
+// A machine pool whose pool URL is its ingress URL, an edge, is tunneled to
 // through it, its sandboxes' machines reach that host alone, and its agents
 // serve plain HTTP, which is all an edge speaks to them, whatever the pool
 // sets.
@@ -91,7 +91,7 @@ func TestPoolHopOfAMachinePoolBehindAnEdgeIsATunnel(t *testing.T) {
 	}
 }
 
-// A tunnel needs TLS to the edge, so a public URL that is not https and is
+// A tunnel needs TLS to the edge, so an ingress URL that is not https and is
 // the only path carries no machine pool.
 func TestPoolHopRefusesAPlainEdge(t *testing.T) {
 	_, err := resolvePoolHop(machineBootstrap("http://127.0.0.1:7302", "http://127.0.0.1:7302"))

@@ -538,10 +538,11 @@ reason here. A sandbox's machine made from a snapshot is made again fresh
 only before its agent has ever answered (`snapshot-proven`, written where the
 answer is seen): after that its disk is the sandbox's work.
 
-## The API on a public URL
+## The API on an ingress URL
 
-- The agent's API can be on a public URL (a boxd pool machine's, ADR
-  26-10-09-106 §3). Only `/healthz`, `/readyz` and `/metadata` answer without
+- The agent's API is on its machine's ingress URL, which may be on the
+  internet (a boxd pool machine's, ADR 26-10-09-106 §3, disco-vm ADR
+  26-11-14-610). Only `/healthz`, `/readyz` and `/metadata` answer without
   a token, and they change nothing and say nothing secret — and `/tunnel/*`
   on a machine pool reached only through an edge (`Config.Tunnels`, ADR
   26-10-29-481 §2), which is spliced onto the proxy unit's tunnel listener and
@@ -569,24 +570,26 @@ answer is seen): after that its disk is the sandbox's work.
   client certificate, so whoever answers it is handed that sandbox's egress.
   The registry is not named that way: buildkitd pushes to it on loopback.
 
-## A machine's public port
+## A machine's ingress port
 
-- **A sandbox machine's public service port belongs to the guest's root, not
+- **A sandbox machine's ingress service port belongs to the guest's root, not
   to the sandbox agent.** The sandbox user has passwordless sudo, so the agent
   in a box can stop the sandbox agent and bind that port itself. Whatever the
   driver publishes there is an inbound channel that neither the egress fence
   nor the pool proxy's audit sees. So a sandbox's machine, and a snapshot
-  build's, asks the driver for no public URL, strictly (`createOptions`;
-  disco-vm ADR 26-11-12-604): boxd gives it none, removing the default proxy
-  it gives every machine, and a driver that cannot withhold one refuses the
-  machine. The driver is trusted to keep to a strict request; nothing polls a
-  machine for a URL, and a machine made before the request keeps its URL
-  until it is made again. The pool's own machine asks for one, not strictly,
-  since the server reaches the pool agent there. A change that adds, keeps or
-  relies on a sandbox machine's public URL, or drops the strict request, is
-  judged against that: "the agent answers nothing else there" is never a
+  build's, asks the driver for no ingress URL, strictly, and for its pool URL,
+  strictly (`createOptions`; disco-vm ADR 26-11-14-610): boxd gives it no
+  ingress, removing the default proxy it gives every machine, and a driver
+  that cannot withhold one (archil, docker, fake) refuses the machine. The
+  driver is trusted to keep to a strict request; nothing polls a machine for
+  a URL, and a machine made before the request keeps its URL until it is made
+  again. The pool's own machine asks for its ingress URL, strictly, since the
+  server reaches the pool agent there and nowhere else. A change that adds,
+  keeps or relies on a sandbox machine's ingress URL, drops either strict
+  request, or has a caller fall back from one scope to the other, is judged
+  against that: "the agent answers nothing else there" is never a
   control, because the guest's root, not the agent, decides what answers. The
-  edge form (ADR 26-10-29-481 §3) reaches a sandbox at its public URL by
+  edge form (ADR 26-10-29-481 §3) reaches a sandbox at its ingress URL by
   design, and has no pool until a driver with no isolation settles how
   (#1053). Why: code in a box could otherwise exfiltrate or take instructions
   around the proxy while every check inside the guest passes.

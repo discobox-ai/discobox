@@ -44,7 +44,7 @@ type poolHop struct {
 // resolvePoolHop is the hop bootstrap describes. A Docker pool's sandboxes
 // reach it by its name on the pool's network, or through the edge its
 // environment names (ADR 26-10-23-719); a machine pool's reach it at its
-// private URL.
+// pool URL.
 func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 	agentTLS := !bootstrap.DisableAgentEndpointTLS
 	if bootstrap.EffectiveRuntime() != RuntimeMachine {
@@ -54,30 +54,27 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 		}
 		return poolHop{endpoints: proxyagent.PoolEndpoints(tunnelURL), tunnelURL: tunnelURL, agentTLS: agentTLS}, nil
 	}
-	public, err := url.Parse(bootstrap.PublicURL)
+	pool, err := url.Parse(bootstrap.PoolURL)
 	if err != nil {
-		return poolHop{}, fmt.Errorf("the pool's public URL: %w", err)
-	}
-	private, err := url.Parse(bootstrap.PrivateURL)
-	if err != nil {
-		return poolHop{}, fmt.Errorf("the pool's private URL: %w", err)
+		return poolHop{}, fmt.Errorf("the pool's pool URL: %w", err)
 	}
 	if !bootstrap.reachedThroughEdge() {
 		// The pool's own name, as on a Docker pool, and discobox's answer for
 		// it: the provider's host, which the sandbox resolves through its
 		// provider at each dial, so an address that moves is followed (§2).
 		endpoints := proxyagent.PoolEndpoints("")
-		endpoints.Address = private.Hostname()
+		endpoints.Address = pool.Hostname()
 		endpoints.DNSSystemResolver = true
 		return poolHop{endpoints: endpoints, egress: &machine.Egress{}, agentTLS: agentTLS, form: hopDirect}, nil
 	}
-	// No path between the driver's machines but the public URL, an edge: the
-	// sandboxes tunnel through it, with their mTLS inside, and reach nothing
-	// else on the internet.
-	if public.Scheme != "https" {
-		return poolHop{}, fmt.Errorf("the pool's machine is reached only at %s, which is not https, so no tunnel can be carried through it", bootstrap.PublicURL)
+	// A pool URL that is the ingress URL is an edge: the driver gives its
+	// machines no path to each other but that one. The sandboxes tunnel
+	// through their pool URL, with their mTLS inside, and reach nothing else
+	// beyond the pool's network. The ingress URL only tells the form.
+	if pool.Scheme != "https" {
+		return poolHop{}, fmt.Errorf("the pool's machine is reached only at %s, which is not https, so no tunnel can be carried through it", bootstrap.PoolURL)
 	}
-	tunnelURL := (&url.URL{Scheme: "wss", Host: public.Host}).String()
+	tunnelURL := (&url.URL{Scheme: "wss", Host: pool.Host}).String()
 	if err := proxyagent.ValidateTunnelURL(tunnelURL); err != nil {
 		return poolHop{}, err
 	}
@@ -86,7 +83,7 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 	return poolHop{
 		endpoints: endpoints,
 		tunnelURL: tunnelURL,
-		egress:    &machine.Egress{Allow: []string{public.Hostname()}},
+		egress:    &machine.Egress{Allow: []string{pool.Hostname()}},
 		form:      hopEdge,
 	}, nil
 }

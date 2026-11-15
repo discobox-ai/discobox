@@ -67,7 +67,7 @@ func newMachineFixture(t *testing.T, config json.RawMessage) *machineFixture {
 		t.Fatal(err)
 	}
 	agents := &fakeMachineAgents{servers: map[string]*fakeMachineAgent{}}
-	driver := &agentDriver{Driver: vmtest.FakeDriver(t, dir, machineTestPool, machine.StaticKey(key), config), agents: agents}
+	driver := &agentDriver{Driver: vmtest.IngressOptional(vmtest.FakeDriver(t, dir, machineTestPool, machine.StaticKey(key), config)), agents: agents}
 	e, err := engine.Open(driver, machineTestPool)
 	if err != nil {
 		t.Fatal(err)
@@ -1059,15 +1059,20 @@ func (d *agentDriver) takeEvents(name string) []string {
 
 // Service owns a bound endpoint for the fixture's lifetime. disco-vm's fake
 // driver saves a port number after closing its reservation; using that number
-// later would race every other loopback listener on the host.
+// later would race every other loopback listener on the host. The ingress URL
+// is withheld where the driver withholds it (vmtest.IngressOptional), so a
+// pool that reached its sandbox there would fail here.
 func (d *agentDriver) Service(ctx context.Context, inst machine.Instance) (machine.Service, error) {
-	_, serviceErr := d.Driver.Service(ctx, inst)
+	driverService, serviceErr := d.Driver.Service(ctx, inst)
 	if serviceErr != nil && !errors.Is(serviceErr, machine.ErrNotRunning) {
 		return machine.Service{}, serviceErr
 	}
 	service, err := d.agents.service(ctx, inst.Name)
 	if err != nil {
 		return machine.Service{}, err
+	}
+	if serviceErr == nil && driverService.IngressURL == "" {
+		service.IngressURL = ""
 	}
 	return service, serviceErr
 }
@@ -1318,7 +1323,7 @@ func (a *fakeMachineAgents) service(ctx context.Context, name string) (machine.S
 		}()
 	}
 	address := ep.listener.Addr().String()
-	return machine.Service{Listen: "tcp:" + address, URL: "http://" + address, PrivateURL: "http://" + address}, nil
+	return machine.Service{Listen: "tcp:" + address, IngressURL: "http://" + address, PoolURL: "http://" + address}, nil
 }
 
 func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config, layer string) error {
@@ -1632,7 +1637,7 @@ func (d *fencingDriver) Instance(ctx context.Context, name string) (machine.Inst
 // §4).
 func TestMachineCreateFencesTheMachine(t *testing.T) {
 	ctx := context.Background()
-	driver := &fencingDriver{Driver: vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil, nil), fences: map[string]*machine.Egress{}}
+	driver := &fencingDriver{Driver: vmtest.IngressOptional(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil, nil)), fences: map[string]*machine.Egress{}}
 	e, err := engine.Open(driver, machineTestPool)
 	if err != nil {
 		t.Fatal(err)
@@ -1803,16 +1808,20 @@ func TestAPlacementAfterAForcedRestartIsRecordedOnceItsAgentAnswers(t *testing.T
 	}
 }
 
-// A sandbox's machine, and a snapshot build's, asks for no public URL,
-// strictly: the pool reaches it at its private URL, and a public one would be
-// an inbound path from the internet that the guest's root answers and the
-// pool's fence never sees (disco-vm ADR 26-11-12-604).
-func TestMachineAsksNoPublicURL(t *testing.T) {
-	want := machine.URLRequest{Mode: machine.URLOff, Strict: true}
+// A sandbox's machine, and a snapshot build's, asks for its pool URL on and
+// its ingress URL off, both strictly: the pool, its peer, reaches it at its
+// pool URL alone, and an ingress URL would be an inbound path from outside
+// the pool that the guest's root answers and the pool's fence never sees
+// (disco-vm ADR 26-11-14-610).
+func TestMachineAsksPoolURLAndNoIngressURL(t *testing.T) {
+	want := machine.URLRequests{
+		Ingress: machine.URLRequest{Mode: machine.URLOff, Strict: true},
+		Pool:    machine.URLRequest{Mode: machine.URLOn, Strict: true},
+	}
 	for _, isolate := range []bool{true, false} {
 		r := &MachineSandboxRuntime{isolate: isolate, network: "pool-0123456789abcdef"}
-		if opts := r.createOptions("sbx-1"); opts.URLs.Public != want || opts.URLs.Private != (machine.URLRequest{}) || opts.URLs.Internal != (machine.URLRequest{}) {
-			t.Fatalf("isolated %v: create options ask URLs %+v, want the public one off, strictly, and nothing else", isolate, opts.URLs)
+		if opts := r.createOptions("sbx-1"); opts.URLs != want {
+			t.Fatalf("isolated %v: create options ask URLs %+v, want ingress off and pool on, both strictly", isolate, opts.URLs)
 		}
 	}
 }

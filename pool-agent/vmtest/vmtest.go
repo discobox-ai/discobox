@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/discobox-ai/vm/pkg/guest"
@@ -132,4 +133,51 @@ func newFakeDriver(dir, pool string, keys machine.KeySource, config json.RawMess
 		Keys:         keys,
 		DriverConfig: config,
 	})
+}
+
+// IngressOptional is driver as one whose ingress URL is optional, as boxd's
+// is: it withholds the ingress URL of an instance asked to have it off, and
+// so meets a strict request to (disco-vm ADR 26-11-14-610 §2). disco-vm's
+// fake driver always gives one, a loopback port, and refuses that request,
+// which a pool's sandbox machine makes; this wrapper lets a test make one.
+// Every other scope is the driver's own.
+func IngressOptional(driver machine.Driver) machine.Driver {
+	return &ingressOptional{Driver: driver, withheld: map[string]bool{}}
+}
+
+type ingressOptional struct {
+	machine.Driver
+	mu       sync.Mutex
+	withheld map[string]bool
+}
+
+func (d *ingressOptional) Capabilities() machine.Capabilities {
+	caps := d.Driver.Capabilities()
+	caps.URLs.Ingress = machine.URLOptional
+	return caps
+}
+
+func (d *ingressOptional) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
+	if err := spec.URLs.Check(d.Capabilities().URLs); err != nil {
+		return machine.Instance{}, err
+	}
+	off := spec.URLs.Ingress.Mode == machine.URLOff
+	spec.URLs.Ingress = machine.URLRequest{}
+	inst, err := d.Driver.Create(ctx, spec)
+	if err == nil {
+		d.mu.Lock()
+		d.withheld[spec.Name] = off
+		d.mu.Unlock()
+	}
+	return inst, err
+}
+
+func (d *ingressOptional) Service(ctx context.Context, inst machine.Instance) (machine.Service, error) {
+	service, err := d.Driver.Service(ctx, inst)
+	d.mu.Lock()
+	if d.withheld[inst.Name] {
+		service.IngressURL = ""
+	}
+	d.mu.Unlock()
+	return service, err
 }

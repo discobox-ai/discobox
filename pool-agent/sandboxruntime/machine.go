@@ -962,15 +962,17 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 }
 
 // createOptions is how every machine of the pool is made, a sandbox's or a
-// snapshot build's: isolated on the pool's network, fenced to its hop, and
-// with no public URL, asked strictly, so a driver that cannot withhold one
-// refuses the machine (ADR 26-10-23-551 §4, ADR 26-10-29-481 §4, disco-vm ADR
-// 26-11-12-604). The pool reaches it at its private URL alone, and a public
-// one would be an inbound path from the internet that the guest's root
-// answers and the pool's fence never sees.
+// snapshot build's: isolated on the pool's network, fenced to its hop, with
+// its pool URL on and its ingress URL off, both asked strictly, so a driver
+// that cannot give the one or withhold the other refuses the machine (ADR
+// 26-10-23-551 §4, ADR 26-10-29-481 §4, disco-vm ADR 26-11-14-610). The pool,
+// its peer, reaches it at its pool URL alone; an ingress URL would be an
+// inbound path from outside the pool that the guest's root answers and the
+// pool's fence never sees.
 func (r *MachineSandboxRuntime) createOptions(name string) engine.CreateOptions {
 	opts := engine.CreateOptions{Name: name, Egress: r.egress}
-	opts.URLs.Public = machine.URLRequest{Mode: machine.URLOff, Strict: true}
+	opts.URLs.Ingress = machine.URLRequest{Mode: machine.URLOff, Strict: true}
+	opts.URLs.Pool = machine.URLRequest{Mode: machine.URLOn, Strict: true}
 	if r.isolate {
 		opts.Isolated, opts.Networks = true, []string{r.network}
 	}
@@ -1233,8 +1235,9 @@ func writeTreeFile(tw *tar.Writer, name string, mode int64, data []byte) {
 	_, _ = tw.Write(data)
 }
 
-// SandboxDialer reaches the sandbox agent at its machine's private URL, where
-// its pool's machine reaches it (ADR 26-10-29-481 §1), over TLS where its
+// SandboxDialer reaches the sandbox agent at its machine's pool URL, where
+// its pool's machine, its peer, reaches it (ADR 26-10-29-481 §1, disco-vm ADR
+// 26-11-14-610), over TLS where its
 // bootstrap told it to serve TLS (§3). A machine has one service, which is
 // the agent's, so no other port in it is reached this way.
 func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error) {
@@ -1262,10 +1265,11 @@ func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID str
 	}, nil
 }
 
-// agentURL is the private URL of the sandbox's machine while it runs: a
-// direct path on the pool's network, or its URL where the driver gives its
-// machines no other path and that URL is not public (a loopback port); a
-// sandbox's machine has no public URL (createOptions).
+// agentURL is the pool URL of the sandbox's machine while it runs, where the
+// pool, its peer, reaches it: a direct path on the pool's network, or the
+// driver's shared path where it gives its machines no other (fake's loopback
+// port). A sandbox's machine has no ingress URL (createOptions), and the pool
+// never reaches it at one.
 func (r *MachineSandboxRuntime) agentURL(ctx context.Context, sandboxID string) (string, error) {
 	if value, ok := r.urls.Load(sandboxID); ok {
 		if target, ok := value.(string); ok {
@@ -1279,7 +1283,7 @@ func (r *MachineSandboxRuntime) agentURL(ctx context.Context, sandboxID string) 
 	if err != nil {
 		return "", err
 	}
-	target, err := r.engine.PrivateURL(ctx, inst)
+	target, err := r.engine.URL(ctx, inst, machine.URLPool)
 	if err != nil {
 		return "", err
 	}
