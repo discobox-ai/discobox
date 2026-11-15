@@ -4191,7 +4191,10 @@ discobox's default terminal already runs one, so a pipe, a recording, or a
 terminal you would rather keep as it is gets the stream and nothing else. Ctrl-A
 d detaches there too. If an interrupt stops getting through — the discobox or
 the server has gone quiet — Ctrl-C again says so, and one more quits. The
-terminal keeps running, exactly as a detach leaves it. Without a terminal to
+terminal keeps running, exactly as a detach leaves it. The attach also ends,
+leaving the terminal running, when its stdin ends or when it is sent SIGTERM,
+SIGINT or SIGHUP: those reach this command, never the program in the
+discobox. Without a terminal to
 draw a window on, attach is raw whether or not the flag was given.
 ~~~~
 

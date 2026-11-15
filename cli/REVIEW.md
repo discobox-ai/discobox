@@ -392,6 +392,15 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 - One-off pool console commands require an explicit exit status. Interactive
   attach EOF means detach, so its default success cannot prove command completion.
 
+- **A change to how a terminal attach ends reaches every caller of it.**
+  `attachSandboxTerminal` and `copyTerminalInput` serve `attach`, `run`,
+  `admin terminal attach`/`create --attach` and the pool console alike, and
+  their stdin means different things: an attach command's is the caller, while
+  `run . -` has already read the prompt from it. Make a new ending a per-caller
+  option (`execAttachOptions.detachAtInputEnd`), and check `run`'s piped prompt
+  before changing it for everyone — making EOF a detach for all of them once
+  ended `echo prompt | discobox run . -` before the harness answered.
+
 ## Observing a terminal
 
 - **A terminal observe does not wait out a start; the command does.** The
