@@ -31,6 +31,18 @@ The server pins digests (`guestimage.DefaultVMImage` for the guest, libkrun's
 `DefaultKernelImage` for the kernel), so the three lines — product, guest,
 kernel — move independently in both directions.
 
+Independently, but never behind: the product release refuses a tag whose pin
+predates this directory (`release:check-vm-pins`,
+`internal/cmd/discobox-vm-pins`). It follows each pinned digest to the
+`vm/v*` or `vm-kernel/v*` tag that published it, and fails when that build's
+inputs changed between the tag's commit and the release's: for the guest,
+`vm-image/` but `kernel/`, plus `pkg/vsock` and the vsock guest it compiles in;
+for the kernel, `kernel/`. Notes and tests are not inputs. A pin no tag
+published fails too. The owner can release anyway with a
+`Release-Stale-VM-Pin: <reason>` trailer in the tag's annotation, which the
+release notes record — a path diff cannot tell a comment-only change from a
+real one.
+
 `REVIEW.md` beside this file carries the pitfalls — the rules whose violation
 is a guest that boots and then fails somewhere else.
 

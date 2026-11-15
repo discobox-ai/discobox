@@ -315,6 +315,26 @@ Say how many commits that is and what is notable in them before tagging. It is
 the last moment anyone can notice that a release is carrying something it
 should not.
 
+Then check the pool VM pins, before the tag exists, against the commit you will
+tag. The release workflow refuses the tag when `vm-image/` (or
+`vm-image/kernel/`) changed after the commit the pinned `discobox-vm` (or
+`discobox-vm-kernel`) image was built from, and it is cheaper to learn that
+now. It needs every `vm/` and `vm-kernel/` tag fetched:
+
+```bash
+go run ./internal/cmd/discobox-vm-pins -rev <green-commit>
+```
+
+A stale pin is fixed by publishing a `vm/v*` (or `vm-kernel/v*`) tag and
+re-pinning, which is a change of its own through CI. Releasing anyway is the
+owner's call, never yours: they name the reason, and it goes in the tag's
+annotation as a `Release-Stale-VM-Pin: <reason>` trailer, which the release
+notes then carry:
+
+```bash
+git tag -a vX.Y.Z -m "vX.Y.Z" -m "Release-Stale-VM-Pin: <reason>" <green-commit>
+```
+
 Tag the green commit explicitly — do not assume `HEAD`:
 
 ```bash
@@ -327,7 +347,9 @@ CI run of their own. Say so rather than sweeping them in.
 
 ## 4. The release workflow
 
-Pushing the tag triggers `.github/workflows/release.yml`: `binaries` (linux and
+Pushing the tag triggers `.github/workflows/release.yml`: `vm-pins`
+(`release:check-vm-pins`, §3), which must pass before anything is built, then
+`binaries` (linux and
 darwin legs — darwin because cgo, the macOS SDK, and codesigning are
 native-only), `images` (multi-arch, pushed to ghcr), then `publish`, which
 creates the GitHub release and uploads `build/release/bin`.

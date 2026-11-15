@@ -25,10 +25,31 @@ env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  # Refuses the tag before anything is built or pushed when the pinned pool VM
+  # guest or kernel predates vm-image/ at the tag. It needs the whole history
+  # and every vm/ and vm-kernel/ tag, which a default checkout leaves out.
+  vm-pins:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: ./.github/actions/task
+        with:
+          target: release:check-vm-pins
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-notes
+          path: build/release/notes
+          if-no-files-found: error
+
   # Each platform builds what only it can build: darwin because cgo, the macOS
   # SDK, and codesigning are native-only; Linux because it also cross-compiles
   # the Windows binary (ADR 0066 §4).
   binaries:
+    needs: vm-pins
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +72,7 @@ jobs:
           if-no-files-found: error
 
   images:
+    needs: vm-pins
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 90
     permissions:
@@ -80,7 +102,7 @@ jobs:
           target: release:images
 
   publish:
-    needs: [binaries, images]
+    needs: [vm-pins, binaries, images]
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     permissions:
@@ -99,6 +121,10 @@ jobs:
           pattern: release-bin-*
           merge-multiple: true
           path: build/release/bin
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-notes
+          path: build/release/notes
       - uses: ./.github/actions/task
         with:
           target: release:publish

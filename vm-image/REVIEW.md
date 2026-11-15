@@ -68,7 +68,16 @@ together, where before it broke one".
   `guestimage.DefaultVMImage` is re-pinned to the new `discobox-vm` digest.
   `kernel/` ships on its own line the same way: a `vm-kernel/v*` tag, then
   libkrun's `DefaultKernelImage` is re-pinned to the new `discobox-vm-kernel`
-  digest.
+  digest. Until both are, the next product release is refused
+  (`release:check-vm-pins`), so a change here is not done when it merges.
+- **A build input is listed twice; change both.** The paths filter of
+  `vm-image.yml` (or `vm-kernel.yml`) and the pin's `Paths` in
+  `internal/cmd/discobox-vm-pins` must name the same inputs: a `COPY` of a new
+  directory into either Dockerfile goes in both, or the release passes a pin
+  that lacks it. A new pinned VM release line, or a moved or renamed pin
+  constant (`vm:publish`'s `PUSH_FILE`/`PUSH_CONST`), goes in that tool's
+  `pins` table too: it fails on a constant it cannot find, but never learns
+  of a line it was not told about.
 - **Do not replace the clock step with NTP, or make it conditional on anything
   but the RTC's presence.** A guest is hours off precisely when its host has
   slept, which is the case an NTP daemon refuses to correct on its own. Every
