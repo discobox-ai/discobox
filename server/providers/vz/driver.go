@@ -181,6 +181,13 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	return d, nil
 }
 
+// Check reports whether this binary and host can run Virtualization.framework
+// VMs, the one host prerequisite a pool's VM has. There is no service to
+// reach, so it never answers unreachable.
+func (d *Driver) Check(context.Context) error {
+	return vzvm.Supported()
+}
+
 // Close tears down every VM. Unlike libkrun's launcher there is nothing to
 // leave running for the next process to adopt: the VMs belong to this one.
 func (d *Driver) Close() error {

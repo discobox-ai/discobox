@@ -2,7 +2,9 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
@@ -44,12 +46,33 @@ func NewLocalDriver(ctx context.Context, host string, agentPort int) (*LocalDriv
 	if err != nil {
 		return nil, err
 	}
-	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
-		daemonHost := cli.DaemonHost()
+	driver := &LocalDriver{client: cli, agentPort: agentPort}
+	if err := driver.Check(ctx); err != nil {
 		_ = cli.Close()
-		return nil, explainDaemonUnreachable(ctx, daemonHost, err)
+		return nil, err
 	}
-	return &LocalDriver{client: cli, agentPort: agentPort}, nil
+	return driver, nil
+}
+
+// Check pings the Docker daemon the provider is pointed at: every pool's
+// container runs there. A daemon that does not answer is unreachable; one
+// that answers and refuses, or a socket this process may not open, is a
+// refusal, fixed by the provider's host or the socket's permissions. It is
+// the one place the ping is read: NewLocalDriver pings through it too, so a
+// provider built while its daemon is down says the same (ADR 26-11-15-089
+// §3). It is marked sandbox.ErrProviderNotReachable, never
+// ErrPoolNotReachable: a build error reaches every resolver, and a sandbox
+// call must fail on a daemon that is down, not wait for a pool to return.
+func (d *LocalDriver) Check(ctx context.Context) error {
+	_, err := d.client.Ping(ctx, client.PingOptions{})
+	if err == nil {
+		return nil
+	}
+	explained := explainDaemonUnreachable(ctx, d.DaemonHost(), err)
+	if client.IsErrConnectionFailed(err) && !errors.Is(err, fs.ErrPermission) {
+		return fmt.Errorf("the Docker daemon at %s does not answer: %w: %w", d.DaemonHost(), explained, sandbox.ErrProviderNotReachable)
+	}
+	return fmt.Errorf("the Docker daemon at %s refuses: %w", d.DaemonHost(), explained)
 }
 
 // DaemonHost returns the resolved Docker daemon endpoint. It is the configured

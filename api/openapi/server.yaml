@@ -6139,6 +6139,33 @@ components:
                 - name
                 - capabilities
             type: object
+        ProviderCheck:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ProviderCheck.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                checkedAt:
+                    description: When the check ran
+                    format: date-time
+                    type: string
+                message:
+                    description: What the provider said, as a pool would show it; absent when the outcome is ok
+                    type: string
+                outcome:
+                    description: 'ok: the provider reaches what its pools need. refused: something answered and refused (a key it does not accept, a region not enabled, a host without the hypervisor); fix the instance''s config. unreachable: nothing answered within the check''s time; fix the server''s network or proxy.'
+                    enum:
+                        - ok
+                        - refused
+                        - unreachable
+                    type: string
+            required:
+                - outcome
+                - checkedAt
+            type: object
         SandboxProviderInstance:
             additionalProperties: false
             properties:
@@ -10669,6 +10696,42 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update a sandbox provider instance
+            tags:
+                - Providers
+    /projects/{projectId}/providers/{providerId}/check:
+        post:
+            description: Asks the provider instance whether the server reaches what its pools need (its service's account, a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret to its service and is answered from what the provider says then; nothing is stored. A disabled instance is checked too. A failed check is answered 200 with its outcome; an error response means the check could not be run.
+            operationId: check-sandbox-provider-instance
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Provider instance ID
+                  in: path
+                  name: providerId
+                  required: true
+                  schema:
+                    description: Provider instance ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProviderCheck'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Check a sandbox provider instance
             tags:
                 - Providers
     /projects/{projectId}/pools:

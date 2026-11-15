@@ -342,6 +342,8 @@ func (p *fakeProvider) EnsureRunning(context.Context, sandbox.SandboxRef, []byte
 func (p *fakeProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte, []string, sandbox.Use) (*transport.HTTPClientLease, error) {
 	return transport.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
+func (p *fakeProvider) Check(context.Context) error { return nil }
+
 func (p *fakeProvider) Status() sandbox.ProviderStatus {
 	return p.status
 }

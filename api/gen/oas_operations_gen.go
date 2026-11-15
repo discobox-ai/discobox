@@ -16,6 +16,7 @@ const (
 	AttachSandboxExecOnceOperation                 OperationName = "AttachSandboxExecOnce"
 	AuthorizePoolSandboxStartOperation             OperationName = "AuthorizePoolSandboxStart"
 	CaptureSandboxHarnessConfigOperation           OperationName = "CaptureSandboxHarnessConfig"
+	CheckSandboxProviderInstanceOperation          OperationName = "CheckSandboxProviderInstance"
 	ClearPoolCacheOperation                        OperationName = "ClearPoolCache"
 	ClearSandboxCacheOperation                     OperationName = "ClearSandboxCache"
 	CompletePoolSandboxSuspendOperation            OperationName = "CompletePoolSandboxSuspend"

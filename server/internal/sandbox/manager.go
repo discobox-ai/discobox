@@ -327,6 +327,44 @@ func (m *ProviderManager) ResolveInstance(ctx context.Context, instance *model.S
 	return m.GetProvider(instance.Type)
 }
 
+// CheckInstance asks the instance's provider whether it reaches what its
+// pools need (ADR 26-11-15-089 §3), with the same joined secret and the same
+// endpoint-policy dialer a pool's resolve would use, so a check that passes
+// went the way a pool's create would. An enabled instance is checked on its
+// cached provider, resolved as its pools resolve it. A disabled one is
+// checked too, so an operator can check it before enabling it, but on a
+// provider built for the check alone, never Initialized or cached, and closed
+// when it returns: nothing else in the server builds a disabled instance, and
+// a build may start the provider's own loops (a Docker provider's watchers).
+// An instance that does not build fails its check with that error.
+func (m *ProviderManager) CheckInstance(ctx context.Context, instance *model.SandboxProviderInstance) error {
+	if !instance.Disabled {
+		provider, err := m.ResolveInstance(ctx, instance)
+		if err != nil {
+			return err
+		}
+		return provider.Check(ctx)
+	}
+	factory := m.factory(instance.Type)
+	if factory == nil {
+		provider, err := m.GetProvider(instance.Type)
+		if err != nil {
+			return err
+		}
+		return provider.Check(ctx)
+	}
+	resolved, err := m.withSecrets(ctx, instance)
+	if err != nil {
+		return err
+	}
+	provider, err := factory(ctx, resolved)
+	if err != nil {
+		return err
+	}
+	defer closeProvider(provider)
+	return provider.Check(ctx)
+}
+
 // ListRuntimeSandboxes returns runtime sandboxes from all process-wide providers.
 //
 // Providers that fail are skipped from the result and included in the returned

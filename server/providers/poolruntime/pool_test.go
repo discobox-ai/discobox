@@ -203,6 +203,8 @@ type testRuntimeProvider struct {
 
 func (p *testRuntimeProvider) Close() error { return nil }
 
+func (p *testRuntimeProvider) Check(context.Context) error { return nil }
+
 func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, maker PoolMaker, begin func(context.Context) error) error {
 	if !p.createsRuntime {
 		return nil

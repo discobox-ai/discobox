@@ -442,6 +442,8 @@ func (stubPoolProvider) Close() error                                           
 func (stubPoolProvider) Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{Name: "Stub"}
 }
+func (stubPoolProvider) Check(context.Context) error { return nil }
+
 func (stubPoolProvider) Status() sandbox.ProviderStatus {
 	return sandbox.ProviderStatus{Available: true}
 }

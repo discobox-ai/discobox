@@ -26,7 +26,8 @@ import (
 
 type nopDriver struct{}
 
-func (nopDriver) Close() error { return nil }
+func (nopDriver) Close() error                { return nil }
+func (nopDriver) Check(context.Context) error { return nil }
 func (nopDriver) EnsureVM(context.Context, string, VMSpec) (*VMInfo, error) {
 	return &VMInfo{ID: "local", Status: sandbox.StatusRunning}, nil
 }

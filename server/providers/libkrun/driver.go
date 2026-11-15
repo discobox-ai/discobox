@@ -184,6 +184,13 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	}, nil
 }
 
+// Check runs the host check a pool's VM boot needs (CheckHost with KVM): the
+// configured libkrun and passt, and the KVM device, probed in a disposable
+// launcher. There is no service to reach, so it never answers unreachable.
+func (d *Driver) Check(ctx context.Context) error {
+	return CheckHost(ctx, Config{LibkrunPath: d.libraryPath, PasstPath: d.passtPath}, true)
+}
+
 // Close tears down every VM this driver started. There is nothing to leave
 // running for the next process to adopt: a launcher whose server has exited
 // kills itself, so leaving one behind would only produce a VM nothing can

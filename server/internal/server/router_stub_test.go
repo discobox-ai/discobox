@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
@@ -696,6 +697,24 @@ func (s *routerTestServices) DeleteSandboxProviderInstance(_ context.Context, pr
 	}
 	delete(s.providers, providerID)
 	return nil
+}
+
+// CheckSandboxProviderInstance answers every instance it has as one the
+// server cannot reach, which is a 200 with that outcome, not an error.
+func (s *routerTestServices) CheckSandboxProviderInstance(_ context.Context, projectID, providerID string) (*services.ProviderCheck, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.providers[providerID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "provider instance not found")
+	}
+	return &services.ProviderCheck{
+		Outcome:   serverapi.ProviderCheckOutcomeUnreachable,
+		Message:   services.OptString{Value: "dial tcp: connect: network is unreachable", Set: true},
+		CheckedAt: time.Now().UTC(),
+	}, nil
 }
 
 func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID string) (*model.Pool, error) {

@@ -301,3 +301,36 @@ func TestNewDriverRejectsInvalidSSHKey(t *testing.T) {
 		t.Fatalf("new driver err = %v, want ssh key parse error", err)
 	}
 }
+
+// Check reads the account with the token. An API that answers and refuses
+// is a refusal; one that does not answer is unreachable.
+func TestCheckReadsTheAccount(t *testing.T) {
+	var auth string
+	ok := newTestDriver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/account" {
+			t.Errorf("request %s %s, want GET /v2/account", r.Method, r.URL.Path)
+		}
+		auth = r.Header.Get("Authorization")
+		encodeJSON(t, w, map[string]any{"account": map[string]any{"status": "active"}})
+	}), nil)
+	if err := ok.Check(context.Background()); err != nil || auth != "Bearer token-1" {
+		t.Fatalf("check: %v, authorization %q; want ok with the token", err, auth)
+	}
+
+	refused := newTestDriver(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"id":"unauthorized","message":"Unable to authenticate you"}`, http.StatusUnauthorized)
+	}), nil)
+	if err := refused.Check(context.Background()); err == nil || errors.Is(err, sandbox.ErrPoolNotReachable) || !strings.Contains(err.Error(), "Unable to authenticate you") {
+		t.Fatalf("check err = %v, want a refusal naming the API's answer", err)
+	}
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	server.Close()
+	unreachable := newTestDriver(t, http.NotFoundHandler(), func(cfg *DriverConfig) {
+		cfg.APIBaseURL = server.URL
+		cfg.HTTPClient = nil
+	})
+	if err := unreachable.Check(context.Background()); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("check err = %v, want unreachable", err)
+	}
+}

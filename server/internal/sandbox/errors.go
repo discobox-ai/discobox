@@ -56,6 +56,14 @@ var (
 	ErrPoolNotReachable       = errors.New("pool agent is not reachable")
 	ErrPoolProtocolTransition = errors.New("pool agent create protocol is transitioning")
 
+	// ErrProviderNotReachable is a provider's service or daemon not answering
+	// when the provider is built or checked (a Docker daemon that is down). A
+	// provider check reads it as unreachable, as it does ErrPoolNotReachable
+	// (ADR 26-11-15-089 §3). Unlike that, nothing waits on it: a provider
+	// that cannot be built is an error to everything that resolves it, at
+	// once.
+	ErrProviderNotReachable = errors.New("provider is not reachable")
+
 	// ErrImageUnavailable indicates the pool cannot obtain the image a sandbox
 	// is pinned to: the pinned image is not on the pool and its reference no
 	// longer names it, or no registry will hand the pool that reference. It is

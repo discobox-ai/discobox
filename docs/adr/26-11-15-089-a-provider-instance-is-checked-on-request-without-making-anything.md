@@ -4,6 +4,7 @@
 - **Date**: 2026-11-15
 
 Accepted by the owner by merging #1207, 2026-11-15.
+- **Amended**: 2026-11-15, §3, during implementation and before anything shipped: a second marker, `sandbox.ErrProviderNotReachable`, for a service that does not answer when a provider is built; and a disabled instance is checked on a provider built for the check alone.
 - **Issue**: [#1200](https://github.com/discobox-ai/discobox/issues/1200)
 - **Preserves**: [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §2's work evidence (nothing here renews a silence budget); [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md) §2's expiry pass; [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md) §§3, 8, every dial checked against the operator's endpoint policy; provider create checking only the config.
 
@@ -111,16 +112,30 @@ the caller can say when it wants one.
     These drivers have no service to reach, so they never answer
     `unreachable`.
 
-An error that wraps `sandbox.ErrPoolNotReachable` is `unreachable`; any other
-error is `refused`. Each runtime already marks a service that does not answer
-this way: `discovm`'s `notReachable` does, and the engine's readiness waits
-do. A Docker driver marks the dial errors from its own transport the same
-way.
+An error that wraps `sandbox.ErrPoolNotReachable` or
+`sandbox.ErrProviderNotReachable` is `unreachable`; any other error is
+`refused`. Each runtime already marks a service that does not answer with the
+first: `discovm`'s `notReachable` does, and the engine's readiness waits do.
+
+*Amended:* the `docker` driver marks the dial errors from its own transport
+with the second. Its daemon is pinged when the provider is built, and a build
+error reaches every resolver of the instance. The sandbox paths read
+`ErrPoolNotReachable` as a pool coming back and wait minutes on it, so a
+daemon that is down would turn an immediate failure into a long wait.
+`ErrProviderNotReachable` is read by the check alone. Marking the build's
+ping `ErrPoolNotReachable` (that wait) and leaving it unmarked (a daemon down
+when the provider was not yet built would read `refused`, pointing at the
+config) were both rejected.
 
 The check goes through the same instance the server resolves for the
-instance's pools (`ProviderManager.ResolveInstance`). That means the same
-joined secret and the same endpoint-policy dialer (26-11-11-080 §§3, 8). A
-check that passes has used the same route the pool's create would use.
+instance's pools. That means the same joined secret and the same
+endpoint-policy dialer (26-11-11-080 §§3, 8). A check that passes has used
+the same route the pool's create would use. *Amended:* an enabled instance is
+checked on the provider `ProviderManager.ResolveInstance` keeps for it. A
+disabled one is checked on a provider built for the check alone, never
+initialized or cached, and closed when the check returns. Nothing else builds
+a disabled instance: initializing marks its pools, and a build may start the
+provider's own loops.
 
 ### 4. The CLI and the live run use it
 

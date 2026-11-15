@@ -21,6 +21,7 @@ func (a *App) newProviderCommand() *cobra.Command {
 	cmd.AddCommand(a.newProviderCreateCommand())
 	cmd.AddCommand(a.newProviderUpdateCommand())
 	cmd.AddCommand(a.newProviderDeleteCommand())
+	cmd.AddCommand(a.newProviderCheckCommand())
 	return cmd
 }
 
@@ -195,6 +196,51 @@ func (a *App) newProviderDeleteCommand() *cobra.Command {
 			return providerID, nil
 		})
 	}}
+}
+
+func (a *App) newProviderCheckCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "check PROVIDER",
+		Short: "Check that the server reaches what a provider instance needs",
+		Long: `Check asks the server whether it reaches what the provider instance's
+pools need — its service's account, a Docker daemon, the host's hypervisor —
+and makes nothing. It works on a disabled instance too.
+
+The outcome is ok, refused (something answered and refused: fix the
+instance's config), or unreachable (nothing answered: fix the server's
+network or proxy). It exits non-zero unless the outcome is ok.`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeProviders,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, err := a.projectIDValue()
+			if err != nil {
+				return err
+			}
+			client, err := a.apiClient()
+			if err != nil {
+				return err
+			}
+			providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, args[0])
+			if err != nil {
+				return err
+			}
+			res, err := client.CheckSandboxProviderInstance(cmd.Context(), apiclientgen.CheckSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+			if err != nil {
+				return err
+			}
+			check, err := expectResponse[apimodel.ProviderCheck](res)
+			if err != nil {
+				return err
+			}
+			if err := a.writeProviderCheck(cmd, check); err != nil {
+				return err
+			}
+			if check.Outcome != apiclientgen.ProviderCheckOutcomeOk {
+				return fmt.Errorf("provider %s check: %s", providerID, check.Outcome)
+			}
+			return nil
+		},
+	}
 }
 
 func rawJSON(value string) (jx.Raw, error) {

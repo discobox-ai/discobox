@@ -893,6 +893,32 @@ func TestFakePoolMachineChecksTheAccountBeforeItsMachine(t *testing.T) {
 	}
 }
 
+// The runtime's check is the one a pool's machine is created after, and
+// makes nothing: an account the driver refuses is a refusal, a service that
+// does not answer is ErrPoolNotReachable, each saying what the pool's create
+// would (ADR 26-11-15-089 §3).
+func TestRuntimeCheckIsTheDriversCheckAndMakesNothing(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	if err := r.Check(ctx); err != nil || driver.checks != 1 {
+		t.Fatalf("Check() = %v after %d driver checks, want ok after one", err, driver.checks)
+	}
+
+	driver.checkErr = status.Error(codes.PermissionDenied, "the account refuses this test")
+	err := r.Check(ctx)
+	if err == nil || !strings.Contains(err.Error(), "refuses its account") || !strings.Contains(err.Error(), "the account refuses this test") || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("Check() on an account the driver refuses = %v, want the driver's reason as a refusal", err)
+	}
+
+	driver.checkErr = status.Error(codes.Unavailable, "connection refused")
+	if err := r.Check(ctx); !errors.Is(err, sandbox.ErrPoolNotReachable) || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("Check() while the service does not answer = %v, want ErrPoolNotReachable naming the error", err)
+	}
+	if len(driver.created) != 0 {
+		t.Fatalf("a check created %+v", driver.created)
+	}
+}
+
 // A running pool is provisioned again when what the provider's configuration
 // says of it moves — its control plane URL, its policy — not only its
 // bundles, and its agent and proxy, which read them at start, are restarted.

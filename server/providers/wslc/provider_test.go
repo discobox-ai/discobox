@@ -40,7 +40,7 @@ func TestStorageDirHonorsConfiguredValue(t *testing.T) {
 // The driver is the last line of defense: a directly constructed driver must
 // also get real storage rather than silently running ephemeral.
 func TestDriverConfigCarriesDefaultedStorage(t *testing.T) {
-	cfg := driverConfig(Config{}, nil)
+	cfg := driverConfig(Config{}, nil, "")
 	if cfg.StorageDir == "" {
 		t.Fatal("driver config has no storage directory; pools would run on tmpfs")
 	}
@@ -99,7 +99,7 @@ func TestEngineConfigPublishesTheAgentPortTheRelayDials(t *testing.T) {
 func TestEngineConfigAndDriverAgreeOnTheAgentPort(t *testing.T) {
 	const port = 4310
 	engine := engineConfig(Config{AgentPort: port}, nil, nil, dockerworker.ServerDefaults{})
-	driver := driverConfig(Config{AgentPort: port}, nil)
+	driver := driverConfig(Config{AgentPort: port}, nil, "")
 	if engine.AgentPort != port || driver.AgentPort != port {
 		t.Fatalf("agent port: engine %d, driver %d, want %d on both", engine.AgentPort, driver.AgentPort, port)
 	}

@@ -630,6 +630,8 @@ func (noopSandboxProvider) Definition() sandboxes.ProviderDefinition {
 	return sandboxes.ProviderDefinition{Name: "noop"}
 }
 
+func (noopSandboxProvider) Check(context.Context) error { return nil }
+
 func (noopSandboxProvider) Status() sandboxes.ProviderStatus {
 	return sandboxes.ProviderStatus{Available: true, State: "ready"}
 }

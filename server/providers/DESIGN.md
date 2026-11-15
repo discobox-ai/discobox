@@ -104,6 +104,11 @@ The engine obtains Docker access exclusively through the driver.
 `dockerworker.Driver` is the backend seam, sized so a backend is added without
 reading the engine:
 
+- `Check`: what the first `EnsureVM` needs first (its API's account, the
+  Docker daemon it is pointed at, the host's hypervisor), asked without
+  making anything; nothing answering wraps `sandbox.ErrPoolNotReachable`, or
+  `sandbox.ErrProviderNotReachable` for what the driver's constructor can
+  return too — see [Provider Check](#provider-check).
 - `EnsureVM` / `StopVM` / `DeleteVM` / `InspectVM`: idempotent VM lifecycle
   keyed by pool ID. `StopVM` preserves driver-owned persistent state for
   repair; `DeleteVM` removes it after pool deletion is authorized. The
@@ -607,6 +612,35 @@ Three properties are load-bearing:
   run explain themselves on stderr, which is merged in, so what they said has
   already reached the operator by the time they fail.
 
+## Provider Check
+
+`sandbox.Provider.Check` asks whether a provider instance reaches what its
+pools' first create needs, and makes nothing ([ADR
+26-11-15-089](../../docs/adr/26-11-15-089-a-provider-instance-is-checked-on-request-without-making-anything.md)).
+It is required at every layer: `poolruntime.Provider` delegates to
+`RuntimeProvider.Check`; `discovm.Runtime` asks its disco-vm driver's `Check`,
+the call `poolMachine.create` makes first (`checkDriver`, so both say the same
+thing); `dockerworker.Engine` asks `Driver.Check`. The server calls it only on
+request (see [providers](../internal/resources/providers/DESIGN.md)).
+
+An error wrapping `sandbox.ErrPoolNotReachable` or
+`sandbox.ErrProviderNotReachable` is nothing answering (fix the server's
+network); any other is a refusal (fix the instance's config). The second is
+for an error a provider's build returns too (the `docker` driver pings its
+daemon at build): a build error reaches every resolver, and sandbox calls
+wait on `ErrPoolNotReachable` but must fail at once on a provider that
+cannot be built.
+
+| Driver | Checks | Unreachable when |
+| --- | --- | --- |
+| `vm` (disco-vm) | the driver's `Check`: boxd's account and region, a held driver's hypervisor | `notReachable`: a dial or gRPC unavailability |
+| `docker` | a ping of the daemon it is pointed at, the same one its build makes | the client cannot connect (not a socket it may not open); `ErrProviderNotReachable` |
+| `digitalocean` | `GET /v2/account` with the token | the request got no answer |
+| `execvm` | the command's `check` op, with no pool | never: a non-zero exit refuses, with stderr |
+| `libkrun` | `CheckHost` with KVM: libkrun, passt, `/dev/kvm` | never: no service |
+| `vz` | `vzvm.Supported` | never: no service |
+| `wslc` | Windows, and `EnsureInstalled` | never: no service |
+
 ## Pool Runtime Drift
 
 Runtime drift detection is backend-owned. The local docker provider runs a
@@ -646,6 +680,11 @@ effort to reconcile it back to health instead of abandoning it.
   the pool is abandoned: the reconciler starts a new bootstrap attempt after
   a backoff, beginning with `RepairPool`
   (`server/internal/resources/pools/DESIGN.md`, "Initial bootstrap waits").
+  A provider error the reconciler waits on rather than fails with
+  (`sandbox.ErrPoolNotReachable`: a service or host that does not answer) is
+  kept on the attempt, and an attempt that expires names it, `… (last
+  waiting on: …)`, so the pool's error says why it made no progress (ADR
+  26-11-15-089 §5).
   A created pool keeps its state and records the failure as its error
   message against that generation; it reads `offline` only when its agent's heartbeat is also stale, since `offline` is a
   liveness verdict. Either way it is re-driven (`SchedulePoolRepair` bumps the
@@ -1132,8 +1171,9 @@ SSH keys plus the matching SSH private key, VPC UUID, tags, and feature flags.
 ## Exec Driver
 
 `server/providers/execvm` implements the `dockerworker.Driver` contract by
-invoking an external command as `<command> <op> <pool-id>`, so a pool backend
-can be a shell script. The protocol is documented in the `execvm` package doc;
+invoking an external command as `<command> <op> <pool-id>` (`<command> check`
+for the provider check, which is about no pool), so a pool backend can be a
+shell script. The protocol is documented in the `execvm` package doc;
 it exists both as an escape hatch and as the proof that the driver seam needs
 nothing Docker-shaped.
 

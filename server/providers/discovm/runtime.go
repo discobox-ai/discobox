@@ -205,6 +205,10 @@ func remotePool(providerID string) (string, error) {
 // requires it.
 func (r *Runtime) Close() error { return nil }
 
+// Check is the driver's check, the one a pool's machine is created after
+// (checkDriver). It makes nothing.
+func (r *Runtime) Check(ctx context.Context) error { return checkDriver(ctx, r.engine) }
+
 // EnsurePool brings up the pool's host, and makes it the pool's box.
 func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {

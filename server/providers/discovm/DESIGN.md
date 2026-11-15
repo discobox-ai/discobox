@@ -291,7 +291,9 @@ never against anything the machine reports (551 §1):
   registers anew. The driver's `Check` runs first, against its provider's
   API, so an account that cannot carry a pool makes no machine and the pool's
   error names why (boxd's: its key, and its region). A check the service does not answer
-  is `notReachable`. A pool whose machine exists is not checked again;
+  is `notReachable`. A pool whose machine exists is not checked again. The
+  same check (`checkDriver`) is `Runtime.Check`, the provider check the
+  server runs on request (ADR 26-11-15-089), so both say the same thing;
 - a machine under the pool's name that is not the one the record names (a
   pass made it and stopped before its record was saved): it is taken as made —
   the pool's keys revoked, the record reset, the agent placed and keyed — but

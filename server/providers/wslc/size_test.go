@@ -43,7 +43,7 @@ func TestSizeForPrefersPoolThenProviderThenHost(t *testing.T) {
 // number would outrank the host default it was only standing in for, which is
 // how every wslc VM ended up with 2 vCPUs.
 func TestDriverConfigLeavesUnsetSizingToTheDriver(t *testing.T) {
-	cfg := driverConfig(Config{}, nil)
+	cfg := driverConfig(Config{}, nil, "")
 	if cfg.CPUCount != 0 || cfg.MemoryMiB != 0 {
 		t.Fatalf("driver config sizing = %d vCPUs, %d MiB; want both unset", cfg.CPUCount, cfg.MemoryMiB)
 	}

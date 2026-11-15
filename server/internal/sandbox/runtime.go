@@ -29,6 +29,14 @@ type Provider interface {
 	Close() error
 	Definition() ProviderDefinition
 	Status() ProviderStatus
+	// Check asks whether the instance reaches what its pools' first create
+	// needs (its service's account, a Docker daemon, the host's hypervisor),
+	// and makes nothing (ADR 26-11-15-089 §3). An error wrapping
+	// ErrPoolNotReachable or ErrProviderNotReachable is nothing answering;
+	// any other is a refusal. Mark with ErrProviderNotReachable what a
+	// provider's build can return too: the sandbox paths wait on
+	// ErrPoolNotReachable.
+	Check(ctx context.Context) error
 	Reconcile(ctx context.Context) error
 	RemoveProject(ctx context.Context, projectID string) error
 
