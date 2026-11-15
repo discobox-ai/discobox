@@ -41,7 +41,7 @@ func (p processHandle) release() {
 // mechanism, as windowsDeliveries maps it: a Windows process has no signals,
 // so a request to end it ends it, and a suspend or resume suspends or resumes
 // its threads. The Delivery says which, for the exec's record.
-func signalProcessGroup(cmd *exec.Cmd, handle processHandle, name string) (Delivery, error) {
+func signalProcessGroup(cmd *exec.Cmd, handle processHandle, _ *os.File, name string) (Delivery, error) {
 	delivery := deliveryFor(windowsDeliveries, name)
 	if cmd == nil || cmd.Process == nil {
 		return delivery, nil

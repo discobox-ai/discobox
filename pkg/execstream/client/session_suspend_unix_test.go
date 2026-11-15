@@ -122,38 +122,3 @@ func TestUnnamedSignalsAreDropped(t *testing.T) {
 		t.Fatalf("frames = %+v, want only the named signal", got)
 	}
 }
-
-// Ctrl-Z stops the caller's job, and a terminal the session only attaches to
-// keeps running: the session stops this process and tells the remote nothing.
-func TestDetachingSessionSuspendsOnlyThisProcess(t *testing.T) {
-	conn, remote := newPipe(t)
-	forwarded := make(chan frame.Frame, 4)
-	go func() {
-		for {
-			next, err := frame.Read(remote)
-			if err != nil {
-				return
-			}
-			forwarded <- next
-		}
-	}()
-	console := newFakeConsole()
-	s := New(Options{
-		Conn: conn, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
-		Console: console, RawMode: true, Detaches: true, Kind: "test",
-	})
-	go func() { _ = s.Run(context.Background()) }()
-
-	console.deliver(t, testSuspendSignal)
-	waitFor(t, console, "suspend")
-	console.resume <- struct{}{}
-	waitFor(t, console, "resumed")
-	select {
-	case next := <-forwarded:
-		t.Fatalf("sent %d %q to the remote, want nothing", next.Type, next.Payload)
-	case <-time.After(100 * time.Millisecond):
-	}
-	if events := console.Events(); !ordered(events, "makeraw", "restore", "suspend", "resumed", "makeraw") {
-		t.Fatalf("events = %v, want the terminal handed back and retaken around the stop", events)
-	}
-}

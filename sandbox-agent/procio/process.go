@@ -214,12 +214,15 @@ func (p *Process) Wait() Status {
 
 // Signal delivers a named signal to the process group, by the platform's
 // nearest mechanism when it cannot deliver the signal itself, and reports what
-// it became. A Delivery that is Mapped is something the exec's record has to
-// say, because the client asked for something else.
+// it became. On a POSIX PTY a signal that ends a program goes to the terminal's
+// foreground group, where a local terminal's would land (ForegroundGroup);
+// suspend and resume stay on the process's own group. A Delivery that is
+// Mapped is something the exec's record has to say, because the client asked
+// for something else.
 func (p *Process) Signal(name string) (Delivery, error) {
 	p.handleMu.Lock()
 	defer p.handleMu.Unlock()
-	return signalProcessGroup(p.cmd, p.handle, name)
+	return signalProcessGroup(p.cmd, p.handle, p.tty, name)
 }
 
 // Terminate asks the process group to stop.

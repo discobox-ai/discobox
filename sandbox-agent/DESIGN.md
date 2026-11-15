@@ -1257,9 +1257,19 @@ signer. Error output never includes exporter stderr or parse fragments.
   (`NtSuspendProcess`/`NtResumeProcess`), none of it reaching the processes it
   started. Those calls go through a handle `procio.Start` opens before anyone
   can `Wait` and holds until `Close`, never a PID reopened later, which Windows
-  may by then have given to another process. On Linux and darwin signals act on the exec's process
-  group (`kill(-pgid)`), which is its own session because every exec starts
-  with `Setsid`. That also means the group is
+  may by then have given to another process. On Linux and darwin signals act on a process
+  group (`kill(-pgid)`). For a TTY exec, a signal that ends a program
+  (`INT`, `TERM`, `HUP`, `QUIT`, `KILL`) goes to the terminal's foreground group
+  (`procio.ForegroundGroup`), where a local terminal's signal lands: a harness
+  terminal's exec is a login shell running the harness as a job of its own
+  (see above), and the shell's own group is the shell alone, which ignores
+  SIGTERM and survives SIGINT, so a client's `timeout` or `kill` aimed at the
+  harness would never reach it. `TSTP` and `CONT` stay on the exec's own group:
+  a stopped job hands the terminal back to its shell, and a `CONT` from outside
+  would resume it in the background, to stop again on its next read; only the
+  shell's `fg` puts it back in front. Every other signal, and every signal to an
+  exec without a PTY or whose PTY names no group, goes to the exec's own group,
+  which is its own session because every exec starts with `Setsid`. That also means the group is
   permanently *orphaned* — no member has a parent in the same session — and the
   kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to an orphaned group. A
   `TSTP` frame therefore maps to **SIGSTOP**, which is never discarded, and is
