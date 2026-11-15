@@ -99,9 +99,12 @@ flowchart LR
   so the person editing is told rather than left with grants the proxy
   refuses. The edit reads the secret locked (`store.LockSecret`) and its
   bindings after writing it, in one transaction, so a discobox's handoff and a
-  harness writer, which lock or write that row, are serialized with it. A
-  person's binding write does not take that lock, so one racing the edit can
-  still slip past both checks. A binding already stranded before the edit, or
+  harness writer, which lock or write that row, are serialized with it, and
+  so is a person's binding write (create, update, a create's bindings,
+  approval), which checks its body places against the secret read `FOR
+  SHARE`, after its target, in its own transaction
+  (`store.ShareBindingSecret`, #1171): whichever commits second sees the
+  other. A binding already stranded before the edit, or
   held to routes that sent the credential nowhere, does not block it. The
   harness writers, which add route constraints with nobody to read a refusal,
   take the stranded routes from such bindings instead, removing one left with
@@ -134,7 +137,10 @@ for a program that signs with it or sends it where a swap cannot reach.
   create): the secret allows it (`Secret.AllowRaw`), the binding is a use, and
   it is not handed on under a delegation. Clearing `AllowRaw` deletes the raw
   bindings that stand (`deleteRawBindingsTx`), each recorded and its holders
-  marked.
+  marked. Both read the secret locked in their own transaction — the clear
+  `FOR UPDATE`, a person's binding write `FOR SHARE`
+  (`store.ShareBindingSecret`) — so a raw binding written beside the clear is
+  either deleted by it or refused.
 - **Only a person, and nothing asks.** A discobox may neither allow raw on a
   secret (`guardAllowRaw`) nor make, create-with or approve a raw binding,
   and no request asks for raw. A person approving may grant the value itself

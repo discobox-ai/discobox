@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -119,12 +120,6 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 	if err := checkBindingShape(binding); err != nil {
 		return nil, err
 	}
-	if err := checkRawBinding(ctx, binding, secret); err != nil {
-		return nil, err
-	}
-	if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
-		return nil, err
-	}
 	ttl, named := input.TtlSeconds.Get()
 	if !named {
 		ttl = secret.MaxBindingTTL
@@ -139,6 +134,20 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 	binding.CreatedBy = principal.Actor()
 	binding.ExpiresAt = expiryAt(time.Now().UTC(), ttl)
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		// Checked on the secret read locked here, not the one looked up above:
+		// a route edit or allow-raw taken away locks it FOR UPDATE and judges
+		// the bindings standing then, so one of the two always sees the other
+		// (#1171).
+		locked, err := shareBindingSecret(ctx, txStore, binding)
+		if err != nil {
+			return err
+		}
+		if err := checkRawBinding(ctx, binding, locked); err != nil {
+			return err
+		}
+		if err := checkSecretBodyPlaces(binding, locked, nil); err != nil {
+			return err
+		}
 		if err := txStore.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: binding.CreatedBy}); err != nil {
 			return bindingConflict(err)
 		}
@@ -226,6 +235,22 @@ func checkSecretBodyPlaces(binding *model.SecretBinding, secret *model.Secret, p
 	}
 }
 
+// shareBindingSecret reads a person's binding's target and then its secret
+// FOR SHARE, in the write's transaction (store.ShareBindingSecret). A writer
+// that changes what the secret allows (UpdateSecret's routes and allow-raw, a
+// harness writer's route constraints) locks it FOR UPDATE and judges the
+// bindings standing then, so a binding checked against this row is either
+// seen by that writer or sees its change (#1171). A read made before the
+// transaction lets a binding written beside the edit slip past both checks.
+// A discobox's handoff locks the secret itself (fitDelegation).
+func shareBindingSecret(ctx context.Context, txStore *store.Store, binding *model.SecretBinding) (*model.Secret, error) {
+	secret, err := txStore.ShareBindingSecret(ctx, binding.ProjectID, binding.SecretID, binding.TargetKind, binding.TargetID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "the binding's secret or target was not found")
+	}
+	return secret, nil
+}
+
 // UpdateSecretBinding changes a binding's routes, lifetime, variable, or what
 // it is for. A lifetime named runs from now, held to the secret's limit and,
 // for a binding handed on, to its parent's. Turning use off takes the variable
@@ -281,18 +306,10 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			"a binding for neither use nor delegation does nothing; remove it instead")
 	}
-	if err := checkRawBinding(ctx, binding, secret); err != nil {
-		return nil, err
-	}
 	var parent *model.SecretBinding
 	if binding.ParentID != "" {
 		if parent, err = s.store.SecretBindingByExactID(ctx, projectID, binding.ParentID); err != nil {
 			return nil, apperrors.NotFound(err, "the delegate binding this was handed on under is gone")
-		}
-	}
-	if input.Routes != nil {
-		if err := checkSecretBodyPlaces(binding, secret, parent); err != nil {
-			return nil, err
 		}
 	}
 	now := time.Now().UTC()
@@ -315,6 +332,19 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 	}
 	change := store.BindingChange{Actor: auth.ActorFromContext(ctx)}
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		// Checked on the secret read locked here (#1171), as a create is.
+		locked, err := shareBindingSecret(ctx, txStore, binding)
+		if err != nil {
+			return err
+		}
+		if err := checkRawBinding(ctx, binding, locked); err != nil {
+			return err
+		}
+		if input.Routes != nil {
+			if err := checkSecretBodyPlaces(binding, locked, parent); err != nil {
+				return err
+			}
+		}
 		// A child's sentinel is held to its parent's routes as one of its
 		// lists, so a change to a parent reaches its children's holders too.
 		// A shortened parent shortens nothing on its own: its children keep
@@ -640,6 +670,39 @@ func (s *Service) PrepareSandboxBindings(ctx context.Context, projectID string, 
 // refuses the create, which then creates nothing.
 func StoreSandboxBindingsTx(ctx context.Context, txStore *store.Store, prepared SandboxBindings) error {
 	now := time.Now().UTC()
+	// Every secret is locked once, in ID order, before any binding is
+	// checked or stored: a harness writer holds several FOR UPDATE in that
+	// order too, so none waits on another in the opposite order. A
+	// discobox's are locked FOR UPDATE after its handoff's sandboxes, as
+	// fitDelegation locks them again below; a person's FOR SHARE after the
+	// target, and checked again on that row, since PrepareSandboxBindings
+	// read it before this transaction (#1171).
+	order := make([]*model.SecretBinding, 0, len(prepared.Bindings))
+	for _, binding := range prepared.Bindings {
+		if !slices.ContainsFunc(order, func(b *model.SecretBinding) bool { return b.SecretID == binding.SecretID }) {
+			order = append(order, binding)
+		}
+	}
+	slices.SortFunc(order, func(a, b *model.SecretBinding) int { return strings.Compare(a.SecretID, b.SecretID) })
+	if prepared.Grantor != "" && len(order) > 0 {
+		if err := lockHandoff(ctx, txStore, order[0].ProjectID, prepared.Grantor, order[0].TargetID); err != nil {
+			return err
+		}
+	}
+	locked := map[string]*model.Secret{}
+	for _, binding := range order {
+		var secret *model.Secret
+		var err error
+		if prepared.Grantor != "" {
+			secret, err = txStore.LockSecret(ctx, binding.ProjectID, binding.SecretID)
+		} else {
+			secret, err = txStore.ShareBindingSecret(ctx, binding.ProjectID, binding.SecretID, binding.TargetKind, binding.TargetID)
+		}
+		if err != nil {
+			return apperrors.NotFound(err, "the binding's secret or target was not found")
+		}
+		locked[secret.ID] = secret
+	}
 	for i, binding := range prepared.Bindings {
 		ttl := prepared.ttls[i]
 		if prepared.Grantor != "" {
@@ -656,6 +719,13 @@ func StoreSandboxBindingsTx(ctx context.Context, txStore *store.Store, prepared 
 			ttl = fitted
 		}
 		if prepared.Grantor == "" {
+			secret := locked[binding.SecretID]
+			if err := checkRawBinding(ctx, binding, secret); err != nil {
+				return err
+			}
+			if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+				return err
+			}
 			binding.ExpiresAt = expiryAt(now, ttl)
 		}
 		if err := txStore.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: prepared.Actor}); err != nil {

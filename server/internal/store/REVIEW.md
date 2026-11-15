@@ -44,3 +44,11 @@
   brings, still reports its own platform, and recording it would turn a darwin
   pool into a linux one and place sandboxes by the wrong platform. Nor does
   `UpdatePool` write `sandbox_os`: it is immutable after create.
+
+- A transaction that locks more than one secret row locks them in secret ID
+  order, after any target (sandbox or harness config) it locks. A person's
+  create holds each of its secrets `FOR SHARE` while a harness save-back holds
+  every secret bound to its config `FOR UPDATE`; locked in the order each
+  happened to list them, a create naming B then A and a save-back holding A
+  then B each wait on the other, and Postgres fails one with a deadlock (#1171
+  review).
