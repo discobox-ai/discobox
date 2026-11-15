@@ -81,13 +81,16 @@ func Validate(data json.RawMessage) error {
 	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
+// FactoryWithPoolManager builds a wslc provider for an instance.
+// wslcCommand is the server's override of the WSL Containers program, which
+// the provider check looks for (DriverConfig.WSLCCommand).
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults, wslcCommand string) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, streams, serverDefaults)
+		return newFromInstance(ctx, instance, poolManager, imageSync, streams, serverDefaults, wslcCommand)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults, wslcCommand string) (sandbox.Provider, error) {
 	// Every pool needs the guest relay, which is embedded at build time. Fail
 	// here, where the message can name the build task, rather than at pool
 	// start with a missing-file error from inside a VM.
@@ -98,7 +101,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	driver, err := NewDriver(driverConfig(cfg, streams))
+	driver, err := NewDriver(driverConfig(cfg, streams, wslcCommand))
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +153,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 	}
 }
 
-func driverConfig(cfg Config, streams StreamSink) DriverConfig {
+func driverConfig(cfg Config, streams StreamSink, wslcCommand string) DriverConfig {
 	return DriverConfig{
 		StorageDir:          effectiveStorageDir(cfg.StorageDir),
 		CPUCount:            cfg.CPUCount,
@@ -158,6 +161,7 @@ func driverConfig(cfg Config, streams StreamSink) DriverConfig {
 		MaxStorageMiB:       effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
 		AgentPort:           effectiveInt(cfg.AgentPort, defaultAgentPort),
 		ControlPlaneStreams: streams,
+		WSLCCommand:         wslcCommand,
 	}
 }
 

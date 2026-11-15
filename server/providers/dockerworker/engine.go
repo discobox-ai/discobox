@@ -240,6 +240,11 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	return &Engine{driver: driver, cfg: cfg, configRevision: configRevision(cfg)}, nil
 }
 
+// Check is the driver's check: what the pool's VM needs before it is made.
+func (e *Engine) Check(ctx context.Context) error {
+	return e.driver.Check(ctx)
+}
+
 func (e *Engine) Close() error {
 	if e == nil {
 		return nil

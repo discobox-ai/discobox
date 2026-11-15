@@ -295,6 +295,26 @@ func (d *Driver) waitForDropletStatus(ctx context.Context, poolID string, status
 	}
 }
 
+// Check reads the API's account with the token: the first call a pool's
+// droplet needs. A request nothing answered is unreachable; an answer that
+// refuses it (a token the API does not accept) is a refusal.
+func (d *Driver) Check(ctx context.Context) error {
+	err := d.do(ctx, http.MethodGet, "/v2/account", nil, nil)
+	var transport *transportError
+	if errors.As(err, &transport) {
+		return fmt.Errorf("digitalocean API at %s does not answer: %w: %w", d.baseURL, err, sandbox.ErrPoolNotReachable)
+	}
+	return err
+}
+
+// transportError is a request to the API that nothing answered, as opposed
+// to an answer the API gave. Check tells the two apart; it reads as the
+// transport's error everywhere else.
+type transportError struct{ err error }
+
+func (e *transportError) Error() string { return e.err.Error() }
+func (e *transportError) Unwrap() error { return e.err }
+
 func (d *Driver) do(ctx context.Context, method, path string, in, out any) error {
 	var body io.Reader
 	if in != nil {
@@ -314,7 +334,7 @@ func (d *Driver) do(ctx context.Context, method, path string, in, out any) error
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return err
+		return &transportError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {

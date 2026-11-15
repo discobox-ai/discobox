@@ -94,6 +94,16 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
 	CaptureSandboxHarnessConfig(ctx context.Context, request *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (CaptureSandboxHarnessConfigRes, error)
+	// CheckSandboxProviderInstance invokes check-sandbox-provider-instance operation.
+	//
+	// Asks the provider instance whether the server reaches what its pools need (its service's account,
+	// a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret
+	// to its service and is answered from what the provider says then; nothing is stored. A disabled
+	// instance is checked too. A failed check is answered 200 with its outcome; an error response means
+	// the check could not be run.
+	//
+	// POST /projects/{projectId}/providers/{providerId}/check
+	CheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (CheckSandboxProviderInstanceRes, error)
 	// ClearPoolCache invokes clear-pool-cache operation.
 	//
 	// Stop every sandbox on a pool and empty its caches.
@@ -2531,6 +2541,122 @@ func (c *Client) sendCaptureSandboxHarnessConfig(ctx context.Context, request *H
 
 	stage = "DecodeResponse"
 	result, err := decodeCaptureSandboxHarnessConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CheckSandboxProviderInstance invokes check-sandbox-provider-instance operation.
+//
+// Asks the provider instance whether the server reaches what its pools need (its service's account,
+// a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret
+// to its service and is answered from what the provider says then; nothing is stored. A disabled
+// instance is checked too. A failed check is answered 200 with its outcome; an error response means
+// the check could not be run.
+//
+// POST /projects/{projectId}/providers/{providerId}/check
+func (c *Client) CheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (CheckSandboxProviderInstanceRes, error) {
+	res, err := c.sendCheckSandboxProviderInstance(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendCheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (res CheckSandboxProviderInstanceRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("check-sandbox-provider-instance"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/providers/{providerId}/check"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CheckSandboxProviderInstanceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/providers/"
+	{
+		// Encode "providerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "providerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProviderId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/check"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCheckSandboxProviderInstanceResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

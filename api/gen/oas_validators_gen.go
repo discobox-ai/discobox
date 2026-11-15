@@ -5397,6 +5397,42 @@ func (s ProjectSandboxUpgradePolicy) Validate() error {
 	}
 }
 
+func (s *ProviderCheck) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Outcome.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "outcome",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ProviderCheckOutcome) Validate() error {
+	switch s {
+	case "ok":
+		return nil
+	case "refused":
+		return nil
+	case "unreachable":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *RefreshSecretBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

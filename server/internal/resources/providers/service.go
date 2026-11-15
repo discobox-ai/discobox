@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
+
+	serverapi "github.com/discobox-ai/discobox/api/gen"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -433,6 +436,48 @@ func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, 
 		return apperrors.NewStatusError(http.StatusConflict, "provider instance has pools")
 	}
 	return apperrors.NotFound(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
+}
+
+// providerCheckTimeout bounds one check (ADR 26-11-15-089 §1). A check
+// still running then is unreachable: nothing answered in time.
+var providerCheckTimeout = 60 * time.Second
+
+// CheckSandboxProviderInstance asks the instance's provider whether it
+// reaches what its pools need, and makes nothing (ADR 26-11-15-089). A failed
+// check is the answer, not an error: an error is the check not being run (no
+// such instance). Nothing is stored (§2).
+func (s *Service) CheckSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*services.ProviderCheck, error) {
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "provider instance not found")
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, providerCheckTimeout)
+	defer cancel()
+	err = s.sandboxes.SandboxProviderManager().CheckInstance(checkCtx, provider)
+	// The caller hanging up is not the provider's answer.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	check := &services.ProviderCheck{CheckedAt: time.Now().UTC(), Outcome: checkOutcome(checkCtx, err)}
+	if err != nil {
+		check.Message = services.OptString{Value: err.Error(), Set: true}
+	}
+	return check, nil
+}
+
+// checkOutcome reads a check's error (ADR 26-11-15-089 §3): nothing
+// answering, marked sandbox.ErrPoolNotReachable or ErrProviderNotReachable or
+// cut off by the check's bound, is unreachable, and anything else is a
+// refusal.
+func checkOutcome(ctx context.Context, err error) services.ProviderCheckOutcome {
+	switch {
+	case err == nil:
+		return serverapi.ProviderCheckOutcomeOk
+	case errors.Is(err, sandbox.ErrPoolNotReachable), errors.Is(err, sandbox.ErrProviderNotReachable), errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return serverapi.ProviderCheckOutcomeUnreachable
+	default:
+		return serverapi.ProviderCheckOutcomeRefused
+	}
 }
 
 // EnsureExistingSandboxProviderInstances schedules provider startup

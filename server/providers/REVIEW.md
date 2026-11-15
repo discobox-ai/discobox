@@ -187,3 +187,9 @@
   change to either moves both. Why: the keyring is served beside the packages
   it signs, and the feature still fetched it unchecked after the image's copy
   was pinned (#1168).
+- Do not mark an error a provider's build (its factory, its driver's
+  constructor) returns with `sandbox.ErrPoolNotReachable`: a build error
+  reaches every resolver, and the sandbox paths read that sentinel as a pool
+  coming back and wait minutes on it, instead of failing on a daemon that is
+  down. Mark a service that does not answer there with
+  `sandbox.ErrProviderNotReachable`, which only the provider check reads.

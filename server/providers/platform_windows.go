@@ -14,7 +14,7 @@ import (
 // that cannot start there.
 func registerPlatformProviderFactories(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, options FactoryOptions) {
 	manager.RegisterProviderDefinition(wslc.ProviderType, wslc.Definition())
-	manager.RegisterFactory(wslc.ProviderType, wslc.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, controlPlaneStreams(options), options.ServerDefaults))
+	manager.RegisterFactory(wslc.ProviderType, wslc.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, controlPlaneStreams(options), options.ServerDefaults, options.WSLCCommand))
 	manager.RegisterProviderConfigValidator(wslc.ProviderType, wslc.Validate)
 }
 

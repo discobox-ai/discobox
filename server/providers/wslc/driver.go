@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,6 +56,10 @@ type DriverConfig struct {
 	// ControlPlaneStreams receives control-plane connections opened by guests.
 	// When nil the relay still runs, but the agent cannot register.
 	ControlPlaneStreams StreamSink
+	// WSLCCommand is the server's override of the WSL Containers program
+	// (wslcCommandSetting), which the provider check looks for as the
+	// server's startup check does. Empty is the default program.
+	WSLCCommand string
 }
 
 // Driver owns one wslc VM session per pool. Sessions are held for the lifetime
@@ -67,7 +72,8 @@ type Driver struct {
 	maxStorageMiB int64
 	agentPort     int
 
-	streams StreamSink
+	streams     StreamSink
+	wslcCommand string
 
 	mu       sync.Mutex
 	sessions map[string]*wslcsession.Session
@@ -96,10 +102,21 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		maxStorageMiB: effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
 		agentPort:     effectiveInt(cfg.AgentPort, defaultAgentPort),
 		streams:       cfg.ControlPlaneStreams,
+		wslcCommand:   cfg.WSLCCommand,
 		sessions:      map[string]*wslcsession.Session{},
 		relays:        map[string]*relaySession{},
 		sizes:         map[string]vmsize.Size{},
 	}, nil
+}
+
+// Check reports whether this host has WSL Containers, which every pool's VM
+// runs in: EnsureInstalled, with the program the server's own startup check
+// looks for. There is no service to reach, so it never answers unreachable.
+func (d *Driver) Check(ctx context.Context) error {
+	if runtime.GOOS != "windows" {
+		return fmt.Errorf("WSL Containers runs only on Windows, and this server runs on %s", runtime.GOOS)
+	}
+	return EnsureInstalled(ctx, d.wslcCommand)
 }
 
 // Close tears down every live session. Unlike libkrun, wslc VMs cannot outlive

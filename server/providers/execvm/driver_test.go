@@ -227,3 +227,27 @@ func TestPoolLogsRequiresAPoolID(t *testing.T) {
 		t.Fatal("pool logs accepted an empty pool ID")
 	}
 }
+
+// check is about no pool: the command is run as `<command> check`, with no
+// pool ID in its arguments or environment, and a non-zero exit refuses with
+// stderr as the reason.
+func TestCheckRunsTheCheckOpWithNoPool(t *testing.T) {
+	driver := newScriptDriver(t, `
+if [ "$1" != check ] || [ "$#" -ne 1 ] || [ -n "${DISCOBOX_POOL_ID+set}" ]; then
+	echo "unexpected: $* pool=${DISCOBOX_POOL_ID-unset}" >&2
+	exit 1
+fi
+`)
+	if err := driver.Check(context.Background()); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+
+	refusing := newScriptDriver(t, `
+echo "the cloud API refuses this token" >&2
+exit 1
+`)
+	err := refusing.Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "the cloud API refuses this token") || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("check err = %v, want a refusal carrying stderr", err)
+	}
+}

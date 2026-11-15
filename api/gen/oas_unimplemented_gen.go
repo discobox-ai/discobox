@@ -110,6 +110,19 @@ func (UnimplementedHandler) CaptureSandboxHarnessConfig(ctx context.Context, req
 	return r, ht.ErrNotImplemented
 }
 
+// CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
+//
+// Asks the provider instance whether the server reaches what its pools need (its service's account,
+// a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret
+// to its service and is answered from what the provider says then; nothing is stored. A disabled
+// instance is checked too. A failed check is answered 200 with its outcome; an error response means
+// the check could not be run.
+//
+// POST /projects/{projectId}/providers/{providerId}/check
+func (UnimplementedHandler) CheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (r CheckSandboxProviderInstanceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ClearPoolCache implements clear-pool-cache operation.
 //
 // Stop every sandbox on a pool and empty its caches.

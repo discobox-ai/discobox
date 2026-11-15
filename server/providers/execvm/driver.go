@@ -6,6 +6,8 @@
 //
 //	<command> <op> <pool-id>
 //
+// except check, which is about no pool and is invoked as <command> check.
+//
 // with the environment of the control plane plus:
 //
 //	DISCOBOX_POOL_ID    the pool ID (same as argv)
@@ -14,6 +16,12 @@
 //
 // Operations and their stdout contracts:
 //
+//	check            No output. Exit 0 when the backend can make a pool's VM
+//	                 (its API answers, its account is accepted); non-zero
+//	                 with the reason on stderr otherwise. Makes nothing. Run
+//	                 only when someone checks the provider, so a command
+//	                 written before this op fails the check with its own
+//	                 usage error and its pools are unaffected.
 //	ensure-vm        JSON {"id":"...","status":"created|running|stopped|failed","address":"..."}
 //	                 Idempotent create/start of the pool's VM.
 //	inspect-vm       Same JSON. Exit code 3 when no VM exists for the pool.
@@ -66,6 +74,7 @@ const (
 	opDockerEndpoint = "docker-endpoint"
 	opAgentEndpoint  = "harness-endpoint"
 	opLogs           = "logs"
+	opCheck          = "check"
 
 	// notFoundExitCode is the documented inspect-vm exit code for "no VM".
 	notFoundExitCode = 3
@@ -209,8 +218,16 @@ func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolL
 	return dockerworker.StreamCommand(cmd, "exec driver "+d.command[0]+" "+opLogs)
 }
 
+// Check runs the command's check op. A non-zero exit is a refusal, with
+// stderr as its reason: the command is the operator's, and only it knows
+// whether what it reaches answered.
+func (d *Driver) Check(ctx context.Context) error {
+	_, err := d.run(ctx, opCheck, "")
+	return err
+}
+
 func (d *Driver) run(ctx context.Context, op, poolID string, extraEnv ...string) ([]byte, error) {
-	if strings.TrimSpace(poolID) == "" {
+	if op != opCheck && strings.TrimSpace(poolID) == "" {
 		return nil, errors.New("worker ID is required")
 	}
 	cmd := d.newCommand(ctx, op, poolID, extraEnv...)
@@ -232,12 +249,17 @@ func (d *Driver) run(ctx context.Context, op, poolID string, extraEnv ...string)
 	return nil, fmt.Errorf("exec driver %s %s failed: %s", d.command[0], op, message)
 }
 
-// command builds one invocation of the configured backend command.
+// command builds one invocation of the configured backend command. An
+// operation about no pool (check) is given no pool ID.
 func (d *Driver) newCommand(ctx context.Context, op, poolID string, extraEnv ...string) *exec.Cmd {
-	args := append(append([]string(nil), d.command[1:]...), op, poolID)
+	args := append(append([]string(nil), d.command[1:]...), op)
+	env := os.Environ()
+	if poolID != "" {
+		args = append(args, poolID)
+		env = append(env, "DISCOBOX_POOL_ID="+poolID)
+	}
 	cmd := exec.CommandContext(ctx, d.command[0], args...) //nolint:gosec // Running an operator-configured command is this driver's purpose; it comes from provider config, not request input.
-	cmd.Env = append(os.Environ(), "DISCOBOX_POOL_ID="+poolID)
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = append(env, extraEnv...)
 	return cmd
 }
 

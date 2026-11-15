@@ -2851,6 +2851,31 @@ discobox admin provider catalog [flags]
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
+## discobox admin provider check
+
+~~~~text
+Check asks the server whether it reaches what the provider instance's
+pools need — its service's account, a Docker daemon, the host's hypervisor —
+and makes nothing. It works on a disabled instance too.
+
+The outcome is ok, refused (something answered and refused: fix the
+instance's config), or unreachable (nothing answered: fix the server's
+network or proxy). It exits non-zero unless the outcome is ok.
+~~~~
+
+```text
+discobox admin provider check PROVIDER [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for check Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
 ## discobox admin provider create
 
 ~~~~text

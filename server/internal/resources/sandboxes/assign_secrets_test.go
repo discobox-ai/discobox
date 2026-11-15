@@ -43,6 +43,8 @@ func (p *recordingProvider) Close() error { return nil }
 func (p *recordingProvider) Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{}
 }
+func (p *recordingProvider) Check(context.Context) error { return nil }
+
 func (p *recordingProvider) Status() sandbox.ProviderStatus  { return sandbox.ProviderStatus{} }
 func (p *recordingProvider) Reconcile(context.Context) error { return nil }
 func (p *recordingProvider) RemoveProject(context.Context, string) error {

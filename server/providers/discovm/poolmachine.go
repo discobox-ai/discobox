@@ -433,11 +433,8 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string
 	// Check: that the key is accepted, and the region enabled), so an
 	// account it refuses fails here, saying why, rather than at the machine.
 	// A service that does not answer is waited on, as any other call is.
-	if err := h.engine.Driver.Check(ctx); err != nil {
-		if err = notReachable(err); errors.Is(err, sandbox.ErrPoolNotReachable) {
-			return engine.Instance{}, fmt.Errorf("pool %s: the %s driver's account cannot be checked yet: %w", pool.ID, h.engine.Driver.Name(), err)
-		}
-		return engine.Instance{}, fmt.Errorf("pool %s: the %s driver refuses its account: %w", pool.ID, h.engine.Driver.Name(), err)
+	if err := checkDriver(ctx, h.engine); err != nil {
+		return engine.Instance{}, fmt.Errorf("pool %s: %w", pool.ID, err)
 	}
 	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}})
 	if err != nil {
@@ -674,6 +671,25 @@ func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst engine.I
 	default:
 		return state, fmt.Errorf("pool %s's machine cannot be asked for its state: %w", pool.ID, notReachable(err))
 	}
+}
+
+// checkDriver is the engine's driver checking what its first machine needs
+// (boxd's account and region, a held driver's hypervisor), saying which it
+// was: a service that does not answer, marked sandbox.ErrPoolNotReachable,
+// or a refusal. A pool's create asks it first, and so does a check of the
+// provider (ADR 26-11-15-089 §3), so both say the same thing.
+func checkDriver(ctx context.Context, e *engine.Engine) error {
+	err := e.Driver.Check(ctx)
+	if err == nil {
+		return nil
+	}
+	if err = notReachable(err); errors.Is(err, sandbox.ErrPoolNotReachable) {
+		return fmt.Errorf("the %s driver's account cannot be checked yet: %w", e.Driver.Name(), err)
+	}
+	if isLocal(e.Driver) {
+		return fmt.Errorf("the %s driver cannot run a machine on this host: %w", e.Driver.Name(), err)
+	}
+	return fmt.Errorf("the %s driver refuses its account: %w", e.Driver.Name(), err)
 }
 
 // notReachable is err marked sandbox.ErrPoolNotReachable when it is a remote

@@ -57,6 +57,8 @@ type ProviderConfigField = apimodel.ProviderConfigField
 type ProviderStatus = apimodel.ProviderStatus
 type CreateSandboxProviderInstanceBody = apimodel.CreateSandboxProviderInstanceBody
 type UpdateSandboxProviderInstanceBody = apimodel.UpdateSandboxProviderInstanceBody
+type ProviderCheck = apimodel.ProviderCheck
+type ProviderCheckOutcome = serverapi.ProviderCheckOutcome
 type CreateProjectBody = apimodel.CreateProjectBody
 type UpdateProjectBody = apimodel.UpdateProjectBody
 type CreatePoolBody = apimodel.CreatePoolBody
@@ -403,6 +405,9 @@ type SandboxProviderInstanceService interface {
 	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
 	UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error)
 	DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error
+	// CheckSandboxProviderInstance asks the instance's provider whether it
+	// reaches what its pools need, and makes nothing (ADR 26-11-15-089).
+	CheckSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*ProviderCheck, error)
 }
 
 // PoolService manages project-scoped pools: the user-visible sharing boundary

@@ -78,3 +78,11 @@ func (h *Handler) DeleteSandboxProviderInstance(ctx context.Context, params serv
 	}
 	return &serverapi.DeleteSandboxProviderInstanceNoContent{}, nil
 }
+
+func (h *Handler) CheckSandboxProviderInstance(ctx context.Context, params serverapi.CheckSandboxProviderInstanceParams) (serverapi.CheckSandboxProviderInstanceRes, error) {
+	check, err := h.services.Providers.CheckSandboxProviderInstance(ctx, params.ProjectId, params.ProviderId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	return check, nil
+}

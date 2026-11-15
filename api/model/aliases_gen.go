@@ -134,6 +134,7 @@ type Project = apigen.Project
 type ProjectGateway = apigen.ProjectGateway
 type ProjectMember = apigen.ProjectMember
 type ProjectSkillsSource = apigen.ProjectSkillsSource
+type ProviderCheck = apigen.ProviderCheck
 type ProviderConfigField = apigen.ProviderConfigField
 type ProviderStatus = apigen.ProviderStatus
 type PullSandboxSourceBody = apigen.PullSandboxSourceBody

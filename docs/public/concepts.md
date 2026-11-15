@@ -119,7 +119,15 @@ Every `driver` field is fixed while the provider has pools.
 ```sh
 discobox admin provider create --type boxd --name boxd --driver-region fra \
   --secret driver.apiKey=@boxd-key
+discobox admin provider check boxd
 ```
+
+Creating a provider checks only its config. `discobox admin provider check`
+asks the server whether it can reach what the provider's pools need, and
+makes nothing. It answers `ok`, `refused` (the service answered and refused,
+such as a key it does not accept or a region not enabled: fix the provider's
+config), or `unreachable` (nothing answered: fix the server's network or
+proxy). Each check calls the provider's service with the key.
 
 An endpoint field is where the driver sends your key, so the server checks it.
 It must be a public host over https, or a public `HOST:PORT`. A write that sets

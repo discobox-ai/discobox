@@ -305,6 +305,23 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProvid
 	return tw.Flush()
 }
 
+func (a *App) writeProviderCheck(cmd *cobra.Command, check *apimodel.ProviderCheck) error {
+	// The message is a service's own words in both forms (cli/REVIEW.md).
+	if a.output == "json" {
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), check)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "OUTCOME\t%s\n", check.Outcome)
+	// The provider's error is one cell: a service's own words can hold line
+	// breaks (boxd joins one dial error per address) and control runes.
+	if message, ok := check.Message.Get(); ok {
+		fmt.Fprintf(tw, "MESSAGE\t%s\n", terminalSafe(message))
+	}
+	fmt.Fprintf(tw, "CHECKED\t%s\n", formatTime(check.CheckedAt))
+	return tw.Flush()
+}
+
 func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxProviderInstance) error {
 	providers = sortedByRecency(providers, func(provider apimodel.SandboxProviderInstance) time.Time {
 		return recencyTime(provider.UpdatedAt, provider.CreatedAt)

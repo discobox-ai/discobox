@@ -75,6 +75,16 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
 	CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (CaptureSandboxHarnessConfigRes, error)
+	// CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
+	//
+	// Asks the provider instance whether the server reaches what its pools need (its service's account,
+	// a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret
+	// to its service and is answered from what the provider says then; nothing is stored. A disabled
+	// instance is checked too. A failed check is answered 200 with its outcome; an error response means
+	// the check could not be run.
+	//
+	// POST /projects/{projectId}/providers/{providerId}/check
+	CheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (CheckSandboxProviderInstanceRes, error)
 	// ClearPoolCache implements clear-pool-cache operation.
 	//
 	// Stop every sandbox on a pool and empty its caches.

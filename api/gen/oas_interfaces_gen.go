@@ -41,6 +41,10 @@ type CaptureSandboxHarnessConfigRes interface {
 	captureSandboxHarnessConfigRes()
 }
 
+type CheckSandboxProviderInstanceRes interface {
+	checkSandboxProviderInstanceRes()
+}
+
 type ClearPoolCacheRes interface {
 	clearPoolCacheRes()
 }

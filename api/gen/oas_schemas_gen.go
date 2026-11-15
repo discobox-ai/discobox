@@ -3207,6 +3207,7 @@ func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
 func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
 func (*ErrorModelStatusCode) authorizePoolSandboxStartRes()             {}
+func (*ErrorModelStatusCode) checkSandboxProviderInstanceRes()          {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
 func (*ErrorModelStatusCode) completePoolSandboxSuspendRes()            {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
@@ -21382,6 +21383,113 @@ func (s *ProjectSkillsSource) SetURL(val string) {
 }
 
 func (*ProjectSkillsSource) createProjectSkillsSourceRes() {}
+
+// Ref: #/components/schemas/ProviderCheck
+type ProviderCheck struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// When the check ran.
+	CheckedAt time.Time `json:"checkedAt"`
+	// What the provider said, as a pool would show it; absent when the outcome is ok.
+	Message OptString `json:"message"`
+	// Ok: the provider reaches what its pools need. refused: something answered and refused (a key it
+	// does not accept, a region not enabled, a host without the hypervisor); fix the instance's config.
+	// unreachable: nothing answered within the check's time; fix the server's network or proxy.
+	Outcome ProviderCheckOutcome `json:"outcome"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ProviderCheck) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCheckedAt returns the value of CheckedAt.
+func (s *ProviderCheck) GetCheckedAt() time.Time {
+	return s.CheckedAt
+}
+
+// GetMessage returns the value of Message.
+func (s *ProviderCheck) GetMessage() OptString {
+	return s.Message
+}
+
+// GetOutcome returns the value of Outcome.
+func (s *ProviderCheck) GetOutcome() ProviderCheckOutcome {
+	return s.Outcome
+}
+
+// SetSchema sets the value of Schema.
+func (s *ProviderCheck) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCheckedAt sets the value of CheckedAt.
+func (s *ProviderCheck) SetCheckedAt(val time.Time) {
+	s.CheckedAt = val
+}
+
+// SetMessage sets the value of Message.
+func (s *ProviderCheck) SetMessage(val OptString) {
+	s.Message = val
+}
+
+// SetOutcome sets the value of Outcome.
+func (s *ProviderCheck) SetOutcome(val ProviderCheckOutcome) {
+	s.Outcome = val
+}
+
+func (*ProviderCheck) checkSandboxProviderInstanceRes() {}
+
+// Ok: the provider reaches what its pools need. refused: something answered and refused (a key it
+// does not accept, a region not enabled, a host without the hypervisor); fix the instance's config.
+// unreachable: nothing answered within the check's time; fix the server's network or proxy.
+type ProviderCheckOutcome string
+
+const (
+	ProviderCheckOutcomeOk          ProviderCheckOutcome = "ok"
+	ProviderCheckOutcomeRefused     ProviderCheckOutcome = "refused"
+	ProviderCheckOutcomeUnreachable ProviderCheckOutcome = "unreachable"
+)
+
+// AllValues returns all ProviderCheckOutcome values.
+func (ProviderCheckOutcome) AllValues() []ProviderCheckOutcome {
+	return []ProviderCheckOutcome{
+		ProviderCheckOutcomeOk,
+		ProviderCheckOutcomeRefused,
+		ProviderCheckOutcomeUnreachable,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ProviderCheckOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case ProviderCheckOutcomeOk:
+		return []byte(s), nil
+	case ProviderCheckOutcomeRefused:
+		return []byte(s), nil
+	case ProviderCheckOutcomeUnreachable:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ProviderCheckOutcome) UnmarshalText(data []byte) error {
+	switch ProviderCheckOutcome(data) {
+	case ProviderCheckOutcomeOk:
+		*s = ProviderCheckOutcomeOk
+		return nil
+	case ProviderCheckOutcomeRefused:
+		*s = ProviderCheckOutcomeRefused
+		return nil
+	case ProviderCheckOutcomeUnreachable:
+		*s = ProviderCheckOutcomeUnreachable
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/ProviderConfigField
 type ProviderConfigField struct {

@@ -635,6 +635,8 @@ func (p *recordingSandboxProvider) Definition() sandboxes.ProviderDefinition {
 	return sandboxes.ProviderDefinition{Name: "recording"}
 }
 
+func (p *recordingSandboxProvider) Check(context.Context) error { return nil }
+
 func (p *recordingSandboxProvider) Status() sandboxes.ProviderStatus {
 	return sandboxes.ProviderStatus{Available: true, State: "ready"}
 }

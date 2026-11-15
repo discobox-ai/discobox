@@ -121,3 +121,20 @@ flowchart LR
   "capabilities" from optional interface assertions; callers that need a
   feature-specific provider operation should depend on that operation
   directly.
+- A check (`CheckSandboxProviderInstance`, `POST …/providers/{id}/check`,
+  ADR 26-11-15-089) asks one instance whether the server reaches what its
+  pools need, and makes nothing. `ProviderManager.CheckInstance` builds it
+  with the joined secret and the endpoint-policy dialer a pool's resolve
+  uses, and calls the required `Provider.Check`, bounded at 60s. An enabled
+  instance is checked on its cached provider, resolved as its pools resolve
+  it. A disabled one is checked too, but on a provider built for the check
+  alone: never `Initialize`d (which marks its pools) or cached, and closed
+  when it returns, since nothing else builds a disabled instance and a build
+  may start the provider's own loops (a Docker provider's watchers). The
+  answer is 200 `ProviderCheck`: `ok`, `unreachable` (an error wrapping
+  `sandbox.ErrPoolNotReachable` or `sandbox.ErrProviderNotReachable`, or the
+  bound running out) or `refused` (any other error, an instance that does
+  not build included), with the error as its message. A problem response means the
+  check could not run (no such instance). Nothing is stored: there is no
+  health field and no background check, since an answer is true only when
+  given and each check spends a call of the provider's account.

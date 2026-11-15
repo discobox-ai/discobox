@@ -90,3 +90,28 @@ func fakeDaemonDriver(t *testing.T, inspect container.InspectResponse) *LocalDri
 	t.Cleanup(func() { _ = cli.Close() })
 	return &LocalDriver{client: cli, agentPort: defaultAgentPort}
 }
+
+// Check pings the daemon the provider is pointed at: one that answers is ok,
+// and one nothing answers at is unreachable, at check and at build alike.
+func TestLocalDriverCheckPingsTheDaemon(t *testing.T) {
+	if err := fakeDaemonDriver(t, container.InspectResponse{}).Check(t.Context()); err != nil {
+		t.Fatalf("check of an answering daemon: %v", err)
+	}
+
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	cli, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(gone.URL, "http://")))
+	if err != nil {
+		t.Fatalf("new docker client: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	err = (&LocalDriver{client: cli}).Check(t.Context())
+	if !errors.Is(err, sandbox.ErrProviderNotReachable) || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("check err = %v, want the provider unreachable, and nothing a sandbox call waits on", err)
+	}
+	// Building the driver pings the same way: a daemon down at build says
+	// the same as one down at check.
+	if _, err := NewLocalDriver(t.Context(), "tcp://"+strings.TrimPrefix(gone.URL, "http://"), 0); !errors.Is(err, sandbox.ErrProviderNotReachable) || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("NewLocalDriver err = %v, want the provider unreachable, and nothing a sandbox call waits on", err)
+	}
+}
