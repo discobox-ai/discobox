@@ -91,70 +91,68 @@ func startRawAttach(t *testing.T) *rawAttach {
 	return a
 }
 
-// ended waits for the attach to return, failing with what it did instead,
-// and returns what it returned. resend, when set, is repeated until then: the
-// session subscribes to signals only once it is running, and a signal that
-// lands before that is the test's own guard's.
-func (a *rawAttach) ended(t *testing.T, after string, resend func()) error {
+// ended waits for the attach to return, and returns what it returned.
+func (a *rawAttach) ended(t *testing.T, after string) error {
 	t.Helper()
-	var err error
-	deadline := time.After(3 * time.Second)
-	tick := time.NewTicker(50 * time.Millisecond)
-	defer tick.Stop()
-	if resend != nil {
-		resend()
-	}
-wait:
-	for {
-		select {
-		case err = <-a.done:
-			break wait
-		case <-tick.C:
-			if resend != nil {
-				resend()
-			}
-			continue
-		case <-deadline:
-		}
-		select {
-		case name := <-a.forwarded:
-			t.Fatalf("attach still running 3s after %s; it forwarded %s to the discobox's terminal instead of ending", after, name)
-		default:
-			t.Fatalf("attach still running 3s after %s", after)
-		}
-	}
 	select {
-	case name := <-a.forwarded:
-		t.Fatalf("attach forwarded %s to the discobox's terminal; it was addressed to the attach", name)
-	default:
+	case err := <-a.done:
+		return err
+	case <-time.After(3 * time.Second):
+		t.Fatalf("attach still running 3s after %s", after)
+		return nil
 	}
-	return err
 }
 
-// SIGTERM is addressed to the attach (`timeout`, a script cleaning up), not
-// to the program in the discobox: it ends the attach and leaves the discobox's
-// terminal running.
-func TestRawAttachEndsOnSIGTERMWithoutSignallingTheDiscobox(t *testing.T) {
-	// The test's own subscription keeps a SIGTERM the attach does not catch
-	// from killing the test binary.
+// SIGTERM sent to a raw attach (`timeout`, a script cleaning up) is passed on
+// to the discobox's terminal, as Ctrl-C and the rest are, where the
+// sandbox-agent delivers it to the program in front.
+func TestRawAttachForwardsSIGTERMToTheDiscobox(t *testing.T) {
+	// The test's own subscription keeps a SIGTERM that lands before the
+	// attach subscribes from killing the test binary.
 	guard := make(chan os.Signal, 4)
 	signal.Notify(guard, syscall.SIGTERM)
 	defer signal.Stop(guard)
 
 	a := startRawAttach(t)
-	err := a.ended(t, "SIGTERM", func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) })
-	// It exits as a shell reports a command SIGTERM killed, and silently.
-	if code, ok := ExitCode(err); !ok || code != 143 {
-		t.Fatalf("attach = %v, want a silent exit 143", err)
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(3 * time.Second)
+	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+wait:
+	for {
+		select {
+		case name := <-a.forwarded:
+			if name != "TERM" {
+				t.Fatalf("forwarded %s, want TERM", name)
+			}
+			break wait
+		case err := <-a.done:
+			t.Fatalf("attach ended on SIGTERM (%v); it should pass it on", err)
+		case <-tick.C:
+			// The session subscribes to signals once it is running.
+			_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		case <-deadline:
+			t.Fatal("SIGTERM never reached the discobox")
+		}
+	}
+
+	_ = a.stdin.Close()
+	if err := a.ended(t, "stdin closed"); err != nil {
+		t.Fatalf("attach = %v, want a detach", err)
 	}
 }
 
 // A raw attach with no terminal has nothing more to send once its stdin is
-// closed, and ends.
+// closed, and ends, sending the discobox nothing.
 func TestRawAttachEndsWhenStdinCloses(t *testing.T) {
 	a := startRawAttach(t)
 	_ = a.stdin.Close()
-	if err := a.ended(t, "stdin closed", nil); err != nil {
+	if err := a.ended(t, "stdin closed"); err != nil {
 		t.Fatalf("attach = %v, want a detach", err)
+	}
+	select {
+	case name := <-a.forwarded:
+		t.Fatalf("forwarded %s to the discobox's terminal", name)
+	default:
 	}
 }

@@ -130,7 +130,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, a
 		Terminal:    tty,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			if len(argv) == 0 {
-				return copyTerminalInput(ctx, s, chord)
+				return copyTerminalInput(ctx, s, chord, false)
 			}
 			return copySandboxExecInput(ctx, s, true)
 		},

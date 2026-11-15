@@ -2347,16 +2347,17 @@ whether the attach has a PTY — not by which command is running:
   cooked, so those keys raise real signals here. `proxySignals` catches them and
   sends a Signal frame instead of acting on them.
 
-An attach to a terminal that keeps running after it (`attachSandboxTerminal`:
-`attach`, `run`, `admin terminal attach`; and the pool's admin shell) is the
-exception: `client.Options.Detaches` is set, and a signal sent to this process is
-never forwarded. INT, TERM, HUP and QUIT end the attach locally, the terminal
-handed back as on a detach, with `client.SignalError`, which `signaledExit` turns
-into a silent exit of 128+N; Ctrl-Z stops this process alone. Those signals came
-from `kill`, `timeout`, a closed window, or a cooked shell's Ctrl-C with no
-terminal lent: all addressed to the attach, none to the harness it was watching.
-The attach commands (`attach`, `admin terminal attach`, `admin terminal
-create --attach`) also detach when stdin ends (`execAttachOptions.detachAtInputEnd`), so
+A forwarded signal that ends a program reaches the terminal's foreground job,
+not merely the process the exec started: a primary terminal is a login shell
+that runs the harness as a job of its own, and the sandbox-agent signals the
+PTY's foreground process group as a local terminal would
+(`procio.ForegroundGroup`). So `timeout`'s SIGTERM to an attach ends the
+harness, not the attach: the terminal carries on as the shell, as a local one
+does, and the attach with it until it detaches or its stdin ends. A script that
+must not outlive its timeout closes stdin or passes `timeout -k`.
+
+The attach commands (`attach`, `admin terminal attach`, `admin terminal create
+--attach`) also detach when stdin ends (`execAttachOptions.detachAtInputEnd`), so
 a script's `attach --raw < <(sleep N)` ends when its input does; `run` does not,
 because its stdin may have been the prompt (`run . -`) and the harness's work on
 it is what is left to watch.
@@ -2366,8 +2367,7 @@ the terminal back in its pre-attach mode, stops this process, and on resume
 takes the terminal back, sends CONT, and re-sends the window size (which may
 have changed while stopped). Forwarding alone would leave the user attached to a
 stopped job with no way to resume it; stopping alone would leave the remote
-running unattended. That is for a command the caller runs; an attach that
-`Detaches` stops only itself, because leaving the terminal running is the point.
+running unattended.
 
 `OSConsole.Suspend` stops with **SIGSTOP**, not by resetting SIGTSTP's
 disposition and re-raising it. A Go process that has notified SIGTSTP keeps a handler installed,
@@ -2378,8 +2378,7 @@ is stopped, not the group, so a script that shares its process group is not
 taken down with it.
 
 Exit status follows the shell convention: a signal-killed command exits 128+N
-(130 for Ctrl-C), decided by the sandbox-agent for the remote command, and by
-`signaledExit` for an attach a signal ended locally — see its `DESIGN.md` for why a
+(130 for Ctrl-C), decided by the sandbox-agent — see its `DESIGN.md` for why a
 suspend request maps to SIGSTOP there too.
 
 ## Origin and Source Delivery
