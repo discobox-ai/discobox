@@ -123,6 +123,10 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 			continue
 		case "docs":
 			want = "needs.changes.outputs.code == 'false'"
+		case "darwin", "darwin-test":
+			// macOS bills at 20x: a pull request runs these only with the
+			// `macos` label, and a push to main always does.
+			want = "${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
 		}
 		if job.Needs != "changes" {
 			t.Errorf("job %s needs %v, want changes", name, job.Needs)
