@@ -396,9 +396,6 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		RawMode:     true,
 		Terminal:    true,
 		SignalReady: true,
-		// The terminal keeps running after the attach: a signal sent to this
-		// process ends the attach, and is never the harness's.
-		Detaches: true,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copyTerminalInput(ctx, s, chord, opts.detachAtInputEnd)
 		},
@@ -424,7 +421,7 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	if errors.Is(err, client.ErrInterrupted) {
 		return interruptedExit()
 	}
-	return signaledExit(err)
+	return err
 }
 
 // escapeTime is how long a raw attach holds back the start of an Alt leader —
