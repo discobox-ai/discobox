@@ -170,7 +170,7 @@ jobs:
   darwin:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
-    runs-on: depot-macos-15
+    runs-on: depot-macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
@@ -184,7 +184,7 @@ jobs:
   darwin-test:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
-    runs-on: depot-macos-15
+    runs-on: depot-macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2

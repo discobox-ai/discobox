@@ -35,7 +35,7 @@ jobs:
         include:
           - runs-on: depot-ubuntu-24.04-4
             artifact: linux
-          - runs-on: depot-macos-15
+          - runs-on: depot-macos-26
             artifact: darwin
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 45
