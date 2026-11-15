@@ -207,7 +207,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		if err := requireMachineFence(bootstrap.Driver, capabilities); err != nil {
 			return err
 		}
-		status = machinePoolStatus(bootstrap.Driver, capabilities, hop.form)
+		status = machinePoolStatus(bootstrap.Driver, capabilities, hop.form, bootstrap.HostedMaxMachines())
 	}
 
 	// A first report the control plane refuses is a pool whose key it does

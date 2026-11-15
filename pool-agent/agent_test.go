@@ -31,6 +31,7 @@ import (
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
+	"github.com/discobox-ai/vm/pkg/machine"
 )
 
 func TestLoadDefaultsControlPlaneURL(t *testing.T) {
@@ -147,6 +148,7 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		ingressURL string
 		poolURL    string
 		config     string
+		limits     map[machine.OS]int
 		wantErr    string
 	}{
 		{name: "none is docker", runtime: ""},
@@ -169,12 +171,16 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		{name: "machine in a pool disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool_1", wantErr: "machine pool"},
 		{name: "docker with a machine pool", runtime: poolagent.RuntimeDocker, pool: "pool-1", wantErr: "machine pool"},
 		{name: "docker with a URL", runtime: poolagent.RuntimeDocker, poolURL: "http://pool-1.boxd:7302", wantErr: "URLs"},
+		{name: "machine with its driver's machine limit", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", limits: map[machine.OS]int{machine.Linux: 4}},
+		{name: "machine with a machine limit that is not positive", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", ingressURL: "https://pool-1.boxd.sh", poolURL: "http://pool-1.boxd:7302", limits: map[machine.OS]int{machine.Linux: 0}, wantErr: "machine limit"},
+		{name: "docker with a machine limit", runtime: poolagent.RuntimeDocker, limits: map[machine.OS]int{machine.Linux: 4}, wantErr: "machine limit"},
 		{name: "unknown", runtime: "podman", wantErr: "unknown pool runtime"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bootstrap := base
 			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachinePool = tc.runtime, tc.driver, tc.pool
 			bootstrap.IngressURL, bootstrap.PoolURL = tc.ingressURL, tc.poolURL
+			bootstrap.MaxMachines = tc.limits
 			if tc.config != "" {
 				bootstrap.DriverConfig = json.RawMessage(tc.config)
 			}
