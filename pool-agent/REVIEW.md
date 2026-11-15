@@ -579,8 +579,12 @@ answer is seen): after that its disk is the sandbox's work.
   nor the pool proxy's audit sees. So a sandbox's machine, and a snapshot
   build's, asks the driver for no ingress URL, strictly, and for its pool URL,
   strictly (`createOptions`; disco-vm ADR 26-11-14-610): boxd gives it no
-  ingress, removing the default proxy it gives every machine, and a driver
-  that cannot withhold one (archil, docker, fake) refuses the machine. The
+  ingress: it deletes every other proxy and closes the default one it gives
+  every machine, which it cannot delete, by locking it to port 0, where no
+  guest can listen (disco-vm ADR 26-11-14-454). The machine keeps its DNS name
+  and certificate at `https://<machine>.<zone>`, which answer boxd's 502, and
+  reports no ingress URL. A driver that cannot withhold one (archil, docker,
+  fake) refuses the machine. The
   driver is trusted to keep to a strict request; nothing polls a machine for
   a URL, and a machine made before the request keeps its URL until it is made
   again. The pool's own machine asks for its ingress URL, strictly, since the
