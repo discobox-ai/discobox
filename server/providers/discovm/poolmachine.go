@@ -72,7 +72,22 @@ type poolMachine struct {
 	// what it prints for the operator reading it.
 	logs      func(sandbox.PoolLogOptions) []string
 	logSource string
+	// limitInterval is how long a pool goes between its driver's Checks for
+	// its machine limit (checkMachineLimit).
+	limitInterval time.Duration
 }
+
+// machineLimitInterval bounds how often a running pool's pass runs the
+// driver's Check for its machine limit (ADR 26-11-15-831, Open: how often
+// Check runs). Every pool is reconciled each scan, once a minute, and boxd's
+// Check is several calls to the org's API; a limit an org's owner moves is
+// seen within this, and the recorded one stands between.
+const machineLimitInterval = 10 * time.Minute
+
+// machineLimitCheckTimeout bounds a running pool's Check, which reaches the
+// provider's home endpoint, not the one the rest of the pass calls: one that
+// does not answer holds up the pass no longer than this.
+const machineLimitCheckTimeout = 30 * time.Second
 
 func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope string) (*engine.Engine, error)) *poolMachine {
 	return &poolMachine{
@@ -86,6 +101,7 @@ func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope strin
 		shell:           []string{"/bin/bash", "-l"},
 		logs:            journalCommand,
 		logSource:       "pool machine journal",
+		limitInterval:   machineLimitInterval,
 	}
 }
 
@@ -119,6 +135,16 @@ type poolRuntimeState struct {
 	Box poolruntime.BoxRecord `json:"box,omitzero"`
 	// Key is the provisioning key placed, without its secret.
 	Key *poolKeyRecord `json:"key,omitempty"`
+	// MaxMachines is the driver's machine limit, by guest OS, as its Check
+	// last read it with the provider's key (ADR 26-11-15-831 §2): what the
+	// pool's bootstrap carries when a pass's Check fails, or before one has
+	// answered since the server started. Absent is no cap, or one the
+	// provider would not say.
+	MaxMachines map[machine.OS]int `json:"maxMachines,omitempty"`
+	// LimitCheckedAt is when the driver's Check was last run for
+	// MaxMachines, whether or not it answered: the next is due
+	// limitInterval after it.
+	LimitCheckedAt time.Time `json:"limitCheckedAt,omitzero"`
 }
 
 func decodeRuntimeState(pool *model.Pool) poolRuntimeState {
@@ -290,6 +316,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 				return err
 			}
 			created = true
+			// create ran the driver's Check, so its limit is read.
+			record.MaxMachines, record.LimitCheckedAt = machineLimit(h.engine.Driver.Capabilities()), time.Now()
 		}
 		made = true
 	}
@@ -337,8 +365,13 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err != nil {
 		return err
 	}
+	if h.checkMachineLimit(ctx, pool, &record) {
+		if err := h.writeState(pool, record); err != nil {
+			return err
+		}
+	}
 	provisioned := record.Box.Agent != ""
-	placement, err := h.placement(ctx, pool, inst, guest, maker, scope)
+	placement, err := h.placement(ctx, pool, inst, guest, maker, scope, record.MaxMachines)
 	if err != nil {
 		if provisioned && !force {
 			slog.WarnContext(ctx, "keeping the pool's machine as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
@@ -417,6 +450,48 @@ func (h *poolMachine) retireKey(ctx context.Context, pool *model.Pool, guest mac
 	return err
 }
 
+// checkMachineLimit runs the driver's Check, the one call that reads its
+// provider's machine limit, and records the limit it then reports (ADR
+// 26-11-15-831 §§1–2), once limitInterval has passed since the record's last
+// Check; it reports whether it ran one. It runs with the provider's key,
+// which can read the limit where the pool's machine's own credential may not.
+// A Check that fails does not fail the pass, nor take a running pool down:
+// the limit recorded stands, and the next Check is an interval away. Whether
+// a running pool should act on a Check that now refuses its account is not
+// decided here.
+func (h *poolMachine) checkMachineLimit(ctx context.Context, pool *model.Pool, record *poolRuntimeState) bool {
+	now := time.Now()
+	if now.Sub(record.LimitCheckedAt) < h.limitInterval && !now.Before(record.LimitCheckedAt) {
+		return false
+	}
+	record.LimitCheckedAt = now
+	checkCtx, cancel := context.WithTimeout(ctx, machineLimitCheckTimeout)
+	defer cancel()
+	if err := checkDriver(checkCtx, h.engine); err != nil {
+		slog.WarnContext(ctx, "keeping the pool's recorded machine limit: its driver's check failed", "pool", pool.ID, "error", err)
+		return true
+	}
+	record.MaxMachines = machineLimit(h.engine.Driver.Capabilities())
+	return true
+}
+
+// machineLimit is the caps a driver reports on the VMs that may exist, by
+// guest OS: none is nil, so a driver that reports none keeps the pool's
+// placement fingerprint as it was.
+func machineLimit(caps machine.Capabilities) map[machine.OS]int {
+	var limit map[machine.OS]int
+	for os, n := range caps.MaxMachines {
+		if n <= 0 {
+			continue
+		}
+		if limit == nil {
+			limit = map[machine.OS]int{}
+		}
+		limit[os] = n
+	}
+	return limit
+}
+
 // create makes the pool's machine from the base, on the pool's network alone,
 // off the org's default one, so no other machine of the provider's reaches it
 // (ADR 26-10-23-551 §4). It is not isolated: boxd peers an isolated machine
@@ -445,9 +520,9 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string
 
 // placement is what the pool's machine is made the pool's box with: its
 // bootstrap, naming its own engine, the network its sandboxes' machines are
-// made on, and where its agent listens; and the agent and bundles for the
-// machine's platform.
-func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, scope string) (poolruntime.BoxPlacement, error) {
+// made on, where its agent listens, and its driver's machine limit; and the
+// agent and bundles for the machine's platform.
+func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, scope string, maxMachines map[machine.OS]int) (poolruntime.BoxPlacement, error) {
 	bootstrap, err := maker.Bootstrap(ctx)
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
@@ -479,6 +554,10 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 		bootstrap.DriverConfig = config
 	}
 	bootstrap.MachineNetwork = scope
+	// The driver's machine limit, which only the provider's key may read, so
+	// the agent reports it (ADR 26-11-15-831 §3). It is in the placement's
+	// fingerprint: a pool on a driver that reports none keeps the one it had.
+	bootstrap.MaxMachines = maxMachines
 	// Where the server reaches the pool's agent, its ingress URL, and where
 	// its sandboxes' machines, its peers, reach the pool, its pool URL, from
 	// which the agent derives their endpoints and their fence (ADR

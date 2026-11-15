@@ -110,3 +110,11 @@
   then opens on that scope. Why: the pool agent makes its snapshots and its
   sandboxes' machines there, the server's engine sees only the provider's
   scope, and once the pool's host is gone nothing else removes them (#1208).
+- A provider call added to `converge` runs once a minute for every pool,
+  not only on a change: the pool reconciler's scan marks every pool dirty
+  each `ScanInterval`. Bound one that costs the provider anything (an
+  interval kept in the pool's record, as the machine limit's `Check` is) and
+  give it its own timeout. Why: the machine limit's `Check` was first added
+  on the premise that passes run only on intent and drift, which would have
+  been several boxd API calls per pool per minute, and a home endpoint that
+  hung would have stalled every pool's pass.

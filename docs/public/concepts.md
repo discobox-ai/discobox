@@ -162,9 +162,14 @@ A boxd account carries discobox's pools only if:
   run only 2.
 
 Before it makes a pool's machine, the server checks the account through
-boxd's API (that the key is accepted, and that the org has the provider's
-region enabled). The pool fails with the reason if boxd refuses it, and waits
-if boxd does not answer.
+boxd's API: that the key is accepted, that the org has the provider's region
+enabled, and that no host-bound secret is in the org or the key owner's
+personal scope. The pool fails with the reason if boxd refuses it, and waits
+if boxd does not answer. A running pool's account is checked again every ten
+minutes, which reads the org's machine limit: the pool's `runtime` condition
+shows it as `maxMachines`, counting every machine billed to the org, stopped
+ones and other members' included. A check that fails then is logged, and
+the pool keeps running.
 
 Behind an egress proxy (`HTTPS_PROXY`, or a SOCKS5 `ALL_PROXY`), the server
 reaches a VM provider's endpoints through the proxy by name, and the proxy

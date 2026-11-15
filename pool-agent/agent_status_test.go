@@ -161,14 +161,16 @@ func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 
 // A machine pool runs its driver's images, and its capacity is its driver's:
 // none of the pool machine's own CPU and memory is reported, and the runtime
-// condition names the driver, its limits and how its sandboxes reach it (ADR
-// 26-10-23-551 §3). It schedules: a driver that cannot fence a sandbox's
-// machine to its pool never gets this far (ADR 26-10-29-481 §4).
+// condition names the driver, its limits — the machine limit the server read
+// at the driver's Check among them (ADR 26-11-15-831 §3) — and how its
+// sandboxes reach it (ADR 26-10-23-551 §3). It schedules: a driver that
+// cannot fence a sandbox's machine to its pool never gets this far (ADR
+// 26-10-29-481 §4).
 func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	client := newRecordingStatusClient()
 	bootstrap, identity, logger := testReporterArgs()
 	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
-	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect)
+	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect, 7)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -196,5 +198,38 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	runtime, ok := conditions["runtime"].(map[string]any)
 	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "ready" || runtime["isolation"] != true || runtime["egress"] != true || runtime["commit"] != true || runtime["hop"] != hopDirect {
 		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, ready, isolating, fencing and committing, reached directly", conditions["runtime"])
+	}
+	if runtime["maxMachines"] != 7 {
+		t.Fatalf("runtime condition's maxMachines = %#v, want the driver's limit, 7", runtime["maxMachines"])
+	}
+}
+
+// A driver that reports no machine limit, or a server that could not read
+// one, leaves maxMachines out of the runtime condition, not zero.
+func TestMachinePoolStatusOmitsAnUnreportedMachineLimit(t *testing.T) {
+	status := machinePoolStatus("boxd", machine.Capabilities{}, hopDirect, 0)
+	if value, ok := status.runtime["maxMachines"]; ok {
+		t.Fatalf("runtime condition's maxMachines = %#v, want none", value)
+	}
+}
+
+// The limit the runtime condition reports is the one for the OS the pool
+// hosts.
+func TestBootstrapHostedMaxMachinesIsTheSandboxOSs(t *testing.T) {
+	limits := map[machine.OS]int{machine.Linux: 5, machine.Darwin: 2}
+	for _, tc := range []struct {
+		sandboxOS string
+		limits    map[machine.OS]int
+		want      int
+	}{
+		{platform.Linux, limits, 5},
+		{platform.Darwin, limits, 2},
+		{platform.Darwin, map[machine.OS]int{machine.Linux: 5}, 0},
+		{"", nil, 0},
+	} {
+		b := Bootstrap{SandboxOS: tc.sandboxOS, MaxMachines: tc.limits}
+		if got := b.HostedMaxMachines(); got != tc.want {
+			t.Errorf("HostedMaxMachines() with sandbox OS %q and limits %v = %d, want %d", tc.sandboxOS, tc.limits, got, tc.want)
+		}
 	}
 }

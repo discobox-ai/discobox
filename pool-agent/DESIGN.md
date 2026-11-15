@@ -157,7 +157,14 @@ whose sandboxes are containers, and `vm/<driver>` for a machine pool, which
 reports none of its own machine's CPU and memory as capacity — its sandboxes
 run on its driver — and names the driver's limits (`maxRunning`, `isolation`,
 `egress`) and its hop (`direct` or `edge`) in its `runtime` condition instead
-([Machine Sandboxes](#machine-sandboxes)). The same platform is the runtime's
+([Machine Sandboxes](#machine-sandboxes)). Beside them, `maxMachines` is the
+provider's cap on the machines of the pool's sandbox OS that may exist,
+stopped ones counted: the provider's count, not the pool's (boxd's is every
+machine billed to the org). The agent's driver does not read it: the server
+reads it at the driver's `Check` with the provider's credential and passes it
+in the bootstrap (`Bootstrap.MaxMachines`, ADR 26-11-15-831), and the key is
+absent when the driver reports none or that credential may not read it.
+Nothing schedules on either limit. The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
 a sandbox — a source's target, the user's home, the working directory, the
 working root it writes into the manifest — is judged by its `sandboxpath`

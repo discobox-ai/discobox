@@ -120,9 +120,13 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 // driver's, which runs its sandboxes, not the pool's own machine's. Its
 // runtime condition names the driver, its limits, and how its sandboxes reach
 // it. It schedules: an agent whose driver cannot fence a sandbox's machine to
-// its pool refused to start (requireMachineFence).
-func machinePoolStatus(driver string, caps machine.Capabilities, hop string) poolStatus {
-	return poolStatus{
+// its pool refused to start (requireMachineFence). maxMachines is the
+// provider's cap on the machines of the pool's sandbox OS that may exist, as
+// the server read it at the driver's Check (ADR 26-11-15-831 §3): the agent's
+// own driver does not run Check, and its credential may not read the cap.
+// Zero is none, and the condition then has no maxMachines.
+func machinePoolStatus(driver string, caps machine.Capabilities, hop string, maxMachines int) poolStatus {
+	status := poolStatus{
 		schedulable: true,
 		imageKind:   platform.VM(driver),
 		runtime: map[string]any{
@@ -140,4 +144,8 @@ func machinePoolStatus(driver string, caps machine.Capabilities, hop string) poo
 			"commit": caps.Commit,
 		},
 	}
+	if maxMachines > 0 {
+		status.runtime["maxMachines"] = maxMachines
+	}
+	return status
 }

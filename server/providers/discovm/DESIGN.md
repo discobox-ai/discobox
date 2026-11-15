@@ -290,17 +290,19 @@ ones; boxd's stay put.
 
 `converge` runs on every reconcile, against the provider's own record on the
 pool's row (`poolRuntimeState` in `RuntimeState`: the machine, the pool's
-scope, the agent and bundles placed, and the key without its secret),
-never against anything the machine reports (551 §1):
+scope, the agent and bundles placed, the key without its secret, and the
+driver's machine limit), never against anything the machine reports (551 §1):
 
 - no machine: the pool's keys are revoked by name (a machine lost outside
   discobox, or a record lost), and one is made, keyed and provisioned; it
   registers anew. The driver's `Check` runs first, against its provider's
   API, so an account that cannot carry a pool makes no machine and the pool's
-  error names why (boxd's: its key, and its region). A check the service does not answer
-  is `notReachable`. A pool whose machine exists is not checked again. The
-  same check (`checkDriver`) is `Runtime.Check`, the provider check the
-  server runs on request (ADR 26-11-15-089), so both say the same thing;
+  error names why (boxd's: its key, its region, and a host-bound secret in
+  its org or its key owner's scope, which boxd lets every machine reach
+  whatever its fence). A check the service does not answer is
+  `notReachable`. The same check (`checkDriver`) is `Runtime.Check`, the
+  provider check the server runs on request (ADR 26-11-15-089), and the
+  running pool's machine-limit check below, so all say the same thing;
 - a machine under the pool's name that is not the one the record names (a
   pass made it and stopped before its record was saved): it is taken as made —
   the pool's keys revoked, the record reset, the agent placed and keyed — but
@@ -309,11 +311,22 @@ never against anything the machine reports (551 §1):
 - a stopped machine is started on the disk it kept; the agent starts from the
   units `apply` enabled, on the key it holds;
 - a key due for renewal is replaced (below);
+- the driver's machine limit (`Capabilities.MaxMachines`) is read at its
+  `Check`, with the provider's key, and recorded as `maxMachines` with when
+  it was checked (`limitCheckedAt`); create's own `Check` stands for it when
+  the pass made the machine. Every pool is reconciled each scan, once a
+  minute, and boxd's `Check` is several calls to the org's API, so a pass
+  checks again only `machineLimitInterval` (10 minutes) after the last
+  attempt, under its own timeout. A `Check` that fails here neither fails the
+  pass nor takes the pool down: the recorded limit stands, and so across a
+  server restart. The bootstrap carries it (`Bootstrap.MaxMachines`) for the
+  agent's `runtime` condition, since a pool's in-machine credential may not
+  read it (26-11-15-831);
 - moved bundles, or a moved bootstrap or policy (the box record's
   `Placement`, `poolruntime.PlacementFingerprint` of what the provider's
   configuration and the pool's own settings say of it: its
   `controlPlaneUrl`, its base, its policy, its machine's URLs, its
-  `disableAgentEndpointTls`), are applied again in the running machine.
+  `disableAgentEndpointTls`, its driver's machine limit), are applied again in the running machine.
   `apply` restarts what moved bundles move; a moved placement restarts the
   agent and proxy, which read it once at start
   (`poolruntime.RestartPoolUnits`), as a Docker pool's are. A record from

@@ -121,6 +121,14 @@ type Bootstrap struct {
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551
 	// §4). A driver that isolates machines needs one.
 	MachineNetwork string `json:"machineNetwork,omitempty"`
+	// MaxMachines is the driver's cap on the VMs of each guest OS that may
+	// exist at once (machine.Capabilities.MaxMachines), as the server read it
+	// at the driver's Check with the provider's key, which the pool's own
+	// credential may not be allowed to (ADR 26-11-15-831 §3). It is the
+	// provider's count, not the pool's: boxd's counts every machine billed to
+	// the org. The agent reports it and acts on nothing by it. Empty is no
+	// cap, or one the provider would not say.
+	MaxMachines map[machine.OS]int `json:"maxMachines,omitempty"`
 	// IngressURL and PoolURL are where the pool's own machine is reached,
 	// named by who reaches it as its driver gives them (disco-vm ADR
 	// 26-11-14-610 §1): the ingress URL by the pool's controller, this
@@ -206,8 +214,8 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
-		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.MachineNetwork != "" || b.IngressURL != "" || b.PoolURL != "" {
-			return fmt.Errorf("a machine pool, base, network and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
+		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.MachineNetwork != "" || len(b.MaxMachines) > 0 || b.IngressURL != "" || b.PoolURL != "" {
+			return fmt.Errorf("a machine pool, base, network, machine limit and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
 		}
 	case RuntimeMachine:
 		if strings.TrimSpace(b.Driver) == "" {
@@ -215,6 +223,11 @@ func (b Bootstrap) Validate() error {
 		}
 		if err := machine.ValidatePool(b.MachinePool); err != nil {
 			return fmt.Errorf("the %s runtime's machine pool: %w", RuntimeMachine, err)
+		}
+		for os, n := range b.MaxMachines {
+			if n <= 0 {
+				return fmt.Errorf("the %s runtime's machine limit for %s is %d; a limit is positive, and no cap is no entry", RuntimeMachine, os, n)
+			}
 		}
 		if len(b.DriverConfig) > 0 {
 			if err := machine.Validate(b.Driver, b.DriverConfig); err != nil {
@@ -294,6 +307,13 @@ func (b Bootstrap) HostedPlatform() platform.Platform {
 		return current
 	}
 	return platform.Platform{OS: b.SandboxOS, Arch: current.Arch}
+}
+
+// HostedMaxMachines is the driver's machine limit for the OS of the platform
+// this pool hosts (HostedPlatform), the one its runtime condition reports;
+// zero is none (ADR 26-11-15-831 §3).
+func (b Bootstrap) HostedMaxMachines() int {
+	return b.MaxMachines[machine.OS(b.HostedPlatform().OS)]
 }
 
 // StatusRequest updates pool scheduling status using a signed pool assertion.

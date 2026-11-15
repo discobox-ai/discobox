@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -55,6 +56,11 @@ type poolTestDriver struct {
 	// refuses, or its service not answering. checks counts the calls.
 	checkErr error
 	checks   int
+	// maxMachines is the machine limit the driver's provider holds, which
+	// Capabilities reports only once a Check has read it, as boxd's does;
+	// read is what the last Check that answered read.
+	maxMachines map[machine.OS]int
+	read        map[machine.OS]int
 	// name, when set, is the driver's name: boxd's, for a pool that
 	// authenticates in-machine, which the fake driver's configuration
 	// cannot ask for.
@@ -88,6 +94,9 @@ func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	if d.noIngress {
 		caps.URLs.Ingress = machine.URLNever
 	}
+	d.mu.Lock()
+	caps.MaxMachines = maps.Clone(d.read)
+	d.mu.Unlock()
 	return caps
 }
 
@@ -99,7 +108,13 @@ func (d *poolTestDriver) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return d.Driver.Check(ctx)
+	if err := d.Driver.Check(ctx); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	d.read = maps.Clone(d.maxMachines)
+	d.mu.Unlock()
+	return nil
 }
 
 func (d *poolTestDriver) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
@@ -930,7 +945,9 @@ func TestFakePoolMachineNeedsIsolation(t *testing.T) {
 // The driver checks its account before the pool's machine is made: an account
 // it refuses makes no machine, and the pool's error says why; a service that
 // does not answer the check is a host not reachable yet, which the reconciler
-// waits on. A pool whose machine exists is not checked again.
+// waits on. A pool whose machine exists is checked again, for its driver's
+// machine limit, once an interval has passed since its last check, and a
+// check that fails there does not fail the pass (ADR 26-11-15-831 §1).
 func TestFakePoolMachineChecksTheAccountBeforeItsMachine(t *testing.T) {
 	r, driver := newFakePool(t, "")
 	ctx := context.Background()
@@ -961,12 +978,126 @@ func TestFakePoolMachineChecksTheAccountBeforeItsMachine(t *testing.T) {
 	if len(driver.created) != 1 {
 		t.Fatalf("created %d machines, want one", len(driver.created))
 	}
-	checks := driver.checks
+	if driver.checks != 3 {
+		t.Fatalf("checks = %d, want 3: the pass that made the machine checked once", driver.checks)
+	}
 	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
 		t.Fatalf("EnsurePool() again = %v", err)
 	}
-	if driver.checks != checks {
-		t.Fatalf("a pool whose machine exists was checked again (%d checks, want %d)", driver.checks, checks)
+	if driver.checks != 3 {
+		t.Fatalf("checks = %d, want 3: a pool checked within the interval is not checked again", driver.checks)
+	}
+	r.host.(*poolMachine).limitInterval = 0
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() once the interval has passed = %v", err)
+	}
+	if driver.checks != 4 {
+		t.Fatalf("checks = %d, want 4: a pool whose interval has passed is checked again", driver.checks)
+	}
+	driver.checkErr = status.Error(codes.PermissionDenied, "the account refuses this test")
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() on a running pool whose check fails = %v, want the pool kept", err)
+	}
+	if len(driver.created) != 1 {
+		t.Fatalf("created %d machines, want the one", len(driver.created))
+	}
+}
+
+// The server reads the driver's machine limit at its Check, with the
+// provider's key, and the pool's bootstrap carries it, so the agent reports
+// it; a pass whose Check fails, or a server that has not checked since it
+// started, places the limit recorded; a moved limit is placed again, and a
+// driver that reports none places none (ADR 26-11-15-831 §§1–3). Check runs
+// at most once an interval, and is not run again within it.
+func TestFakePoolMachinePlacesItsDriversMachineLimit(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	host := r.host.(*poolMachine)
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-15", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	maker := newTestMaker()
+	lastPlaced := func() map[machine.OS]int {
+		t.Helper()
+		driver.mu.Lock()
+		defer driver.mu.Unlock()
+		if len(driver.applied) == 0 {
+			t.Fatal("nothing was placed")
+		}
+		return driver.applied[len(driver.applied)-1].MaxMachines
+	}
+	recorded := func() map[machine.OS]int { return decodeRuntimeState(pool).MaxMachines }
+
+	driver.maxMachines = map[machine.OS]int{machine.Linux: 4}
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[machine.OS]int{machine.Linux: 4}; !maps.Equal(lastPlaced(), want) || !maps.Equal(recorded(), want) {
+		t.Fatalf("placed %v, recorded %v; want the limit the create's check read, %v", lastPlaced(), recorded(), want)
+	}
+	if driver.checks != 1 {
+		t.Fatalf("checks = %d, want the create's one", driver.checks)
+	}
+
+	// Within the interval the limit recorded is placed and the driver is
+	// not asked again, even when its provider's limit moved.
+	driver.maxMachines = map[machine.OS]int{machine.Linux: 9}
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if driver.checks != 1 || driver.applies() != 1 || !maps.Equal(recorded(), map[machine.OS]int{machine.Linux: 4}) {
+		t.Fatalf("checks %d, applies %d, recorded %v; want no check within the interval", driver.checks, driver.applies(), recorded())
+	}
+	host.limitInterval = 0
+
+	// A check that fails keeps the recorded limit, and the pool as placed.
+	driver.checkErr = status.Error(codes.Unavailable, "connection refused")
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatalf("EnsurePool() while the check does not answer = %v", err)
+	}
+	if driver.applies() != 1 || !maps.Equal(recorded(), map[machine.OS]int{machine.Linux: 4}) {
+		t.Fatalf("applies %d, recorded %v; want the pool kept on its recorded limit", driver.applies(), recorded())
+	}
+
+	// A server that has not checked since it started reports none from its
+	// driver; the recorded limit stands while its check fails.
+	driver.mu.Lock()
+	driver.read = nil
+	driver.mu.Unlock()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if driver.applies() != 1 {
+		t.Fatalf("applies %d; a restarted server whose check fails placed the pool again", driver.applies())
+	}
+
+	// A limit that moved is placed again, and the agent restarted to read it.
+	driver.checkErr, driver.maxMachines = nil, map[machine.OS]int{machine.Linux: 6}
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[machine.OS]int{machine.Linux: 6}; driver.applies() != 2 || !maps.Equal(lastPlaced(), want) || !maps.Equal(recorded(), want) {
+		t.Fatalf("applies %d, placed %v, recorded %v; want the moved limit %v placed", driver.applies(), lastPlaced(), recorded(), want)
+	}
+	if len(driver.restarts) != 1 {
+		t.Fatalf("restarts = %q, want the agent restarted once on its new placement", driver.restarts)
+	}
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if driver.applies() != 2 {
+		t.Fatalf("applies %d; an unchanged limit placed the pool again", driver.applies())
+	}
+
+	// A check that answers with no limit places none.
+	driver.maxMachines = nil
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if driver.applies() != 3 || lastPlaced() != nil || recorded() != nil {
+		t.Fatalf("applies %d, placed %v, recorded %v; want none placed or recorded", driver.applies(), lastPlaced(), recorded())
+	}
+	if !strings.Contains(string(pool.RuntimeState), `"instance"`) || strings.Contains(string(pool.RuntimeState), "maxMachines") {
+		t.Fatalf("runtime state %s, want no maxMachines", pool.RuntimeState)
 	}
 }
 
