@@ -18,16 +18,21 @@ import (
 
 // scriptedPoolProvider records each runtime call and answers it with fail,
 // when set. Every call reports work evidence, so a test can see which attempt
-// the call's executor was bound to.
+// the call's executor was bound to, unless silent: a pass with nothing new to
+// show.
 type scriptedPoolProvider struct {
 	stubPoolProvider
 	fail     error
+	silent   bool
 	calls    []string
 	reported []string
 }
 
 func (p *scriptedPoolProvider) call(ctx context.Context, kind string) error {
 	p.calls = append(p.calls, kind)
+	if p.silent {
+		return p.fail
+	}
 	if facts, err := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "image:test", Bytes: int64(len(p.calls))}); err == nil && facts != nil {
 		p.reported = append(p.reported, facts.Attempt)
 	}

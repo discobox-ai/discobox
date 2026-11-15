@@ -190,3 +190,41 @@ func TestExpiryRecordsWhenTheAttemptEnded(t *testing.T) {
 		t.Fatalf("failure %q ended %s, want expiry recorded at %s", b.Failure, b.EndedAt, at)
 	}
 }
+
+// What a pass waited on is display (ADR 26-11-15-089 §5): it renews no
+// budget and ends nothing, even recorded past the budget; the expiry names
+// it; and progress clears it, since the attempt is no longer waiting there.
+func TestWaitingIsDisplayNamedByExpiryAndClearedByProgress(t *testing.T) {
+	now := time.Now()
+	b := NewPoolBootstrap(1, now)
+	b.Accept(BootstrapEvidence{Waiting: "dial tcp: network is unreachable"}, now.Add(time.Minute))
+	if b.Waiting == "" || !b.ProgressAt.Equal(now) || b.Marker != 0 {
+		t.Fatalf("waiting %q progress %s marker %d; want it recorded and no budget renewed", b.Waiting, b.ProgressAt, b.Marker)
+	}
+
+	late := now.Add(PoolBootstrapSilence + time.Minute)
+	b.Accept(BootstrapEvidence{Waiting: "dial tcp: i/o timeout"}, late)
+	if b.Failure != "" || b.Waiting != "dial tcp: i/o timeout" {
+		t.Fatalf("failure %q waiting %q; want a late wait recorded and the attempt left to its expiry pass", b.Failure, b.Waiting)
+	}
+	if reason := b.Expired(late); reason != "bootstrap stopped making progress (last waiting on: dial tcp: i/o timeout)" {
+		t.Fatalf("expired = %q, want the reason naming what it waited on", reason)
+	}
+
+	progressed := NewPoolBootstrap(1, now)
+	progressed.Accept(BootstrapEvidence{Waiting: "dial tcp: network is unreachable"}, now)
+	progressed.Accept(BootstrapEvidence{Operation: "image", Bytes: 1}, now.Add(time.Second))
+	if progressed.Waiting != "" {
+		t.Fatalf("waiting %q after progress, want it cleared", progressed.Waiting)
+	}
+	if reason := progressed.Expired(now.Add(time.Second + PoolBootstrapSilence)); strings.Contains(reason, "waiting") {
+		t.Fatalf("expired = %q, want no stale wait named", reason)
+	}
+
+	ended := NewPoolBootstrap(1, now)
+	ended.Accept(BootstrapEvidence{Waiting: "dial tcp: network is unreachable"}, now)
+	ended.Accept(BootstrapEvidence{WaitEnded: true}, now.Add(time.Second))
+	if ended.Waiting != "" || ended.Marker != 0 || !ended.ProgressAt.Equal(now) {
+		t.Fatalf("waiting %q marker %d progress %s after a pass that waited on nothing; want it cleared and no budget renewed", ended.Waiting, ended.Marker, ended.ProgressAt)
+	}
+}

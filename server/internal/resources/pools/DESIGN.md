@@ -436,6 +436,14 @@ An ended attempt does not end a never-registered pool (ADR 26-11-09-593):
   executor's `Repaired` report, so a pass that dies first repairs on the next.
   A repair error, `ErrPoolNotReachable` included, ends the attempt: it may
   come before anything was replaced.
+- A reconcile (not a repair) that ends in `ErrPoolNotReachable` is waited on,
+  not recorded as a failure, so the reconciler keeps its error on the attempt
+  as `Waiting` (written only when it changes; ADR 26-11-15-089 §5). It is
+  display, not evidence: it renews no budget and ends nothing. Progress
+  clears it, and so does a pass that waits on nothing (`WaitEnded`
+  evidence), so an expiry never names a wait a later pass got past. An attempt that expires names it, `… (last waiting on: …)`, so a
+  pool whose provider the server cannot reach says so rather than only that
+  bootstrap stopped making progress.
 - Waiters stay pinned to their attempt and end on a new one ("bootstrap attempt
   changed"); the acquisition gate refuses actions with the failure while the
   pool backs off, and an action arriving during a new attempt waits on it.
