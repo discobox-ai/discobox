@@ -42,6 +42,11 @@
   - [26-10-31-694](26-10-31-694-a-providers-credentials-are-sealed-in-its-row-and-never-returned.md)
     §2's "a field the body leaves out keeps its sealed value", for a write
     that changes a `Privileged` field (§4).
+- **Superseded in part** by [26-11-15-507](26-11-15-507-a-boxd-provider-names-its-region-and-one-without-is-made-again.md):
+  §7's "once it is in, the pin moves and nothing else changes", and, for a
+  boxd row, §8's "with neither set, no `driver` object is written, and boxd
+  takes the defaults it took before" and its "a boxd pool runs on with the
+  machine it has".
 - **Date**: 2026-11-11
 - **Accepted**: by the owner merging #1007, 2026-11-12. disco-vm's debts
   (Consequences) are met by its ADR 26-11-12-461 (vm#88).
