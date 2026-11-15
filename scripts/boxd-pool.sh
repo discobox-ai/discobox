@@ -5,15 +5,16 @@
 #
 # Usage: scripts/boxd-pool.sh [--name NAME] [--region REGION] [--base ID] [discobox flags...]
 #
-#   scripts/boxd-pool.sh                                  # provider and pool "boxd", in fra
+#   scripts/boxd-pool.sh                                  # provider and pool "boxd", made in nyc
 #   scripts/boxd-pool.sh --server http://127.0.0.1:8080
-#   scripts/boxd-pool.sh --region nyc                     # the boxd region, which the provider requires
+#   scripts/boxd-pool.sh --region fra                     # the boxd region, which the provider requires
 #   scripts/boxd-pool.sh --base <boxd image or snapshot ID>
 #
 # Run `boxd login` first: boxd makes API keys only for an interactive session.
 # Each run makes a new key, named <name>-<random>. When the provider already
-# exists its config is replaced with the new key, and the key it held is left in
-# boxd for you to revoke. Flags the script does not know (--server, --project,
+# exists its config is replaced with the new key, keeping its region unless
+# --region names one (a region cannot change while the provider has pools), and
+# the key it held is left in boxd for you to revoke. Flags the script does not know (--server, --project,
 # ...) go to every discobox call; $DISCOBOX names the CLI (default: discobox on
 # PATH) and $BOXD the boxd CLI (default: boxd on PATH).
 #
@@ -22,10 +23,15 @@
 # alone: the pool's machine authenticates as itself, and is given no key (ADR
 # 26-11-11-080 §9). The server seals the key in the provider's row and never
 # returns it (ADR 26-10-31-694).
+#
+# The provider names its region and no endpoint: the driver asks boxd's home
+# endpoint for the region's (ListRegions) and makes and lists its machines
+# there, while the key exchange and account calls stay at the home endpoint
+# (ADR 26-11-15-507 §3).
 set -eu
 
 name=boxd
-region=fra
+region=
 base=
 discobox=${DISCOBOX:-discobox}
 boxd=${BOXD:-boxd}
@@ -46,7 +52,7 @@ while [ "$n" -gt 0 ]; do
 	--name=*) name=${arg#*=} ;;
 	--region=*) region=${arg#*=} ;;
 	--base=*) base=${arg#*=} ;;
-	-h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+	-h|--help) sed -n '2,30p' "$0"; exit 0 ;;
 	*) set -- "$@" "$arg" ;;
 	esac
 done
@@ -55,6 +61,21 @@ for cli in "$boxd" "$discobox"; do
 	command -v "$cli" >/dev/null 2>&1 || { echo "$cli is not on PATH" >&2; exit 2; }
 done
 command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 2; }
+
+# A new provider is made in nyc unless --region says otherwise; an existing one
+# keeps its region. Decided before a key is made, so a refusal leaves none.
+exists=0
+if current=$("$discobox" "$@" -o json admin provider get "$name" 2>/dev/null); then
+	exists=1
+	if [ -z "$region" ]; then
+		region=$(printf '%s' "$current" | jq -r '(.config | if type == "string" then fromjson else . end) // {} | .driver.region // empty')
+		if [ -z "$region" ]; then
+			echo "provider $name has no region, which boxd now requires; delete it and its pools and run this again (docs/public/boxd.md, Upgrading a provider without a region)" >&2
+			exit 1
+		fi
+	fi
+fi
+[ -n "$region" ] || region=nyc
 
 suffix=$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')
 key_name="$name-$suffix"
@@ -78,12 +99,12 @@ chmod 600 "$config"
 jq -n --arg key "$key" --arg region "$region" --arg base "$base" \
 	'{driver: {apiKey: $key, region: $region}} + (if $base == "" then {} else {base: $base} end)' >"$config"
 
-if "$discobox" "$@" admin provider get "$name" >/dev/null 2>&1; then
+if [ "$exists" = 1 ]; then
 	"$discobox" "$@" admin provider update "$name" --config "@$config" >/dev/null
 	echo "updated provider $name with the new key; revoke the key it held before in boxd" >&2
 else
 	"$discobox" "$@" admin provider create --type boxd --name "$name" --config "@$config" >/dev/null
-	echo "created provider $name" >&2
+	echo "created provider $name in $region" >&2
 fi
 
 if "$discobox" "$@" admin pool get "$name" >/dev/null 2>&1; then
