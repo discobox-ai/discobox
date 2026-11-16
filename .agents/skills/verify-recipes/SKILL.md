@@ -692,6 +692,31 @@ before/after, build it in `git archive HEAD | tar -x -C $S/old` and in a copy
 of the working tree. Shorten a time constant in the copies (never in the
 checkout) to reach an expiry in seconds.
 
+The real CLI and console over iroh, against the dev loop's boxes: the loop's
+server listens on `http://127.0.0.1:8080` only (`DISCOBOX_SERVER_LISTEN` in its
+environment wins over the Taskfile's `iroh://`), so front it instead of
+restarting it. A probe `main` in the copy binds `NewIrohEndpoint`
+(`DisableDiscovery`, `DisableRelay`, `BindAddrs` 127.0.0.1:0, an `Authorize`
+that admits everyone and logs each call), serves `Listen()` with an
+`httputil.NewSingleHostReverseProxy` to 127.0.0.1:8080 (upgrades, so attaches,
+pass through), and prints `IrohURLWithAddrs(id, DirectAddrs())`. Then
+`env -u DISCOBOX_SERVER <cli> --server '<that URL>' attach <sbx>` in an
+isolated tmux. Each logged `Authorize` is one QUIC connection the client
+opened. Notes:
+
+- An outage is `sudo iptables -I INPUT 1 -p udp --dport <probe port> -j DROP`
+  (and `-D` to end it). Not SIGSTOP on the probe: its endpoint takes minutes
+  to answer again after a resume, which looks like a client that never
+  reconnects.
+- `--iroh-log` on a client from before #1275 fails every request after the
+  first (`could not set log level`), so compare old and new by the probe's
+  count, not by the client's log. iroh's own tracing also lands in the
+  console's pane, not on the redirected stderr.
+- A process started by `discobox exec` dies with the exec: start a box-side
+  helper with `setsid -f`, and check it with a second exec.
+- `pgrep -f <cli path>` also matches your own tool shell, and a `kill` of
+  that kills the shell (exit 144): use `pgrep -x`.
+
 # Verifying a pool route as the dev pool (the asset API, any `/api/pools/{poolId}/…`)
 
 A pool route answers only the pool's own signed assertion, so `curl` it with
