@@ -48,6 +48,27 @@ func TestSleepWithAWakeWritesBothDatedAndNothingElse(t *testing.T) {
 	}
 }
 
+func TestSleepKeepsANoteWithSpacesAndPunctuationWhole(t *testing.T) {
+	const text = "discobox#503: backport pushed (8b9cfbe), blocked on release/0.18 existing"
+	d := testDirs(t)
+	if err := power(d, []string{"sleep", "--note", text, "--wake-in", "1m"}, now, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if note, _ := os.ReadFile(filepath.Join(d.wake, "sleep")); strings.TrimSpace(string(note)) != text {
+		t.Fatalf("note = %q, want %q", note, text)
+	}
+	// A note is a wake's contents, so with no wake it is refused for that
+	// reason, not as a stray argument, and nothing is written.
+	d = testDirs(t)
+	err := power(d, []string{"sleep", "--note", text}, now, io.Discard)
+	if err == nil || err.Error() != "--note needs --wake-in or --wake-at" {
+		t.Fatalf("sleep --note with no wake: err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(d.sleep, "agent")); !os.IsNotExist(err) {
+		t.Fatalf("sleep requested despite the refusal: %v", err)
+	}
+}
+
 func TestWakeAtAClockTimeIsTheNextOneToCome(t *testing.T) {
 	d := testDirs(t)
 	if err := power(d, []string{"wake", "ci", "--at", "09:30"}, now, io.Discard); err != nil {
