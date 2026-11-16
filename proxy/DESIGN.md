@@ -399,6 +399,24 @@ connection with `GOAWAY PROTOCOL_ERROR`. libwww-perl sends
 these were dropped. `TestHTTPProxyDropsHopByHopHeadersBeforeAnHTTP2Upstream`
 pins it.
 
+## Incomplete Response Bodies
+
+A response body that fails part way — an origin that drops the connection, the
+control plane revoking a gate call mid-download — reaches the sandbox as an
+**incomplete transfer**, never as the clean end of a shorter body. The sandbox
+often cannot tell otherwise: the proxy wraps every body it records, so `goproxy`
+drops `Content-Length` and the sandbox's leg is chunked (or h2 with no length)
+whatever the origin sent. The sandbox gets the response head and every byte that
+did arrive, then the HTTP/1.1 connection closes without the last chunk, or the
+HTTP/2 stream is reset (`INTERNAL_ERROR`) rather than ended — what
+`httputil.ReverseProxy` does. Stock `goproxy` finalized the message on the plain
+HTTP and HTTP/2 MITM paths; the fork the root `go.mod` points at aborts it there
+(the HTTP/1.1 MITM path already did). So a reader wrapped around a response body
+on the way must return a read error as it is, never end the body with `io.EOF`
+in its place: this package's `responseStream` and the pool agent's
+`gateResponseBody` do. `TestHTTPProxyGateUpstreamBodyFailureIsAnIncompleteTransfer` pins it on
+all three paths, chunked and with a known length.
+
 ## HTTP/2 and gRPC
 
 HTTP/2 is end to end and still MITM'd. The sandbox's leg offers `h2` over ALPN

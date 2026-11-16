@@ -388,10 +388,18 @@ replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v
 // this repository's CI for the full ten minute test timeout. The fork forwards
 // the buffered bytes on both paths.
 //
-// Drop this once an upstream release fixes both: elazarl/goproxy#805 covers the
-// MITM path in https.go, and the plain HTTP path this proxy uses — hijackConnection
-// in websocket.go — is untouched by it. discobox-ai/discobox#25 tracks that, and
-// proxy's TestHTTPProxyUpgradeEarlyClientBytes is what says whether it is safe.
-replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
+// It also aborts a response whose upstream body fails part way, as
+// httputil.ReverseProxy does, where goproxy finalized it: over plain HTTP it
+// wrote the last chunk, and over the HTTP/2 MITM it ended the stream, so a
+// sandbox read a revoked files download through the gate as a complete, shorter
+// file (#655). proxy's TestHTTPProxyGateUpstreamBodyFailureIsAnIncompleteTransfer
+// says whether a goproxy without it is safe, and #1247 tracks offering it upstream.
+//
+// Drop this once an upstream release fixes all of it: elazarl/goproxy#805 covers
+// the MITM path in https.go of the first, and the plain HTTP path this proxy uses
+// — hijackConnection in websocket.go — is untouched by it. discobox-ai/discobox#25
+// tracks that, and proxy's TestHTTPProxyUpgradeEarlyClientBytes is what says
+// whether it is safe.
+replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20261116173614-9cdd04791161
 
 replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4

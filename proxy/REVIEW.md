@@ -175,6 +175,11 @@
   stays on the kept-alive connection for the client to read as the next
   response. A HEAD keeps its transfer coding: it describes the GET, and
   without it net/http closes the connection after an unsized HEAD.
+- A reader wrapped around a response body returns its source's read error as
+  it is, never `io.EOF` or a short clean end in its place. The sandbox's leg is
+  chunked whatever the origin sent, so that error is the only thing that makes
+  the proxy abort the response instead of finalizing a truncated body as whole
+  (#655; see Incomplete Response Bodies in `DESIGN.md`).
 - A new place the audit trail keeps request or response text — a row field, a
   spool, a span attribute — goes through the recorder's redactor
   (`Recorder.SetRedactor`), or a client's raw secret (ADR 26-10-27-840) is
