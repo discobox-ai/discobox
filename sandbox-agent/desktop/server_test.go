@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -663,6 +664,9 @@ func TestTheSessionEndpointDoesNotStartADisplay(t *testing.T) {
 // xrandr is a stub on PATH that counts its calls and answers as a running
 // server would, and a listener on ServerAddr stands in for Xorg's own TCP port.
 func TestTheSessionEndpointDoesNotRestartAStoppedDisplay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the xrandr stub is POSIX shell")
+	}
 	bin := t.TempDir()
 	calls := filepath.Join(bin, "calls")
 	stub := "#!/bin/sh\necho x >> " + calls + "\n" +
