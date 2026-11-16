@@ -283,11 +283,11 @@ func (h *httpProxy) policy() *filter.Filter {
 
 func (h *httpProxy) setupMITM() {
 	tlsConfig := func(host string, _ *goproxy.ProxyCtx) (*tls.Config, error) {
-		hostname := host
-		if split, _, err := net.SplitHostPort(host); err == nil {
-			hostname = split
-		}
-		cert, err := h.certs.SignHost(hostname)
+		// The leaf names the host the way policy does: a client asking for a
+		// fully qualified name (CONNECT host.:443) gets a leaf for host, since
+		// a dNSName SAN never carries the trailing dot (RFC 5280) and a strict
+		// verifier refuses one that does.
+		cert, err := h.certs.SignHost(authorityHostname(host))
 		if err != nil {
 			return nil, err
 		}
