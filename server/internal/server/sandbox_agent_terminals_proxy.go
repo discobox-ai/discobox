@@ -164,6 +164,11 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 			return
 		}
 		proxy := sandboxPoolReverseProxy(target, lease, writeSandboxAgentProxyError)
+		if use.Attach {
+			// The sandbox is usable, so a pool that does not answer now is a
+			// hop on the way that is briefly down: the attach waits it out.
+			proxy.Transport = poolOutageRetry{base: proxy.Transport}
+		}
 		if notRunning != nil {
 			// The pool agent found the sandbox not running — stopped, or not
 			// yet done starting — and refused rather than start it, saying
