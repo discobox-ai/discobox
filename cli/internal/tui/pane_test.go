@@ -464,6 +464,45 @@ func TestThePollDoesNotReopenASessionAlreadyShown(t *testing.T) {
 	})
 }
 
+// A server that stops answering costs the workspace one poll, not one every
+// tick: the next listing waits for the last one's answer, and a listing that
+// never answers is given up at its own deadline so the poll carries on. A
+// console left open on a hung transport otherwise piled up a request every two
+// seconds for as long as it stayed open.
+func TestTheWorkspacePollWaitsForItsLastAnswer(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		// Let the opening poll's own tick come and go, so the only listing
+		// out is the one asked for below.
+		d.wait("the opening poll's next listing", func() bool { return ds.execsAsked() >= 2 })
+		d.wait("the poll to be idle", func() bool { return m.execsPoll.since.IsZero() })
+
+		ds.hangExecs()
+		before := ds.execsAsked()
+		d.dispatch(workspaceTickMsg{gen: m.wsGen})
+		d.wait("the hung listing", func() bool { return ds.execsAsked() == before+1 })
+
+		// Five poll intervals, all short of the listing's own deadline.
+		for range 5 * int(workspacePollEvery/(200*time.Millisecond)) {
+			d.settle()
+		}
+		if got := ds.execsAsked() - before; got != 1 {
+			t.Fatalf("%d exec listings were asked for while the first had not answered, want 1", got)
+		}
+		d.dispatch(workspaceTickMsg{gen: m.wsGen})
+		d.settle()
+		if got := ds.execsAsked() - before; got != 1 {
+			t.Fatalf("a tick sent a second listing while the first was out (%d asked)", got)
+		}
+
+		// Past the deadline the listing fails, and the poll asks again.
+		time.Sleep(workspacePollTimeout)
+		d.wait("the poll to carry on after the listing's deadline", func() bool { return ds.execsAsked() >= before+2 })
+	})
+}
+
 // A tick from a workspace that has been left is stale, and must not reopen
 // anything.
 func TestAStaleTickIsDropped(t *testing.T) {

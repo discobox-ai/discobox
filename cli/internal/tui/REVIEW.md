@@ -115,6 +115,13 @@
 
 ## The screen
 
+- **Anything the window re-reads on a beat goes through a `poll`.** One at a
+  time, each request on a deadline of its own: a request sent every tick
+  whether or not the last had answered is how a window open for hours ends up
+  holding hundreds of them. It happened twice — the listing (the `poll` type's
+  own comment), then the workspace's exec and service listings, which a hung
+  transport grew to some 400 requests in flight (#1275).
+
 - **Bubble Tea's own messages arrive in no order.** The size it opened with,
   the color profile, the environment and every answer to `RequestWindowSize`
   are each sent from a goroutine of their own, so one asked for later is not
