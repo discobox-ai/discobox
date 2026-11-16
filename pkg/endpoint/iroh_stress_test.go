@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -471,5 +472,205 @@ func TestIrohRedialConvergesOnOneConnection(t *testing.T) {
 
 	if got := admitted.Load(); got != 1 {
 		t.Fatalf("the restarted server admitted %d connections for %d concurrent requests, want 1", got, requests)
+	}
+}
+
+// A process builds round trippers to one peer freely: each CLI App and git
+// proxy has its own, and a client built per request was once the console's
+// every poll, every two seconds for hours. The peer's connection carries the
+// handshake and the path state, so it belongs to the endpoint and the peer, not
+// to whichever round tripper happened to dial it; otherwise every round
+// tripper is a new QUIC connection.
+func TestIrohRoundTrippersShareOneConnectionPerPeer(t *testing.T) {
+	serverKey := newSecretKey(t)
+	addrs, admitted, stop := irohEchoServer(t, serverKey)
+	t.Cleanup(stop)
+
+	client := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t)})
+	serverPub, _ := serverKey.Public().(ed25519.PublicKey)
+	serverID, err := IrohIDFromPublicKey(serverPub)
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+
+	const requests = 5
+	for i := 0; i < requests; i++ {
+		transport, err := client.RoundTripper(serverID, nil, addrs...)
+		if err != nil {
+			t.Fatalf("RoundTripper() error = %v", err)
+		}
+		if err := post(ctx, &http.Client{Transport: transport}, fmt.Appendf(nil, "request %d", i)); err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+	}
+
+	if got := admitted.Load(); got != 1 {
+		t.Fatalf("the server admitted %d connections for %d requests to one peer, want 1", got, requests)
+	}
+}
+
+// A dial to a peer that does not answer is shared by every request to that
+// peer, and no request's deadline is the dial's: each caller — the one that
+// started the dial and the ones that found it in flight — gets its own error at
+// its own deadline rather than waiting for as long as iroh takes to give up.
+func TestIrohDialWaitsEndWithEachCallersContext(t *testing.T) {
+	// A UDP socket that is bound and never read: the peer's address answers
+	// nothing, so its dial neither completes nor is refused.
+	silent, err := (&net.ListenConfig{}).ListenPacket(t.Context(), "udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ListenPacket() error = %v", err)
+	}
+	t.Cleanup(func() { _ = silent.Close() })
+
+	client := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t), DisableDiscovery: true, DisableRelay: true})
+	t.Cleanup(client.close)
+	ep, err := client.bind()
+	if err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	peerPub, _ := newSecretKey(t).Public().(ed25519.PublicKey)
+	peerID, err := IrohIDFromPublicKey(peerPub)
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	direct := []string{silent.LocalAddr().String()}
+
+	var wg sync.WaitGroup
+	for _, caller := range []string{"the caller that starts the dial", "a caller that finds it in flight"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			started := time.Now()
+			if _, err := client.acquire(ctx, ep, peerID, direct, nil); !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("%s: acquire() error = %v, want its own deadline", caller, err)
+			}
+			if waited := time.Since(started); waited > 5*time.Second {
+				t.Errorf("%s waited %s, past its own one-second deadline", caller, waited.Round(time.Millisecond))
+			}
+		}()
+		time.Sleep(100 * time.Millisecond)
+	}
+	wg.Wait()
+}
+
+// A peer grants each connection a fixed number of concurrent streams, and a
+// stream past that waits for one to close. Long-lived streams — attached
+// panes, port forwards — must not use that up for everything else to the same
+// peer: past irohStreamsPerConn the endpoint dials another connection, and
+// closes it once the burst has gone.
+func TestIrohStreamsPastOneConnectionsShareOpenAnother(t *testing.T) {
+	serverKey := newSecretKey(t)
+	addrs, admitted, stop := irohEchoServer(t, serverKey)
+	t.Cleanup(stop)
+
+	client := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t)})
+	serverPub, _ := serverKey.Public().(ed25519.PublicKey)
+	serverID, err := IrohIDFromPublicKey(serverPub)
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	transport, err := client.RoundTripper(serverID, nil, addrs...)
+	if err != nil {
+		t.Fatalf("RoundTripper() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	// Past what iroh grants one connection (100), every one held open.
+	const held = 150
+	streams := make([]net.Conn, 0, held)
+	for i := 0; i < held; i++ {
+		stream, err := dialThrough(ctx, transport)
+		if err != nil {
+			t.Fatalf("stream %d: %v", i, err)
+		}
+		// A stream exists on the peer only once bytes flow on it.
+		if _, err := stream.Write([]byte("GET /echo HTTP/1.1\r\nHost: discobox.local\r\n\r\n")); err != nil {
+			t.Fatalf("write on stream %d: %v", i, err)
+		}
+		streams = append(streams, stream)
+	}
+	if got, want := admitted.Load(), int64((held+irohStreamsPerConn-1)/irohStreamsPerConn); got != want {
+		t.Fatalf("the server admitted %d connections for %d open streams, want %d", got, held, want)
+	}
+
+	for _, stream := range streams {
+		_ = stream.Close()
+	}
+	client.peersMu.Lock()
+	left := len(client.peers[serverID].conns)
+	client.peersMu.Unlock()
+	if left != 1 {
+		t.Fatalf("%d connections are kept once every stream has closed, want 1", left)
+	}
+	// And the one kept still serves.
+	if err := post(ctx, &http.Client{Transport: transport}, []byte("after the burst")); err != nil {
+		t.Fatalf("request after the burst: %v", err)
+	}
+}
+
+// A connection that stops granting streams — its peer not freeing the slots of
+// streams this side has finished with — must not take every later request
+// with it. The stream that waited out its bound is tried once on a new
+// connection, and the starved one is given nothing more.
+func TestIrohAStarvedConnectionIsRetired(t *testing.T) {
+	serverKey := newSecretKey(t)
+	addrs, admitted, stop := irohEchoServer(t, serverKey)
+	t.Cleanup(stop)
+
+	client := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t)})
+	client.streamOpenTimeout = time.Second
+	ep, err := client.bind()
+	if err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	serverPub, _ := serverKey.Public().(ed25519.PublicKey)
+	serverID, err := IrohIDFromPublicKey(serverPub)
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	// Use up every stream the server grants the connection, behind the
+	// endpoint's back: each request is answered and its stream kept open, as
+	// a peer that never frees its slots would.
+	first, err := client.acquire(ctx, ep, serverID, addrs, nil)
+	if err != nil {
+		t.Fatalf("acquire() error = %v", err)
+	}
+	for i := 0; ; i++ {
+		openCtx, openCancel := context.WithTimeout(ctx, time.Second)
+		stream, err := first.conn.OpenConn(openCtx)
+		openCancel()
+		if err != nil {
+			break
+		}
+		if _, err := stream.Write([]byte("GET /echo HTTP/1.1\r\nHost: discobox.local\r\n\r\n")); err != nil {
+			t.Fatalf("write on stream %d: %v", i, err)
+		}
+		if i > 1000 {
+			t.Fatal("the server never stopped granting streams")
+		}
+	}
+	client.release(serverID, first)
+
+	transport, err := client.RoundTripper(serverID, nil, addrs...)
+	if err != nil {
+		t.Fatalf("RoundTripper() error = %v", err)
+	}
+	httpClient := &http.Client{Transport: transport}
+	for i := 0; i < 3; i++ {
+		if err := post(ctx, httpClient, fmt.Appendf(nil, "request %d", i)); err != nil {
+			t.Fatalf("request %d on a peer whose first connection is starved: %v", i, err)
+		}
+	}
+	if got := admitted.Load(); got != 2 {
+		t.Fatalf("the server admitted %d connections, want 2: the starved one and its replacement", got)
 	}
 }

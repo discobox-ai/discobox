@@ -254,6 +254,36 @@ ID with no stream read, and a certificate-carrying client meeting a server
 without certificate support is refused at the TLS layer — an unambiguous "this
 server has no certificates" rather than a misleading "not enrolled".
 
+## The Endpoint Owns the Connections, the App Owns the Client
+
+A process's **QUIC connections to a peer are its iroh endpoint's**
+(`IrohEndpoint.acquire`, `pkg/endpoint/iroh_transport.go`): usually one, more
+only while one is busy, and every round tripper to that peer opens its streams
+on them. They are the endpoint's rather than a round tripper's because round trippers are built freely: a connection per
+round tripper was a connection per request, and a console polling every two
+seconds for hours opened tens of thousands from one endpoint until new connects
+stopped resolving. A dead connection is replaced by one dial that every request
+waiting on the peer shares; the dial runs on its own, bounded
+(`irohDialTimeout`), and each request waits for it only as long as its own
+context allows.
+
+A peer grants a connection a fixed number of concurrent streams (iroh's
+default is 100) and a stream past that waits, while a console's streams
+include long-lived ones — every attached pane, the event stream, each
+connection through a port forward. So past `irohStreamsPerConn` open streams
+the endpoint dials the peer another connection, and closes the extra one once
+its streams have all ended. Opening a stream is bounded too
+(`irohStreamOpenTimeout`); a connection that does not grant one within it is
+retired — given no new streams, closed when its open ones end — and the stream
+is tried on another.
+
+An `App` builds its HTTP client once and reuses it for every request
+(`httpClientWithAutoStart`), as it keeps the resolved server: a client built
+per request would leave each earlier one's idle streams open on the shared
+connection until they timed out. Configuring the transport again on a second
+build sets iroh's own tracing only the first time, because iroh refuses a
+second call (`SetIrohLogging`).
+
 ## A Client Remembers Where a Server Answered
 
 `peer_addrs.go` keeps one entry per peer under `<state>/iroh/peer-addrs.json`:

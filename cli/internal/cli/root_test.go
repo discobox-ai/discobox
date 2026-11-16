@@ -1559,6 +1559,28 @@ func TestHTTPClientAddsAuthorizationHeader(t *testing.T) {
 	}
 }
 
+// Every request of an App goes through the one client it built: over iroh that
+// client's idle streams sit on the endpoint's one connection to the peer, and a
+// client built per request would leave every earlier one's open there. The
+// console asks every two seconds for as long as it is open.
+func TestHTTPClientIsBuiltOnce(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(server.Close)
+
+	app := &App{serverURL: server.URL, token: "token-1"}
+	firstURL, first, err := app.httpClient()
+	if err != nil {
+		t.Fatalf("http client: %v", err)
+	}
+	secondURL, second, err := app.httpClient()
+	if err != nil {
+		t.Fatalf("second http client: %v", err)
+	}
+	if first != second || firstURL != secondURL {
+		t.Fatal("the App built a second client for its second request, want the first one again")
+	}
+}
+
 func TestDebugTransportPrintsRequestAndRedactsAuthorization(t *testing.T) {
 	var log bytes.Buffer
 	transport := debugTransport{

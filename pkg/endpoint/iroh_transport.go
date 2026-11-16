@@ -85,6 +85,15 @@ type IrohEndpoint struct {
 	// peer without a certificate is its own identity and has no entry.
 	claimsMu sync.Mutex
 	claims   map[IrohID]*irohClaim
+
+	// peers is this endpoint's connections to each peer it dials, shared by
+	// every round tripper to that peer. See acquire.
+	peersMu sync.Mutex
+	peers   map[IrohID]*irohPeer
+
+	// streamOpenTimeout is irohStreamOpenTimeout, held here so a test can
+	// shorten it for one endpoint.
+	streamOpenTimeout time.Duration
 }
 
 type irohClaim struct {
@@ -187,7 +196,7 @@ func NewIrohEndpoint(cfg IrohConfig) (*IrohEndpoint, error) {
 		issuer = &id
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &IrohEndpoint{cfg: cfg, issuer: issuer, ctx: ctx, cancel: cancel}, nil
+	return &IrohEndpoint{cfg: cfg, issuer: issuer, ctx: ctx, cancel: cancel, streamOpenTimeout: irohStreamOpenTimeout}, nil
 }
 
 // ID is the endpoint ID peers dial to reach this endpoint.
@@ -598,62 +607,14 @@ func irohRoundTripper(target Endpoint, base http.RoundTripper) (http.RoundTrippe
 // RoundTripper dials one peer and serves HTTP over streams opened to it. Any
 // direct addresses given are tried alongside whatever discovery finds, which is
 // what makes a peer reachable before a discovery service exists.
+//
+// The QUIC connections under it are the endpoint's, not the round tripper's
+// (see [IrohEndpoint.acquire]): every round tripper to one peer opens its
+// streams on the same connections, however many a caller builds.
 func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ...string) (http.RoundTripper, error) {
 	ep, err := e.bind()
 	if err != nil {
 		return nil, err
-	}
-
-	var (
-		mu   sync.Mutex
-		conn *iroh.Conn
-	)
-	// One QUIC connection per peer, redialed when it dies. Streams are cheap;
-	// connections carry the handshake, the path discovery, and the NAT
-	// traversal state, so tearing one down per request would pay all of that
-	// again on every call.
-	//
-	// A caller reports the connection it found dead rather than asking for a
-	// new one, which is what keeps a peer restarting from costing one
-	// connection per request in flight: whoever gets here first replaces it,
-	// and everyone else finds the replacement already waiting.
-	dial := func(ctx context.Context, stale *iroh.Conn) (*iroh.Conn, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if conn != nil && conn != stale {
-			return conn, nil
-		}
-		addrs := append(append([]string(nil), direct...), locate(e.cfg.Locate, id)...)
-		parsed, err := parseIrohAddrs(addrs)
-		if err != nil {
-			irohLogf(IrohLogError, "connect: %s has an unusable direct address: %v", id.Short(), err)
-			return nil, err
-		}
-		addr := iroh.AddrOf(iroh.EndpointID(id)).WithDirectAddrs(parsed...)
-		alpn := e.dialALPN()
-		irohLogf(IrohLogInfo, "connect: dialing %s (direct %s, alpn %s)", id.Short(), joinAddrPorts(parsed), alpn)
-		started := time.Now()
-		opened, err := ep.Connect(ctx, addr, []byte(alpn))
-		if err != nil {
-			irohLogf(IrohLogError, "connect: %s failed after %s: %v", id.Short(), time.Since(started).Round(time.Millisecond), err)
-			return nil, fmt.Errorf("dial iroh endpoint %s: %w", id.Short(), err)
-		}
-		// A handshake proves the peer's identity and nothing about whether it
-		// will admit us: a server refuses by closing the connection after
-		// accepting it, so the refusal surfaces at the first stream rather than
-		// here. That is the layer boundary this line marks.
-		irohLogf(IrohLogInfo, "connect: %s connected in %s", id.Short(), time.Since(started).Round(time.Millisecond))
-		// Before the connection is pooled, so no request can be the thing that
-		// discovers the certificate was never sent.
-		if err := e.presentCertificate(ctx, opened); err != nil {
-			irohLogf(IrohLogError, "connect: %s could not be given this peer's certificate: %v", id.Short(), err)
-			return nil, err
-		}
-		conn = opened
-		if e.cfg.Reached != nil {
-			go e.watchPaths(id, opened)
-		}
-		return conn, nil
 	}
 
 	transport := cloneTransport(base)
@@ -663,16 +624,31 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 		// connection-level error rather than a stream one. It earns exactly
 		// one redial: more would retry a peer that is simply unreachable on
 		// every request, and the error already says why it failed.
-		var stale *iroh.Conn
+		var stale *irohPeerConn
 		for attempt := 0; ; attempt++ {
-			active, err := dial(ctx, stale)
+			active, err := e.acquire(ctx, ep, id, direct, stale)
 			if err != nil {
 				return nil, err
 			}
-			stream, err := active.OpenConn(ctx)
+			// Bounded: net/http dials on a context nothing cancels, and a
+			// stream the peer has no credit for waits until it does.
+			openCtx, cancel := context.WithTimeout(ctx, e.streamOpenTimeout)
+			stream, err := active.conn.OpenConn(openCtx)
+			// The stream's own bound ran out, not the caller's: the connection
+			// is up and is not granting this side a stream.
+			starved := err != nil && ctx.Err() == nil && errors.Is(openCtx.Err(), context.DeadlineExceeded)
+			cancel()
 			if err == nil {
 				irohLogf(IrohLogDebug, "stream: opened to %s", id.Short())
-				return stream, nil
+				return &irohStream{StreamConn: stream, release: func() { e.release(id, active) }}, nil
+			}
+			if starved {
+				e.retire(id, active)
+			}
+			e.release(id, active)
+			if attempt == 0 && starved {
+				irohLogf(IrohLogWarn, "stream: %s granted no stream on its connection in %s; opening another", id.Short(), e.streamOpenTimeout)
+				continue
 			}
 			if attempt == 0 && errors.Is(err, iroh.ErrConnection) {
 				irohLogf(IrohLogWarn, "stream: the connection to %s is gone (%v); redialing", id.Short(), err)
@@ -693,6 +669,232 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 	// peer that is not a proxy.
 	transport.Proxy = nil
 	return localRoundTripper{base: transport}, nil
+}
+
+// irohDialTimeout bounds one dial of a peer: the handshake and the
+// certificate that follows it. A dial is shared by every request waiting on the
+// peer and is not any one of theirs to cancel, and net/http dials on a context
+// that is never canceled, so without this a connect that never resolves holds
+// every request to the peer for the life of the process. iroh gives up on an
+// unanswering direct address at about thirty seconds on its own; this is the
+// bound for whatever it does not give up on.
+const irohDialTimeout = 30 * time.Second
+
+// irohStreamsPerConn is how many streams this side opens on one connection
+// before it dials the peer another.
+//
+// A peer grants a connection a fixed number of concurrent streams — iroh's
+// default is 100 — and a stream opened past that waits for one to close. A
+// process's streams to its server are not all short requests: every attached
+// pane, the event stream and each connection through a port forward holds one
+// for as long as it lasts, so one connection would cap all of them together.
+// It stops well short of the peer's limit because a stream closed here frees
+// its slot only once the peer has seen it close.
+const irohStreamsPerConn = 64
+
+// irohStreamOpenTimeout bounds opening a stream on a connection that is up. It
+// returns at once while the peer has credit, so reaching it means the peer is
+// not freeing the slots of streams this side has closed, or has stopped
+// answering on that connection: either way the connection is retired (see
+// IrohEndpoint.retire) and the stream tried once on another.
+const irohStreamOpenTimeout = 15 * time.Second
+
+// irohPeer is the endpoint's connections to one peer, and the dial in flight
+// to add one.
+type irohPeer struct {
+	conns []*irohPeerConn
+	// dialing is closed when the dial in flight ends, nil when none is.
+	dialing chan struct{}
+	// err is how the last dial ended, for the requests that waited on it.
+	err error
+}
+
+// irohPeerConn is one connection to a peer and how many of this side's
+// streams are open on it.
+type irohPeerConn struct {
+	conn    *iroh.Conn
+	streams int
+	// retired is a connection that stopped granting streams: none are opened
+	// on it again, and it closes when the last open one ends.
+	retired bool
+}
+
+// drop takes conn out of the peer's connections, reporting whether it was
+// there.
+func (p *irohPeer) drop(conn *irohPeerConn) bool {
+	i := slices.Index(p.conns, conn)
+	if i < 0 {
+		return false
+	}
+	p.conns = slices.Delete(p.conns, i, i+1)
+	return true
+}
+
+// irohStream is a stream this side opened, which gives its connection back
+// its slot when it ends.
+type irohStream struct {
+	*iroh.StreamConn
+	once    sync.Once
+	release func()
+}
+
+func (s *irohStream) Close() error {
+	err := s.StreamConn.Close()
+	s.once.Do(s.release)
+	return err
+}
+
+func (s *irohStream) Reset(ctx context.Context, code uint64) error {
+	err := s.StreamConn.Reset(ctx, code)
+	s.once.Do(s.release)
+	return err
+}
+
+// acquire reserves a stream on one of the endpoint's connections to id,
+// dialing one when there is none with room or the one there was found dead.
+// [IrohEndpoint.release] gives the reservation back.
+//
+// The connections are the endpoint's, not a round tripper's, and there is one
+// per peer until it is busy (irohStreamsPerConn). Streams are cheap;
+// connections carry the handshake, the path discovery, and the NAT traversal
+// state, so tearing one down per request would pay all of that again on every
+// call. They are held here rather than in a round tripper because callers
+// build round trippers freely, and a connection per round tripper was a
+// connection per request: a console polling for hours opened tens of
+// thousands.
+//
+// A caller reports the connection it found dead (stale) rather than asking for
+// a new one, which is what keeps a peer restarting from costing one connection
+// per request in flight: whoever gets here first replaces it, and everyone else
+// waits on that dial and finds the replacement. The dial runs on its own,
+// bounded by irohDialTimeout, and every caller — the one that started it
+// included — waits for it only as long as its own context allows.
+func (e *IrohEndpoint) acquire(ctx context.Context, ep *iroh.Endpoint, id IrohID, direct []string, stale *irohPeerConn) (*irohPeerConn, error) {
+	for {
+		e.peersMu.Lock()
+		if e.peers == nil {
+			e.peers = map[IrohID]*irohPeer{}
+		}
+		peer := e.peers[id]
+		if peer == nil {
+			peer = &irohPeer{}
+			e.peers[id] = peer
+		}
+		if stale != nil {
+			if peer.drop(stale) {
+				// Found dead; closing it frees what iroh still holds for it.
+				defer func(dead *iroh.Conn) { _ = dead.Close() }(stale.conn)
+			}
+			stale = nil
+		}
+		for _, conn := range peer.conns {
+			if !conn.retired && conn.streams < irohStreamsPerConn {
+				conn.streams++
+				e.peersMu.Unlock()
+				return conn, nil
+			}
+		}
+		wait := peer.dialing
+		if wait == nil {
+			wait = make(chan struct{})
+			peer.dialing = wait
+			go e.dialInto(ep, peer, id, direct, wait)
+		}
+		e.peersMu.Unlock()
+
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("dial iroh endpoint %s: %w", id.Short(), ctx.Err())
+		}
+		e.peersMu.Lock()
+		err := peer.err
+		e.peersMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
+// dialInto dials id and adds the connection to peer, then ends the dial in
+// flight (done).
+func (e *IrohEndpoint) dialInto(ep *iroh.Endpoint, peer *irohPeer, id IrohID, direct []string, done chan struct{}) {
+	opened, err := e.dialPeer(ep, id, direct)
+	e.peersMu.Lock()
+	peer.dialing, peer.err = nil, err
+	if err == nil {
+		peer.conns = append(peer.conns, &irohPeerConn{conn: opened})
+	}
+	e.peersMu.Unlock()
+	close(done)
+}
+
+// release gives back a stream acquire reserved. A connection left with no
+// streams is closed when it is retired, or when the peer has another: it was
+// dialed for a burst, and one connection is all a quiet peer needs kept.
+func (e *IrohEndpoint) release(id IrohID, conn *irohPeerConn) {
+	e.peersMu.Lock()
+	conn.streams--
+	idle := false
+	if peer := e.peers[id]; peer != nil && conn.streams == 0 && (conn.retired || len(peer.conns) > 1) {
+		idle = peer.drop(conn)
+	}
+	e.peersMu.Unlock()
+	if idle {
+		_ = conn.conn.Close()
+	}
+}
+
+// retire stops conn being given new streams. Its open ones — an attached
+// pane, a forwarded connection — are left to end on their own, which is why it
+// is not closed here as a dead one is.
+func (e *IrohEndpoint) retire(id IrohID, conn *irohPeerConn) {
+	e.peersMu.Lock()
+	defer e.peersMu.Unlock()
+	if !conn.retired {
+		irohLogf(IrohLogWarn, "stream: retiring a connection to %s with %d streams open", id.Short(), conn.streams)
+	}
+	conn.retired = true
+}
+
+// dialPeer opens a new connection to id and presents this endpoint's
+// certificate on it, within irohDialTimeout.
+func (e *IrohEndpoint) dialPeer(ep *iroh.Endpoint, id IrohID, direct []string) (*iroh.Conn, error) {
+	addrs := append(append([]string(nil), direct...), locate(e.cfg.Locate, id)...)
+	parsed, err := parseIrohAddrs(addrs)
+	if err != nil {
+		irohLogf(IrohLogError, "connect: %s has an unusable direct address: %v", id.Short(), err)
+		return nil, err
+	}
+	// The endpoint's context, not a caller's: the dial is shared, and closing
+	// the endpoint is what should end it early.
+	ctx, cancel := context.WithTimeout(e.ctx, irohDialTimeout)
+	defer cancel()
+	addr := iroh.AddrOf(iroh.EndpointID(id)).WithDirectAddrs(parsed...)
+	alpn := e.dialALPN()
+	irohLogf(IrohLogInfo, "connect: dialing %s (direct %s, alpn %s)", id.Short(), joinAddrPorts(parsed), alpn)
+	started := time.Now()
+	opened, err := ep.Connect(ctx, addr, []byte(alpn))
+	if err != nil {
+		irohLogf(IrohLogError, "connect: %s failed after %s: %v", id.Short(), time.Since(started).Round(time.Millisecond), err)
+		return nil, fmt.Errorf("dial iroh endpoint %s: %w", id.Short(), err)
+	}
+	// A handshake proves the peer's identity and nothing about whether it
+	// will admit us: a server refuses by closing the connection after
+	// accepting it, so the refusal surfaces at the first stream rather than
+	// here. That is the layer boundary this line marks.
+	irohLogf(IrohLogInfo, "connect: %s connected in %s", id.Short(), time.Since(started).Round(time.Millisecond))
+	// Before the connection is pooled, so no request can be the thing that
+	// discovers the certificate was never sent.
+	if err := e.presentCertificate(ctx, opened); err != nil {
+		irohLogf(IrohLogError, "connect: %s could not be given this peer's certificate: %v", id.Short(), err)
+		_ = opened.Close()
+		return nil, err
+	}
+	if e.cfg.Reached != nil {
+		go e.watchPaths(id, opened)
+	}
+	return opened, nil
 }
 
 func locate(locator func(IrohID) []string, id IrohID) []string {
