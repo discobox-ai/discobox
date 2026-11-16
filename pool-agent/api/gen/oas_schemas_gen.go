@@ -7467,9 +7467,11 @@ type SandboxConfig struct {
 	Description OptString           `json:"description"`
 	Env         OptSandboxConfigEnv `json:"env"`
 	// The sandbox's first tags, which seed its meta file with the description when it has none.
-	Tags   OptSandboxConfigTags   `json:"tags"`
-	Git    OptSandboxGitIdentity  `json:"git"`
-	Skills OptSandboxConfigSkills `json:"skills"`
+	Tags OptSandboxConfigTags `json:"tags"`
+	// The sandbox's first name, which seeds its meta file with the description and tags when it has none.
+	MetaName OptString              `json:"metaName"`
+	Git      OptSandboxGitIdentity  `json:"git"`
+	Skills   OptSandboxConfigSkills `json:"skills"`
 	// Directories of skills sources whose skills the sandbox links into the harness's skill directories
 	// on its first launch, in order (ADR 26-10-14-294). Each names a sourceCodeReferences key.
 	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
@@ -7526,6 +7528,11 @@ func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 // GetTags returns the value of Tags.
 func (s *SandboxConfig) GetTags() OptSandboxConfigTags {
 	return s.Tags
+}
+
+// GetMetaName returns the value of MetaName.
+func (s *SandboxConfig) GetMetaName() OptString {
+	return s.MetaName
 }
 
 // GetGit returns the value of Git.
@@ -7616,6 +7623,11 @@ func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 // SetTags sets the value of Tags.
 func (s *SandboxConfig) SetTags(val OptSandboxConfigTags) {
 	s.Tags = val
+}
+
+// SetMetaName sets the value of MetaName.
+func (s *SandboxConfig) SetMetaName(val OptString) {
+	s.MetaName = val
 }
 
 // SetGit sets the value of Git.

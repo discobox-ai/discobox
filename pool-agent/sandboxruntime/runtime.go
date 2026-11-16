@@ -1424,6 +1424,7 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 		if tags, ok := config.Tags.Get(); ok && len(tags) > 0 {
 			doc.Runtime.Tags = maps.Clone(map[string]string(tags))
 		}
+		doc.Runtime.MetaName = optString(config.MetaName)
 		if env, ok := config.Env.Get(); ok {
 			doc.Runtime.Env = map[string]string(env)
 		}

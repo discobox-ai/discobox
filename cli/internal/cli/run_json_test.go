@@ -243,6 +243,48 @@ func TestRunTagsAndDescribesTheDiscobox(t *testing.T) {
 	}
 }
 
+// `run --name` and --from-json's "name" are the meta name: they go as
+// config.metaName, normalized as a rename's is, and config.name stays the
+// generated handle (ADR 26-11-16-207 §§1, 6). With no name, no metaName is
+// sent, so a server from before it is not refused one.
+func TestRunNamesTheDiscobox(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args  []string
+		stdin string
+		want  any
+	}{
+		"flag":    {args: []string{"run", "-d", "--no-source", "--name", " Fix\u3000login flake ", "-p", "go"}, want: "Fix login flake"},
+		"json":    {args: []string{"run", "--from-json"}, stdin: `{"noSource": true, "prompt": "go", "name": "Fix login flake"}`, want: "Fix login flake"},
+		"none":    {args: []string{"run", "-d", "--no-source", "-p", "go"}},
+		"blank":   {args: []string{"run", "-d", "--no-source", "--name", "  ", "-p", "go"}},
+		"no json": {args: []string{"run", "--from-json"}, stdin: `{"noSource": true, "prompt": "go"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setHome(t, t.TempDir())
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			t.Chdir(newRunSourceTestRepo(t))
+			var posted map[string]any
+			server := runJSONServer(t, &posted)
+
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(strings.NewReader(tc.stdin))
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, tc.args...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute run: %v", err)
+			}
+			config, _ := posted["config"].(map[string]any)
+			if got := config["metaName"]; got != tc.want {
+				t.Fatalf("config.metaName = %#v, want %#v", got, tc.want)
+			}
+			if handle, _ := config["name"].(string); handle == "" || handle == "Fix login flake" {
+				t.Fatalf("config.name = %#v, want a generated handle", config["name"])
+			}
+		})
+	}
+}
+
 // A tag `discobox tag` would refuse is refused by run before anything is
 // created: the server named here answers nothing.
 func TestRunRefusesABadTagBeforeCreating(t *testing.T) {
@@ -250,9 +292,10 @@ func TestRunRefusesABadTagBeforeCreating(t *testing.T) {
 		args []string
 		want string
 	}{
-		"a key twice":       {[]string{"--tag", "job=a", "--tag", "job=b"}, "more than once"},
-		"a bad key":         {[]string{"--tag", "a,b"}, `--tag: tag "a,b"`},
-		"a bad description": {[]string{"--description", "a\x07b"}, "control characters"},
+		"a key twice":         {[]string{"--tag", "job=a", "--tag", "job=b"}, "more than once"},
+		"a bad key":           {[]string{"--tag", "a,b"}, `--tag: tag "a,b"`},
+		"a bad description":   {[]string{"--description", "a\x07b"}, "control characters"},
+		"a name of two lines": {[]string{"--name", "a\nb"}, "one line"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()

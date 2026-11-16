@@ -969,11 +969,13 @@ it needs. The in-box skills teach these forms.
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: `title: msg`, where the title is the name the discobox
-was given when it has one (`discobox rename`), else the primary terminal's
+was given when it has one (`run --name` or `discobox rename`, ADR
+26-11-16-207), else the primary terminal's
 window title, and the configured name only until there is one of those, and
 the msg is what its program reports over OSC 7501 while it reports one — and
 the configured name is
-generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
+generated (`randomname.Generate`; `run --name` sets the given name, never
+this one), so it is a string the
 listing has usually stopped printing.
 
 - `configuredName` matches `Config.Name` alone. `cp` alone takes it: what

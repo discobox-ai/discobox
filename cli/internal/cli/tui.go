@@ -1235,7 +1235,9 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		// or to leave the declared ones out. See tui.WithRun.
 		Include:             req.Include,
 		SkipDeclaredSources: req.SkipDeclaredSources,
-		// Likewise --description and --tag, which the panel has no row for.
+		// Likewise --name, --description and --tag, which the panel has no
+		// row for.
+		Name:        req.Name,
 		Description: req.Description,
 		Tags:        req.Tags,
 	}

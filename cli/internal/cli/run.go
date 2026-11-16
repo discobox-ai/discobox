@@ -240,20 +240,26 @@ binds only what it may delegate, and delegates nothing.
 acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
---tag KEY=VALUE tags the new discobox, and --tag KEY gives it a plain label
-with no value; repeat it for more. --description TEXT describes it. Both are
-recorded with the discobox when it is created, so "discobox ls" shows them,
-and "discobox events" its tags, from its first state, and they are in its
+--name NAME names the new discobox, as "discobox rename" would afterwards:
+it is the name "discobox ls" and the console show it by. It is not the
+discobox's handle, which is still generated, stays unique, and is what ssh
+and "discobox admin box update --name" use. --tag KEY=VALUE tags it, and
+--tag KEY gives it a plain label with no value; repeat it for more.
+--description TEXT describes it. All three are recorded with the discobox
+when it is created, so "discobox ls" shows them, and "discobox events" its
+tags, from its first state, and they are in its
 ~/.discobox/meta.json before its harness starts. They are checked as
-"discobox tag" checks them, and a bad one creates nothing. From then on they
-are the discobox's own, changed with "discobox tag" or from inside it.
+"discobox rename" and "discobox tag" check them, and a bad one creates
+nothing. From then on they are the discobox's own, changed with "discobox
+rename", "discobox tag" or from inside it.
 
 --from-json reads the whole request from stdin as one JSON object instead,
 creates the discobox without attaching, and prints it as JSON. It is for a
 caller that would rather not quote a prompt through a shell — an agent in a
 discobox making another, above all. "source" is SOURCE, required
 unless "noSource" is set; every other field is optional, and each means what
-its flag does. No argument or other run flag may be given beside it:
+its flag does, so "name" is --name, the name the discobox is listed by, not
+its handle. No argument or other run flag may be given beside it:
 
   {
     "source": "https://github.com/org/repo",
@@ -264,6 +270,7 @@ its flag does. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "name": "Fix the pkg/foo tests",
     "tags": {"ticket": "ENG-12", "wip": ""},
     "description": "Fix the failing tests in pkg/foo",
     "env": ["MODE=test"],
@@ -292,6 +299,7 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
   discobox run -d --bind github:GH_TOKEN . 'fix issue 42'
   discobox run -d --bind npm-token --delegate github . 'fan out the issues'
   discobox run -d --tag ticket=ENG-12 --tag wip --description 'Fix the flaky test' . 'fix the flaky test'
+  discobox run -d --name 'Fix login flake' . 'fix the flaky login test'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -510,6 +518,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; or SECRET[:VAR],policy=FILE,NAME=VALUE (repeat policy=FILE to merge files, arguments follow each file). Repeat for more. A discobox creating one binds only what it may delegate")
 	flags.StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Tag the new discobox from its creation, as KEY=VALUE, or KEY for a plain label; repeat for more. The same tags \"discobox tag\" sets and \"discobox ls --tag\" lists by")
+	flags.StringVar(&opts.prompt.Name, "name", "", "Name the new discobox from its creation, as \"discobox rename\" would afterwards: the name it is listed by, not its handle")
 	flags.StringVar(&opts.prompt.Description, "description", "", "Describe the new discobox from its creation, as \"discobox tag --description\" would afterwards")
 	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
@@ -783,6 +792,7 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Bind:                opts.bind,
 		Delegate:            opts.delegate,
 		DiscoboxAPI:         opts.discoboxAPI,
+		Name:                opts.prompt.Name,
 		Description:         opts.prompt.Description,
 		Tags:                opts.prompt.Tags,
 		Include:             opts.prompt.Include,

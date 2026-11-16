@@ -64,9 +64,12 @@ type PromptOptions struct {
 	Prompt             []string
 	Env                []string
 	Secret             []string
-	// Description and Tags are the discobox's first description and tags,
-	// recorded with it at create and seeded into its meta file (--description
-	// and --tag). Tags are as sandboxmeta.ParseTags reads them.
+	// Name, Description and Tags are the discobox's first meta name,
+	// description and tags, recorded with it at create and seeded into its
+	// meta file (--name, --description and --tag). Name is the name a listing
+	// shows, not the handle, which is always generated (ADR 26-11-16-207 §1).
+	// Tags are as sandboxmeta.ParseTags reads them.
+	Name        string
 	Description string
 	Tags        map[string]string
 	// SkillDirs and UserSkills are --skills and --user-skills: directories of
@@ -132,10 +135,12 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 	default:
 		return PromptOptions{}, fmt.Errorf("include dirty: invalid value %q: want true, false, or auto", opts.IncludeDirty)
 	}
-	// Checked as `discobox tag` checks a change, so a bad tag or description
-	// is refused before anything is resolved or created. The server checks
-	// them again.
-	if err := (sandboxmeta.Meta{Description: opts.Description, Tags: opts.Tags}).Validate(); err != nil {
+	// Checked as `discobox tag` and `discobox rename` check a change, the name
+	// normalized as a rename's is, so a bad name, tag or description is
+	// refused before anything is resolved or created. The server checks them
+	// again.
+	opts.Name = sandboxmeta.NormalizeName(opts.Name)
+	if err := (sandboxmeta.Meta{Name: opts.Name, Description: opts.Description, Tags: opts.Tags}).Validate(); err != nil {
 		return PromptOptions{}, err
 	}
 	return opts, nil
@@ -163,6 +168,11 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	if strings.TrimSpace(opts.Harness) != "" {
 		body.SetHarnessName(optionalString(opts.Harness))
+	}
+	// The meta name goes only when given: a server from before it refuses
+	// the field.
+	if opts.Name != "" {
+		body.Config.SetMetaName(apiclientgen.NewOptString(opts.Name))
 	}
 	if opts.Description != "" {
 		body.Config.SetDescription(apiclientgen.NewOptString(opts.Description))

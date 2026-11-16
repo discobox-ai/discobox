@@ -5035,20 +5035,26 @@ binds only what it may delegate, and delegates nothing.
 acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
---tag KEY=VALUE tags the new discobox, and --tag KEY gives it a plain label
-with no value; repeat it for more. --description TEXT describes it. Both are
-recorded with the discobox when it is created, so "discobox ls" shows them,
-and "discobox events" its tags, from its first state, and they are in its
+--name NAME names the new discobox, as "discobox rename" would afterwards:
+it is the name "discobox ls" and the console show it by. It is not the
+discobox's handle, which is still generated, stays unique, and is what ssh
+and "discobox admin box update --name" use. --tag KEY=VALUE tags it, and
+--tag KEY gives it a plain label with no value; repeat it for more.
+--description TEXT describes it. All three are recorded with the discobox
+when it is created, so "discobox ls" shows them, and "discobox events" its
+tags, from its first state, and they are in its
 ~/.discobox/meta.json before its harness starts. They are checked as
-"discobox tag" checks them, and a bad one creates nothing. From then on they
-are the discobox's own, changed with "discobox tag" or from inside it.
+"discobox rename" and "discobox tag" check them, and a bad one creates
+nothing. From then on they are the discobox's own, changed with "discobox
+rename", "discobox tag" or from inside it.
 
 --from-json reads the whole request from stdin as one JSON object instead,
 creates the discobox without attaching, and prints it as JSON. It is for a
 caller that would rather not quote a prompt through a shell — an agent in a
 discobox making another, above all. "source" is SOURCE, required
 unless "noSource" is set; every other field is optional, and each means what
-its flag does. No argument or other run flag may be given beside it:
+its flag does, so "name" is --name, the name the discobox is listed by, not
+its handle. No argument or other run flag may be given beside it:
 
   {
     "source": "https://github.com/org/repo",
@@ -5059,6 +5065,7 @@ its flag does. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "name": "Fix the pkg/foo tests",
     "tags": {"ticket": "ENG-12", "wip": ""},
     "description": "Fix the failing tests in pkg/foo",
     "env": ["MODE=test"],
@@ -5097,6 +5104,7 @@ Examples:
   discobox run -d --bind github:GH_TOKEN . 'fix issue 42'
   discobox run -d --bind npm-token --delegate github . 'fan out the issues'
   discobox run -d --tag ticket=ENG-12 --tag wip --description 'Fix the flaky test' . 'fix the flaky test'
+  discobox run -d --name 'Fix login flake' . 'fix the flaky login test'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -5122,6 +5130,7 @@ Examples:
 | --include, -i | stringArray | [] | Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo |
 | --include-dirty | bool | false | Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says Value when passed without an argument: true. |
 | --lend-git-credentials | bool | false | Deprecated: use --git-credentials=lend (false means ask) Value when passed without an argument: true. |
+| --name | string |  | Name the new discobox from its creation, as "discobox rename" would afterwards: the name it is listed by, not its handle |
 | --no-project-skills | bool | false | Leave the project's skills repositories (discobox admin skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name Value when passed without an argument: true. |
 | --no-source | bool | false | Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |

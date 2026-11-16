@@ -20,7 +20,7 @@ import (
 )
 
 // Revision advances whenever the required create contract changes.
-const Revision = 2
+const Revision = 3
 const Subprotocol = "discobox-create.v1"
 
 type Discovery struct {

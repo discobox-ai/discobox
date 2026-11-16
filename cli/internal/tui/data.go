@@ -1282,10 +1282,11 @@ type RunRequest struct {
 	Delegate    []string
 	DiscoboxAPI bool
 
-	// Description and Tags are `--description` and `--tag`: the discobox's
-	// first description and tags, recorded with it at create. Like Bind, the
-	// window offers no way to name them and carries them from `discobox
-	// run`'s own request (WithRun).
+	// Name, Description and Tags are `--name`, `--description` and `--tag`:
+	// the discobox's first meta name, description and tags, recorded with it
+	// at create. Like Bind, the window offers no way to give them and
+	// carries them from `discobox run`'s own request (WithRun).
+	Name        string
 	Description string
 	Tags        map[string]string
 

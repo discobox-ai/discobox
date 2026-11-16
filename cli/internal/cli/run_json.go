@@ -26,6 +26,9 @@ type runJSONRequest struct {
 	Bindings []runJSONBinding `json:"bindings"`
 	// DiscoboxAPI is --discobox-api.
 	DiscoboxAPI bool `json:"discoboxApi"`
+	// Name is --name, the meta name: not the API's config.name, the handle,
+	// which a request cannot set (ADR 26-11-16-207 §6).
+	Name string `json:"name"`
 	// Tags and Description are --tag and --description: tags as an object,
 	// key to value, with "" for a plain label.
 	Tags        map[string]string `json:"tags"`
@@ -93,6 +96,7 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	}
 	opts.bindings = bindings
 	opts.discoboxAPI = req.DiscoboxAPI
+	opts.prompt.Name = req.Name
 	opts.prompt.Tags = req.Tags
 	opts.prompt.Description = req.Description
 	if req.Prompt != "" {

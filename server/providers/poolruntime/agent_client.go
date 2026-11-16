@@ -937,6 +937,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, 
 	if len(opts.Tags) > 0 {
 		config.Tags = poolclient.NewOptSandboxConfigTags(poolclient.SandboxConfigTags(maps.Clone(opts.Tags)))
 	}
+	if opts.MetaName != nil && *opts.MetaName != "" {
+		config.MetaName = poolclient.NewOptString(*opts.MetaName)
+	}
 	if opts.HarnessConfigID != nil {
 		config.HarnessConfigId = poolclient.NewOptString(*opts.HarnessConfigID)
 	}

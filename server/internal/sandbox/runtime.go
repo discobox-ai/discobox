@@ -272,7 +272,10 @@ type CreateOptions struct {
 	Description *string
 	// Tags seed the sandbox's meta file with Description when it has none
 	// (ADR 0136): the tags it was created with, or its last reported ones.
-	Tags                 map[string]string
+	Tags map[string]string
+	// MetaName seeds the meta file's name on the same terms (ADR
+	// 26-11-16-207 §4). It is not Name, the handle.
+	MetaName             *string
 	HarnessConfigID      *string
 	Model                *string
 	ModelServiceTier     *string
