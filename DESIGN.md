@@ -300,10 +300,16 @@ flowchart TD
   failed. Jobs are skipped by `if`, never by `paths-ignore`, so a required
   check still reports. Go's
   build and test cache is Depot Cache, which Depot's runners set as
-  `GOCACHEPROG` and every run, pull requests included, reads and writes per
-  object; a runner without it builds cold. Any run but a pull request or a
-  branch push turns Depot Cache off (a tag's release, a dispatched one), since
-  a pull request can write what it would read.
+  `GOCACHEPROG` for runs of the repository's own branches: a branch push and a
+  same-repository pull request read and write it per object. A pull request
+  from a fork (every worker's) gets none and builds cold on purpose: Depot
+  withholds it from fork runs, and handing it one would take
+  `pull_request_target`, running fork code with write access to the cache
+  branch pushes and same-repository pull requests read. The task action logs
+  which case a run is, and warns only when a run that should have the cache
+  lacks it. Any run but a pull request or a branch push turns Depot Cache off
+  (a tag's release, a dispatched one), since a pull request can write what it
+  would read.
   golangci-lint's analysis cache is Depot Cache too, through the
   `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
   modules come from the module proxy each run, on demand as the target loads
