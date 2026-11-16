@@ -8,10 +8,11 @@ name: CI
 # -8 or -16 to trade money for wall-clock. Windows is -4: -8 was 165s against
 # 223s on -4 with Depot Cache warm, but bills twice the rate, so -4 costs about
 # a third less overall. Depot's
-# runners also start every job with GOCACHEPROG pointing Go's build and test
-# cache at Depot Cache, which is fetched object by object rather than restored
-# and saved whole; see .github/actions/task for when it is turned off, and that
-# it caches nothing else.
+# runners also start every job of the repository's own branches with
+# GOCACHEPROG pointing Go's build and test cache at Depot Cache, which is
+# fetched object by object rather than restored and saved whole; see
+# .github/actions/task for when it is turned off, why a fork's pull request has
+# none, and that it caches nothing else.
 
 on:
   pull_request:

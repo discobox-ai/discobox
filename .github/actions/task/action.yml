@@ -45,13 +45,21 @@ runs:
         go-version-file: go.mod
         cache: false
 
-    # Go's build and test cache is not here: Depot's runners start every job
-    # with GOCACHEPROG set to Depot Cache, which Go asks for each compiled
-    # package or test result as it needs it and writes new ones to as it makes
-    # them. Nothing is downloaded before the target or uploaded after it, and a
-    # pull request's results are shared like main's. Nix keeps the environment,
-    # so the devShell's go sees it too. This step shows it in the log, and
-    # warns on a runner without it, where every build starts cold.
+    # Go's build and test cache is not here: Depot's runners start a job of the
+    # repository's own branches with GOCACHEPROG set to Depot Cache, which Go
+    # asks for each compiled package or test result as it needs it and writes
+    # new ones to as it makes them. Nothing is downloaded before the target or
+    # uploaded after it, and a same-repository pull request's results are
+    # shared like main's. Nix keeps the environment, so the devShell's go sees
+    # it too. This step shows it in the log.
+    #
+    # A pull request from a fork (every worker's) gets no GOCACHEPROG and
+    # builds cold, on purpose: Depot withholds the cache from a fork's run as
+    # GitHub withholds secrets, and the only way to hand it one is
+    # pull_request_target, which would run fork code with write access to the
+    # cache branch pushes and same-repository pull requests read. The step says
+    # so plainly, and warns only on a run that should have had the cache and
+    # did not, where the runner is set up wrong.
     #
     # Only for a pull request or a push to a branch. Go trusts whatever the
     # cache returns for a key, and a pull request's code can write that cache,
@@ -66,6 +74,8 @@ runs:
       shell: bash
       env:
         SHARED: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) }}
+        FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       run: |
         if [ "$RUNNER_OS" != Linux ]; then go=go; else go='nix develop -c go'; fi
         if [ "$SHARED" != true ]; then
@@ -95,6 +105,8 @@ runs:
           else
             echo "golangci-lint's cache is local to this job."
           fi
+        elif [ "$FORK" = true ]; then
+          echo "A pull request from the fork $HEAD_REPO: Depot gives a fork's run no cache, so Go builds from a cold cache. That is expected, not a runner fault."
         else
           echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
         fi
