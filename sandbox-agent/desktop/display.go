@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -49,6 +49,12 @@ import (
 type Display struct {
 	// Name is the X display to act on.
 	Name string
+	// ServerAddr is where the X server itself accepts TCP connections for
+	// Name: 127.0.0.1:6000+N for :N. Nothing socket-activates it, unlike
+	// /tmp/.X11-unix/X<N>, so a dial there asks whether X is running without
+	// starting it. Empty when Name has no such address, and then X is never
+	// taken to be running by a caller that must not start it.
+	ServerAddr string
 
 	// EnvDir is where the toolkit environment file is written. Empty writes
 	// none, which is what the tests run with.
@@ -78,14 +84,6 @@ type Display struct {
 	// does not, so "unchanged" is not the same as "already on disk" until this
 	// is set.
 	applied bool
-	// up records that this process has successfully talked to the X server, so
-	// a read-only caller can tell "no display yet" from "a display of unknown
-	// size". Set by the calls that legitimately start one.
-	//
-	// Atomic rather than guarded by mu: run() is the one place that sets it,
-	// and it is reached from both sides of the lock -- GeometryIfUp reads this
-	// before taking it, the resize and scale paths call run() holding it.
-	up atomic.Bool
 	// released records that the desktop session has been let go. Before that,
 	// a scale change is just the value the session will start with; after it,
 	// the session is already running at the old one and has to be restarted to
@@ -174,7 +172,22 @@ func NewDisplay(name string) *Display {
 	if strings.TrimSpace(name) == "" {
 		name = ":0"
 	}
-	return &Display{Name: name, modes: map[string]bool{}, scale: 1}
+	return &Display{Name: name, ServerAddr: serverAddr(name), modes: map[string]bool{}, scale: 1}
+}
+
+// serverAddr is the loopback TCP address of a local display, ":N" or ":N.S".
+// X servers listen on 6000+N; this one runs -listen tcp for exactly that.
+func serverAddr(name string) string {
+	number, ok := strings.CutPrefix(name, ":")
+	if !ok {
+		return ""
+	}
+	number, _, _ = strings.Cut(number, ".")
+	n, err := strconv.Atoi(number)
+	if err != nil || n < 0 || n > 59535 {
+		return ""
+	}
+	return net.JoinHostPort("127.0.0.1", strconv.Itoa(6000+n))
 }
 
 // NormalizeSize holds a requested framebuffer size to the range this display
@@ -412,25 +425,44 @@ func (d *Display) geometryOf(width, height int, output string) Geometry {
 	}
 }
 
-// GeometryIfUp reports the screen only when this process has already
-// established that there is one, and otherwise reports nothing and starts
-// nothing.
+// GeometryIfUp reports the screen only when the X server is running, and
+// otherwise reports nothing and starts nothing.
 //
 // The distinction matters because every route to the geometry runs xrandr, and
 // xrandr on a cold display is not a read — it is a socket connection to
 // /tmp/.X11-unix/X0, which starts the X server and the desktop session behind
 // it. Callers that merely want to *describe* the display have to be able to ask
-// without conjuring one.
+// without conjuring one. So whether X is running is asked of the server
+// itself, where nothing socket-activates it, every time: X can be started by
+// any program on the display and stopped again at any point, and neither goes
+// through this process.
 func (d *Display) GeometryIfUp(ctx context.Context) (Geometry, error) {
-	if !d.up.Load() {
+	if !d.serverRunning(ctx) {
 		return Geometry{}, errNotUp
 	}
 	return d.Geometry(ctx)
 }
 
+// serverRunning reports whether the X server accepts connections on its own
+// TCP listener, without a connection that could start it. Not the abstract
+// socket Xorg also listens on: libxcb falls back from that to the activation
+// file, and anything reaching for X the way a client does can start it.
+func (d *Display) serverRunning(ctx context.Context) bool {
+	if d.ServerAddr == "" {
+		return false
+	}
+	dialer := net.Dialer{Timeout: time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", d.ServerAddr)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
 // errNotUp is returned rather than an empty geometry so a caller cannot mistake
 // "there is no display yet" for "the display is 0x0".
-var errNotUp = errors.New("desktop: the display has not been started")
+var errNotUp = errors.New("desktop: the display is not running")
 
 // Geometry reports the screen as it stands.
 func (d *Display) Geometry(ctx context.Context) (Geometry, error) {
@@ -578,15 +610,10 @@ func (d *Display) mergeResources(ctx context.Context, resources string) error {
 	return nil
 }
 
-// run is every xrandr call, and the one place that learns the display exists.
-// A call that succeeds proves there is an X server; the first such call is also
-// usually what started it, which is why nothing calls this speculatively.
+// run is every xrandr call. On a cold display it is what starts X, which is why
+// nothing calls this speculatively.
 func (d *Display) run(ctx context.Context, args ...string) (string, error) {
-	out, err := d.command(ctx, "xrandr", args...)
-	if err == nil {
-		d.up.Store(true)
-	}
-	return out, err
+	return d.command(ctx, "xrandr", args...)
 }
 
 func (d *Display) command(ctx context.Context, name string, args ...string) (string, error) {
