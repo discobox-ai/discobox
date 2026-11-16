@@ -27,7 +27,8 @@ type StreamSink interface {
 }
 
 // channelRedial is how long the holder waits before dialing a pool's channel
-// again, doubling to channelRedialMax: short at first, because a pool's agent
+// again, doubling to channelRedialMax (after channelRedialGrace, for a
+// channel that had settled): short at first, because a pool's agent
 // waits for its first channel before it can report, and the dial that finds
 // it listening is the one its boot is waiting on.
 const (
@@ -40,6 +41,13 @@ const (
 	// channelWarnEvery is how often a channel that keeps failing is logged
 	// as a warning.
 	channelWarnEvery = time.Minute
+	// channelRedialGrace is how long after a settled channel drops the holder
+	// keeps redialing every channelRedial before it starts backing off. Such
+	// a drop is a hop between the two ends cutting every connection to the
+	// pool at once (an edge restarting, #1218), which comes back within
+	// seconds: doubling from the first failed dial left the pool unreached
+	// for up to twice as long as the hop was down.
+	channelRedialGrace = 30 * time.Second
 )
 
 // controlPlaneChannels holds a control-plane channel open to each pool of a
@@ -104,7 +112,9 @@ func (c *controlPlaneChannels) close() {
 // again when it drops, until ctx ends.
 func (c *controlPlaneChannels) keep(ctx context.Context, projectID, poolID string) {
 	wait := channelRedial
-	var warned time.Time
+	// dropped is when the last settled channel dropped: zero until one has,
+	// so the dials a new pool's boot waits on back off from the first.
+	var warned, dropped time.Time
 	for ctx.Err() == nil {
 		opened := time.Now()
 		err := c.serve(ctx, projectID, poolID)
@@ -113,6 +123,7 @@ func (c *controlPlaneChannels) keep(ctx context.Context, projectID, poolID strin
 		}
 		if time.Since(opened) > channelSettled {
 			wait = channelRedial
+			dropped = time.Now()
 		}
 		// A pool whose channel will not open cannot report, and nothing else
 		// says why: its agent only sees no channel arrive. So the cause is a
@@ -128,8 +139,19 @@ func (c *controlPlaneChannels) keep(ctx context.Context, projectID, poolID strin
 			return
 		case <-time.After(wait):
 		}
-		wait = min(2*wait, channelRedialMax)
+		wait = nextChannelRedial(wait, dropped, time.Now())
 	}
+}
+
+// nextChannelRedial is the wait before the dial after one that failed after
+// waiting wait: channelRedial again while within channelRedialGrace of a
+// settled channel's drop at dropped, and otherwise double, up to
+// channelRedialMax.
+func nextChannelRedial(wait time.Duration, dropped, now time.Time) time.Duration {
+	if !dropped.IsZero() && now.Sub(dropped) < channelRedialGrace {
+		return channelRedial
+	}
+	return min(2*wait, channelRedialMax)
 }
 
 // serve opens one channel and hands every stream the pool opens on it to the
