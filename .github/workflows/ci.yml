@@ -25,8 +25,13 @@ on:
 permissions:
   contents: read
 
+# A pull request's runs share a group keyed on its number, never on
+# github.ref: for an event on a merged or closed PR (a label added after the
+# merge) github.ref is the base branch, so a ref-keyed group would put that run
+# in main's group, and its cancel-in-progress would cancel main's push run. A
+# push to main has no pull_request, so it falls back to its ref.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

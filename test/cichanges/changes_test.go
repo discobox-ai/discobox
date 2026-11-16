@@ -1,6 +1,7 @@
 // Package cichanges_test checks how CI decides a pull request changes only
 // docs/: scripts/ci-changes.sh's answer, and that every job of the CI
-// workflow waits on it.
+// workflow waits on it; and that a pull request's runs never share main's
+// concurrency group.
 package cichanges_test
 
 import (
@@ -142,6 +143,34 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 		if job.If != want {
 			t.Errorf("job %s runs if %q, want %q", name, job.If, want)
 		}
+	}
+}
+
+// A pull_request event on a merged PR (a label added after the merge) has
+// the base branch as github.ref. Keyed on the ref, that run would join main's
+// group and, as a PR run cancels in progress, cancel main's push run
+// (#1271). Keyed on the PR number it can only ever share a group with its own
+// PR's runs, and a push, which has no pull_request, keeps its ref's group.
+func TestPullRequestRunsNeverShareMainsGroup(t *testing.T) {
+	data, err := os.ReadFile("../../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		Concurrency struct {
+			Group            string `yaml:"group"`
+			CancelInProgress string `yaml:"cancel-in-progress"`
+		} `yaml:"concurrency"`
+	}
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	if want := "ci-${{ github.event.pull_request.number || github.ref }}"; workflow.Concurrency.Group != want {
+		t.Errorf("concurrency group %q, want %q", workflow.Concurrency.Group, want)
+	}
+	// Only a PR run cancels, so a push to main never cancels another push.
+	if want := "${{ github.event_name == 'pull_request' }}"; workflow.Concurrency.CancelInProgress != want {
+		t.Errorf("cancel-in-progress %q, want %q", workflow.Concurrency.CancelInProgress, want)
 	}
 }
 
