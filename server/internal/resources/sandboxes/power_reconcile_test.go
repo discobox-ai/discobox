@@ -189,6 +189,24 @@ func TestSleepWinsOverIdle(t *testing.T) {
 	}
 }
 
+// The person has left the box: its primary's shell exiting outranks a pending
+// sleep, which would freeze a box nobody is in, and idle (ADR 26-11-16-372 §2).
+func TestExitWinsOverSleepAndIdle(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{
+		"idle":            true,
+		"sleep":           map[string]any{"requestedAt": f.now, "request": "agent"},
+		"primaryExitedAt": f.now,
+	})
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.provider.powerDowns) != 1 || f.provider.powerDowns[0] != sandbox.PowerDownExit {
+		t.Fatalf("power-downs = %v, want one exit", f.provider.powerDowns)
+	}
+}
+
 // A refusal is the stored status having gone stale — a client attached since
 // — and nothing changes.
 func TestARefusedPowerDownChangesNothing(t *testing.T) {
@@ -302,7 +320,9 @@ func TestOnlyAStatusAskingForAPowerDownMarksIt(t *testing.T) {
 		`{"autostop":{"idle":false}}`:                              false,
 		`{"autostop":{"idle":true}}`:                               true,
 		`{"autostop":{"sleep":{"requestedAt":"x","request":"a"}}}`: true,
-		`{}`: false,
+		`{"autostop":{"primaryExitedAt":"2026-11-16T00:00:00Z"}}`:  true,
+		`{"autostop":{"primaryExitedAt":null}}`:                    false,
+		`{}`:                                                       false,
 	} {
 		_, got := powerDownAsked(json.RawMessage(status))
 		if got != want {

@@ -82,6 +82,16 @@ type Exec struct {
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	SocketPath  string            `json:"socketPath,omitempty"`
 	RuntimePath string            `json:"runtimePath,omitempty"`
+	// CurrentBoot says the read found the exec's tmpfs runtime file, which a
+	// reboot takes and an agent restart within the boot keeps; a record
+	// answered from the durable store alone is of an earlier boot. One such
+	// record that was still starting or running is demoted to lost by the
+	// read, which writes its runtime file, so it reads as of this boot from
+	// then on, lost. An exited or failed record is settled and never
+	// rewritten, so a run that ended in an earlier boot never does: an exited
+	// record that is CurrentBoot ended in this boot. Set on every read, never
+	// stored.
+	CurrentBoot bool `json:"-"`
 	// AttacherCount is the number of clients currently attached to this exec's
 	// stream, reported live by the shim on every /status query (see
 	// shimRuntime.handleStatus) rather than tracked as persisted state.
@@ -655,6 +665,7 @@ func (m *Manager) List() []Exec {
 	byUnit := m.unitsByName(ctx)
 	for i := range execs {
 		execs[i] = m.refreshExecWithUnit(ctx, execs[i], true, lookupUnit(byUnit, execs[i].Unit))
+		execs[i].CurrentBoot = true
 	}
 	for i := range execs {
 		seen[execs[i].ID] = true
@@ -804,6 +815,7 @@ func (m *Manager) Get(id string) (Exec, bool) {
 		return Exec{}, false
 	}
 	exec = m.refreshExec(ctx, exec, true)
+	exec.CurrentBoot = true
 	if record, ok := records[id]; ok {
 		exec = hydrateMetadata(exec, record)
 	}

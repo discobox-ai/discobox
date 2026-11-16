@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 )
 
 const autostopConfirmPath = "/api/projects/project-1/sandboxes/sandbox-1/autostop/confirm"
@@ -119,5 +121,37 @@ func TestAutostopConfirmUsesConfiguredPaths(t *testing.T) {
 	}
 	if resp := serveAutostopConfirm(t, router, token); resp.Code != http.StatusConflict {
 		t.Fatalf("after consumption = %d, want 409", resp.Code)
+	}
+}
+
+// The pool may ask to confirm an exit: the route takes the reason, and a
+// sandbox whose primary has not exited refuses it as it refuses a stale idle
+// (ADR 26-11-16-372 §3).
+func TestAutostopConfirmTakesExit(t *testing.T) {
+	router, _, poolToken := runtimeConfigRouterWithPool(t)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, autostopConfirmPath, bytes.NewBufferString(`{"reason":"exit"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+poolToken("worker-1", ScopeAutostopConfirm))
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("confirm exit with no exited primary = %d %s, want 409", resp.Code, resp.Body.String())
+	}
+}
+
+// The exit travels only once the control plane holds the power, beside idle
+// (ADR 26-11-16-372 §2).
+func TestAutostopStatusReportsTheExitOnlyUnderTheControlPlane(t *testing.T) {
+	exited := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	state := autostop.State{PrimaryExitedAt: exited}
+	if got := sandboxAgentAutostopStatus(state); got.PrimaryExitedAt.Set {
+		t.Fatalf("primaryExitedAt = %v without the control plane, want absent", got.PrimaryExitedAt)
+	}
+	state.ControlPlanePower = true
+	if got, ok := sandboxAgentAutostopStatus(state).PrimaryExitedAt.Get(); !ok || !got.Equal(exited) {
+		t.Fatalf("primaryExitedAt = %v, %v, want %v", got, ok, exited)
+	}
+	if got := sandboxAgentAutostopStatus(autostop.State{ControlPlanePower: true}); got.PrimaryExitedAt.Set {
+		t.Fatalf("primaryExitedAt = %v with no exit, want absent", got.PrimaryExitedAt)
 	}
 }

@@ -269,24 +269,28 @@ func reportedPowerDown(sb *model.Sandbox) (PowerDownReason, bool) {
 	return powerDownAsked(sb.AgentStatus)
 }
 
-// powerDownAsked reads the power-down a sandbox status asks for: sleep when a
-// sleep request is pending, which wins, and idle when the sandbox reports
-// itself idle. A sandbox whose power the control plane does not hold reports
-// neither.
+// powerDownAsked reads the power-down a sandbox status asks for: exit when its
+// primary terminal's shell has exited, which wins over both others (ADR
+// 26-11-16-372 §2), then sleep when a sleep request is pending, and idle when
+// the sandbox reports itself idle. A sandbox whose power the control plane
+// does not hold reports none of them.
 func powerDownAsked(agentStatus []byte) (PowerDownReason, bool) {
 	if len(agentStatus) == 0 {
 		return "", false
 	}
 	var status struct {
 		Autostop *struct {
-			Idle  bool            `json:"idle"`
-			Sleep json.RawMessage `json:"sleep"`
+			Idle            bool            `json:"idle"`
+			Sleep           json.RawMessage `json:"sleep"`
+			PrimaryExitedAt json.RawMessage `json:"primaryExitedAt"`
 		} `json:"autostop"`
 	}
 	if err := json.Unmarshal(agentStatus, &status); err != nil || status.Autostop == nil {
 		return "", false
 	}
 	switch {
+	case len(status.Autostop.PrimaryExitedAt) > 0 && string(status.Autostop.PrimaryExitedAt) != "null":
+		return PowerDownExit, true
 	case len(status.Autostop.Sleep) > 0 && string(status.Autostop.Sleep) != "null":
 		return PowerDownSleep, true
 	case status.Autostop.Idle:

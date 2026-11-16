@@ -10208,6 +10208,8 @@ func (s *PoolSandboxPowerDownRequestReason) Decode(d *jx.Decoder) error {
 		*s = PoolSandboxPowerDownRequestReasonIdle
 	case PoolSandboxPowerDownRequestReasonSleep:
 		*s = PoolSandboxPowerDownRequestReasonSleep
+	case PoolSandboxPowerDownRequestReasonExit:
+		*s = PoolSandboxPowerDownRequestReasonExit
 	default:
 		*s = PoolSandboxPowerDownRequestReason(v)
 	}

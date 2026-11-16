@@ -141,12 +141,15 @@ var (
 )
 
 // PowerDownReason is why the control plane is powering a sandbox down: it
-// reported itself idle, or it asked to sleep (ADR 26-10-16-337 §5).
+// reported itself idle, it asked to sleep (ADR 26-10-16-337 §5), or its
+// primary terminal's shell exited (ADR 26-11-16-372 §2). Only sleep may
+// freeze; every other reason stops.
 type PowerDownReason string
 
 const (
 	PowerDownIdle  PowerDownReason = "idle"
 	PowerDownSleep PowerDownReason = "sleep"
+	PowerDownExit  PowerDownReason = "exit"
 )
 
 // Wake is a sandbox's earliest pending wake, as its confirmation of a

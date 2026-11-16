@@ -724,6 +724,9 @@ const (
 	// PowerDownSleep is a sandbox an agent asked to sleep: frozen where the
 	// runtime can, stopped otherwise (ADR 26-10-16-420 §2).
 	PowerDownSleep PowerDownReason = "sleep"
+	// PowerDownExit is a sandbox whose primary terminal's shell exited: the
+	// person has left it, so it is always stopped (ADR 26-11-16-372 §2).
+	PowerDownExit PowerDownReason = "exit"
 )
 
 // Wake is when a sandbox asked to be started again, and the file that asked;
