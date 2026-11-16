@@ -141,6 +141,20 @@ Current proxy routes:
   box's ports in plain text (`writePlainProxyError`), which git and a browser
   show as it is. The transport's error is only logged. An answer the pool did
   send, its own 502 included, is handed on as it is.
+- An exec attach with no body first waits out a pool it cannot reach
+  (`poolOutageRetry`), tried again every second for up to 30 seconds from the
+  first try, inside the caller's context. What it waits out is a connection
+  that could not be made or was cut, or a 502, 503 or 504 that is not in the
+  API's JSON error shape: a front's (boxd's edge, an egress proxy), never the
+  pool agent's or sandbox agent's own answer, which is handed on at once as
+  above. Its sandbox is already usable (ADR 0039 tier 1, which polls since
+  ADR 0081), so that is a hop on the way cutting every connection to the pool
+  for a few seconds (#1218). The attach tries its own path rather than
+  waiting for the pool's control-plane channel to reopen: it does not ride
+  the channel (it is its own HTTPS connection to the agent's URL), and a pool
+  that dials its control plane has no channel to wait for. No other route
+  waits: the reads want an answer now, and a request with a body sends the
+  client's stream once.
 
 ### Pool Host Console
 

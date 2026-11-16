@@ -49,3 +49,9 @@
   sandbox-agent API decodes `{"error": …}`, while git and a box's ports show
   plain text. The first fix for a bare 502 gave the git and port routes, here
   and in the pool agent, the agent API's JSON and its "may be restarting".
+- A retry that waits out a hop to a pool keys on what only the hop says: a
+  connection that failed, or a 5xx not in the API's JSON error shape. A bare
+  status cannot tell a front's 502 from the pool agent's or sandbox agent's
+  own, which are answers to hand on at once; the first cut of the attach
+  retry held those for 30 seconds, and retried a token that could not be
+  minted, which is no connection's failure.
