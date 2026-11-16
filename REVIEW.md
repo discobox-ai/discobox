@@ -102,13 +102,23 @@ Global review expectations:
   `!cancelled() && needs.changes.outputs.code != 'false'`. A bare
   `needs.changes.outputs.code == 'true'` skips the job when `changes` fails,
   and a skipped job passes a required check, so nothing would have run.
-- A workflow whose `pull_request` runs cancel in progress keys its
-  concurrency group on `github.event.pull_request.number`, never on
-  `github.ref` alone. An event on a merged or closed PR (a label added after
-  the merge) has the base branch as `github.ref`, so a ref-keyed PR run joined
-  main's group and cancelled main's push run (#1271). `vm-image.yml` and
-  `vm-kernel.yml` are ref-keyed and safe only while their `pull_request`
-  triggers keep the default types, which never fire on a merged PR.
+- A workflow's concurrency group keys a pull request's runs on
+  `github.event.pull_request.number || github.ref`, never on `github.ref`
+  alone. An event on a merged or closed PR (a label added after the merge)
+  has the base branch as `github.ref`, so a ref-keyed PR run joined main's
+  group and cancelled main's push run (#1271).
+- A run that publishes is never cancelled: a cancelled one leaves a release
+  half made. That takes two things. `cancel-in-progress` is `false` for it
+  (or `${{ !startsWith(github.ref, 'refs/tags/') }}` when the workflow's
+  other runs should cancel), which stops a newer run cancelling it in
+  progress. And it has a group of its own, one per release: GitHub keeps one
+  pending run per group and a newer run replaces it whatever
+  `cancel-in-progress` says. A tag push is grouped by its ref; `release.yml`'s
+  dispatch runs off a branch, so it is grouped by the tag it names.
+  `promote.yml` (`release` events) shares one group, which is safe only
+  because each run recomputes from the newest blessed release.
+  `test/cichanges` checks the tag-triggered workflows (`on.push.tags`) and
+  `ci.yml`, not the rest.
 - A Taskfile target that must force an environment variable sets it on the
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced

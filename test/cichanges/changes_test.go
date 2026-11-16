@@ -1,10 +1,11 @@
 // Package cichanges_test checks how CI decides a pull request changes only
 // docs/: scripts/ci-changes.sh's answer, and that every job of the CI
-// workflow waits on it; and that a pull request's runs never share main's
-// concurrency group.
+// workflow waits on it; and each workflow's concurrency group and
+// cancellation.
 package cichanges_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -146,20 +147,83 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 	}
 }
 
-// A pull_request event on a merged PR (a label added after the merge) has
-// the base branch as github.ref. Keyed on the ref, that run would join main's
-// group and, as a PR run cancels in progress, cancel main's push run
-// (#1271). Keyed on the PR number it can only ever share a group with its own
-// PR's runs, and a push, which has no pull_request, keeps its ref's group.
-func TestPullRequestRunsNeverShareMainsGroup(t *testing.T) {
+// Every workflow's concurrency keeps two rules. A pull_request event on a
+// merged PR (a label added after the merge) has the base branch as
+// github.ref, so a PR run keyed on the ref joined main's group and canceled
+// main's push run (#1271): a PR's runs are keyed on its number. And a tag's
+// run publishes, so nothing may cancel it, in progress or pending.
+func TestWorkflowConcurrency(t *testing.T) {
+	const prKey = "github.event.pull_request.number || github.ref"
+	const tagSafe = "${{ !startsWith(github.ref, 'refs/tags/') }}"
+	paths, err := filepath.Glob("../../.github/workflows/*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no workflows found")
+	}
+	for _, path := range paths {
+		name := filepath.Base(path)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// `on` as a map, so a bare `pull_request:` (a null value) still
+		// counts as present.
+		var workflow struct {
+			On          map[string]yaml.Node `yaml:"on"`
+			Concurrency struct {
+				Group            string `yaml:"group"`
+				CancelInProgress any    `yaml:"cancel-in-progress"`
+			} `yaml:"concurrency"`
+		}
+		if err := yaml.Unmarshal(data, &workflow); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var push struct {
+			Tags []string `yaml:"tags"`
+		}
+		if node, ok := workflow.On["push"]; ok {
+			if err := node.Decode(&push); err != nil {
+				t.Fatalf("%s: on.push: %v", name, err)
+			}
+		}
+		group := workflow.Concurrency.Group
+		cancel := fmt.Sprint(workflow.Concurrency.CancelInProgress)
+		if _, ok := workflow.On["pull_request"]; ok && strings.Contains(group, "github.ref") && !strings.Contains(group, prKey) {
+			t.Errorf("%s: concurrency group %q keys a pull request's runs on github.ref; key them on %q", name, group, prKey)
+		}
+		if len(push.Tags) > 0 {
+			if cancel != "false" && cancel != tagSafe {
+				t.Errorf("%s: a tag runs it, but cancel-in-progress is %q; want false or %q", name, cancel, tagSafe)
+			}
+			// A newer run replaces a pending one whatever
+			// cancel-in-progress says, so each tag needs a group of its own.
+			if !strings.Contains(group, "github.ref") {
+				t.Errorf("%s: a tag runs it, but its concurrency group %q is not per ref", name, group)
+			}
+		}
+	}
+}
+
+// CI cancels every superseded run, main's included: only main's newest
+// commit needs checking, and a run waiting on a macOS runner must not hold
+// main's group while the pushes behind it are replaced unrun (#1272). That is
+// safe only because no tag runs it.
+func TestCICancelsSupersededRuns(t *testing.T) {
 	data, err := os.ReadFile("../../.github/workflows/ci.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var workflow struct {
+		On struct {
+			Push struct {
+				Tags []string `yaml:"tags"`
+			} `yaml:"push"`
+		} `yaml:"on"`
 		Concurrency struct {
 			Group            string `yaml:"group"`
-			CancelInProgress string `yaml:"cancel-in-progress"`
+			CancelInProgress any    `yaml:"cancel-in-progress"`
 		} `yaml:"concurrency"`
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
@@ -168,9 +232,11 @@ func TestPullRequestRunsNeverShareMainsGroup(t *testing.T) {
 	if want := "ci-${{ github.event.pull_request.number || github.ref }}"; workflow.Concurrency.Group != want {
 		t.Errorf("concurrency group %q, want %q", workflow.Concurrency.Group, want)
 	}
-	// Only a PR run cancels, so a push to main never cancels another push.
-	if want := "${{ github.event_name == 'pull_request' }}"; workflow.Concurrency.CancelInProgress != want {
-		t.Errorf("cancel-in-progress %q, want %q", workflow.Concurrency.CancelInProgress, want)
+	if got := fmt.Sprint(workflow.Concurrency.CancelInProgress); got != "true" {
+		t.Errorf("cancel-in-progress %q, want true", got)
+	}
+	if len(workflow.On.Push.Tags) > 0 {
+		t.Errorf("ci.yml runs on tags %v, and cancels in progress", workflow.On.Push.Tags)
 	}
 }
 

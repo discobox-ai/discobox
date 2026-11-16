@@ -16,8 +16,12 @@ on:
 permissions:
   contents: read
 
+# One group per release tag, a dispatch keyed on the tag it names rather than
+# the branch it runs off: false keeps a newer run from cancelling one in
+# progress, but a newer run in the same group still replaces one still
+# pending, so two releases must never share a group.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
   cancel-in-progress: false
 
 env:

@@ -297,7 +297,10 @@ flowchart TD
   it decides *when*, and every other job waits on it. A pull request that changes only `docs/` skips every job
   but `docs` (`ci:docs`, the checks that read `docs/`); any other run, and
   every push to `main`, runs them all, and so does a run whose `changes`
-  failed or was skipped. Jobs are skipped by `if`, never by `paths-ignore`, so a required
+  failed or was skipped. A newer run cancels the older one in its group, on
+  `main` as on a pull request, so a `main` commit a newer push supersedes may
+  end with a cancelled run (a pull request's runs are grouped by its number,
+  never with `main`'s). Jobs are skipped by `if`, never by `paths-ignore`, so a required
   check still reports. Go's
   build and test cache is Depot Cache, which Depot's runners set as
   `GOCACHEPROG` and every run, pull requests included, reads and writes per
