@@ -112,15 +112,35 @@ func runProvisionCommand(args []string) int {
 		if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
 			return usage()
 		}
-		if info, err := os.Stat(agentlayer.PlacedDir); err == nil && info.IsDir() {
-			return applyPlacedBundles(ctx)
-		} else if err != nil && !os.IsNotExist(err) {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		return applyDeliveredBundles(ctx, *wait)
+		return provisionApply(ctx, *wait)
 	}
 	return usage()
+}
+
+// provisionApply applies a box's bundles: the verified contents its maker
+// placed, or, on a box delivered without them, the agent's start. Either
+// runs systemctl on a box systemd is running, and apply runs straight after
+// the box's start, which a provider may return from once the machine runs:
+// systemd's directory under /run is there by then, its bus not always. So it
+// waits for the bus first, rather than failing the start on the first
+// systemctl that cannot reach it.
+func provisionApply(ctx context.Context, wait bool) int {
+	if _, err := os.Stat("/run/systemd/system"); err == nil {
+		busCtx, cancel := context.WithTimeout(ctx, systemdReadyTimeout)
+		err = awaitSystemdBus(busCtx)
+		cancel()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "discobox-provision:", err)
+			return 1
+		}
+	}
+	if info, err := os.Stat(agentlayer.PlacedDir); err == nil && info.IsDir() {
+		return applyPlacedBundles(ctx)
+	} else if err != nil && !os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return applyDeliveredBundles(ctx, wait)
 }
 
 // provisionIdentity prints the public half of the box's identity key at

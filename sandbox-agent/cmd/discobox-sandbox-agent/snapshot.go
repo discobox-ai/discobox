@@ -281,19 +281,8 @@ func awaitSystemd(ctx context.Context) error {
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, systemdReadyTimeout)
 	defer cancel()
-	// Its directory under /run appears before systemd answers on its bus:
-	// wait for systemctl to reach it and say a state, which it does not
-	// while it cannot ("offline" is a manager it cannot talk to yet).
-	for {
-		out, _ := exec.CommandContext(waitCtx, "systemctl", "is-system-running").Output()
-		if state := strings.TrimSpace(string(out)); state != "" && state != "offline" {
-			break
-		}
-		select {
-		case <-waitCtx.Done():
-			return errors.New("systemd did not come up in the box")
-		case <-time.After(250 * time.Millisecond):
-		}
+	if err := awaitSystemdBus(waitCtx); err != nil {
+		return err
 	}
 	// A boot that ends degraded, or does not settle in time, is still one
 	// to provision: its status is not the build's, and a step that needs a
@@ -305,6 +294,25 @@ func awaitSystemd(ctx context.Context) error {
 		return fmt.Errorf("systemctl daemon-reload: %w: %s", err, out)
 	}
 	return nil
+}
+
+// awaitSystemdBus waits, until ctx ends, for systemd to answer on its bus.
+// Its directory under /run appears before it does, so a systemctl run
+// straight after a box's start can fail at once, or return while systemd is
+// still starting: wait for systemctl to reach it and say a state, which it
+// does not while it cannot ("offline" is a manager it cannot talk to yet).
+func awaitSystemdBus(ctx context.Context) error {
+	for {
+		out, _ := exec.CommandContext(ctx, "systemctl", "is-system-running").Output()
+		if state := strings.TrimSpace(string(out)); state != "" && state != "offline" {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("systemd did not come up in the box")
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 // ephemeralSnapshotDir puts agentlayer.SnapshotDir on a tmpfs, unless it is
