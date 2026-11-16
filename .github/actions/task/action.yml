@@ -104,17 +104,28 @@ runs:
     # So a target that fails with output that looks like a network failure runs
     # once more, and one that fails any other way fails the job at once: a real
     # test or lint failure is not paid for twice.
+    #
+    # The target reaches the script through a variable named for this action
+    # alone. Task hands every environment variable to its templates as a
+    # variable, so one named like a Taskfile variable becomes that variable's
+    # value in every task that does not set it: TARGET reached release:image as
+    # its Dockerfile stage, and the release's images job asked Docker to build
+    # a stage named release:images. It is unset before Task runs, so no name is
+    # left to collide. It is expanded unquoted on purpose: a target may carry
+    # Task variables after the task's name (`vm:build VM_PLATFORM=linux/arm64`).
     - name: go tool task ${{ inputs.target }}
       shell: bash
       env:
-        TARGET: ${{ inputs.target }}
+        DISCOBOX_CI_TASK_TARGET: ${{ inputs.target }}
       run: |
         if [ "$RUNNER_OS" = Linux ]; then run='nix develop -c go tool task'; else run='go tool task'; fi
+        target=$DISCOBOX_CI_TASK_TARGET
+        unset DISCOBOX_CI_TASK_TARGET
         log=$(mktemp)
-        if $run "$TARGET" 2>&1 | tee "$log"; then exit 0; fi
+        if $run $target 2>&1 | tee "$log"; then exit 0; fi
         if grep -qiE 'proxy\.golang\.org|dial tcp|connection reset|unexpected EOF|TLS handshake|i/o timeout|could not import|go: .*@v[^ ]*: ' "$log"; then
-          echo "::warning title=Retrying $TARGET::The first run failed in a way that looks like a dropped module download; running it once more."
-          $run "$TARGET"
+          echo "::warning title=Retrying $target::The first run failed in a way that looks like a dropped module download; running it once more."
+          $run $target
         else
           exit 1
         fi

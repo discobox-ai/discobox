@@ -98,6 +98,13 @@ Global review expectations:
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced
   `GOPROXY=off` there was silently ignored on any machine that exports one.
+- An environment variable a CI step or job exports around `go tool task`
+  either is a Taskfile input, named for the variable it sets (`RELEASE_TAG`),
+  or is named so no Taskfile variable could share it (`DISCOBOX_CI_…`), or is
+  unset before Task runs. Task hands every environment variable to its
+  templates, so one named like a task's variable fills it wherever the task
+  leaves it unset: the task action's `TARGET` became `release:image`'s
+  Dockerfile stage and failed the release's images job.
 - A client's patience with something the server bounds comes from the
   server's bound plus a margin (`health.PoolUpgradeWait`), never from a
   constant that happens to equal it: with no margin the client times out on
