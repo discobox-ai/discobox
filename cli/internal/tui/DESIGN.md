@@ -1870,6 +1870,11 @@ into one. It is a poll rather than a subscription because the control plane has
 no exec event stream: exec state lives on the sandbox-agent and `/execs` is a
 raw proxy, so there is nothing server-side to subscribe to. The seam is a
 snapshot, so the tick loop is the only thing a stream would have to replace.
+Each listing is read one at a time (`execsPoll`, `servicesPoll`, the window's
+`poll`): a listing still out when the beat comes round is left to answer, and
+each has its own deadline (`workspacePollTimeout`), so a server or transport
+that stops answering costs one request rather than one every tick for as long
+as the console is open.
 `Execs` and `Services` answer `ErrNotRunning` for a discobox that is not
 running: the server answers those reads from what the discobox last posted
 rather than start it (ADR 26-10-11-657), and a tab opened from that would

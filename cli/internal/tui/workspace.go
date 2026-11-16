@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"sort"
@@ -37,6 +38,12 @@ import (
 // workspace is open. It only has to catch sessions started elsewhere, so it is
 // paced like a refresh rather than a keystroke.
 const workspacePollEvery = 2 * time.Second
+
+// workspacePollTimeout bounds one listing of the workspace poll. Each listing
+// is read one at a time (execsPoll, servicesPoll), so a request that never
+// ends would end that listing with it; this is what turns that request into a
+// failed listing and the poll into one that carries on.
+const workspacePollTimeout = 15 * time.Second
 
 // workspaceExecsMsg is one answer from the exec listing: the first one opens
 // the workspace's terminals, and every one after reconciles the tabs.
@@ -372,8 +379,13 @@ func (m *Model) forwardedPorts() map[portKey]int {
 // no exec to report — so a tab strip drawn from it alone is silent about
 // exactly the service you need to hear about.
 func (m *Model) listServices(gen int) tea.Cmd {
+	if !m.servicesPoll.start(m.now()) {
+		return nil
+	}
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(ctx, workspacePollTimeout)
+		defer cancel()
 		services, err := ds.Services(ctx, id)
 		return workspaceServicesMsg{gen: gen, services: services, err: err}
 	}
@@ -381,8 +393,13 @@ func (m *Model) listServices(gen int) tea.Cmd {
 
 // listExecs asks the server what is running in the workspace's discobox.
 func (m *Model) listExecs(gen int) tea.Cmd {
+	if !m.execsPoll.start(m.now()) {
+		return nil
+	}
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(ctx, workspacePollTimeout)
+		defer cancel()
 		execs, err := ds.Execs(ctx, id)
 		return workspaceExecsMsg{gen: gen, execs: execs, err: err}
 	}
@@ -413,6 +430,7 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	if msg.gen != m.wsGen {
 		return nil
 	}
+	m.execsPoll.landed()
 	var cmds []tea.Cmd
 	first := m.primary() == nil && !m.connecting[ExecPrimary]
 	if first {
@@ -504,7 +522,11 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 // a workspace can be opened on a sandbox that is still coming up, where this is
 // answered "not yet" and the poll retries seconds later.
 func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
-	if msg.gen != m.wsGen || msg.err != nil {
+	if msg.gen != m.wsGen {
+		return nil
+	}
+	m.servicesPoll.landed()
+	if msg.err != nil {
 		return nil
 	}
 	declared := make(map[string]bool, len(msg.services))
@@ -540,9 +562,6 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 		if p.service != "" && !declared[p.service] {
 			m.closeTab(p)
 		}
-	}
-	if len(cmds) == 0 {
-		return nil
 	}
 	return tea.Batch(cmds...)
 }
@@ -1056,6 +1075,9 @@ func (m *Model) closeWorkspace() {
 // opens, and the audit and wait drawn over it.
 func (m *Model) endLiveScreen() {
 	m.wsGen++
+	// Whatever the old screen's poll still has out answers into a generation
+	// that is gone, so the new screen's poll starts from none.
+	m.execsPoll, m.servicesPoll = poll{}, poll{}
 	m.connecting = nil
 	m.toolOpening = nil
 	m.closeAudit()

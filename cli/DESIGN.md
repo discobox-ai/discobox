@@ -598,14 +598,15 @@ is an error rather than a lost convenience.
   - **The window asks for one listing at a time**, which is where a window
     with one server gets the same protection: `d.servers` is nil there, `List`
     waits for the one answer there is, and it is the window that declines to
-    send a second while the first is out. All three of the window's polls —
-    the listing, the machine readout, the credential inbox — go through one
-    `poll` (`cli/internal/tui/model.go`), which holds when the request still
-    out was sent and whether another was asked for meanwhile. The listing and
-    the inbox send that follow-up when the answer lands, since an action asks
-    for both by itself — an archive, an approval — and the answer in flight was
-    taken before the action happened. The readout does not: only the beat asks
-    for it.
+    send a second while the first is out. Every one of the window's polls —
+    the listing, the machine readout, the credential inbox, the refused
+    credentials, and an open workspace's exec and service listings — goes
+    through a `poll` (`cli/internal/tui/model.go`), which holds when the
+    request still out was sent and whether another was asked for meanwhile.
+    The listing and the inbox send that follow-up when the answer lands, since
+    an action asks for both by itself — an archive, an approval — and the
+    answer in flight was taken before the action happened. The others do not:
+    only the beat asks for them.
   - **A server that has not answered yet is not a server that failed.** It is
     reported in `Listing.Waiting` and the window says `still listing` where its
     rows go, because a request still in flight at the end of a poll has

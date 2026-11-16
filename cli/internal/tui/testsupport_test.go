@@ -226,6 +226,11 @@ type fakeSource struct {
 	execs       []Exec
 	execsErr    error
 	openExecErr error
+	// execsHang, when set, makes every listing wait until its context ends,
+	// the way a request to a server that has stopped answering does;
+	// execsCalls counts the listings asked for.
+	execsHang  bool
+	execsCalls int
 	// failedExecSandboxes, when set, replaces the listing as an attach fails:
 	// the server recording why a sandbox failed at the moment its attach does.
 	failedExecSandboxes []Sandbox
@@ -863,8 +868,14 @@ func (f *fakeSource) addressLookups() []string {
 	return append([]string(nil), f.addressed...)
 }
 
-func (f *fakeSource) Execs(context.Context, string) ([]Exec, error) {
+func (f *fakeSource) Execs(ctx context.Context, _ string) ([]Exec, error) {
 	f.mu.Lock()
+	f.execsCalls++
+	if f.execsHang {
+		f.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	defer f.mu.Unlock()
 	if f.execsErr != nil {
 		return nil, f.execsErr
@@ -1020,6 +1031,20 @@ func (f *fakeSource) Services(context.Context, string) ([]Service, error) {
 		return nil, f.servicesErr
 	}
 	return append([]Service(nil), f.services...), nil
+}
+
+// hangExecs makes every exec listing from now on wait until its context ends.
+func (f *fakeSource) hangExecs() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execsHang = true
+}
+
+// execsAsked is how many exec listings have been asked for.
+func (f *fakeSource) execsAsked() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.execsCalls
 }
 
 // setServices moves what the service poll reports while a workspace is up.

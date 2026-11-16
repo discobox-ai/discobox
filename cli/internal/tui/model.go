@@ -217,6 +217,12 @@ type Model struct {
 	// wsGen numbers workspaces. Detaching bumps it, and a poll tick or an
 	// open still in flight from the one that was left is stale and dropped.
 	wsGen int
+	// execsPoll and servicesPoll are the workspace's two listings, each read
+	// one at a time on the workspace's beat (see poll): a listing still out
+	// when the beat comes round is left to answer, and the skipped read is
+	// simply the next tick's, as the readout's is.
+	execsPoll    poll
+	servicesPoll poll
 	// toolOpening is the tools with an attach in flight, keyed by tool id, so
 	// the poll and the picker cannot open two panes onto one session.
 	toolOpening map[string]bool
@@ -707,9 +713,9 @@ const listingStaleAfter = 3 * refreshEvery
 // poll is one thing the window re-reads on the beat: when the request still
 // out was sent, and whether another read was asked for while it was out.
 //
-// One at a time is the rule all three follow. A second request while the first
-// has not landed asks a server that is not answering to answer twice, and
-// against one that has stopped it is how a window open for an hour ends up
+// One at a time is the rule every one of them follows. A second request while
+// the first has not landed asks a server that is not answering to answer twice,
+// and against one that has stopped it is how a window open for an hour ends up
 // holding hundreds of them. The rule lives here rather than as a flag beside
 // each load because the three copies it replaced had already drifted apart:
 // one of them dropped the read an action asked for, and one called a refresh
