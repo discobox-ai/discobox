@@ -23,9 +23,12 @@ flowchart TD
     vsock --> vnc["x11vnc@.service"]
     dsvc -->|"xrandr"| xsock
     dsvc -->|"xfconf-query"| bus["discobox-session-bus.socket<br/>session D-Bus"]
-    vnc --> xorg["xvfb.service<br/>Xorg dummy on :0"]
-    app(["any program on DISPLAY=:0"]) --> xsock["x11-display.socket"]
-    xsock --> xorg
+    vnc -->|"abstract socket"| xorg["xvfb.service<br/>Xorg dummy on :0"]
+    app(["any program on DISPLAY=:0"]) -->|"abstract socket, while X runs"| xorg
+    app -->|"/tmp/.X11-unix/X0, while it does not"| xsock["x11-display.socket"]
+    xsock --> xproxy["x11-display.service<br/>socket proxy"]
+    xproxy -->|"tcp 127.0.0.1:6000"| xorg
+    dsvc -.->|"is X running? tcp :6000"| xorg
     xorg -.->|"Wants"| dsvc
     xorg -.->|"Wants"| xfce["xfce4-session@user.service<br/>xfwm4, panel, xfdesktop, xfsettingsd"]
     xfce --> bus
@@ -221,10 +224,15 @@ is a file, not a screen: `scale.env` records what the last run settled on, and
 `AdoptScale` writes it back without an X server anywhere in the call. Reading
 the display is behind `GeometryIfUp`, which answers "there is none" rather than
 conjuring one, so describing the desktop over `/api/session` starts nothing
-either. `TestSettlingTheScaleNeverTouchesTheDisplay`,
-`TestARememberedScaleIsAdoptedWithoutADisplay` and
-`TestTheSessionEndpointDoesNotStartADisplay` pin this against a display that
-does not exist.
+either. Whether X runs is asked of the server itself, each time: `GeometryIfUp`
+dials Xorg's own TCP listener (`127.0.0.1:6000`), which nothing
+socket-activates, and runs its xrandr only when that connects. X can be started
+by any program on `:0` and stopped at any point, neither through the viewer, so
+nothing the viewer remembers about having seen it answers the question.
+`TestSettlingTheScaleNeverTouchesTheDisplay`,
+`TestARememberedScaleIsAdoptedWithoutADisplay`,
+`TestTheSessionEndpointDoesNotStartADisplay` and
+`TestTheSessionEndpointDoesNotRestartAStoppedDisplay` pin this.
 
 X starts when something genuinely needs pixels: a browser that has loaded the
 page asking for a size, the VNC socket being opened, or any program in the
@@ -244,14 +252,29 @@ for a desktop; the thing that must not start one is a connection that never
 became a page.
 
 **The X server must not delete its own activation socket.** `x11-display.socket`
-binds `/tmp/.X11-unix/X0`; Xorg runs `-nolisten local` and never creates that
-path, so `xvfb.service`'s `ExecStartPre` cleans up only `/tmp/.X0-lock`.
-Sweeping the socket path as stale state would unlink the file systemd had
-already bound: the socket unit would still report itself listening and the
-first client through would still work, but every later `DISPLAY=:0` would get
-`Can't open display :0` until something restarted the socket unit. `TestTheXServerDoesNotDeleteItsActivationSocket`
-reads the units and pins it; `TestTheViewerDoesNotPullUpTheDisplay` pins the
-absence of a `Requires=` in the other direction.
+binds `/tmp/.X11-unix/X0`, and that path is the socket unit's alone. Removing it
+unlinks the file systemd bound: the socket unit still reports itself listening,
+but every later `DISPLAY=:0` gets `Can't open display :0` until something
+restarts the socket unit. So `xvfb.service`'s `ExecStartPre` cleans up only
+`/tmp/.X0-lock`, and Xorg runs `-nolisten unix`: with xtrans's `unix` transport
+on, Xorg replaces systemd's file with its own listener and unlinks it on exit,
+so a stop left `:0` unreachable.
+
+Clients still reach a running X over a unix socket, not through the proxy.
+Xorg runs `-listen local`, the Linux abstract socket `@/tmp/.X11-unix/X0`,
+which libxcb tries before the file: while X runs, clients connect there
+directly; while it does not, that connect is refused and they fall back to the
+file, which activates X. This matters because over TCP Xorg cannot read a
+client's credentials and refuses its MIT-SHM attaches, and x11vnc exits on that
+refusal. Only the activating connection goes through `x11-display.service` to
+TCP 6000. A client in another network namespace with the file bind-mounted
+(a nested container) sees no abstract socket, so it always goes the proxy's
+way, without MIT-SHM.
+
+`TestTheXServerDoesNotDeleteItsActivationSocket` and
+`TestTheXServerDoesNotTakeOverItsActivationSocket` read the units and pin
+both; `TestTheViewerDoesNotPullUpTheDisplay` pins the absence of a `Requires=`
+in the other direction.
 
 **The X server counts as started only once it accepts connections.** Every unit
 that talks to the display — the `:0` proxy (`x11-display.service`), `x11vnc@`,

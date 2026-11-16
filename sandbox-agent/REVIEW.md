@@ -381,6 +381,23 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   hang until go test's timeout (`browserRun.open` in
   `desktop/capture_e2e_test.go`, #508).
 
+## The desktop's X server
+
+- **Nothing but `x11-display.socket` may remove, replace or listen on
+  `/tmp/.X11-unix/X0`.** It is how a stopped X starts again; once the file is
+  gone the socket unit still reports itself listening and `:0` is dead until
+  it is restarted. Lost twice: an `ExecStartPre` that swept it as stale state,
+  then Xorg's own `unix` transport, which `-nolisten local` does not turn off
+  on Linux (#1252). Check any change to `xvfb.service`'s flags or cleanup
+  against it, on a box: stop X and see that the file's inode survives.
+- **A running X is reached over a unix socket, not the TCP proxy.** Over TCP
+  Xorg refuses MIT-SHM attaches and x11vnc exits on the refusal, so a change
+  that sends every client through `x11-display.service` breaks the VNC
+  desktop. Keep Xorg's abstract socket (`-listen local`).
+- **Code that asks whether X is running must not ask through `:0`.** Any
+  client connection there may start it. Dial Xorg's own `127.0.0.1:6000`
+  (`desktop.Display.serverRunning`), and ask each time rather than remember.
+
 ## Processes
 
 - Credentials must set supplementary groups explicitly. `NoSetGroups` leaves the

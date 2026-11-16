@@ -49,8 +49,9 @@ func directive(unit, key string) []string {
 // x11-display.socket had already bound. The listening unit still reported
 // itself active, the first client through -- the one whose connection started
 // the server -- still worked, and every later DISPLAY=:0 got "Can't open
-// display", until something restarted the socket unit. Xorg runs -nolisten
-// local and never creates that path, so it has no business removing it either.
+// display", until something restarted the socket unit. Xorg does not listen
+// on that path (see TestTheXServerDoesNotTakeOverItsActivationSocket), so it
+// has no business removing it either.
 func TestTheXServerDoesNotDeleteItsActivationSocket(t *testing.T) {
 	listen := directive(readUnit(t, "x11-display.socket"), "ListenStream")
 	if len(listen) != 1 {
@@ -70,6 +71,38 @@ func TestTheXServerDoesNotDeleteItsActivationSocket(t *testing.T) {
 						"removing it makes :0 reachable exactly once per start", key, socketPath)
 				}
 			}
+		}
+	}
+}
+
+// Xorg must not listen on the activation socket's path itself, and must still
+// be reachable over a unix socket while it runs.
+//
+// With xtrans's "unix" transport on, Xorg unlinks the file x11-display.socket
+// bound, binds its own listener there, and unlinks that when it exits: after a
+// stop, :0 has no socket file and nothing can start X again. Turning it off
+// alone is not enough, though: every client would then reach Xorg over TCP
+// through the proxy, where Xorg cannot read a client's credentials and refuses
+// its MIT-SHM attaches -- and x11vnc exits on that refusal. The "local"
+// transport is Linux's abstract socket, which libxcb tries before the file, so
+// a running X serves its clients there and a stopped one is started through
+// the file.
+func TestTheXServerDoesNotTakeOverItsActivationSocket(t *testing.T) {
+	starts := directive(readUnit(t, "xvfb.service"), "ExecStart")
+	if len(starts) != 1 {
+		t.Fatalf("xvfb.service ExecStart = %q, want exactly one", starts)
+	}
+	args := strings.Fields(starts[0])
+	transports := map[string]string{}
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-listen" || args[i] == "-nolisten" {
+			transports[args[i+1]] = args[i]
+		}
+	}
+	for transport, want := range map[string]string{"unix": "-nolisten", "local": "-listen", "tcp": "-listen"} {
+		if got := transports[transport]; got != want {
+			t.Errorf("xvfb.service ExecStart has %q for the %s transport, want %s %s:\n%s",
+				got, transport, want, transport, starts[0])
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -650,6 +651,66 @@ func TestTheSessionEndpointDoesNotStartADisplay(t *testing.T) {
 	}
 	if _, err := server.display.GeometryIfUp(t.Context()); err == nil {
 		t.Fatalf("serving the session brought a display up")
+	}
+}
+
+// Nor once the display has been up and was stopped. Having seen X once used to
+// be enough for GeometryIfUp, so after xvfb.service stopped, the session fetch's
+// xrandr connected to :0 and that connection started X again. Whether X runs is
+// asked of the server each time, so a display some other program started is
+// described too, though this process never talked to it.
+//
+// xrandr is a stub on PATH that counts its calls and answers as a running
+// server would, and a listener on ServerAddr stands in for Xorg's own TCP port.
+func TestTheSessionEndpointDoesNotRestartAStoppedDisplay(t *testing.T) {
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "calls")
+	stub := "#!/bin/sh\necho x >> " + calls + "\n" +
+		"echo 'Screen 0: minimum 8 x 8, current 1280 x 768, maximum 32767 x 32767'\n" +
+		"echo 'DUMMY0 connected primary 1280x768+0+0'\n"
+	if err := os.WriteFile(filepath.Join(bin, "xrandr"), []byte(stub), 0o755); err != nil {
+		t.Fatalf("write xrandr stub: %v", err)
+	}
+	t.Setenv("PATH", bin)
+	countCalls := func() int {
+		body, err := os.ReadFile(calls)
+		if os.IsNotExist(err) {
+			return 0
+		}
+		if err != nil {
+			t.Fatalf("read calls: %v", err)
+		}
+		return strings.Count(string(body), "x")
+	}
+
+	var listenConfig net.ListenConfig
+	xorg, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	server, _ := newTestServer(t)
+	server.display = NewDisplay(":91")
+	server.display.ServerAddr = xorg.Addr().String()
+
+	// X is running, started by something other than the viewer.
+	if got := decode[sessionResponse](t, do(t, server, http.MethodGet, "/api/session", nil)).Geometry.Width; got != 1280 {
+		t.Fatalf("geometry width = %d with X running, want 1280", got)
+	}
+
+	// X stops.
+	if err := xorg.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	before := countCalls()
+	recorder := do(t, server, http.MethodGet, "/api/session", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	if got := decode[sessionResponse](t, recorder).Geometry.Width; got != 0 {
+		t.Fatalf("geometry width = %d, want none reported for a display that was stopped", got)
+	}
+	if after := countCalls(); after != before {
+		t.Fatalf("serving the session ran xrandr %d times against a stopped display; that connection starts X", after-before)
 	}
 }
 
