@@ -1,6 +1,6 @@
 # 26-10-12-026 — A sandbox's name is meta, and renaming it is a meta write
 
-- **Status**: Accepted (§3 superseded in part by [26-10-31-618](26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md): a set name is the display name's title, followed by the program's msg)
+- **Status**: Accepted (§3 superseded in part by [26-10-31-618](26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md): a set name is the display name's title, followed by the program's msg; §4 amended by [26-11-16-207](26-11-16-207-a-box-is-named-at-creation-by-seeding-its-meta-name.md): a create may set the meta name too)
 - **Date**: 2026-10-12
 - **Supersedes**, in part:
   [0136](0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md)

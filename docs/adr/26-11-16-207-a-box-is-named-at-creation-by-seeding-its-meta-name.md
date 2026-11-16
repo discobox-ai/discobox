@@ -1,7 +1,8 @@
 # 26-11-16-207 — A box is named at creation by seeding its meta name
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
+  Accepted by the owner by merging #1246, 2026-11-16
 - **Amends**:
   [26-10-12-026](26-10-12-026-a-sandboxs-name-is-meta-and-renaming-it-is-a-meta-write.md)
   §4, which made a rename the only way to set the meta name from outside: a
@@ -65,9 +66,11 @@ An empty or absent `metaName` sets no name.
 `CreateSandbox` checks the name with the description and tags, as one
 `sandboxmeta.Meta{Name, Description, Tags}.Validate()`, and refuses a bad one
 with 400 before anything is created. It records it on the row's `meta_name`
-unobserved, as the tags are, so the first listing's `displayName` and the
-created event carry it as they carry the tags, and the sandbox's first report of its meta
-file replaces it under the newer-wins rule (ADR 0136 §§2, 4).
+unobserved, as the tags are, so the first listing's `displayName` carries it,
+and the sandbox's first report of its meta file replaces it under the
+newer-wins rule (ADR 0136 §§2, 4). The created event does not carry it: an
+event's `name` is the handle, and an event carries no meta name, as it
+carries no description (ADR 26-10-29-316 §1).
 
 Uniqueness is not checked: two boxes may carry the same meta name, and a
 command given it refuses it as ambiguous, as ADR 26-10-12-026 already says
