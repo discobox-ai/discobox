@@ -253,6 +253,15 @@ first client through would still work, but every later `DISPLAY=:0` would get
 reads the units and pins it; `TestTheViewerDoesNotPullUpTheDisplay` pins the
 absence of a `Requires=` in the other direction.
 
+**The X server counts as started only once it accepts connections.** Every unit
+that talks to the display — the `:0` proxy (`x11-display.service`), `x11vnc@`,
+the Xfce session, the viewer — is ordered `After=xvfb.service`, and the proxy
+forwards the very connection that started X. Xorg has no `sd_notify`, so the
+unit stays `Type=simple` and an `ExecStartPost` waits for `127.0.0.1:6000`
+before systemd calls it started; without it the activating client is forwarded
+into `Connection refused`. No unit after it needs a wait of its own.
+`TestTheXServerIsStartedOnlyOnceItAcceptsConnections` pins it.
+
 ### Why the session still waits for the viewer
 
 `xfce4-session@.service` is ordered `After=discobox-desktop.service`, and the
