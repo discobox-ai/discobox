@@ -1331,6 +1331,21 @@ agent's published port, or the pool never registers.
   `docker-endpoint` prints `unix:///var/run/docker.sock`, `harness-endpoint`
   prints `http://127.0.0.1:<port>`, and the provider is
   `admin provider create --type exec --config '{"command":["<script>"],"agentPort":<port>}'`.
+  It must also answer `pool-outbound` (stdout `{"runtime": <$DISCOBOX_VM_OUTBOUND>,
+  "appliedRevision": "<any stable string>", "restartRequired": false}`), or the
+  pool fails `exec backend must implement pool-outbound boot delivery`.
+- A hop cutting the pool (an edge restart, #1218): have `harness-endpoint`
+  print a port of a ~60-line Go TCP relay to `agentPort` that, on SIGUSR1,
+  closes its listener and every connection and refuses for a set time. Then
+  create an exec (`curl --unix-socket` POST `.../execs`), cut, and send the
+  attach as a raw upgrade (`curl --http1.1 -H 'Connection: Upgrade' -H
+  'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: …'`)
+  0.5s later; the CLI's `exec` creates and attaches in one go, so it cannot
+  land the attach alone in the gap. A channel gets the redial grace
+  (`channelRedialGrace`: a redial every second for 30s after it drops) only
+  once it has been open a minute, so wait that long before cutting
+  it. Build `main`'s server from `git archive HEAD` in the scratchpad for
+  the before.
 - Evidence: the server logs `pool control-plane channel open`, and the
   pool's own box — its container `discobox-vm-<poolId>` on this host's
   Docker, not a sandbox — shows the rest under `docker exec`: the agent's
