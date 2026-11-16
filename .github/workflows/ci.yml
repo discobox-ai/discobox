@@ -33,11 +33,14 @@ jobs:
   # Whether this run has code to check (scripts/ci-changes.sh). A pull request
   # that changes only docs/ has none: every job below waits on this one, and
   # all but `docs`, which runs the checks that read docs/, are skipped by their
-  # `if`. A push to main always has code.
+  # `if`. A push to main always has code, so on a push `changes` is skipped and
+  # never takes a runner.
   #
-  # The gate fails closed: a run whose `changes` failed runs everything but
-  # `docs`, which the rest cover. Without `!cancelled()` a failed `needs` would
-  # skip every job, and a skipped job satisfies a required check.
+  # The gate fails closed: a run whose `changes` failed or was skipped runs
+  # everything but `docs`, which the rest cover. Its output is then empty, never
+  # 'false', so each `code != 'false'` holds. Without `!cancelled()` a failed or
+  # skipped `needs` would skip every job, and a skipped job satisfies a
+  # required check.
   #
   # Skipped by `if` rather than by `on.pull_request.paths-ignore`, because a
   # job skipped that way reports nothing and a required check waiting on it
@@ -45,9 +48,11 @@ jobs:
   #
   # Run as a script rather than through .github/actions/task: it needs only git,
   # and every other job of the run waits on it, so it does not pay for Nix and
-  # the module download.
+  # the module download. It runs on the same runner as every other job: on
+  # Depot's 2-CPU default, pushes to main got a runner that never ran a step.
   changes:
-    runs-on: depot-ubuntu-24.04
+    if: github.event_name == 'pull_request'
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 5
     outputs:
       code: ${{ steps.changes.outputs.code }}
