@@ -72,7 +72,7 @@ const (
 //
 // A digest rather than a tag, for the reason the guest image is one: a tag
 // would let whoever runs the server decide which kernel they boot.
-const DefaultKernelImage = "ghcr.io/discobox-ai/discobox-vm-kernel@sha256:23f0ce879e1dc3939fd0f498237d857d11478bec1c570d3f7222194ccf81955f"
+const DefaultKernelImage = "ghcr.io/discobox-ai/discobox-vm-kernel@sha256:cf6b85d12ecd4d5ae06441fb9a258e682ab73703e6e25cca50e560a2cb00fa1c"
 
 // guestImageDockerfile is the Dockerfile in a discobox checkout that produces
 // the guest artifact set, in the path form BuildKit's frontend wants. Its
