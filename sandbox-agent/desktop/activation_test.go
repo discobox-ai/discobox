@@ -174,3 +174,24 @@ func TestTerminalsAreGivenTheSessionBusWithoutTheDisplay(t *testing.T) {
 		t.Errorf("discobox-session-bus.service RuntimeDirectory = %q; stopping the daemon would unlink its activation socket", dirs)
 	}
 }
+
+// Every unit that talks to the display is ordered After=xvfb.service, and the
+// first of them is the socket proxy forwarding the very connection that started
+// X. After= waits only for the X server to count as started, so that has to mean
+// Xorg is accepting connections on 127.0.0.1:6000, not merely that it was
+// forked: a Type=simple unit is started the instant its process exists, and the
+// proxy then forwards that first client into "Connection refused".
+func TestTheXServerIsStartedOnlyOnceItAcceptsConnections(t *testing.T) {
+	xvfb := readUnit(t, "xvfb.service")
+	if slices.Contains(directive(xvfb, "Type"), "notify") {
+		return
+	}
+	for _, command := range directive(xvfb, "ExecStartPost") {
+		if strings.Contains(command, "6000") {
+			return
+		}
+	}
+	t.Errorf("xvfb.service Type = %q with no ExecStartPost waiting for 127.0.0.1:6000;\n"+
+		"units ordered after it start before Xorg listens, and the client that activated :0 is refused",
+		directive(xvfb, "Type"))
+}
