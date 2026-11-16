@@ -31,7 +31,9 @@
   - [26-10-30-875](26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)
     (the control-plane channel);
   - [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)
-    (sleep);
+    (sleep) and
+    [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)
+    (a Docker pool freezes a sleep);
   - disco-vm ADRs 26-11-03-676 (archil's guest operations), 26-11-12-604
     and 26-11-14-610 (a service's URLs and their scopes).
 
@@ -255,8 +257,16 @@ under systemd. There is no supervisor of discobox's own (Q5).
 
 ### 5. Archil's 24-hour pause is undone, and a sleep stays a stop
 
-- **discobox's sleep (337) is a stop on archil, as on every driver.** A
-  stop checkpoints the root disk. discobox never asks for a pause.
+- **discobox's sleep (337) is a stop on archil, as on every machine pool.**
+  337 lets the runtime choose between a freeze and a stop. A Docker pool
+  freezes (`docker pause`, 420 §2). A machine pool stops, because
+  disco-vm's contract has no freeze: `machine.Machine` has no pause, and
+  the pool's `MachineSandboxRuntime` stops on a sleep and refuses a suspend
+  (`pool-agent/sandboxruntime/machinepower.go`). No disco-vm driver pauses a
+  machine on discobox's behalf. Two only resume a machine their provider
+  paused: boxd's `StartVm` resumes a suspended machine, and archil's
+  `Start` and first exec resume a paused sandbox. A stop checkpoints the
+  root disk. discobox never asks Archil for a pause.
 - **A pause discobox did not ask for is undone by the machine's owner.**
   - The server resumes a paused pool machine at its next reconcile; the
     driver's `Start` resumes a paused sandbox.
@@ -296,9 +306,19 @@ under systemd. There is no supervisor of discobox's own (Q5).
 - **A port token per sandbox for the pool's listener.** It puts the server
   in every create (§2). The shared token's exposure is boxd's public pool
   URL's.
-- **Mapping discobox's sleep onto Archil's pause.** It would keep memory and
-  wake faster. But it gives one driver a second kind of sleep, and the pause
-  is bounded by the same session limit.
+- **Mapping discobox's sleep onto Archil's pause, for archil alone.** It
+  would keep memory and wake faster, as a Docker pool's freeze does (420).
+  But a freeze on a machine pool belongs in disco-vm's contract and the
+  machine runtime, for every driver that can freeze (boxd's `SuspendVm`
+  too), not in one driver's special case. Archil's pause is also bounded
+  by the same session limit. Deferred below.
+
+## Deferred
+
+- **A machine pool that freezes a sleep and a suspend** (420 §§2–3 on
+  disco-vm). It needs a freeze in `machine.Machine`, reported as its own
+  state, and a `MachineSandboxRuntime` that uses it. Revisit when a
+  machine pool's user loses a warm harness to a sleep's stop.
 
 ## Open, for implementation
 
