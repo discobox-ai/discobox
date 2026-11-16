@@ -102,6 +102,13 @@ Global review expectations:
   `!cancelled() && needs.changes.outputs.code != 'false'`. A bare
   `needs.changes.outputs.code == 'true'` skips the job when `changes` fails,
   and a skipped job passes a required check, so nothing would have run.
+- A workflow whose `pull_request` runs cancel in progress keys its
+  concurrency group on `github.event.pull_request.number`, never on
+  `github.ref` alone. An event on a merged or closed PR (a label added after
+  the merge) has the base branch as `github.ref`, so a ref-keyed PR run joined
+  main's group and cancelled main's push run (#1271). `vm-image.yml` and
+  `vm-kernel.yml` are ref-keyed and safe only while their `pull_request`
+  triggers keep the default types, which never fire on a merged PR.
 - A Taskfile target that must force an environment variable sets it on the
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced
