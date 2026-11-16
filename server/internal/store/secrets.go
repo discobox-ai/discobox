@@ -397,7 +397,7 @@ func (s *Store) secretValueReplaced(ctx context.Context, secret *model.Secret) (
 	// an exchange secret it could not read.
 	storedPlain, err := s.OpenSecretPlaintext(ctx, stored)
 	if err != nil {
-		return stored, !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil
+		return stored, !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil //nolint:nilerr // a value that does not open is compared as bytes
 	}
 	written, err := s.OpenSecretPlaintext(ctx, secret)
 	if err != nil {
