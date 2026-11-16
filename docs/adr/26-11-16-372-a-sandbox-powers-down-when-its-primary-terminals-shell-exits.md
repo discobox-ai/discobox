@@ -1,7 +1,8 @@
 # 26-11-16-372 — A sandbox powers down when its primary terminal's shell exits
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
+  Accepted by the owner by merging #1236, 2026-11-16.
 - **Amends**: [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)
   §4 (the status gains `primaryExitedAt`), §5 (power-down gains the reason
   **exit**, ahead of sleep and idle), and §8 (the field travels only under

@@ -1,6 +1,6 @@
 # 26-11-04-746 — A sleep request has a fifteen-second grace
 
-- **Status**: Accepted (narrows [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §§1, 4, 5, 8: sleep waits for a minimum grace and bounded OSC 7501 working deferral; sleep and idle reporting are gated while waiting)
+- **Status**: Accepted (narrows [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §§1, 4, 5, 8: sleep waits for a minimum grace and bounded OSC 7501 working deferral; sleep and idle reporting are gated while waiting; §1 narrowed by [26-11-16-372](26-11-16-372-a-sandbox-powers-down-when-its-primary-terminals-shell-exits.md): a power-down for `exit` waits for no grace or deferral)
 - **Date**: 2026-11-04
 - Accepted by the owner by merging #565, 2026-11-04
 - **Relates to**: [#564](https://github.com/discobox-ai/discobox/issues/564);
