@@ -36,7 +36,8 @@ decision, destination policy decision, cache event, and upgraded-stream audit
 row. The listener sniffs each connection's first byte: `0x05` is served as
 SOCKS5, an ASCII capital letter as HTTP, and anything else (SOCKS4 included) is
 closed. Every allowed `CONNECT` is MITM'd with a per-host certificate from the
-MITM CA, except one to a host the client's passthrough names, which is spliced
+MITM CA, naming the host as policy does (lowercase, without a trailing dot: a
+client's `host.:443` gets a leaf for `host`), except one to a host the client's passthrough names, which is spliced
 to the origin unread ([Passthrough](#passthrough)).
 
 A request read from a tunnel is for the `CONNECT` authority, while policy —
