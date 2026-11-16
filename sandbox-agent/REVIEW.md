@@ -99,6 +99,14 @@
   the unit sees nothing, and a `ConditionPathExists` on it skips the unit
   with `systemctl start` still returning 0 (#1197).
 
+- **An exec run straight after a machine's start waits for systemd's bus
+  before its first `systemctl`.** A provider's start can return once the
+  machine runs, and `/run/systemd/system` appears before systemd answers on
+  its bus: `systemctl` then fails at once or returns while systemd is still
+  starting. Call `awaitSystemdBus` first, as `provision apply` does for
+  both its paths (a sandbox machine's start, a pool box's provisioning) and
+  the snapshot command does (#1240).
+
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has
   and the source does not name, which is what keeps a provider's settings; it
