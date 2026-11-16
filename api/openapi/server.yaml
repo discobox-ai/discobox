@@ -4738,8 +4738,11 @@ components:
                         $ref: '#/components/schemas/SandboxFeature'
                     description: The repository's features by name, from its .discobox/settings.json. The sandbox provisions every feature but those whose enabled is false; a feature the harness requires cannot be turned off unless the box already has a usable one. Fixed at create.
                     type: object
+                metaName:
+                    description: The sandbox's first name, the one a listing shows it by, checked as a meta change's name is. It is recorded with the sandbox from its creation and seeds the meta file inside it before its harness starts, as the description does; that file holds the name from then on. It is display text, need not be unique, and is not name, the handle. Empty or absent gives no name.
+                    type: string
                 name:
-                    description: Sandbox name
+                    description: The sandbox's handle, unique in the project, which commands and ssh resolve it by. It is not the name a listing shows, which is the meta name (metaName).
                     maxLength: 200
                     type: string
                 prompt:

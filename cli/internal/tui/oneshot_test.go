@@ -426,6 +426,7 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 			Env:         []string{"A=1"},
 			Bind:        []string{"github:GH_TOKEN"},
 			Pool:        "pool-a",
+			Name:        "Fix login flake",
 			Description: "deliver 700",
 			Tags:        map[string]string{"repo": "a/b", "wip": ""},
 		}
@@ -458,8 +459,8 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 		if !slices.Equal(run.Prompt, req.Prompt) || !slices.Equal(run.Bind, req.Bind) || run.Pool != "pool-a" {
 			t.Fatalf("run = %+v, want the prompt, bindings and pool as given", run)
 		}
-		if run.Description != req.Description || !maps.Equal(run.Tags, req.Tags) {
-			t.Fatalf("run = %+v, want the description and tags as given", run)
+		if run.Name != req.Name || run.Description != req.Description || !maps.Equal(run.Tags, req.Tags) {
+			t.Fatalf("run = %+v, want the name, description and tags as given", run)
 		}
 	})
 }

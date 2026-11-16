@@ -26759,7 +26759,13 @@ type SandboxCreateConfig struct {
 	// feature but those whose enabled is false; a feature the harness requires cannot be turned off
 	// unless the box already has a usable one. Fixed at create.
 	Features OptSandboxCreateConfigFeatures `json:"features"`
-	// Sandbox name.
+	// The sandbox's first name, the one a listing shows it by, checked as a meta change's name is. It is
+	// recorded with the sandbox from its creation and seeds the meta file inside it before its harness
+	// starts, as the description does; that file holds the name from then on. It is display text, need
+	// not be unique, and is not name, the handle. Empty or absent gives no name.
+	MetaName OptString `json:"metaName"`
+	// The sandbox's handle, unique in the project, which commands and ssh resolve it by. It is not the
+	// name a listing shows, which is the meta name (metaName).
 	Name string `json:"name"`
 	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
 	Prompt []string `json:"prompt"`
@@ -26832,6 +26838,11 @@ func (s *SandboxCreateConfig) GetSkillsSources() []SandboxSkillsSource {
 // GetFeatures returns the value of Features.
 func (s *SandboxCreateConfig) GetFeatures() OptSandboxCreateConfigFeatures {
 	return s.Features
+}
+
+// GetMetaName returns the value of MetaName.
+func (s *SandboxCreateConfig) GetMetaName() OptString {
+	return s.MetaName
 }
 
 // GetName returns the value of Name.
@@ -26922,6 +26933,11 @@ func (s *SandboxCreateConfig) SetSkillsSources(val []SandboxSkillsSource) {
 // SetFeatures sets the value of Features.
 func (s *SandboxCreateConfig) SetFeatures(val OptSandboxCreateConfigFeatures) {
 	s.Features = val
+}
+
+// SetMetaName sets the value of MetaName.
+func (s *SandboxCreateConfig) SetMetaName(val OptString) {
+	s.MetaName = val
 }
 
 // SetName sets the value of Name.

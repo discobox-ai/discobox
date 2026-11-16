@@ -5,9 +5,11 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 )
@@ -68,7 +70,63 @@ func TestCreateRecordsItsDescriptionAndTags(t *testing.T) {
 	}
 }
 
-// A description or tags a meta change could not make are refused before
+// A create's meta name is the name the sandbox is listed by from its first
+// listing, normalized as a rename's is, and the reconciler hands it to the
+// pool with the description and tags as the seed for the meta file. The
+// handle, config.name, is untouched, and two sandboxes may share a meta name
+// (ADR 26-11-16-207 §§1, 3).
+func TestCreateRecordsItsMetaName(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	svc.SetReleaseBundles(release(platformOld))
+	var ids []string
+	for _, handle := range []string{"brave-otter", "calm-heron"} {
+		created, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+			HarnessName: serverapi.NewOptString("codex"),
+			Config: serverapi.SandboxCreateConfig{
+				Name: handle,
+				// An ideographic space and space around it, as an input
+				// method or a paste gives them.
+				MetaName: serverapi.NewOptString(" Fix\u3000login flake "),
+			},
+		})
+		if err != nil {
+			t.Fatalf("create %s: %v", handle, err)
+		}
+		ids = append(ids, created.ID)
+	}
+	sb, err := st.GetSandbox(ctx, "project-1", ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.MetaName == nil || *sb.MetaName != "Fix login flake" || sb.Name != "brave-otter" || sb.MetaObservedAt != nil {
+		t.Fatalf("row = meta name %v, name %q, observed %v; want the normalized meta name, the handle, unobserved", sb.MetaName, sb.Name, sb.MetaObservedAt)
+	}
+	if got := services.SandboxDisplayName(sb); got != "Fix login flake" {
+		t.Fatalf("display name = %q, want the meta name", got)
+	}
+	opts, err := (&SandboxReconciler{store: st}).createOptionsFromSandbox(ctx, sb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.MetaName == nil || *opts.MetaName != "Fix login flake" || opts.Name != "brave-otter" {
+		t.Fatalf("seed for the pool = meta name %v, name %q; want the meta name beside the handle", opts.MetaName, opts.Name)
+	}
+
+	// No meta name is none, not an empty one.
+	created, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+		HarnessName: serverapi.NewOptString("codex"),
+		Config:      serverapi.SandboxCreateConfig{Name: "plain", MetaName: serverapi.NewOptString("  ")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain, err := st.GetSandbox(ctx, "project-1", created.ID); err != nil || plain.MetaName != nil {
+		t.Fatalf("blank meta name recorded as %v (%v), want none", plain.MetaName, err)
+	}
+}
+
+// A name, description or tags a meta change could not make are refused before
 // anything is created.
 func TestCreateRefusesMetaAChangeWouldRefuse(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
@@ -79,6 +137,8 @@ func TestCreateRefusesMetaAChangeWouldRefuse(t *testing.T) {
 		"a value with a comma": {Name: "b", Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"k": "a,b"})},
 		"a control character":  {Name: "c", Description: serverapi.NewOptString("a\x07b")},
 		"an empty key":         {Name: "d", Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"": "x"})},
+		"a name of two lines":  {Name: "e", MetaName: serverapi.NewOptString("one\ntwo")},
+		"a name too long":      {Name: "f", MetaName: serverapi.NewOptString(strings.Repeat("n", sandboxmeta.MaxNameLength+1))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{HarnessName: serverapi.NewOptString("codex"), Config: config})

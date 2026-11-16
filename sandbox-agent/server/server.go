@@ -72,10 +72,11 @@ type Config struct {
 	DatabasePath    string
 	Env             map[string]string
 	Prompt          []string
-	// Description and Tags seed the meta file when the sandbox has none
-	// (ADR 0136).
+	// Description, Tags and MetaName seed the meta file when the sandbox has
+	// none (ADR 0136, ADR 26-11-16-207 §4).
 	Description string
 	Tags        map[string]string
+	MetaName    string
 	Resources   config.ResourceConfig
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime
 	// config, and nothing else (ADR 26-10-08-127 §3). Empty accepts none.
@@ -146,6 +147,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Prompt:                cfg.Prompt,
 		Description:           cfg.Description,
 		Tags:                  cfg.Tags,
+		MetaName:              cfg.MetaName,
 		Resources:             cfg.Resources,
 		PoolPublicKey:         cfg.PoolPublicKey,
 		AwaitsRuntimeConfig:   cfg.AwaitsRuntimeConfig,
@@ -354,7 +356,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		// to be diagnosed. Its status then says why it reports no meta.
 		slog.Default().Warn("sandbox agent meta disabled", "error", err)
 		metaFile = nil
-	} else if err := metaFile.Seed(sandboxmeta.Meta{Description: cfg.Description, Tags: cfg.Tags}); err != nil {
+	} else if err := metaFile.Seed(sandboxmeta.Meta{Name: cfg.MetaName, Description: cfg.Description, Tags: cfg.Tags}); err != nil {
 		slog.Default().Warn("seed sandbox meta", "path", metaFile.Path(), "error", err)
 	}
 	// git runs with the sandbox's own environment, so a clone takes the route

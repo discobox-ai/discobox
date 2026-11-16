@@ -184,6 +184,49 @@ func TestSeedWritesTagsWithTheDescription(t *testing.T) {
 	}
 }
 
+// The name the sandbox was created with seeds the file with its description
+// and tags, and on the same terms: a rename, or a name cleared, inside the
+// sandbox stays through every later seed (ADR 26-11-16-207 §4).
+func TestSeedWritesTheName(t *testing.T) {
+	home := t.TempDir()
+	file := New(home, Owner{})
+	seed := sandboxmeta.Meta{Name: "Fix login flake", Tags: map[string]string{"job": "deliver"}}
+	if err := file.Seed(seed); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := file.Read(); err != nil || got.Name != "Fix login flake" || got.Tags["job"] != "deliver" {
+		t.Fatalf("Read() after Seed() = %+v, %v", got, err)
+	}
+	renamed := "Fixed login flake"
+	if _, _, err := file.Update(sandboxmeta.Change{Name: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Seed(seed); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := file.Read(); got.Name != renamed {
+		t.Fatalf("Seed() undid a rename: %q", got.Name)
+	}
+	cleared := ""
+	if _, _, err := file.Update(sandboxmeta.Change{Name: &cleared}); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Seed(seed); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := file.Read(); got.Name != "" {
+		t.Fatalf("Seed() put back a cleared name: %q", got.Name)
+	}
+
+	nameOnly := New(t.TempDir(), Owner{})
+	if err := nameOnly.Seed(sandboxmeta.Meta{Name: "Just a name"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := nameOnly.Read(); err != nil || got.Name != "Just a name" || got.Description != "" || len(got.Tags) != 0 {
+		t.Fatalf("Read() after a name-only Seed() = %+v, %v", got, err)
+	}
+}
+
 func writeMetaFile(t *testing.T, home, content string) {
 	t.Helper()
 	path := filepath.Join(home, sandboxmeta.RelativePath)

@@ -838,6 +838,9 @@ components:
                         type: string
                     description: The sandbox's first tags, which seed its meta file with the description when it has none.
                     type: object
+                metaName:
+                    description: The sandbox's first name, which seeds its meta file with the description and tags when it has none.
+                    type: string
                 git:
                     "$ref": "#/components/schemas/SandboxGitIdentity"
                 skills:
@@ -1875,7 +1878,7 @@ paths:
             operationId: pool-discover-create-protocol
             description: >-
                 Opens the discobox-create.v1 WebSocket. Its first text message is
-                a stable JSON envelope with integer createRevision (currently 2).
+                a stable JSON envelope with integer createRevision (currently 3).
                 Subsequent binary messages carry HTTP/1.1 create requests and
                 responses on this agent instance only. Reconnect requires fresh
                 discovery. Unknown envelope members must be ignored.

@@ -305,11 +305,15 @@ func TestPoolCreateRequestCarriesBodyPlacesOnlyToAnAgentThatTakesThem(t *testing
 // The tags a sandbox was created with go to its pool beside its
 // description, as the seed for its meta file.
 func TestPoolCreateRequestForwardsTheMetaSeed(t *testing.T) {
-	description := "deliver 700"
+	description, metaName := "deliver 700", "Fix login flake"
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		MetaName:    &metaName,
 		Description: &description,
 		Tags:        map[string]string{"repo": "a/b", "wip": ""},
 	}, false, false, false)
+	if request.Config.MetaName.Or("") != metaName {
+		t.Fatalf("meta name = %q, want %q", request.Config.MetaName.Or(""), metaName)
+	}
 	tags, ok := request.Config.Tags.Get()
 	if !ok || len(tags) != 2 || tags["repo"] != "a/b" {
 		t.Fatalf("tags = %v, want both", tags)
@@ -317,7 +321,7 @@ func TestPoolCreateRequestForwardsTheMetaSeed(t *testing.T) {
 	if request.Config.Description.Or("") != description {
 		t.Fatalf("description = %q, want %q", request.Config.Description.Or(""), description)
 	}
-	if untagged := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false); untagged.Config.Tags.Set {
-		t.Fatalf("an untagged sandbox sent tags %v", untagged.Config.Tags.Value)
+	if untagged := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false); untagged.Config.Tags.Set || untagged.Config.MetaName.Set {
+		t.Fatalf("an untagged, unnamed sandbox sent tags %v and name %q", untagged.Config.Tags.Value, untagged.Config.MetaName.Value)
 	}
 }

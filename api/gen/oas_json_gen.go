@@ -42626,6 +42626,12 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.MetaName.Set {
+			e.FieldStart("metaName")
+			s.MetaName.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("name")
 		e.Str(s.Name)
 	}
@@ -42675,7 +42681,7 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [18]string{
+var jsonFieldsNameOfSandboxCreateConfig = [19]string{
 	0:  "egress",
 	1:  "harnessConfigId",
 	2:  "model",
@@ -42687,13 +42693,14 @@ var jsonFieldsNameOfSandboxCreateConfig = [18]string{
 	8:  "skills",
 	9:  "skillsSources",
 	10: "features",
-	11: "name",
-	12: "prompt",
-	13: "secrets",
-	14: "source",
-	15: "sourceCodeReferences",
-	16: "tags",
-	17: "user",
+	11: "metaName",
+	12: "name",
+	13: "prompt",
+	14: "secrets",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "tags",
+	18: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -42822,8 +42829,18 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"features\"")
 			}
+		case "metaName":
+			if err := func() error {
+				s.MetaName.Reset()
+				if err := s.MetaName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metaName\"")
+			}
 		case "name":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -42921,7 +42938,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00001000,
+		0b00010000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

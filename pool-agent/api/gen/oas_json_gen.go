@@ -12241,6 +12241,12 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.MetaName.Set {
+			e.FieldStart("metaName")
+			s.MetaName.Encode(e)
+		}
+	}
+	{
 		if s.Git.Set {
 			e.FieldStart("git")
 			s.Git.Encode(e)
@@ -12316,7 +12322,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [18]string{
+var jsonFieldsNameOfSandboxConfig = [19]string{
 	0:  "harnessConfigId",
 	1:  "model",
 	2:  "modelReasoningLevel",
@@ -12324,17 +12330,18 @@ var jsonFieldsNameOfSandboxConfig = [18]string{
 	4:  "description",
 	5:  "env",
 	6:  "tags",
-	7:  "git",
-	8:  "skills",
-	9:  "skillsSources",
-	10: "features",
-	11: "start",
-	12: "specFingerprint",
-	13: "name",
-	14: "prompt",
-	15: "source",
-	16: "sourceCodeReferences",
-	17: "user",
+	7:  "metaName",
+	8:  "git",
+	9:  "skills",
+	10: "skillsSources",
+	11: "features",
+	12: "start",
+	13: "specFingerprint",
+	14: "name",
+	15: "prompt",
+	16: "source",
+	17: "sourceCodeReferences",
+	18: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -12414,6 +12421,16 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"tags\"")
+			}
+		case "metaName":
+			if err := func() error {
+				s.MetaName.Reset()
+				if err := s.MetaName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metaName\"")
 			}
 		case "git":
 			if err := func() error {

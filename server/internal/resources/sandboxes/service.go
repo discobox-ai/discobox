@@ -156,15 +156,22 @@ func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot strin
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
 	config := input.Config
-	// The description and tags the sandbox is created with are its meta
-	// file's first content, so they are checked as a meta change is, before
-	// anything is created (ADR 0136).
+	// The name, description and tags the sandbox is created with are its meta
+	// file's first content, so they are checked as a meta change is, the name
+	// normalized as a change's is, before anything is created (ADR 0136,
+	// ADR 26-11-16-207 §3). The name is the meta name, not config.Name, the
+	// handle, and is not checked against any other box's.
+	metaName := sandboxmeta.NormalizeName(config.MetaName.Or(""))
 	tags := map[string]string(config.Tags.Or(nil))
-	if err := (sandboxmeta.Meta{Description: config.Description.Or(""), Tags: tags}).Validate(); err != nil {
+	if err := (sandboxmeta.Meta{Name: metaName, Description: config.Description.Or(""), Tags: tags}).Validate(); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	if len(tags) == 0 {
 		tags = nil
+	}
+	var metaNamePtr *string
+	if metaName != "" {
+		metaNamePtr = &metaName
 	}
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
@@ -333,7 +340,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		// Recorded from the start, so the first listing and the created event
 		// carry them. Left unobserved, which the sandbox's first report of its
 		// meta file replaces.
-		Tags: tags,
+		Tags:     tags,
+		MetaName: metaNamePtr,
 		SandboxManifest: model.SandboxManifest{
 			HarnessConfigID:       &harnessConfigID,
 			Model:                 services.OptStringPtr(config.Model),
