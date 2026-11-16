@@ -179,6 +179,8 @@ func (s *Session) WriteInitialResize() error {
 
 // Run serves the session until the remote exits, the caller detaches, or ctx is
 // canceled. A remote process that exited non-zero is reported as an ExitError.
+// When it returns, nothing it started still uses the Console; only
+// Options.CopyInput may still be reading Stdin.
 func (s *Session) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -231,18 +233,31 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 		}
 	}()
+	// The resize watcher and the signal proxy use the console, so Run does not
+	// hand it back until both have stopped: a caller closes its stdin once the
+	// session ends, and a watcher still asking that file for its size would read
+	// a closed descriptor. Deferred after the terminal's reset and restore, so
+	// it runs before them. Every path out of the loop below closes the
+	// connection, which ends a write either is blocked in (execstream.Conn's
+	// contract). CopyInput is not waited for: it can be blocked in a read of
+	// stdin that only the caller can end.
+	var consoleUsers sync.WaitGroup
+	defer func() {
+		cancel()
+		consoleUsers.Wait()
+	}()
 	if s.opts.Terminal {
-		go func() {
+		consoleUsers.Go(func() {
 			if err := s.watchResize(ctx); err != nil {
 				otherErr <- err
 			}
-		}()
+		})
 	}
-	go func() {
+	consoleUsers.Go(func() {
 		if err := s.proxySignals(ctx); err != nil {
 			otherErr <- err
 		}
-	}()
+	})
 
 	for {
 		select {
@@ -277,9 +292,9 @@ func (s *Session) Run(ctx context.Context) error {
 }
 
 // outputDrain bounds the wait for the output reader before the terminal is
-// handed back. Every path out of Run closes the connection, which is what ends
-// that read; the bound is for the ones that cannot — a write that failed before
-// the loop was entered, or a transport that does not notice its own close.
+// handed back. Every path out of Run's loop closes the connection, which is
+// what ends that read; the bound is for the one that returns before the loop
+// is entered, when the Ready frame could not be written.
 const outputDrain = 250 * time.Millisecond
 
 func waitForOutput(done <-chan struct{}) {
