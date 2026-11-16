@@ -25,14 +25,20 @@ on:
 permissions:
   contents: read
 
+# A newer run cancels the older one in its group, on main as on a pull
+# request: only the newest commit needs checking. Without that, a main run
+# waiting on a runner (a macOS one) held main's group, and each push behind it
+# was replaced before it ran (#1272).
+#
 # A pull request's runs share a group keyed on its number, never on
 # github.ref: for an event on a merged or closed PR (a label added after the
 # merge) github.ref is the base branch, so a ref-keyed group would put that run
-# in main's group, and its cancel-in-progress would cancel main's push run. A
-# push to main has no pull_request, so it falls back to its ref.
+# in main's group and cancel main's push run (#1271). A push to main has no
+# pull_request, so it falls back to its ref. No tag runs this workflow; a
+# workflow that a tag runs never cancels the tag's run (REVIEW.md).
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   # Whether this run has code to check (scripts/ci-changes.sh). A pull request

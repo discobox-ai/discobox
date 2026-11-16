@@ -49,9 +49,13 @@ on:
 permissions:
   contents: read
 
+# A tag's run publishes, so nothing cancels it. Any other run is replaced by
+# a newer one in its group: a pull request's runs share a group keyed on its
+# number, never on github.ref, which is the base branch for an event on a
+# merged PR (#1271).
 concurrency:
-  group: vm-image-${{ github.ref }}
-  cancel-in-progress: true
+  group: vm-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   guest:
