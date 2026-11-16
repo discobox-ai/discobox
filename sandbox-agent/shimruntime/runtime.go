@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -317,13 +318,20 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 	_ = netConn.SetDeadline(time.Time{})
 
 	conn := &upgradeConn{rw: rw, conn: netConn}
-	_ = r.stream.Attach(context.Background(), conn, host.AttachOptions{
+	err = r.stream.Attach(context.Background(), conn, host.AttachOptions{
 		Replay: repaintRequested,
 		Ready: func() error {
 			_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + r.protocol + "\r\n\r\n")
 			return rw.Flush()
 		},
 	})
+	// A viewer the stream detached for not keeping up is the one ending worth
+	// a line: its client sees only a dropped connection (and a terminal
+	// reconnects and is repainted), so this is where the reason is left. A
+	// client that went away ends with a write error, which says nothing.
+	if errors.Is(err, host.ErrFellBehind) || errors.Is(err, host.ErrStalled) {
+		slog.Warn("detached a slow exec viewer", "protocol", r.protocol, "error", err)
+	}
 }
 
 // upgradeConn is an execstream.Conn over a hijacked HTTP connection.
