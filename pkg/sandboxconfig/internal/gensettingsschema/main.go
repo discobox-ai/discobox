@@ -13,6 +13,7 @@ import (
 	"reflect"
 
 	"github.com/discobox-ai/discobox/pkg/configfile"
+	"github.com/discobox-ai/discobox/pkg/genfile"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
@@ -26,7 +27,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	if err := os.WriteFile(*out, encoded, 0o644); err != nil { //nolint:gosec // G306: the schema is public documentation.
+	if err := genfile.WriteFile(*out, encoded, 0o644); err != nil {
 		fail(err)
 	}
 }

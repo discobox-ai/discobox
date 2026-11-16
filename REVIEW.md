@@ -19,6 +19,14 @@ Global review expectations:
   comments, not only the Go callers the compiler finds. Renaming
   `agentlayer.AgentLayer` to `ExtractAgent` left five citations of the old
   name, a review note among them, pointing at code that was gone.
+- A generator `go tool task generate` runs writes its output through
+  `pkg/genfile` (`WriteFile`, or `SyncDir` for a tool that writes a whole
+  directory, as `api/internal/genogen` does for ogen), never `os.WriteFile`
+  or a tool's own clean-then-write: a rewrite of unchanged content still shows
+  the hooks a modified or deleted file and sets off every hook over it. A
+  generator not written in Go cannot import it and keeps the same rules
+  itself, as `scripts/build-harness-settings.mjs` does (`writeIfChanged`); a
+  change to one is made to the other.
 - A file or tree something trusts after a hard stop (a record, a marker, a
   key, a cache entry, a harness's settings) is staged and renamed through
   `pkg/fsdurable`, in every module, and so is any staged write that syncs at

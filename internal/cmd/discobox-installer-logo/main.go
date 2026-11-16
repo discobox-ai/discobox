@@ -25,6 +25,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/genfile"
 )
 
 // run is a piece of a row and the colors it is drawn in, as logo.json spells
@@ -268,5 +270,5 @@ func replace(path string, stamps map[string]string) error {
 			return fmt.Errorf("%s: expected one %q line, found %d", path, marker, seen[marker])
 		}
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644) //nolint:gosec // G306: an install script, which is public by the time anyone runs it.
+	return genfile.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }

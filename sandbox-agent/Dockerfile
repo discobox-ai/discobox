@@ -139,6 +139,7 @@ COPY pkg/declared ./pkg/declared
 COPY pkg/endpoint ./pkg/endpoint
 COPY pkg/execstream ./pkg/execstream
 COPY pkg/fsdurable ./pkg/fsdurable
+COPY pkg/genfile ./pkg/genfile
 COPY harness ./harness
 COPY pkg/health ./pkg/health
 COPY pkg/hostscope ./pkg/hostscope

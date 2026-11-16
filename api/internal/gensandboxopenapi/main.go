@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/discobox-ai/discobox/api/internal/genyaml"
+	"github.com/discobox-ai/discobox/pkg/genfile"
 )
 
 const sandboxAgentMarker = "x-sandbox-agent"
@@ -84,7 +85,7 @@ func run() error {
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(targetPath, buf.Bytes(), 0o600)
+	return genfile.WriteFile(targetPath, buf.Bytes(), 0o644)
 }
 
 func referencedComponents(source map[string]any, roots ...any) map[string]any {
