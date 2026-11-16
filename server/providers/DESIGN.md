@@ -849,7 +849,11 @@ sequenceDiagram
   per pool from `ReconcilePool`/`RepairPool`, *before* the runtime's
   `EnsurePool`, because the agent cannot make its first report, which the
   runtime waits on, until a channel is open; it redials with backoff and
-  releases on `RemovePool` and `Close`. It dials the agent at the same lease
+  releases on `RemovePool` and `Close`. A channel that had lasted and dropped
+  is redialed every second for 30 seconds before the backoff starts
+  (`channelRedialGrace`): such a drop is a hop between the ends that comes
+  back within seconds, and doubling from the first failed dial left the pool
+  unreached for twice as long as the hop was down. It dials the agent at the same lease
   every other call uses (`AcquirePoolAgentClient`), on the lease's transport
   rather than its client, so no client timeout cuts it.
 - **How it crosses a front.** A binary WebSocket, asked for over HTTP/1.1

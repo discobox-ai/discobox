@@ -213,3 +213,27 @@ func shortTempDir(t *testing.T) string {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
 }
+
+// A channel that lasted and dropped is redialed every channelRedial while the
+// hop that cut it comes back, and backs off only once the grace has passed. A
+// pool whose channel never settled backs off from its first failed dial.
+func TestASettledChannelsDropIsRedialedWithoutBackingOffAtFirst(t *testing.T) {
+	now := time.Now()
+	dropped := now.Add(-5 * time.Second)
+	wait := channelRedial
+	for range 3 {
+		if wait = nextChannelRedial(wait, dropped, now); wait != channelRedial {
+			t.Fatalf("within the grace: wait %s, want %s", wait, channelRedial)
+		}
+	}
+	late := dropped.Add(channelRedialGrace)
+	if got := nextChannelRedial(channelRedial, dropped, late); got != 2*channelRedial {
+		t.Fatalf("after the grace: wait %s, want %s", got, 2*channelRedial)
+	}
+	if got := nextChannelRedial(channelRedialMax, dropped, late); got != channelRedialMax {
+		t.Fatalf("after the grace: wait %s, want the cap %s", got, channelRedialMax)
+	}
+	if got := nextChannelRedial(channelRedial, time.Time{}, now); got != 2*channelRedial {
+		t.Fatalf("never settled: wait %s, want %s", got, 2*channelRedial)
+	}
+}
