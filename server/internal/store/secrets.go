@@ -278,12 +278,13 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	// Whether this write replaces the credential, which is what decides
 	// whether a recorded rejection of it is still true (ADR 0132 §4).
 	//
-	// The test is against what is stored rather than against the shape of what
-	// arrived, because it has to hold both with a sealer and without one. A
-	// caller replacing a value hands over plaintext, which never equals the
-	// stored ciphertext; a caller renaming hands back the row it read, whose
-	// value is byte-identical to it. With no sealer both sides are plaintext
-	// and the same comparison still separates them.
+	// The test is plaintext against plaintext, so it holds the same with a
+	// sealer and without one (#880): a caller replacing a value hands over
+	// plaintext, a caller renaming hands back the row it read, sealed or not,
+	// and both are opened before they are compared with what is stored. A
+	// writer handing over the value already stored replaces nothing: the same
+	// bytes are the same credential an upstream refused, and only a writer
+	// that stamps the value restarts its lifetime (below).
 	//
 	// It lives here rather than in each service because "the value was
 	// replaced" has more than one writer — the secrets service, harness
@@ -385,7 +386,24 @@ func (s *Store) secretValueReplaced(ctx context.Context, secret *model.Secret) (
 		}
 		return nil, false, err
 	}
-	return stored, !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil
+	// Each side may be sealed, sealed by an earlier release, or in the clear,
+	// and sealing is not deterministic, so only their plaintexts compare.
+	// A stored value that does not open (a row whose key has moved on:
+	// PrepareEncryption opens only what it re-seals) has no plaintext to
+	// compare, so its bytes are compared instead. A writer handing over a new
+	// value then replaces it, which is how such a secret is mended, and one
+	// handing back the row it read does not. Refusing the write instead would
+	// leave the secret impossible to update, and fail the start that retires
+	// an exchange secret it could not read.
+	storedPlain, err := s.OpenSecretPlaintext(ctx, stored)
+	if err != nil {
+		return stored, !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil
+	}
+	written, err := s.OpenSecretPlaintext(ctx, secret)
+	if err != nil {
+		return nil, false, err
+	}
+	return stored, !bytes.Equal(storedPlain, written), nil
 }
 
 // MarkSecretValueStale makes a secret's current value stale from at, without
