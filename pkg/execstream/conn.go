@@ -21,7 +21,8 @@ import (
 //
 // Implementations must be safe for one reader and one writer concurrently;
 // WriteFrame may be called from several goroutines and must serialize writes
-// itself.
+// itself. Close ends a ReadFrame or WriteFrame blocked in another goroutine:
+// that is how the code above ends its own goroutines when a session is over.
 type Conn interface {
 	ReadFrame() (frame.Frame, error)
 	WriteFrame(typ byte, payload []byte) error
