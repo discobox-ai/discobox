@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/discobox-ai/discobox/pkg/genfile"
 	"github.com/discobox-ai/discobox/server/internal/config"
 )
 
@@ -45,7 +46,7 @@ func main() {
 }
 
 func write(path string, body []byte) {
-	if err := os.WriteFile(path, body, 0o644); err != nil { //nolint:gosec // G306: both artifacts are public documentation.
+	if err := genfile.WriteFile(path, body, 0o644); err != nil {
 		fail(err)
 	}
 }

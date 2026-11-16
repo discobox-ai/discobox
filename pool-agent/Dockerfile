@@ -42,6 +42,7 @@ COPY api ./api
 COPY pkg/auditid ./pkg/auditid
 COPY pkg/controlplane ./pkg/controlplane
 COPY pkg/fsdurable ./pkg/fsdurable
+COPY pkg/genfile ./pkg/genfile
 COPY pkg/gitbackend ./pkg/gitbackend
 COPY pkg/gitprogress ./pkg/gitprogress
 COPY harness ./harness

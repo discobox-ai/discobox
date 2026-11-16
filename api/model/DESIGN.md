@@ -28,6 +28,7 @@ go tool task generate
 ```
 
 The `go:generate` directives live in the root `generate.go`, not in this
-package: ogen regenerates `../gen` first, then `../internal/genmodelaliases`
+package: ogen regenerates `../gen` first (through `../internal/genogen`, which
+writes only the files that changed), then `../internal/genmodelaliases`
 writes `aliases_gen.go` from the contract and the regenerated schemas. The
 same generator produces `pool-agent/api/model`.

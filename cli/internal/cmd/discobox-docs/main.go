@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/cli/internal/cli"
+	"github.com/discobox-ai/discobox/pkg/genfile"
 )
 
 func main() {
@@ -40,7 +41,7 @@ func main() {
 		if !bytes.Equal(old, rendered.Bytes()) {
 			fail(fmt.Errorf("%s is stale; run go tool task docs:generate", *output))
 		}
-	} else if err := os.WriteFile(*output, rendered.Bytes(), 0o600); err != nil {
+	} else if err := genfile.WriteFile(*output, rendered.Bytes(), 0o644); err != nil {
 		fail(err)
 	}
 }
