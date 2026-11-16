@@ -19,10 +19,11 @@ not production code. Its earlier opt-in recommendation predates that choice.
 
 At base `31d6deb4d1226f6efd58919d2a33f00fd422dbf7`,
 `sandbox-agent/desktop/server.go` serves noVNC and proxies `/websockify`;
-`features/desktop/provision.yaml` provisions noVNC, x11vnc and websockify.
-`desktop/web/app.js` owns resizing, density and annotation interaction;
-`desktop/web/capture.js` reads the displayed canvas. There is no desktop
-clipboard bridge; the existing browser clipboard call copies feedback text.
+`sandbox-agent/features/desktop/provision.yaml` provisions noVNC, x11vnc and
+websockify. `sandbox-agent/desktop/web/app.js` owns resizing, density and
+annotation interaction; `sandbox-agent/desktop/web/capture.js` reads the
+displayed canvas. There is no desktop clipboard bridge; the existing browser
+clipboard call copies feedback text.
 
 The spike's pinned voxl revision is
 `9d004076f73cb374bdb87ff96d2e23e44b9f47b9` (0.3.3): XDamage/MIT-SHM capture
