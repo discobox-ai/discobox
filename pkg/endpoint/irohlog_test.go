@@ -3,6 +3,8 @@ package endpoint
 import (
 	"bytes"
 	"log"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -90,5 +92,30 @@ func useIrohLog(t *testing.T, level IrohLogLevel, out *bytes.Buffer) func() {
 		irohLogMu.Lock()
 		irohLogLevel, irohLogWriter = previousLevel, previousWriter
 		irohLogMu.Unlock()
+	}
+}
+
+// A process configures the transport every time it builds a client — a CLI
+// App per server, the git proxy its own — and iroh's tracing can be set only
+// once per process. Configuring it again must keep working rather than fail
+// the request that asked with "could not set log level".
+//
+// It runs in a process of its own: turning iroh's tracing on cannot be undone,
+// and here it would leave every later test in this package writing to stderr
+// (see useIrohLog).
+func TestSetIrohLoggingTwice(t *testing.T) {
+	if os.Getenv("DISCOBOX_TEST_SET_IROH_LOGGING_TWICE") == "1" {
+		var out bytes.Buffer
+		for _, level := range []IrohLogLevel{IrohLogError, IrohLogError, IrohLogWarn} {
+			if err := SetIrohLogging(level, &out); err != nil {
+				t.Fatalf("SetIrohLogging(%s) error = %v", level, err)
+			}
+		}
+		return
+	}
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestSetIrohLoggingTwice$") //nolint:gosec // G204: this test binary, rerun as the child.
+	cmd.Env = append(os.Environ(), "DISCOBOX_TEST_SET_IROH_LOGGING_TWICE=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("configuring iroh logging three times in one process: %v\n%s", err, out)
 	}
 }
