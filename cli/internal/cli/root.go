@@ -66,6 +66,12 @@ type App struct {
 	resolved    endpoint.Endpoint
 	resolveDone bool
 
+	// clientMu guards the client every request of this App goes through,
+	// built on the first request and kept (see httpClientWithAutoStart).
+	clientMu      sync.Mutex
+	client        *http.Client
+	clientBaseURL string
+
 	// serverSet is every server this invocation lists discoboxes from, read
 	// once (see App.servers).
 	serversOnce  sync.Once
@@ -468,13 +474,29 @@ func shouldAutoLaunchServer(autoStart autoStartServer) bool {
 	}
 }
 
+// httpClientWithAutoStart is the client that reaches --server, autolaunching
+// it first when autoStart says so.
+//
+// The client is built once and every caller shares it. What it is built from —
+// the resolved server, the token, --debug — is settled for the App's life, and
+// what it holds is not free to rebuild: its idle connections, which over iroh
+// are streams on the endpoint's one connection to the peer. A client per
+// request leaves every earlier one's idle streams open on that connection
+// until they time out, and a console asking every two seconds keeps dozens of
+// them open for nothing.
+//
+// A failure is not kept, for the reason resolveServerAddress gives.
 func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {
-	transport := http.DefaultTransport
 	parsed := a.serverEndpoint()
 	if autoStart && parsed.AutoLaunchable() {
 		if err := a.ensureLocalServerOnce(); err != nil {
 			return "", nil, err
 		}
+	}
+	a.clientMu.Lock()
+	defer a.clientMu.Unlock()
+	if a.client != nil {
+		return a.clientBaseURL, a.client, nil
 	}
 	resolved, err := a.resolvedServer()
 	if err != nil {
@@ -483,11 +505,11 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 	if err := configureIrohForEndpoint(resolved, a.irohRelayURLs, a.irohLogLevel); err != nil {
 		return "", nil, err
 	}
-	baseURL, client, err := endpoint.HTTPClient(resolved, transport)
+	baseURL, client, err := endpoint.HTTPClient(resolved, http.DefaultTransport)
 	if err != nil {
 		return "", nil, err
 	}
-	transport = client.Transport
+	transport := client.Transport
 	if a.debug {
 		transport = debugTransport{
 			out:  a.errOut,
@@ -510,9 +532,8 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 	transport = serverTransport{
 		base: transport,
 	}
-	return baseURL, &http.Client{
-		Transport: transport,
-	}, nil
+	a.client, a.clientBaseURL = &http.Client{Transport: transport}, baseURL
+	return a.clientBaseURL, a.client, nil
 }
 
 // serverTransport marks what the control-plane transport could not do as this
