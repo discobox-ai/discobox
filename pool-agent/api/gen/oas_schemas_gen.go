@@ -6624,7 +6624,9 @@ func (s *PoolSandboxPort) SetProtocol(val string) {
 type PoolSandboxPowerDownRequest struct {
 	// Idle when the sandbox reported itself idle, which always
 	// stops it; sleep when it reported a sleep request, which a
-	// runtime that can freeze freezes and any other stops.
+	// runtime that can freeze freezes and any other stops; exit
+	// when it reported its primary terminal's shell has exited,
+	// which always stops it.
 	Reason PoolSandboxPowerDownRequestReason `json:"reason"`
 }
 
@@ -6640,12 +6642,15 @@ func (s *PoolSandboxPowerDownRequest) SetReason(val PoolSandboxPowerDownRequestR
 
 // Idle when the sandbox reported itself idle, which always
 // stops it; sleep when it reported a sleep request, which a
-// runtime that can freeze freezes and any other stops.
+// runtime that can freeze freezes and any other stops; exit
+// when it reported its primary terminal's shell has exited,
+// which always stops it.
 type PoolSandboxPowerDownRequestReason string
 
 const (
 	PoolSandboxPowerDownRequestReasonIdle  PoolSandboxPowerDownRequestReason = "idle"
 	PoolSandboxPowerDownRequestReasonSleep PoolSandboxPowerDownRequestReason = "sleep"
+	PoolSandboxPowerDownRequestReasonExit  PoolSandboxPowerDownRequestReason = "exit"
 )
 
 // AllValues returns all PoolSandboxPowerDownRequestReason values.
@@ -6653,6 +6658,7 @@ func (PoolSandboxPowerDownRequestReason) AllValues() []PoolSandboxPowerDownReque
 	return []PoolSandboxPowerDownRequestReason{
 		PoolSandboxPowerDownRequestReasonIdle,
 		PoolSandboxPowerDownRequestReasonSleep,
+		PoolSandboxPowerDownRequestReasonExit,
 	}
 }
 
@@ -6662,6 +6668,8 @@ func (s PoolSandboxPowerDownRequestReason) MarshalText() ([]byte, error) {
 	case PoolSandboxPowerDownRequestReasonIdle:
 		return []byte(s), nil
 	case PoolSandboxPowerDownRequestReasonSleep:
+		return []byte(s), nil
+	case PoolSandboxPowerDownRequestReasonExit:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6676,6 +6684,9 @@ func (s *PoolSandboxPowerDownRequestReason) UnmarshalText(data []byte) error {
 		return nil
 	case PoolSandboxPowerDownRequestReasonSleep:
 		*s = PoolSandboxPowerDownRequestReasonSleep
+		return nil
+	case PoolSandboxPowerDownRequestReasonExit:
+		*s = PoolSandboxPowerDownRequestReasonExit
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

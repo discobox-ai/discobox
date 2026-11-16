@@ -1119,6 +1119,8 @@ func (s SandboxAutostopConfirmRequestReason) Validate() error {
 		return nil
 	case "sleep":
 		return nil
+	case "exit":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

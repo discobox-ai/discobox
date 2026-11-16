@@ -38,6 +38,7 @@ var ErrPoolAgentUnsupported = contract.ErrPoolAgentUnsupported
 
 const PowerDownIdle = contract.PowerDownIdle
 const PowerDownSleep = contract.PowerDownSleep
+const PowerDownExit = contract.PowerDownExit
 
 var ErrImageUnavailable = contract.ErrImageUnavailable
 var ErrNotRunning = contract.ErrNotRunning

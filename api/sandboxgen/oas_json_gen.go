@@ -4945,6 +4945,12 @@ func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.PrimaryExitedAt.Set {
+			e.FieldStart("primaryExitedAt")
+			s.PrimaryExitedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		if s.Sleep.Set {
 			e.FieldStart("sleep")
 			s.Sleep.Encode(e)
@@ -4968,17 +4974,18 @@ func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentAutostopStatus = [10]string{
-	0: "controlPlanePower",
-	1: "idle",
-	2: "idleTimeoutSeconds",
-	3: "lastActivity",
-	4: "lastActivityAt",
-	5: "leaseUntil",
-	6: "sleep",
-	7: "stopsAt",
-	8: "wake",
-	9: "wakeAt",
+var jsonFieldsNameOfSandboxAgentAutostopStatus = [11]string{
+	0:  "controlPlanePower",
+	1:  "idle",
+	2:  "idleTimeoutSeconds",
+	3:  "lastActivity",
+	4:  "lastActivityAt",
+	5:  "leaseUntil",
+	6:  "primaryExitedAt",
+	7:  "sleep",
+	8:  "stopsAt",
+	9:  "wake",
+	10: "wakeAt",
 }
 
 // Decode decodes SandboxAgentAutostopStatus from json.
@@ -5056,6 +5063,16 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"leaseUntil\"")
 			}
+		case "primaryExitedAt":
+			if err := func() error {
+				s.PrimaryExitedAt.Reset()
+				if err := s.PrimaryExitedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"primaryExitedAt\"")
+			}
 		case "sleep":
 			if err := func() error {
 				s.Sleep.Reset()
@@ -5067,7 +5084,7 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sleep\"")
 			}
 		case "stopsAt":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.StopsAt = v
@@ -5108,8 +5125,8 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10011100,
-		0b00000000,
+		0b00011100,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9016,6 +9033,8 @@ func (s *SandboxAutostopConfirmRequestReason) Decode(d *jx.Decoder) error {
 		*s = SandboxAutostopConfirmRequestReasonIdle
 	case SandboxAutostopConfirmRequestReasonSleep:
 		*s = SandboxAutostopConfirmRequestReasonSleep
+	case SandboxAutostopConfirmRequestReasonExit:
+		*s = SandboxAutostopConfirmRequestReasonExit
 	default:
 		*s = SandboxAutostopConfirmRequestReason(v)
 	}

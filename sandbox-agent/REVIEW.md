@@ -916,6 +916,14 @@ user waits on every single start.
   lists can hide shim errors, so use the error-preserving status read for this
   decision (ADR 26-11-04-746).
 
+- **Only the primary's shell ending is an exit.** The harness ending leaves
+  the shell running and must not power anything down; a primary that never
+  ran a shell (no `StartedAt`, `lost`) or whose run belongs to an earlier boot
+  (not `execs.Exec.CurrentBoot`) must not either, or a broken launch or the
+  boot's own revive would stop the box at every start. Confirm `exit` fresh
+  and against nothing else: clients, leases and a sleep's grace do not hold
+  it (ADR 26-11-16-372).
+
 - Bound the entire shim status exchange, not only the dial. An accepting but
   unresponsive shim must fail status reads so sleep can reach its ceiling.
 

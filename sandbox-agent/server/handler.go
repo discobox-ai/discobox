@@ -745,6 +745,9 @@ func sandboxAgentAutostopStatus(in autostop.State) sandboxapi.SandboxAgentAutost
 		return out
 	}
 	out.Idle = sandboxapi.NewOptBool(in.Idle)
+	if !in.PrimaryExitedAt.IsZero() {
+		out.PrimaryExitedAt = sandboxapi.NewOptDateTime(in.PrimaryExitedAt)
+	}
 	if !in.Sleep.IsZero() {
 		out.Sleep = sandboxapi.NewOptSandboxAgentAutostopSleep(sandboxapi.SandboxAgentAutostopSleep{
 			RequestedAt: in.Sleep.At,

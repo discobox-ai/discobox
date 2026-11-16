@@ -203,8 +203,10 @@ This is request progress, never observed state or a provisioning heartbeat.
 
 A sandbox asks for its own power-down, and the control plane carries it out
 ([ADR 26-10-16-337](../../../../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)).
-Its status reports `autostop.idle` or a pending `autostop.sleep` once its pool
-has handed its power over; recording such a status
+Its status reports `autostop.idle`, a pending `autostop.sleep`, or
+`autostop.primaryExitedAt` (its primary terminal's shell has exited,
+[ADR 26-11-16-372](../../../../docs/adr/26-11-16-372-a-sandbox-powers-down-when-its-primary-terminals-shell-exits.md))
+once its pool has handed its power over; recording such a status
 (`SandboxAgentStatusReported`, from the pools service's status ingest) marks
 the sandbox's **power reconcile** (`SandboxPowerResourceType`,
 `power_reconcile.go`) — a resource of its own, like egress, so the sandbox
@@ -212,10 +214,11 @@ reconcile's ensure is not run on every idle report, and the wake timer lives on
 a dirty row no other reconcile returns over.
 
 - **Power-down.** The reconcile sends the provider `PowerDown` with the reason —
-  `sleep` wins over `idle` — for a sandbox observed running. The stored status
+  `exit` wins over `sleep`, which wins over `idle` — for a sandbox observed
+  running. The stored status
   is never acted on as it stands: the runtime asks the sandbox to confirm under
   its power lock, and `ErrPowerDownRefused` is the instruction having nothing
-  to do. Idle is always a stop; sleep is the runtime's to freeze if it can,
+  to do. Exit and idle are always a stop; sleep is the runtime's to freeze if it can,
   which a Docker pool does: the sandbox then reports `suspended`, is not
   running, and is not asked again on the status that froze it.
 - **Suspend.** `SuspendSandbox` is a power instruction beside stop

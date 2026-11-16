@@ -707,13 +707,14 @@ ten concurrent requests produce one start.
 
 `power-down` is the fourth, and the one that is conditional
 ([ADR 26-10-16-337](../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)
-§5): the control plane sends it when a sandbox reported itself idle or asked
-to sleep, and under the same mutex the runtime asks the sandbox to confirm the
+§5): the control plane sends it when a sandbox reported itself idle, asked
+to sleep, or reported its primary terminal's shell exited
+([ADR 26-11-16-372](../docs/adr/26-11-16-372-a-sandbox-powers-down-when-its-primary-terminals-shell-exits.md)), and under the same mutex the runtime asks the sandbox to confirm the
 reason, fresh — `POST .../autostop/confirm`, with a token the pool signs for the
 pool-only `autostop-confirm` scope alone (the scope that also signs the thaw's
 `autostop/resumed`, below). A sandbox that is not running, or
 does not confirm, is refused with a typed 409 (`sandbox-power-down-refused`)
-and nothing changes; a confirmed idle is stopped, a confirmed sleep is frozen
+and nothing changes; a confirmed idle or exit is stopped, a confirmed sleep is frozen
 (stopped if the freeze fails), and the answer carries the wake the sandbox's
 confirmation named.
 

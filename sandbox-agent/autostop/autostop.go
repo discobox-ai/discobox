@@ -16,6 +16,11 @@
 // 26-10-16-337). Either way the next sandbox-directed request starts it again
 // (ADR 0017 §§10, 12).
 //
+// The primary terminal's shell exiting is a reason of its own, ahead of sleep
+// and idle (ADR 26-11-16-372): the person has left the box, so it goes down at
+// once, whatever else is attached or held. Quitting the harness is not an
+// exit, because the shell it was typed into is still running (ADR 0027).
+//
 // Sleep and wake are files, as leases are: a file in the sleep directory asks
 // to sleep after a minimum grace and bounded primary-working deferral
 // (ADR 26-11-04-746), and a file in the wake
@@ -80,7 +85,8 @@ const (
 )
 
 // ErrNotConfirmed refuses a power-down the sandbox does not see a reason for
-// now: it is no longer idle, or no sleep request is pending.
+// now: it is no longer idle, no sleep request is pending, or its primary
+// terminal is running again.
 var ErrNotConfirmed = errors.New("the sandbox does not confirm the power-down")
 
 // Reason is why the control plane is powering the sandbox down.
@@ -89,6 +95,9 @@ type Reason string
 const (
 	ReasonIdle  Reason = "idle"
 	ReasonSleep Reason = "sleep"
+	// ReasonExit is the primary terminal's shell having exited
+	// (ADR 26-11-16-372).
+	ReasonExit Reason = "exit"
 )
 
 // Owner is who the wake directory's handed-over files belong to: the run user,
@@ -107,6 +116,10 @@ type Config struct {
 	// state from its shim. Nil status with no error means no primary/report;
 	// an error (or missing reader) defers sleep until SleepCeiling.
 	PrimaryStatus func() (*programstatus.Status, error)
+	// Primary reads the current primary terminal's exec without relaunching
+	// it: a live one when there is one, else the latest. Nil, or false, is no
+	// primary, which never powers anything down.
+	Primary func() (execs.Exec, bool)
 	// LeaseDir defaults to DefaultLeaseDir.
 	LeaseDir string
 	// SleepDir defaults to DefaultSleepDir.
@@ -146,6 +159,7 @@ type Config struct {
 type Policy struct {
 	execs         func() []execs.Exec
 	primaryStatus func() (*programstatus.Status, error)
+	primary       func() (execs.Exec, bool)
 	leaseDir      string
 	sleepDir      string
 	wakeDir       string
@@ -206,6 +220,10 @@ type State struct {
 	Idle bool
 	// Sleep is the latest pending request, only once eligible to sleep.
 	Sleep Request
+	// PrimaryExitedAt is when the primary terminal's latest run ended, while
+	// it has (primaryExited), and zero otherwise. It is reported, like Idle,
+	// only while ControlPlanePower is set.
+	PrimaryExitedAt time.Time
 	// NextWake is the earliest wake in the future, zero when none is.
 	NextWake Request
 }
@@ -255,6 +273,7 @@ func New(cfg Config) *Policy {
 	return &Policy{
 		execs:              cfg.Execs,
 		primaryStatus:      cfg.PrimaryStatus,
+		primary:            cfg.Primary,
 		leaseDir:           cfg.LeaseDir,
 		sleepDir:           cfg.SleepDir,
 		wakeDir:            cfg.WakeDir,
@@ -430,7 +449,33 @@ func (p *Policy) Evaluate(now time.Time) State {
 			state.NextWake = wake
 		}
 	}
+	state.PrimaryExitedAt, _ = p.primaryExited()
 	return state
+}
+
+// primaryExited reports when the primary terminal's latest run ended, if it
+// has: the process the shim ran for it, the login shell, is gone (ADR
+// 26-11-16-372 §1). The harness ending is not this, since its shell is still
+// running. Neither is a launch that never ran a shell: a start that failed
+// records no StartedAt, and a record whose process a boot took is lost rather
+// than exited.
+//
+// Nor is a run of an earlier boot (execs.Exec.CurrentBoot): its exit was acted
+// on then, and this boot's revive has yet to start the next run. A revive in
+// place clears the run's times, so a primary relaunched since is not exited
+// again until its new run ends.
+func (p *Policy) primaryExited() (time.Time, bool) {
+	if p.primary == nil {
+		return time.Time{}, false
+	}
+	e, ok := p.primary()
+	if !ok || (e.Status != execs.StatusExited && e.Status != execs.StatusFailed) {
+		return time.Time{}, false
+	}
+	if !e.CurrentBoot || e.StartedAt == nil || e.ExitedAt == nil {
+		return time.Time{}, false
+	}
+	return e.ExitedAt.UTC(), true
 }
 
 // sleepEligible is shared by reports and fresh confirmation. Reads of primary
@@ -479,6 +524,12 @@ func (p *Policy) Confirm(reason Reason) (Request, error) {
 	}
 	now := p.now().UTC()
 	switch reason {
+	case ReasonExit:
+		// The primary's run has to have ended now: an attach that revived it
+		// since the report started a new one (ADR 26-11-16-372 §3).
+		if _, exited := p.primaryExited(); !exited {
+			return Request{}, ErrNotConfirmed
+		}
 	case ReasonIdle:
 		if !p.Evaluate(now).Idle {
 			return Request{}, ErrNotConfirmed
@@ -667,7 +718,11 @@ func (p *Policy) Run(ctx context.Context) {
 		}
 		now := p.now().UTC()
 		state := p.Evaluate(now)
-		if !state.Sleep.IsZero() {
+		if !state.PrimaryExitedAt.IsZero() {
+			// Ahead of a pending sleep, which would only be a power-off too:
+			// the person has left the box (ADR 26-11-16-372 §4).
+			p.logger.Info("primary terminal exited, powering off", "exitedAt", state.PrimaryExitedAt)
+		} else if !state.Sleep.IsZero() {
 			// Without the control plane a sleep can only be what it always
 			// could: a power-off after eligibility. It is consumed first, as a confirmed
 			// one is.

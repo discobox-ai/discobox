@@ -3471,8 +3471,14 @@ type SandboxAgentAutostopStatus struct {
 	// it the observation time, and a lease dated in the future makes it that date.
 	LastActivityAt time.Time `json:"lastActivityAt"`
 	// The latest keepalive lease's time, when one is in the future.
-	LeaseUntil OptDateTime                  `json:"leaseUntil"`
-	Sleep      OptSandboxAgentAutostopSleep `json:"sleep"`
+	LeaseUntil OptDateTime `json:"leaseUntil"`
+	// When the process of the primary terminal's latest run (its login shell) ended. Present only once
+	// the pool has handed the sandbox's power to the control plane, and only while that run, started in
+	// this boot, has ended - the person typed exit at the shell, or it was killed. Quitting the harness
+	// leaves the shell running and does not set it, nor does a primary whose launch failed. The control
+	// plane stops the sandbox after fresh confirmation, whatever else is attached or held.
+	PrimaryExitedAt OptDateTime                  `json:"primaryExitedAt"`
+	Sleep           OptSandboxAgentAutostopSleep `json:"sleep"`
 	// LastActivityAt plus the idle timeout - the earliest the sandbox powers itself off if nothing else
 	// happens.
 	StopsAt time.Time `json:"stopsAt"`
@@ -3511,6 +3517,11 @@ func (s *SandboxAgentAutostopStatus) GetLastActivityAt() time.Time {
 // GetLeaseUntil returns the value of LeaseUntil.
 func (s *SandboxAgentAutostopStatus) GetLeaseUntil() OptDateTime {
 	return s.LeaseUntil
+}
+
+// GetPrimaryExitedAt returns the value of PrimaryExitedAt.
+func (s *SandboxAgentAutostopStatus) GetPrimaryExitedAt() OptDateTime {
+	return s.PrimaryExitedAt
 }
 
 // GetSleep returns the value of Sleep.
@@ -3561,6 +3572,11 @@ func (s *SandboxAgentAutostopStatus) SetLastActivityAt(val time.Time) {
 // SetLeaseUntil sets the value of LeaseUntil.
 func (s *SandboxAgentAutostopStatus) SetLeaseUntil(val OptDateTime) {
 	s.LeaseUntil = val
+}
+
+// SetPrimaryExitedAt sets the value of PrimaryExitedAt.
+func (s *SandboxAgentAutostopStatus) SetPrimaryExitedAt(val OptDateTime) {
+	s.PrimaryExitedAt = val
 }
 
 // SetSleep sets the value of Sleep.
@@ -5618,7 +5634,8 @@ func (s *SandboxAgentStatusWaitResponse) SetPortsVersion(val string) {
 // now.
 // Ref: #/components/schemas/SandboxAutostopConfirmRequest
 type SandboxAutostopConfirmRequest struct {
-	// Idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request.
+	// Idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request; exit
+	// when it reported its primary terminal's shell has exited.
 	Reason SandboxAutostopConfirmRequestReason `json:"reason"`
 }
 
@@ -5632,12 +5649,14 @@ func (s *SandboxAutostopConfirmRequest) SetReason(val SandboxAutostopConfirmRequ
 	s.Reason = val
 }
 
-// Idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request.
+// Idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request; exit
+// when it reported its primary terminal's shell has exited.
 type SandboxAutostopConfirmRequestReason string
 
 const (
 	SandboxAutostopConfirmRequestReasonIdle  SandboxAutostopConfirmRequestReason = "idle"
 	SandboxAutostopConfirmRequestReasonSleep SandboxAutostopConfirmRequestReason = "sleep"
+	SandboxAutostopConfirmRequestReasonExit  SandboxAutostopConfirmRequestReason = "exit"
 )
 
 // AllValues returns all SandboxAutostopConfirmRequestReason values.
@@ -5645,6 +5664,7 @@ func (SandboxAutostopConfirmRequestReason) AllValues() []SandboxAutostopConfirmR
 	return []SandboxAutostopConfirmRequestReason{
 		SandboxAutostopConfirmRequestReasonIdle,
 		SandboxAutostopConfirmRequestReasonSleep,
+		SandboxAutostopConfirmRequestReasonExit,
 	}
 }
 
@@ -5654,6 +5674,8 @@ func (s SandboxAutostopConfirmRequestReason) MarshalText() ([]byte, error) {
 	case SandboxAutostopConfirmRequestReasonIdle:
 		return []byte(s), nil
 	case SandboxAutostopConfirmRequestReasonSleep:
+		return []byte(s), nil
+	case SandboxAutostopConfirmRequestReasonExit:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5668,6 +5690,9 @@ func (s *SandboxAutostopConfirmRequestReason) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxAutostopConfirmRequestReasonSleep:
 		*s = SandboxAutostopConfirmRequestReasonSleep
+		return nil
+	case SandboxAutostopConfirmRequestReasonExit:
+		*s = SandboxAutostopConfirmRequestReasonExit
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

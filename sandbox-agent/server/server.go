@@ -335,6 +335,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	idleStopConfig := cfg.Autostop
 	idleStopConfig.Execs = execManager.List
 	idleStopConfig.PrimaryStatus = manager.PrimaryProgramStatus
+	idleStopConfig.Primary = manager.CurrentPrimary
 	idleStopConfig.IdleTimeout = appliedAgent.IdleTimeoutDuration()
 	if home, owner, err := runUserHome(execManager); err != nil {
 		slog.Default().Warn("sandbox agent wakes disabled", "error", err)

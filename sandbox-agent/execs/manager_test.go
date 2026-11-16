@@ -528,6 +528,12 @@ func TestManagerReconcilesDurableRecordWithoutRuntimeFile(t *testing.T) {
 	if len(listed) != 1 || listed[0].SocketPath == "" || listed[0].Status != StatusLost {
 		t.Fatalf("listed execs = %#v", listed)
 	}
+	if listed[0].CurrentBoot {
+		t.Fatal("a record with no runtime file was listed as of the current boot")
+	}
+	if again := manager.List(); len(again) != 1 || !again[0].CurrentBoot {
+		t.Fatalf("a record whose runtime file the listing wrote = %#v, want of the current boot", again)
+	}
 	// List persists the reconciled status back to the derived runtime path;
 	// remove it again to exercise Get's durable-record fallback independently.
 	if err := os.Remove(created.RuntimePath); err != nil {
@@ -545,6 +551,12 @@ func TestManagerReconcilesDurableRecordWithoutRuntimeFile(t *testing.T) {
 	}
 	if got.Status != StatusLost {
 		t.Fatalf("status = %q, want lost", got.Status)
+	}
+	if got.CurrentBoot {
+		t.Fatal("a record read from the durable store alone is of the current boot")
+	}
+	if got, ok := manager.Get(created.ID); !ok || !got.CurrentBoot {
+		t.Fatalf("a record read from its runtime file = %#v, want of the current boot", got)
 	}
 }
 

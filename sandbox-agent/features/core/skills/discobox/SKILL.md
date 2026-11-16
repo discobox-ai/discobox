@@ -316,6 +316,17 @@ Nothing else counts. A dev server nobody is attached to, a declared service,
 a build left running in the background — the box stops under all of them once
 the terminals go still, however busy the processes are.
 
+### Exiting the primary terminal's shell stops the box
+
+The harness runs as a command typed into the primary terminal's login shell.
+Quitting the harness leaves that shell at its prompt, and the box stays up
+until it idles out. Exiting the shell itself (`exit` or Ctrl-D at that prompt,
+or the shell being killed) stops the box within about half a minute, whatever
+else is attached, held by a lease, or running: a build in another terminal, a
+service, a forward. The next attach starts the box again and resumes the
+harness. To leave work running, detach from the box instead of exiting the
+shell.
+
 ### Hold the box up with a lease
 
 Before leaving anything running that must outlast you — a long build or test

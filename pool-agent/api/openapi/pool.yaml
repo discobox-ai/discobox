@@ -1624,10 +1624,13 @@ components:
                     description: |-
                         idle when the sandbox reported itself idle, which always
                         stops it; sleep when it reported a sleep request, which a
-                        runtime that can freeze freezes and any other stops.
+                        runtime that can freeze freezes and any other stops; exit
+                        when it reported its primary terminal's shell has exited,
+                        which always stops it.
                     enum:
                     - idle
                     - sleep
+                    - exit
                     type: string
             required:
             - reason

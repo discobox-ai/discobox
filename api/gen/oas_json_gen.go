@@ -36418,6 +36418,12 @@ func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.PrimaryExitedAt.Set {
+			e.FieldStart("primaryExitedAt")
+			s.PrimaryExitedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		if s.Sleep.Set {
 			e.FieldStart("sleep")
 			s.Sleep.Encode(e)
@@ -36437,17 +36443,18 @@ func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentAutostopStatus = [10]string{
-	0: "idleTimeoutSeconds",
-	1: "lastActivityAt",
-	2: "lastActivity",
-	3: "stopsAt",
-	4: "leaseUntil",
-	5: "controlPlanePower",
-	6: "idle",
-	7: "sleep",
-	8: "wakeAt",
-	9: "wake",
+var jsonFieldsNameOfSandboxAgentAutostopStatus = [11]string{
+	0:  "idleTimeoutSeconds",
+	1:  "lastActivityAt",
+	2:  "lastActivity",
+	3:  "stopsAt",
+	4:  "leaseUntil",
+	5:  "controlPlanePower",
+	6:  "idle",
+	7:  "primaryExitedAt",
+	8:  "sleep",
+	9:  "wakeAt",
+	10: "wake",
 }
 
 // Decode decodes SandboxAgentAutostopStatus from json.
@@ -36536,6 +36543,16 @@ func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"idle\"")
+			}
+		case "primaryExitedAt":
+			if err := func() error {
+				s.PrimaryExitedAt.Reset()
+				if err := s.PrimaryExitedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"primaryExitedAt\"")
 			}
 		case "sleep":
 			if err := func() error {
@@ -40965,6 +40982,8 @@ func (s *SandboxAutostopConfirmRequestReason) Decode(d *jx.Decoder) error {
 		*s = SandboxAutostopConfirmRequestReasonIdle
 	case SandboxAutostopConfirmRequestReasonSleep:
 		*s = SandboxAutostopConfirmRequestReasonSleep
+	case SandboxAutostopConfirmRequestReasonExit:
+		*s = SandboxAutostopConfirmRequestReasonExit
 	default:
 		*s = SandboxAutostopConfirmRequestReason(v)
 	}

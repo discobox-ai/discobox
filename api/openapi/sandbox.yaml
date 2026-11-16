@@ -438,6 +438,10 @@ components:
                     description: The latest keepalive lease's time, when one is in the future.
                     format: date-time
                     type: string
+                primaryExitedAt:
+                    description: When the process of the primary terminal's latest run (its login shell) ended. Present only once the pool has handed the sandbox's power to the control plane, and only while that run, started in this boot, has ended - the person typed exit at the shell, or it was killed. Quitting the harness leaves the shell running and does not set it, nor does a primary whose launch failed. The control plane stops the sandbox after fresh confirmation, whatever else is attached or held.
+                    format: date-time
+                    type: string
                 sleep:
                     $ref: '#/components/schemas/SandboxAgentAutostopSleep'
                 stopsAt:
@@ -1059,10 +1063,11 @@ components:
             description: Which power-down the pool is about to carry out, for the sandbox to confirm against what it sees now.
             properties:
                 reason:
-                    description: idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request.
+                    description: idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request; exit when it reported its primary terminal's shell has exited.
                     enum:
                         - idle
                         - sleep
+                        - exit
                     type: string
             required:
                 - reason
