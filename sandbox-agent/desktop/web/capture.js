@@ -6,9 +6,10 @@
 // e2e test in capture_e2e_test.go imports this module into a real browser and
 // checks the pixels these draw.
 
-// crop lifts the marked region out of the framebuffer. The canvas is painted by
-// noVNC from the socket, so it is not tainted and can be read back; a browser
-// that refuses anyway leaves the note without a picture rather than unsaved.
+// crop lifts the marked region out of the framebuffer. The canvas is a copy of
+// the frame the stream decoded and the page drew, so it is not tainted and can
+// be read back; a browser that refuses anyway leaves the note without a picture
+// rather than unsaved.
 export function crop(canvas, region) {
   try {
     const out = document.createElement('canvas');

@@ -336,7 +336,7 @@ func (b *browserRun) open(t *testing.T, url string) {
 	})
 }
 
-// harnessPage paints a framebuffer the way noVNC would, runs the real capture
+// harnessPage paints a framebuffer the way the stream would, runs the real capture
 // functions over it, and posts the result the way the real page does. It asserts
 // nothing itself: the pixels are checked in Go, against the file that was
 // written, so the encode, the transport and the store are inside the test too.
@@ -399,23 +399,15 @@ try {
 // comes — which is exactly how the page fails in production, silently, with an
 // empty screen and nothing in the server log.
 //
-// Only noVNC is stubbed, because it is a third-party library that ships in the
-// image rather than in this repository, so a test has nothing real to serve.
-// index.html, app.js and capture.js are the real ones.
+// Only voxl's client and worker are stubbed, because they are built into the
+// image from voxl's source rather than shipped in this repository, so a test
+// has nothing real to serve. index.html, app.js, stream.js and capture.js are
+// the real ones.
 func TestThePageBootsInABrowser(t *testing.T) {
 	if testing.Short() {
 		t.Skip("drives a real browser")
 	}
 	browser := findBrowser(t)
-
-	novnc := filepath.Join(t.TempDir(), "novnc")
-	if err := os.MkdirAll(filepath.Join(novnc, "core"), 0o755); err != nil {
-		t.Fatalf("stub noVNC: %v", err)
-	}
-	stub := "export default class RFB { constructor() {} addEventListener() {} disconnect() {} }\n"
-	if err := os.WriteFile(filepath.Join(novnc, "core", "rfb.js"), []byte(stub), 0o644); err != nil {
-		t.Fatalf("stub noVNC: %v", err)
-	}
 
 	// Display and ScaleEnvDir are the load-bearing ones: this test loads the
 	// real app.js, whose boot() posts to /api/scale and /api/display before it
@@ -425,7 +417,7 @@ func TestThePageBootsInABrowser(t *testing.T) {
 	// own scale.env. :91 is a display number nothing here uses.
 	server, err := New(slog.New(slog.DiscardHandler), Config{
 		FeedbackDir: t.TempDir(),
-		NoVNCDir:    novnc,
+		VoxlDir:     stubVoxl(t),
 		Display:     ":91",
 		ScaleEnvDir: filepath.Join(t.TempDir(), "scale-env"),
 	})

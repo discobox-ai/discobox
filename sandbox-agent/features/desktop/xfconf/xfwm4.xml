@@ -6,7 +6,7 @@
 
   Compositing is off. It buys shadows and transparency, and it costs a full
   software composite of every frame on a dummy driver with no GPU behind it,
-  which x11vnc then has to re-encode. The viewer already draws the desktop
+  which the stream then has to re-encode. The viewer already draws the desktop
   inside a framed, shadowed window of its own; a second set of shadows inside
   that frame is paid for on every keystroke.
 

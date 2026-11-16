@@ -19,16 +19,14 @@ import (
 // two separate things here, and keeping them separate is the whole design.
 //
 // **Size follows the window, continuously.** The viewer resizes the desktop by
-// driving this rather than by reconnecting with the `?x=&y=` query the
-// websockify proxy on 6080 understands. Both reach xrandr in the end, but only
-// this one can do it on a live connection: x11vnc runs with `-xrandr resize`
-// and pushes the new geometry to an attached client as a desktop-size update,
-// so the desktop follows the browser window instead of dropping the session and
-// rebuilding it on every drag of the frame.
+// driving this, and voxl, which captures the screen, notices the new geometry
+// and rebuilds its capture at it, so the desktop follows the browser window on
+// a live stream. voxl is started with its own resizing off: it would be a
+// second owner of the geometry.
 //
-// **Scale does not.** It is a sticky session property — an integer, adopted
-// once from the viewer's device pixel ratio and then changed only when a person
-// asks. It cannot track the window, because everything that reads it reads it
+// **Scale does not.** It is a sticky session property — an integer, 2 unless a
+// person chose otherwise, and changed only when a person asks. It cannot track
+// the window, because everything that reads it reads it
 // **once, when a program launches**: a scale recomputed on every resize leaves
 // two programs started at two window sizes drawing at two different sizes, with
 // nothing able to reconcile them afterwards.
@@ -75,9 +73,9 @@ type Display struct {
 	// because xrandr recomputes the screen's physical size from the mode and
 	// would otherwise quietly drop the density back to the default.
 	scale int
-	// chosen records that somebody decided the scale, so the viewer's
-	// auto-detection stops overriding it. A second browser on a normal screen
-	// must not undo what a person set from a HiDPI one.
+	// chosen records that somebody decided the scale this run, rather than it
+	// being the one remembered or the default. Reported in the geometry; an
+	// automatic report keeps the standing scale whether or not it is set.
 	chosen bool
 	// applied records that the scale has been written out at least once this
 	// run. The environment file outlives the process and the in-memory scale
@@ -94,7 +92,7 @@ type Display struct {
 // The bounds a requested size is held to. The floor keeps a window nobody has
 // dragged open yet usable; the ceiling is what a 2x viewport on a large HiDPI
 // screen reaches, and bounds how much framebuffer a browser tab can ask this
-// sandbox to allocate and x11vnc to encode.
+// sandbox to allocate and voxl to encode.
 //
 // All four are multiples of SizeBucket, so every reachable size is one this
 // display can be asked for exactly — a ceiling off the bucket would be a size
@@ -133,14 +131,16 @@ const (
 	MinScale = 1
 	MaxScale = 3
 
-	// DefaultScale is the scale a desktop starts at before anybody has said
-	// what screen it is watched on. 2, not 1, for two reasons. HiDPI is the
+	// DefaultScale is the scale a desktop starts at unless a person chose
+	// another (ADR 26-11-06-851 §3). 2, not 1, for two reasons. HiDPI is the
 	// ordinary screen to watch from, so the common case starts right and never
 	// pays the restart a change costs. And the scale is not only the desktop's:
 	// every shell the agent starts sources it, at boot, long before anybody
 	// opens the viewer and with no way to be told when it later moves — so the
 	// default is the scale the agent's own programs draw at. A viewer on an
-	// ordinary screen reports 1 and moves it down.
+	// ordinary screen does not move it down: the browser's device pixel ratio
+	// is not a choice, and acting on it restarts the session under whoever is
+	// using it.
 	//
 	// It is :0's scale and nothing else's. Chromium's launcher forces it only
 	// on a headed browser on :0, but the toolkit variables in a login shell
@@ -233,27 +233,44 @@ func (d *Display) Resize(ctx context.Context, cssWidth, cssHeight int) (Geometry
 		return Geometry{}, err
 	}
 	mode := fmt.Sprintf("%dx%d_%d.00", width, height, refreshRate)
+	if err := d.setMode(ctx, output, mode, width, height); err != nil {
+		// The modes this process remembers creating are the X server's, and an
+		// X server that restarted has none of them: the cache says the mode is
+		// there and the server says it is not. Forget the cache and make the
+		// mode again, once.
+		d.modes = map[string]bool{}
+		d.modeOrder = nil
+		if err := d.setMode(ctx, output, mode, width, height); err != nil {
+			return Geometry{}, err
+		}
+	}
+	return d.geometryOf(width, height, output), nil
+}
+
+// setMode makes sure the mode exists and switches the output to it.
+func (d *Display) setMode(ctx context.Context, output, mode string, width, height int) error {
 	if err := d.ensureMode(ctx, output, mode, width, height); err != nil {
-		return Geometry{}, err
+		return err
 	}
 	// --dpi rides along with the mode change rather than following it: xrandr
 	// derives the screen's physical size from the mode, so a bare --mode would
 	// drop the density back to the default for a moment, and any program that
 	// happened to launch in that moment would latch the wrong one.
-	dpi := d.dpiLocked()
-	if _, err := d.run(ctx, "--output", output, "--mode", mode, "--dpi", strconv.Itoa(dpi)); err != nil {
-		return Geometry{}, err
-	}
-	return d.geometryOf(width, height, output), nil
+	_, err := d.run(ctx, "--output", output, "--mode", mode, "--dpi", strconv.Itoa(d.dpiLocked()))
+	return err
 }
 
 // SetScale makes the desktop HiDPI at the given integer scale, setting the
 // server's density and writing the toolkit environment together so nothing sees
 // half of a change.
 //
-// auto marks the call as the viewer's detection rather than a person's choice:
-// it is ignored once anybody has chosen, so opening the desktop in a second
-// browser on a normal screen does not undo what was set from a HiDPI one.
+// auto marks the call as the viewer's report rather than a person's choice,
+// and an automatic report never moves the scale: the standing one is kept —
+// what a person chose, else what the sandbox remembers, else DefaultScale —
+// and the call carries on to apply it. A browser's device pixel ratio says what
+// screen it is, not what density anybody wants, so a viewer on an ordinary
+// screen does not lower 2× to 1×, and opening the desktop in a second browser
+// does not undo what was set from the first (ADR 26-11-06-851 §3).
 //
 // It reaches only programs launched afterwards. Everything involved — Xft.dpi,
 // GDK_SCALE, Qt's screen factor — is read once at startup, so a running program
@@ -268,12 +285,12 @@ func (d *Display) SetScale(ctx context.Context, scale int, auto bool) (Geometry,
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	// A choice outranks the viewer's detection on the *value*, and that is all
-	// it does: the reported scale is discarded and the chosen one kept, then
-	// the call carries on. Returning here instead would mean an auto call could
-	// never finish a chosen scale whose live half had failed, and an auto call
-	// is the only thing that happens on its own -- every page load makes one.
-	if auto && d.chosen {
+	// The report is discarded on the *value*, and that is all: the call
+	// carries on with the standing scale. Returning here instead would mean an
+	// auto call could never finish a scale whose live half had failed, and an
+	// auto call is the only thing that happens on its own -- every page load
+	// makes one.
+	if auto {
 		scale = d.scale
 	}
 	if !auto {
@@ -351,9 +368,8 @@ func (d *Display) Applied() bool {
 	return d.applied
 }
 
-// Chosen reports that somebody set the scale deliberately, so the viewer's
-// auto-detection has stopped overriding it. Recorded even when applying the
-// scale then failed: the person decided either way.
+// Chosen reports that somebody set the scale deliberately this run. Recorded
+// even when applying the scale then failed: the person decided either way.
 func (d *Display) Chosen() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()

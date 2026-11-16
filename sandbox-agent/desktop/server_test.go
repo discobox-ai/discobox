@@ -50,6 +50,9 @@ func do(t *testing.T, server *Server, method, target string, body any) *httptest
 		reader = strings.NewReader(string(encoded))
 	}
 	request := httptest.NewRequestWithContext(t.Context(), method, target, reader)
+	// The host a forward reaches the viewer under; httptest's own default,
+	// example.com, is one the desktop refuses (access.go).
+	request.Host = "localhost:6900"
 	recorder := httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)
 	return recorder
@@ -319,7 +322,7 @@ func TestPageAndScriptAreServed(t *testing.T) {
 	server, _ := newTestServer(t)
 	for path, want := range map[string]string{
 		"/":        "<title>Discobox desktop</title>",
-		"/app.js":  "import RFB from",
+		"/app.js":  "from './stream.js'",
 		"/app.css": "--mark: #f45cff",
 	} {
 		recorder := do(t, server, http.MethodGet, path, nil)
@@ -587,14 +590,55 @@ func TestAutoDetectionDoesNotOverrideAChoice(t *testing.T) {
 	}
 }
 
+// The page's automatic report never moves the scale, whatever screen it is on:
+// a new desktop stays at 2x for a viewer on an ordinary screen, and one an
+// older image remembered at 1x stays at 1x for a HiDPI one. Only a person's
+// choice moves it (ADR 26-11-06-851 §3).
+func TestAnAutomaticReportNeverMovesTheScale(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		remembered int // 0: nothing on disk
+		reported   int
+		want       int
+	}{
+		{name: "a new desktop on an ordinary screen", reported: 1, want: DefaultScale},
+		{name: "a remembered 1x on a HiDPI screen", remembered: 1, reported: 2, want: 1},
+		{name: "a remembered 2x on an ordinary screen", remembered: 2, reported: 1, want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, dir := newTestServer(t)
+			server.display = NewDisplay(":91") // no X server behind it
+			server.display.EnvDir = filepath.Join(dir, "env")
+			if tc.remembered != 0 {
+				if _, err := WriteScaleEnv(server.display.EnvDir, tc.remembered); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// What the viewer does as it starts: adopt what is remembered, or
+			// the default.
+			server.settleScale()
+
+			// The X half cannot run with no display; what matters is the value
+			// the report left behind, in memory and on disk.
+			_ = do(t, server, http.MethodPost, "/api/scale", scaleRequest{Scale: float64(tc.reported), Auto: true})
+			if got := server.display.Scale(); got != tc.want {
+				t.Fatalf("scale = %d, want %d", got, tc.want)
+			}
+			if got, ok := RememberedScale(server.display.EnvDir); !ok || got != tc.want {
+				t.Fatalf("RememberedScale = %d, %v; want %d", got, ok, tc.want)
+			}
+		})
+	}
+}
+
 // The guarantee: starting the viewer must not start the desktop.
 //
 // It used to. settleScale called a readiness loop (since deleted) whose xrandr
 // connects to
 // /tmp/.X11-unix/X0 — which socket-activates the X server, and xvfb.service
 // pulls the Xfce session up behind it. So anything that opened a TCP connection
-// to 6900 and went away brought up an X server, a window manager, a panel and a
-// VNC server, in a sandbox where nobody had asked to see a desktop.
+// to 6900 and went away brought up an X server, a window manager and a panel,
+// in a sandbox where nobody had asked to see a desktop.
 //
 // :91 has no X server, so any attempt to reach one fails and is visible as a
 // non-nil error. What this asserts is that no attempt is made at all.
@@ -723,25 +767,30 @@ func TestTheSessionEndpointDoesNotRestartAStoppedDisplay(t *testing.T) {
 // to start with nothing in the server log. Routes are listed one by one rather
 // than served as a tree, so this is easy to forget.
 //
-// The proxied trees are left out: /novnc/ and /brand/ are served from
-// directories on the image, not from the embedded assets, so a test server has
-// nothing behind them.
+// Every module the page's own modules import is checked, relative to the page
+// as the browser resolves it. voxl's tree is left out: /voxl/ is served from
+// the desktop feature's directory on the image, not from the embedded assets,
+// so a test server has nothing behind it.
 func TestEveryModuleThePageImportsIsServed(t *testing.T) {
 	server, _ := newTestServer(t)
 
-	source, err := fs.ReadFile(server.static, "app.js")
-	if err != nil {
-		t.Fatalf("read app.js: %v", err)
-	}
-	specifiers := regexp.MustCompile(`from\s+'(/[^']+)'`).FindAllStringSubmatch(string(source), -1)
-	if len(specifiers) == 0 {
-		t.Fatal("app.js imports nothing; this test is no longer reading it correctly")
+	var specifiers [][]string
+	for _, module := range []string{"app.js", "stream.js"} {
+		source, err := fs.ReadFile(server.static, module)
+		if err != nil {
+			t.Fatalf("read %s: %v", module, err)
+		}
+		found := regexp.MustCompile(`from\s+'\./([^']+)'`).FindAllStringSubmatch(string(source), -1)
+		if len(found) == 0 {
+			t.Fatalf("%s imports nothing; this test is no longer reading it correctly", module)
+		}
+		specifiers = append(specifiers, found...)
 	}
 
 	checked := 0
 	for _, match := range specifiers {
-		path := match[1]
-		if strings.HasPrefix(path, "/novnc/") || strings.HasPrefix(path, "/brand/") {
+		path := "/" + match[1]
+		if strings.HasPrefix(path, "/voxl/") {
 			continue
 		}
 		checked++
@@ -817,5 +866,44 @@ func TestAnAutoReportStillFinishesAnUnappliedChoice(t *testing.T) {
 	}
 	if scale != 2 {
 		t.Fatalf("the auto report wrote %d; a choice outranks the reported value", scale)
+	}
+}
+
+// The shots directory is the sandbox user's, and the viewer's origin may hold
+// the person's clipboard permission, so what it serves from there is a
+// picture and nothing else: a page planted there would be same-origin with the
+// viewer and could read that clipboard.
+func TestShotsAreServedOnlyAsInertPictures(t *testing.T) {
+	server, dir := newTestServer(t)
+	shots := filepath.Join(dir, shotsDir)
+	if err := os.MkdirAll(shots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"df-0001.png": "\x89PNG\r\n\x1a\n",
+		"x.html":      "<script>navigator.clipboard.readText()</script>",
+		"y.png":       "<html><script>alert(1)</script></html>",
+	} {
+		if err := os.WriteFile(filepath.Join(shots, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := do(t, server, http.MethodGet, "/shots/x.html", nil).Code; got != http.StatusNotFound {
+		t.Errorf("GET /shots/x.html = %d, want 404", got)
+	}
+	for _, name := range []string{"df-0001.png", "y.png"} {
+		recorder := do(t, server, http.MethodGet, "/shots/"+name, nil)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET /shots/%s = %d", name, recorder.Code)
+		}
+		for header, want := range map[string]string{
+			"Content-Type":            "image/png",
+			"X-Content-Type-Options":  "nosniff",
+			"Content-Security-Policy": "sandbox; default-src 'none'",
+		} {
+			if got := recorder.Header().Get(header); got != want {
+				t.Errorf("GET /shots/%s: %s = %q, want %q", name, header, got, want)
+			}
+		}
 	}
 }

@@ -71,25 +71,18 @@ const (
 	// that is deliberately *not* multiplied by it.
 	//
 	// The cursor is the only part of the desktop the browser does not draw from
-	// the framebuffer. noVNC takes the remote cursor shape and hands it to CSS
-	// as `cursor: url(...)`, and a CSS cursor image is laid out at its intrinsic
-	// size in *CSS* pixels — the scale transform that shrinks the framebuffer
-	// into the frame does not touch it. So a cursor of C device pixels appears
-	// at C CSS pixels whatever the scale, while everything around it appears at
-	// its own size over the scale.
+	// the framebuffer. The stream sends the remote cursor's shape and voxl's
+	// client hands it to CSS as `cursor: url(...)`, sized to the desktop's
+	// on-screen scale but never under 24 CSS pixels, a normal pointer. So a
+	// cursor of 24 device pixels appears at 24 CSS pixels at every scale: at 2x
+	// it is drawn at half, then held up to the floor.
 	//
-	// Scaling the cursor with the desktop therefore does the opposite of what
-	// it does to everything else: at 2x a 48px cursor is drawn 48 CSS pixels
-	// wide next to content drawn at half size, which is a pointer twice the
-	// size it should be. Holding it at the base size is what makes it land at
-	// the same apparent size at every scale.
+	// Scaling the cursor with the desktop would change nothing on screen here
+	// and would make it larger in every X client that draws its own, so it is
+	// held at the base size.
 	//
 	// The cost is sharpness: at 2x the pointer is a 24px bitmap the browser
-	// upscales, while everything behind it is pixel-for-pixel. Fixing that
-	// needs noVNC to scale the cursor, which it has no support for, or x11vnc
-	// to composite the cursor into the framebuffer (-nocursorshape) — which
-	// makes the pointer move at the framebuffer's latency instead of the
-	// browser's, and a laggy pointer is worse than a soft one.
+	// upscales, while everything behind it is pixel-for-pixel.
 	baseCursorSize = 24
 
 	// LauncherDir is where the image keeps the desktop launchers the boot flow

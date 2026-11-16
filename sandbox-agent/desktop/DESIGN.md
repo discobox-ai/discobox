@@ -1,9 +1,11 @@
 # desktop
 
 The sandbox's desktop, as a page: a branded viewer on `127.0.0.1:6900` that
-embeds noVNC, keeps the X screen the same shape and density as the browser
-window it is being watched in, and turns a box drawn on that desktop into
-something the agent working in the same sandbox can read.
+streams it with voxl, keeps the X screen the shape of the browser window it is
+being watched in at two times density, moves plain text between the person's
+clipboard and the desktop's, and turns a box drawn on that desktop into
+something the agent working in the same sandbox can read
+([ADR 26-11-06-851](../../docs/adr/26-11-06-851-voxl-streams-the-desktop-at-two-times-density.md)).
 
 It is the one *user-facing* thing this module serves. Everything else here is an
 API a control plane calls; this is a page a person opens.
@@ -17,13 +19,10 @@ wants it. This service joins that stack rather than replacing any of it.
 flowchart TD
     browser(["browser"]) -->|"GET :6900"| dsock["discobox-desktop.socket"]
     dsock --> dsvc["discobox-desktop.service<br/>this package"]
-    dsvc -->|"/websockify"| wsock["websockify-proxy.socket :6080"]
-    wsock --> wsvc["websockify@user.service :6081"]
-    wsvc --> vsock["x11vnc.socket :5900"]
-    vsock --> vnc["x11vnc@.service"]
+    dsvc -->|"/api/stream, as its child"| voxl["voxl<br/>127.0.0.1:17063"]
     dsvc -->|"xrandr"| xsock
     dsvc -->|"xfconf-query"| bus["discobox-session-bus.socket<br/>session D-Bus"]
-    vnc -->|"abstract socket"| xorg["xvfb.service<br/>Xorg dummy on :0"]
+    voxl -->|"abstract socket, MIT-SHM, XTEST"| xorg["xvfb.service<br/>Xorg dummy on :0"]
     app(["any program on DISPLAY=:0"]) -->|"abstract socket, while X runs"| xorg
     app -->|"/tmp/.X11-unix/X0, while it does not"| xsock["x11-display.socket"]
     xsock --> xproxy["x11-display.service<br/>socket proxy"]
@@ -80,26 +79,177 @@ connection, never an autolaunch.
 
 ## One port
 
-The page, the noVNC client, the brand assets, the VNC websocket and the
-annotation API are all on 6900. `/websockify` is a reverse proxy onto the
-existing 6080 socket rather than a second connection the page opens itself.
+The page, voxl's client and worker, the brand assets, the stream and the
+annotation API are all on 6900. `/api/stream` is a reverse proxy onto voxl's
+own websocket rather than a second connection the page opens itself.
 
 | Route | Does |
 | --- | --- |
 | `GET /api/session` | Limits, handoff prompt and record path; geometry only if X is already up. |
 | `POST /api/display` | CSS box in, framebuffer out (`Display.Resize`). |
-| `POST /api/scale` | Device scale; `auto` marks the viewer's detection (`Display.SetScale`). |
+| `POST /api/scale` | A person's density; `auto` applies the standing one (`Display.SetScale`). |
+| `GET /api/stream` | The stream: a websocket proxied onto voxl, started on demand (`Streamer`). |
 | `GET` `POST /api/feedback`, `PATCH` `DELETE /api/feedback/{id}` | List, capture, edit or tick, delete a note. |
 | `GET /shots/{name}` | A note's pictures. |
-| `/websockify` | Reverse proxy onto 6080. |
+| `GET /voxl/` | voxl's browser client and decode worker, as the build made them. |
 
-That is a deliberate cost — one more hop on the pixel path — bought for one
-property: **the desktop is one port to forward and one URL to open.** A page on
-6900 pointing its socket at 6080 works locally and breaks the moment either port
-is tunnelled without the other.
+That is a deliberate cost — one more hop on the pixel path — bought for two
+properties. **The desktop is one port to forward and one URL to open**: a page
+on 6900 pointing its socket at another port works locally and breaks the moment
+either port is tunnelled without the other. And **no browser page reaches voxl
+except through this service**, which is what the access boundary below rests
+on.
 
-Port 6080 keeps its own contract for the client that already speaks it,
-including the `?x=&y=` resize this package does not use.
+Every URL the page uses is relative to it, so it works beneath whatever path
+prefix a forward serves it under.
+
+There is no VNC: no `/novnc/`, no `/websockify`, no port 6080 or 5900, and no
+renderer to choose. The client-facing contract is this page on this origin, not
+a protocol endpoint ([ADR 26-11-06-851](../../docs/adr/26-11-06-851-voxl-streams-the-desktop-at-two-times-density.md) §2).
+
+## The stream
+
+[voxl](https://github.com/tembo/voxl) captures the X screen through XDamage and
+MIT-SHM, encodes it as H.264 on the CPU with x264, and carries video, pointer,
+keyboard, cursor and clipboard over one websocket to a client that decodes with
+WebCodecs. The X session, Xfce, the session bus and the density chain are all
+unchanged: voxl reads the screen they draw.
+
+### One source, two halves
+
+The server and the browser client speak a protocol that moves with voxl's
+revision, so both are built from one pinned source in `sandbox-agent/Dockerfile`
+(`voxl-builder`, `VOXL_REVISION`) and land together in the desktop feature's
+`voxl/` directory: the binary, `web/worker.js` (voxl's decode worker, unchanged)
+and `web/client.js`, voxl's own keyboard, pointer, touch and cursor modules
+re-exported by [`voxl/client.ts`](voxl/client.ts). `link-voxl.sh` links that
+directory at `/usr/local/lib/discobox/voxl`; the viewer starts the binary from
+it and serves `web/` as `/voxl/` with `Cache-Control: no-cache`, so a page never
+keeps a client from a previous voxl.
+
+The binary has to run on every distribution the feature provisions, Ubuntu
+24.04 among them, so nothing distribution-specific is linked dynamically. The
+builder is on the one Ubuntu pin, whose apt source carries no `deb-src`, so
+x264 (by commit) and Opus (by release tarball and SHA-256) are built static from
+upstream source pinned in the Dockerfile; libyuv is Ubuntu's static archive,
+libstdc++ is linked in, and voxl is built without its `pulseaudio` feature
+(audio is off). The build refuses
+a binary that needs any library but glibc's, or a glibc symbol newer than
+Ubuntu 24.04's 2.39. It is built natively per architecture, as the release
+builds every bundle.
+
+voxl's code is MIT, but the binary links x264, which is GPL-2.0, so the binary
+is distributed under the GPL. The feature carries what that and the other
+licenses ask for: `voxl/licenses/` (voxl, x264, Opus, libyuv, and every Rust
+crate with its own license files, listed in `crates.txt`) and `voxl/SOURCES`,
+naming the exact voxl, x264, Opus and libyuv sources the binary was built
+from. Whether that is enough to ship is a decision for a release, not this
+document.
+
+### Started late, by whoever needs it
+
+voxl is the viewer's child, not a unit of its own (`Streamer` in
+[`stream.go`](stream.go)):
+
+- **It starts on a stream request, after the display answers.** voxl attaches
+  to an X server that is already up and exits when it cannot, so `/api/stream`
+  reads the geometry first — which brings a cold display up, and answers only
+  once it is — and starts voxl after. Nothing else starts it: a TCP probe,
+  `GET /` and `GET /api/session` leave both X and voxl down.
+- **One lock serializes it.** Two tabs opening at once start one voxl. A start
+  is ready when voxl's health check answers; one that exits first — a cold
+  display refusing its shared-memory attach is the expected case — is retried
+  after a short pause, three times in all, and then the request fails with
+  voxl's own last lines.
+- **It is started again, not watched.** voxl exits when its X server goes away;
+  the page's next connect starts a new one. It is a reader of the screen and a
+  source of input events, never the parent of anything a person runs, so
+  restarting it costs nothing on the desktop. It rebuilds its own capture when
+  the screen changes size.
+- **It runs as the sandbox user, beside Xorg**, which MIT-SHM needs (one IPC
+  namespace) and the input and clipboard it injects belong to.
+
+Its flags turn off what this page owns or the decision excludes: its own
+resizing (one owner of the geometry), audio, the microphone and file transfer.
+Its clipboard is on in both directions; what happens with it is the page's
+decision.
+
+### The access boundary
+
+voxl listens on `127.0.0.1:17063`, with a token made fresh for every start and
+handed to voxl alone, in its environment; `/api/stream` adds it, drops the
+browser's `Origin` and cookies, and forwards only voxl's websocket. So no page,
+and no program that only finds the port, can reach voxl's input, screenshot or
+recording routes. It is no boundary inside the sandbox — the sandbox user and
+root can read voxl's environment, and can type on the desktop through X anyway
+— and is not meant to be one. The start is ready only when an authenticated
+request succeeds, so another program holding the port is never taken for voxl.
+The agent's port watcher excludes 17063 by number, so it is never listed as one
+of the sandbox's ports or probed; the port is fixed, in the 170xx range beside
+the agent's other listeners, because one picked at start could not be excluded
+ahead of time.
+
+The viewer itself checks every request, the websocket upgrade included
+([`access.go`](access.go)): its `Host` must be `localhost`, a loopback address,
+or a name it was told to answer for (`--allowed-host`), and its `Origin`, when
+it has one, must be the request's own origin. A forward reaches the viewer as
+`localhost:<port>`, which passes; a page on another site is refused because a
+browser always sends `Origin` on a websocket and on a cross-site write, and a
+domain pointed at 127.0.0.1 (DNS rebinding) is refused by its `Host`. The stream
+carries keystrokes and the clipboard, so either would otherwise be typing on the
+desktop.
+
+### What the page does with it
+
+[`web/stream.js`](web/stream.js) is the rest of a client, ours rather than
+voxl's because each part decides something the desktop decides:
+
+- **Presentation.** The worker hands decoded frames back and the page draws
+  them onto its own canvas, in every browser alike, so an annotation can copy
+  the frame actually shown (below).
+- **Size** follows each `hello`. One that disagrees with the size the page set
+  means the display changed under it — an X server that restarted comes back at
+  its default mode — and the page asks for its size again.
+- **Connection.** voxl's worker reconnects every second forever. Here a few
+  closes in a row with no desktop between them end it: the worker is stopped
+  and the status becomes the reconnect control. A stream that connects but
+  shows no frame — a decoder that took the configuration and fails the frames —
+  ends the same way, saying the browser did not decode it.
+- **Unsupported browsers** are told before anything starts: no secure context,
+  no WebCodecs, or no H.264 decoder for the stream's configuration, each named,
+  with what would work. Such a page starts neither X nor the stream, and the
+  notes still work.
+- **Input** is voxl's own keyboard, pointer and touch handling, with two
+  changes: pinch zoom is off, because it would move the desktop out from under
+  the annotation overlay; and an image pasted into the desktop is refused, as
+  the clipboard is text only. Held keys and buttons are released when the page
+  loses focus or is hidden.
+
+### The clipboard
+
+Plain text, both ways, on the X `CLIPBOARD` selection (never `PRIMARY`), and
+only when the person moves it (ADR 26-11-06-851 §4):
+
+- **Paste.** Ctrl/⌘+V into the desktop sends what the browser's paste event
+  carries to the desktop's clipboard first, then the keystroke. The panel takes
+  a paste into its box and sends it. Neither needs a permission, and the page
+  never asks for one to read the clipboard: a browser keeps that permission
+  for the origin, and this origin is the box's (see
+  [`REVIEW.md`](REVIEW.md)).
+- **Copy.** A copy shortcut typed into the desktop takes the desktop's next
+  clipboard change, within two seconds, as its result and writes it locally.
+  The panel shows the desktop's clipboard and copies it on a click.
+- **Never on its own.** Nothing reads the local clipboard but a paste the
+  person makes, and nothing writes it because the desktop's changed. voxl's own
+  client does both, which is why its clipboard module is not used.
+- **When the browser will not write the clipboard**, the panel says so,
+  selects the desktop's text for Ctrl/⌘+C, and leaves the stream running;
+  trying again is one click.
+
+Text over 1 MiB is refused either way; a paste that large empties the desktop's
+clipboard instead, so the paste keystroke that follows pastes nothing rather
+than what it held before. The desktop's text is held only while the connection
+that brought it lasts, and nothing is logged or kept.
 
 ## Size follows the window; scale does not
 
@@ -109,10 +259,10 @@ Two properties, deliberately on different footings.
 page sends the frame it has in CSS pixels; `Display.Resize` multiplies by the
 scale, rounds to a mode boundary and sets it; the page sizes its frame from what
 comes back. All the arithmetic is on the server, so there is no pair of
-roundings that has to agree forever. Because x11vnc runs with `-xrandr resize`,
-the change reaches an attached client as a desktop-size update and the desktop
-follows the window on a live session — reconnecting on a query string, which is
-what port 6080's client does, would drop the session on every drag.
+roundings that has to agree forever. voxl notices the new geometry, rebuilds its
+capture at it and says hello again with the new size, so the desktop follows
+the window on a live stream; voxl's own resizing is off, since two owners of the
+geometry race.
 
 Every distinct size becomes a modeline that outlives the process, so sizes are
 bucketed to 64px and the table is capped. Reaching the cap **evicts the oldest
@@ -123,7 +273,10 @@ since a failed resize is not retried at the same window size. Eviction forgets
 unconditionally and asks the server to drop the mode best-effort, which is the
 right way round: this table is what has to stay bounded, and the server refuses
 to delete a mode in use. A mode the server kept is found again by the existing
-`known` check, which re-attaches it instead of recreating it.
+`known` check, which re-attaches it instead of recreating it. The table is this
+process's memory of one X server: when switching to a mode it holds fails — an X
+server that restarted has none of them — it is forgotten and the mode made
+again, once.
 
 **Scale** is an integer, decided once per session, and it is the desktop's
 HiDPI-ness. It drives four things that must agree:
@@ -149,8 +302,13 @@ Integer only. A fractional scale is a fractional downscale in the browser —
 soft, which is the opposite of the point — and `GDK_SCALE` takes integers
 anyway, so 1.5 would scale text and not widgets.
 
-**The starting scale is 2×**, or whatever `scale.env` remembers
-(`StartingScale`). 2 because HiDPI is the ordinary screen to watch from, so the
+**The scale is 2× unless a person picks another** ([ADR 26-11-06-851](../../docs/adr/26-11-06-851-voxl-streams-the-desktop-at-two-times-density.md) §3).
+A choice made in the viewer comes first, then what `scale.env` remembers, then
+2× (`StartingScale`). The browser's device pixel ratio is not on that list: it
+says what screen the page is on, not what density anybody wants, and acting on
+it would lower 2× to 1× on every ordinary screen and restart the session under
+whoever is using it. The page's automatic call to `/api/scale` carries no scale
+and applies the standing one. 2 because HiDPI is the ordinary screen to watch from, so the
 common case never pays a restart, and because the scale is not only the
 desktop's: every shell the agent starts sources `scale.env`, so the default is
 what the agent's own programs draw at. Boot writes it before anything runs as
@@ -166,8 +324,8 @@ Two consequences are accepted rather than fixed, because both come from the
 scale travelling as environment, which nothing can take back from a running
 process or scope to one X server:
 
-- **A later change does not reach the agent's shells.** When a viewer on an
-  ordinary screen moves the desktop to 1×, a GTK program the agent launches
+- **A later change does not reach the agent's shells.** When a person moves
+  the desktop to 1×, a GTK program the agent launches
   afterwards still holds `GDK_SCALE=2` and `GDK_DPI_SCALE=0.5` against a 96 DPI
   server: 2× widgets around 1× text, the mixed state nothing else may cause.
   Chromium follows the file (its launcher re-reads it) and xterm and Qt follow
@@ -197,11 +355,11 @@ not leave them disagreeing. That is the mixed-channel state
 `d.applied` is what waits for all of it, and it is the flag that makes a failure
 repairable: the unchanged-value short-circuit needs it, so a half-finished change
 is retried rather than returned early forever. `d.chosen` is set up front — a
-person decided, whether or not applying it then worked — and it outranks the
-viewer's detection on the **value only**: an auto report from a chosen display
-keeps the chosen scale and then carries on, because a page load is the only
-thing that happens on its own and it has to be able to finish an unapplied
-choice.
+person decided, whether or not applying it then worked. An automatic report
+never moves the value, chosen or not: it keeps the standing scale and then
+carries on, because a page load is the only thing that happens on its own and it
+has to be able to finish an unapplied choice. `TestAnAutomaticReportNeverMovesTheScale`
+pins the precedence for a new desktop, a remembered 1× and a remembered 2×.
 
 The response to `POST /api/scale` carries `restarted` alongside the geometry.
 Picking a density that is already in effect changes nothing and restarts
@@ -216,8 +374,8 @@ starts the *viewer*, and it must start nothing else. Any `xrandr` call connects
 to `/tmp/.X11-unix/X0`, which socket-activates the X server, and `xvfb.service`
 pulls the Xfce session up behind it — so a viewer that touched X while starting
 would let anything that opened a connection to 6900 and went away (a health
-check, a port scan, a stray probe) bring up an X server, a window manager, a
-panel and a VNC server in a sandbox where nobody had asked to see a desktop.
+check, a port scan, a stray probe) bring up an X server, a window manager and a
+panel in a sandbox where nobody had asked to see a desktop.
 
 **Nothing on the viewer's startup path may touch X.** The scale it needs at boot
 is a file, not a screen: `scale.env` records what the last run settled on, and
@@ -235,7 +393,7 @@ nothing the viewer remembers about having seen it answers the question.
 `TestTheSessionEndpointDoesNotRestartAStoppedDisplay` pin this.
 
 X starts when something genuinely needs pixels: a browser that has loaded the
-page asking for a size, the VNC socket being opened, or any program in the
+page asking for a size, a stream being opened, or any program in the
 sandbox talking to `DISPLAY=:0`. That last one is the case the whole
 socket-activated stack exists for.
 
@@ -245,11 +403,12 @@ xrandr` each bring the whole desktop up.
 
 Those first three are what a *probe* does — connect, maybe fetch, go away — and
 they are the case this rule is about. A real browser is not one of them: `boot()`
-calls `reportScale()` before it asks for a size, and even the no-op path through
+calls `applyScale()` before it asks for a size, and even the no-op path through
 `SetScale` ends in `geometryLocked`, whose `xrandr --query` starts X. That is
 correct and deliberate. Somebody whose browser is running this page **is** asking
 for a desktop; the thing that must not start one is a connection that never
-became a page.
+became a page — or a page in a browser that cannot show it, which stops before
+`applyScale()`.
 
 **The X server must not delete its own activation socket.** `x11-display.socket`
 binds `/tmp/.X11-unix/X0`, and that path is the socket unit's alone. Removing it
@@ -265,7 +424,7 @@ Xorg runs `-listen local`, the Linux abstract socket `@/tmp/.X11-unix/X0`,
 which libxcb tries before the file: while X runs, clients connect there
 directly; while it does not, that connect is refused and they fall back to the
 file, which activates X. This matters because over TCP Xorg cannot read a
-client's credentials and refuses its MIT-SHM attaches, and x11vnc exits on that
+client's credentials and refuses its MIT-SHM attaches, and voxl exits on that
 refusal. Only the activating connection goes through `x11-display.service` to
 TCP 6000. A client in another network namespace with the file bind-mounted
 (a nested container) sees no abstract socket, so it always goes the proxy's
@@ -277,8 +436,8 @@ both; `TestTheViewerDoesNotPullUpTheDisplay` pins the absence of a `Requires=`
 in the other direction.
 
 **The X server counts as started only once it accepts connections.** Every unit
-that talks to the display — the `:0` proxy (`x11-display.service`), `x11vnc@`,
-the Xfce session, the viewer — is ordered `After=xvfb.service`, and the proxy
+that talks to the display — the `:0` proxy (`x11-display.service`), the Xfce
+session, the viewer — is ordered `After=xvfb.service`, and the proxy
 forwards the very connection that started X. Xorg has no `sd_notify`, so the
 unit stays `Type=simple` and an `ExecStartPost` waits for `127.0.0.1:6000`
 before systemd calls it started; without it the activating client is forwarded
@@ -296,11 +455,6 @@ because the viewer signals ready as soon as the file is written.
 In the image the boot flow has already written the same value, so this
 ordering is a backstop for a viewer run anywhere else rather than the source of
 the file.
-
-A sandbox whose first ever desktop is watched from an ordinary screen starts its
-session at 2× and restarts it at 1× when the browser says so. That is one
-restart on one boot, against not starting an X server at all in every sandbox
-that never opens a desktop.
 
 ### Changing the scale afterwards
 
@@ -346,8 +500,8 @@ differs from the 1× framebuffer by a mean of **1.12/255**, and the panel's
 The viewer is socket-activated, so nothing runs until a browser asks for the
 page. That laziness is easy to lose: the port watcher classifies a port by
 connecting to it, and a connection to 6900 *is* the activation — one
-classification probe boots the X server, the Xfce session, the VNC server and
-the viewer, in every sandbox, whether or not anybody wanted a desktop.
+classification probe starts the viewer, in every sandbox, whether or not
+anybody wanted a desktop.
 
 So the port is neither discovered nor probed. The image declares it, in the same
 format a repository's `.discobox/services` uses and read by the same code
@@ -526,8 +680,20 @@ the page come up at all. `app.js` fetches `/api/session` at import, before it
 does anything else, so that request arriving proves the document parsed, every
 import resolved and nothing threw on the way in. It is the failure that is
 otherwise invisible — a module with no route behind it leaves a blank screen and
-writes nothing to the server log. Only noVNC is stubbed there, because it ships
-in the image rather than in this repository.
+writes nothing to the server log. Only voxl's client and worker are stubbed
+there, because they are built into the image rather than shipped in this
+repository.
+
+`TestTheStreamPresentsFramesAndKeepsTheClipboardToThePerson`
+(`stream_e2e_test.go`) drives the real `stream.js` against a stand-in worker
+that speaks voxl's worker messages: a decoded frame is drawn and is what the
+snapshot copies; the desktop's clipboard changing is never written locally,
+until a copy shortcut asks for it; text the page sends is what the desktop
+holds, though voxl does not say so; a reconnect forgets it; and a stream that
+will not open is given up on after a bounded number of tries. `stream_test.go`
+covers the server half with a stand-in voxl: the token, the origin rules, the
+retry after a cold refusal, the bound on it, and a voxl that died being started
+again.
 
 ### A note's words cannot break the file
 
@@ -619,8 +785,8 @@ absolute path. Nothing notifies the agent; a person does.
 
 | Path | Served from | Why not embedded |
 | --- | --- | --- |
-| `/` `/app.css` `/app.js` `/capture.js` | `go:embed web` | Owned here, versioned with the code. `TestEveryModuleThePageImportsIsServed` keeps the routes in step with `app.js`'s imports. |
-| `/novnc/` | `/usr/share/novnc` | Debian's `novnc` package, 1.7MB of ESM the page imports directly. |
+| `/` `/app.css` `/app.js` `/capture.js` `/stream.js` | `go:embed web` | Owned here, versioned with the code. `TestEveryModuleThePageImportsIsServed` keeps the routes in step with the page's imports. |
+| `/voxl/` | `/usr/local/lib/discobox/voxl/web` | voxl's client and decode worker, built with the voxl binary from one pinned source (see [The stream](#the-stream)); served `no-cache` so a page always matches the voxl it streams from. |
 | `/brand/` | `/usr/local/share/discobox/brand` | The repository's `assets/brand`, which this nested module's `go:embed` cannot reach up to. A second copy would be a second thing to keep in step with Illustrator. |
 | `/shots/` | the annotation record's `shots/` | Written at run time, into the sandbox user's home. |
 

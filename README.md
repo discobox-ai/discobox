@@ -159,8 +159,9 @@ remote. Open a pull request or fetch and merge that branch on your machine.
   (ADR 26-11-03-982).
   `discobox tools --help` shows how to write one. Other editors with SSH remote
   support can also connect directly.
-- **Desktop:** Access the box's graphical desktop and browser through VNC or
-  noVNC, using port forwarding.
+- **Desktop:** Open the box's graphical desktop and browser in a browser tab,
+  streamed as video at twice the density, with plain-text clipboard both ways,
+  using port forwarding.
 - **Toolchain:** direnv loads the project's declared environment, including
   Nix or mise configuration.
 - **Automation:** The CLI and OpenAPI API support scripting box creation,

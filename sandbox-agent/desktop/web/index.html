@@ -4,14 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Discobox desktop</title>
-<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/app.css">
+<!-- Every URL here is relative, so the page works beneath whatever path
+     prefix a forward serves it under. -->
+<link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 
 <header class="bar">
-  <a class="brand" href="/" title="Discobox">
-    <img class="brand-word" src="/brand/wordmark-gradient.svg" alt="Discobox">
+  <a class="brand" href="./" title="Discobox">
+    <img class="brand-word" src="brand/wordmark-gradient.svg" alt="Discobox">
     <span class="brand-sub">desktop</span>
   </a>
 
@@ -23,7 +25,6 @@
       <span class="dot"></span>
       <span class="status-text" id="status-text">Starting the display…</span>
     </button>
-    <span class="chip chip-name" id="chip-name" hidden></span>
     <span class="chip" id="chip-geometry" hidden></span>
     <span class="chip" id="chip-density" hidden></span>
   </div>
@@ -36,7 +37,10 @@
     <button class="btn" id="btn-notes" type="button" aria-pressed="false">
       Notes <span class="count" id="notes-count">0</span>
     </button>
-    <label class="btn btn-select" for="scale" title="Device scale. Detected from this screen; applies to programs started afterwards.">
+    <button class="btn" id="btn-clipboard" type="button" aria-pressed="false" title="Move text between this computer and the desktop">
+      Clipboard
+    </button>
+    <label class="btn btn-select" for="scale" title="Desktop density. HiDPI 2&times; unless you pick another; applies to programs started afterwards.">
       Density
       <select id="scale">
         <option value="1">Standard</option>
@@ -55,12 +59,18 @@
 
 <main class="stage" id="stage">
   <div class="screen-wrap" id="screen-wrap">
-    <div class="screen" id="screen"></div>
+    <!-- The desktop. stream.js draws it here and voxl's pointer handling
+         listens here; the textarea beside it takes the keyboard, IME and paste,
+         and is kept out of sight rather than hidden so a phone still opens its
+         keyboard for it. -->
+    <div class="screen" id="screen" tabindex="0"></div>
+    <textarea class="kbd" id="kbd" autocomplete="off" autocorrect="off" autocapitalize="off"
+              spellcheck="false" tabindex="-1" aria-hidden="true"></textarea>
     <div class="overlay" id="overlay">
       <div class="marquee" id="marquee" hidden></div>
     </div>
     <div class="curtain" id="curtain">
-      <img class="curtain-mark" src="/brand/logo-purple.svg" alt="">
+      <img class="curtain-mark" src="brand/logo-purple.svg" alt="">
       <p class="curtain-text" id="curtain-text">Waking the desktop…</p>
     </div>
   </div>
@@ -100,6 +110,36 @@
 
   <ul class="notes-list" id="notes-list"></ul>
   <p class="notes-empty" id="notes-empty">Nothing noted yet. Hit <b>Annotate</b> and drag a box on the desktop.</p>
+</aside>
+
+<!-- Plain text between this computer's clipboard and the desktop's, moved only
+     by the buttons here, a paste into the desktop, or a copy made in it. -->
+<aside class="clip" id="clip" hidden aria-label="Clipboard">
+  <div class="notes-head">
+    <h2>Clipboard</h2>
+    <button class="btn btn-icon" id="clip-close" type="button" title="Close">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </button>
+  </div>
+  <p class="clip-lead">Ctrl/⌘+V in the desktop pastes from this computer, and a copy made in the desktop comes back here. To move text by hand, paste it into the box below and send it, or copy it from the one under it.</p>
+
+  <section class="clip-section">
+    <h3 class="clip-title"><label for="clip-local">To the desktop</label></h3>
+    <textarea id="clip-local" rows="4" placeholder="Paste (Ctrl/⌘+V) or type text to send…" spellcheck="false"></textarea>
+    <div class="clip-actions">
+      <button class="btn btn-accent" id="clip-send" type="button">Send</button>
+    </div>
+  </section>
+
+  <section class="clip-section">
+    <h3 class="clip-title"><label for="clip-remote">From the desktop</label></h3>
+    <textarea id="clip-remote" rows="4" readonly placeholder="Copy something in the desktop and it appears here." spellcheck="false"></textarea>
+    <div class="clip-actions">
+      <button class="btn btn-accent" id="clip-copy" type="button">Copy to this computer</button>
+    </div>
+  </section>
+
+  <p class="clip-status" id="clip-status" role="status"></p>
 </aside>
 
 <!-- One note, opened from the list: what the screen looked like when it was
@@ -148,6 +188,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="/app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

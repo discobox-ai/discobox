@@ -1,21 +1,27 @@
 // The desktop viewer.
 //
-// Three things happen here, and only the first is noVNC's:
+// Four things happen here:
 //
-//  1. Connect to the VNC websocket this page's own origin proxies through to
-//     websockify, and draw the framebuffer into the frame.
+//  1. Stream the desktop: stream.js opens voxl's stream through this page's own
+//     origin and draws what it decodes into the frame.
 //  2. Keep the remote screen the shape of the frame. This page sends the frame
 //     it has, in CSS pixels, and sizes that frame from the framebuffer it gets
 //     back; it does no sizing arithmetic of its own. The scale that turns one
-//     into the other is a separate, sticky property on /api/scale, reported
-//     once from devicePixelRatio and then left alone — everything that reads a
-//     scale reads it when a program launches, so a scale that moved with the
-//     window would leave every program drawing at whatever it started at.
+//     into the other is a separate, sticky property on /api/scale: 2x unless a
+//     person picks another, and never taken from this screen's pixel ratio —
+//     everything that reads a scale reads it when a program launches, so a
+//     scale that moved with the window, or with whichever browser opened the
+//     page, would leave every program drawing at whatever it started at.
 //  3. Let a person draw a box on the desktop, say what is wrong inside it, and
 //     leave that where an agent working in this sandbox will find it.
+//  4. Move plain text between this computer's clipboard and the desktop's, only
+//     when the person does something to move it.
+//
+// Every URL is relative to the page, so it works beneath whatever path prefix
+// a forward serves it under.
 
-import RFB from '/novnc/core/rfb.js';
-import { crop, screenWithRegion } from '/capture.js';
+import { crop, screenWithRegion } from './capture.js';
+import { openStream, supported } from './stream.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,9 +38,17 @@ const dom = {
   statusText: $('status-text'),
   chipGeometry: $('chip-geometry'),
   chipDensity: $('chip-density'),
-  chipName: $('chip-name'),
+  kbd: $('kbd'),
   btnAnnotate: $('btn-annotate'),
   btnNotes: $('btn-notes'),
+  btnClipboard: $('btn-clipboard'),
+  clip: $('clip'),
+  clipClose: $('clip-close'),
+  clipLocal: $('clip-local'),
+  clipSend: $('clip-send'),
+  clipRemote: $('clip-remote'),
+  clipCopy: $('clip-copy'),
+  clipStatus: $('clip-status'),
   btnFullscreen: $('btn-fullscreen'),
   btnReconnect: $('btn-reconnect'),
   btnCopy: $('btn-copy'),
@@ -71,9 +85,8 @@ const dom = {
 const state = {
   limits: null,
   geometry: null, // what the display was last set to
-  rfb: null,
+  stream: null,
   connected: false,
-  retries: 0,
   annotating: false,
   drawing: null,
   pending: null,
@@ -83,7 +96,6 @@ const state = {
 };
 
 const RESIZE_SETTLE_MS = 220;
-const MAX_RETRIES = 6;
 
 // ------------------------------------------------------------------ startup
 
@@ -92,7 +104,7 @@ boot();
 async function boot() {
   wireControls();
   try {
-    const session = await getJSON('/api/session');
+    const session = await getJSON('api/session');
     state.limits = session.limits;
     dom.handoffPrompt.textContent = session.prompt;
     dom.handoffPath.textContent = session.feedbackPath;
@@ -101,14 +113,24 @@ async function boot() {
     dom.curtainText.textContent = String(err.message || err);
     return;
   }
+  // The notes are a file, readable whether or not this browser can show the
+  // desktop they were taken on.
+  refreshNotes();
+
+  // Before anything starts X: a browser that cannot decode the stream is told
+  // so, and leaves the desktop as cold as it found it.
+  const support = await supported();
+  if (!support.ok) {
+    showUnsupported(support.reason);
+    return;
+  }
 
   // Scale first, then size: the framebuffer is the frame times the scale, so
-  // asking for a size before the display knows what screen it is being watched
-  // on would size it once and immediately again.
-  await reportScale();
+  // asking for a size before the display has its scale would size it once and
+  // immediately again.
+  await applyScale();
   await resizeDisplay({ force: true });
   connect();
-  refreshNotes();
 
   const observer = new ResizeObserver(() => scheduleResize());
   observer.observe(dom.stage);
@@ -119,13 +141,13 @@ function wireControls() {
   dom.btnAnnotate.addEventListener('click', () => setAnnotating(!state.annotating));
   dom.btnNotes.addEventListener('click', () => toggleNotes(dom.notes.hidden));
   dom.notesClose.addEventListener('click', () => toggleNotes(false));
-  const reconnect = () => {
-    state.retries = 0;
-    connect();
-  };
-  dom.btnReconnect.addEventListener('click', reconnect);
-  dom.statusMain.addEventListener('click', reconnect);
+  dom.btnReconnect.addEventListener('click', connect);
+  dom.statusMain.addEventListener('click', connect);
   dom.btnFullscreen.addEventListener('click', toggleFullscreen);
+  dom.btnClipboard.addEventListener('click', () => toggleClipboard(dom.clip.hidden));
+  dom.clipClose.addEventListener('click', () => toggleClipboard(false));
+  dom.clipSend.addEventListener('click', () => sendToDesktop(dom.clipLocal.value));
+  dom.clipCopy.addEventListener('click', copyFromDesktop);
   dom.scale.addEventListener('change', chooseScale);
   dom.btnCopy.addEventListener('click', copyPrompt);
   dom.noteDialogTabScreen.addEventListener('click', () => {
@@ -164,6 +186,8 @@ function wireControls() {
       cancelComposer();
     } else if (state.annotating) {
       setAnnotating(false);
+    } else if (!dom.clip.hidden && dom.clip.contains(document.activeElement)) {
+      toggleClipboard(false);
     }
   });
 }
@@ -197,7 +221,7 @@ async function resizeDisplay({ force }) {
   }
   lastRequested = avail;
   try {
-    const geometry = await postJSON('/api/display', { cssWidth: avail.w, cssHeight: avail.h });
+    const geometry = await postJSON('api/display', { cssWidth: avail.w, cssHeight: avail.h });
     applyGeometry(geometry);
   } catch (err) {
     // Forget the request, or this size is on record as asked for and the
@@ -220,28 +244,27 @@ function applyGeometry(geometry) {
   dom.screenWrap.style.width = `${Math.round(geometry.width / geometry.scale)}px`;
   dom.screenWrap.style.height = `${Math.round(geometry.height / geometry.scale)}px`;
   showGeometry(geometry);
-  rescaleViewport();
+  if (state.stream) state.stream.layout();
 }
 
-// reportScale tells the display what kind of screen it is being watched on.
-// Sent once, on connect, as a suggestion rather than an instruction: the
-// display ignores it if somebody has chosen a scale, so opening the desktop in
-// a second browser on an ordinary screen does not undo a HiDPI session.
-async function reportScale() {
+// applyScale has the display apply the scale it already stands at — what a
+// person chose, else what this sandbox remembers, else 2x — before the page
+// asks for a size. It is the viewer's automatic report, and it carries no
+// scale: this screen's pixel ratio says what screen it is, not what density
+// anybody wants, and acting on it would restart the desktop session under
+// whoever is using it.
+async function applyScale() {
   try {
-    applyGeometry(await postJSON('/api/scale', {
-      scale: window.devicePixelRatio || 1,
-      auto: true,
-    }));
+    applyGeometry(await postJSON('api/scale', { auto: true }));
   } catch (err) {
-    console.warn('could not report the screen scale', err);
+    console.warn('could not apply the desktop scale', err);
   }
 }
 
 async function chooseScale() {
   const scale = parseInt(dom.scale.value, 10);
   try {
-    const geometry = await postJSON('/api/scale', { scale, auto: false });
+    const geometry = await postJSON('api/scale', { scale, auto: false });
     // The framebuffer has to be re-asked for at the new scale; the display
     // holds the scale but the frame is still the size it was.
     await resizeDisplay({ force: true });
@@ -276,82 +299,95 @@ function showGeometry(geometry) {
   dom.scale.value = String(geometry.scale);
 }
 
-// noVNC recomputes its scale when the container changes, but the container was
-// resized in the same frame as the request that changed the framebuffer, so
-// nudge it once the new size is known.
-function rescaleViewport() {
-  if (!state.rfb) return;
-  state.rfb.scaleViewport = false;
-  state.rfb.scaleViewport = true;
-}
-
 // --------------------------------------------------------------- connection
 
+// connect opens the stream, or opens it again. The stream retries a dropped
+// connection itself a few times; past that it gives up and this is the way
+// back, from the status or the reconnect button. A reconnect never changes the
+// density or restarts the desktop: it is only the picture.
 function connect() {
-  if (state.rfb) {
-    try { state.rfb.disconnect(); } catch { /* already gone */ }
-    state.rfb = null;
+  showCurtain('Waking the desktop…');
+  setStatus('connecting', 'Connecting to the display…');
+  if (state.stream) {
+    state.stream.reconnect();
+    return;
   }
+  state.stream = openStream({
+    surface: dom.screen,
+    kbd: dom.kbd,
+    on: {
+      connecting(attempt) {
+        if (attempt > 1) {
+          setStatus('connecting', 'Reconnecting…');
+          showCurtain('Reconnecting to the desktop…');
+        }
+      },
+      hello({ width, height }) {
+        state.stream.layout();
+        // The stream reports the screen as it is. A size other than the one
+        // this page set means the display changed under it — an X server that
+        // restarted comes back at its own default mode — so the page's size is
+        // asked for again rather than shown stretched.
+        const set = state.geometry;
+        if (set && set.width && (set.width !== width || set.height !== height)) {
+          resizeDisplay({ force: true });
+        }
+      },
+      frame() {
+        state.connected = true;
+        setStatus('connected', 'Connected');
+        dom.curtain.classList.add('fading');
+        setTimeout(() => { dom.curtain.hidden = true; }, 280);
+        state.stream.focus();
+      },
+      closed() {
+        state.connected = false;
+      },
+      failed(reason) {
+        state.connected = false;
+        if (reason === 'decode') {
+          setStatus('error', 'This browser did not show the desktop');
+          showCurtain(UNSUPPORTED.decode);
+          return;
+        }
+        setStatus('error', 'Disconnected');
+        showCurtain('The desktop connection closed. Click the status at the top to reconnect.');
+      },
+      clipboard(text) {
+        dom.clipRemote.value = text ?? '';
+      },
+      copied: copiedOnDesktop,
+      notice(message) {
+        toast(message, 'error');
+      },
+    },
+  });
+}
+
+function showCurtain(text) {
   dom.curtain.hidden = false;
   dom.curtain.classList.remove('fading');
-  dom.curtainText.textContent = 'Waking the desktop…';
-  setStatus('connecting', 'Connecting to the display…');
+  dom.curtainText.textContent = text;
+}
 
-  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const rfb = new RFB(dom.screen, `${scheme}//${location.host}/websockify`, { shared: true });
-  rfb.scaleViewport = true;
-  rfb.clipViewport = false;
-  // The size is this page's decision, made through /api/display; letting noVNC
-  // negotiate one too would give the display two owners that disagree.
-  rfb.resizeSession = false;
-  rfb.background = '#000';
-  rfb.showDotCursor = true;
+// What a person is told when this browser cannot show the desktop, by the
+// reason stream.js gives. Each names what would work, since nothing on this
+// page can change the answer.
+const UNSUPPORTED = {
+  insecure: 'The desktop can only be shown on a secure page. Open it through its forward at localhost, or over HTTPS.',
+  webcodecs: 'This browser cannot decode the desktop’s video. Open it in a current Chrome, Edge, Firefox or Safari.',
+  h264: 'This browser cannot decode the desktop’s H.264 video. Open it in a current Chrome, Edge, Firefox or Safari.',
+  decode: 'This browser did not decode the desktop’s video. Open it in a current Chrome, Edge, Firefox or Safari, or click the status at the top to try again.',
+};
 
-  // Every handler below checks that it is still the current connection first.
-  // disconnect() does not detach listeners and noVNC dispatches 'disconnect'
-  // asynchronously from the socket close, so the *previous* connection's
-  // handler runs after this one is already in state.rfb -- painting
-  // "Disconnected" over a desktop that is connecting or connected. A
-  // user-initiated disconnect carries clean === true, which falls past the
-  // retry branch straight to the error state, so pressing Reconnect on a
-  // healthy session was the way to see it.
-  const current = () => state.rfb === rfb;
-
-  rfb.addEventListener('connect', () => {
-    if (!current()) return;
-    state.connected = true;
-    state.retries = 0;
-    setStatus('connected', 'Connected');
-    dom.curtain.classList.add('fading');
-    setTimeout(() => { dom.curtain.hidden = true; }, 280);
-    rescaleViewport();
-  });
-
-  rfb.addEventListener('disconnect', (event) => {
-    if (!current()) return;
-    state.connected = false;
-    dom.curtain.hidden = false;
-    dom.curtain.classList.remove('fading');
-    if (event.detail && event.detail.clean === false && state.retries < MAX_RETRIES) {
-      state.retries += 1;
-      const wait = Math.min(400 * state.retries, 2500);
-      setStatus('connecting', `Reconnecting… (${state.retries}/${MAX_RETRIES})`);
-      dom.curtainText.textContent = 'Reconnecting to the desktop…';
-      setTimeout(connect, wait);
-      return;
-    }
-    setStatus('error', 'Disconnected');
-    dom.curtainText.textContent = 'The desktop connection closed. Click the status at the top to reconnect.';
-  });
-
-  rfb.addEventListener('desktopname', (event) => {
-    if (!current()) return;
-    const name = event.detail.name;
-    dom.chipName.textContent = name || '';
-    dom.chipName.hidden = !name;
-  });
-
-  state.rfb = rfb;
+// showUnsupported is the end of the page for a browser that cannot decode the
+// stream: it says so and why, and starts nothing. The notes still work.
+function showUnsupported(reason) {
+  setStatus('unsupported', 'This browser cannot show the desktop');
+  showCurtain(UNSUPPORTED[reason] || UNSUPPORTED.webcodecs);
+  for (const control of [dom.btnAnnotate, dom.btnClipboard, dom.btnReconnect, dom.scale]) {
+    control.disabled = true;
+  }
 }
 
 // setStatus paints the state, and makes it the way back when the way back is
@@ -380,12 +416,13 @@ function setAnnotating(on) {
   if (!on) cancelDraw();
 }
 
-// canvasBox is where the framebuffer actually sits inside the overlay. noVNC
-// centers the canvas when the aspect ratios differ, so this is read from the
-// canvas rather than assumed to be the whole overlay.
+// canvasBox is where the desktop is drawn inside the overlay, read from the
+// canvas rather than assumed to be the whole overlay. Only once a frame is up:
+// before that there is nothing to mark.
 function canvasBox() {
-  const canvas = dom.screen.querySelector('canvas');
-  if (!canvas || !canvas.width || !canvas.height) return null;
+  if (!state.stream || !state.connected) return null;
+  const canvas = state.stream.canvas;
+  if (!canvas.width || !canvas.height) return null;
   const rect = canvas.getBoundingClientRect();
   const origin = dom.overlay.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
@@ -430,7 +467,11 @@ function onPointerUp(event) {
   const rect = marqueeRect();
   const box = canvasBox();
   state.drawing = null;
-  if (!box || rect.w < 8 || rect.h < 8) {
+  // The frame on screen as the box is let go, copied once: the crop and the
+  // whole-desktop picture are both cut from this copy, so a frame or a resize
+  // arriving between the two cannot make them disagree.
+  const frame = box && state.stream.snapshot();
+  if (!box || !frame || rect.w < 8 || rect.h < 8) {
     cancelDraw();
     return;
   }
@@ -443,23 +484,23 @@ function onPointerUp(event) {
   // desktop and slide it inward, marking a region the person did not draw.
   // Each far edge is held one pixel past its near one so the region is never
   // empty and never a zero-sized canvas to crop from.
-  const left = clamp(Math.round((rect.x - box.left) * box.scaleX), 0, box.canvas.width - 1);
-  const top = clamp(Math.round((rect.y - box.top) * box.scaleY), 0, box.canvas.height - 1);
-  const right = clamp(Math.round((rect.x + rect.w - box.left) * box.scaleX), left + 1, box.canvas.width);
-  const bottom = clamp(Math.round((rect.y + rect.h - box.top) * box.scaleY), top + 1, box.canvas.height);
+  const left = clamp(Math.round((rect.x - box.left) * box.scaleX), 0, frame.width - 1);
+  const top = clamp(Math.round((rect.y - box.top) * box.scaleY), 0, frame.height - 1);
+  const right = clamp(Math.round((rect.x + rect.w - box.left) * box.scaleX), left + 1, frame.width);
+  const bottom = clamp(Math.round((rect.y + rect.h - box.top) * box.scaleY), top + 1, frame.height);
   const region = {
     x: left,
     y: top,
     w: right - left,
     h: bottom - top,
-    frameWidth: box.canvas.width,
-    frameHeight: box.canvas.height,
+    frameWidth: frame.width,
+    frameHeight: frame.height,
   };
 
   state.pending = {
     region,
-    screenshot: crop(box.canvas, region),
-    screen: screenWithRegion(box.canvas, region),
+    screenshot: crop(frame, region),
+    screen: screenWithRegion(frame, region),
   };
   openComposer(rect);
 }
@@ -536,7 +577,7 @@ async function saveNote(event) {
   };
   dom.composer.hidden = true;
   try {
-    const item = await postJSON('/api/feedback', payload);
+    const item = await postJSON('api/feedback', payload);
     state.pending = null;
     cancelDraw();
     setAnnotating(false);
@@ -552,7 +593,7 @@ async function saveNote(event) {
 
 async function refreshNotes() {
   try {
-    adoptNotes(await getJSON('/api/feedback'));
+    adoptNotes(await getJSON('api/feedback'));
   } catch (err) {
     console.warn('could not read notes', err);
   }
@@ -618,7 +659,7 @@ function noteRow(item) {
 
 async function patchNote(item, change) {
   try {
-    adoptNotes(await requestJSON('PATCH', `/api/feedback/${item.id}`, change));
+    adoptNotes(await requestJSON('PATCH', `api/feedback/${item.id}`, change));
     // The dialog stays open on an edit and follows what was saved, so ticking
     // and rewording read as changes to the thing being looked at.
     const updated = state.items.find((note) => note.id === item.id);
@@ -634,7 +675,7 @@ async function patchNote(item, change) {
 
 async function deleteNote(item) {
   try {
-    adoptNotes(await requestJSON('DELETE', `/api/feedback/${item.id}`));
+    adoptNotes(await requestJSON('DELETE', `api/feedback/${item.id}`));
     if (state.open && state.open.id === item.id) {
       state.open = null;
       dom.noteDialog.close();
@@ -751,11 +792,11 @@ function renderReplies(replies) {
 // out of the Markdown on every read and resolves whatever path it finds there,
 // so a picture that was renamed, moved or hand-edited into the file still
 // resolves. Rebuilding the name from the id would hardcode one writer's
-// convention and quietly 404 on anything else. /shots/ serves them by name.
+// convention and quietly 404 on anything else. shots/ serves them by name.
 function shotURL(rel) {
   if (!rel) return '';
   const name = String(rel).split('/').pop();
-  return `/shots/${encodeURIComponent(name)}`;
+  return `shots/${encodeURIComponent(name)}`;
 }
 
 // showCapture switches between the two pictures of the same moment.
@@ -782,6 +823,96 @@ function showCapture(item, which) {
 function showDoneButton(done) {
   dom.noteDialogDone.textContent = done ? '✓ Done' : 'Mark done';
   dom.noteDialogDone.setAttribute('aria-pressed', String(done));
+}
+
+// --------------------------------------------------------------- clipboard
+//
+// Plain text, in both directions, and only when the person moves it. Copy and
+// paste inside the desktop are the desktop's own. Between it and this
+// computer:
+//
+//  - Paste (Ctrl/⌘+V) into the desktop sends what this computer's clipboard
+//    holds to the desktop's first, through the browser's paste event, which
+//    needs no permission (voxl's keyboard does this).
+//  - A copy shortcut typed into the desktop brings the desktop's new clipboard
+//    back here (copiedOnDesktop).
+//  - The panel does either by hand: a box to paste into and send, and the
+//    desktop's text to copy or select.
+//
+// This page never asks to read the clipboard (navigator.clipboard.readText):
+// a browser keeps that permission for the origin, and this origin is the
+// box's — it can serve any page on it, and a forward's local port is reused by
+// other boxes — so a permission granted once would be held by whatever is
+// served here next. A paste event needs none.
+//
+// Nothing here writes this computer's clipboard because the desktop's changed.
+// Nothing is kept: the panel's boxes are this page's, the desktop's text goes
+// with the connection.
+
+function toggleClipboard(open) {
+  dom.clip.hidden = !open;
+  dom.btnClipboard.setAttribute('aria-pressed', String(open));
+  if (open) {
+    dom.clipRemote.value = (state.stream && state.stream.remoteClipboard()) ?? '';
+    clipStatus('');
+  } else {
+    dom.clipLocal.value = '';
+    if (state.stream) state.stream.focus();
+  }
+}
+
+function clipStatus(message, kind) {
+  dom.clipStatus.textContent = message;
+  dom.clipStatus.dataset.kind = kind || 'ok';
+}
+
+function sendToDesktop(text) {
+  if (!text) {
+    clipStatus('There is no text to send.', 'error');
+    return;
+  }
+  const result = state.stream ? state.stream.sendClipboard(text) : 'disconnected';
+  if (result === 'sent') {
+    dom.clipLocal.value = '';
+    clipStatus('On the desktop’s clipboard. Paste it there with Ctrl+V.');
+  } else if (result === 'too-large') {
+    clipStatus('That text is too large to send to the desktop.', 'error');
+  } else {
+    clipStatus('The desktop is not connected.', 'error');
+  }
+}
+
+async function copyFromDesktop() {
+  const text = state.stream && state.stream.remoteClipboard();
+  if (text == null || text === '') {
+    clipStatus('Nothing has been copied on the desktop yet.', 'error');
+    return;
+  }
+  if (await writeLocal(text)) {
+    clipStatus('Copied to this computer.');
+    return;
+  }
+  dom.clipRemote.focus();
+  dom.clipRemote.select();
+  clipStatus('This browser did not let the page write the clipboard. The text is selected: press Ctrl/⌘+C.', 'error');
+}
+
+// copiedOnDesktop is the desktop's clipboard just after a copy the person typed
+// into it. Most browsers let it through; where one wants the write to come from
+// a click, the panel has it.
+async function copiedOnDesktop(text) {
+  if (await writeLocal(text)) return;
+  toast('Copied on the desktop. Open Clipboard to bring it to this computer.', 'error');
+}
+
+async function writeLocal(text) {
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ------------------------------------------------------------------- misc

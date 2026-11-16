@@ -32,6 +32,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
+	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
@@ -580,7 +581,9 @@ func runUserHome(execManager *execs.Manager) (string, meta.Owner, error) {
 
 // agentListenPorts are the TCP ports Discobox's own plumbing listens on inside
 // the sandbox, which are never a discobox's ports: the agent itself, the
-// credentials endpoint, and the forwarders (egress, BuildKit, the DNS stub).
+// credentials endpoint, the forwarders (egress, BuildKit, the DNS stub), and the
+// desktop's stream, which the desktop viewer starts behind its own port and
+// only it may reach (ADR 26-11-06-851 §1).
 // The uid filter does not keep them out when the sandbox user is root. They
 // must not be probed either: a forwarder carries what it is sent out of the
 // sandbox, so a classification probe of one is traffic nobody meant.
@@ -596,6 +599,7 @@ func agentListenPorts(listenAddress string) []int {
 		sandboxconfig.SandboxEgressListenAddress,
 		sandboxconfig.SandboxBuildKitListenAddress,
 		sandboxconfig.SandboxDNSListenAddress,
+		desktop.DefaultStreamAddr,
 	} {
 		out = append(out, listenPorts(address)...)
 	}
