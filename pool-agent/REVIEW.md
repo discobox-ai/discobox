@@ -485,6 +485,16 @@ changed. A step added that lays a binary needs it there too.
   after the restart does. Recorded before the restart, a pool agent gone in
   between leaves a running machine whose record says current, no agent, and
   every request a 502.
+- **What runs in a machine straight after `engine.Start` does not assume
+  systemd has settled.** At disco-vm be1c6f74 boxd's `Start` returns once
+  boxd says the machine runs, so a placement, `provision apply` or a
+  snapshot build's command may land mid-boot: start units with `systemctl
+  start`, which queues behind the boot's own job, and wait for the system in
+  the guest where a step needs it settled, as the snapshot command does
+  (`awaitSystemd`). When the pin moves, compare what `Start` waits for, and
+  check a box's start and restart on a live boxd pool if it waits for less
+  (done for #1238). Why: the fake driver boots instantly, so CI cannot show
+  a step that needs a settled system.
 
 ## A machine's new root
 

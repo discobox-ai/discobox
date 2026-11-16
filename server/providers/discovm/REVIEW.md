@@ -59,6 +59,20 @@
   so a field the new pin adds is offered with no change here, and one it
   marks `Privileged` fails `TestPrivilegedFieldsAreTheCheckedEndpoints` until
   it is checked (ADR 26-11-11-080 §3).
+- When the disco-vm pin moves, also compare what a driver's `Start` waits
+  for. Since be1c6f74 boxd's returns once boxd says the machine runs, not
+  once systemd has settled, so the guest commands that follow it here (key
+  placement, `guest.Info`, the fence, `provision apply`) may run mid-boot;
+  they must not assume a settled system, and a pin that waits for less
+  again is checked on a live boxd pool, whose fresh machine and out-of-band
+  stop converge on the first pass (done for #1238). The pool agent's side
+  is in `pool-agent/REVIEW.md`. Why: the fake driver boots instantly, so CI
+  cannot show it.
+- Map a disco-vm sentinel in `unreachable` only when a call that goes
+  through `notReachable` can return it. `machine.ErrUnreachable` is a guest
+  operation's, which `engine.Start` retries itself and this package keeps
+  out of the mapping (above). Why: a branch no caller reaches reads as
+  handling a case it does not.
 - A linked driver has no `Retired` field. disco-vm decodes one into its
   `ReplacedBy`, and the catalog lists it nowhere, so the providers service's
   per-key checks of a `Privileged` or `Immutable` field never see a write of
