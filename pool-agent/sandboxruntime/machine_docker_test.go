@@ -26,8 +26,9 @@ const dockerImageEnv = "DISCO_VM_DOCKER_IMAGE"
 // cache volume, and a new root keeps both and loses what was on the old one
 // (disco-vm ADR 26-11-03-782). The pool's sandbox agent is not run: a docker
 // guest's service is reached through a port the daemon publishes, where the
-// fake agent these tests serve on the host cannot listen, so this drives the
-// runtime's create and upgrade and reads the machine through its guest.
+// fake agent these tests serve on the host cannot listen, so this makes the
+// machine as the runtime's create does, drives the runtime's upgrade, and
+// reads the machine through its guest.
 func TestMachineNewRootOnDocker(t *testing.T) {
 	image := os.Getenv(dockerImageEnv)
 	if image == "" {
@@ -73,7 +74,20 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inst, _, err := r.ensureInstance(ctx, "sbx_docker", nil)
+	// Made as ensureInstance makes a sandbox's machine, with its own data
+	// and cache volumes, but with the driver's ingress URL: ensureInstance
+	// asks for none strictly, and the docker driver gives every machine on a
+	// local daemon one, so it refuses that create. What this test checks,
+	// the volumes a new root keeps, does not depend on that URL, and the
+	// upgrade asks no URL of its own.
+	name, err := machineName("sbx_docker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := r.createOptions(name)
+	opts.URLs.Ingress = machine.URLRequest{}
+	opts.Data, opts.Cache = &machine.DataVolume{}, &machine.CacheVolume{Key: name}
+	inst, err := e.Create(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
