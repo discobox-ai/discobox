@@ -219,8 +219,8 @@ github.com/denis-tingaikin/go-header v0.5.0 h1:SRdnP5ZKvcO9KKRP1KJrhFR3RrlGuD+42
 github.com/denis-tingaikin/go-header v0.5.0/go.mod h1:mMenU5bWrok6Wl2UsZjy+1okegmwQ3UgWl4V1D8gjlY=
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255 h1:d0ZnwjYS8WTsF3N7t/0dgfjUvEJd18H3QNTICJjs/I0=
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
-github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8 h1:lFJ79i3hZemgcTAIDZUs4yeeTMEx4XWzbm3wvSDWim0=
-github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8/go.mod h1:THdE5ix2clxX9lZzcICPpZ67d6CdrPZxdOYsNgU5e30=
+github.com/discobox-ai/goproxy v0.0.0-20261116173614-9cdd04791161 h1:T7ZuvyI98CyLSXMEuFpHip3/YQf0ljdTwRnx31fa9rk=
+github.com/discobox-ai/goproxy v0.0.0-20261116173614-9cdd04791161/go.mod h1:THdE5ix2clxX9lZzcICPpZ67d6CdrPZxdOYsNgU5e30=
 github.com/discobox-ai/hooks v0.0.0-20261104212035-41d925d8be72 h1:4Ylj0F8y/ohIYm0kNpfUDcUK+LvOrUzjxuCVZDEUjak=
 github.com/discobox-ai/hooks v0.0.0-20261104212035-41d925d8be72/go.mod h1:7d0f2wr0FrIVLVhzyapt1P2oiYkGxxG4iOl9Mbrwwyo=
 github.com/discobox-ai/iroh-go v0.4.0 h1:ogqDwo1cxUY08s6n3dBKg48iQlZ7rHtLLRWO4Ps8lhQ=

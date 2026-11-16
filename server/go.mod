@@ -458,12 +458,14 @@ replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v
 replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20261114085742-69bde4a48a94
 
 // goproxy drops the bytes a client sends in the same write as an upgrade
-// request, hanging both ends; see the root go.mod for the detail. Repeated here
+// request, hanging both ends, and finalizes a response whose upstream body
+// failed part way, so the client takes a prefix for the whole body; see the
+// root go.mod for the detail. Repeated here
 // because a replace only applies to the main module, and this module builds
 // proxy itself.
 //
-// Drop this with the one in the root go.mod, once an upstream release fixes both
-// call sites (elazarl/goproxy#805 covers only the MITM half).
-replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
+// Drop this with the one in the root go.mod, once an upstream release fixes all
+// of it (elazarl/goproxy#805 covers only the MITM half of the first).
+replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20261116173614-9cdd04791161
 
 replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4

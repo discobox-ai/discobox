@@ -35,4 +35,9 @@
   dropping the field widens the route (a body block read away leaves an open
   route for the headers), keep such routes outside the lists an older agent
   reads (`bodyRoutes`), so it holds the lists without them, never wider.
-
+- `gateResponseBody` returns the control plane's read error as it is, never
+  `io.EOF` in its place. The sandbox's leg is chunked whatever the control
+  plane sent, so that error is the only thing that makes the pool proxy abort
+  the response instead of handing the sandbox a revoked or broken files read
+  as a whole, shorter file (#655; Incomplete Response Bodies in
+  `proxy/DESIGN.md`).
