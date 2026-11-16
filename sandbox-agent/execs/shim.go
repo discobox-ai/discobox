@@ -777,7 +777,6 @@ func (r *shimRuntime) wait() {
 	code := exit.ExitCode
 	r.status.ExitCode = &code
 	status := r.status
-	attachers := r.stream.Attachers()
 	r.mu.Unlock()
 	// Do not publish terminal status until every byte has been read from the
 	// PTY/pipes and the asynchronous audit log has drained. Callers use terminal
@@ -790,7 +789,13 @@ func (r *shimRuntime) wait() {
 	// the final screen replay and exit code, then notify current attachers.
 	r.stream.MarkExited(payload)
 	close(r.exited)
-	for _, attach := range attachers {
+	// The attachers are listed only now, after the exit frame is retained, so
+	// every attach is told the process ended: one that registered before this
+	// is on the list, and one that registers after finds the retained frame
+	// itself (host.Stream.Attach). One that does both is sent it once, since a
+	// closed attach takes nothing more. lingerThenFinish waits for each of them
+	// to end, so one missed here would keep the shim up for good.
+	for _, attach := range r.stream.Attachers() {
 		_ = attach.WriteFrame(frame.Exit, payload)
 		attach.Close()
 	}
@@ -804,10 +809,27 @@ func (r *shimRuntime) wait() {
 // so a late attacher can replay the final output and read the exit code.
 const exitLingerTimeout = 60 * time.Second
 
+// exitAttachPoll is how often a shim past its linger checks whether the last
+// attach has ended.
+const exitAttachPoll = time.Second
+
+// lingerThenFinish shuts the shim down once the linger is over and no attach is
+// still serving. An attach still taking its output is a client that is behind:
+// a pipe exec's viewer is never cut off for that, and finishing would detach
+// it and drop the end of the command's output and its exit status. A
+// terminal's attach ends on its own, bounded by its write timeout.
 func (r *shimRuntime) lingerThenFinish() {
 	select {
 	case <-time.After(exitLingerTimeout):
 	case <-r.done:
+		return
+	}
+	for r.stream.HasAttachers() {
+		select {
+		case <-time.After(exitAttachPoll):
+		case <-r.done:
+			return
+		}
 	}
 	r.finish()
 }

@@ -250,7 +250,8 @@ flowchart LR
   agent's stderr: a shim outlives the agent, and a Go process writing to a
   pipe whose reader is gone dies of SIGPIPE. The log is collected with the
   unit when it is empty and kept when it is not — a shim writes there only
-  when it fails.
+  when it fails, or when it detaches an attach client that stopped keeping up
+  (below), which is the one place that reason is left.
 - The Windows half of the lock is not written yet. It builds and reports
   every lock as unsupported, which the supervisor never reads as a shim that
   ended.
@@ -1291,8 +1292,8 @@ signer. Error output never includes exporter stderr or parse fragments.
   broadcast before registration is lost. That ordering is structural rather
   than a convention — `host.Attach` registers, then invokes
   `AttachOptions.Ready`, which is where `HandleAttach` writes its `101`, so a
-  caller cannot reorder the two. The attacher registers buffering, so live
-  frames cannot race the handshake bytes onto the wire.
+  caller cannot reorder the two. The attacher registers holding its output, so
+  live frames cannot race the handshake bytes onto the wire.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint
@@ -1345,14 +1346,37 @@ signer. Error output never includes exporter stderr or parse fragments.
   the attacher set under one lock, and registration captures the `Replayer`
   snapshot under that same lock. Every output chunk
   therefore falls on exactly one side of the attach: already absorbed into the
-  snapshot, or buffered as a live frame from registration onward and flushed
-  after the snapshot — so nothing is lost or duplicated. The shim withholds the
+  snapshot, or queued as a live frame behind it from registration onward, the
+  queue held until the join ends — so nothing is lost or duplicated. The shim withholds the
   snapshot until the client sends a `frame.Ready` (the CLI sends it once its
   output reader is running): writing during the HTTP upgrade handshake risks
   losing the leading bytes at an intermediate proxy hop that buffers them before
   its tunnel is wired up. `frame.Ready` proves the tunnel is established end to
   end; a bounded timeout still repaints (best effort) for clients that never
   send it.
+- A terminal viewer's delivery speed decides nothing but its own delivery
+  (`pkg/execstream/host`). `Broadcast`, called by the shim's output readers
+  (`execs` `copyOutput`, one per output stream; a TTY exec has one), queues each
+  chunk per attacher and returns. Each attacher has one writer goroutine and one
+  queue bounded in bytes (`Options.MaxPendingBytes`; a replay's snapshot is
+  queued outside it, so a reconnect is not detached by its own repaint).
+  - On a terminal stream a viewer that falls more than its budget behind is
+    detached (`ErrFellBehind`), and so is one whose frame write makes no
+    progress for `Options.WriteTimeout` (`ErrStalled`): its connection is
+    closed, its client reconnects and is repainted, and the output keeps
+    draining to everyone else.
+  - A pipe exec cannot repaint, and its viewer is usually the command's only
+    reader, so it is never detached for being slow: a full queue holds the
+    producer, with no deadline, as an ordinary pipe would. A second viewer of
+    the same pipe exec waits with it.
+
+  `HandleAttach` logs a detach's reason to the shim's log. An attach that is
+  closed (the exit frame sent) writes everything queued before closing its
+  connection, with no deadline beyond each terminal write's, and the shim does
+  not shut down after its exit linger until the last attach has ended
+  (`lingerThenFinish`), since shutting down (`Options.Done`) detaches whatever
+  is still attached. A replay snapshot rides outside the budget one at a
+  time; a repaint asked for while one is still queued counts.
 - Reconnecting terminal clients establish an opaque logical session through
   `pkg/execstream/resume`. Input, signal, and close-input actions are positioned and
   acknowledged only after the shim applies them. The host retains the highest

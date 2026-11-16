@@ -292,3 +292,18 @@ Global review expectations:
   executable, then rename after signing. Do not build directly over the live
   path: Go may copy in place, and a truncated file retaining its build ID can
   be accepted unchanged on retry.
+- An exec attach (`pkg/execstream/host`) never puts a deadline on a pipe
+  stream's output, its closing drain included, and nothing that owns a stream
+  closes `Options.Done` under an attach still taking it (the shim waits out
+  its attachers after its exit linger): a pipe exec has no repaint, so a
+  viewer cut off loses the rest of the command's output and its exit status.
+  #1261's first cut did both, with a 30s drain budget and the 60s linger.
+  Only a terminal stream's viewer may be detached for being slow, and it
+  recovers by reconnecting with a replay. Keep the protocol `Error` frame
+  behind the output it ends, too: a client stops reading at it.
+- Anything that waits for a stream's attaches to end (the shim's
+  `lingerThenFinish`) relies on every attach being told to end: list the
+  attachers to send `Exit` and `Close` only after `MarkExited`, so an attach
+  that joins meanwhile is either on that list or finds the retained exit frame
+  itself. Listing them before the output drained left a late joiner with
+  neither, and the shim waiting on it for good.

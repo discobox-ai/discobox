@@ -506,13 +506,14 @@ func framePayloads(frames []frame.Frame) []string {
 // the second copy under the repaint it asked for.
 func TestReplayFenceDropsWhatTheSnapshotAlreadyHolds(t *testing.T) {
 	conn, client := newPipe(t)
-	attach := &Attacher{conn: conn, done: make(chan struct{}), ready: make(chan struct{})}
+	attach := New(Options{}).newAttacher(conn)
+	attach.joined()
+	go attach.write()
+	t.Cleanup(func() { attach.detach(errEnded); _ = attach.finish(nil) })
 
-	// A snapshot taken when the Replayer had absorbed seven chunks.
-	attach.beginReplay(7)
-	if err := attach.flushBuffer(); err != nil {
-		t.Fatalf("flush: %v", err)
-	}
+	// A snapshot taken when the Replayer had absorbed seven chunks; its screen
+	// is not what this test is about.
+	attach.beginReplay(7, nil)
 
 	// Drained continuously, and broadcast from a goroutine: a chunk that should
 	// have been dropped has to have somewhere to go, or this fails as a
@@ -537,7 +538,7 @@ func TestReplayFenceDropsWhatTheSnapshotAlreadyHolds(t *testing.T) {
 			{"eighth", 8},  // counted after it: the client has not seen this
 			{"stderr", 0},  // no snapshot can hold it, so it is never dropped
 		} {
-			_ = attach.broadcast(frame.Stdout, []byte(chunk.text), chunk.at)
+			_ = attach.broadcast(frame.Stdout, []byte(chunk.text), chunk.at, true)
 		}
 	}()
 
@@ -671,7 +672,8 @@ func TestRepaintWithNoScreenSetsNoFence(t *testing.T) {
 	s := New(Options{Done: done, Replay: replay})
 	conn, _ := newPipe(t)
 
-	attach := &Attacher{conn: conn, done: make(chan struct{}), ready: make(chan struct{})}
+	attach := s.newAttacher(conn)
+	attach.joined()
 	s.mu.Lock()
 	s.attachers[attach] = struct{}{}
 	s.observed = 5
@@ -681,18 +683,55 @@ func TestRepaintWithNoScreenSetsNoFence(t *testing.T) {
 
 	attach.mu.Lock()
 	fence := attach.replayedThrough
-	buffering := attach.buffering
+	queued := len(attach.data)
 	attach.mu.Unlock()
 	if fence != 0 {
 		t.Fatalf("fence moved to %d for a screen that was never sent, want it left alone", fence)
 	}
-	if buffering {
-		t.Fatal("attacher left buffering with no snapshot coming to flush it behind")
+	if queued != 0 {
+		t.Fatalf("%d frames queued for a screen that was never taken, want none", queued)
 	}
 	replay.mu.Lock()
 	after := replay.after
 	replay.mu.Unlock()
 	if after != 1 {
 		t.Fatalf("AfterReplay ran %d times, want the program nudged into redrawing anyway", after)
+	}
+}
+
+// A viewer that stops reading must not hold up the process's output: the
+// producer that calls Broadcast keeps draining, and every other viewer keeps
+// receiving, while that one viewer's socket is full.
+func TestStalledViewerDoesNotBlockBroadcastOrOtherViewers(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	s := New(Options{Done: done})
+
+	stalled, _ := newPipe(t) // its client end is never read
+	healthy, healthyClient := newPipe(t)
+	go func() { _ = s.Attach(context.Background(), stalled, AttachOptions{}) }()
+	go func() { _ = s.Attach(context.Background(), healthy, AttachOptions{}) }()
+	for len(s.Attachers()) < 2 {
+		time.Sleep(time.Millisecond)
+	}
+
+	const chunks = 3
+	healthyFrames := collect(healthyClient, chunks)
+	produced := make(chan struct{})
+	go func() {
+		defer close(produced)
+		for i := range chunks {
+			s.Broadcast(frame.Stdout, fmt.Appendf(nil, "chunk-%d", i))
+		}
+	}()
+
+	select {
+	case <-produced:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Broadcast blocked on a viewer that stopped reading: the producer cannot drain the process's output")
+	}
+	got := await(t, healthyFrames)
+	if want := []string{"chunk-0", "chunk-1", "chunk-2"}; !slices.Equal(framePayloads(got), want) {
+		t.Fatalf("healthy viewer read %q, want %q", framePayloads(got), want)
 	}
 }
