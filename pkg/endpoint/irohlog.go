@@ -78,31 +78,41 @@ var (
 	irohLogMu     sync.RWMutex
 	irohLogLevel  = IrohLogOff
 	irohLogWriter *log.Logger
+	// irohNativeLogSet records that iroh's own tracing has been given its
+	// level. The library refuses every call after the first (it installs its
+	// subscriber once), so this is what keeps a second call from failing.
+	irohNativeLogSet bool
 )
 
 // SetIrohLogging turns transport logging on at level, writing to out (stderr
 // when nil), and turns iroh's own tracing on at the same level.
 //
 // The native library installs a process-global tracing subscriber the first
-// time it is asked, so only the first call changes *its* verbosity; this
+// time it is asked, and refuses to be asked again, so only the first call that
+// turns logging on sets *its* verbosity and later ones leave it as it is; this
 // package's own level can be changed at any time. That asymmetry is the
 // library's and is why the two are set together here rather than separately by
-// each caller.
+// each caller: a process builds a client more than once (a CLI App per server,
+// the git proxy its own), and each build configures logging again.
 func SetIrohLogging(level IrohLogLevel, out io.Writer) error {
 	if out == nil {
 		out = os.Stderr
 	}
 	irohLogMu.Lock()
+	defer irohLogMu.Unlock()
 	irohLogLevel = level
 	// No date: a diagnostic read beside a server log wants to line up with the
 	// lines around it, and microseconds are what separate two events in one
 	// handshake.
 	irohLogWriter = log.New(out, "iroh: ", log.Ltime|log.Lmicroseconds)
-	irohLogMu.Unlock()
-	if level == IrohLogOff {
+	if level == IrohLogOff || irohNativeLogSet {
 		return nil
 	}
-	return iroh.SetLogLevel(nativeIrohLogLevel(level))
+	if err := iroh.SetLogLevel(nativeIrohLogLevel(level)); err != nil {
+		return err
+	}
+	irohNativeLogSet = true
+	return nil
 }
 
 // nativeIrohLogLevel maps our level onto the library's. The two happen to
