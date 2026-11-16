@@ -112,11 +112,19 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := workflow.Jobs["changes"]; !ok {
+	changes, ok := workflow.Jobs["changes"]
+	if !ok {
 		t.Fatal("ci.yml has no changes job")
 	}
+	// Only a pull request is filtered, so a push skips the job rather than
+	// wait on a runner for an answer it already knows. Every gate below reads
+	// a skipped job's empty output as code, as it does a failed one's.
+	if want := "github.event_name == 'pull_request'"; changes.If != want {
+		t.Errorf("job changes runs if %q, want %q", changes.If, want)
+	}
 	for name, job := range workflow.Jobs {
-		// Fails closed: a failed or missing answer runs the job.
+		// Fails closed: a failed or skipped changes job leaves its output
+		// empty, which is not 'false', so the job runs.
 		want := "${{ !cancelled() && needs.changes.outputs.code != 'false' }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
 		switch name {
 		case "changes":

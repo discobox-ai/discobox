@@ -293,11 +293,11 @@ flowchart TD
   composite action as `nix develop -c go tool task <target>` on Linux, or as
   plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). The
   one exception is CI's first job, `changes`, which runs
-  `scripts/ci-changes.sh` with only git: it decides *when*, and every other
-  job waits on it. A pull request that changes only `docs/` skips every job
+  `scripts/ci-changes.sh` with only git on a pull request (a push skips it):
+  it decides *when*, and every other job waits on it. A pull request that changes only `docs/` skips every job
   but `docs` (`ci:docs`, the checks that read `docs/`); any other run, and
   every push to `main`, runs them all, and so does a run whose `changes`
-  failed. Jobs are skipped by `if`, never by `paths-ignore`, so a required
+  failed or was skipped. Jobs are skipped by `if`, never by `paths-ignore`, so a required
   check still reports. Go's
   build and test cache is Depot Cache, which Depot's runners set as
   `GOCACHEPROG` and every run, pull requests included, reads and writes per
