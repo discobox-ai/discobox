@@ -4,7 +4,7 @@
 //
 //	discobox-main-build version [-repo DIR] [-rev REV]
 //	discobox-main-build newer VERSION LATEST
-//	discobox-main-build prune -repo OWNER/NAME -registry-owner OWNER [-keep 336h]
+//	discobox-main-build prune -repo OWNER/NAME -registry-owner OWNER -release-manifest FILE [-keep 336h]
 //
 // version prints the version a main build of REV takes:
 // v<next patch>-main.<first-parent count>.g<sha7>, the next patch being of the
@@ -18,7 +18,9 @@
 // one's release and tag in the main builds' repository (GH_TOKEN, contents
 // write there), then every ghcr image version whose tags are all main builds
 // that no longer have a release (PACKAGES_TOKEN, packages write on the
-// owner's discobox-* packages).
+// owner's discobox-* packages). The images are those -release-manifest, the
+// release.json of the build being published, names under the owner's ghcr
+// namespace at that build's version.
 package main
 
 import (
@@ -29,12 +31,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/mod/semver"
 
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/pkg/version"
 )
 
@@ -79,18 +83,28 @@ func run(ctx context.Context, args []string) error {
 		owner := flags.String("registry-owner", "", "the ghcr.io owner the main builds' images are pushed under")
 		keep := flags.Duration("keep", 14*24*time.Hour, "how long a main build is kept")
 		api := flags.String("api", "https://api.github.com", "the GitHub API")
+		manifest := flags.String("release-manifest", "", "the release.json of the build being published, naming the images to prune")
 		dryRun := flags.Bool("dry-run", false, "say what would be deleted, and delete nothing")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		if *repo == "" || *owner == "" {
-			return errors.New("prune: -repo and -registry-owner are required")
+		if *repo == "" || *owner == "" || *manifest == "" {
+			return errors.New("prune: -repo, -registry-owner and -release-manifest are required")
+		}
+		m, err := releasemanifest.Read(*manifest)
+		if err != nil {
+			return err
+		}
+		images, err := releaseImages(m, *owner)
+		if err != nil {
+			return err
 		}
 		p := pruner{
 			releases: newClient(*api, os.Getenv("GH_TOKEN")),
 			packages: newClient(*api, os.Getenv("PACKAGES_TOKEN")),
 			repo:     *repo,
 			owner:    *owner,
+			images:   images,
 			cutoff:   time.Now().Add(-*keep),
 			dryRun:   *dryRun,
 			log:      os.Stdout,
@@ -99,6 +113,30 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q: version, newer or prune", args[0])
 	}
+}
+
+// releaseImages names the ghcr packages the release m pushed under owner: each
+// image and bundle it pins at its own version in ghcr.io/<owner>. What it pins
+// by digest (the VM guest and kernel) is released on its own line, and never
+// carries a main build's tag.
+func releaseImages(m releasemanifest.Manifest, owner string) ([]string, error) {
+	prefix, suffix := "ghcr.io/"+owner+"/", ":"+m.Version
+	var names []string
+	for _, ref := range m.AllReferences() {
+		name, ok := strings.CutPrefix(ref, prefix)
+		if !ok {
+			continue
+		}
+		if name, ok = strings.CutSuffix(name, suffix); !ok || strings.ContainsAny(name, "/:@") {
+			continue
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("the release manifest names no image under ghcr.io/%s at %s", owner, m.Version)
+	}
+	slices.Sort(names)
+	return names, nil
 }
 
 // mainVersion is the version of a main build of rev in the checkout at dir.

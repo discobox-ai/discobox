@@ -1772,8 +1772,12 @@ tasks:
   release:prune-main:
     desc: Delete main builds older than fourteen days, their releases, tags and images, keeping the newest
     # GH_TOKEN writes the main builds' repository; PACKAGES_TOKEN deletes the
-    # images' main-build tags from ghcr (ADR 26-11-16-249 §6). DRY_RUN=yes
-    # says what it would delete and deletes nothing.
+    # images' main-build tags from ghcr (ADR 26-11-16-249 §6), the images being
+    # those build/release/bin/release.json names, which release:publish wrote.
+    # DRY_RUN=yes says what it would delete and deletes nothing.
+    preconditions:
+      - sh: test -f build/release/bin/release.json
+        msg: "release:prune-main prunes the images build/release/bin/release.json names; build it with release:build and release:manifest first"
     cmds:
       - |
         set -eu
@@ -1783,7 +1787,8 @@ tasks:
           echo "release:prune-main: could not resolve the repository and registry; pass RELEASE_REPO= and REGISTRY=" >&2
           exit 1
         fi
-        go run ./internal/cmd/discobox-main-build prune -repo "{{.MAIN_REPO}}" -registry-owner "$owner" {{if .DRY_RUN}}-dry-run{{end}}
+        go run ./internal/cmd/discobox-main-build prune -repo "{{.MAIN_REPO}}" -registry-owner "$owner" \
+          -release-manifest build/release/bin/release.json {{if .DRY_RUN}}-dry-run{{end}}
 
   release:manifest:
     desc: Assemble every platform's CLI, server, and image metadata into release.json

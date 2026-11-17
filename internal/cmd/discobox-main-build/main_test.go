@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 )
 
 func git(t *testing.T, dir string, args ...string) string {
@@ -106,6 +108,9 @@ type fakeGitHub struct {
 	versions map[string][]map[string]any
 	deleted  []string
 	auth     map[string]string
+	// installationToken answers the organization's package listing the way
+	// GitHub answers a workflow's GITHUB_TOKEN.
+	installationToken bool
 }
 
 func (f *fakeGitHub) handler(t *testing.T) http.Handler {
@@ -129,15 +134,13 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 	mux.HandleFunc("DELETE /repos/o/main/releases/{id}", func(_ http.ResponseWriter, r *http.Request) { record(r) })
 	mux.HandleFunc("DELETE /repos/o/main/git/refs/tags/{tag}", func(_ http.ResponseWriter, r *http.Request) { record(r) })
 	mux.HandleFunc("GET /users/o", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, `{"type":"Organization"}`) })
-	mux.HandleFunc("GET /orgs/o/packages", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("package_type") != "container" {
-			t.Errorf("packages listed without package_type=container: %s", r.URL)
+	mux.HandleFunc("GET /orgs/o/packages", func(w http.ResponseWriter, _ *http.Request) {
+		if f.installationToken {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"message":"Invalid argument."}`)
+			return
 		}
-		var pkgs []map[string]any
-		for name := range f.versions {
-			pkgs = append(pkgs, map[string]any{"name": name})
-		}
-		list(w, r, pkgs)
+		t.Error("prune listed the organization's packages")
 	})
 	mux.HandleFunc("GET /orgs/o/packages/container/{name}/versions", func(w http.ResponseWriter, r *http.Request) {
 		list(w, r, f.versions[r.PathValue("name")])
@@ -175,7 +178,6 @@ func TestPrune(t *testing.T) {
 			// An orphan of a build whose release was deleted on an earlier run.
 			imageVersion(15, older, "v1.0.1-main.5.gddddddd"),
 		},
-		"other-thing": {imageVersion(20, older, "v1.0.1-main.5.gddddddd")},
 	}
 	server := httptest.NewServer(f.handler(t))
 	t.Cleanup(server.Close)
@@ -184,7 +186,7 @@ func TestPrune(t *testing.T) {
 	p := pruner{
 		releases: newClient(server.URL, "contents-token"),
 		packages: newClient(server.URL, "packages-token"),
-		repo:     "o/main", owner: "o",
+		repo:     "o/main", owner: "o", images: []string{"discobox-agent"},
 		cutoff: now.Add(-14 * 24 * time.Hour),
 		log:    &log,
 	}
@@ -219,7 +221,7 @@ func TestPruneKeepsTheNewestHoweverOld(t *testing.T) {
 	}
 	server := httptest.NewServer(f.handler(t))
 	t.Cleanup(server.Close)
-	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o",
+	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o", images: []string{"discobox-agent"},
 		cutoff: time.Now().Add(-14 * 24 * time.Hour), log: io.Discard}
 	if err := p.prune(context.Background()); err != nil {
 		t.Fatal(err)
@@ -242,7 +244,7 @@ func TestPruneTreatsADraftAsAFailedPublish(t *testing.T) {
 	}
 	server := httptest.NewServer(f.handler(t))
 	t.Cleanup(server.Close)
-	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o",
+	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o", images: []string{"discobox-agent"},
 		cutoff: time.Now().Add(-14 * 24 * time.Hour), log: io.Discard}
 	if err := p.prune(context.Background()); err != nil {
 		t.Fatal(err)
@@ -265,7 +267,7 @@ func TestPruneDryRunDeletesNothing(t *testing.T) {
 	server := httptest.NewServer(f.handler(t))
 	t.Cleanup(server.Close)
 	var log strings.Builder
-	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o",
+	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o", images: []string{"discobox-agent"},
 		cutoff: time.Now().Add(-14 * 24 * time.Hour), dryRun: true, log: &log}
 	if err := p.prune(context.Background()); err != nil {
 		t.Fatal(err)
@@ -275,5 +277,88 @@ func TestPruneDryRunDeletesNothing(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "v1.0.1-main.1.gaaaaaaa") {
 		t.Errorf("a dry run did not say what it would delete:\n%s", log.String())
+	}
+}
+
+// The publish job prunes images with its own GITHUB_TOKEN, which GitHub lets
+// read and delete a named package's versions but never list the
+// organization's packages.
+func TestPruneImagesWithAWorkflowToken(t *testing.T) {
+	old := time.Now().Add(-60 * 24 * time.Hour)
+	f := &fakeGitHub{auth: map[string]string{}, installationToken: true, versions: map[string][]map[string]any{
+		"discobox-agent": {imageVersion(10, old, "v1.0.1-main.1.gaaaaaaa")},
+	}}
+	f.releases = []map[string]any{
+		{"id": 2, "tag_name": "v1.0.1-main.2.gbbbbbbb", "created_at": time.Now()},
+		{"id": 1, "tag_name": "v1.0.1-main.1.gaaaaaaa", "created_at": old},
+	}
+	server := httptest.NewServer(f.handler(t))
+	t.Cleanup(server.Close)
+	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o",
+		images: []string{"discobox-agent"}, cutoff: time.Now().Add(-14 * 24 * time.Hour), log: io.Discard}
+	if err := p.prune(context.Background()); err != nil {
+		t.Fatalf("prune with a workflow token: %v", err)
+	}
+	want := []string{"/repos/o/main/releases/1", "/repos/o/main/git/refs/tags/v1.0.1-main.1.gaaaaaaa", "/orgs/o/packages/container/discobox-agent/versions/10"}
+	if !slices.Equal(f.deleted, want) {
+		t.Fatalf("deleted %v, want %v", f.deleted, want)
+	}
+}
+
+// Only a discobox-* package is ever pruned, whatever the manifest names, and
+// one that is not fails the run before any build is deleted.
+func TestPruneRefusesAnImageNotDiscobox(t *testing.T) {
+	old := time.Now().Add(-60 * 24 * time.Hour)
+	f := &fakeGitHub{auth: map[string]string{}, versions: map[string][]map[string]any{}}
+	f.releases = []map[string]any{
+		{"id": 2, "tag_name": "v1.0.1-main.2.gbbbbbbb", "created_at": time.Now()},
+		{"id": 1, "tag_name": "v1.0.1-main.1.gaaaaaaa", "created_at": old},
+	}
+	server := httptest.NewServer(f.handler(t))
+	t.Cleanup(server.Close)
+	p := pruner{releases: newClient(server.URL, ""), packages: newClient(server.URL, ""), repo: "o/main", owner: "o",
+		images: []string{"discobox-agent", "other-thing"}, cutoff: time.Now().Add(-14 * 24 * time.Hour), log: io.Discard}
+	if err := p.prune(context.Background()); err == nil || !strings.Contains(err.Error(), "other-thing") {
+		t.Fatalf("prune of other-thing: err %v", err)
+	}
+	if len(f.deleted) != 0 {
+		t.Fatalf("deleted %v before refusing other-thing", f.deleted)
+	}
+}
+
+// The images pruned are those the build pushed: what its manifest pins at its
+// own version under the owner's namespace, not the VM guest and kernel it pins
+// by digest from their own line, nor an image under another owner.
+func TestReleaseImages(t *testing.T) {
+	v := "v1.0.1-main.3.gccccccc"
+	m := releasemanifest.Manifest{
+		Format:  1,
+		Version: v,
+		Images: releasemanifest.Images{
+			SandboxBase: "ghcr.io/o/discobox-sandbox-base:" + v,
+			VM:          "ghcr.io/o/discobox-vm@sha256:" + strings.Repeat("a", 64),
+			Kernel:      "ghcr.io/o/discobox-vm-kernel:v40",
+		},
+		Bundles: releasemanifest.Bundles{
+			Platform:  "ghcr.io/o/discobox-platform:" + v,
+			Agent:     "ghcr.io/o/discobox-agent:" + v,
+			PoolAgent: "ghcr.io/o/discobox-pool-agent-bundle:" + v,
+			Harnesses: map[string]string{
+				"shell":       "ghcr.io/o/discobox-harness-shell:" + v,
+				"claude-code": "ghcr.io/o/discobox-harness-claude-code:" + v,
+				"elsewhere":   "ghcr.io/other/discobox-harness-elsewhere:" + v,
+			},
+		},
+	}
+	got, err := releaseImages(m, "o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"discobox-agent", "discobox-harness-claude-code", "discobox-harness-shell", "discobox-platform", "discobox-pool-agent-bundle", "discobox-sandbox-base"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("releaseImages = %v\nwant %v", got, want)
+	}
+	if _, err := releaseImages(m, "nobody"); err == nil {
+		t.Error("a manifest naming no image under the owner gave no error")
 	}
 }
