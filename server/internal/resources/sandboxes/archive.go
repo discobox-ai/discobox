@@ -7,6 +7,7 @@ import (
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // DefaultArchiveRetention is how long an archived sandbox is kept when neither
@@ -75,6 +76,9 @@ func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox,
 	}
 
 	if err := r.archiveSandbox(ctx, sandbox); err != nil {
+		if teardownNotAnswered(ctx, err) {
+			return reconcile.Result{}, err
+		}
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
@@ -116,6 +120,20 @@ func (r *SandboxReconciler) armArchiveExpiry(sb *model.Sandbox, retention time.D
 		return reconcile.Result{}
 	}
 	return reconcile.RequeueAt(archiveDeadline(sb, retention))
+}
+
+// teardownNotAnswered is whether a teardown — an archive, a delete, or the
+// archive a repair runs before it rebuilds — failed without the pool's answer
+// to it: the pool was not reachable, or the reconcile's context
+// ended. Neither is the reconciler giving up on the intent, so neither settles
+// it (ADR 0017 §3): the generation stays unobserved and the engine retries with
+// backoff. A pool is unreachable for a while after every server restart, until
+// the pool reconciler brings its host back, and an archive accepted just
+// before a shutdown is retried in exactly that window; settled there, it was
+// left `failed` with nothing to drive it again (#1043). The pool's own refusal
+// still settles, as any other failure does.
+func teardownNotAnswered(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || errors.Is(err, sandbox.ErrPoolNotReachable)
 }
 
 // archiveSandbox is the provider call. A sandbox with no provider — one that

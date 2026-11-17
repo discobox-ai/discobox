@@ -271,6 +271,9 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	// its row still reading `ready`.
 	if sandbox.RepairGeneration == generation && !sandbox.Converged() && !firstCreate {
 		if err := r.archiveSandbox(ctx, sandbox); err != nil {
+			if teardownNotAnswered(ctx, err) {
+				return reconcile.Result{}, err
+			}
 			sandbox.ObservedGeneration = generation
 			sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
@@ -369,6 +372,9 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 	}
 
 	if err := r.deleteSandbox(ctx, sandbox); err != nil {
+		if teardownNotAnswered(ctx, err) {
+			return err
+		}
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
