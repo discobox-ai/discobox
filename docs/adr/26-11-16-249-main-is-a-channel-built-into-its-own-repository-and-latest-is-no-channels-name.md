@@ -237,9 +237,19 @@ is tagged at all.
   notice.
 - **A stale VM pin on main.** Whether `release:check-vm-pins` refuses a main
   build the way it refuses a tag, or only records the override in its notes.
+  *Decided by the owner, 2026-11-17, before any main build shipped: it
+  records.* A main build has no tag annotation to carry an override, and is for
+  trying main, so it is built with the stale pin at the top of its release
+  notes. A tag is still refused.
 - **Pruning ghcr tags**: which token deletes package versions, and whether a
   tag shared by a main build and a release is possible at all (it should not
-  be, by §5).
+  be, by §5). *Decided in implementation, 2026-11-17:* the workflow's own
+  `GITHUB_TOKEN` with `packages: write`, the token that pushed them. A version
+  is deleted only when every tag it carries is a pruned main build's, so one
+  shared with a release is never deleted. Untagged versions (an index's
+  per-platform and attestation manifests) are never deleted: the bundles are
+  reproducible, so one is routinely shared by many builds and releases, and
+  proving none still names it means reading every remaining index.
 
 ## Consequences
 
