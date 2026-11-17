@@ -36,8 +36,10 @@ curl -sSfL https://discobox.ai | sh -s -- --version TAG
 & ([scriptblock]::Create((irm https://discobox.ai/install.ps1))) -Version TAG
 ```
 
-`discobox-dev` is Homebrew's latest dot release channel; it does not select
-an `-rc` tag. Stable and development clients share local state and cannot run
+`discobox-beta` is Homebrew's beta channel, the newest dot release; it does not
+select an `-rc` tag. To try what is on the main branch, install its newest
+build with `curl -sSfL https://main.discobox.ai | sh`; main builds are kept for
+fourteen days. Every channel shares local state, so two installs cannot run
 their servers simultaneously.
 
 Discobox supports macOS, Linux and Windows. On Linux, the built-in provider
