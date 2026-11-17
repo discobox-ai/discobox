@@ -1,6 +1,6 @@
 # 26-10-16-420 — A Docker pool freezes a sleeping sandbox, and a person can suspend one
 
-- **Status**: Accepted
+- **Status**: Accepted (§4 amended by [26-11-17-583](26-11-17-583-a-sleep-may-leave-a-note-for-the-next-start.md): a thaw sets aside the notes for the next start with the due wakes)
 - **Date**: 2026-10-16
 - **Amends**: [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md)
   §5, where every runtime implemented power-down for sleep as a stop, and its
