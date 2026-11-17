@@ -56,8 +56,9 @@ state such as trust and recent-model history. Exclusion patterns match actual
 object path segments, with `*` for one and `**` for any depth. This is known-shape
 normalization, not a scanner for secrets embedded in arbitrary strings.
 Parents emptied by exclusions are omitted; explicitly empty user objects remain.
-Codex's model-availability tooltip state is local bookkeeping and is excluded
-from both current settings and delivered baselines.
+Codex's first-run bookkeeping, its model-availability tooltip state and its
+`tui.screen_reader_detection_done` flag, is local and is excluded from both
+current settings and delivered baselines.
 Credential files still use strict schemas and sentinel references; they are never
 ordinary settings. Recognized exclusions do not themselves create diagnostics.
 JSON/JSONC accepts comments and trailing commas where the CLI does. TOML and YAML
