@@ -3,6 +3,7 @@
 - **Status**: Accepted (decided by the maintainer on 2026-10-27, delivering
   #127)
 - **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — for a pool machine's network fenced first
+- **Narrowed by**: [26-11-16-619](26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md) — a pool provisioned as a Docker pool is, on a driver whose guest init is not systemd: systemd is started as 619 §4 says, the units unchanged
 - **Date**: 2026-10-27
 - **Supersedes**:
   [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
