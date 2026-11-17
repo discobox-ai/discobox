@@ -66,7 +66,7 @@ func (m *matcher) graphQL(block *GraphQL, blocked bool) (bool, string) {
 				return true, "a " + op.operation
 			}
 			if i := slices.IndexFunc(op.fields, fieldIn); i >= 0 {
-				return true, "a " + op.operation + " of the root field " + safe(op.fields[i])
+				return true, "a " + op.operation + " of the root field " + Safe(op.fields[i])
 			}
 		}
 		return false, ""
@@ -84,7 +84,7 @@ func (m *matcher) graphQL(block *GraphQL, blocked bool) (bool, string) {
 			return false, "does not allow a " + op.operation
 		}
 		if i := slices.IndexFunc(op.fields, func(field string) bool { return !fieldIn(field) }); i >= 0 {
-			return false, "does not allow the root field " + safe(op.fields[i])
+			return false, "does not allow the root field " + Safe(op.fields[i])
 		}
 	}
 	return true, ""
@@ -247,7 +247,7 @@ func (m *matcher) mcp(block *MCP, blocked bool) (bool, string) {
 		}
 		for _, message := range read.messages {
 			if message.kind == mcpToolCall && anyNameMatches(block.Tools, message.tool) {
-				return true, "the tool " + safe(message.tool)
+				return true, "the tool " + Safe(message.tool)
 			}
 		}
 		return false, ""
@@ -267,10 +267,10 @@ func (m *matcher) mcp(block *MCP, blocked bool) (bool, string) {
 		switch message.kind {
 		case mcpToolCall:
 			if !anyNameMatches(block.Tools, message.tool) {
-				return false, "does not allow the tool " + safe(message.tool)
+				return false, "does not allow the tool " + Safe(message.tool)
 			}
 		case mcpOther:
-			return false, "does not allow the MCP method " + safe(message.method)
+			return false, "does not allow the MCP method " + Safe(message.method)
 		}
 	}
 	return true, ""

@@ -26,10 +26,35 @@ so it bounds route-pair traversal, string comparisons and repeated path splittin
 refusal requesting provably narrower routes or a person's grant. Omitted binding
 lists inherit and are handled by the caller's effective-parent binding.
 
+# WebSocket message places
+
+A `websocket` block (ADR 26-11-06-442) grants places in the client's JSON text
+messages on the connection a route's request upgrades: an exact RFC 6901
+pointer, and optional top-level conditions compared as exact scalars. It is
+the one block whose absence grants nothing: an open route without one,
+`*` included, is no message candidate. `Request.Message` carries a parsed
+message and `At` its pointers; candidates are a WebSocket route whose place
+allows the pointer in that message, or a blocked route without a protocol
+block. Specificity is host then path as for every use; conditions add none.
+
+`ParseMessage` reads one strict JSON object (`ParseDocument` any value, which
+the proxy reads body places in too): no duplicate members, no
+unpaired surrogates, depth 64, with numbers kept as exact decimals
+(`canonicalNumber`), so `2` and `2.0` are one value and no float rounding
+joins two. Conditions are stored in that canonical spelling, which makes
+`Format` and containment comparisons byte equality. The typed form is
+`ws=` and a JSON array, cut out of the text as one JSON value before the
+rest is split into words.
+
+Containment needs a WebSocket block on both sides; each child place matches a
+parent pointer and repeats every parent condition. `WebSocketCandidate` tells
+the proxy which upgrades to inspect, and `PlacesAllowed` refuses a grant
+naming a message place no list could allow.
+
 # Body places a grant can use
 
-`BodyPlacesAllowed` says whether one list can ever allow a grant's body
-places: each place an open body route of the grant names must be named by an
+`PlacesAllowed` says whether one list can ever allow a grant's body and
+message places: each place an open body route of the grant names must be named by an
 open body route of the list on an overlapping host and method, since `*`
 grants no body place. It answers only for what is certainly disjoint (hosts,
 methods); paths and blocks stay `Decide`'s. Callers run it against every list

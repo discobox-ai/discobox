@@ -6,7 +6,9 @@
 // a suffix, or `*` alone for any host (ADR 26-10-27-939) — and, optionally,
 // the methods, the paths (segment globs) and the GraphQL operations or MCP
 // tools it allows, or the places in a JSON request body a credential is
-// swapped at (a body block, #1012; ADR 26-11-11-080 §9). A blocked route refuses what it is the most specific
+// swapped at (a body block, #1012; ADR 26-11-11-080 §9), or the places in the
+// messages a client sends on the WebSocket connection it upgrades (a
+// WebSocket block, ADR 26-11-06-442). A blocked route refuses what it is the most specific
 // candidate for: it is a carve-out inside a wider route of the same list, and
 // what a route a judge used to read became, so that removing the judge sent
 // nothing on it unjudged. A credential is held to several lists at once — its
@@ -45,16 +47,19 @@ import (
 
 // Route is where a secret may be sent. Every part but Hosts is optional, and
 // an absent part allows anything: no methods is any method, no paths is any
-// path, and no protocol block is any body. A blocked route refuses the
-// requests it is the most specific candidate for.
+// path, and no protocol block is any body. The one exception is a WebSocket
+// message: only a route with a WebSocket block names a place in one, so no
+// WebSocket block is no message place (ADR 26-11-06-442 §2). A blocked route
+// refuses the requests it is the most specific candidate for.
 type Route struct {
-	Hosts   []string `json:"hosts"`
-	Methods []string `json:"methods,omitempty"`
-	Paths   []string `json:"paths,omitempty"`
-	GraphQL *GraphQL `json:"graphql,omitempty"`
-	MCP     *MCP     `json:"mcp,omitempty"`
-	Body    *Body    `json:"body,omitempty"`
-	Blocked bool     `json:"blocked,omitempty"`
+	Hosts     []string   `json:"hosts"`
+	Methods   []string   `json:"methods,omitempty"`
+	Paths     []string   `json:"paths,omitempty"`
+	GraphQL   *GraphQL   `json:"graphql,omitempty"`
+	MCP       *MCP       `json:"mcp,omitempty"`
+	Body      *Body      `json:"body,omitempty"`
+	WebSocket *WebSocket `json:"websocket,omitempty"`
+	Blocked   bool       `json:"blocked,omitempty"`
 }
 
 // Body holds a route to places in a JSON request body: the credential is
@@ -88,6 +93,15 @@ type MCP struct {
 	Tools []string `json:"tools,omitempty"` // tools/call params.name, trailing * allowed; none = any tool
 }
 
+// HostWide reports whether a route says nothing of a request but its host:
+// no methods, no paths and no protocol block. Anything a route narrows a
+// request by is a part a person approving it must see, so every view that
+// shows such a route by its hosts alone asks this, and a new block is added
+// here once.
+func (r Route) HostWide() bool {
+	return len(r.Methods) == 0 && len(r.Paths) == 0 && r.GraphQL == nil && r.MCP == nil && r.Body == nil && r.WebSocket == nil
+}
+
 // AnyHost is the route host that covers every host (ADR 26-10-27-939). It is
 // the least specific host there is: a route naming any host is more specific
 // than it, so within a list a narrower route still answers for what it covers.
@@ -98,7 +112,7 @@ const BlockedSuffix = "=blocked"
 
 // Syntax is the typed form of a route, as Parse reads it and Format writes it,
 // for help text and errors to show.
-const Syntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][" + BlockedSuffix + "]"
+const Syntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][" + BlockedSuffix + "]"
 
 // The GraphQL operation types a route may name.
 var graphqlOperations = []string{"query", "mutation", "subscription"}
@@ -106,9 +120,10 @@ var graphqlOperations = []string{"query", "mutation", "subscription"}
 // Normalize is the one reading of a route: it validates every part, lower-cases
 // hosts and operation types, upper-cases methods, and sorts and dedupes every
 // list. A `*` among a block's fields or tools is every one, so the list is
-// dropped. A route without hosts, or with more than one of a GraphQL, an MCP
-// and a body block, is refused: no body is both GraphQL and MCP, and a body
-// block names where a credential goes, not what a request does.
+// dropped. A route without hosts, or with more than one of a GraphQL, an MCP,
+// a body and a WebSocket block, is refused: no body is both GraphQL and MCP,
+// and a body or WebSocket block names where a credential goes, not what a
+// request does.
 func Normalize(r Route) (Route, error) {
 	out := Route{Blocked: r.Blocked}
 	if len(r.Hosts) == 0 {
@@ -140,6 +155,16 @@ func Normalize(r Route) (Route, error) {
 	}
 	if r.Body != nil && (r.GraphQL != nil || r.MCP != nil) {
 		return Route{}, fmt.Errorf("a route with body places has no GraphQL or MCP block: it names where a credential goes in the body, not what the request does")
+	}
+	if r.WebSocket != nil && (r.GraphQL != nil || r.MCP != nil || r.Body != nil) {
+		return Route{}, fmt.Errorf("a route with WebSocket message places has no GraphQL, MCP or body block: it names where a credential goes in a message, not what the request does")
+	}
+	if r.WebSocket != nil {
+		ws, err := normalizeWebSocket(r.WebSocket)
+		if err != nil {
+			return Route{}, err
+		}
+		out.WebSocket = ws
 	}
 	if r.Body != nil {
 		if len(r.Body.Places) == 0 {
@@ -310,14 +335,16 @@ func sortedSet(list []string) []string {
 
 // Parse reads a route as a person types it (Syntax):
 //
-//	[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]
+//	[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked]
 //
 // METHODS is an optional first word of upper-case methods joined by commas.
 // HOSTS is a comma list up to the first "/", and PATHS from it, several
 // joined by a "," immediately followed by "/". OPS is a comma list of
 // operation types, or `*` for any, and FIELDS a comma list of root fields;
 // TOOLS is a comma list of tool names, or `*` for any. PLACES is one or more
-// JSON pointers into the request body, joined like PATHS. The `=blocked` suffix
+// JSON pointers into the request body, joined like PATHS. The ws= PLACES
+// are one JSON array of message places, {"at": POINTER, "when": {NAME:
+// SCALAR}}, read as one JSON value whatever whitespace is inside it. The `=blocked` suffix
 // on the whole text blocks the route. The route is normalized. Any other word
 // is refused: an "=" anywhere else is the use a route once carried, which
 // nothing reads any more.
@@ -347,6 +374,20 @@ func Parse(text string) (Route, error) {
 
 // parseOpen reads a route without its blocked suffix.
 func parseOpen(text string) (Route, error) {
+	text, ws, err := cutWebSocket(text)
+	if err != nil {
+		return Route{}, err
+	}
+	route, err := parseWords(text)
+	if err != nil {
+		return Route{}, err
+	}
+	route.WebSocket = ws
+	return Normalize(route)
+}
+
+// parseWords reads a route's words but its ws= word, without normalizing it.
+func parseWords(text string) (Route, error) {
 	words := strings.Fields(text)
 	if len(words) == 0 {
 		return Route{}, fmt.Errorf("a route must name a host")
@@ -425,7 +466,7 @@ func parseOpen(text string) (Route, error) {
 			return Route{}, fmt.Errorf("%q is not part of a route: a route is %s", word, Syntax)
 		}
 	}
-	return Normalize(route)
+	return route, nil
 }
 
 // knownMethods are the HTTP methods a word is read as, whatever its case, to
@@ -507,6 +548,10 @@ func Format(r Route) string {
 	if r.Body != nil {
 		b.WriteString(" body=")
 		b.WriteString(strings.Join(r.Body.Places, ","))
+	}
+	if r.WebSocket != nil {
+		b.WriteString(" ws=")
+		b.Write(marshalPlaces(r.WebSocket.Places))
 	}
 	if r.Blocked {
 		b.WriteString(BlockedSuffix)

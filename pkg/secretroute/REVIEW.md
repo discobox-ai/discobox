@@ -65,10 +65,10 @@
 
 - **A reason carries at most `reasonNameLimit` runes of anything a request
   names** (a tool, a root field, a method, a host and path), cut with an
-  ellipsis by `safe`, which also escapes it. A request bounds those names only
+  ellipsis by `Safe`, which also escapes it. A request bounds those names only
   by the body limit, and a reason goes back to the sandbox, into the audit
   row, and onto every screen that shows it (t103). Never put request-derived
-  text in a reason except through `safe`.
+  text in a reason except through `Safe` (exported, so the proxy uses the same one).
 
 - Keep containment input bounds aligned with credential-request route and byte
   bounds. A delegation combines resolved policies, including repeated shared
@@ -91,3 +91,20 @@
   grants, each allowing one use, allow neither together. Any new kind of
   place follows the same split.
 
+- **No WebSocket block is no message place, whatever else the route says.**
+  Every other block's absence allows any body; reusing that for messages
+  would let a host route put a credential into any field a service publishes
+  (ADR 26-11-06-442 §2). A blocked route without a protocol block still
+  refuses a message on its host and path, and a WebSocket route grants no
+  header or body use.
+- Read a message strictly and compare conditions on the original, before any
+  value is swapped in. A lenient decoder takes the last of two members and
+  replaces an unpaired surrogate, either of which lets the proxy and the
+  origin read a different message.
+- Every view that shows a route by its hosts alone asks `Route.HostWide`,
+  never its own list of fields: the hand-written lists missed the body block
+  once and the WebSocket block once (`routesSection`), showing a narrowed
+  route as a bare host at approval.
+- A place shown for approval (`MessagePlace.Describe`) quotes its pointer and
+  every condition name: a name may read "op is 2 and nonce", and shown bare
+  an approver reads a condition the place does not have.

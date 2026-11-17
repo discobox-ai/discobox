@@ -190,7 +190,10 @@ func ResolveDocument(data []byte, args map[string]string) (Resolved, error) {
 	used := map[string]bool{}
 	remainingPathBytes := policyByteLimit
 	for i, route := range doc.Routes {
-		// Only paths allow placeholders. Check all other fields as encoded JSON.
+		// Only paths allow placeholders. Check all other fields as encoded
+		// JSON: a WebSocket message place's pointer and conditions included
+		// (ADR 26-11-06-442 §1), whose parameters wait for a service that
+		// needs them.
 		paths := route.Paths
 		route.Paths = nil
 		other, err := json.Marshal(route)
@@ -288,6 +291,14 @@ func checkJSON(d *json.Decoder, t reflect.Type, path string, depth int) error {
 	tok, err := d.Token()
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
+	}
+	// A raw value is a WebSocket message place's condition: a JSON scalar,
+	// null included, which secretroute.Normalize reads exactly.
+	if t == reflect.TypeFor[json.RawMessage]() {
+		if delim, ok := tok.(json.Delim); ok {
+			return fmt.Errorf("%s: want a string, number, true, false or null, not %s", path, delim)
+		}
+		return nil
 	}
 	if tok == nil {
 		return fmt.Errorf("%s: null is not permitted", path)

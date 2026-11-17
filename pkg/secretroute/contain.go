@@ -34,6 +34,11 @@ func ProveContained(secret, grant, limit []Route) error {
 			if r.Body != nil {
 				patterns += len(r.Body.Places)
 			}
+			if r.WebSocket != nil {
+				for _, place := range r.WebSocket.Places {
+					patterns += 1 + len(place.When)
+				}
+			}
 			if bytes > agentcreds.MaxRequestRouteBytes || patterns > 16384 {
 				return nil, fmt.Errorf("route containment proof input exceeds its limit")
 			}
@@ -75,7 +80,7 @@ func ProveContained(secret, grant, limit []Route) error {
 	// Never reason about them as independent negative rectangles.
 	for _, r := range d {
 		if r.Blocked {
-			return fmt.Errorf("containment against blocked delegation route %s cannot be proved", safe(Format(r)))
+			return fmt.Errorf("containment against blocked delegation route %s cannot be proved", Safe(Format(r)))
 		}
 	}
 	for _, r := range g {
@@ -90,7 +95,7 @@ func ProveContained(secret, grant, limit []Route) error {
 			}
 		}
 		if !fits {
-			return fmt.Errorf("grant route %s is not covered by the delegation; use a provably narrower list or ask a person", safe(Format(r)))
+			return fmt.Errorf("grant route %s is not covered by the delegation; use a provably narrower list or ask a person", Safe(Format(r)))
 		}
 	}
 	return nil
@@ -119,6 +124,20 @@ func openContained(g, d Route) bool {
 	}
 	if d.Body != nil && !patternsContained(g.Body.Places, d.Body.Places, func(a, b string) bool { return a == b }) {
 		return false
+	}
+	// A WebSocket block likewise grants message places and nothing else (ADR
+	// 26-11-06-442 §2): the two sides agree on having one, and each place the
+	// grant names fits one the parent names, at the same pointer and in no
+	// message the parent's conditions leave out.
+	if (g.WebSocket == nil) != (d.WebSocket == nil) {
+		return false
+	}
+	if d.WebSocket != nil {
+		for _, child := range g.WebSocket.Places {
+			if !slices.ContainsFunc(d.WebSocket.Places, func(parent MessagePlace) bool { return placeContained(child, parent) }) {
+				return false
+			}
+		}
 	}
 	return true
 }
@@ -193,6 +212,14 @@ func containmentWork(routes []Route) int {
 		for _, patterns := range groups {
 			for _, pattern := range patterns {
 				n += 1 + len(pattern)
+			}
+		}
+		if r.WebSocket != nil {
+			for _, place := range r.WebSocket.Places {
+				n += 1 + len(place.At)
+				for name, scalar := range place.When {
+					n += 1 + len(name) + len(scalar)
+				}
 			}
 		}
 	}

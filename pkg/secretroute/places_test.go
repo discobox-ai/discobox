@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestBodyPlacesAllowed(t *testing.T) {
+func TestPlacesAllowed(t *testing.T) {
 	routes := func(texts ...string) []Route {
 		var out []Route
 		for _, s := range texts {
@@ -39,9 +39,9 @@ func TestBodyPlacesAllowed(t *testing.T) {
 		{"an empty list inherits or allows nothing", routes(exchange), nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := BodyPlacesAllowed(tc.grant, tc.list)
+			err := PlacesAllowed(tc.grant, tc.list)
 			if (err == nil) != tc.ok {
-				t.Fatalf("BodyPlacesAllowed = %v, want ok %v", err, tc.ok)
+				t.Fatalf("PlacesAllowed = %v, want ok %v", err, tc.ok)
 			}
 			if err != nil && !strings.Contains(err.Error(), "body place") {
 				t.Fatalf("reason %q does not name the body place", err)
@@ -50,9 +50,9 @@ func TestBodyPlacesAllowed(t *testing.T) {
 	}
 }
 
-// What BodyPlacesAllowed refuses, Decide refuses: the reported grant, a
+// What PlacesAllowed refuses, Decide refuses: the reported grant, a
 // secret routed to `*` with a delegation naming the exchange's body place.
-func TestBodyPlacesAllowedAgreesWithDecide(t *testing.T) {
+func TestPlacesAllowedAgreesWithDecide(t *testing.T) {
 	wide, err := Parse("*")
 	if err != nil {
 		t.Fatal(err)
@@ -64,8 +64,8 @@ func TestBodyPlacesAllowedAgreesWithDecide(t *testing.T) {
 	req := Request{Method: http.MethodPost, Host: "app.boxd.sh", URL: "/api/v1/auth/token", Header: http.Header{"Content-Type": {"application/json"}}, At: []string{"/api_key"}}
 	for _, secret := range [][]Route{{wide}, {wide, exchange}} {
 		allowed, _ := Decide([][]Route{secret, {exchange}}, req)
-		if checked := BodyPlacesAllowed([]Route{exchange}, secret) == nil; checked != allowed {
-			t.Fatalf("secret %v: BodyPlacesAllowed ok = %v, Decide allowed = %v", secret, checked, allowed)
+		if checked := PlacesAllowed([]Route{exchange}, secret) == nil; checked != allowed {
+			t.Fatalf("secret %v: PlacesAllowed ok = %v, Decide allowed = %v", secret, checked, allowed)
 		}
 	}
 }
