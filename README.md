@@ -194,42 +194,52 @@ See [discobox.ai](https://discobox.ai) for the full overview and
 ## Release channels
 
 Every release is published as a prerelease and marked stable by hand later, once
-it has been in use for a while. That gives three channels, each newer and less
+it has been in use for a while. The newest green commit on `main` is built
+too, about a dozen times a day. That gives four channels, each newer and less
 proven than the one before:
 
 - **stable** — the newest release marked stable. This is what you get when you
   ask for nothing in particular.
-- **latest** — the newest `vX.Y.Z` release, stable or not. A release joins it
+- **beta** — the newest `vX.Y.Z` release, stable or not. A release joins it
   the moment it is cut.
 - **edge** — the newest release of any kind, including the `-alpha`, `-beta`,
   and `-rc` builds cut to try a change before it becomes a release.
+- **main** — the newest build of the `main` branch, versioned like
+  `v0.19.7-main.4210.g0123abc` (the next patch, the commit count, and the
+  commit). Main builds are kept for fourteen days; reinstall to move on.
+
+`latest` was the beta channel's name and still installs it, saying so.
 
 ### Homebrew
 
-The tap carries stable and latest as two formulae. `discobox-dev` installs
+The tap carries stable and beta as two formulae. `discobox-beta` installs
 beside `discobox` and runs under its own name, so you can keep both:
 
 ```bash
-brew install discobox-ai/tap/discobox      # stable, runs as discobox
-brew install discobox-ai/tap/discobox-dev  # latest, runs as discobox-dev
+brew install discobox-ai/tap/discobox       # stable, runs as discobox
+brew install discobox-ai/tap/discobox-beta  # beta, runs as discobox-beta
 ```
 
 The two share one state directory, one configuration, and one downloaded server,
 so their servers cannot run at the same time; stop one before starting the
-other. There is no edge formula — use the install script for that.
+other. There is no edge or main formula — use the install script for those.
+The beta formula used to be `discobox-dev`; it still links a `discobox-dev`
+command, which says to run `discobox-beta` instead.
 
 ### Install script
 
 ```bash
-curl -sSfL https://discobox.ai | sh                         # stable
-curl -sSfL https://discobox.ai | sh -s -- --channel latest  # latest
-curl -sSfL https://edge.discobox.ai | sh                    # edge
+curl -sSfL https://discobox.ai | sh                       # stable
+curl -sSfL https://discobox.ai | sh -s -- --channel beta  # beta
+curl -sSfL https://edge.discobox.ai | sh                  # edge
+curl -sSfL https://main.discobox.ai | sh                  # main
 ```
 
 ```powershell
-irm https://discobox.ai/install.ps1 | iex                   # stable
-irm https://edge.discobox.ai/install.ps1 | iex              # edge
-$env:DISCOBOX_CHANNEL = 'latest'; irm https://discobox.ai/install.ps1 | iex
+irm https://discobox.ai/install.ps1 | iex                 # stable
+irm https://edge.discobox.ai/install.ps1 | iex            # edge
+irm https://main.discobox.ai/install.ps1 | iex            # main
+$env:DISCOBOX_CHANNEL = 'beta'; irm https://discobox.ai/install.ps1 | iex
 ```
 
 Unlike the tap, the script installs whichever channel you ask for as `discobox`,
