@@ -234,6 +234,12 @@ Global review expectations:
   never to a ref. A skill once told approvers "nothing that closes is routed"
   over `updatePullRequest`. Say what the routes stop and what they do not,
   and keep repository-scoped writes on REST where REST has them.
+- A route a skill tells the agent to ask for names its repository in the
+  path (`api.github.com/repos/OWNER/REPO/...`), never only in a query the
+  agent writes: a route matches no query, so `GET api.github.com/search/issues`
+  searches every private repository the approver's token can read, whatever
+  `q=repo:` the skill meant. The issue-reporting section of the `discobox`
+  skill once asked for exactly that as a fallback.
 - No ADR number or reference in user-facing text: OpenAPI descriptions
   (`api/openapi/server.yaml`, `pool-agent/api/openapi/pool.yaml`) and the code
   generated from them, model `doc:` tags, CLI help, error messages, and console
