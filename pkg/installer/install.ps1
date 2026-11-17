@@ -2,7 +2,8 @@
 #
 #   irm https://discobox.ai/install.ps1 | iex
 #   irm https://edge.discobox.ai/install.ps1 | iex
-#   $env:DISCOBOX_CHANNEL = 'latest'; irm https://discobox.ai/install.ps1 | iex
+#   irm https://main.discobox.ai/install.ps1 | iex
+#   $env:DISCOBOX_CHANNEL = 'beta'; irm https://discobox.ai/install.ps1 | iex
 #   & ([scriptblock]::Create((irm https://discobox.ai/install.ps1))) -Version v0.7.1
 #
 # The copy a release uploads is stamped with that release and the SHA-256 of
@@ -13,8 +14,10 @@
 # installer for sh: the two take the same options and follow the same rules.
 #
 #   -Channel CHANNEL   stable  the newest release marked stable
-#                      latest  the newest vX.Y.Z release, stable or not
+#                      beta    the newest vX.Y.Z release, stable or not
 #                      edge    the newest release of any kind, -alpha and -rc too
+#                      main    the newest build of the main branch, kept for
+#                              fourteen days
 #   -Version VERSION   one release, such as v0.7.1
 #   -InstallDir DIR    where to put the discobox command
 #                      (default: %LOCALAPPDATA%\Programs\Discobox on Windows)
@@ -72,6 +75,17 @@ function Install-Discobox {
     $api = 'https://api.github.com/repos/discobox-ai/discobox'
     if ($env:DISCOBOX_INSTALL_API) { $api = $env:DISCOBOX_INSTALL_API }
     $releasesPage = 'https://github.com/discobox-ai/discobox/releases'
+    # Main builds, a version with -main. in it, are releases of their own
+    # repository, which holds nothing else, so its latest release is the
+    # newest main build: found by following GitHub's redirect, with no API
+    # call (ADR 26-11-16-249 sections 4 and 5).
+    $mainSources = @('https://github.com/discobox-ai/discobox-main/releases/download')
+    if ($env:DISCOBOX_INSTALL_MAIN_SOURCES) {
+        $mainSources = @($env:DISCOBOX_INSTALL_MAIN_SOURCES -split '\s+' | Where-Object { $_ })
+    }
+    $mainLatest = 'https://github.com/discobox-ai/discobox-main/releases/latest'
+    if ($env:DISCOBOX_INSTALL_MAIN_LATEST) { $mainLatest = $env:DISCOBOX_INSTALL_MAIN_LATEST }
+    $mainReleasesPage = 'https://github.com/discobox-ai/discobox-main/releases'
 
     # The mark, in 24-bit color and in the nearest xterm-256 indices, as base64
     # of the escape sequences. Written by `go generate ./pkg/installer` from the
@@ -176,9 +190,29 @@ function Install-Discobox {
         return (& $core $A) -gt (& $core $B)
     }
 
+    # The newest main build: where GitHub redirects its latest release, which
+    # ends in the tag. With no release, GitHub sends latest to the release
+    # list, or answers 404.
+    function Resolve-DiscoboxMain {
+        try {
+            $response = Invoke-WebRequest -Uri $mainLatest -Method Head -UseBasicParsing
+        } catch {
+            if ((Get-HttpStatus $_) -eq 404) { throw "there is no build on the main channel yet (see $mainReleasesPage)" }
+            throw "could not reach $mainLatest to look up the main channel: $($_.Exception.Message)"
+        }
+        # 5.1 says where it ended up as ResponseUri, 7 as the request it last sent.
+        $base = $response.BaseResponse
+        if ($base.PSObject.Properties['ResponseUri']) { $uri = $base.ResponseUri } else { $uri = $base.RequestMessage.RequestUri }
+        $tag = ([string]$uri).TrimEnd('/') -replace '^.*/', ''
+        if ($tag -notmatch '^v[0-9].*-main\.') { throw "there is no build on the main channel yet (see $mainReleasesPage)" }
+        Write-DiscoboxStep "the main channel is at $tag"
+        return $tag
+    }
+
     # The release a channel is at, with the same rules the Homebrew tap uses
-    # for its two formulae, plus edge (ADR 0110 section 3).
+    # for its two formulae, plus edge (ADR 0110 section 3) and main.
     function Resolve-DiscoboxChannel([string]$Name) {
+        if ($Name -eq 'main') { return Resolve-DiscoboxMain }
         try {
             $list = Invoke-RestMethod -Uri "$api/releases?per_page=100" -Headers @{ Accept = 'application/vnd.github+json' } -UseBasicParsing
         } catch {
@@ -204,7 +238,7 @@ function Install-Discobox {
         $found = $null
         switch ($Name) {
             'stable' { $found = $stable }
-            'latest' { $found = $releases | Where-Object { $_.tag_name -match '^v[0-9]+\.[0-9]+\.[0-9]+$' } | Select-Object -First 1 }
+            'beta' { $found = $releases | Where-Object { $_.tag_name -match '^v[0-9]+\.[0-9]+\.[0-9]+$' } | Select-Object -First 1 }
             'edge' {
                 # The newer of the newest stable release and the newest
                 # prerelease, which is what edge.discobox.ai works out from the
@@ -242,7 +276,9 @@ function Install-Discobox {
     # Downloads <tag>/<asset> from the first source that has it and, given a
     # digest, whose bytes match it.
     function Get-DiscoboxFile([string]$Tag, [string]$Name, [string]$OutFile, [string]$Sha256) {
-        foreach ($base in $sources) {
+        $from = $sources
+        if ($Tag -like '*-main.*') { $from = $mainSources }
+        foreach ($base in $from) {
             $url = "$base/$Tag/$Name"
             try {
                 Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing
@@ -424,11 +460,15 @@ function Install-Discobox {
         if ($Version -notmatch '^v') { $Version = "v$Version" }
         if ($Version -notmatch '^v[0-9][0-9A-Za-z.+-]*$') { throw "$Version is not a release version, such as v0.7.1" }
     }
-    if ($Channel -and @('stable', 'latest', 'edge') -notcontains $Channel) {
-        throw "there is no channel called ${Channel}: choose stable, latest, or edge"
-    }
-
     $style = Get-DiscoboxStyle
+
+    if ($Channel -eq 'latest') {
+        Write-DiscoboxWarn 'the latest channel is now called beta; installing beta'
+        $Channel = 'beta'
+    }
+    if ($Channel -and @('stable', 'beta', 'edge', 'main') -notcontains $Channel) {
+        throw "there is no channel called ${Channel}: choose stable, beta, edge, or main"
+    }
 
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('discobox-install-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -452,6 +492,9 @@ function Install-Discobox {
         Write-DiscoboxStep "installing $target with the installer it was released with"
         $script = Join-Path $tmp 'install.ps1'
         if (-not (Get-DiscoboxFile $target 'install.ps1' $script '')) {
+            if ($target -like '*-main.*') {
+                throw "$target has no installer: there is no such main build, or it was deleted (main builds are kept for fourteen days); install the newest with -Channel main (see $mainReleasesPage)"
+            }
             throw "$target has no installer: there is no such release, or it came before install.ps1 did (see $releasesPage/tag/$target)"
         }
         $params = @{ Version = $target }

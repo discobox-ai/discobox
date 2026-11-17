@@ -2,9 +2,10 @@
 # Install the discobox command line client.
 #
 #   curl -sSfL https://discobox.ai | sh
-#   curl -sSfL https://discobox.ai | sh -s -- --channel latest
+#   curl -sSfL https://discobox.ai | sh -s -- --channel beta
 #   curl -sSfL https://discobox.ai | sh -s -- --version v0.7.1
 #   curl -sSfL https://edge.discobox.ai | sh
+#   curl -sSfL https://main.discobox.ai | sh
 #
 # The copy a release uploads is stamped with that release and the SHA-256 of
 # every binary it uploaded, and run with no arguments installs exactly that
@@ -29,6 +30,13 @@ sources=${DISCOBOX_INSTALL_SOURCES:-"https://assets.discobox.ai/discobox https:/
 # Where a channel is looked up.
 api=${DISCOBOX_INSTALL_API:-https://api.github.com/repos/discobox-ai/discobox}
 releases_page=https://github.com/discobox-ai/discobox/releases
+# Main builds, a version with -main. in it, are releases of their own
+# repository, which holds nothing else, so its latest release is the newest
+# main build: found by following GitHub's redirect, with no API call (ADR
+# 26-11-16-249 sections 4 and 5).
+main_sources=${DISCOBOX_INSTALL_MAIN_SOURCES:-https://github.com/discobox-ai/discobox-main/releases/download}
+main_latest=${DISCOBOX_INSTALL_MAIN_LATEST:-https://github.com/discobox-ai/discobox-main/releases/latest}
+main_releases_page=https://github.com/discobox-ai/discobox-main/releases
 
 # How this looks. The palette is the console's (cli/internal/tui/theme.go) and the
 # mark is the console's, drawn only where the terminal will show it: a pipe, a log
@@ -66,15 +74,18 @@ Install the discobox command line client.
 Usage: install.sh [--channel CHANNEL | --version VERSION] [--dir DIR]
 
   --channel CHANNEL  stable  the newest release marked stable
-                     latest  the newest vX.Y.Z release, stable or not
+                     beta    the newest vX.Y.Z release, stable or not
                      edge    the newest release of any kind, -alpha and -rc too
+                     main    the newest build of the main branch, kept for
+                             fourteen days
   --version VERSION  one release, such as v0.7.1
   --dir DIR          where to put the discobox command
                      (default: /usr/local/bin as root, ~/.local/bin otherwise)
   --stage            download the server too, rather than on first use
 
 With neither --channel nor --version it installs the release this copy of the
-script came with: stable from discobox.ai, edge from edge.discobox.ai.
+script came with: stable from discobox.ai, edge from edge.discobox.ai, main
+from main.discobox.ai.
 
 Each option can also be set in the environment as DISCOBOX_CHANNEL,
 DISCOBOX_VERSION, DISCOBOX_INSTALL_DIR, or DISCOBOX_INSTALL_STAGE. A flag beats
@@ -276,8 +287,12 @@ main() {
 		esac
 	fi
 	case $channel in
-		'' | stable | latest | edge) ;;
-		*) die "there is no channel called $channel: choose stable, latest, or edge" ;;
+		'' | stable | beta | edge | main) ;;
+		latest)
+			warn "the latest channel is now called beta; installing beta"
+			channel=beta
+			;;
+		*) die "there is no channel called $channel: choose stable, beta, edge, or main" ;;
 	esac
 
 	tmp=$(mktemp -d)
@@ -316,8 +331,12 @@ option() {
 }
 
 # resolve prints the release a channel is at, with the same rules the Homebrew
-# tap uses for its two formulae, plus edge (ADR 0110 section 3).
+# tap uses for its two formulae, plus edge (ADR 0110 section 3) and main.
 resolve() {
+	if [ "$1" = main ]; then
+		resolve_main
+		return
+	fi
 	status=$(curl -sSL --retry 2 -o "$tmp/releases.json" -w '%{http_code}' \
 		-H 'Accept: application/vnd.github+json' "$api/releases?per_page=100") ||
 		die "could not reach $api to look up the $1 channel"
@@ -364,7 +383,7 @@ resolve() {
 	stable=$(awk '$2 == "false" { print $1; exit }' "$tmp/releases")
 	case $1 in
 		stable) found=$stable ;;
-		latest) found=$(awk '$1 ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ { print $1; exit }' "$tmp/releases") ;;
+		beta) found=$(awk '$1 ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ { print $1; exit }' "$tmp/releases") ;;
 		edge)
 			# The newer of the newest stable release and the newest prerelease,
 			# which is what edge.discobox.ai works out from the mirror's two
@@ -379,6 +398,26 @@ resolve() {
 	esac
 	[ -n "$found" ] || die "there is no release on the $1 channel yet"
 	step "the $1 channel is at $found"
+	printf '%s\n' "$found"
+}
+
+# resolve_main prints the newest main build: where GitHub redirects its latest
+# release, which ends in the tag.
+resolve_main() {
+	answer=$(curl -sSL --retry 2 -o /dev/null -w '%{http_code} %{url_effective}' "$main_latest") ||
+		die "could not reach $main_latest to look up the main channel"
+	found=${answer%/}
+	found=${found##*/}
+	case ${answer%% *} in
+		200 | 404) ;;
+		*) die "$main_latest answered ${answer%% *} when asked for the main channel" ;;
+	esac
+	# With no release, GitHub sends latest to the release list, or answers 404.
+	case ${answer%% *}:$found in
+		200:v[0-9]*-main.*) ;;
+		*) die "there is no build on the main channel yet (see $main_releases_page)" ;;
+	esac
+	step "the main channel is at $found"
 	printf '%s\n' "$found"
 }
 
@@ -397,8 +436,12 @@ newer() {
 # fetch downloads <tag>/<asset> to a file from the first source that has it
 # and, given a digest, whose bytes match it.
 fetch() {
+	from=$sources
+	case $1 in
+		*-main.*) from=$main_sources ;;
+	esac
 	# shellcheck disable=SC2086 # the list is split on whitespace on purpose
-	for base in $sources; do
+	for base in $from; do
 		url=$base/$1/$2
 		if curl -fsL --retry 2 -o "$3" "$url"; then
 			[ -n "$4" ] || return 0
@@ -433,8 +476,12 @@ sha256() {
 
 delegate() {
 	step "installing $1 with the installer it was released with"
-	fetch "$1" install.sh "$tmp/install.sh" "" ||
+	if ! fetch "$1" install.sh "$tmp/install.sh" ""; then
+		case $1 in
+			*-main.*) die "$1 has no installer: there is no such main build, or it was deleted (main builds are kept for fourteen days); install the newest with --channel main (see $main_releases_page)" ;;
+		esac
 		die "$1 has no installer: there is no such release, or it came before install.sh did (see $releases_page/tag/$1)"
+	fi
 	set -- --version "$1"
 	if [ -n "$dir" ]; then
 		set -- "$@" --dir "$dir"
