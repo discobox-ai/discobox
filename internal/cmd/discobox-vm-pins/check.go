@@ -254,7 +254,8 @@ func (r report) Markdown() string {
 	}
 	b.WriteString("```\n")
 	if r.Overridden() {
-		b.WriteString("\n" + r.Notes())
+		b.WriteString("\n")
+		b.WriteString(r.Notes())
 	}
 	return b.String()
 }
