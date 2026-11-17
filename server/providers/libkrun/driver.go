@@ -258,7 +258,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	slog.InfoContext(ctx, "started libkrun pool VM",
 		"pool_id", poolID, "guest_image", root.Source, "kernel_image", kernel.Source,
 		"vcpus", want.VCPUs, "memory_mib", want.MemoryMiB, "pid", guest.cmd.Process.Pid)
-	return runningInfo(poolID), nil
+	info := runningInfo(poolID)
+	info.Started = true
+	return info, nil
 }
 
 // launch creates the pool's disks and starts its launcher, and is the whole of

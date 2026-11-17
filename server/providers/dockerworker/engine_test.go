@@ -1,10 +1,12 @@
 package dockerworker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -330,7 +332,7 @@ func TestDockerReadyReportsTheDaemonsOwnError(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, timeout := range []time.Duration{dockerAnswerWait, defaultDockerReadyWait, dockerReadyPollDelay / 2} {
-			_, err := engine.acquireDockerReady(context.Background(), "pool-1", timeout)
+			_, _, err := engine.acquireDockerReady(context.Background(), "pool-1", timeout)
 			if err == nil || !strings.Contains(err.Error(), "connection refused") || errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("acquireDockerReady(%v) error = %v, want the daemon's connection refused", timeout, err)
 			}
@@ -953,5 +955,72 @@ func TestAcquirePoolAgentClientReportsAMissingHostAsNotReachable(t *testing.T) {
 				t.Fatalf("error %v still reads as the sandbox not found", err)
 			}
 		})
+	}
+}
+
+// slowDockerDriver is a running VM whose Docker daemon refuses the first
+// refusals connections, as one does while its guest boots, and then answers.
+// started is whether EnsureVM says it started the VM.
+type slowDockerDriver struct {
+	lifecycleDriver
+	url      string
+	refusals int
+	started  bool
+}
+
+func (d *slowDockerDriver) EnsureVM(context.Context, string, VMSpec) (*VMInfo, error) {
+	return &VMInfo{ID: "local", Status: sandbox.StatusRunning, Started: d.started}, nil
+}
+
+func (d *slowDockerDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
+	if d.refusals > 0 {
+		d.refusals--
+		return nil, errors.New("connection refused")
+	}
+	cli, err := testDockerClient(d.url)
+	if err != nil {
+		return nil, err
+	}
+	return NewDockerClientLease(cli, DaemonOnThisMachine, func() { _ = cli.Close() }), nil
+}
+
+// A pass that starts the pool's VM, or waits for its Docker daemon, is
+// bringing its host up, so the log says when its VM ran and when Docker
+// answered, at info; a pass that does neither is a re-check, and says neither
+// at info.
+func TestEnsurePoolLogsTheHostStepsOfAHostComingUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if stripDockerAPIVersion(request.URL.Path) == "/_ping" {
+			w.Header().Set("Api-Version", "1.51")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Error(w, "not faked", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	for _, tc := range []struct {
+		refusals int
+		started  bool
+		info     bool
+	}{{refusals: 1, info: true}, {started: true, info: true}, {info: false}} {
+		var logged bytes.Buffer
+		slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelInfo})))
+		driver := &slowDockerDriver{lifecycleDriver: lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}, url: server.URL, refusals: tc.refusals, started: tc.started}
+		engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The fake daemon answers only pings, so the pass fails after them.
+		_ = engine.EnsurePool(context.Background(), nil, &model.SandboxProviderInstance{ID: "provider-1"},
+			&model.Pool{ID: "pool-1", ProjectID: "project-1"}, nil, func(context.Context) error { return nil })
+
+		for _, msg := range []string{`msg="the pool's VM is running" pool=pool-1 duration=`, `msg="the pool's Docker daemon is ready" pool=pool-1 duration=`} {
+			if got := strings.Contains(logged.String(), "level=INFO "+msg); got != tc.info {
+				t.Errorf("refusals %d, started %v: %s logged at info = %v, want %v; log:\n%s", tc.refusals, tc.started, msg, got, tc.info, logged.String())
+			}
+		}
 	}
 }

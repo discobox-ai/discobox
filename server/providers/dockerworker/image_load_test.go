@@ -438,7 +438,7 @@ func TestDaemonLocalityForHost(t *testing.T) {
 // container runs.
 func loadTestImage(t *testing.T, engine *Engine, image string) error {
 	t.Helper()
-	lease, err := engine.acquireDockerReady(context.Background(), "pool_1", engine.dockerReadyTimeout())
+	lease, _, err := engine.acquireDockerReady(context.Background(), "pool_1", engine.dockerReadyTimeout())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +486,7 @@ func TestContainerdLoadReportsFixedSilentExtractionAllowance(t *testing.T) {
 	}
 	pool := &model.Pool{ID: "pool_1", Bootstrap: data, ResourceLifecycle: model.ResourceLifecycle{Generation: 1}}
 	ctx := sandbox.WithBootstrapExecutor(context.Background(), manager, pool)
-	lease, err := engine.acquireDockerReady(ctx, pool.ID, engine.dockerReadyTimeout())
+	lease, _, err := engine.acquireDockerReady(ctx, pool.ID, engine.dockerReadyTimeout())
 	if err != nil {
 		t.Fatal(err)
 	}

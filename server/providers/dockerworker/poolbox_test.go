@@ -99,7 +99,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	// the server the pool still runs its previous agent.
 	var kept error
 	keptCtx := sandbox.WithBoxKeptReporter(context.Background(), func(reason error) { kept = reason })
-	got, err := engine.applyMovedPoolBundles(keptCtx, cli, "container-1", pool, unresolvable, recorded, begin)
+	got, err := engine.applyMovedPoolBundles(keptCtx, cli, "container-1", pool, unresolvable, recorded, begin, poolruntime.NewHostSteps(pool.ID))
 	if err != nil || began || got.Agent != recorded.Agent || len(got.Bundles) != 1 {
 		t.Fatalf("an unresolvable release: record %+v, began %v, err %v; want the box kept as it is", got, began, err)
 	}
@@ -111,7 +111,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	pool.OutboundStatus = &model.PoolOutboundStatus{}
 	pool.Outbound = pooloutbound.Resolved{HTTP: "http://new-proxy:3128"}
 	pool.OutboundAppliedRevision = "last-applied"
-	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, unresolvable, recorded, begin)
+	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, unresolvable, recorded, begin, poolruntime.NewHostSteps(pool.ID))
 	if !errors.Is(err, sandbox.ErrPoolConfigApply) || pool.OutboundAppliedRevision != "last-applied" || began {
 		t.Fatalf("unapplied outbound update: revision %q, began %v, error %v", pool.OutboundAppliedRevision, began, err)
 	}
@@ -129,7 +129,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 		t.Fatal(err)
 	}
 	kept = nil
-	if _, err := engine.applyMovedPoolBundles(keptCtx, cli, "container-1", pool, same, recorded, begin); err != nil || began || kept != nil {
+	if _, err := engine.applyMovedPoolBundles(keptCtx, cli, "container-1", pool, same, recorded, begin, poolruntime.NewHostSteps(pool.ID)); err != nil || began || kept != nil {
 		t.Fatalf("unmoved bundles and placement: began %v, kept %v, err %v; want nothing done", began, kept, err)
 	}
 
@@ -137,7 +137,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	// told in its bootstrap — is provisioned again.
 	superseded := errors.New("pool generation changed")
 	flipped := &fakeMaker{box: same.box, disableTLS: true}
-	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, flipped, recorded, func(context.Context) error { return superseded })
+	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, flipped, recorded, func(context.Context) error { return superseded }, poolruntime.NewHostSteps(pool.ID))
 	if !errors.Is(err, superseded) {
 		t.Fatalf("a moved placement: err %v; want it provisioned again, which begin stopped", err)
 	}
@@ -148,7 +148,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	var starts []sandbox.AgentStartKind
 	startCtx := sandbox.WithAgentStartReporter(keptCtx, func(_ time.Time, kind sandbox.AgentStartKind) { starts = append(starts, kind) })
 	moved := &fakeMaker{box: sandbox.PoolBox{Bundles: []sandbox.BundlePin{{Name: "discobox-pool-agent-bundle", Digest: "sha256:c"}}}}
-	_, err = engine.applyMovedPoolBundles(startCtx, cli, "container-1", pool, moved, recorded, func(context.Context) error { return superseded })
+	_, err = engine.applyMovedPoolBundles(startCtx, cli, "container-1", pool, moved, recorded, func(context.Context) error { return superseded }, poolruntime.NewHostSteps(pool.ID))
 	if !errors.Is(err, superseded) || moved.enrolled || len(starts) != 0 {
 		t.Fatalf("moved bundles under newer intent: err %v, enrolled %v, starts %v; want begin's error and nothing applied or recorded", err, moved.enrolled, starts)
 	}
@@ -162,7 +162,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 			t.Errorf("an in-place start %v was recorded before placement closed", starts)
 		}
 		return nil
-	})
+	}, poolruntime.NewHostSteps(pool.ID))
 	if err != nil || kept == nil || got.Agent != recorded.Agent || len(starts) != 1 || starts[0] != sandbox.AgentStartInPlace {
 		t.Fatalf("moved bundles whose apply fails: record %+v, kept %v, starts %v, err %v; want one in-place start before the apply, and the box kept", got, kept, starts, err)
 	}

@@ -389,7 +389,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	d.vms[poolID] = guest
 	slog.InfoContext(ctx, "started vz pool VM",
 		"pool_id", poolID, "guest_image", bundle.Source, "vcpus", want.VCPUs, "memory_mib", want.MemoryMiB)
-	return runningInfo(poolID), nil
+	info := runningInfo(poolID)
+	info.Started = true
+	return info, nil
 }
 
 // StopVM powers the guest down but keeps its data and cache disks, so a repair

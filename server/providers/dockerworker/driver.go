@@ -128,6 +128,12 @@ type VMInfo struct {
 	// fixing anything, and for a driver with no VM of its own to restart. That
 	// is why it is the zero value.
 	HostedHere bool
+	// Started reports that this EnsureVM call started the VM, or replaced
+	// it: it was not running before. The engine logs the pass's steps at info
+	// then (poolruntime.HostSteps), since the pass is bringing the pool's
+	// host up. A driver that cannot tell leaves it false, and the engine
+	// falls back to whether the VM's Docker daemon had to be waited for.
+	Started bool
 }
 
 // DockerClientLease holds a Docker API client until Release is called.
