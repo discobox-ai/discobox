@@ -13,6 +13,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// errConnRefused is a refused connection, for listenerGone. Winsock reports
+// it as a code of its own, which syscall.ECONNREFUSED does not match on Windows.
+//
+// Windows refuses a closed loopback TCP port only after retrying for about two
+// seconds, longer than the default probe timeout, so a server gone from an
+// http:// endpoint reads as slow and is waited out to the deadline. The local
+// default, a named pipe, is reported gone at once (fs.ErrNotExist).
+var errConnRefused error = windows.WSAECONNREFUSED
+
 // acquireLaunchLock takes an exclusive lock on path, waiting for whoever holds
 // it. LockFileEx without LOCKFILE_FAIL_IMMEDIATELY blocks, which is what the
 // flock on Unix does and what this needs: the caller is about to decide whether

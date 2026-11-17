@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,8 +27,8 @@ const (
 	StartupErrorFileEnv  = "DISCOBOX_SERVER_START_ERROR_FILE"
 	defaultProbePath     = health.Path
 	defaultProbeInterval = 100 * time.Millisecond
-	// probesBeforeGone is how many consecutive unanswered probes mean a server
-	// that had been answering has exited rather than stalled. See waitReady.
+	// probesBeforeGone is how many consecutive probes finding nothing listening
+	// mean a server that had been answering has exited. See waitReady.
 	probesBeforeGone = 3
 )
 
@@ -282,14 +283,15 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 }
 
 // waitReady polls a server that has answered "starting" or "upgrading pools"
-// until it is ready.
+// until it is ready. Every caller enters on such an answer, so the server is
+// known to be there from the first probe on.
 //
 // Upgrading pools gets a deadline of its own, from when it is first seen: the
 // server bounds it (health.PoolUpgradeWait) and reports ready once that runs
 // out, so the client's deadline is that and a margin, never the start's.
 func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) error {
 	var last health.Status
-	answered, unanswered, upgrading := false, 0, false
+	unanswered, upgrading := 0, false
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		switch {
@@ -301,7 +303,7 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 				upgrading = true
 				deadline = time.Now().Add(opts.upgradeTimeout())
 			}
-			answered, unanswered = true, 0
+			unanswered = 0
 			// On the step changing, not on every poll: uptime moves with each
 			// answer, so comparing whole statuses reports the same step over
 			// and over.
@@ -311,22 +313,25 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 			}
 		case !isProbeConnectionError(err):
 			return err
-		case answered:
-			// It was answering and now it is not. A server holds its listeners
-			// for the whole of startup and releases them only when the process
-			// ends, so this is one that gave up — a step that failed — rather
-			// than one that is busy, and waiting out the generous ready
-			// deadline for a process that has exited is minutes of saying
-			// nothing when its last words are already in the log.
-			//
-			// Not on the first failure: a probe has a timeout of its own, and
-			// one that expires on a loaded machine is a slow answer rather than
-			// a dead server. A short run of them is neither.
+		case listenerGone(err):
+			// It was answering and now nothing listens. A server holds its
+			// listeners for the whole of startup and releases them only when
+			// the process ends, so this is one that gave up — a step that
+			// failed — rather than one that is busy, and waiting out the
+			// generous ready deadline for a process that has exited is minutes
+			// of saying nothing when its last words are already in the log.
 			unanswered++
 			if unanswered >= probesBeforeGone {
 				return fmt.Errorf("local server at %s stopped while starting (last step: %s)%s",
-					opts.Endpoint, phaseOrUnknown(last), opts.logTail())
+					opts.Endpoint, lastStep(last), opts.logTail())
 			}
+		default:
+			// Anything else — above all a probe that ran out its own timeout —
+			// reached a listener, so the process is still there: a slow answer
+			// on a loaded machine, not a dead server. The deadline bounds it
+			// (#1298: three timeouts in a row read as "stopped" while the
+			// server went on upgrading its pools for minutes).
+			unanswered = 0
 		}
 		select {
 		case <-ctx.Done():
@@ -334,15 +339,25 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 		case <-time.After(opts.probeInterval()):
 		}
 	}
-	return fmt.Errorf("local server at %s did not finish starting (last step: %s)%s",
-		opts.Endpoint, phaseOrUnknown(last), opts.logTail())
+	// Said by what the last probe found: a server whose listener has just gone
+	// is not one to call running.
+	if unanswered > 0 {
+		return fmt.Errorf("local server at %s stopped answering before it finished starting (last step: %s)%s",
+			opts.Endpoint, lastStep(last), opts.logTail())
+	}
+	return fmt.Errorf("local server at %s is still running but did not finish starting in time (last step: %s)%s",
+		opts.Endpoint, lastStep(last), opts.logTail())
 }
 
-// phaseOrUnknown names the last step a server reported, for an error that has
-// to say something about a server that never said what it was doing.
-func phaseOrUnknown(status health.Status) string {
+// lastStep names the last step a server reported, for an error that has to say
+// what the wait was on. A server upgrading pools says so in its status and
+// count, and may report no phase at all.
+func lastStep(status health.Status) string {
 	if phase := strings.TrimSpace(status.Phase); phase != "" {
 		return phase
+	}
+	if status.UpgradingPools() {
+		return fmt.Sprintf("upgrading pools (%d left)", status.PoolsUpgrading)
 	}
 	return "unknown"
 }
@@ -600,6 +615,13 @@ func (o LaunchOptions) probeInterval() time.Duration {
 		return o.ProbeInterval
 	}
 	return defaultProbeInterval
+}
+
+// listenerGone reports whether a probe found nothing listening at all: the
+// connection refused, or the socket or pipe no longer there. Unlike a probe
+// that timed out, that is what a server that has exited looks like.
+func listenerGone(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, errConnRefused)
 }
 
 func isProbeConnectionError(err error) bool {

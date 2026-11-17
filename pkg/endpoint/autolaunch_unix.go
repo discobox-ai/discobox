@@ -15,6 +15,9 @@ import (
 	"syscall"
 )
 
+// errConnRefused is a refused connection, for listenerGone.
+var errConnRefused error = syscall.ECONNREFUSED
+
 func acquireLaunchLock(path string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err

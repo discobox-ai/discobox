@@ -18,3 +18,21 @@
   context, and each caller waits for it only as long as its own context
   allows; tying it to the caller that happened to start it ends it for
   everyone waiting when that one gives up.
+
+## Autolaunch probes
+
+- **In `waitReady`, a probe that ran out its own timeout reached a live
+  server; only a refused connection or a missing socket or pipe
+  (`listenerGone`) means it is gone.** It once counted every probe error
+  toward "stopped while starting", and on a host at load 116 three slow
+  `/healthz` answers in a row ended the wait of a server busy upgrading its
+  pools (#1298); the earlier fix, a short run of failures before giving up,
+  was the same mistake.
+- **The probes before a launch, and `replaceOlderServer`'s wait for an older
+  server to let go, read a timeout as no server on purpose** (`cli/DESIGN.md`,
+  autolaunch). Windows refuses a closed loopback TCP port only after about two
+  seconds, past the default probe timeout, so reading a timeout there as a
+  server stalls every cold start on an `http://` endpoint. Do not "fix" them
+  into the `waitReady` rule; telling a dial that timed out from an answer that
+  did is #1308. A test that needs to see a refusal on Windows gives its probe
+  longer than two seconds.
