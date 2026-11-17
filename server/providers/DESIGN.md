@@ -821,7 +821,8 @@ answered not-found settles `archived` with the container still running. An
 archive waits on that pool as one with state does. The agent's delete finds the container by
 its labels, so asking it with no state removes whatever it made. That delete
 does not wait for its pool, though, as one with state does: a pool that
-cannot be reached at once answers not-found and the row goes, since a pool
+cannot be reached at once, or whose agent then does not answer the delete,
+answers not-found and the row goes, since a pool
 that never came up could otherwise hold its sandboxes and itself forever. What
 it made is its own reaper's once it is back
 ([pool-agent](../../pool-agent/DESIGN.md)).
@@ -1300,7 +1301,9 @@ reconcile slot; and a restart, which is two steps.
 
 A teardown (archive, remove) the agent was not there to answer is reported the
 same way, and is not resent here either: the sandbox reconciler leaves it
-unsettled and the engine retries it with backoff. A libkrun pool's agent is a
+unsettled and the engine retries it with backoff. The exception is a remove of
+a sandbox with no state, which answers not-found (above), so its delete never
+waits on the pool. A libkrun pool's agent is a
 VM the server boots again after every restart, and an archive accepted just
 before a shutdown has been seen reset there with only "connection reset by
 peer" to say why.

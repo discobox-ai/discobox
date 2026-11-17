@@ -51,3 +51,22 @@ func TestPoolProviderArchiveWithoutProviderStateOnAnUnreachablePoolIsNotNotFound
 		t.Fatalf("archive without state on an unreachable pool: %v, want it to fail, never not found", err)
 	}
 }
+
+// The row's pool reached for an archive with no state is waited on, so an
+// archive its agent then does not answer is the pool not being reachable,
+// retried, never not-found, which would settle the row archived while the
+// container keeps running (#1322, #1043).
+func TestPoolProviderArchiveWithoutProviderStateLostToTheAgentLeavingIsThePoolNotReachable(t *testing.T) {
+	runtimeProvider, sent := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/archive", 1, nil)
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+	ref := sandbox.SandboxRef{ProjectID: "project-1", PoolID: "pool-1", SandboxID: "sandbox-1"}
+
+	_, err := provider.Archive(context.Background(), ref, nil)
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) || errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("archive without state lost to the agent leaving = %v, want the pool not reachable", err)
+	}
+	if got := sent.Load(); got != 1 {
+		t.Fatalf("archive sent = %d, want 1", got)
+	}
+}
