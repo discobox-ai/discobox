@@ -944,8 +944,17 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef
 	return client.AcquireHTTPClient(ctx, ref, state, scopes, use)
 }
 
+// Archive drops the sandbox's container on its pool and keeps its tree.
+//
+// A sandbox with no state naming its pool is archived on the pool the control
+// plane placed it in (agentClientForSandbox): a create superseded by the
+// archive intent finishes on the pool but never writes its state, and answering
+// not-found from that would settle the row archived while its container keeps
+// running (#1322). Unlike Remove's fallback, that pool is waited on, and an
+// unreachable one is reported as such, never as not-found: not-found is what
+// the reconciler settles an archive on.
 func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
+	client, err := p.agentClientForSandbox(ctx, ref, state)
 	if err != nil {
 		return state, err
 	}
