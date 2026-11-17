@@ -547,12 +547,17 @@ type HTTPAuditExchangeDetail struct {
 	ResponseBodyError    string              `json:"responseBodyError,omitempty"`
 	ResponseBodyRecorded bool                `json:"responseBodyRecorded"`
 	UpgradeC2SBytes      int64               `json:"upgradeC2sBytes"`
-	UpgradeS2CBytes      int64               `json:"upgradeS2cBytes"`
-	StreamSessionID      string              `json:"streamSessionId,omitempty"`
-	StreamFormat         string              `json:"streamFormat,omitempty"`
-	StreamRecorded       bool                `json:"streamRecorded"`
-	StreamDroppedChunks  int64               `json:"streamDroppedChunks"`
-	StreamDroppedBytes   int64               `json:"streamDroppedBytes"`
+	// UpgradeInspected is a WebSocket connection whose messages were read
+	// for credentials, and UpgradeC2SSentBytes what of the sandbox's bytes
+	// reached the origin there (ADR 26-11-06-442 §4).
+	UpgradeInspected    bool   `json:"upgradeInspected,omitempty"`
+	UpgradeC2SSentBytes int64  `json:"upgradeC2sSentBytes,omitempty"`
+	UpgradeS2CBytes     int64  `json:"upgradeS2cBytes"`
+	StreamSessionID     string `json:"streamSessionId,omitempty"`
+	StreamFormat        string `json:"streamFormat,omitempty"`
+	StreamRecorded      bool   `json:"streamRecorded"`
+	StreamDroppedChunks int64  `json:"streamDroppedChunks"`
+	StreamDroppedBytes  int64  `json:"streamDroppedBytes"`
 }
 
 // PoolRuntime is the provider surface for a pool's own runtime host: the pool

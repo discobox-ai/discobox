@@ -1,6 +1,7 @@
 package poolruntime
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -64,7 +65,7 @@ func TestPoolCreateRequestForwardsSourceDataKeys(t *testing.T) {
 		SourceDataKey:               primaryKey,
 		SourceCodeReferences:        model.SourceCodeReferences{"library": {Kind: "git"}},
 		SourceCodeReferenceDataKeys: map[string]string{"library": refKey},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 
 	gotPrimary, ok := request.Config.Source.Get()
 	if !ok || gotPrimary.DataKey.Or("") != primaryKey {
@@ -85,7 +86,7 @@ func TestPoolCreateRequestForwardsSourceSlugs(t *testing.T) {
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		Source:               &primary,
 		SourceCodeReferences: model.SourceCodeReferences{"/home/user/src/hooks": {Kind: "git", Slug: &refSlug}},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 
 	gotPrimary, ok := request.Config.Source.Get()
 	if !ok || gotPrimary.Slug.Or("") != primarySlug {
@@ -145,7 +146,7 @@ func TestPoolCreateRequestSendsTheDefaultBranchOnlyToAnAgentThatTakesIt(t *testi
 	source := model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryCache, UpstreamURL: &upstream, DefaultBranch: &branch}
 	opts := sandbox.CreateOptions{Source: &source, SourceCodeReferences: model.SourceCodeReferences{"lib": source}}
 	for _, takes := range []bool{false, true} {
-		request := poolCreateRequestFromOptions("sandbox-1", opts, true, true, true, takes)
+		request := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{bodyPlaces: true}, takes)
 		want := ""
 		if takes {
 			want = "main"
@@ -167,7 +168,7 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 			{Path: "run.sh", Content: []byte("x"), Executable: true},
 			{Path: "a.md", Content: []byte("y")},
 		}}},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 	foo, ok := request.Config.Skills.Or(nil)["foo"]
 	if !ok || foo.Skill != "# foo" || len(foo.Files) != 2 {
 		t.Fatalf("skills = %#v, want foo with its two files", request.Config.Skills)
@@ -175,7 +176,7 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 	if !foo.Files[0].Executable.Or(false) || foo.Files[1].Executable.Set || string(foo.Files[1].Content) != "y" {
 		t.Fatalf("files = %#v", foo.Files)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false, false); request.Config.Skills.Set {
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, routeBlocks{}, false); request.Config.Skills.Set {
 		t.Fatal("skills set for a sandbox created without any")
 	}
 }
@@ -185,7 +186,7 @@ func TestPoolCreateRequestCarriesSkills(t *testing.T) {
 func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 	restricted := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		Egress: egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 	got, ok := restricted.Egress.Get()
 	if !ok || !got.DenyByDefault.Or(false) {
 		t.Fatalf("restricted policy = %+v, set %v", got, ok)
@@ -194,7 +195,7 @@ func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 		t.Fatalf("allow = %v", allow)
 	}
 
-	open := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false, false)
+	open := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, routeBlocks{}, false)
 	got, ok = open.Egress.Get()
 	if !ok || got.DenyByDefault.Or(true) {
 		t.Fatalf("unrestricted policy = %+v, set %v; want it sent, unrestricted", got, ok)
@@ -206,11 +207,11 @@ func TestPoolCreateRequestForwardsTheEgressPolicy(t *testing.T) {
 func TestPoolCreateRequestCarriesFeatures(t *testing.T) {
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		Features: map[string]sandboxconfig.Feature{"brew": {Enabled: false}},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 	if got := request.Config.Features.Or(nil); len(got) != 1 || got["brew"].Enabled {
 		t.Fatalf("features = %#v", request.Config.Features)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false, false); request.Config.Features.Set {
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, routeBlocks{}, false); request.Config.Features.Set {
 		t.Fatal("features set for a sandbox created without any")
 	}
 }
@@ -225,7 +226,7 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Delivery: sandbox.Delivery{
 		Agent:   sandbox.BundlePin{Name: "discobox-agent", Digest: agent},
 		Bundles: []sandbox.BundlePin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-codex", Digest: harness}},
-	}}, false, false, false, false)
+	}}, false, false, routeBlocks{}, false)
 	pins, ok := request.Bundles.Get()
 	if !ok || len(pins) != 2 || pins[0].Name != "discobox-platform" || pins[0].Digest != platform || pins[1].Name != "discobox-harness-codex" || pins[1].Digest != harness {
 		t.Fatalf("bundles = %+v", pins)
@@ -233,7 +234,7 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 	if got, ok := request.Agent.Get(); !ok || got.Name != "discobox-agent" || got.Digest != agent {
 		t.Fatalf("agent = %+v", request.Agent)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false, false); request.Bundles.IsSet() || request.Agent.IsSet() {
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, routeBlocks{}, false); request.Bundles.IsSet() || request.Agent.IsSet() {
 		t.Fatalf("bundles = %+v, agent %+v for a sandbox pinned to none", request.Bundles, request.Agent)
 	}
 }
@@ -242,13 +243,13 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 // is one: a create with none sends a pool that predates raw bindings nothing
 // it would refuse (ADR 26-10-27-840).
 func TestPoolCreateRequestCarriesRawSecretsOnlyWhenThereAreAny(t *testing.T) {
-	none := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Sentinels: []string{"s-1"}}, false, false, false, false)
+	none := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Sentinels: []string{"s-1"}}, false, false, routeBlocks{}, false)
 	if none.RawSecrets.IsSet() {
 		t.Fatalf("raw secrets sent with none: %#v", none.RawSecrets)
 	}
 	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
 		RawSecrets: map[string]sandbox.RawSecret{"raw-1": {EnvName: "AWS_SECRET_ACCESS_KEY", Delivery: sandboxconfig.RawDeliveryFile}},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 	raw, ok := request.RawSecrets.Get()
 	if !ok || raw["raw-1"].EnvName != "AWS_SECRET_ACCESS_KEY" || string(raw["raw-1"].Delivery) != sandboxconfig.RawDeliveryFile {
 		t.Fatalf("raw secrets = %#v, want the handle's delivery", raw)
@@ -271,7 +272,7 @@ func TestAPoolFromBeforeGrantsIsNeverSentAnAddition(t *testing.T) {
 		Sentinels:      []string{"BASE", "ALONE"},
 		SentinelGrants: map[string][]secretroute.Grant{"BASE": {plain, added}, "ALONE": {added}},
 	}
-	old := poolCreateRequestFromOptions("sandbox-1", opts, false, false, false, false)
+	old := poolCreateRequestFromOptions("sandbox-1", opts, false, false, routeBlocks{}, false)
 	if old.SentinelGrants.IsSet() {
 		t.Fatal("an agent from before grants was sent sentinelGrants")
 	}
@@ -282,7 +283,7 @@ func TestAPoolFromBeforeGrantsIsNeverSentAnAddition(t *testing.T) {
 	if got := routes["ALONE"]; len(got) != 1 || len(got[0]) != 0 {
 		t.Fatalf("ALONE = %+v, want one empty list, sent nowhere", got)
 	}
-	current := poolCreateRequestFromOptions("sandbox-1", opts, true, false, false, false)
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, false, routeBlocks{}, false)
 	grants, _ := current.SentinelGrants.Get()
 	if current.SentinelRoutes.IsSet() || len(grants["BASE"]) != 2 || !grants["BASE"][1].ExpiresAt.IsSet() {
 		t.Fatalf("grants = %+v, want both, the addition with its expiry", grants)
@@ -296,10 +297,10 @@ func TestPoolCreateRequestCarriesGenerationsOnlyToAnAgentThatTakesThem(t *testin
 		Sentinels:           []string{"SENT"},
 		SentinelGenerations: map[string]string{"SENT": "g1"},
 	}
-	if old := poolCreateRequestFromOptions("sandbox-1", opts, true, false, false, false); old.SentinelGenerations.IsSet() {
+	if old := poolCreateRequestFromOptions("sandbox-1", opts, true, false, routeBlocks{}, false); old.SentinelGenerations.IsSet() {
 		t.Fatal("an agent from before generations was sent sentinelGenerations")
 	}
-	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, false, false)
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{}, false)
 	generations, ok := current.SentinelGenerations.Get()
 	if !ok || generations["SENT"] != "g1" {
 		t.Fatalf("generations = %v, want SENT's", generations)
@@ -317,7 +318,7 @@ func TestPoolCreateRequestCarriesBodyPlacesOnlyToAnAgentThatTakesThem(t *testing
 		SentinelGrants: map[string][]secretroute.Grant{"SENT": {{Lists: [][]secretroute.Route{{headers, body}}}}, "ONLY": {{Lists: [][]secretroute.Route{{body}}}}},
 	}
 	for _, holdsGrants := range []bool{false, true} {
-		old := poolCreateRequestFromOptions("sandbox-1", opts, holdsGrants, true, false, false)
+		old := poolCreateRequestFromOptions("sandbox-1", opts, holdsGrants, true, routeBlocks{}, false)
 		lists := map[string][][]poolclient.SentinelRoute{}
 		if holdsGrants {
 			grants, _ := old.SentinelGrants.Get()
@@ -334,11 +335,43 @@ func TestPoolCreateRequestCarriesBodyPlacesOnlyToAnAgentThatTakesThem(t *testing
 			t.Fatalf("grants %v: ONLY = %+v, want one empty list, sent nowhere", holdsGrants, got)
 		}
 	}
-	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, true, false)
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{bodyPlaces: true}, false)
 	grants, _ := current.SentinelGrants.Get()
 	sent := grants["SENT"][0].Lists[0]
 	if len(sent) != 2 || !sent[1].Body.IsSet() || sent[1].Body.Value.Places[0] != "/api_key" {
 		t.Fatalf("SENT = %+v, want both routes, the body place carried", sent)
+	}
+}
+
+// A route's WebSocket block goes only to an agent that declared it takes
+// one: any other refuses a field it does not know, whole, and swaps nothing
+// in a message, so it is sent the rest of the list without it, open or
+// blocked.
+func TestPoolCreateRequestCarriesWebSocketPlacesOnlyToAnAgentThatTakesThem(t *testing.T) {
+	headers := secretroute.Route{Hosts: []string{"gateway.discord.gg"}}
+	ws := secretroute.Route{Hosts: []string{"gateway.discord.gg"}, WebSocket: &secretroute.WebSocket{Places: []secretroute.MessagePlace{
+		{At: "/d/token", When: map[string]json.RawMessage{"op": json.RawMessage("2")}},
+	}}}
+	blocked := ws
+	blocked.Blocked = true
+	opts := sandbox.CreateOptions{
+		Sentinels:      []string{"SENT"},
+		SentinelGrants: map[string][]secretroute.Grant{"SENT": {{Lists: [][]secretroute.Route{{headers, ws, blocked}}}}},
+	}
+	old := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{bodyPlaces: true}, false)
+	grants, _ := old.SentinelGrants.Get()
+	if got := grants["SENT"][0].Lists[0]; len(got) != 1 || got[0].Websocket.IsSet() {
+		t.Fatalf("SENT = %+v, want its header route alone", got)
+	}
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{bodyPlaces: true, webSocket: true}, false)
+	grants, _ = current.SentinelGrants.Get()
+	sent := grants["SENT"][0].Lists[0]
+	if len(sent) != 3 || !sent[1].Websocket.IsSet() {
+		t.Fatalf("SENT = %+v, want every route, the message place carried", sent)
+	}
+	place := sent[1].Websocket.Value.Places[0]
+	if when, _ := place.When.Get(); place.At != "/d/token" || string(when["op"]) != "2" {
+		t.Fatalf("place = %+v", place)
 	}
 }
 
@@ -350,7 +383,7 @@ func TestPoolCreateRequestForwardsTheMetaSeed(t *testing.T) {
 		MetaName:    &metaName,
 		Description: &description,
 		Tags:        map[string]string{"repo": "a/b", "wip": ""},
-	}, false, false, false, false)
+	}, false, false, routeBlocks{}, false)
 	if request.Config.MetaName.Or("") != metaName {
 		t.Fatalf("meta name = %q, want %q", request.Config.MetaName.Or(""), metaName)
 	}
@@ -361,7 +394,7 @@ func TestPoolCreateRequestForwardsTheMetaSeed(t *testing.T) {
 	if request.Config.Description.Or("") != description {
 		t.Fatalf("description = %q, want %q", request.Config.Description.Or(""), description)
 	}
-	if untagged := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, false, false); untagged.Config.Tags.Set || untagged.Config.MetaName.Set {
+	if untagged := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, routeBlocks{}, false); untagged.Config.Tags.Set || untagged.Config.MetaName.Set {
 		t.Fatalf("an untagged, unnamed sandbox sent tags %v and name %q", untagged.Config.Tags.Value, untagged.Config.MetaName.Value)
 	}
 }

@@ -4673,6 +4673,98 @@ func (o OptSentinelRouteMCP) Or(d SentinelRouteMCP) SentinelRouteMCP {
 	return d
 }
 
+// NewOptSentinelRouteMessagePlaceWhen returns new OptSentinelRouteMessagePlaceWhen with value set to v.
+func NewOptSentinelRouteMessagePlaceWhen(v SentinelRouteMessagePlaceWhen) OptSentinelRouteMessagePlaceWhen {
+	return OptSentinelRouteMessagePlaceWhen{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSentinelRouteMessagePlaceWhen is optional SentinelRouteMessagePlaceWhen.
+type OptSentinelRouteMessagePlaceWhen struct {
+	Value SentinelRouteMessagePlaceWhen
+	Set   bool
+}
+
+// IsSet returns true if OptSentinelRouteMessagePlaceWhen was set.
+func (o OptSentinelRouteMessagePlaceWhen) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSentinelRouteMessagePlaceWhen) Reset() {
+	var v SentinelRouteMessagePlaceWhen
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSentinelRouteMessagePlaceWhen) SetTo(v SentinelRouteMessagePlaceWhen) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSentinelRouteMessagePlaceWhen) Get() (v SentinelRouteMessagePlaceWhen, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSentinelRouteMessagePlaceWhen) Or(d SentinelRouteMessagePlaceWhen) SentinelRouteMessagePlaceWhen {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSentinelRouteWebSocket returns new OptSentinelRouteWebSocket with value set to v.
+func NewOptSentinelRouteWebSocket(v SentinelRouteWebSocket) OptSentinelRouteWebSocket {
+	return OptSentinelRouteWebSocket{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSentinelRouteWebSocket is optional SentinelRouteWebSocket.
+type OptSentinelRouteWebSocket struct {
+	Value SentinelRouteWebSocket
+	Set   bool
+}
+
+// IsSet returns true if OptSentinelRouteWebSocket was set.
+func (o OptSentinelRouteWebSocket) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSentinelRouteWebSocket) Reset() {
+	var v SentinelRouteWebSocket
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSentinelRouteWebSocket) SetTo(v SentinelRouteWebSocket) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSentinelRouteWebSocket) Get() (v SentinelRouteWebSocket, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSentinelRouteWebSocket) Or(d SentinelRouteWebSocket) SentinelRouteWebSocket {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -5323,6 +5415,13 @@ type PoolHTTPAuditExchangeDetail struct {
 	Upgrade OptBool `json:"upgrade"`
 	// Bytes the sandbox sent over the upgraded connection.
 	UpgradeC2sBytes OptInt64 `json:"upgradeC2sBytes"`
+	// Bytes that reached the upstream of what the sandbox sent, on a connection whose messages were
+	// inspected for credentials: it differs from upgradeC2sBytes where a credential was swapped into a
+	// message, or a message was refused.
+	UpgradeC2sSentBytes OptInt64 `json:"upgradeC2sSentBytes"`
+	// True for a WebSocket connection whose messages the proxy read to swap a credential at a place a
+	// route names.
+	UpgradeInspected OptBool `json:"upgradeInspected"`
 	// Bytes the upstream sent over the upgraded connection.
 	UpgradeS2cBytes OptInt64 `json:"upgradeS2cBytes"`
 	// The upgrade protocol.
@@ -5526,6 +5625,16 @@ func (s *PoolHTTPAuditExchangeDetail) GetUpgrade() OptBool {
 // GetUpgradeC2sBytes returns the value of UpgradeC2sBytes.
 func (s *PoolHTTPAuditExchangeDetail) GetUpgradeC2sBytes() OptInt64 {
 	return s.UpgradeC2sBytes
+}
+
+// GetUpgradeC2sSentBytes returns the value of UpgradeC2sSentBytes.
+func (s *PoolHTTPAuditExchangeDetail) GetUpgradeC2sSentBytes() OptInt64 {
+	return s.UpgradeC2sSentBytes
+}
+
+// GetUpgradeInspected returns the value of UpgradeInspected.
+func (s *PoolHTTPAuditExchangeDetail) GetUpgradeInspected() OptBool {
+	return s.UpgradeInspected
 }
 
 // GetUpgradeS2cBytes returns the value of UpgradeS2cBytes.
@@ -5741,6 +5850,16 @@ func (s *PoolHTTPAuditExchangeDetail) SetUpgrade(val OptBool) {
 // SetUpgradeC2sBytes sets the value of UpgradeC2sBytes.
 func (s *PoolHTTPAuditExchangeDetail) SetUpgradeC2sBytes(val OptInt64) {
 	s.UpgradeC2sBytes = val
+}
+
+// SetUpgradeC2sSentBytes sets the value of UpgradeC2sSentBytes.
+func (s *PoolHTTPAuditExchangeDetail) SetUpgradeC2sSentBytes(val OptInt64) {
+	s.UpgradeC2sSentBytes = val
+}
+
+// SetUpgradeInspected sets the value of UpgradeInspected.
+func (s *PoolHTTPAuditExchangeDetail) SetUpgradeInspected(val OptBool) {
+	s.UpgradeInspected = val
 }
 
 // SetUpgradeS2cBytes sets the value of UpgradeS2cBytes.
@@ -8066,7 +8185,8 @@ type SentinelRoute struct {
 	// Path patterns, each matched against the whole request path one segment at a time: `*` is exactly
 	// one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring
 	// case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path.
-	Paths []string `json:"paths"`
+	Paths     []string                  `json:"paths"`
+	Websocket OptSentinelRouteWebSocket `json:"websocket"`
 }
 
 // GetBlocked returns the value of Blocked.
@@ -8104,6 +8224,11 @@ func (s *SentinelRoute) GetPaths() []string {
 	return s.Paths
 }
 
+// GetWebsocket returns the value of Websocket.
+func (s *SentinelRoute) GetWebsocket() OptSentinelRouteWebSocket {
+	return s.Websocket
+}
+
 // SetBlocked sets the value of Blocked.
 func (s *SentinelRoute) SetBlocked(val OptBool) {
 	s.Blocked = val
@@ -8137,6 +8262,11 @@ func (s *SentinelRoute) SetMethods(val []string) {
 // SetPaths sets the value of Paths.
 func (s *SentinelRoute) SetPaths(val []string) {
 	s.Paths = val
+}
+
+// SetWebsocket sets the value of Websocket.
+func (s *SentinelRoute) SetWebsocket(val OptSentinelRouteWebSocket) {
+	s.Websocket = val
 }
 
 // Narrows a route to places in a JSON request body: the credential is carried there and swapped
@@ -8278,6 +8408,79 @@ func (s *SentinelRouteMCP) GetTools() []string {
 // SetTools sets the value of Tools.
 func (s *SentinelRouteMCP) SetTools(val []string) {
 	s.Tools = val
+}
+
+// One place in a client message: the string at a JSON pointer, in a message whose top-level members
+// hold every condition.
+// Ref: #/components/schemas/SentinelRouteMessagePlace
+type SentinelRouteMessagePlace struct {
+	// A JSON pointer (RFC 6901) into the message, such as /d/token, naming one member or array element;
+	// the string there must be exactly the credential's placeholder. No `-` append index and no `*` or
+	// `**` segment.
+	At string `json:"at"`
+	// Top-level member names and the JSON scalar (string, number, true, false or null) each must hold,
+	// compared exactly: strings as decoded, numbers as exact decimals, so 2 and 2.0 are equal. A missing
+	// member is not null. Empty or absent is every message.
+	When OptSentinelRouteMessagePlaceWhen `json:"when"`
+}
+
+// GetAt returns the value of At.
+func (s *SentinelRouteMessagePlace) GetAt() string {
+	return s.At
+}
+
+// GetWhen returns the value of When.
+func (s *SentinelRouteMessagePlace) GetWhen() OptSentinelRouteMessagePlaceWhen {
+	return s.When
+}
+
+// SetAt sets the value of At.
+func (s *SentinelRouteMessagePlace) SetAt(val string) {
+	s.At = val
+}
+
+// SetWhen sets the value of When.
+func (s *SentinelRouteMessagePlace) SetWhen(val OptSentinelRouteMessagePlaceWhen) {
+	s.When = val
+}
+
+// Top-level member names and the JSON scalar (string, number, true, false or null) each must hold,
+// compared exactly: strings as decoded, numbers as exact decimals, so 2 and 2.0 are equal. A missing
+// member is not null. Empty or absent is every message.
+type SentinelRouteMessagePlaceWhen map[string]jx.Raw
+
+func (s *SentinelRouteMessagePlaceWhen) init() SentinelRouteMessagePlaceWhen {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Narrows a route to places in the JSON text messages a client sends on the WebSocket connection the
+// route's request upgrades: the credential is carried there and swapped there, as the whole of the
+// JSON string at one of places, and nowhere else. A route with a WebSocket block allows the
+// credential at the places it names and nowhere else, not in the handshake's headers, query or body;
+// a route without one, any host included, allows it in no message. Hosts, methods and paths match
+// the upgrade request. A blocked WebSocket route refuses the credential at its places. Only a client
+// message that is exactly one JSON object, valid UTF-8 with each member named once, is read for
+// places; a credential anywhere else in a message, in another kind of message, or past 64 KiB closes
+// the connection without sending it.
+// Ref: #/components/schemas/SentinelRouteWebSocket
+type SentinelRouteWebSocket struct {
+	// Where in a message the credential may be. At least one.
+	Places []SentinelRouteMessagePlace `json:"places"`
+}
+
+// GetPlaces returns the value of Places.
+func (s *SentinelRouteWebSocket) GetPlaces() []SentinelRouteMessagePlace {
+	return s.Places
+}
+
+// SetPlaces sets the value of Places.
+func (s *SentinelRouteWebSocket) SetPlaces(val []SentinelRouteMessagePlace) {
+	s.Places = val
 }
 
 // Ref: #/components/schemas/SourceDelivery

@@ -84,7 +84,7 @@ flowchart LR
   marked; delegate on is refused for a binding handed on itself, since no
   chain grows from a discobox; a binding left for neither is refused.
 - **A body place no other list names is refused when written**
-  (`checkSecretBodyPlaces`, #1097): a binding route naming a body place that
+  (`checkSecretPlaces`, #1097): a binding route naming a body or message place that
   its secret's routes, a route constraint or its parent never name on its
   hosts and methods is one the proxy refuses on every use, so every door that
   writes routes (create, update, a create's bindings, approval by a person or
@@ -93,9 +93,9 @@ flowchart LR
   handoff checks the secret read under its locks (`fitDelegation`); its parent
   is covered by `ProveContained`.
 - **A route edit that strands a standing binding is refused** (#1105): an
-  `UpdateSecret` whose new routes allow nowhere a body place a live binding
+  `UpdateSecret` whose new routes allow nowhere a body or message place a live binding
   names, where the old routes allowed it, answers 409 naming each binding and
-  place (`refuseStrandingBindingsTx`, over `store.StrandedBodyPlaceBindings`),
+  place (`refuseStrandingBindingsTx`, over `store.StrandedPlaceBindings`),
   so the person editing is told rather than left with grants the proxy
   refuses. The edit reads the secret locked (`store.LockSecret`) and its
   bindings after writing it, in one transaction, so a discobox's handoff and a

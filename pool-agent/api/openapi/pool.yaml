@@ -633,8 +633,37 @@ components:
                     items:
                         type: string
                     type: array
+                websocket:
+                    $ref: '#/components/schemas/SentinelRouteWebSocket'
             required:
                 - hosts
+            type: object
+        SentinelRouteWebSocket:
+            additionalProperties: false
+            description: "Narrows a route to places in the JSON text messages a client sends on the WebSocket connection the route's request upgrades: the credential is carried there and swapped there, as the whole of the JSON string at one of places, and nowhere else. A route with a WebSocket block allows the credential at the places it names and nowhere else, not in the handshake's headers, query or body; a route without one, any host included, allows it in no message. Hosts, methods and paths match the upgrade request. A blocked WebSocket route refuses the credential at its places. Only a client message that is exactly one JSON object, valid UTF-8 with each member named once, is read for places; a credential anywhere else in a message, in another kind of message, or past 64 KiB closes the connection without sending it."
+            properties:
+                places:
+                    description: Where in a message the credential may be. At least one.
+                    items:
+                        $ref: '#/components/schemas/SentinelRouteMessagePlace'
+                    minItems: 1
+                    type: array
+            required:
+                - places
+            type: object
+        SentinelRouteMessagePlace:
+            additionalProperties: false
+            description: "One place in a client message: the string at a JSON pointer, in a message whose top-level members hold every condition."
+            properties:
+                at:
+                    description: "A JSON pointer (RFC 6901) into the message, such as /d/token, naming one member or array element; the string there must be exactly the credential's placeholder. No `-` append index and no `*` or `**` segment."
+                    type: string
+                when:
+                    additionalProperties: true
+                    description: "Top-level member names and the JSON scalar (string, number, true, false or null) each must hold, compared exactly: strings as decoded, numbers as exact decimals, so 2 and 2.0 are equal. A missing member is not null. Empty or absent is every message."
+                    type: object
+            required:
+                - at
             type: object
         SentinelRouteBody:
             additionalProperties: false
@@ -1480,6 +1509,13 @@ components:
                     description: Bytes the sandbox sent over the upgraded connection
                     format: int64
                     type: integer
+                upgradeC2sSentBytes:
+                    description: "Bytes that reached the upstream of what the sandbox sent, on a connection whose messages were inspected for credentials: it differs from upgradeC2sBytes where a credential was swapped into a message, or a message was refused"
+                    format: int64
+                    type: integer
+                upgradeInspected:
+                    description: "True for a WebSocket connection whose messages the proxy read to swap a credential at a place a route names"
+                    type: boolean
                 upgradeS2cBytes:
                     description: Bytes the upstream sent over the upgraded connection
                     format: int64

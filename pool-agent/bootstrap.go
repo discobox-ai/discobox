@@ -346,6 +346,12 @@ type StatusRequest struct {
 	// Always true from an agent that has it; one from before sends none, and
 	// is sent no defaultBranch, which its decoder would refuse.
 	SourceDefaultBranch bool `json:"sourceDefaultBranch"`
+	// SentinelWebSocket declares that this agent takes a sentinel route's
+	// WebSocket block, and its proxy swaps a sentinel at the message places
+	// it names (ADR 26-11-06-442). Always true from an agent that has them;
+	// one from before sends none, and is sent no route with one, which its
+	// decoder would refuse.
+	SentinelWebSocket bool `json:"sentinelWebSocket"`
 	// FirstReport marks the one report this agent process sends at start,
 	// before it serves; its heartbeats leave it out. A server upgrading the
 	// pool counts a marked report received after it recorded the agent's

@@ -333,4 +333,5 @@ func TestRawSecretNotYetHeldHoldsTheRequest(t *testing.T) {
 	}
 }
 
-func (routedRawResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (routedRawResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (routedRawResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }

@@ -62,4 +62,6 @@ type SentinelRoute = poolagentapi.SentinelRoute
 type SentinelRouteBody = poolagentapi.SentinelRouteBody
 type SentinelRouteGraphQL = poolagentapi.SentinelRouteGraphQL
 type SentinelRouteMCP = poolagentapi.SentinelRouteMCP
+type SentinelRouteMessagePlace = poolagentapi.SentinelRouteMessagePlace
+type SentinelRouteWebSocket = poolagentapi.SentinelRouteWebSocket
 type SourceDelivery = poolagentapi.SourceDelivery

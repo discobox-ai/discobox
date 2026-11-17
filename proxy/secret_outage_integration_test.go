@@ -400,4 +400,5 @@ func (r *outageResolver) ResolveRaw(context.Context, secrets.RawRequest) (secret
 	return secrets.RawResult{}, secrets.ErrDenied
 }
 
-func (*outageResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*outageResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*outageResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }

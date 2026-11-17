@@ -1007,6 +1007,8 @@ func (r *ctxResolver) Resolve(ctx context.Context, _ ResolveRequest) (ResolveRes
 	return ResolveResult{}, ctx.Err()
 }
 
-func (*fakeResolver) BodyPlaces(context.Context, BodyPlacesRequest) []string { return nil }
+func (*fakeResolver) BodyPlaces(context.Context, PlacesRequest) []string   { return nil }
+func (*fakeResolver) InspectsMessages(context.Context, PlacesRequest) bool { return false }
 
-func (*hostRecordingResolver) BodyPlaces(context.Context, BodyPlacesRequest) []string { return nil }
+func (*hostRecordingResolver) BodyPlaces(context.Context, PlacesRequest) []string   { return nil }
+func (*hostRecordingResolver) InspectsMessages(context.Context, PlacesRequest) bool { return false }

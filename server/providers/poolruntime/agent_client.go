@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-faster/jx"
+
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -49,10 +51,8 @@ type poolAgentClient struct {
 	// sentinelGenerations, and any other is sent none, since its decoder
 	// refuses a field it does not know.
 	holdsGenerations bool
-	// holdsBodyPlaces is whether it declared it takes a route's body block
-	// (model.Pool.SentinelBodyPlaces, #1012): any other is sent no route
-	// with one, since its decoder refuses a field it does not know.
-	holdsBodyPlaces bool
+	// takes is which of a route's place blocks it declared it takes.
+	takes routeBlocks
 	// takesDefaultBranch is whether it declared it takes a git source's
 	// defaultBranch (model.Pool.SourceDefaultBranch, #245): any other is sent
 	// none, since its decoder refuses a field it does not know, and its
@@ -60,10 +60,25 @@ type poolAgentClient struct {
 	takesDefaultBranch bool
 }
 
+// routeBlocks is which of a route's place blocks a pool's agent declared it
+// takes: its body block (model.Pool.SentinelBodyPlaces, #1012) and its
+// WebSocket block (model.Pool.SentinelWebSocket, ADR 26-11-06-442). An agent
+// is sent no route with a block it has not declared, since its decoder
+// refuses a field it does not know.
+type routeBlocks struct {
+	bodyPlaces bool
+	webSocket  bool
+}
+
+// routeBlocksOf is what a pool's agent last declared it takes.
+func routeBlocksOf(pool *model.Pool) routeBlocks {
+	return routeBlocks{bodyPlaces: pool.SentinelBodyPlaces, webSocket: pool.SentinelWebSocket}
+}
+
 // newPoolAgentClient is a client of one pool's agent over lease, speaking
 // what that agent last declared it takes.
 func newPoolAgentClient(pool *model.Pool, issuer poolAgentTokenIssuer, lease *transport.HTTPClientLease) *poolAgentClient {
-	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations, holdsBodyPlaces: pool.SentinelBodyPlaces, takesDefaultBranch: pool.SourceDefaultBranch}
+	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations, takes: routeBlocksOf(pool), takesDefaultBranch: pool.SourceDefaultBranch}
 }
 
 type poolAgentTokenIssuer interface {
@@ -77,7 +92,7 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 		return nil, state, err
 	}
 	defer release()
-	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants, p.holdsGenerations, p.holdsBodyPlaces, p.takesDefaultBranch)
+	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants, p.holdsGenerations, p.takes, p.takesDefaultBranch)
 	if opts.ResolvedHarnessConfig != nil {
 		resolved := request.ResolvedHarnessConfig.Value
 		if value := opts.ResolvedHarnessConfig.SaveBack; value != nil {
@@ -378,6 +393,8 @@ func httpAuditExchangeDetail(res *poolapimodel.PoolHTTPAuditExchangeDetail) (*sa
 		ResponseBodyError:    res.ResponseBodyError.Or(""),
 		ResponseBodyRecorded: res.ResponseBodyRecorded.Or(false),
 		UpgradeC2SBytes:      res.UpgradeC2sBytes.Or(0),
+		UpgradeInspected:     res.UpgradeInspected.Or(false),
+		UpgradeC2SSentBytes:  res.UpgradeC2sSentBytes.Or(0),
 		UpgradeS2CBytes:      res.UpgradeS2cBytes.Or(0),
 		StreamSessionID:      res.StreamSessionId.Or(""),
 		StreamFormat:         res.StreamFormat.Or(""),
@@ -462,9 +479,9 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	// lists ride with every sentinel push, never left out or null.
 	if opts.Sentinels != nil || opts.SentinelGrants != nil {
 		if p.holdsGrants {
-			req.SentinelGrants = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants, p.holdsBodyPlaces))
+			req.SentinelGrants = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants, p.takes))
 		} else {
-			req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants, p.holdsBodyPlaces))
+			req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants, p.takes))
 		}
 		// Replacing the whole map, as the grants do: one left out would
 		// leave the proxy holding the last push's generations.
@@ -888,7 +905,7 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 	return out
 }
 
-func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants, holdsGenerations, holdsBodyPlaces, takesDefaultBranch bool) *poolapimodel.PoolSandboxCreateRequest {
+func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants, holdsGenerations bool, takes routeBlocks, takesDefaultBranch bool) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID, PullSources: poolclient.NewOptBool(opts.PullSources)}
 	if opts.HarnessChangeID != "" {
 		out.HarnessChangeId = poolclient.NewOptString(opts.HarnessChangeID)
@@ -914,9 +931,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, 
 	}
 	if len(opts.Sentinels) > 0 || len(opts.SentinelGrants) > 0 {
 		if holdsGrants {
-			out.SentinelGrants = poolclient.NewOptNilPoolSandboxCreateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants, holdsBodyPlaces))
+			out.SentinelGrants = poolclient.NewOptNilPoolSandboxCreateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants, takes))
 		} else {
-			out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants, holdsBodyPlaces))
+			out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants, takes))
 		}
 	}
 	if holdsGenerations && len(opts.SentinelGenerations) > 0 {
@@ -1337,14 +1354,13 @@ func poolRawSecrets(in map[string]sandbox.RawSecret) map[string]poolclient.RawSe
 
 // poolSentinelGrants states each sentinel's grants (ADR 26-11-03-329 §3)
 // the way an agent that declared sentinelGrants reads them; never nil, and an
-// empty list stays empty, refusing everything. holdsBodyPlaces is
-// poolRouteLists'.
-func poolSentinelGrants(in map[string][]secretroute.Grant, holdsBodyPlaces bool) map[string][]poolclient.SentinelGrant {
+// empty list stays empty, refusing everything. takes is poolRouteLists'.
+func poolSentinelGrants(in map[string][]secretroute.Grant, takes routeBlocks) map[string][]poolclient.SentinelGrant {
 	out := make(map[string][]poolclient.SentinelGrant, len(in))
 	for sentinel, grants := range in {
 		poolGrants := make([]poolclient.SentinelGrant, 0, len(grants))
 		for _, grant := range grants {
-			item := poolclient.SentinelGrant{Lists: poolRouteLists(grant.Lists, holdsBodyPlaces)}
+			item := poolclient.SentinelGrant{Lists: poolRouteLists(grant.Lists, takes)}
 			if grant.ExpiresAt != nil {
 				item.ExpiresAt = poolclient.NewOptDateTime(*grant.ExpiresAt)
 			}
@@ -1363,31 +1379,32 @@ func poolSentinelGrants(in map[string][]secretroute.Grant, holdsBodyPlaces bool)
 // binding because the variable has nothing else, which goes as one empty
 // list, sent nowhere, since such an agent would hold it with no expiry.
 // Never nil, and an empty list stays empty. Such an agent predates body
-// places too, and is sent none.
-func poolSentinelRoutes(in map[string][]secretroute.Grant, holdsBodyPlaces bool) map[string][][]poolclient.SentinelRoute {
+// and message places too, and is sent neither.
+func poolSentinelRoutes(in map[string][]secretroute.Grant, takes routeBlocks) map[string][][]poolclient.SentinelRoute {
 	out := make(map[string][][]poolclient.SentinelRoute, len(in))
 	for sentinel, grants := range in {
 		if len(grants) == 0 || grants[0].Adds {
 			out[sentinel] = [][]poolclient.SentinelRoute{{}}
 			continue
 		}
-		out[sentinel] = poolRouteLists(grants[0].Lists, holdsBodyPlaces)
+		out[sentinel] = poolRouteLists(grants[0].Lists, takes)
 	}
 	return out
 }
 
 // poolRouteLists states route lists the way the pool agent reads them. An
-// agent that has not declared it takes body places (holdsBodyPlaces) is sent
-// no route with a body block. That only narrows: such an agent swaps nothing
-// in a body, so an open one allowed it nothing, and a blocked one refuses a
-// body place and no header use. A list left with no route refuses everything,
-// as an empty list does.
-func poolRouteLists(lists [][]secretroute.Route, holdsBodyPlaces bool) [][]poolclient.SentinelRoute {
+// agent that has not declared it takes body places is sent no route with a
+// body block, and one that has not declared it takes WebSocket places none
+// with a WebSocket block (takes). That only narrows: such an agent swaps
+// nothing in a body or message, so an open one allowed it nothing, and a
+// blocked one refuses a body or message place and no header use. A list left
+// with no route refuses everything, as an empty list does.
+func poolRouteLists(lists [][]secretroute.Route, takes routeBlocks) [][]poolclient.SentinelRoute {
 	poolLists := make([][]poolclient.SentinelRoute, 0, len(lists))
 	for _, routes := range lists {
 		list := make([]poolclient.SentinelRoute, 0, len(routes))
 		for _, route := range routes {
-			if route.Body != nil && !holdsBodyPlaces {
+			if route.Body != nil && !takes.bodyPlaces || route.WebSocket != nil && !takes.webSocket {
 				continue
 			}
 			item := poolclient.SentinelRoute{Hosts: route.Hosts, Methods: route.Methods, Paths: route.Paths}
@@ -1404,6 +1421,9 @@ func poolRouteLists(lists [][]secretroute.Route, holdsBodyPlaces bool) [][]poolc
 			if route.Body != nil {
 				item.Body = poolclient.NewOptSentinelRouteBody(poolclient.SentinelRouteBody{Places: route.Body.Places})
 			}
+			if route.WebSocket != nil {
+				item.Websocket = poolclient.NewOptSentinelRouteWebSocket(poolSentinelWebSocket(route.WebSocket))
+			}
 			if route.Blocked {
 				item.Blocked = poolclient.NewOptBool(true)
 			}
@@ -1412,6 +1432,24 @@ func poolRouteLists(lists [][]secretroute.Route, holdsBodyPlaces bool) [][]poolc
 		poolLists = append(poolLists, list)
 	}
 	return poolLists
+}
+
+// poolSentinelWebSocket is a route's WebSocket block as the pool agent reads
+// it, each condition's value as the route holds it.
+func poolSentinelWebSocket(block *secretroute.WebSocket) poolclient.SentinelRouteWebSocket {
+	out := poolclient.SentinelRouteWebSocket{Places: make([]poolclient.SentinelRouteMessagePlace, 0, len(block.Places))}
+	for _, place := range block.Places {
+		next := poolclient.SentinelRouteMessagePlace{At: place.At}
+		if len(place.When) > 0 {
+			when := make(poolclient.SentinelRouteMessagePlaceWhen, len(place.When))
+			for name, value := range place.When {
+				when[name] = jx.Raw(value)
+			}
+			next.When = poolclient.NewOptSentinelRouteMessagePlaceWhen(when)
+		}
+		out.Places = append(out.Places, next)
+	}
+	return out
 }
 
 // poolGateways is the pool's shape of a sandbox's gateways; never nil, so an

@@ -75,6 +75,10 @@ type requestMeta struct {
 	start    time.Time
 	client   clientIdentity
 	cacheHit bool
+	// inspect is the upgrade request a WebSocket route of the client's
+	// credentials covers, whose connection's messages are inspected
+	// (planInspection); nil for every other request.
+	inspect *upgradeContext
 	// poolHost is the pool host that answered the request (servePoolHost),
 	// whose response is never cached, and whose body is not spooled when
 	// the host's bodies are unspooled.
@@ -181,7 +185,11 @@ type responseStream struct {
 }
 
 type upgradedResponseStream struct {
-	source       io.ReadWriteCloser
+	source io.ReadWriteCloser
+	// inspect enforces credentials in the client's messages on a connection
+	// a WebSocket route covers (wsinspect.go); nil copies both directions
+	// unchanged.
+	inspect      *messageInspector
 	req          *http.Request
 	meta         *requestMeta
 	audit        *audit.Recorder
@@ -587,13 +595,18 @@ func (h *httpProxy) setupHandlers() {
 				attribute.String("proxy.http.upgrade_type", upgradedProtocol),
 				attribute.Int("http.response.status_code", resp.StatusCode),
 			)
+			if meta.inspect != nil {
+				if reason := inspectableUpgrade(upgradedProtocol, resp); reason != "" {
+					return h.refuseUpgrade(ctx.Req, resp, meta, reason)
+				}
+			}
 			if body, ok := resp.Body.(io.ReadWriteCloser); ok {
 				streamRecord, stream, err := h.audit.BeginUpgradeStream(meta.client.ID, upgradedProtocol, strings.Join(resp.Header.Values("Sec-WebSocket-Extensions"), ","))
 				if err != nil {
 					meta.cacheError = err.Error()
 					recordSpanError(meta.span, err)
 				}
-				resp.Body = &upgradedResponseStream{
+				upgraded := &upgradedResponseStream{
 					source:       body,
 					req:          ctx.Req,
 					meta:         meta,
@@ -605,6 +618,10 @@ func (h *httpProxy) setupHandlers() {
 					upgradeType:  upgradedProtocol,
 					recording:    h.recording.add(),
 				}
+				if meta.inspect != nil {
+					upgraded.inspect = newMessageInspector(h, upgraded, meta.client, *meta.inspect)
+				}
+				resp.Body = upgraded
 			} else {
 				h.audit.RecordHTTP(h.auditEvent(ctx.Req, resp, meta, time.Since(meta.start), false))
 				meta.span.End()
@@ -734,6 +751,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	_, span := proxyTracer().Start(meta.ctx, "proxy.secret_swap")
 	defer span.End()
 	preSwapHeader := req.Header.Clone()
+	h.planInspection(req, meta, client, preURL)
 	readBody := routeBody(req)
 	matched := swapper.Match(req, client.ID)
 	body, refused := h.matchBody(req, meta, client, preURL, preSwapHeader, readBody)
@@ -880,7 +898,7 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 // be read in, or holding one at a place under a Content-Encoding, which the
 // proxy decodes to read but does not encode again.
 func (h *httpProxy) matchBody(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, readBody func() ([]byte, bool)) (secrets.BodyUses, *http.Response) {
-	places := h.swapper.BodyPlaces(meta.ctx, secrets.BodyPlacesRequest{
+	places := h.swapper.BodyPlaces(meta.ctx, secrets.PlacesRequest{
 		ClientID: client.ID,
 		Method:   req.Method,
 		Host:     req.Host,
@@ -1420,7 +1438,15 @@ func (h *httpProxy) beginResponseBody(meta *requestMeta) (*audit.BodyRecord, *au
 }
 
 func (s *upgradedResponseStream) Read(p []byte) (int, error) {
-	n, err := s.source.Read(p)
+	var (
+		n   int
+		err error
+	)
+	if s.inspect != nil {
+		n, err = s.inspect.read(p)
+	} else {
+		n, err = s.source.Read(p)
+	}
 	if n > 0 {
 		s.s2cBytes.Add(int64(n))
 		if s.stream != nil {
@@ -1452,6 +1478,11 @@ func (s *upgradedResponseStream) Write(p []byte) (int, error) {
 	if s.stream != nil {
 		s.stream.RecordChunk(audit.StreamClientToServer, p)
 	}
+	if s.inspect != nil {
+		// What the client sent is recorded as it sent it, with its
+		// placeholders; the inspector decides what reaches the origin.
+		return s.inspect.write(p)
+	}
 	n, err := s.source.Write(p)
 	if n < len(p) {
 		s.c2sBytes.Add(int64(n) - int64(len(p)))
@@ -1471,6 +1502,9 @@ func (s *upgradedResponseStream) Close() error {
 func (s *upgradedResponseStream) finish() {
 	s.finalizeOnce.Do(func() {
 		defer s.recording.done()
+		if s.inspect != nil {
+			s.inspect.close()
+		}
 		_ = s.stream.Close()
 		duration := time.Since(s.meta.start)
 		event := s.auditEvent(duration)
@@ -1526,7 +1560,54 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		event.StreamDroppedChunks = s.stream.DroppedChunks()
 		event.StreamDroppedBytes = s.stream.DroppedBytes()
 	}
+	if s.inspect != nil {
+		// An inspected connection that was ended is a refusal, though its
+		// handshake succeeded: 101 alone cannot say what became of it.
+		reason, secretIDs, sent := s.inspect.outcome()
+		if reason != "" {
+			event.Blocked = true
+			event.BlockedReason = s.meta.rawSet.Redact(reason)
+		}
+		for _, id := range secretIDs {
+			if !slices.Contains(event.SwappedSecretIDs, id) {
+				event.SwappedSecretIDs = append(event.SwappedSecretIDs, id)
+			}
+		}
+		event.UpgradeC2SSentBytes = sent
+		event.UpgradeInspected = true
+	}
 	return event
+}
+
+// inspectableUpgrade is why an upgrade whose messages were to be inspected
+// cannot be: the server switched to another protocol, or negotiated an
+// extension the proxy did not offer it. Empty when it can.
+func inspectableUpgrade(protocol string, resp *http.Response) string {
+	switch {
+	case protocol != "websocket":
+		return "the server switched to " + strconv.Quote(protocol) + ", not the WebSocket protocol the request's credentials are inspected for"
+	case strings.TrimSpace(strings.Join(resp.Header.Values("Sec-WebSocket-Extensions"), "")) != "":
+		return "the server negotiated a WebSocket extension the proxy did not offer it, on a connection whose messages are inspected for credentials"
+	}
+	return ""
+}
+
+// refuseUpgrade answers a handshake whose connection cannot be inspected with
+// a 502, never relaying its 101, and records it once as blocked.
+func (h *httpProxy) refuseUpgrade(req *http.Request, resp *http.Response, meta *requestMeta, reason string) *http.Response {
+	if resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	status := http.StatusBadGateway
+	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))
+	h.recordRefusal(req, meta, meta.client, refusalRecord{
+		url:    meta.url(req),
+		header: req.Header,
+		reason: "route: " + reason,
+		status: status,
+	})
+	meta.span.End()
+	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+reason+"\n")
 }
 
 func (s *responseStream) Read(p []byte) (int, error) {

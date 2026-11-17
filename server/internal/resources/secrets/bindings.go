@@ -145,7 +145,7 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 		if err := checkRawBinding(ctx, binding, locked); err != nil {
 			return err
 		}
-		if err := checkSecretBodyPlaces(binding, locked, nil); err != nil {
+		if err := checkSecretPlaces(binding, locked, nil); err != nil {
 			return err
 		}
 		if err := txStore.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: binding.CreatedBy}); err != nil {
@@ -209,23 +209,23 @@ func checkRawBinding(ctx context.Context, binding *model.SecretBinding, secret *
 	return nil
 }
 
-// checkSecretBodyPlaces refuses a binding with a route naming a body place
-// some other list it is held to (store.RouteLists: its secret's routes, each
+// checkSecretPlaces refuses a binding with a route naming a body or message
+// place some other list it is held to (store.RouteLists: its secret's routes, each
 // route constraint, and its parent's, when parent is given) allows nowhere on
 // that route's hosts and methods. Every list is held at once and `*` grants
-// no body place, so such a binding is one the proxy refuses on every use:
+// no body or message place, so such a binding is one the proxy refuses on every use:
 // whoever writes it, a person or a discobox, is told now, rather than told it
 // is granted (#1097). The binding's own list is among them, and always
 // allows its own places.
-func checkSecretBodyPlaces(binding *model.SecretBinding, secret *model.Secret, parent *model.SecretBinding) error {
-	i, err := store.BodyPlaceRefusal(binding.Routes, store.RouteLists(secret, binding, parent))
+func checkSecretPlaces(binding *model.SecretBinding, secret *model.Secret, parent *model.SecretBinding) error {
+	i, err := store.PlaceRefusal(binding.Routes, store.RouteLists(secret, binding, parent))
 	if err == nil {
 		return nil
 	}
 	switch {
 	case i == 0:
 		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"secret %s's routes: %v, so the credential would never be sent there; the secret needs a route naming that body place first", secret.Name, err))
+			"secret %s's routes: %v, so the credential would never be sent there; the secret needs a route naming that place first", secret.Name, err))
 	case i <= len(secret.RouteConstraints):
 		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
 			"secret %s's harness route constraints: %v, so the credential would never be sent there", secret.Name, err))
@@ -341,7 +341,7 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 			return err
 		}
 		if input.Routes != nil {
-			if err := checkSecretBodyPlaces(binding, locked, parent); err != nil {
+			if err := checkSecretPlaces(binding, locked, parent); err != nil {
 				return err
 			}
 		}
@@ -623,7 +623,7 @@ func (s *Service) PrepareSandboxBindings(ctx context.Context, projectID string, 
 		if err := checkRawBinding(ctx, binding, secret); err != nil {
 			return SandboxBindings{}, err
 		}
-		if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+		if err := checkSecretPlaces(binding, secret, nil); err != nil {
 			return SandboxBindings{}, err
 		}
 		if binding.Use {
@@ -723,7 +723,7 @@ func StoreSandboxBindingsTx(ctx context.Context, txStore *store.Store, prepared 
 			if err := checkRawBinding(ctx, binding, secret); err != nil {
 				return err
 			}
-			if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+			if err := checkSecretPlaces(binding, secret, nil); err != nil {
 				return err
 			}
 			binding.ExpiresAt = expiryAt(now, ttl)

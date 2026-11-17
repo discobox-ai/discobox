@@ -177,6 +177,34 @@
   swap is the credential's exchange, so its body is never spooled or cached
   and its header values are redacted but for framing (`bodySwapped`,
   `responseHeaders`).
+- An inspected WebSocket connection sends nothing of a message before the
+  whole of it is decided, and never falls back to copying: an oversized
+  message, a frame it cannot read, or an unsupported extension ends the
+  connection rather than streaming past the scan. Enforcement parses frames
+  itself (`internal/wsframe`); the audit capture stops on what it cannot
+  read while traffic goes on, which permission must never do.
+- A message is decided again when it is sent (`Swapper.Decide`), and read
+  again after any configuration change while it waited: a value resolved
+  under one configuration must not go out under another, and a sentinel
+  taken from the sandbox stays one its messages are refused for.
+- A refusal reason never names what the sandbox sent but a pointer and why:
+  a pointer through a member name holding the sentinel would carry it, so a
+  member-name refusal names the parent. Anything the sandbox wrote goes into
+  a reason through `secretroute.Safe`, never a lookalike: a second copy cut
+  bytes instead of runes and escaped nothing (made twice now).
+- Never hold `Swapper.publish` (`Swapper.Decide`) across network I/O. Every
+  `Reconfigure` for the whole pool waits on it, and an origin that stops
+  reading would hold every sandbox's revocations behind one socket. Decide
+  under it, then write — but take the connection's write lock before
+  deciding and hold it until the frame is written: a decided message that
+  then waits behind a ping or another message on a stalled origin can go
+  out after the revocation it was decided before. This order has been wrong
+  both ways once each.
+- Every new place a credential is swapped into keeps its value out of what
+  comes back: a body swap's response is not spooled (`bodySwapped`), a
+  message swap's values are added to the connection's capture redactions
+  before the message is sent (`StreamSession.Redact`). An origin echoing the
+  token otherwise writes it to the pool's disk.
 - A response that cannot carry a body (HEAD, 1xx, 204, 304; see
   `bodyAllowed`) leaves the handler with `http.NoBody` and nothing wrapped
   around it — on the upstream path and on a cache hit alike (`discardBody`).

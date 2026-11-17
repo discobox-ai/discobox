@@ -2079,7 +2079,8 @@ func (noGatewayHeaders) ResolveGatewayHeaders(context.Context, GatewayHeadersReq
 	return nil, nil
 }
 
-func (stubResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (stubResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (stubResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }
 
 // Close must not close the audit recorder while a MITM'd request is still
 // being served: the exchange is recorded when goproxy finishes the response

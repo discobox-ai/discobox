@@ -64,7 +64,7 @@ func fitDelegation(ctx context.Context, txStore *store.Store, holderID string, b
 	// secret's as they stand now. A parent's list needs no check of its own:
 	// a grant ProveContained fits to it names only places it names, or the
 	// parent is the secret's own list.
-	if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+	if err := checkSecretPlaces(binding, secret, nil); err != nil {
 		return nil, 0, err
 	}
 	holder, err := txStore.GetSandbox(ctx, binding.ProjectID, holderID)

@@ -331,7 +331,7 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 // edit's transaction, after the secret's row is written, so a discobox's
 // handoff (which locks that row) is either seen or sees the new routes.
 func refuseStrandingBindingsTx(ctx context.Context, txStore *store.Store, prior, sec *model.Secret) error {
-	stranded, err := txStore.StrandedBodyPlaceBindings(ctx, prior, sec, time.Now().UTC())
+	stranded, err := txStore.StrandedPlaceBindings(ctx, prior, sec, time.Now().UTC())
 	if err != nil || len(stranded) == 0 {
 		return err
 	}
@@ -793,7 +793,7 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 		return nil, err
 	}
 	if a.approverID == "" {
-		if err := checkSecretBodyPlaces(binding, secret, nil); err != nil {
+		if err := checkSecretPlaces(binding, secret, nil); err != nil {
 			return nil, err
 		}
 		binding.ExpiresAt = expiryAt(now, ttl)

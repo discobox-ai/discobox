@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // ErrDenied indicates a sentinel is unknown, unapproved, or not permitted for
@@ -178,6 +179,13 @@ type AuthorizeRequest struct {
 	// sentinel in both Sentinels and Places must be allowed in its headers
 	// and at each of its places.
 	Places []Place
+	// Message is set when Places are in a message the client sent on the
+	// WebSocket connection this request upgraded (MatchMessage; ADR
+	// 26-11-06-442): the request is then the upgrade as the client sent it,
+	// Sentinels and Body are empty, and each place is a JSON pointer into the
+	// message, decided against the routes' message places
+	// (secretroute.Request.Message).
+	Message *secretroute.Message
 }
 
 // Verdict is an authorizer's answer. A request it does not allow is never
@@ -220,7 +228,13 @@ type Resolver interface {
 	// only requests whose body the proxy reads for a sentinel to swap
 	// (secretroute.BodyPlaces). It is a hint, never a permission: what is
 	// found there is authorized like any other use.
-	BodyPlaces(ctx context.Context, req BodyPlacesRequest) []string
+	BodyPlaces(ctx context.Context, req PlacesRequest) []string
+	// InspectsMessages reports whether some open route of the client's
+	// credentials with a WebSocket block covers an upgrade request, judged
+	// on its method, host and path alone (secretroute.WebSocketCandidate):
+	// the only connections whose messages the proxy reads for a sentinel to
+	// swap. Like BodyPlaces, a hint and never a permission.
+	InspectsMessages(ctx context.Context, req PlacesRequest) bool
 	// ResolveRaw returns the value of a client's raw binding by its sentinel
 	// (ADR 26-10-27-840), ErrDenied when the client no longer holds it raw,
 	// or any other error when there is no answer.
@@ -338,6 +352,12 @@ type Swapper struct {
 	previous   map[cacheKey]previousValue
 	refreshing map[cacheKey]struct{}
 	now        func() time.Time
+
+	// publish is held by Reconfigure while it installs a configuration, and
+	// shared by Forward while a WebSocket message resolved under the last one
+	// is sent; revision counts the configurations installed.
+	publish  sync.RWMutex
+	revision atomic.Uint64
 }
 
 // settings is a Swapper's configuration: the sentinel set and swap tuning a
@@ -437,9 +457,12 @@ func (s *Swapper) Reconfigure(cfg Config) {
 	}
 	next := newSettings(cfg)
 	s.raw.reconfigure(cfg.Raw, next.refreshTTL)
+	s.publish.Lock()
+	defer s.publish.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings.Store(next)
+	s.revision.Add(1)
 	for key, entry := range s.cache {
 		// A value whose secret was since given another is dropped with the
 		// one it displaced (Config.Generations): the next request resolves
@@ -618,7 +641,7 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string,
 	res.Headers, res.QueryParams = eachValue(st, req, func(value string) (string, bool) {
 		return s.swapValue(ctx, st, clientID, at, value, &res)
 	})
-	if swapped, ok := s.applyBody(ctx, st, clientID, at, body, &res); ok {
+	if swapped, ok := s.applyBody(ctx, st, clientID, at, body, &res, nil); ok {
 		req.Body = io.NopCloser(bytes.NewReader(swapped))
 		req.ContentLength = int64(len(swapped))
 		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(swapped)), nil }
