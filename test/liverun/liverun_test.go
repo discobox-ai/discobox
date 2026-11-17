@@ -62,7 +62,9 @@ run*)
 		echo 'request failed: 409 Conflict: no harness given and this project has no default; pass --harness, or set one with ` + "`discobox admin harness set-default <harness>`" + `' >&2; exit 1
 	fi
 	prompt=$(printf '%s\n' "$@" | grep -o 'string [0-9a-f]* written' | awk '{ print $2 }')
-	printf '%s' "$prompt" | rev >"$STUB/answer"
+	# Reversed in awk: rev is util-linux's, which neither the devShell nor a
+	# discobox provides.
+	printf '%s' "$prompt" | awk '{ for (i = length($0); i > 0; i--) printf "%s", substr($0, i, 1) }' >"$STUB/answer"
 	# The CLI's progress goes to stderr, beside the JSON.
 	echo "Creating discobox... syncing SSH config" >&2
 	echo '{"id":"sbx_T1"}' ;;
