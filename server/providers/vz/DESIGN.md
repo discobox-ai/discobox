@@ -107,8 +107,18 @@ VM, owned by the VM rather than by a lease (`dockerworker.NewPoolAgentClient`):
 every connection to it is a new VSOCK connection into the guest, and every
 pool-agent call takes its own lease, so a per-lease client dialed the guest for
 each proxied request and each poll of an attached console (#1335). A lease's
-release leaves the client alone; stopping or replacing the VM closes its idle
-connections, and the VM that replaces it gets a client of its own.
+release leaves the client alone; stopping or replacing the VM drops its
+connections, idle and in flight, and the VM that replaces it gets a client of
+its own.
+
+A guest that panics reboots inside the same VM, and nothing promises the host
+side of the old boot's connections ends with it: on a Mac, requests sent just
+after a panic waited past a 60s timeout (#1335; that run could not tell a kept
+connection from a stalled dial). The first sign the host gets is the rebooting
+guest refusing a new dial to the agent port, so the client drops every
+connection it holds then, in flight included, and a request still waiting on
+the old boot fails instead of waiting for its caller to give up. A dial into a
+guest that has panicked but not yet rebooted stalls until it is back (#1336).
 
 Connections deliberately do not implement `CloseWrite`. The framework's
 connection cannot have its write side shut down independently through this

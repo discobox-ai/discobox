@@ -141,7 +141,7 @@ type guestVM struct {
 	// the guest, so it belongs to the VM, not to a lease, and closes with it
 	// (#1335).
 	agentMu     sync.Mutex
-	agent       *http.Client
+	agent       *dockerworker.PoolAgentClient
 	agentClosed bool
 }
 
@@ -853,7 +853,7 @@ func (g *guestVM) agentClient(socket string) (*http.Client, bool) {
 			return dialer.DialContext(ctx, "unix", socket)
 		})
 	}
-	return g.agent, true
+	return g.agent.Client, true
 }
 
 func (g *guestVM) socketsReady() bool {
@@ -901,7 +901,7 @@ func (g *guestVM) close() {
 		g.agentMu.Lock()
 		g.agentClosed = true
 		if g.agent != nil {
-			g.agent.CloseIdleConnections()
+			g.agent.Close()
 		}
 		g.agentMu.Unlock()
 	})
