@@ -240,14 +240,17 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	// Resolved outside the lock: the first pool on a machine pulls the guest
 	// image and the kernel, and no other pool should block on that.
 	//
-	// The phase is reported and not held. A fetch that moves bytes restates
-	// itself twice a second with its byte counts, and a held phase would blank
-	// those every time its heartbeat fired.
+	// The phase is reported and not held: a fetch that moves bytes restates
+	// itself twice a second with its byte counts. Through its quiet stretches —
+	// the unpack between the two images — the engine's starting_vm hold this
+	// runs inside restates the last of these reports, until the VM starting is
+	// reported again once both are here.
 	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
 	root, kernel, err := d.resolveArtifacts(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
+	d.progress.Report(ctx, poolID, sandbox.PoolPhaseStartingVM)
 
 	guest, started, err := d.launch(ctx, poolID, root, kernel, want, spec.Outbound)
 	if err != nil {

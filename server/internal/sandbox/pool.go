@@ -175,7 +175,7 @@ func (r PoolProgressReporter) Report(ctx context.Context, poolID string, phase P
 var poolPhaseHeartbeat = 5 * time.Second
 
 // Hold reports a phase and keeps restating it until the returned func is
-// called.
+// called. The held work runs under the returned context.
 //
 // A phase entered once and then held for minutes is, to anyone reading the
 // record, indistinguishable from a phase entered and abandoned — the record
@@ -191,17 +191,26 @@ var poolPhaseHeartbeat = 5 * time.Second
 // failed with "no sandbox capacity" while its VM was booting normally.
 //
 // The image phases do not need this: a pull restates itself as it moves.
-func (r PoolProgressReporter) Hold(ctx context.Context, poolID string, phase PoolProvisionPhase) func() {
+//
+// The held work may refine the phase from inside, as a VM driver reports the
+// guest image fetch from inside the starting_vm the engine holds around it.
+// The held work runs under the returned context, and the heartbeat restates
+// whatever was last reported through it for this pool — the fetch with its
+// byte counts and retry, through every quiet stretch of it — rather than the
+// bare phase, which would blank them. The work hands the line back by
+// reporting the held phase itself once its refinement is over.
+func (r PoolProgressReporter) Hold(ctx context.Context, poolID string, phase PoolProvisionPhase) (context.Context, func()) {
 	r.Report(ctx, poolID, phase)
 	if r == nil || poolID == "" || phase == "" {
-		return func() {}
+		return ctx, func() {}
 	}
-	done := make(chan struct{})
-	var once sync.Once
 	// Read before the goroutine starts, so the interval it uses is settled at
 	// the moment of the call and the goroutine never reads a package variable
 	// a test may be restoring.
 	interval := poolPhaseHeartbeat
+	held := &heldPhase{poolID: poolID, latest: PoolProvisionProgress{Phase: phase}}
+	done := make(chan struct{})
+	var once sync.Once
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -212,11 +221,11 @@ func (r PoolProgressReporter) Hold(ctx context.Context, poolID string, phase Poo
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				r.Report(ctx, poolID, phase)
+				held.restate(ctx, r)
 			}
 		}
 	}()
-	return func() { once.Do(func() { close(done) }) }
+	return context.WithValue(ctx, heldPhaseKey{}, held), func() { once.Do(func() { close(done) }) }
 }
 
 // ReportProgress is Report with the detail a phase can carry.
@@ -224,7 +233,37 @@ func (r PoolProgressReporter) ReportProgress(ctx context.Context, poolID string,
 	if r == nil || poolID == "" || progress.Phase == "" {
 		return
 	}
+	if held, _ := ctx.Value(heldPhaseKey{}).(*heldPhase); held != nil && held.poolID == poolID {
+		held.report(ctx, r, progress)
+		return
+	}
 	r(ctx, poolID, progress)
+}
+
+// heldPhase is what a hold restates: the last report made inside the work it
+// holds, which starts as the held phase itself.
+type heldPhase struct {
+	poolID string
+
+	// mu orders the work's reports and the heartbeat's restatements, so a
+	// restatement read before a newer report is never stored after it.
+	mu     sync.Mutex
+	latest PoolProvisionProgress
+}
+
+type heldPhaseKey struct{}
+
+func (h *heldPhase) report(ctx context.Context, r PoolProgressReporter, progress PoolProvisionProgress) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.latest = progress
+	r(ctx, h.poolID, progress)
+}
+
+func (h *heldPhase) restate(ctx context.Context, r PoolProgressReporter) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r(ctx, h.poolID, h.latest)
 }
 
 // PoolBox is what a pool's maker places in its box before it runs

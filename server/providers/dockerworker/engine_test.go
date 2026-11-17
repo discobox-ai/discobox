@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1022,5 +1024,95 @@ func TestEnsurePoolLogsTheHostStepsOfAHostComingUp(t *testing.T) {
 				t.Errorf("refusals %d, started %v: %s logged at info = %v, want %v; log:\n%s", tc.refusals, tc.started, msg, got, tc.info, logged.String())
 			}
 		}
+	}
+}
+
+// fetchingDriver is a VM driver whose EnsureVM fetches its guest image first,
+// reporting the fetch from inside the call as the vz and libkrun drivers do.
+type fetchingDriver struct {
+	lifecycleDriver
+	progress sandbox.PoolProgressReporter
+}
+
+func (d *fetchingDriver) EnsureVM(ctx context.Context, poolID string, _ VMSpec) (*VMInfo, error) {
+	d.ensureCalled = true
+	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
+	// A registry slow to answer, then two images with an unpack between them,
+	// as libkrun fetches its guest and its kernel: every stretch long enough
+	// for the engine's starting_vm hold to fire several times.
+	time.Sleep(20 * time.Second)
+	for _, image := range []string{"guest", "kernel"} {
+		for current := int64(1); current <= 5; current++ {
+			d.progress.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
+				Phase: sandbox.PoolPhaseFetchingVMImage,
+				Pull:  &sandbox.PoolPullProgress{Image: image, Current: current, Total: 5, Done: current == 5},
+			})
+			time.Sleep(20 * time.Second)
+		}
+	}
+	d.progress.Report(ctx, poolID, sandbox.PoolPhaseStartingVM)
+	// The boot.
+	time.Sleep(20 * time.Second)
+	return &VMInfo{ID: "local", Status: sandbox.StatusRunning}, nil
+}
+
+// The engine holds starting_vm around EnsureVM, and a VM driver fetching its
+// guest image reports the fetch from inside that call. Both places that start
+// the VM run it under the hold's context, so the hold's heartbeat yields to the
+// fetch instead of blanking its byte counts, and says the VM is starting once
+// the driver says the fetch is over.
+func TestStartingVMHoldYieldsToTheGuestImageFetch(t *testing.T) {
+	for _, path := range []string{"ensure", "repair"} {
+		t.Run(path, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var mu sync.Mutex
+				var phases []sandbox.PoolProvisionPhase
+				reporter := sandbox.PoolProgressReporter(func(_ context.Context, _ string, progress sandbox.PoolProvisionProgress) {
+					mu.Lock()
+					defer mu.Unlock()
+					phases = append(phases, progress.Phase)
+				})
+				driver := &fetchingDriver{lifecycleDriver: lifecycleDriver{status: sandbox.StatusStopped}, progress: reporter}
+				engine, err := New(Config{SandboxBaseImage: "worker-image", ProgressReporter: reporter}, driver)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Ended by the Docker wait, which this driver cannot satisfy.
+				ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+				defer cancel()
+				provider := &model.SandboxProviderInstance{ID: "provider-1"}
+				pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
+				if path == "ensure" {
+					err = engine.EnsurePool(ctx, nil, provider, pool, nil, nil)
+				} else {
+					err = engine.RepairPool(ctx, nil, provider, pool, nil, "", nil)
+				}
+				if err == nil {
+					t.Fatal("want the Docker wait to fail")
+				}
+				synctest.Wait()
+				if !driver.ensureCalled {
+					t.Fatal("EnsureVM was not called")
+				}
+
+				mu.Lock()
+				defer mu.Unlock()
+				first, last := slices.Index(phases, sandbox.PoolPhaseFetchingVMImage), -1
+				for i, phase := range phases {
+					if phase == sandbox.PoolPhaseFetchingVMImage {
+						last = i
+					}
+				}
+				for i := first; i <= last; i++ {
+					if phases[i] != sandbox.PoolPhaseFetchingVMImage {
+						t.Fatalf("phases %v: %q at %d interrupts the guest image fetch", phases, phases[i], i)
+					}
+				}
+				// Once the fetch is over the VM boots, and the hold says so.
+				if n := slices.Index(phases[last:], sandbox.PoolPhaseWaitingForDocker); n < 3 || slices.ContainsFunc(phases[last+1:last+n], func(phase sandbox.PoolProvisionPhase) bool { return phase != sandbox.PoolPhaseStartingVM }) {
+					t.Fatalf("phases %v: want %q restated through the boot after the fetch", phases, sandbox.PoolPhaseStartingVM)
+				}
+			})
+		})
 	}
 }

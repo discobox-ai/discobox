@@ -146,7 +146,7 @@ func (s *DevelopmentImageSynchronizer) buildBundles(ctx context.Context, daemonI
 	if !ok {
 		return fmt.Errorf("save development bundles: Docker daemon %s reports no platform", daemonID)
 	}
-	release := reporter.Hold(ctx, poolID, sandbox.PoolPhaseSyncingDevelopmentImages)
+	ctx, release := reporter.Hold(ctx, poolID, sandbox.PoolPhaseSyncingDevelopmentImages)
 	defer release()
 	images := make([]devimage.Image, 0, len(builds))
 	for _, bundle := range builds {
@@ -295,7 +295,7 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 	}
 	// Report only after inspection proves there is work. Hold the phase through
 	// builds and transfers, which may otherwise go silent for minutes.
-	release := reporter.Hold(ctx, poolID, sandbox.PoolPhaseSyncingDevelopmentImages)
+	ctx, release := reporter.Hold(ctx, poolID, sandbox.PoolPhaseSyncingDevelopmentImages)
 	defer release()
 	for _, image := range retags {
 		if _, err := destination.ImageTag(ctx, client.ImageTagOptions{Source: image.ID, Target: image.Reference}); err != nil {

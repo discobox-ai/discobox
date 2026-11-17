@@ -318,11 +318,13 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	// whether the image is cached is known only by asking, and a phase that
 	// lasts milliseconds on a warm machine costs a status line one frame.
 	//
-	// The phase is not held. A fetch that moves bytes restates itself twice a
-	// second with its byte counts, and a held phase would blank those every time
-	// its heartbeat fired — the same reason the engine does not hold the pool
-	// image pull. The one report here covers a resolve that never gets that far:
-	// a cache hit, a local build, or a registry that has not answered yet.
+	// The phase is not held: a fetch that moves bytes restates itself twice a
+	// second with its byte counts, as the engine's pool image pull does. The
+	// one report here covers a resolve that never gets that far: a cache hit, a
+	// local build, or a registry that has not answered yet. Through any quiet
+	// stretch the engine's starting_vm hold this runs inside restates the last
+	// of these reports, until the VM starting is reported again once the image
+	// is here.
 	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
 	bundle, err := d.guest.Resolve(ctx, func(fetch guestimage.Progress) {
 		d.progress.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
@@ -333,6 +335,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	if err != nil {
 		return nil, err
 	}
+	d.progress.Report(ctx, poolID, sandbox.PoolPhaseStartingVM)
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
