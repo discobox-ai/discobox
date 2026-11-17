@@ -4,25 +4,24 @@
 # boxd's), and holds what those have in common rather than what either alone
 # has. Node, a browser, Nix, brew and the coding agents are features the
 # platform provisions, and stay out of here so the platform cannot come to
-# depend on them unnoticed. It is Debian sid where those are Ubuntu: sid is
-# the one Debian this repository builds on (see "Debian" in the root
-# DESIGN.md), and the features provision onto either.
+# depend on them unnoticed. It is Ubuntu 26.04 LTS (resolute), the one Linux
+# this repository builds on (see "Ubuntu" in the root DESIGN.md), and the
+# features provision onto any Debian-family image.
 #
 # A Docker pool's container runs it too, provisioned from the pool bundle (ADR
 # 26-10-24-953 §2), so a pool host pulls one image for itself and its
 # sandboxes.
 
-# The repository's one Debian pin: sid's image by digest, and the
-# snapshot.debian.org timestamp apt builds from. `go tool task debian:bump`
-# moves both, here and in every other Dockerfile.
-ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
-ARG DEBIAN_SNAPSHOT=20261111T202414Z
+# The repository's one Ubuntu pin: resolute's image by digest, and the mirror
+# apt reads first on each architecture. `go tool task ubuntu:bump` moves the
+# image, here and in every other Dockerfile.
+ARG UBUNTU_IMAGE=public.ecr.aws/docker/library/ubuntu:resolute-20261105.1@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
+ARG UBUNTU_MIRROR_AMD64=http://azure.archive.ubuntu.com/ubuntu
+ARG UBUNTU_MIRROR_ARM64=http://azure.ports.ubuntu.com/ubuntu-ports
 
-# Another Debian-family distribution can stand in, to provision the platform
-# onto it as onto a provider's own image: `task build:ubuntu-sandbox-base`.
-ARG DISTRO_IMAGE=${DEBIAN_IMAGE}
-FROM ${DISTRO_IMAGE}
-ARG DEBIAN_SNAPSHOT
+FROM ${UBUNTU_IMAGE}
+ARG UBUNTU_MIRROR_AMD64
+ARG UBUNTU_MIRROR_ARM64
 
 ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
@@ -38,34 +37,33 @@ LABEL io.discobox.reclaimable.v1=true
 # GID package installs leave kvm at moves with what they install.
 RUN groupadd --system --gid 992 kvm
 
-# On Debian, apt builds this image from the pinned snapshot, so a rebuild
-# installs what the last one did; the last apt layer below hands the box back
-# to the live sid archive, and takes away the snapshot's check below. The
-# snapshot is read over http: the image has no CA certificates to check TLS
-# with until apt installs them. apt verifies every index against Debian's
-# archive key, but with Check-Valid-Until off (a snapshot's Release expires a
-# week after it was taken) any older signed index would pass for it, so an
-# apt hook fails every update whose sid index is not dated within the day
-# before the snapshot. A stand-in distribution keeps its own sources.
-RUN set -eux \
-    && . /etc/os-release \
-    && if [ "$ID" = debian ]; then \
-        printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
-            'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
-            'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources; \
-        s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s); \
-        printf '%s\n' '#!/bin/sh' \
-            'set -eu' \
-            "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease /var/lib/apt/lists/*_dists_sid_Release 2>/dev/null | head -n 1)" \
-            "[ -n \"\$released\" ] || { echo 'apt fetched no signed sid Release to check against snapshot ${DEBIAN_SNAPSHOT}: refusing it' >&2; exit 1; }" \
-            "d=\$(date -u -d \"\$released\" +%s)" \
-            "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
-            "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
-            'exit 1' > /usr/local/sbin/discobox-apt-snapshot; \
-        chmod 0755 /usr/local/sbin/discobox-apt-snapshot; \
-        echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot; \
-    fi \
-    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries
+# apt reads resolute's live pockets (resolute, -updates, -security) from the
+# mirror list: a fast mirror first, Ubuntu's own archive behind it, for the
+# build and for the box after it, so a box's own apt, and the features
+# provisioned onto it, read the fast mirror too. Every entry is plain http: the
+# image has no CA certificates to check TLS with until apt installs them, and
+# apt verifies every index against Ubuntu's archive key, whichever host served
+# it. Ubuntu's Release files carry no Valid-Until, so the moving pockets
+# (-updates, -security) get Valid-Until-Max: apt refuses one dated more than a
+# week ago, so no host can replay an older, validly signed index of them, in
+# the build or in a box.
+RUN set -eu \
+    && case "$(dpkg --print-architecture)" in \
+        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
+        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && mkdir -p /etc/apt/mirrors \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
+        'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute-updates resolute-security' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
+        > /etc/apt/sources.list.d/ubuntu.sources \
+    && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
+    && echo "apt reads $mirror, then $fallback"
 
 # Common apt requirements of core, build, cli, python and shells-editors
 # (ADR 26-11-06-664). Keep in sync with their provision.yaml declarations.
@@ -123,30 +121,22 @@ RUN set -eux \
 # Kept apart from the layer above so a Docker update does not invalidate it.
 # A pool's container runs none of it: its daemon's socket is bound in.
 #
-# Docker publishes no suite for Debian sid, so on Debian it is Docker's trixie
-# suite: the one thing in this repository's builds that names trixie, and the
-# owner's choice over sid's own docker.io. Docker's packages are its own
-# builds with few library dependencies, which sid's newer libraries satisfy.
-# Everything else in the image is sid's.
+# It is Docker's resolute suite, not Ubuntu's docker.io.
 #
 # The daemon is pinned, and the pool VM guest runs the same one:
 # DOCKER_CE_VERSION and CONTAINERD_IO_VERSION are one pin with vm-image's,
-# kept one by `go tool task check:debian` and moved by `go tool task
+# kept one by `go tool task check:ubuntu` and moved by `go tool task
 # docker:bump`.
 # A pin names the upstream version and the build takes the suite's package of
-# it, whichever distribution the image is built on. buildx and Compose are the
-# suite's newest. Docker's key is served beside the packages it signs, so it
-# is held to Docker's published fingerprint, the same on every distribution.
-ARG DOCKER_DEBIAN_SUITE=trixie
+# it. buildx and Compose are the suite's newest. Docker's key is served beside
+# the packages it signs, so it is held to Docker's published fingerprint.
 ARG DOCKER_CE_VERSION=29.9.3-1
 ARG CONTAINERD_IO_VERSION=2.4.2-4
 ARG DOCKER_APT_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 RUN set -eux \
     && install -m 0755 -d /etc/apt/keyrings \
     && . /etc/os-release \
-    && suite="$VERSION_CODENAME" \
-    && if [ "$ID" = debian ]; then suite="$DOCKER_DEBIAN_SUITE"; fi \
-    && curl -fsSL --retry 5 --retry-all-errors "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
+    && curl -fsSL --retry 5 --retry-all-errors https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
     && gnupg=$(mktemp -d) \
     && fingerprints=$(GNUPGHOME=$gnupg gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }') \
     && rm -rf "$gnupg" \
@@ -154,14 +144,14 @@ RUN set -eux \
         echo "Docker's apt key is not $DOCKER_APT_KEY_FINGERPRINT: $fingerprints" >&2; exit 1; \
     fi \
     && chmod a+r /etc/apt/keyrings/docker.asc \
-    && printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
-        "$ID" "$suite" "$(dpkg --print-architecture)" \
+    && printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
+        "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
         > /etc/apt/sources.list.d/docker.sources \
     && apt-get update \
     && ce=$(apt-cache madison docker-ce | awk -v v="5:${DOCKER_CE_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
     && containerd=$(apt-cache madison containerd.io | awk -v v="${CONTAINERD_IO_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
     && if [ -z "$ce" ] || [ -z "$containerd" ]; then \
-        echo "Docker's $suite suite has no docker-ce $DOCKER_CE_VERSION or containerd.io $CONTAINERD_IO_VERSION" >&2; exit 1; \
+        echo "Docker's $VERSION_CODENAME suite has no docker-ce $DOCKER_CE_VERSION or containerd.io $CONTAINERD_IO_VERSION" >&2; exit 1; \
     fi \
     && apt-get install -y --no-install-recommends \
         containerd.io="$containerd" \
@@ -174,10 +164,7 @@ RUN set -eux \
     && systemctl disable docker.service containerd.service \
     && systemctl enable docker.socket
 
-# gh, from GitHub's own repository, which tracks its releases. The last apt
-# layer, so it is also where Debian's sources go back from the snapshot to the
-# live sid archive: a box's own apt, and the features provisioned onto it,
-# install today's sid.
+# gh, from GitHub's own repository, which tracks its releases.
 #
 # GitHub's key is served beside the packages it signs, so it is held to the
 # fingerprints GitHub publishes for it (cli/cli docs/install_linux.md). The
@@ -200,17 +187,11 @@ RUN set -eux \
     && apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && . /etc/os-release \
-    && if [ "$ID" = debian ]; then \
-        printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian' \
-            'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
-            > /etc/apt/sources.list.d/debian.sources; \
-        rm -f /etc/apt/apt.conf.d/81-discobox-snapshot /usr/local/sbin/discobox-apt-snapshot; \
-    fi
+    && rm -rf /var/lib/apt/lists/*
 
-# Go and uv, each its upstream release, pinned with its checksum: Debian's Go
-# trails upstream, and Debian packages no uv.
+# Go and uv, each its upstream release, pinned with its checksum: Ubuntu's Go
+# trails upstream, and Ubuntu packages no uv. Go is the repository's one Go
+# pin, the Go its builders use, moved by `go tool task go:bump`.
 # Every curl in this image retries, any error included: one 504 from a release
 # host would otherwise fail the build (#871). curl's own backoff (1s doubling,
 # about 30s over five retries) rides out a short outage. curl -o discards a
@@ -219,27 +200,36 @@ RUN set -eux \
 ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
+RUN set -eu \
+    && arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+        amd64) go_sha=$GO_SHA256_AMD64 ;; \
+        arm64) go_sha=$GO_SHA256_ARM64 ;; \
+        *) echo "no Go for $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL --retry 5 --retry-all-errors -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+    && echo "$go_sha  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && /usr/local/go/bin/go version
+ENV PATH=/usr/local/go/bin:${PATH}
+
 ARG UV_VERSION=0.13.4
 ARG UV_SHA256_AMD64=2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f
 ARG UV_SHA256_ARM64=1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab
 RUN set -eux \
     && arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
-        amd64) go_sha="$GO_SHA256_AMD64" uv_arch=x86_64 uv_sha="$UV_SHA256_AMD64" ;; \
-        arm64) go_sha="$GO_SHA256_ARM64" uv_arch=aarch64 uv_sha="$UV_SHA256_ARM64" ;; \
+        amd64) uv_arch=x86_64 uv_sha="$UV_SHA256_AMD64" ;; \
+        arm64) uv_arch=aarch64 uv_sha="$UV_SHA256_ARM64" ;; \
         *) echo "unsupported architecture $arch" >&2; exit 1 ;; \
     esac \
     && tmp="$(mktemp -d)" \
-    && curl -fsSL --retry 5 --retry-all-errors -o "$tmp/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
-    && echo "$go_sha  $tmp/go.tar.gz" | sha256sum -c - \
-    && tar -C /usr/local -xzf "$tmp/go.tar.gz" \
     && curl -fsSL --retry 5 --retry-all-errors -o "$tmp/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
     && echo "$uv_sha  $tmp/uv.tar.gz" | sha256sum -c - \
     && tar -C /usr/local/bin --strip-components=1 -xzf "$tmp/uv.tar.gz" "uv-${uv_arch}-unknown-linux-gnu/uv" "uv-${uv_arch}-unknown-linux-gnu/uvx" \
     && rm -rf "$tmp" \
-    && /usr/local/go/bin/go version \
     && uv --version
-ENV PATH=/usr/local/go/bin:${PATH}
 
 # The login user, at uid 1000: passwordless sudo, in `docker`, and lingering.
 # A sandbox whose account is another deletes this one at boot (ADR

@@ -331,3 +331,10 @@ Global review expectations:
   that joins meanwhile is either on that list or finds the retained exit frame
   itself. Listing them before the output drained left a late joiner with
   neither, and the shim waiting on it for good.
+- `check:ubuntu` (`scripts/ubuntu-pin.sh`) reads Dockerfiles as text, so it
+  holds only what it is taught: the mirror list and Ubuntu's sources are
+  written by the one shared setup block it compares across every copy, and a
+  new way of writing either (another file, a heredoc, a `COPY`) needs the check
+  taught to refuse it in the same change. Its first version accepted a stage
+  that wrote an https list with `Trusted: yes` outside the block, because any
+  mention of the list's path counted as the setup.

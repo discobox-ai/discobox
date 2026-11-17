@@ -23,11 +23,17 @@
   fix it at the binding, not with a method that lies.
 - **The root disk is shared and read-only.** Never attach it writable and never
   add `rw` to the kernel command line: every pool on the host has it open.
-- **The guest's hard-lockup detector is timer-based, not an NMI.** Debian's
-  arm64 kernel has only the buddy detector, which reads a vCPU the Mac
-  deschedules for 1.2 × `watchdog_thresh` as locked. Since
-  `nmi_watchdog=panic` turns that into a reset, lowering `watchdog_thresh` or
-  making soft lockups or RCU stalls fatal resets pools under host load.
+- **Know which hard-lockup detector the guest's kernel has before relying on
+  it.** Debian's arm64 kernel had only the buddy detector, which reads a vCPU
+  the Mac deschedules for 1.2 × `watchdog_thresh` as locked. Ubuntu's arm64
+  kernel, the guest's since ADR 26-11-16-365, builds the perf detector
+  (`HARDLOCKUP_DETECTOR_PERF`) instead, which needs a PMU the guest can take
+  an NMI from; on a vz guest without one, no hard-lockup detector runs and
+  `nmi_watchdog=panic` does nothing. Read the guest's boot log (its
+  `NMI watchdog` line) on a Mac after a guest kernel change. Whichever
+  detector runs, `nmi_watchdog=panic` turns what it reports into a reset, so
+  lowering `watchdog_thresh` or making soft lockups or RCU stalls fatal can
+  reset pools under host load.
 - **A panicked guest reboots inside the same VM.** Virtualization.framework
   does not stop a VM whose guest panics: `Running` stays true, and the guest's
   own reboot is what recovers the pool, not repair. Do not write recovery code

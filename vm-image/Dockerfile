@@ -20,71 +20,100 @@
 # release line (kernel/Dockerfile), and it ignores the one this build lifts out
 # of the distribution package.
 #
-# Every stage is Debian sid: the image pinned by digest, apt pinned to a
-# snapshot.debian.org timestamp. They are the repository's one Debian pin, the
-# same two values in every Dockerfile that builds on Debian; see "Debian" in
-# the root DESIGN.md, and `go tool task debian:bump` to move them. Docker is
-# the one exception: Docker CE from Docker's trixie suite, on its own pin
-# (DOCKER_CE_VERSION below, moved by `go tool task docker:bump`).
-ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
-ARG DEBIAN_SNAPSHOT=20261111T202414Z
+# Every stage is Ubuntu 26.04 LTS (resolute): the image pinned by digest, apt
+# reading the release's live pockets from a fast mirror with Ubuntu's own
+# archive behind it. They are the repository's one Ubuntu pin, the same values
+# in every Dockerfile that builds on Ubuntu; see "Ubuntu" in the root
+# DESIGN.md, and `go tool task ubuntu:bump` to move the image. Docker CE (from
+# Docker's resolute suite) and Go (upstream's release) have pins of their own
+# (DOCKER_CE_VERSION and GO_VERSION below, moved by `go tool task docker:bump`
+# and `go tool task go:bump`).
+ARG UBUNTU_IMAGE=public.ecr.aws/docker/library/ubuntu:resolute-20261105.1@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
+ARG UBUNTU_MIRROR_AMD64=http://azure.archive.ubuntu.com/ubuntu
+ARG UBUNTU_MIRROR_ARM64=http://azure.ports.ubuntu.com/ubuntu-ports
+ARG GO_VERSION=1.27.3
+ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 
 # The stages that run on the target architecture start here, with apt reading
-# the pinned snapshot and never the moving archive. The snapshot is read over
-# http: the sid image has no CA certificates to check TLS with before apt
-# installs them. apt verifies every index against Debian's archive key, but
-# with Check-Valid-Until off (a snapshot's Release expires a week after it was
-# taken) any older signed index would pass for it, so an apt hook fails every
-# update whose sid index is not dated within the day before the snapshot. The
-# Go stage below and every Dockerfile on the Debian pin do the same.
-FROM ${DEBIAN_IMAGE} AS debian
-ARG DEBIAN_SNAPSHOT
-RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
-        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
-        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
-    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
-    && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
-    && printf '%s\n' '#!/bin/sh' \
-        'set -eu' \
-        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease /var/lib/apt/lists/*_dists_sid_Release 2>/dev/null | head -n 1)" \
-        "[ -n \"\$released\" ] || { echo 'apt fetched no signed sid Release to check against snapshot ${DEBIAN_SNAPSHOT}: refusing it' >&2; exit 1; }" \
-        "d=\$(date -u -d \"\$released\" +%s)" \
-        "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
-        "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
-        'exit 1' > /usr/local/sbin/discobox-apt-snapshot \
-    && chmod 0755 /usr/local/sbin/discobox-apt-snapshot \
-    && echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot
+# the mirror list. Every entry is plain http: the image has no CA certificates
+# to check TLS with before apt installs them, and apt verifies every index
+# against Ubuntu's archive key, whichever host served it. Ubuntu's Release
+# files carry no Valid-Until, so the moving pockets (-updates, -security) get
+# Valid-Until-Max: apt refuses one dated more than a week ago, so no host can
+# replay an older, validly signed index of them. The frozen release pocket is
+# dated its release day and stays out of that. The Go stage below and every
+# Dockerfile on the Ubuntu pin write the same list.
+FROM ${UBUNTU_IMAGE} AS ubuntu
+ARG UBUNTU_MIRROR_AMD64
+ARG UBUNTU_MIRROR_ARM64
+RUN set -eu \
+    && case "$(dpkg --print-architecture)" in \
+        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
+        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && mkdir -p /etc/apt/mirrors \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
+        'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute-updates resolute-security' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
+        > /etc/apt/sources.list.d/ubuntu.sources \
+    && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
+    && echo "apt reads $mirror, then $fallback"
 
-# Go is sid's own, at the snapshot: there is no golang image on sid. Built
-# natively on the host platform and cross-compiled, so nothing is emulated.
-FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS guest-tools
-ARG DEBIAN_SNAPSHOT
+# Go is upstream's, on the repository's one Go pin: the LTS's Go is older than
+# go.mod asks for, and the golang images are Debian. Built natively on the host
+# platform and cross-compiled, so nothing is emulated.
+FROM --platform=$BUILDPLATFORM ${UBUNTU_IMAGE} AS guest-tools
+ARG UBUNTU_MIRROR_AMD64
+ARG UBUNTU_MIRROR_ARM64
+ARG GO_VERSION
+ARG GO_SHA256_AMD64
+ARG GO_SHA256_ARM64
 ARG TARGETOS=linux
 ARG TARGETARCH
 
-RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
-        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
-        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
-    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
-    && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
-    && printf '%s\n' '#!/bin/sh' \
-        'set -eu' \
-        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease /var/lib/apt/lists/*_dists_sid_Release 2>/dev/null | head -n 1)" \
-        "[ -n \"\$released\" ] || { echo 'apt fetched no signed sid Release to check against snapshot ${DEBIAN_SNAPSHOT}: refusing it' >&2; exit 1; }" \
-        "d=\$(date -u -d \"\$released\" +%s)" \
-        "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
-        "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
-        'exit 1' > /usr/local/sbin/discobox-apt-snapshot \
-    && chmod 0755 /usr/local/sbin/discobox-apt-snapshot \
-    && echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates golang-go \
+RUN set -eu \
+    && case "$(dpkg --print-architecture)" in \
+        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
+        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && mkdir -p /etc/apt/mirrors \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
+        'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute-updates resolute-security' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
+        > /etc/apt/sources.list.d/ubuntu.sources \
+    && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
+    && echo "apt reads $mirror, then $fallback"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-# The snapshot's Go is the Go that builds: a go.mod that asks for a newer one
-# fails here, rather than fetching a toolchain nothing pins (Debian's Go
-# defaults to GOTOOLCHAIN=auto). Moving to it is a bump of the Debian pin.
-ENV GOPATH=/go GOTOOLCHAIN=local
+RUN set -eu \
+    && arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+        amd64) go_sha=$GO_SHA256_AMD64 ;; \
+        arm64) go_sha=$GO_SHA256_ARM64 ;; \
+        *) echo "no Go for $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL --retry 5 --retry-all-errors -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+    && echo "$go_sha  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && /usr/local/go/bin/go version
+# The pinned Go is the Go that builds: a go.mod that asks for a newer one
+# fails here, rather than fetching a toolchain nothing pins. Moving it is
+# `go tool task go:bump`.
+ENV PATH=/usr/local/go/bin:${PATH} GOPATH=/go GOTOOLCHAIN=local
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -102,18 +131,18 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # beside the packages it signs, so it is held to Docker's published
 # fingerprint: a key that is not Docker's fails the build, rather than signing
 # the daemon every pool runs as root.
-FROM debian AS docker-apt-key
+FROM ubuntu AS docker-apt-key
 ARG DOCKER_APT_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl gpg \
-    && curl -fsSL --retry 5 --retry-all-errors https://download.docker.com/linux/debian/gpg -o /docker.asc \
+    && curl -fsSL --retry 5 --retry-all-errors https://download.docker.com/linux/ubuntu/gpg -o /docker.asc \
     && fingerprints=$(gpg --show-keys --with-colons /docker.asc | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }') \
     && if [ "$fingerprints" != "$DOCKER_APT_KEY_FINGERPRINT" ]; then \
         echo "Docker's apt key is not $DOCKER_APT_KEY_FINGERPRINT: $fingerprints" >&2; exit 1; \
     fi \
     && chmod a+r /docker.asc
 
-FROM debian AS rootfs
+FROM ubuntu AS rootfs
 ARG TARGETARCH
 
 ENV container=discobox-vm
@@ -127,15 +156,18 @@ RUN printf '%s\n' \
         'path-exclude /usr/share/man/*' \
         > /etc/dpkg/dpkg.cfg.d/01-discobox-nodoc
 
-# linux-image-<arch> is the only reason this image is not tiny, and it is what
+# linux-image-virtual is the only reason this image is not tiny, and it is what
 # removes a kernel build from the backends that can use it: a hypervisor taking
 # stock virtio needs no patched kernel (ADR 0062 §8). It is installed on every
 # architecture so this build has no per-backend branch in it, and a backend that
 # brings its own kernel simply does not ask for the one assembly lifts out.
 #
-# It is sid's kernel because the root is sid, the repository's one Debian,
-# with no apt pin taking it from anywhere else. zstd is listed because sid's
-# initramfs-tools no longer pulls it in, and without it COMPRESS=zstd below
+# It is Ubuntu's virtual kernel from resolute-updates, because the root is
+# resolute, the repository's one Ubuntu, with no apt pin taking it from
+# anywhere else; a rebuild takes the newest the pocket has. initramfs-tools is
+# named because Ubuntu's default initramfs generator is dracut, and the initrd
+# below is built from initramfs-tools' module list. zstd is listed because
+# initramfs-tools does not pull it in, and without it COMPRESS=zstd below
 # quietly falls back to gzip.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -145,7 +177,7 @@ RUN apt-get update \
         initramfs-tools \
         iproute2 \
         iputils-ping \
-        linux-image-${TARGETARCH} \
+        linux-image-virtual \
         systemd \
         systemd-resolved \
         systemd-sysv \
@@ -154,32 +186,30 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Docker is Docker CE from Docker's own repository, the Docker the sandbox base
-# runs, at the same version: DOCKER_CE_VERSION and CONTAINERD_IO_VERSION are
-# one pin with the sandbox base's, kept one by `go tool task check:debian` and
-# moved by `go tool task docker:bump`.
-# Not sid's docker.io: Debian's build of Docker 28.5.2 refuses every archive
-# copy into a container whose bind crosses the /var/run link, where Docker's
-# own builds accept it (#1164). Docker publishes no sid suite, so this is its
-# trixie suite, as for the sandbox base. A pin names the upstream version and
+# Docker is Docker CE from Docker's own repository, its resolute suite, the
+# Docker the sandbox base runs, at the same version: DOCKER_CE_VERSION and
+# CONTAINERD_IO_VERSION are one pin with the sandbox base's, kept one by
+# `go tool task check:ubuntu` and moved by `go tool task docker:bump`.
+# Not a distribution's docker.io: Debian's build of Docker 28.5.2 refused every
+# archive copy into a container whose bind crosses the /var/run link, where
+# Docker's own builds accept it (#1164). A pin names the upstream version and
 # the build takes the suite's package of it, so a rebuild installs the same
-# Docker even though Docker's repository is not a snapshot.
+# Docker even though Docker's repository is not pinned.
 #
 # docker-ce depends on docker-ce-cli, and nothing in the guest runs the CLI
-# (the pool's console brings its own), so it goes, as Debian's docker.io never
-# installed one here.
-ARG DOCKER_DEBIAN_SUITE=trixie
+# (the pool's console brings its own), so it goes.
 ARG DOCKER_CE_VERSION=29.9.3-1
 ARG CONTAINERD_IO_VERSION=2.4.2-4
 COPY --from=docker-apt-key /docker.asc /etc/apt/keyrings/docker.asc
-RUN printf 'Types: deb\nURIs: https://download.docker.com/linux/debian\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
-        "$DOCKER_DEBIAN_SUITE" "$(dpkg --print-architecture)" \
+RUN . /etc/os-release \
+    && printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
+        "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
         > /etc/apt/sources.list.d/docker.sources \
     && apt-get update \
     && ce=$(apt-cache madison docker-ce | awk -v v="5:${DOCKER_CE_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
     && containerd=$(apt-cache madison containerd.io | awk -v v="${CONTAINERD_IO_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
     && if [ -z "$ce" ] || [ -z "$containerd" ]; then \
-        echo "Docker's $DOCKER_DEBIAN_SUITE suite has no docker-ce $DOCKER_CE_VERSION or containerd.io $CONTAINERD_IO_VERSION" >&2; exit 1; \
+        echo "Docker's $VERSION_CODENAME suite has no docker-ce $DOCKER_CE_VERSION or containerd.io $CONTAINERD_IO_VERSION" >&2; exit 1; \
     fi \
     && apt-get install -y --no-install-recommends \
         containerd.io="$containerd" \
@@ -190,7 +220,7 @@ RUN printf 'Types: deb\nURIs: https://download.docker.com/linux/debian\nSuites: 
     && rm -f /usr/bin/docker \
     && rm -rf /usr/libexec/docker/cli-plugins
 
-# Debian's kernel package carries a module for every device Debian supports.
+# Ubuntu's kernel packages carry a module for every device Ubuntu supports.
 # This guest's entire hardware surface is virtio — block, net, vsock, console,
 # entropy, balloon, fs — whichever hypervisor attaches it, so whole driver
 # classes here describe hardware that cannot appear. depmod after, or
@@ -200,6 +230,10 @@ RUN printf 'Types: deb\nURIs: https://download.docker.com/linux/debian\nSuites: 
 # Docker's, not the hardware's, and virtiofs is a filesystem rather than a
 # driver class — it lives in kernel/fs/fuse and is loaded on demand by the
 # kernel when /etc/fstab asks for the virtiofs type.
+#
+# On arm64 the modules package also carries a device tree for every board the
+# kernel boots on bare metal (about 100 MiB); a hypervisor describes this
+# guest's hardware itself, so they go too.
 RUN set -eux; \
     modules=$(ls -d /usr/lib/modules/*); \
     for class in \
@@ -213,7 +247,13 @@ RUN set -eux; \
     do \
         rm -rf "$modules/kernel/$class"; \
     done; \
-    depmod -a "$(basename "$modules")"
+    depmod -a "$(basename "$modules")"; \
+    rm -rf "/usr/lib/firmware/$(basename "$modules")/device-tree"
+
+# Ubuntu's image carries a login account, `ubuntu` (uid 1000, in sudo). Nobody
+# logs in to the guest: it runs no getty and no ssh, and everything else runs
+# in containers. An account with sudo has no business in it, so it goes.
+RUN userdel --remove ubuntu
 
 # udev's hardware database is a PCI, USB and OUI vendor table for naming devices
 # that are not on this machine.
@@ -230,7 +270,7 @@ RUN rm -f /usr/bin/ctr
 #
 # The initrd's whole job is to mount an ext4 root on a virtio-blk disk, so it is
 # built from a list rather than from MODULES=most, which packs every block and
-# network driver Debian ships. Names that are built into the kernel on an
+# network driver Ubuntu ships. Names that are built into the kernel on an
 # architecture are ignored there, so listing them costs nothing and covers the
 # case where a flavour builds them as modules.
 RUN set -eux; \
@@ -250,7 +290,7 @@ RUN set -eux; \
 # systemd-logind is masked, not merely unused: a headless guest has no seats and
 # no PAM sessions, so it fails and is restarted in a loop that floods the serial
 # console — the one diagnostic available for a guest whose Docker never answers.
-# Its varlink socket goes with it: sid's systemd starts that socket on its own,
+# Its varlink socket goes with it: systemd starts that socket on its own,
 # and with the service masked it fails to listen, a red line on every boot.
 #
 # systemd-networkd-persistent-storage is masked for the same reason and a
@@ -310,7 +350,7 @@ RUN mkdir -p \
         systemd-networkd-wait-online.service \
         systemd-resolved.service
 
-FROM debian AS assemble
+FROM ubuntu AS assemble
 ARG TARGETARCH
 ARG ROOT_SLACK_MIB=32
 

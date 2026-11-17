@@ -189,14 +189,21 @@ framework reboots it inside the same VM, on the same disks: the VM stays
 running, the guest boots again, and its pool agent re-registers, with nothing
 from the driver. Without it the kernel halts in place and the VM reports running
 with nothing inside. libkrun needs no equivalent — its default command line
-already carries `panic=-1`. vz's also carries `nmi_watchdog=panic`: Debian's
-kernel detects a hard lockup (the buddy detector) but only warns, leaving the VM
-running and wedged, and this makes it a panic, so a reboot. It is on vz's command
+already carries `panic=-1`. vz's also carries `nmi_watchdog=panic`: the guest
+kernel detects a hard lockup but only warns, leaving the VM running and wedged,
+and this makes it a panic, so a reboot. Debian's arm64 kernel detected one with
+the buddy detector; Ubuntu's, the guest's now, builds the perf detector, which
+runs only where the guest has a PMU to take an NMI from (see REVIEW.md). It is on vz's command
 line rather than a sysctl in the shared guest image because libkrun's kernel,
 the image's other one, has no lockup detector, and it holds from boot.
-`watchdog_thresh=30` goes with it: the buddy detector reads a vCPU the Mac
-descheduled for 1.2 thresholds as locked, which at the default 10 is a load
-spike and at 30 is 36 s or more, while a real lockup never ends. Soft lockups
+`watchdog_thresh=30` goes with it. It was set for the buddy detector, which
+read a vCPU the Mac descheduled for 1.2 thresholds as locked: at the default
+10 that is a load spike, at 30 it is 36 s or more, while a real lockup never
+ends. It stays for whichever detector runs, since a threshold past a load
+spike is what keeps the reset for a real lockup. On a guest kernel with only
+the perf detector and a vz guest with no PMU, no hard-lockup detector runs
+and neither setting does anything; that is unverified for Ubuntu's kernel
+(ADR 26-11-16-365's amendment). Soft lockups
 and RCU stalls stay warnings for the same reason. A guest that is running but
 broken without panicking is the engine's to catch, by its Docker daemon not
 answering a repair.
@@ -288,7 +295,7 @@ The guest image is built and released on its own line
 `DefaultGuestImage` is `guestimage.DefaultVMImage`, and the pin lives there
 rather than here because the image is shared: one publish has to be one edit, or
 a backend quietly keeps booting the release before last. Its inputs change when
-Debian, the kernel, or Docker changes rather than when Discobox does, so tying
+Ubuntu, the kernel, or Docker changes rather than when Discobox does, so tying
 the two would make a guest fix require a product release and a product release
 imply a new guest.
 

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Turn an exported guest root filesystem into a boot artifact set: an
-# uncompressed kernel, an initrd, and a raw ext4 root filesystem.
+# uncompressed kernel, an initrd, a raw ext4 root filesystem, and the list of
+# packages the root was built from.
 #
 # Everything here runs inside the image build (ADR 0062 §6). mkfs.ext4 -d
 # populates an image file without a loop device and without privileges, which
@@ -33,25 +34,82 @@ is_kernel_image() {
     [ -s "$1" ] && [ "$(dd if="$1" bs=1 skip=56 count=4 2>/dev/null)" = "ARMd" ]
 }
 
+# le N FILE OFFSET prints the N-byte (2 or 4) little-endian unsigned integer
+# at OFFSET in FILE.
+le() {
+    od -An -t "u$1" --endian=little -j "$3" -N "$1" "$2" | tr -d ' \n'
+}
+
+# text FILE OFFSET COUNT prints COUNT bytes at OFFSET in FILE, NULs dropped.
+text() {
+    dd if="$1" bs=1 skip="$2" count="$3" 2>/dev/null | tr -d '\000'
+}
+
+# slice FILE OFFSET SIZE OUT copies SIZE bytes at OFFSET in FILE to OUT.
+slice() {
+    tail -c +"$(($2 + 1))" "$1" | head -c "$3" >"$4"
+}
+
+# unwrap_stub IN OUT copies the kernel out of an EFI stub that carries it as a
+# PE section named .linux, as Ubuntu's arm64 kernel is shipped (a stub that
+# also carries device trees, .dtbauto, for the machines it boots on bare
+# metal), and fails when IN is not such a stub.
+unwrap_stub() {
+    [ "$(text "$1" 0 2)" = MZ ] || return 1
+    pe=$(le 4 "$1" 60)
+    [ "$(text "$1" "$pe" 4)" = PE ] || return 1
+    sections=$(le 2 "$1" $((pe + 6)))
+    table=$((pe + 24 + $(le 2 "$1" $((pe + 20)))))
+    i=0
+    while [ "$i" -lt "$sections" ]; do
+        entry=$((table + i * 40))
+        if [ "$(text "$1" "$entry" 8)" = .linux ]; then
+            slice "$1" "$(le 4 "$1" $((entry + 20)))" "$(le 4 "$1" $((entry + 16)))" "$2"
+            return 0
+        fi
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# unwrap_zboot IN OUT copies the compressed payload out of an EFI zboot image
+# ("zimg" at offset 4, the payload's offset and size at 8 and 12, its
+# compression's name at 24), and fails when IN is not one.
+unwrap_zboot() {
+    [ "$(text "$1" 4 4)" = zimg ] || return 1
+    echo "assemble-guest-image: $kernel is an EFI zboot image, $(text "$1" 24 32)-compressed"
+    slice "$1" "$(le 4 "$1" 8)" "$(le 4 "$1" 12)" "$2"
+}
+
 case "$arch" in
 arm64)
     # A hypervisor that loads a kernel directly requires an uncompressed one.
-    # Which form Debian ships is not a constant: the sid arm64 kernel, as
-    # trixie's was, is already a raw Image, while other flavours and releases
-    # are gzipped. Detect rather than assume, so a Debian change is not a
-    # silent boot failure on a host that cannot be debugged from. Doing it here
-    # also means the published artifact is always bootable and no server
-    # carries a kernel decompressor.
-    if is_kernel_image "$kernel"; then
+    # Which form a distribution ships is not a constant: Debian's arm64 kernel
+    # was a raw Image; Ubuntu's is an EFI stub whose .linux section is an EFI
+    # zboot image whose payload is a zstd-compressed Image. Unwrap and detect rather
+    # than assume, so a kernel packaging change is not a silent boot failure
+    # on a host that cannot be debugged from. Doing it here also means the
+    # published artifact is always bootable and no server carries a kernel
+    # decompressor.
+    work=$(mktemp -d)
+    image=$kernel
+    if unwrap_stub "$image" "$work/linux"; then
+        echo "assemble-guest-image: took the kernel out of $kernel's .linux section"
+        image=$work/linux
+    fi
+    if unwrap_zboot "$image" "$work/payload"; then
+        image=$work/payload
+    fi
+    if is_kernel_image "$image"; then
         echo "assemble-guest-image: $kernel is already an uncompressed kernel Image"
-        cp "$kernel" "$out/vmlinux"
+        cp "$image" "$out/vmlinux"
     else
         for format in gzip zstd xz lz4; do
             case "$format" in
-            gzip) gzip -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
-            zstd) zstd -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
-            xz) xz -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
-            lz4) lz4 -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
+            gzip) gzip -dc "$image" >"$out/vmlinux" 2>/dev/null || true ;;
+            zstd) zstd -dc "$image" >"$out/vmlinux" 2>/dev/null || true ;;
+            xz) xz -dc "$image" >"$out/vmlinux" 2>/dev/null || true ;;
+            lz4) lz4 -dc "$image" >"$out/vmlinux" 2>/dev/null || true ;;
             esac
             if is_kernel_image "$out/vmlinux"; then
                 echo "assemble-guest-image: decompressed $kernel with $format"
@@ -60,6 +118,7 @@ arm64)
             rm -f "$out/vmlinux"
         done
     fi
+    rm -rf "$work"
     if ! is_kernel_image "$out/vmlinux"; then
         echo "assemble-guest-image: $kernel is not an arm64 kernel Image and no known compression produced one" >&2
         exit 1
@@ -69,7 +128,7 @@ amd64)
     # No vmlinux is published for amd64, and that is not an omission. The one
     # backend that boots this architecture is libkrun, which requires the
     # libkrunfw-patched kernel from kernel/Dockerfile and would not load
-    # Debian's in any form. Extracting an amd64 bzImage's payload from its boot
+    # Ubuntu's in any form. Extracting an amd64 bzImage's payload from its boot
     # stub is real work with no consumer: ADR 0062 defers Intel Macs, and they
     # are the only thing that would want it.
     echo "assemble-guest-image: not publishing a vmlinux for amd64; libkrun boots its own patched kernel"
@@ -82,7 +141,17 @@ esac
 
 cp "$initrd" "$out/initrd.img"
 
-# The lockup detectors are built into Debian's kernel, not modules, so the
+# A rebuild installs the newest packages in the release's pockets rather than
+# replaying a snapshot (ADR 26-11-16-365 §2), so what a published guest holds
+# is recorded with it: every package, its version and architecture.
+dpkg-query --admindir="$rootfs/var/lib/dpkg" -W -f '${Package}\t${Version}\t${Architecture}\n' >"$out/packages.txt"
+sort -o "$out/packages.txt" "$out/packages.txt"
+if [ ! -s "$out/packages.txt" ]; then
+    echo "assemble-guest-image: $rootfs has no dpkg database to list its packages from" >&2
+    exit 1
+fi
+
+# The lockup detectors are built into Ubuntu's kernel, not modules, so the
 # kernel's config is the only place to see them, and it leaves with /boot
 # below. A guest whose CPU hard-locks with no detector just stops answering,
 # with nothing on its console (#1101). The modules the guest needs are checked
@@ -109,11 +178,11 @@ ln -s /run/systemd/resolve/resolv.conf "$rootfs/etc/resolv.conf"
 
 # Two more files a container runtime supplies and a VM does not.
 #
-# /etc/hostname ships in the Debian base image saying "debuerreotype", the tool
-# Debian builds its official images with. No container ever sees it — the
-# runtime bind-mounts its own over the top — but nothing masks it here, so the
-# guest came up calling itself that, which is what an operator on the pool
-# console reads and what every log line from inside carries.
+# /etc/hostname ships in a distribution's base image naming whatever built it
+# (Debian's said "debuerreotype"). No container ever sees it — the runtime
+# bind-mounts its own over the top — but nothing masks it here, so the guest
+# came up calling itself that, which is what an operator on the pool console
+# reads and what every log line from inside carries.
 #
 # /etc/hosts is the same arrangement in reverse: the runtime provides one, so
 # the image carries none at all, and a VM booting this tree would have no entry

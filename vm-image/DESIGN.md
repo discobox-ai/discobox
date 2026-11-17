@@ -12,7 +12,7 @@ by `server/providers/guestimage`.
 
 | Path | Publishes | Release line | Booted by |
 | --- | --- | --- | --- |
-| `Dockerfile` | `vmlinux` (arm64 only), `initrd.img`, `root.ext4` | `vm/v*` → `discobox-vm`, `linux/arm64` + `linux/amd64` | `vz` (arm64), `libkrun` (amd64) |
+| `Dockerfile` | `vmlinux` (arm64 only), `initrd.img`, `root.ext4`, `packages.txt` | `vm/v*` → `discobox-vm`, `linux/arm64` + `linux/amd64` | `vz` (arm64), `libkrun` (amd64) |
 | `kernel/Dockerfile` | `vmlinux`, `kernel.config` | `vm-kernel/v*` → `discobox-vm-kernel`, `linux/amd64` | `libkrun` |
 
 Two builds, two workflows (`.github/workflows/vm-image.yml`, `vm-kernel.yml`).
@@ -22,10 +22,11 @@ paths for exactly that reason.
 
 Publishing is tag-driven only: `vm:publish` / `vm:publish-kernel` push to
 `ghcr.io` and report the digest to pin. The scheduled runs — weekly for the
-guest, monthly for the kernel — build and verify but never publish. With apt
-pinned to a snapshot they install what the last build did, so they prove the
-pinned build still builds (the snapshot and image are still there); security
-fixes reach the guest only by a bump of the Debian pin, then a release.
+guest, monthly for the kernel — build and verify but never publish. apt reads
+resolute's live pockets, so a scheduled build installs today's updates and
+proves what a release would ship; security fixes reach the guest with the next
+release, no bump needed. The artifact's `packages.txt` records what it was
+built from.
 
 The server pins digests (`guestimage.DefaultVMImage` for the guest, libkrun's
 `DefaultKernelImage` for the kernel), so the three lines — product, guest,
@@ -56,7 +57,7 @@ boots.
 That is what keeps the image small enough to ship from a registry on a machine's
 first pool start, static enough to version on its own line, and small enough to
 audit. The same rule applies to hardware: the guest's entire surface is virtio,
-so the build deletes the driver classes Debian ships for the rest of the world
+so the build deletes the driver classes Ubuntu ships for the rest of the world
 and builds the initrd from a list rather than `MODULES=most`.
 
 ## Why one image
@@ -118,56 +119,62 @@ The clock timer is the same shape of tolerance: every 30 seconds it steps the
 guest clock from a host-backed RTC, and its service is conditioned on that RTC
 existing, so where there is none it never runs.
 
-## Debian sid, and its kernel
+## Ubuntu resolute, and its kernel
 
-The guest is Debian sid, on the repository's one Debian pin (see
-[Debian](../DESIGN.md#debian)). `vz` boots the kernel that comes with that
-root, sid's `linux-image-<arch>`; trixie's 6.12 was the guest of #1101's hard
-lockup. No apt pin mixes suites, so the kernel moves when the pin does and at
-no other time, and a bump of the pin is a guest release to verify like any
-other.
+The guest is Ubuntu 26.04 LTS (resolute), on the repository's one Ubuntu pin
+(see [Ubuntu](../DESIGN.md#ubuntu), ADR 26-11-16-365). `vz` boots the kernel
+that comes with that root, `linux-image-virtual` from `resolute-updates` (a 7.x
+kernel; Debian trixie's 6.12 was the guest of #1101's hard lockup). No apt pin
+mixes releases; the kernel moves with the pocket, so a guest release takes the
+newest one, and `packages.txt` names it. Ubuntu's default initramfs generator
+is dracut; the guest installs initramfs-tools, whose module list builds the
+initrd.
 
 What the guest needs of that kernel is checked on every build. Assembly fails
 on a kernel built without the soft and hard lockup detectors, which leave
-with `/boot`. `vm:verify` fails on an artifact whose kernel lost a module the
+with `/boot`. That proves a detector is built, not that it runs: Ubuntu's
+arm64 kernel builds the perf hard-lockup detector, which runs only on a guest
+with a PMU to take an NMI from, and whether vz gives the guest one is
+unverified (ADR 26-11-16-365's amendment). Only the guest's boot log on a Mac
+shows it (see [vz's REVIEW.md](../server/providers/vz/REVIEW.md)). `vm:verify` fails on an artifact whose kernel lost a module the
 guest loads on demand: Docker's netfilter (nftables, conntrack, `nft_compat`)
 and bridge, overlay, the VSOCK transport, and the virtio disk and NIC.
 
-Docker is the exception to sid: Docker CE from Docker's trixie suite, the
-sandbox base's daemon at the sandbox base's pinned version (see
-[Debian](../DESIGN.md#debian)), without its CLI, which nothing in the guest
-runs. Debian's `docker.io` is not an option: its 28.5.2 build refuses every
-archive copy into a container whose bind crosses the `/var/run` link, and a
-pool's box is placed by one (#1164).
+Docker is Docker CE from Docker's resolute suite, the sandbox base's daemon at
+the sandbox base's pinned version (see [Ubuntu](../DESIGN.md#ubuntu)), without
+its CLI, which nothing in the guest runs. A distribution's `docker.io` is not
+an option: Debian's 28.5.2 build refused every archive copy into a container
+whose bind crosses the `/var/run` link, and a pool's box is placed by one
+(#1164).
 
 ## Why the kernel is not one of them
 
 libkrun boots a kernel directly through libkrunfw's patched entry paths, so no
-distribution kernel boots under it. `vz` is stock virtio and takes Debian's,
+distribution kernel boots under it. `vz` is stock virtio and takes Ubuntu's,
 which is why ADR 0062 §8 declined to build one at all.
 
 `kernel/` is therefore a separate artifact with a separate release line, not a
-stage of the guest build. Its build stage follows the Debian pin, so a bump of the pin
+stage of the guest build. Its build stage follows the Ubuntu pin, so a bump of the pin
 rewrites `kernel/Dockerfile` and rebuilds it (`vm-kernel.yml` builds; it
 publishes only on its own tag), though the kernel it builds does not change. The inputs move on unrelated clocks — this changes
-when libkrunfw or upstream Linux does, the guest when Debian or Docker does —
+when libkrunfw or upstream Linux does, the guest when Ubuntu or Docker does —
 and folding them together would make every guest rebuild compile a kernel and
 every kernel bump republish a userland (ADR 0101 §3).
 
 It builds libkrunfw's patched Linux from a checksum-pinned libkrunfw commit and
-kernel tarball, with sid's toolchain: only the build stage follows the Debian
-pin, never the kernel. `configure-kernel` then builds in what libkrunfw's
+kernel tarball, with resolute's toolchain: only the build stage follows the
+Ubuntu pin, never the kernel. `configure-kernel` then builds in what libkrunfw's
 compact nftables-only baseline leaves out and the guest needs — Docker's
 `x_tables` / `iptables-nft` compatibility, `PACKET` for the DHCP client,
 macvlan, ipvlan, VXLAN and 802.1Q — and turns off the one baseline setting the
 guest cannot live with, `BASE_SMALL`, which caps `pid_max` at 32768 for the
 whole pool VM (boots it at a few thousand) and fails `systemd-sysctl` on
-Debian's `50-pid-max.conf`. It fails the build if `olddefconfig` drops any
+the distribution's `50-pid-max.conf`. It fails the build if `olddefconfig` drops any
 required setting or keeps `BASE_SMALL`. The output is an ELF `vmlinux`, which
 libkrun loads with no initramfs, plus the `kernel.config` it was built from, so
 what booted can be read back off the artifact.
 
-The guest build still installs `linux-image-<arch>` on both architectures, so it
+The guest build still installs `linux-image-virtual` on both architectures, so it
 has no per-backend branch in it. Assembly publishes `vmlinux` only where it can
 produce an uncompressed image a hypervisor will load, which today is arm64;
 libkrun asks the resolver for `root.ext4` alone and never extracts the rest.
@@ -181,8 +188,11 @@ running pool VM (ADR 0062 §6, §7). There is no host-side `fakeroot`, `qemu-img
 or loop mount to be missing on a machine with no Docker daemon of its own.
 
 It lifts the kernel and initrd out of `/boot` into artifacts of their own — on
-arm64, detecting whether Debian's kernel is already a raw `Image` or which
-compression to undo — so the root filesystem never carries them twice.
+arm64, unwrapping an EFI stub's `.linux` section and an EFI zboot image
+(Ubuntu's arm64 kernel is both, around a zstd-compressed `Image`), then
+detecting whether what is left is already a raw `Image` or which compression
+to undo — so the root filesystem never carries them twice. It writes `packages.txt`, every package in the root with
+its version, beside them.
 
 It also supplies the three files a container runtime provides and a VM does not
 — `/etc/hostname`, `/etc/hosts`, and a `/etc/resolv.conf` that is not the

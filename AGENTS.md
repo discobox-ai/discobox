@@ -25,7 +25,7 @@
 - `server/internal/database`: database setup and resolution.
 - `server/internal/auth`: API authentication and authorization; `auth/sandbox` issues sandbox access tokens, `auth/poolagent` signs control-plane requests to pool agents.
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
-  `server/providers/dockerworker/sandbox-image` is the Docker driver's Debian
+  `server/providers/dockerworker/sandbox-image` is the Docker driver's Ubuntu
   sandbox base image every sandbox container runs, with its platform and
   harness bundles applied, and every Docker pool's container, with the pool
   bundle applied.

@@ -367,24 +367,11 @@ tasks:
         echo "staged {{.STAGE_WHAT}} artifacts in $dest; recreate a pool to boot them"
 
   build:sandbox-base-image:
-    desc: Build the Docker driver's Debian sandbox base image, every sandbox container's and every Docker pool's
+    desc: Build the Docker driver's Ubuntu sandbox base image, every sandbox container's and every Docker pool's
     vars:
       BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-sandbox-base:local"}}'
     cmds:
-      - docker build -f server/providers/dockerworker/sandbox-image/Dockerfile {{if .DISTRO_IMAGE}}--build-arg DISTRO_IMAGE={{.DISTRO_IMAGE}} {{end}}-t {{.BASE_IMAGE}} server/providers/dockerworker/sandbox-image
-
-  build:ubuntu-sandbox-base:
-    desc: Build the sandbox base image on Ubuntu 24.04 (discobox-sandbox-base:ubuntu), so a pool pointed at it provisions the features' Ubuntu paths
-    # The base image is Debian, so a box on this one is what applies a
-    # feature's `ubuntu:` packages and its `when: {distro: [ubuntu]}` steps,
-    # which exe.dev's and boxd's Ubuntu machines take. Point a pool at it with
-    # DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE. Its own tag, so the watcher-owned
-    # :local one does not move.
-    cmds:
-      - >-
-        go tool task build:sandbox-base-image
-        DISTRO_IMAGE=public.ecr.aws/docker/library/ubuntu:24.04
-        BASE_IMAGE=discobox-sandbox-base:ubuntu
+      - docker build -f server/providers/dockerworker/sandbox-image/Dockerfile -t {{.BASE_IMAGE}} server/providers/dockerworker/sandbox-image
 
   build:pool-agent-bundle:
     desc: Build the pool bundle, the pool-agent and pool-builder features FROM scratch
@@ -943,29 +930,36 @@ tasks:
           exit 1
         fi
 
-  check:debian:
-    desc: Every Debian stage builds on the one sid pin, Docker CE is one pinned version, and every copy of each agrees
-    # A Dockerfile cannot import another, so the sid image digest and the
-    # snapshot.debian.org timestamp are written into each one, and so are
-    # Docker CE's version, containerd.io's and Docker's key fingerprint in each
-    # one that installs Docker (the sandbox base and the pool VM guest). This
-    # is what keeps them one pin each. See "Debian" in DESIGN.md.
+  check:ubuntu:
+    desc: Every Linux stage builds on the one Ubuntu resolute pin and its mirror list, Docker CE and Go are one pinned version each, and every copy of each agrees
+    # A Dockerfile cannot import another, so the resolute image digest and the
+    # mirror for each architecture are written into each one, and so are the
+    # mirror list's setup, Docker CE's version, containerd.io's and Docker's
+    # key fingerprint in each one that installs Docker (the sandbox base and
+    # the pool VM guest), and Go's version and checksums in each one that
+    # installs Go. This is what keeps them one pin each. See "Ubuntu" in
+    # DESIGN.md.
     cmds:
-      - scripts/debian-pin.sh check
+      - scripts/ubuntu-pin.sh check
 
-  debian:bump:
-    desc: "Move the Debian pin, in every Dockerfile, to SNAPSHOT=<YYYYMMDDTHHMMSSZ> and the newest dated debian:sid-slim from a day before it; Docker CE stays put (docker:bump)"
-    requires:
-      vars: [SNAPSHOT]
+  ubuntu:bump:
+    desc: "Move the Ubuntu image pin, in every Dockerfile, to TAG=<resolute-YYYYMMDD[.N]>, by default the newest dated resolute image; apt already reads the release's live pockets, and Docker CE and Go stay put (docker:bump, go:bump)"
+    # It moves the guest's base, so it is a guest release: vm:verify on both
+    # architectures and a boot on each backend.
     cmds:
-      - scripts/debian-pin.sh bump {{.SNAPSHOT}}
+      - scripts/ubuntu-pin.sh bump "{{.TAG}}"
 
   docker:bump:
     desc: "Move Docker CE's pin, in the sandbox base and the pool VM guest, to VERSION=<docker-ce, e.g. 29.9.3-1> and CONTAINERD=<containerd.io, e.g. 2.4.2-4>, each defaulting to the newest Docker publishes for amd64 and arm64"
-    # It moves the guest's daemon, so like a Debian bump it is a guest release:
-    # vm:verify on both architectures and a boot on each backend.
+    # It moves the guest's daemon, so like an Ubuntu bump it is a guest
+    # release: vm:verify on both architectures and a boot on each backend.
     cmds:
-      - scripts/debian-pin.sh docker-bump "{{.VERSION}}" "{{.CONTAINERD}}"
+      - scripts/ubuntu-pin.sh docker-bump "{{.VERSION}}" "{{.CONTAINERD}}"
+
+  go:bump:
+    desc: "Move Go's pin, in every Dockerfile that installs Go (the Go builders and the sandbox base), to VERSION=<e.g. 1.27.3>, by default the newest stable Go, with its published checksums"
+    cmds:
+      - scripts/ubuntu-pin.sh go-bump "{{.VERSION}}"
 
   check:dockerfile-deps:
     desc: Every package an image's Go binaries import is copied into its build context
@@ -1159,7 +1153,7 @@ tasks:
     cmds:
       - go tool task check check:deadcode check:windows check:darwin-cross check:dockerfile-deps
       - task: check:dockerfiles
-      - task: check:debian
+      - task: check:ubuntu
       - task: check:shell
 
   ci:docs:
@@ -2239,7 +2233,7 @@ tasks:
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
-          echo "compilation is emulated. Only the Debian runtime stages are: slow for" >&2
+          echo "compilation is emulated. Only the Ubuntu runtime stages are: slow for" >&2
           echo "the sandbox base image's and sandbox-agent's apt, Nix, and language runtime installs." >&2
           # buildx needs both of these for a foreign architecture and says
           # nothing useful when they are missing.
@@ -2298,11 +2292,11 @@ tasks:
         arch="${arch#linux/}"
         cd build/vm
         ls -l
-        for artifact in initrd.img root.ext4; do
+        for artifact in initrd.img root.ext4 packages.txt; do
           test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
         done
         # Only arm64 publishes a kernel. amd64 is booted by libkrun, which needs
-        # the patched kernel from vm-image/kernel and would not load Debian's;
+        # the patched kernel from vm-image/kernel and would not load Ubuntu's;
         # see assemble-guest-image.
         if [ "$arch" = arm64 ]; then
           test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
@@ -2314,9 +2308,10 @@ tasks:
           test ! -e vmlinux || { echo "amd64 published a vmlinux; libkrun boots its own kernel" >&2; exit 1; }
         fi
         dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root"
-        # The guest's own name. The Debian base image ships /etc/hostname
-        # saying "debuerreotype" and a container never sees it, so this is only
-        # ever wrong in the artifact that boots — the one place nothing looks.
+        # The guest's own name. A distribution's base image ships /etc/hostname
+        # naming whatever built it and a container never sees it, so this is
+        # only ever wrong in the artifact that boots — the one place nothing
+        # looks.
         hostname=$(debugfs -R "cat /etc/hostname" root.ext4 2>/dev/null | tr -d '\0\r\n ')
         test "$hostname" = "discobox" || { echo "root.ext4 boots as '$hostname', not discobox" >&2; exit 1; }
         # One guest for every backend, so the network configuration has to be
@@ -2345,7 +2340,7 @@ tasks:
           exit 1
         fi
         # The modules the guest loads on demand, which the build's pruning of
-        # whole driver classes, or a Debian kernel bump, could take away:
+        # whole driver classes, or an Ubuntu kernel update, could take away:
         # Docker's netfilter and bridge, the overlay store, the VSOCK transport
         # every host channel rides, and the virtio disk and NIC. Each is either
         # a module (modules.dep) or built in (modules.builtin).
@@ -2355,6 +2350,10 @@ tasks:
         for module in nf_tables nf_conntrack nft_compat nft_ct bridge br_netfilter veth overlay vmw_vsock_virtio_transport virtio_blk virtio_net virtio_pci virtio_mmio; do
           echo "$modules" | grep -q "/$module\.ko" || { echo "kernel $modules_dir has no $module" >&2; exit 1; }
         done
+        # What the guest was built from: a rebuild takes the newest packages in
+        # resolute's pockets, so the list it carries is the record of them.
+        grep -q "^linux-image-$modules_dir[[:space:]]" packages.txt \
+          || { echo "packages.txt does not list the kernel linux-image-$modules_dir" >&2; exit 1; }
         echo "VM artifacts verified for $arch (hostname $hostname, kernel $modules_dir)"
 
   vm:verify-kernel:
@@ -2380,7 +2379,7 @@ tasks:
         done
         # CONFIG_BASE_SMALL caps pid_max at PAGE_SIZE*8 (32768) and boots it at
         # max(4096, 1024 per CPU): the guest's systemd-sysctl then fails every
-        # boot on Debian's 50-pid-max.conf, and the whole pool VM, every sandbox
+        # boot on the distribution's 50-pid-max.conf, and the whole pool VM, every sandbox
         # in it, shares a few thousand PIDs. Absent from the config is off too.
         if grep -q '^CONFIG_BASE_SMALL=y' kernel.config; then
           echo "kernel is built with CONFIG_BASE_SMALL; pid_max is capped at 32768" >&2; exit 1

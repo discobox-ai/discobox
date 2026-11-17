@@ -3,9 +3,9 @@
 #
 # It is separate from the guest image workflow because it compiles Linux. The
 # two artifacts move on unrelated clocks — this one when libkrunfw or upstream
-# does, the guest when Debian or Docker does — and folding them together would
+# does, the guest when Ubuntu or Docker does — and folding them together would
 # mean every guest change waiting on a kernel build that nothing in it touched.
-# The one input they share is the Debian pin its build stage runs on, so a bump
+# The one input they share is the Ubuntu pin its build stage runs on, so a bump
 # of the pin rebuilds this too, without changing the kernel it builds.
 #
 # It publishes as `discobox-vm-kernel`, linux/amd64 only: it exists because no

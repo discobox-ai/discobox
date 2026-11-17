@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       # Without a Depot project the Taskfile falls back to emulated buildx,
-      # which is correct but slow for sandbox-agent's Debian stage
+      # which is correct but slow for sandbox-agent's Ubuntu stage
       # (ADR 0066 §6).
       - uses: depot/setup-action@v1.7.2
         if: vars.DEPOT_PROJECT_ID != ''
