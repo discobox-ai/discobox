@@ -56,7 +56,10 @@ type SandboxOperationRef struct {
 }
 
 // ListSandboxRefsNeedingReconcile returns refs of sandboxes whose generations
-// disagree. It is the reconcile engine's lost-mark backstop (ADR 0017 §1).
+// disagree, and of every sandbox meant to be deleted. It is the reconcile
+// engine's lost-mark backstop (ADR 0017 §1). A purge is finished only when its
+// row is gone (ADR 0022 §3), so a row asking for deletion is unfinished whatever
+// its generations say: one a failure settled is still re-driven.
 //
 // The generation comparison is the source of truth, so this needs no cutoff and
 // no notion of an operation being in flight. The query it replaces asked which
@@ -71,7 +74,7 @@ func (s *Store) ListSandboxRefsNeedingReconcile(ctx context.Context) ([]SandboxO
 	var rows []model.Sandbox
 	if err := read.Model(&model.Sandbox{}).
 		Select("project_id", "id").
-		Where("generation > observed_generation").
+		Where("generation > observed_generation OR desired_state = ?", model.DesiredStateDeleted).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

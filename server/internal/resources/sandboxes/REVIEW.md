@@ -71,15 +71,24 @@
 
 ## Settling a failure
 
-- **A teardown settles only on the pool's answer.** Archive, delete and a
-  repair's teardown record `failed` and advance `ObservedGeneration` only for
+- **A teardown settles only on the pool's answer.** Archive and a repair's
+  teardown record `failed` and advance `ObservedGeneration` only for
   something the pool said; nothing re-drives a settled failure (ADR 0017
-  §§3–4). `ErrPoolNotReachable` or an ended context is no answer: return the
+  §§3–4). `ErrPoolNotReachable`, an agent older than the server
+  (`ErrPoolAgentUnsupported`) or an ended context is no answer: return the
   error unsettled so the engine retries (`teardownNotAnswered`). A pool is
   unreachable after every server restart, and an archive settled there stayed
   `error` for good (#1043). Create is not a teardown: it already waits up to
   `poolAgentWaitCeiling` for its host and then settles, by design
-  (`server/providers/DESIGN.md`).
+  (`server/providers/DESIGN.md`); it waits on the older agent only.
+- **A delete never settles, the pool's own refusal included** (ADR 0022 §3).
+  It returns every removal failure unsettled and records nothing, so the box
+  reads `deleting` while the engine retries. Settled, a purge on a pool whose
+  host was away kept its data while its 409 promised a retry, and a
+  retention's purge has no one to purge again (#928). Do not record the cause
+  as `ErrorMessage` on an unsettled teardown either: `DisplayState` reads any
+  `ErrorMessage` as `error`. The scan re-drives every row asking for
+  deletion, so a purge settled before that fix is not stranded.
 
 ## Marks a pool observation earns
 
@@ -143,6 +152,10 @@
   automatic repair) does so only over a row it read as `present`, under that
   read's generation. A check in the caller before either races a purge
   recorded after its read.
+- **The purge's 409 text is matched by `test/ux-smoke`** (`purge_box`), which
+  waits for the background purge only on `sandbox purge did not complete; it
+  will be retried in the background`. Change it there in the same change, or
+  keep that text as the message's start (`purgePending`).
 - Read a program's reported status off `agent_status` only for a running
   sandbox. A stopped sandbox's row keeps the last report its agent posted and
   is never rewritten, so a msg or state read from it describes nothing that is

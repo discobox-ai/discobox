@@ -83,7 +83,9 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) (reconcile
 // disagree is re-marked, whatever it is doing and however long ago the mark was
 // lost (ADR 0017 §1). A settled failure has already advanced
 // ObservedGeneration, so it is converged by design and this does not re-drive
-// it until new intent arrives.
+// it until new intent arrives — except a purge's: a row meant to be deleted
+// that still exists is unfinished whatever its generations say, and one a
+// server before #928 settled is re-driven from here (ADR 0022 §3).
 // It has one addition the generation comparison cannot express: archived
 // sandboxes past their retention. Those have converged — their generations
 // agree, and by design nothing re-drives them — so the deadline is the only
@@ -288,11 +290,10 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 			// of an upgrade: the server restarts first and the pool's agent is
 			// replaced after it. Settling here latched a failure no later
 			// reconcile looked at again, so a sandbox re-pinned in that window
-			// stayed failed once its pool had caught up. Say why it waits, and
-			// leave the generation unobserved and the state as it was: the
-			// engine retries the create with backoff, and the first one the
-			// pool's new agent takes converges it. The state is kept so a
-			// sandbox that has never run is still started by that create.
+			// stayed failed once its pool had caught up. The engine retries the
+			// create with backoff, and the first one the pool's new agent takes
+			// converges it. The state is kept so a sandbox that has never run is
+			// still started by that create.
 			sandbox.RecordFailure(sandbox.State, err.Error(), "")
 			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 				return reconcile.Result{}, updateErr
@@ -372,14 +373,14 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 	}
 
 	if err := r.deleteSandbox(ctx, sandbox); err != nil {
-		if teardownNotAnswered(ctx, err) {
-			return err
-		}
-		sandbox.ObservedGeneration = generation
-		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
-		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-			return updateErr
-		}
+		// A purge is never settled: whatever stopped the removal — the pool's
+		// host away, its proxy, an agent not yet upgraded, the pool's own
+		// failure — it is retried until the pool confirms the data is gone
+		// (ADR 0022 §3, ADR 26-11-03-724 §2). Settled, nothing retried it,
+		// and a retention's purge has no one to purge again. Like a teardown
+		// the pool did not answer it records nothing, so the sandbox reads
+		// `deleting`, not `error`, while it waits; the purge's 409 and the
+		// engine's log carry why.
 		return err
 	}
 	sandbox.ObservedGeneration = generation
