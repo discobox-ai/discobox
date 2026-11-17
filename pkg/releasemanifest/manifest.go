@@ -208,6 +208,25 @@ func validateImage(value string) error {
 	return nil
 }
 
+// AllReferences is every image and bundle reference m names, by role, each once:
+// what a release of it pushed, and what it pins from another line (the VM
+// guest and kernel).
+func (m Manifest) AllReferences() []string {
+	refs := []string{m.Images.VM, m.Images.Kernel, m.Images.PoolAgent, m.Images.SandboxBase, m.Images.SandboxAgent}
+	refs = append(refs, bySlug(m.Images.Harnesses)...)
+	refs = append(refs, m.Bundles.Platform, m.Bundles.Agent, m.Bundles.PoolAgent)
+	refs = append(refs, bySlug(m.Bundles.Harnesses)...)
+	seen := map[string]bool{"": true}
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if !seen[ref] {
+			out = append(out, ref)
+			seen[ref] = true
+		}
+	}
+	return out
+}
+
 // References includes boot artifacts needed by the selected host backend.
 // Linux also stages libkrun's boot artifacts; Windows supplies its own guest.
 //

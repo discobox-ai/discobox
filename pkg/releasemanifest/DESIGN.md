@@ -23,6 +23,9 @@ and stages an older server's manifest. `References` derives the host cache's
 staging list from the image roles. Bundles are not staged: the cache feeds
 pool daemons, and a pool's daemon never holds a bundle — the server serves
 them to pools by blob (§13). Never add a separately maintained preload list.
+`AllReferences` is every role's reference, bundles included, for whatever
+acts on all of a release's images (the main builds' ghcr prune); it too is
+derived from the roles, never listed again elsewhere.
 The VM/kernel retain their independent release pins; container image tags name
 the Discobox release. Windows supplies its own guest through WSL Containers.
 

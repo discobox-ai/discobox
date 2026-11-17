@@ -244,3 +244,29 @@ func TestRejectIncompleteBundles(t *testing.T) {
 		})
 	}
 }
+
+// AllReferences names every role's reference once, bundles included, so whatever
+// prunes a release's images finds a role added here without a list of its own.
+func TestAllReferencesNamesEveryRole(t *testing.T) {
+	m, err := Read("examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBundles(&m)
+	m.Images.SandboxBase = "ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0"
+	m.Bundles.Agent = "ghcr.io/discobox-ai/discobox-agent:v0.8.0"
+	got := m.AllReferences()
+	want := []string{m.Images.VM, m.Images.Kernel, m.Images.SandboxBase, m.Bundles.Platform, m.Bundles.Agent, m.Bundles.PoolAgent}
+	if m.Images.PoolAgent != "" {
+		want = append(want, m.Images.PoolAgent)
+	}
+	want = append(want, bySlug(m.Bundles.Harnesses)...)
+	if len(got) != len(want) {
+		t.Fatalf("AllReferences = %v\nwant the set %v", got, want)
+	}
+	for _, ref := range want {
+		if !slices.Contains(got, ref) {
+			t.Errorf("AllReferences leaves out %s", ref)
+		}
+	}
+}
