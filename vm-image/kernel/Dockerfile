@@ -74,6 +74,14 @@ RUN tar -xzf /tmp/libkrunfw.tar.gz --strip-components=1 \
     && ln -s /tmp/linux-6.12.91.tar.xz tarballs/linux-6.12.91.tar.xz \
     && make linux-6.12.91
 
+# Discobox's own patches, on top of libkrunfw's. libkrun has no power-off
+# device and ends the VM only on a CPU reset, so without the first a guest's
+# poweroff halts it and the VM runs on until the host kills it (#1319).
+COPY vm-image/kernel/patches /tmp/discobox-patches
+RUN for p in /tmp/discobox-patches/*.patch; do \
+        patch -d linux-6.12.91 -p1 --forward --no-backup-if-mismatch < "$p" || exit 1; \
+    done
+
 COPY --chmod=0755 vm-image/kernel/configure-kernel /usr/local/bin/configure-discobox-kernel
 RUN configure-discobox-kernel linux-6.12.91 \
     && make -C linux-6.12.91 \

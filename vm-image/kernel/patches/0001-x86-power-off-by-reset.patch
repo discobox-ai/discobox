@@ -1,0 +1,39 @@
+x86: power off a libkrun guest by resetting it
+
+libkrun has no power-off device, and this kernel is built without ACPI, so
+x86 has no power-off handler: a poweroff halts the guest ("Power off not
+available: System halted instead") and leaves the VM running until the host
+kills it. libkrun ends the VM when the guest resets its CPU through the i8042
+(reboot=k, its default command line). Register a power-off handler that does
+that reset, so a guest that powers off ends its VM at once.
+
+--- a/arch/x86/kernel/reboot.c
++++ b/arch/x86/kernel/reboot.c
+@@ -818,6 +818,27 @@
+ 	machine_ops.power_off();
+ }
+ 
++/*
++ * Discobox: libkrun has no power-off device. It ends the VM when the guest
++ * resets its CPU (its default command line is reboot=k, and its i8042 turns
++ * the keyboard controller's reset into the VM's exit), so without a handler
++ * a poweroff halts the guest and leaves the VM running. Power off by that
++ * reset instead. This kernel boots only under libkrun.
++ */
++static int krun_power_off(struct sys_off_data *data)
++{
++	__machine_emergency_restart(0);
++	return NOTIFY_DONE;
++}
++
++static int __init krun_power_off_init(void)
++{
++	return PTR_ERR_OR_ZERO(register_sys_off_handler(SYS_OFF_MODE_POWER_OFF,
++							SYS_OFF_PRIO_LOW,
++							krun_power_off, NULL));
++}
++device_initcall(krun_power_off_init);
++
+ void machine_shutdown(void)
+ {
+ 	machine_ops.shutdown();

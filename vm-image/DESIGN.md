@@ -174,6 +174,17 @@ required setting or keeps `BASE_SMALL`. The output is an ELF `vmlinux`, which
 libkrun loads with no initramfs, plus the `kernel.config` it was built from, so
 what booted can be read back off the artifact.
 
+Before configuring, it applies Discobox's own patches in `kernel/patches` on top
+of libkrunfw's. libkrun has no power-off device and the kernel has no ACPI, so a
+stock x86 poweroff halts the guest ("Power off not available: System halted
+instead") and the VM runs on until the host kills it. libkrun ends the VM when
+the guest resets its CPU through the i8042 (`reboot=k`, its default command
+line), which is how libkrunfw's own init leaves. The patch registers a power-off
+handler that does that reset, so a guest that powers off ends its VM at once,
+whoever asked: the lifecycle service or a `poweroff` inside the guest. It lives
+in the kernel, not in the guest image, because only libkrun needs it, and the
+guest image must not know which backend booted it.
+
 The guest build still installs `linux-image-virtual` on both architectures, so it
 has no per-backend branch in it. Assembly publishes `vmlinux` only where it can
 produce an uncompressed image a hypervisor will load, which today is arm64;
@@ -228,8 +239,8 @@ not optional politeness: a guest that publishes a kernel the hypervisor cannot
 load, or a root filesystem that will not mount, fails as a blank console with
 nothing to read. `vm:verify` checks the kernel format per architecture, the root
 label, the hostname, and the network properties above; `vm:verify-kernel`
-checks the ELF header, the required config settings, and that `BASE_SMALL` is
-off.
+checks the ELF header, the required config settings, that `BASE_SMALL` is
+off, and that the power-off handler from `kernel/patches` is in `vmlinux`.
 
 ## Compatibility surface
 
