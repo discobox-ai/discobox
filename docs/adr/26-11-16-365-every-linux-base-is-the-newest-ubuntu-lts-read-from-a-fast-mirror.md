@@ -1,7 +1,8 @@
 # 26-11-16-365 — Every Linux base is the newest Ubuntu LTS, read from a fast mirror
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
+- Accepted by the owner by merging #1243, 2026-11-17
 - **Replaces**: the Debian sid pin of #1133 (commits `af3fc836a`,
   `f4685ff80`, `751b3cdd0`) and the trixie exception for Docker of #1164
   (`3fdb360f7`). No ADR recorded either; the root `DESIGN.md` "Debian"
