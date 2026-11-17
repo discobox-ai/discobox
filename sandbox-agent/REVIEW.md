@@ -10,6 +10,14 @@
   protocol. A silent `tcp` result earns one repeat after three seconds;
   counting accepts inflates reuse and admission checks.
 
+- **An fsnotify loop selects on `Errors` beside `Events`, and never calls
+  `Add`/`Remove` itself.** fsnotify sends both from one reader on unbuffered
+  channels, so an error nobody reads (an inotify queue overflow) holds back
+  every later event, and the loop falls back to its periodic re-check
+  without saying so: treat an error as a change (#1305, #1337). On Windows
+  `Add`/`Remove` wait on that same reader, so one called from the loop that
+  drains it blocks both for good once an error is sent mid-call (#1303).
+
 ## The DNS stub's firewall
 
 - **A new way of putting a sandbox on a shared network keeps its interface
