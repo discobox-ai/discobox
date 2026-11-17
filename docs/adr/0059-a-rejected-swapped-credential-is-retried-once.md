@@ -1,6 +1,6 @@
 # 0059 — A rejected swapped credential is retried once, and the delivered file is restored
 
-- **Status**: Accepted (sandbox credential-file rendering mechanism superseded by [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md); its `401`-only retry, and its previous-value fallback for a replaced value, superseded by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md))
+- **Status**: Accepted (sandbox credential-file rendering mechanism superseded by [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md); its `401`-only retry, and its previous-value fallback for a replaced value, superseded by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md); its passing the `401` through when the retry's fresh resolve failed transiently narrowed by [26-11-17-078](26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md))
 - **Date**: 2026-08-19
 
 ## Context

@@ -1,8 +1,8 @@
 # 26-11-17-078 — A control-plane 401 is about the pool, and is transient
 
-- **Status**: Proposed
+- **Status**: Accepted (by the owner by merging #1284, 2026-11-17)
 - **Date**: 2026-11-17
-- **Supersedes** (on acceptance): [ADR 26-10-14-482](26-10-14-482-a-sentinel-the-control-plane-could-not-resolve-is-never-sent.md)
+- **Supersedes**: [ADR 26-10-14-482](26-10-14-482-a-sentinel-the-control-plane-could-not-resolve-is-never-sent.md)
   §2's last paragraph, where a `401` and a resolve made before the pool holds a
   control-plane credential are each `ErrDenied`. It also narrows §2's
   paragraph on the retry of [ADR 0059](0059-a-rejected-swapped-credential-is-retried-once.md)
