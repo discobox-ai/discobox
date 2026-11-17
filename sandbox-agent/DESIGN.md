@@ -509,7 +509,10 @@ absent.
   checkout read as a clone of the source's own remote: it fetches the
   namespace's `refs/remotes/origin/*` from the pool once, points `origin` at
   the manifest's `upstreamUrl`, and has the branch track `origin/<branch>` when
-  the remote has it. A source with no remote has the pool remote alone, and
+  the remote has it. A delivery carries no symbolic refs, so `origin/HEAD` is
+  written from the manifest's `defaultBranch` (the branch the client last saw
+  the remote's HEAD name) when that branch was delivered, and left unset
+  otherwise; nothing asks the remote. A source with no remote has the pool remote alone, and
   its branch tracks that. Every pass asserts only the pool remote's URL and
   credential helper; `origin` is the sandbox's from materialization on. When
   `poolRemote` is absent — a source delivered before that — the pool is

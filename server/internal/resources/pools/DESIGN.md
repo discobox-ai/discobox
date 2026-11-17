@@ -334,9 +334,12 @@ decides whether its sandboxes are sent grants or each sentinel's first grant
 as route lists; whether it takes each sentinel's value generation
 (`sentinelGenerations`, #1022); and whether it takes a route's body block
 (`sentinelBodyPlaces`, `Pool.SentinelBodyPlaces`, #1012), without which its
-sandboxes are sent no route with one (`store.AgentSentinels`). An agent from
-before any of them sends none, recorded as false. A
-report that changes one marks every present sandbox on the pool for sentinel
+sandboxes are sent no route with one. It also declares whether it takes a
+git source's `defaultBranch` (`sourceDefaultBranch`, `Pool.SourceDefaultBranch`,
+#245), without which its sandboxes' sources are sent none and their
+`origin/HEAD` stays unset. All four are `store.AgentDeclarations`. An agent
+from before any of them sends none, recorded as false. A
+report that changes a sentinel declaration marks every present sandbox on the pool for sentinel
 delivery, as drift, in the transaction that records it
 (`SandboxDelivery.MarkPoolSentinelsTx`): nothing else changed, so nothing else
 would send them in the shape the agent now takes. A report that turns the pool
@@ -366,7 +369,7 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | `HealthCheckStartedAt` | server startup | `Store.BeginPoolHealthChecks`, before workers/listeners |
 | `PublicKey`, `KeyType` | pool's maker | `ControlPlane.EnrollPool`, once per box it makes (ADR 26-10-24-953 §4) |
 | `RegisteredAt` | pool agent | its first `UpdatePoolStatus` heartbeat |
-| `Platform`, `ImageKind`, `SentinelGrants`, `SentinelGenerations`, `SentinelBodyPlaces` | pool agent | every `UpdatePoolStatus` heartbeat |
+| `Platform`, `ImageKind`, `SentinelGrants`, `SentinelGenerations`, `SentinelBodyPlaces`, `SourceDefaultBranch` | pool agent | every `UpdatePoolStatus` heartbeat |
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |

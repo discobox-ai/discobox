@@ -37,7 +37,7 @@ func TestCreateTakesThePoolsPlatform(t *testing.T) {
 		t.Fatalf("platform = %q before the pool declared one, want none", created.Platform)
 	}
 	for _, hosts := range []platform.Platform{{OS: "linux", Arch: "riscv64"}, platform.Pool()} {
-		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", hosts, platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
+		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", hosts, platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
 			t.Fatal(err)
 		}
 		if err := create("on-" + hosts.Arch); err != nil {
@@ -66,10 +66,10 @@ func TestCreateTakesThePoolsImageKind(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.VM("boxd"), store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-boxd", platform.Pool(), platform.VM("boxd"), store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, pool := range []string{"pool-boxd", "pool-1"} {
@@ -120,7 +120,7 @@ func TestCreateJudgesTheUserByThePoolsPlatform(t *testing.T) {
 		{platform.Platform{OS: "linux", Arch: "arm64"}, false},
 		{platform.Platform{OS: "darwin", Arch: "arm64"}, true},
 	} {
-		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", tc.hosts, platform.VM("vz"), store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
+		if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", tc.hosts, platform.VM("vz"), store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
 			t.Fatal(err)
 		}
 		err := create("on-" + tc.hosts.OS)

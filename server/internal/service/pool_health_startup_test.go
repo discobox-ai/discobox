@@ -27,7 +27,7 @@ func TestStartRequiresNewPoolHealthReports(t *testing.T) {
 	if err := st.CreatePool(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The report has to be from before this run to be one this run distrusts,
@@ -63,7 +63,7 @@ func TestStartRequiresNewPoolHealthReports(t *testing.T) {
 	if pool.RegisteredAt == nil || pool.State != model.PoolStateActive {
 		t.Fatal("startup discarded lifecycle or registration")
 	}
-	pool, _, err = st.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentSentinels{}, true, true, false, 1, 1, 1, nil)
+	pool, _, err = st.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

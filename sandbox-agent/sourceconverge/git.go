@@ -362,14 +362,25 @@ func (r *repository) configureOrigin(ctx context.Context, spec sandboxconfig.Sou
 		return fmt.Errorf("fetch the remote's branches from the pool: %w", err)
 	}
 	// A delivery carries refs and no symbolic ones, so a HEAD among them is a
-	// plain ref frozen where the client's was. None is the honest state: a
-	// `git remote set-head origin --auto` asks the remote, as it would in any
-	// clone that lacks one.
-	if err := r.run(ctx, nil, "symbolic-ref", "--quiet", "refs/remotes/"+originRemote+"/HEAD"); err != nil {
-		_ = r.run(ctx, nil, "update-ref", "-d", "refs/remotes/"+originRemote+"/HEAD")
+	// plain ref frozen where the client's was, and is dropped. The client
+	// says instead which branch the remote's HEAD names, and origin/HEAD
+	// names that branch when it was delivered, as a clone's does. Unknown,
+	// or not delivered, origin/HEAD is left unset: a `git remote set-head
+	// origin --auto` asks the remote, as it would in any clone that lacks one.
+	head := "refs/remotes/" + originRemote + "/HEAD"
+	if err := r.run(ctx, nil, "symbolic-ref", "--quiet", head); err != nil {
+		_ = r.run(ctx, nil, "update-ref", "-d", head)
 	}
 	if err := r.configureRemote(ctx, originRemote, remote); err != nil {
 		return err
+	}
+	if branch := strings.TrimSpace(spec.DefaultBranch); branch != "" {
+		target := "refs/remotes/" + originRemote + "/" + branch
+		if r.run(ctx, nil, "show-ref", "--verify", "--quiet", target) == nil {
+			if err := r.run(ctx, nil, "symbolic-ref", head, target); err != nil {
+				return fmt.Errorf("point origin/HEAD at %s: %w", target, err)
+			}
+		}
 	}
 	if spec.RefType != "branch" || spec.RefName == "" {
 		return nil

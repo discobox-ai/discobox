@@ -1017,3 +1017,80 @@ func TestACacheDeliveredDirtyWorkspaceIsRestoredFromThePool(t *testing.T) {
 		t.Fatalf("README.md = %q, want the snapshot's", got)
 	}
 }
+
+// A clone records which branch its remote's HEAD names, and tools that ask
+// for the default branch read it as origin/HEAD. A cache-delivered source
+// reads as a clone of its remote, so it has one too.
+func TestACacheDeliveredSourceHasAnOriginHead(t *testing.T) {
+	o := newOrigin(t)
+	o.commit("README.md", "as the remote has it\n")
+	o.publish("main:refs/remotes/origin/main", "main:refs/remotes/origin/release")
+	pinned := o.commit("work.txt", "not pushed to the remote\n")
+	target := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, sandboxconfig.Source{Slug: "primary", Target: target, RefName: "main", RefType: "branch", UpstreamURL: "https://git.invalid/acme/widget.git", DefaultBranch: "main", PoolRemote: "discobox"})
+	source := sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: pinned}
+	if state := h.pass(t, document(1, source), "primary"); state.State != StateMaterialized {
+		t.Fatalf("state = %+v", state)
+	}
+	out, err := h.git(t, target, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if got := strings.TrimSpace(out); err != nil || got != "refs/remotes/origin/main" {
+		t.Fatalf("origin/HEAD = %q (%v), want a symbolic ref to refs/remotes/origin/main", got, err)
+	}
+}
+
+// origin/HEAD names the remote's default branch, not the branch the source
+// was started from: a diff against origin/HEAD from a feature branch is a
+// diff against the default branch.
+func TestOriginHeadNamesTheDefaultBranchNotTheCheckedOutOne(t *testing.T) {
+	o := newOrigin(t)
+	o.commit("README.md", "as the remote has it\n")
+	gitT(t, o.work, "branch", "feature")
+	o.publish("main:refs/remotes/origin/main", "feature:refs/remotes/origin/feature", "feature")
+	gitT(t, o.work, "checkout", "-q", "feature")
+	pinned := o.commit("work.txt", "on the feature branch\n")
+	o.publish("feature")
+	target := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, sandboxconfig.Source{Slug: "primary", Target: target, RefName: "feature", RefType: "branch", UpstreamURL: "https://git.invalid/acme/widget.git", DefaultBranch: "main", PoolRemote: "discobox"})
+	source := sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: pinned}
+	if state := h.pass(t, document(1, source), "primary"); state.State != StateMaterialized || state.Commit != pinned {
+		t.Fatalf("state = %+v, want materialized at %s", state, pinned)
+	}
+	out, err := h.git(t, target, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if got := strings.TrimSpace(out); err != nil || got != "refs/remotes/origin/main" {
+		t.Fatalf("origin/HEAD = %q (%v), want refs/remotes/origin/main", got, err)
+	}
+	if out, err := h.git(t, target, "log", "--no-decorate", "origin/HEAD...", "--"); err != nil {
+		t.Fatalf("git log origin/HEAD...: %v\n%s", err, out)
+	}
+}
+
+// A default branch that was not delivered, or not known, leaves origin/HEAD
+// unset rather than naming a branch the checkout does not have.
+func TestOriginHeadIsUnsetWhenTheDefaultBranchIsNotThere(t *testing.T) {
+	for name, branch := range map[string]string{"unknown": "", "not delivered": "trunk", "not a ref name": "main^"} {
+		t.Run(name, func(t *testing.T) {
+			o := newOrigin(t)
+			o.commit("README.md", "as the remote has it\n")
+			o.publish("main:refs/remotes/origin/main", "main:refs/remotes/origin/HEAD")
+			pinned := o.commit("work.txt", "not pushed to the remote\n")
+			target := filepath.Join(t.TempDir(), "workspace")
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			h := newHarness(t, sandboxconfig.Source{Slug: "primary", Target: target, RefName: "main", RefType: "branch", UpstreamURL: "https://git.invalid/acme/widget.git", DefaultBranch: branch, PoolRemote: "discobox"})
+			source := sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: pinned}
+			if state := h.pass(t, document(1, source), "primary"); state.State != StateMaterialized {
+				t.Fatalf("state = %+v", state)
+			}
+			if out, err := h.git(t, target, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
+				t.Fatalf("origin/HEAD = %q, want none", strings.TrimSpace(out))
+			}
+		})
+	}
+}

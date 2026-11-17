@@ -6616,6 +6616,12 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DefaultBranch.Set {
+			e.FieldStart("defaultBranch")
+			s.DefaultBranch.Encode(e)
+		}
+	}
+	{
 		if s.Delivery.Set {
 			e.FieldStart("delivery")
 			s.Delivery.Encode(e)
@@ -6687,21 +6693,22 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfGitSource = [14]string{
+var jsonFieldsNameOfGitSource = [15]string{
 	0:  "checkout",
 	1:  "cacheKey",
-	2:  "delivery",
-	3:  "destination",
-	4:  "kind",
-	5:  "localDirectory",
-	6:  "noLocalCommits",
-	7:  "noLocalGitDirectory",
-	8:  "noLocalRepository",
-	9:  "purpose",
-	10: "slug",
-	11: "upstreamUrl",
-	12: "url",
-	13: "workspace",
+	2:  "defaultBranch",
+	3:  "delivery",
+	4:  "destination",
+	5:  "kind",
+	6:  "localDirectory",
+	7:  "noLocalCommits",
+	8:  "noLocalGitDirectory",
+	9:  "noLocalRepository",
+	10: "purpose",
+	11: "slug",
+	12: "upstreamUrl",
+	13: "url",
+	14: "workspace",
 }
 
 // Decode decodes GitSource from json.
@@ -6733,6 +6740,16 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"cacheKey\"")
 			}
+		case "defaultBranch":
+			if err := func() error {
+				s.DefaultBranch.Reset()
+				if err := s.DefaultBranch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"defaultBranch\"")
+			}
 		case "delivery":
 			if err := func() error {
 				s.Delivery.Reset()
@@ -6754,7 +6771,7 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"destination\"")
 			}
 		case "kind":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				if err := s.Kind.Decode(d); err != nil {
 					return err
@@ -6863,7 +6880,7 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00010000,
+		0b00100000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -55872,9 +55889,15 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 			s.SentinelGrants.Encode(e)
 		}
 	}
+	{
+		if s.SourceDefaultBranch.Set {
+			e.FieldStart("sourceDefaultBranch")
+			s.SourceDefaultBranch.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfUpdatePoolStatusBody = [14]string{
+var jsonFieldsNameOfUpdatePoolStatusBody = [15]string{
 	0:  "$schema",
 	1:  "availableCpuVcpus",
 	2:  "availableMemoryBytes",
@@ -55889,6 +55912,7 @@ var jsonFieldsNameOfUpdatePoolStatusBody = [14]string{
 	11: "sentinelBodyPlaces",
 	12: "sentinelGenerations",
 	13: "sentinelGrants",
+	14: "sourceDefaultBranch",
 }
 
 // Decode decodes UpdatePoolStatusBody from json.
@@ -56052,6 +56076,16 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinelGrants\"")
+			}
+		case "sourceDefaultBranch":
+			if err := func() error {
+				s.SourceDefaultBranch.Reset()
+				if err := s.SourceDefaultBranch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sourceDefaultBranch\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

@@ -1475,11 +1475,12 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 				// How the sandbox agent checks the source out when it clones
 				// it from the origin the runtime-config document names (ADR
 				// 0126 §4).
-				RefName:     sourceRefName(source.git),
-				RefType:     sourceRefType(source.git),
-				UpstreamURL: strings.TrimSpace(optString(source.git.UpstreamUrl)),
-				PoolRemote:  sourcePoolRemote(source.git),
-				Workspace:   sourceWorkspace(source.git),
+				RefName:       sourceRefName(source.git),
+				RefType:       sourceRefType(source.git),
+				UpstreamURL:   strings.TrimSpace(optString(source.git.UpstreamUrl)),
+				DefaultBranch: strings.TrimSpace(optString(source.git.DefaultBranch)),
+				PoolRemote:    sourcePoolRemote(source.git),
+				Workspace:     sourceWorkspace(source.git),
 				// The client still owes this one: the sandbox holds its harness
 				// launch until the delivery lands and this pool agent reports
 				// the sandbox settled.

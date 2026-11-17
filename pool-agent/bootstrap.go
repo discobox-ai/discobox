@@ -341,6 +341,11 @@ type StatusRequest struct {
 	// (#1012). Always true from an agent that has them; one from before sends
 	// none, and is sent no route with one, which its decoder would refuse.
 	SentinelBodyPlaces bool `json:"sentinelBodyPlaces"`
+	// SourceDefaultBranch declares that this agent takes a git source's
+	// defaultBranch and hands it to the sandbox for its origin/HEAD (#245).
+	// Always true from an agent that has it; one from before sends none, and
+	// is sent no defaultBranch, which its decoder would refuse.
+	SourceDefaultBranch bool `json:"sourceDefaultBranch"`
 	// FirstReport marks the one report this agent process sends at start,
 	// before it serves; its heartbeats leave it out. A server upgrading the
 	// pool counts a marked report received after it recorded the agent's

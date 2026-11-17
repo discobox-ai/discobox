@@ -130,9 +130,14 @@ type resolvedRunSource struct {
 	// its origin and which names the pool cache the source is delivered into.
 	// Empty when the repository has none a sandbox could reach (localRemote).
 	UpstreamURL string
-	Checkout    resolvedRunSourceCheckout
-	Workspace   resolvedRunSourceWorkspace
-	Destination resolvedRunSourceDestination
+	// DefaultBranch is the branch UpstreamURL's HEAD names, as this client
+	// last knew it: the local checkout's own <remote>/HEAD, or what a remote
+	// source's remote answered. The sandbox's origin/HEAD names it. Empty
+	// when that is not known here.
+	DefaultBranch string
+	Checkout      resolvedRunSourceCheckout
+	Workspace     resolvedRunSourceWorkspace
+	Destination   resolvedRunSourceDestination
 	// cleanup releases the throwaway repository, and is nil for a source that
 	// did not need one.
 	cleanup func()
@@ -357,6 +362,7 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 		source.SetNoLocalGitDirectory(apiclientgen.NewOptBool(true))
 	}
 	source.SetUpstreamUrl(optionalString(s.UpstreamURL))
+	source.SetDefaultBranch(optionalString(s.DefaultBranch))
 	checkout := apimodel.GitSourceCheckout{}
 	checkout.SetCommit(optionalString(s.Checkout.Commit))
 	checkout.SetRefName(optionalString(s.Checkout.RefName))
@@ -411,7 +417,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 			return resolvedRunSource{}, err
 		}
 		resolved.NoLocalGitDirectory = noGitDirectory
-		resolved.UpstreamURL = localRemoteURL(ctx, repoRoot, resolved.Checkout)
+		resolved.UpstreamURL, resolved.DefaultBranch = localUpstream(ctx, repoRoot, resolved.Checkout)
 		return resolved, nil
 	}
 	destination := localRunDestination(opts.Platform, repoRoot, absSource)
@@ -436,7 +442,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 			return resolvedRunSource{}, err
 		}
 		resolved.Checkout = localRunCheckout(ctx, repoRoot, ref, commit)
-		resolved.UpstreamURL = localRemoteURL(ctx, repoRoot, resolved.Checkout)
+		resolved.UpstreamURL, resolved.DefaultBranch = localUpstream(ctx, repoRoot, resolved.Checkout)
 		return resolved, nil
 	}
 	baseCommit, err := gitutil.ResolveCommit(ctx, repoRoot, "HEAD")
@@ -444,7 +450,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 		return resolvedRunSource{}, err
 	}
 	resolved.Checkout = localRunCheckout(ctx, repoRoot, "", baseCommit)
-	resolved.UpstreamURL = localRemoteURL(ctx, repoRoot, resolved.Checkout)
+	resolved.UpstreamURL, resolved.DefaultBranch = localUpstream(ctx, repoRoot, resolved.Checkout)
 	if opts.IncludeDirty == IncludeDirtyNever {
 		return resolved, warnLeftOut(ctx, repoRoot, opts)
 	}
@@ -766,8 +772,9 @@ func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef
 		return resolvedRunSource{}, err
 	}
 	return resolvedRunSource{
-		Kind: runSourceKindGit,
-		URL:  source,
+		Kind:          runSourceKindGit,
+		URL:           source,
+		DefaultBranch: pinned.defaultBranch,
 		Checkout: resolvedRunSourceCheckout{
 			Commit:  pinned.commit,
 			RefName: pinned.name,
@@ -797,12 +804,21 @@ func localRunCheckout(ctx context.Context, repoRoot, ref, commit string) resolve
 	return resolvedRunSourceCheckout{Commit: commit, RefType: runSourceRefTypeCommit}
 }
 
-// localRemoteURL is the URL of a local checkout's remote: what the sandbox has
-// as its origin, and what names the pool cache the source is delivered into
-// (ADR 26-10-10-545 §§2, 6).
-func localRemoteURL(ctx context.Context, repoRoot string, checkout resolvedRunSourceCheckout) string {
-	_, url := localRemote(ctx, repoRoot, checkout)
-	return url
+// localUpstream is a local checkout's remote (localRemote): its URL, and the
+// branch this checkout last saw the remote's HEAD name, which a clone records
+// as <remote>/HEAD. The branch is empty when the checkout has no such
+// symbolic ref, or the remote is a URL with no remote-tracking refs.
+func localUpstream(ctx context.Context, repoRoot string, checkout resolvedRunSourceCheckout) (remoteURL, defaultBranch string) {
+	name, remoteURL := localRemote(ctx, repoRoot, checkout)
+	if name == "" {
+		return remoteURL, ""
+	}
+	prefix := "refs/remotes/" + name + "/"
+	head, err := gitutil.Output(ctx, repoRoot, nil, nil, "symbolic-ref", "--quiet", prefix+"HEAD")
+	if head = strings.TrimSpace(head); err != nil || !strings.HasPrefix(head, prefix) {
+		return remoteURL, ""
+	}
+	return remoteURL, strings.TrimPrefix(head, prefix)
 }
 
 // localRemote is a local checkout's remote, by the name this repository
@@ -918,60 +934,68 @@ func networkRemoteURL(value string) string {
 
 // resolveRemoteGitRef pins ref of the remote source to a commit, with one
 // ls-remote run with env added to git's environment. ref is the remote's
-// default branch (defaultRemoteBranch) when the source named none.
+// default branch (defaultRemoteBranch) when the source named none. The same
+// run asks for the remote's HEAD, which names its default branch whatever ref
+// is pinned: the sandbox's origin/HEAD names it, as a clone's would.
 func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bool, env map[string]string) (remoteRef, error) {
 	refs := []string{ref}
 	if explicitRef {
 		refs = append(refs, "refs/heads/"+ref, "refs/tags/"+ref)
 	}
+	if ref != defaultRemoteBranch {
+		refs = append(refs, defaultRemoteBranch)
+	}
 	out, err := sandboxgit.Output(ctx, "", nil, env, append([]string{"ls-remote", "--symref", "--", source}, refs...)...)
 	if err != nil {
 		return remoteRef{}, fmt.Errorf("resolve remote git ref %q: %w", ref, err)
 	}
-	commit, symbolicRef, err := parseRemoteRefOutput(out, ref)
+	commit, symbolicRef, defaultBranch, err := parseRemoteRefOutput(out, ref)
 	if err != nil {
 		return remoteRef{}, err
 	}
-	if symbolicRef != "" {
-		return remoteRef{commit: commit, name: strings.TrimPrefix(symbolicRef, "refs/heads/"), refType: runSourceRefTypeBranch}, nil
-	}
-	if !explicitRef {
-		return remoteRef{commit: commit, refType: runSourceRefTypeCommit}, nil
-	}
+	pinned := remoteRef{commit: commit, refType: runSourceRefTypeCommit, defaultBranch: defaultBranch}
 	switch {
+	case symbolicRef != "":
+		pinned.name, pinned.refType = strings.TrimPrefix(symbolicRef, "refs/heads/"), runSourceRefTypeBranch
+	case !explicitRef:
 	case remoteOutputHasRef(out, "refs/heads/"+ref):
-		return remoteRef{commit: commit, name: ref, refType: runSourceRefTypeBranch}, nil
+		pinned.name, pinned.refType = ref, runSourceRefTypeBranch
 	case remoteOutputHasRef(out, "refs/tags/"+ref):
-		return remoteRef{commit: commit, name: ref, refType: runSourceRefTypeTag}, nil
-	default:
-		return remoteRef{commit: commit, refType: runSourceRefTypeCommit}, nil
+		pinned.name, pinned.refType = ref, runSourceRefTypeTag
 	}
+	return pinned, nil
 }
 
-func parseRemoteRefOutput(out, ref string) (string, string, error) {
-	var commit, symbolicRef string
+// parseRemoteRefOutput reads `ls-remote --symref` output for ref: the commit
+// it names, the ref it points at when it is symbolic, and the branch the
+// remote's HEAD names, if the output says. Only a line ls-remote would have
+// matched to ref answers for it: the remote's HEAD, asked for alongside a ref
+// named explicitly, matches its own pattern and is no answer for that ref.
+func parseRemoteRefOutput(out, ref string) (commit, symbolicRef, defaultBranch string, err error) {
+	matches := func(name string) bool { return name == ref || strings.HasSuffix(name, "/"+ref) }
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "ref:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				symbolicRef = fields[1]
+		fields := strings.Fields(strings.TrimSpace(line))
+		switch {
+		case len(fields) == 3 && fields[0] == "ref:":
+			target, name := fields[1], fields[2]
+			if name == defaultRemoteBranch {
+				if branch, ok := strings.CutPrefix(target, "refs/heads/"); ok {
+					defaultBranch = branch
+				}
 			}
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) >= 1 && len(fields[0]) == 40 {
-			commit = fields[0]
-			break
+			if symbolicRef == "" && matches(name) {
+				symbolicRef = target
+			}
+		case len(fields) == 2:
+			if commit == "" && len(fields[0]) == 40 && matches(fields[1]) {
+				commit = fields[0]
+			}
 		}
 	}
 	if commit == "" {
-		return "", "", fmt.Errorf("remote ref %q did not resolve to a commit", ref)
+		return "", "", "", fmt.Errorf("remote ref %q did not resolve to a commit", ref)
 	}
-	return commit, symbolicRef, nil
+	return commit, symbolicRef, defaultBranch, nil
 }
 
 func remoteOutputHasRef(out, ref string) bool {
@@ -1007,7 +1031,8 @@ func SourceGitHubRepository(ctx context.Context, sourceArg string) string {
 	if err != nil {
 		return ""
 	}
-	return sourceref.GitHubURL(localRemoteURL(ctx, root, localRunCheckout(ctx, root, source.Ref, "")))
+	_, remoteURL := localRemote(ctx, root, localRunCheckout(ctx, root, source.Ref, ""))
+	return sourceref.GitHubURL(remoteURL)
 }
 
 // resolvedReference is one extra source brought into the sandbox alongside the

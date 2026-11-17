@@ -183,6 +183,7 @@ func TestSandboxDocumentCarriesEachSourcesCheckout(t *testing.T) {
 	req := originTestRequest("/home/user/src/app")
 	primary := req.Config.Source.Value
 	primary.UpstreamUrl = workerclient.NewOptString("https://github.com/example/app.git")
+	primary.DefaultBranch = workerclient.NewOptString("main")
 	req.Config.Source = workerclient.NewOptGitSource(primary)
 
 	doc, buildErr := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
@@ -194,8 +195,8 @@ func TestSandboxDocumentCarriesEachSourcesCheckout(t *testing.T) {
 		bySlug[source.Slug] = source
 	}
 	got := bySlug["primary"]
-	if got.RefName != "feature" || got.RefType != "branch" || got.UpstreamURL != "https://github.com/example/app.git" {
-		t.Fatalf("primary = %+v, want branch feature and its remote", got)
+	if got.RefName != "feature" || got.RefType != "branch" || got.UpstreamURL != "https://github.com/example/app.git" || got.DefaultBranch != "main" {
+		t.Fatalf("primary = %+v, want branch feature, its remote and the remote's default branch", got)
 	}
 	// A cache-delivered source reaches its pool as the discobox remote, and
 	// measures its changes against the pool's copy of its branch: origin is

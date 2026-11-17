@@ -53,12 +53,17 @@ type poolAgentClient struct {
 	// (model.Pool.SentinelBodyPlaces, #1012): any other is sent no route
 	// with one, since its decoder refuses a field it does not know.
 	holdsBodyPlaces bool
+	// takesDefaultBranch is whether it declared it takes a git source's
+	// defaultBranch (model.Pool.SourceDefaultBranch, #245): any other is sent
+	// none, since its decoder refuses a field it does not know, and its
+	// sandbox's origin/HEAD is left unset as before.
+	takesDefaultBranch bool
 }
 
 // newPoolAgentClient is a client of one pool's agent over lease, speaking
 // what that agent last declared it takes.
 func newPoolAgentClient(pool *model.Pool, issuer poolAgentTokenIssuer, lease *transport.HTTPClientLease) *poolAgentClient {
-	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations, holdsBodyPlaces: pool.SentinelBodyPlaces}
+	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations, holdsBodyPlaces: pool.SentinelBodyPlaces, takesDefaultBranch: pool.SourceDefaultBranch}
 }
 
 type poolAgentTokenIssuer interface {
@@ -72,7 +77,7 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 		return nil, state, err
 	}
 	defer release()
-	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants, p.holdsGenerations, p.holdsBodyPlaces)
+	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants, p.holdsGenerations, p.holdsBodyPlaces, p.takesDefaultBranch)
 	if opts.ResolvedHarnessConfig != nil {
 		resolved := request.ResolvedHarnessConfig.Value
 		if value := opts.ResolvedHarnessConfig.SaveBack; value != nil {
@@ -883,7 +888,7 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 	return out
 }
 
-func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants, holdsGenerations, holdsBodyPlaces bool) *poolapimodel.PoolSandboxCreateRequest {
+func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants, holdsGenerations, holdsBodyPlaces, takesDefaultBranch bool) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID, PullSources: poolclient.NewOptBool(opts.PullSources)}
 	if opts.HarnessChangeID != "" {
 		out.HarnessChangeId = poolclient.NewOptString(opts.HarnessChangeID)
@@ -985,13 +990,13 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, 
 		config.Prompt = opts.Prompt
 	}
 	if opts.Source != nil {
-		workerSource, err := poolGitSource(*opts.Source, opts.SourceDataKey)
+		workerSource, err := poolGitSource(*opts.Source, opts.SourceDataKey, takesDefaultBranch)
 		if err == nil {
 			config.Source = poolclient.NewOptGitSource(workerSource)
 		}
 	}
 	if opts.SourceCodeReferences != nil {
-		config.SourceCodeReferences = poolclient.NewOptSandboxConfigSourceCodeReferences(poolSourceCodeReferences(opts.SourceCodeReferences, opts.SourceCodeReferenceDataKeys))
+		config.SourceCodeReferences = poolclient.NewOptSandboxConfigSourceCodeReferences(poolSourceCodeReferences(opts.SourceCodeReferences, opts.SourceCodeReferenceDataKeys, takesDefaultBranch))
 	}
 	user := poolapimodel.SandboxUser{}
 	user.SetName(poolOptStringPtr(opts.UserName))
@@ -1054,10 +1059,10 @@ func poolOptStringPtr(value *string) poolclient.OptString {
 	return poolclient.NewOptString(*value)
 }
 
-func poolSourceCodeReferences(in model.SourceCodeReferences, dataKeys map[string]string) poolclient.SandboxConfigSourceCodeReferences {
+func poolSourceCodeReferences(in model.SourceCodeReferences, dataKeys map[string]string, takesDefaultBranch bool) poolclient.SandboxConfigSourceCodeReferences {
 	out := make(poolclient.SandboxConfigSourceCodeReferences, len(in))
 	for key, ref := range in {
-		workerRef, err := poolGitSource(ref, dataKeys[key])
+		workerRef, err := poolGitSource(ref, dataKeys[key], takesDefaultBranch)
 		if err != nil {
 			continue
 		}
@@ -1066,7 +1071,7 @@ func poolSourceCodeReferences(in model.SourceCodeReferences, dataKeys map[string
 	return out
 }
 
-func poolGitSource(in model.GitSource, dataKey string) (poolapimodel.GitSource, error) {
+func poolGitSource(in model.GitSource, dataKey string, takesDefaultBranch bool) (poolapimodel.GitSource, error) {
 	out := poolapimodel.GitSource{Kind: poolclient.GitSourceKind(in.Kind)}
 	if dataKey != "" {
 		out.DataKey = poolclient.NewOptString(dataKey)
@@ -1119,6 +1124,9 @@ func poolGitSource(in model.GitSource, dataKey string) (poolapimodel.GitSource, 
 	// sandbox itself fetches from, not a location the pool is asked to reach.
 	if in.UpstreamURL != nil && *in.UpstreamURL != "" {
 		out.UpstreamUrl = poolclient.NewOptString(*in.UpstreamURL)
+	}
+	if takesDefaultBranch && in.DefaultBranch != nil && *in.DefaultBranch != "" {
+		out.DefaultBranch = poolclient.NewOptString(*in.DefaultBranch)
 	}
 	if in.Checkout != nil {
 		checkout := poolapimodel.GitSourceCheckout{}

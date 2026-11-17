@@ -496,6 +496,9 @@ components:
                     description: Opaque stable key for durable pool-local data shared by sandboxes using this source.
                     pattern: ^[a-f0-9]{64}$
                     type: string
+                defaultBranch:
+                    description: The branch the source's remote's HEAD names, as the client last knew it. A cache-delivered source's checkout has origin/HEAD name it when that branch was delivered.
+                    type: string
                 destination:
                     "$ref": "#/components/schemas/GitSourceDestination"
                 kind:

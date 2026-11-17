@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -242,5 +243,24 @@ func TestSandboxToAPIIncludesItsEgressLevel(t *testing.T) {
 	}
 	if allow, _ := level.Allow.Get(); len(allow) != 1 || allow[0] != "github.com" {
 		t.Fatalf("allow = %v", allow)
+	}
+}
+
+// The branch a source's remote's HEAD names is kept as the client sent it,
+// and read back with the sandbox.
+func TestAGitSourceKeepsItsRemotesDefaultBranch(t *testing.T) {
+	in := serverapi.GitSource{Kind: serverapi.GitSourceKindGit}
+	in.SetUpstreamUrl(serverapi.NewOptString("https://github.com/acme/widget.git"))
+	in.SetDefaultBranch(serverapi.NewOptString("trunk"))
+	source := GitSourceToModel(in)
+	if source.DefaultBranch == nil || *source.DefaultBranch != "trunk" {
+		t.Fatalf("model default branch = %v, want trunk", source.DefaultBranch)
+	}
+	out, err := SandboxToAPI(&model.Sandbox{ID: "sb_1", ProjectID: "p1", SandboxManifest: model.SandboxManifest{Source: &source}}, SandboxUpgradeBasis{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.Config.Source.Value.DefaultBranch.Or(""); got != "trunk" {
+		t.Fatalf("sandbox's source default branch = %q, want trunk", got)
 	}
 }
