@@ -416,7 +416,8 @@ func TestARouteIsShownWithEverythingThatNarrowsIt(t *testing.T) {
 		{"hosts":["api.github.com"],"paths":["/graphql"]},
 		{"hosts":["api.github.com"],"paths":["/graphql"],"blocked":true,"graphql":{"operations":["subscription"]}},
 		{"hosts":["mcp.example.com"],"mcp":{"tools":["search","read_*"]}},
-		{"hosts":["x.example.com"],"websocket":{"frames":"all"}}
+		{"hosts":["x.example.com"],"websocket":{"places":[{"at":"/token","when":{"op":2}}]}},
+		{"hosts":["y.example.com"],"future":{"frames":"all"}}
 	]`), &routes); err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +429,8 @@ func TestARouteIsShownWithEverythingThatNarrowsIt(t *testing.T) {
 		"api.github.com/graphql",
 		"api.github.com/graphql graphql=subscription=blocked",
 		"mcp.example.com mcp=search,read_*",
-		"x.example.com (narrowed by websocket, not shown)",
+		`x.example.com ws=[{"at":"/token","when":{"op":2}}]`,
+		"y.example.com (narrowed by future, not shown)",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("routes = %q", got)

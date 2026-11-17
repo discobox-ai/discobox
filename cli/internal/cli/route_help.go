@@ -26,6 +26,13 @@ one per --route:
             at one of them, and nowhere else: not in the headers, and not
             elsewhere in the body. A route without body= allows it in the
             headers and query, and at no body place
+  ws=       places in the JSON messages a client sends on the WebSocket
+            connection the route's request upgrades: a JSON array of
+            {"at": POINTER, "when": {MEMBER: VALUE}}, quoted as one word.
+            The credential goes there, as the whole string at the pointer,
+            in a message whose top-level members hold every condition, and
+            nowhere else. A route without ws=, * included, allows it in no
+            message. The whole array is one JSON value; =blocked follows it
   =blocked  refuses what the route is the most specific route for: a
             carve-out inside a wider route
 
@@ -35,6 +42,7 @@ one per --route:
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
   'POST app.boxd.sh/api/v1/auth/token body=/api_key'
+  'GET gateway.discord.gg,*.discord.gg ws=[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6}}]'
 
 A request must fall on a route of every list it is held to; within a list the
 most specific route it falls on decides, host first, then path.`

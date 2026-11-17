@@ -307,3 +307,44 @@ func TestARequestWithABodyPlaceRouteDecodesEverywhere(t *testing.T) {
 		}
 	}
 }
+
+// A request whose routes name a WebSocket message place decodes and shows
+// it, from the list, one request, and its approval, in the typed form a
+// person can paste back.
+func TestARequestWithAWebSocketPlaceRouteDecodesEverywhere(t *testing.T) {
+	const requestID = "request-1"
+	request := `{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","sandboxId":"sbx-1","status":"pending","envName":"DISCORD_TOKEN",` +
+		`"use":{"routes":[{"hosts":["gateway.discord.gg"],"methods":["GET"],"websocket":{"places":[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6}}]}}]},` +
+		`"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
+			_, _ = w.Write([]byte(`{"secretRequests":[` + request + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(request))
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			_, _ = w.Write([]byte(strings.Replace(request, `"status":"pending"`, `"status":"approved","secretId":"sec_1"`, 1)))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"sec_1","projectId":"project-1","name":"discord","type":"token","maxBindingTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-bindings":
+			_, _ = w.Write([]byte(`{"secretBindings":[]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/bound-secrets":
+			_, _ = w.Write([]byte(`{"boundSecrets":[]}`))
+		default:
+			t.Logf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	for _, args := range [][]string{
+		{"secret", "request", "ls"},
+		{"secret", "request", "get", requestID},
+		{"secret", "request", "approve", requestID, "--secret", "sec_1"},
+	} {
+		out := runCLI(t, server.URL, args...)
+		if args[2] == "get" && !strings.Contains(out, `ws=[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6}}]`) {
+			t.Errorf("%v does not show the message places:\n%s", args, out)
+		}
+	}
+}

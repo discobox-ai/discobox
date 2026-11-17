@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -267,7 +268,8 @@ func tuiRoutes(routes []apimodel.SecretRoute) []secretroute.Route {
 }
 
 // terminalSafeRoute is route with every word in it escaped: hosts, methods,
-// paths, the GraphQL fields and MCP tools, and the body places it names.
+// paths, the GraphQL fields and MCP tools, and the body and message places
+// it names, with their conditions.
 func terminalSafeRoute(route secretroute.Route) secretroute.Route {
 	safe := func(words []string) []string {
 		var out []string
@@ -285,6 +287,20 @@ func terminalSafeRoute(route secretroute.Route) secretroute.Route {
 	}
 	if route.Body != nil {
 		route.Body = &secretroute.Body{Places: safe(route.Body.Places)}
+	}
+	if route.WebSocket != nil {
+		ws := &secretroute.WebSocket{}
+		for _, place := range route.WebSocket.Places {
+			next := secretroute.MessagePlace{At: terminalSafe(place.At)}
+			for name, value := range place.When {
+				if next.When == nil {
+					next.When = map[string]json.RawMessage{}
+				}
+				next.When[terminalSafe(name)] = json.RawMessage(terminalSafe(string(value)))
+			}
+			ws.Places = append(ws.Places, next)
+		}
+		route.WebSocket = ws
 	}
 	return route
 }

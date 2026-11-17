@@ -6,6 +6,10 @@
 package apiroute
 
 import (
+	"encoding/json"
+
+	"github.com/go-faster/jx"
+
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -26,6 +30,21 @@ func Input(route secretroute.Route) apimodel.SecretRouteInput {
 	}
 	if route.Body != nil {
 		in.Body = apiclientgen.NewOptSecretRouteBody(apimodel.SecretRouteBody{Places: route.Body.Places})
+	}
+	if route.WebSocket != nil {
+		ws := apimodel.SecretRouteWebSocket{Places: make([]apimodel.SecretRouteMessagePlace, 0, len(route.WebSocket.Places))}
+		for _, place := range route.WebSocket.Places {
+			next := apimodel.SecretRouteMessagePlace{At: place.At}
+			if len(place.When) > 0 {
+				when := make(apiclientgen.SecretRouteMessagePlaceWhen, len(place.When))
+				for name, value := range place.When {
+					when[name] = jx.Raw(value)
+				}
+				next.When = apiclientgen.NewOptSecretRouteMessagePlaceWhen(when)
+			}
+			ws.Places = append(ws.Places, next)
+		}
+		in.Websocket = apiclientgen.NewOptSecretRouteWebSocket(ws)
 	}
 	if route.Blocked {
 		in.Blocked = apiclientgen.NewOptBool(true)
@@ -59,6 +78,19 @@ func Route(route apimodel.SecretRoute) secretroute.Route {
 	}
 	if body, ok := route.Body.Get(); ok {
 		out.Body = &secretroute.Body{Places: body.Places}
+	}
+	if ws, ok := route.Websocket.Get(); ok {
+		out.WebSocket = &secretroute.WebSocket{Places: make([]secretroute.MessagePlace, 0, len(ws.Places))}
+		for _, place := range ws.Places {
+			next := secretroute.MessagePlace{At: place.At}
+			if when, ok := place.When.Get(); ok && len(when) > 0 {
+				next.When = make(map[string]json.RawMessage, len(when))
+				for name, value := range when {
+					next.When[name] = json.RawMessage(value)
+				}
+			}
+			out.WebSocket.Places = append(out.WebSocket.Places, next)
+		}
 	}
 	return out
 }

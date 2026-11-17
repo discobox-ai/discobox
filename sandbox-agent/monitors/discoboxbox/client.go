@@ -79,7 +79,7 @@ type route struct {
 }
 
 // knownRouteKeys are the SecretRoute fields secretroute.Route reads.
-var knownRouteKeys = map[string]bool{"hosts": true, "methods": true, "paths": true, "blocked": true, "graphql": true, "mcp": true}
+var knownRouteKeys = map[string]bool{"hosts": true, "methods": true, "paths": true, "blocked": true, "graphql": true, "mcp": true, "body": true, "websocket": true}
 
 func (r *route) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &r.Route); err != nil {

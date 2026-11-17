@@ -376,6 +376,9 @@ func httpAuditUpgradeField(detail *apimodel.HTTPAuditExchangeDetail) string {
 	}
 	parts := []string{terminalSafe(detail.UpgradeType.Or("upgraded"))}
 	parts = append(parts, fmt.Sprintf("%d bytes sent, %d received", detail.UpgradeC2sBytes.Or(0), detail.UpgradeS2cBytes.Or(0)))
+	if detail.UpgradeInspected.Or(false) {
+		parts = append(parts, fmt.Sprintf("messages inspected for credentials, %d bytes reached the upstream", detail.UpgradeC2sSentBytes.Or(0)))
+	}
 	if detail.StreamRecorded.Or(false) {
 		parts = append(parts, "stream recorded as "+terminalSafe(detail.StreamFormat.Or("framed")))
 	}
