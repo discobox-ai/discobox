@@ -90,8 +90,14 @@ func consoleWindow() uintptr {
 // is a server too busy to answer, not an absent one. A pipe nobody has
 // created is absent, and says so at once, so a cold start waits for nothing.
 func TestProbeTellsABusyPipeFromAMissingOne(t *testing.T) {
-	pipe := fmt.Sprintf(`\\.\pipe\discobox-test-%d-%d`, os.Getpid(), time.Now().UnixNano())
-	opts := LaunchOptions{Endpoint: "npipe:" + strings.ReplaceAll(pipe, `\`, "/"), ProbeTimeout: 200 * time.Millisecond}
+	name := fmt.Sprintf("discobox-test-%d-%d", os.Getpid(), time.Now().UnixNano())
+	pipe := `\\.\pipe\` + name
+	opts := LaunchOptions{Endpoint: "npipe:////./pipe/" + name, ProbeTimeout: 200 * time.Millisecond}
+	// The probe has to dial the pipe the listener below holds, or a missing
+	// pipe is all either half of this test ever sees.
+	if parsed, err := Parse(opts.Endpoint); err != nil || parsed.Value != pipe {
+		t.Fatalf("Parse(%q) = %q, %v; want the pipe %q", opts.Endpoint, parsed.Value, err, pipe)
+	}
 
 	start := time.Now()
 	_, err := probeEndpoint(context.Background(), opts)
