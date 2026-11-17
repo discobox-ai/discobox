@@ -145,3 +145,102 @@ func TestUpgradeTimeoutOutlastsTheServersBound(t *testing.T) {
 		t.Fatalf("upgradeTimeout() = %s, want more than the server's %s", got, health.PoolUpgradeWait)
 	}
 }
+
+// A server upgrading pools on a loaded host can be slow to answer its probe,
+// slower than the probe's own timeout, several times in a row. That is a
+// server still running, not one that stopped: the wait goes on, and ends in
+// its ready answer.
+func TestWaitReadyKeepsWaitingOnAServerSlowToAnswer(t *testing.T) {
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch n := probes.Add(1); {
+		case n == 1:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
+		case n <= 1+probesBeforeGone:
+			// Busy: answers, but after the probe has given up.
+			time.Sleep(60 * time.Millisecond)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+		}
+	}))
+	defer server.Close()
+	opts := LaunchOptions{Endpoint: server.URL, ProbeTimeout: 20 * time.Millisecond, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond}
+	if err := waitReady(context.Background(), opts, time.Now().Add(time.Minute)); err != nil {
+		t.Fatalf("waitReady() = %v, want the wait to go on through slow answers", err)
+	}
+}
+
+// A server whose listener is gone has stopped, and the wait ends with it
+// rather than at the deadline. The error names the step it was on, and a
+// server upgrading pools reports that step as its status, not as a phase.
+func TestWaitReadyEndsWhenTheListenerIsGone(t *testing.T) {
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		probes.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":2}`))
+	}))
+	go func() {
+		for probes.Load() < 2 {
+			time.Sleep(time.Millisecond)
+		}
+		server.Close()
+	}()
+	// A probe timeout longer than Windows takes to refuse a closed loopback
+	// port (about two seconds), so the refusal is what each probe sees there.
+	opts := LaunchOptions{Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"), ProbeTimeout: 5 * time.Second, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond}
+	start := time.Now()
+	err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
+	if err == nil || !strings.Contains(err.Error(), "stopped while starting") {
+		t.Fatalf("waitReady() = %v, want a server that stopped", err)
+	}
+	if !strings.Contains(err.Error(), "upgrading pools (2 left)") {
+		t.Fatalf("error %q does not name the step it stopped on", err)
+	}
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Fatalf("waited %s, want the wait to end with the server", elapsed)
+	}
+}
+
+// Every caller enters the wait on an answer, so a server gone by the wait's
+// first probe is reported as stopped, not waited out to the deadline and then
+// called running.
+func TestWaitReadyReportsAServerGoneBeforeItsFirstProbe(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	server.Close()
+	opts := LaunchOptions{Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"), ProbeTimeout: 5 * time.Second, ProbeInterval: time.Millisecond}
+	start := time.Now()
+	err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
+	if err == nil || !strings.Contains(err.Error(), "stopped while starting") {
+		t.Fatalf("waitReady() = %v, want a server that stopped", err)
+	}
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Fatalf("waited %s, want the wait to end with the server", elapsed)
+	}
+}
+
+// A server still answering when the wait runs out has not stopped: the error
+// says it is still running and what it was waiting on.
+func TestWaitReadyDeadlineSaysTheServerIsStillRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
+	}))
+	defer server.Close()
+	opts := LaunchOptions{Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"), UpgradeTimeout: 50 * time.Millisecond, ProbeInterval: time.Millisecond}
+	err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
+	if err == nil {
+		t.Fatal("waitReady() = nil, want the deadline to end the wait")
+	}
+	for _, want := range []string{"still running", "did not finish starting", "upgrading pools (1 left)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not say %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "stopped") {
+		t.Fatalf("error %q says a running server stopped", err)
+	}
+}

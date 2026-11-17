@@ -913,7 +913,19 @@ from one that was merely slow.
 Neither deadline is what ends the wait for a server that is already gone.
 `EnsureRunning` watches the process it started and reports it the moment it
 exits, and a server that answered `starting` and then stopped answering is
-reported when it stops. A server refusing to start — a Windows host with no WSL
+reported when it stops. Stopped means nothing listens any more — the
+connection refused, the socket or pipe gone — never a probe that ran out its
+own timeout: that reached a live server too busy to answer in time, which on a
+loaded host can go on for minutes of an upgrade, so the wait goes on to its
+deadline. Run out, that deadline is reported by what the last probe found: a
+server still running that did not finish, or one that stopped answering, with
+the step it was on either way. The probes before a launch, and the wait for an
+older server to let go, still read a timeout as no server: on Windows a closed
+loopback TCP port is refused only after the probe has timed out, so reading a
+timeout as a server would stall every cold start on an `http://` endpoint
+there (the default, a named pipe, is reported missing at once). A server launched
+beside a busy one meets it at the singleton lock, which asks the incumbent to
+shut down and hand over. A server refusing to start — a Windows host with no WSL
 Containers, a project with no harness — is a failure in milliseconds whose
 explanation is already in the log, so nothing is gained by sitting out the rest
 of `StartTimeout` on every command that autolaunches. A server started as a user
