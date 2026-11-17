@@ -15,6 +15,13 @@ import (
 // own identity — no unit manager drops privileges for it — because it drops to
 // the run user itself after it has set up the PTY and the socket.
 //
+// The exec's environment is the one input not on it (#1076). A command line is
+// readable by every user in the sandbox (/proc/<pid>/cmdline) and reported as
+// process telemetry outside it, and an environment holds sentinels and
+// whatever a caller passed. The shim reads it from the exec's runtime record
+// instead (--runtime), which the Manager writes, owner-only, before every
+// start.
+//
 // ParseShimArgs is its inverse, and the two live together so the contract
 // between whatever starts a shim and the shim itself is one file.
 func shimArgv(exe string, req StartRequest) ([]string, error) {
@@ -23,10 +30,6 @@ func shimArgv(exe string, req StartRequest) ([]string, error) {
 		return nil, err
 	}
 	startupCommandJSON, err := json.Marshal(req.StartupCommand)
-	if err != nil {
-		return nil, err
-	}
-	envJSON, err := json.Marshal(req.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +59,6 @@ func shimArgv(exe string, req StartRequest) ([]string, error) {
 		"--cols", strconv.Itoa(int(req.Cols)),
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
 		"--startup-command", base64.StdEncoding.EncodeToString(startupCommandJSON),
-		"--env", base64.StdEncoding.EncodeToString(envJSON),
 		"--user", base64.StdEncoding.EncodeToString(userJSON),
 		"--metadata", base64.StdEncoding.EncodeToString(metadataJSON),
 	}
@@ -86,12 +88,12 @@ type ShimArgs struct {
 // wrote them.
 func ParseShimArgs(args []string) (ShimArgs, error) {
 	var (
-		out                                                                        ShimArgs
-		cfg                                                                        = &out.Config
-		commandBase64, startupCommandBase64, envBase64, userBase64, metadataBase64 string
-		rawEnvBase64                                                               string
-		lifetime                                                                   string
-		rows, cols                                                                 int
+		out                                                             ShimArgs
+		cfg                                                             = &out.Config
+		commandBase64, startupCommandBase64, userBase64, metadataBase64 string
+		rawEnvBase64                                                    string
+		lifetime                                                        string
+		rows, cols                                                      int
 	)
 	flags := flag.NewFlagSet("discobox-sandbox-agent exec-shim", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -106,7 +108,6 @@ func ParseShimArgs(args []string) (ShimArgs, error) {
 	flags.BoolVar(&cfg.TTY, "tty", false, "allocate a PTY")
 	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")
 	flags.StringVar(&startupCommandBase64, "startup-command", "", "base64 encoded JSON startup command argv, typed into the shell after it starts")
-	flags.StringVar(&envBase64, "env", "", "base64 encoded JSON environment")
 	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON exec user")
 	flags.StringVar(&metadataBase64, "metadata", "", "base64 encoded JSON exec metadata")
 	flags.StringVar(&rawEnvBase64, "raw-env", "", "base64 encoded JSON map of each env-delivered raw secret to the file its value is read from")
@@ -124,7 +125,6 @@ func ParseShimArgs(args []string) (ShimArgs, error) {
 	}{
 		{"command", commandBase64, &cfg.Command},
 		{"startup command", startupCommandBase64, &cfg.StartupCommand},
-		{"env", envBase64, &cfg.Env},
 		{"user", userBase64, &cfg.User},
 		{"metadata", metadataBase64, &cfg.Metadata},
 		{"raw env", rawEnvBase64, &cfg.RawEnv},
@@ -140,6 +140,14 @@ func ParseShimArgs(args []string) (ShimArgs, error) {
 			return ShimArgs{}, fmt.Errorf("parse exec shim %s: %w", field.name, err)
 		}
 	}
+	if cfg.RuntimePath == "" {
+		return ShimArgs{}, errors.New("exec shim runtime path is required")
+	}
+	record, err := readRuntime(cfg.RuntimePath)
+	if err != nil {
+		return ShimArgs{}, fmt.Errorf("read exec shim environment: %w", err)
+	}
+	cfg.Env = record.Env
 	if lifetime != "" {
 		fd, err := strconv.ParseUint(lifetime, 10, 64)
 		if err != nil {

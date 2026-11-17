@@ -170,8 +170,8 @@ func TestReviveResumesDeadTerminalInPlace(t *testing.T) {
 	if len(start.StartupCommand) != 3 || start.StartupCommand[1] != "resume" {
 		t.Fatalf("startupCommand = %v, want the harness relaunch command", start.StartupCommand)
 	}
-	if start.Env["DISCOBOX_TERMINAL_ID"] != created.ID {
-		t.Fatalf("env terminal id = %q, want the stable id", start.Env["DISCOBOX_TERMINAL_ID"])
+	if units.envs[1]["DISCOBOX_TERMINAL_ID"] != created.ID {
+		t.Fatalf("env terminal id = %q, want the stable id", units.envs[1]["DISCOBOX_TERMINAL_ID"])
 	}
 	// Hook/file setup is re-ensured per run.
 	if len(installer.calls) != 2 {

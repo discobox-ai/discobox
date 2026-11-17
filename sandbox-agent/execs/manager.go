@@ -177,12 +177,14 @@ type StartRequest struct {
 	Command        []string
 	StartupCommand []string
 	Workdir        string
-	Env            map[string]string
 	User           *User
 	TTY            bool
 	Metadata       map[string]string
 	SocketPath     string
-	RuntimePath    string
+	// RuntimePath is the exec's runtime record, which the Manager writes before
+	// every start. The shim reads the exec's environment from it: no argument
+	// and no unit property carries the environment (#1076).
+	RuntimePath string
 	// DatabasePath is the sqlite file the exec-shim process opens its own
 	// connection to, to write transcript chunks (see LogSink).
 	DatabasePath string
@@ -628,7 +630,6 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Command:        exec.Command,
 		StartupCommand: exec.StartupCommand,
 		Workdir:        workdir,
-		Env:            cloneMap(env),
 		User:           user.Clone(),
 		TTY:            req.TTY,
 		Metadata:       cloneMap(req.Metadata),
@@ -1029,7 +1030,6 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 		Command:        current.Command,
 		StartupCommand: current.StartupCommand,
 		Workdir:        current.Workdir,
-		Env:            cloneMap(env),
 		User:           user.Clone(),
 		TTY:            current.TTY,
 		Metadata:       cloneMap(current.Metadata),

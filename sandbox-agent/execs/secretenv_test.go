@@ -25,7 +25,7 @@ func TestExecutionsReceiveLiveSecretEnvironment(t *testing.T) {
 		if _, err := manager.Create(context.Background(), req); err != nil {
 			t.Fatal(err)
 		}
-		env := runner.starts[len(runner.starts)-1].Env
+		env := runner.envs[len(runner.starts)-1]
 		if env["GH_TOKEN"] != secrets["GH_TOKEN"] || env["BASE"] != "base" {
 			t.Fatalf("unexpected environment: %v", env)
 		}
@@ -37,7 +37,7 @@ func TestExecutionsReceiveLiveSecretEnvironment(t *testing.T) {
 	if _, err := manager.Create(context.Background(), CreateRequest{Command: []string{"echo"}, Env: map[string]string{"GH_TOKEN": "override"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := runner.starts[len(runner.starts)-1].Env["GH_TOKEN"]; got != "override" {
+	if got := runner.envs[len(runner.starts)-1]["GH_TOKEN"]; got != "override" {
 		t.Fatalf("override = %q", got)
 	}
 	if secrets["FILE_TOKEN"] != "sentinel-file" {

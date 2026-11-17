@@ -79,7 +79,7 @@ func TestManagerRelaunchRevivesLostExecInPlace(t *testing.T) {
 		t.Fatalf("unit starts = %d, want the original plus the revival", len(units.starts))
 	}
 	start := units.starts[1]
-	if start.Env["GH_TOKEN"] != "sentinel-after" {
+	if units.envs[1]["GH_TOKEN"] != "sentinel-after" {
 		t.Fatal("relaunch missed live secret")
 	}
 	if start.Unit != revived.Unit || start.ID != created.ID {
@@ -91,8 +91,8 @@ func TestManagerRelaunchRevivesLostExecInPlace(t *testing.T) {
 	if len(start.StartupCommand) != 2 || start.StartupCommand[1] != "--continue" {
 		t.Fatalf("startupCommand = %v, want the caller's resume command", start.StartupCommand)
 	}
-	if start.Env["FRESH"] != "yes" {
-		t.Fatalf("env = %#v, want the caller's freshly resolved env", start.Env)
+	if units.envs[1]["FRESH"] != "yes" {
+		t.Fatalf("env = %#v, want the caller's freshly resolved env", units.envs[1])
 	}
 	if start.Metadata["harnessId"] != "claude" || start.Metadata["primary"] != "true" {
 		t.Fatalf("metadata = %#v, want identity metadata carried over", start.Metadata)

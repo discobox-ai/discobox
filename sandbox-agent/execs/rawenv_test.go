@@ -34,10 +34,10 @@ func TestRawSecretsReachTheProcessAndNoRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := runner.starts[len(runner.starts)-1]
-	if got := start.Env["SIGNING_KEY"]; got != filepath.Join(dir, "SIGNING_KEY") {
+	if got := runner.envs[len(runner.envs)-1]["SIGNING_KEY"]; got != filepath.Join(dir, "SIGNING_KEY") {
 		t.Fatalf("file-delivered variable = %q, want its path", got)
 	}
-	if _, ok := start.Env["API_KEY"]; ok {
+	if _, ok := runner.envs[len(runner.envs)-1]["API_KEY"]; ok {
 		t.Fatal("env-delivered value rode in the start request's environment")
 	}
 	if got := start.RawEnv["API_KEY"]; got != filepath.Join(dir, "API_KEY") {

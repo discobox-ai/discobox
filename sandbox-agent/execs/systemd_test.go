@@ -48,6 +48,11 @@ func TestUnitStartKeepsShimRootAndPassesUserToShim(t *testing.T) {
 			t.Fatalf("unit properties set %s; the shim drops privileges itself", forbidden)
 		}
 	}
+	// Any user in the sandbox can read a unit's properties: the shim reads the
+	// environment from the exec's runtime record.
+	if _, ok := byName["Environment"]; ok {
+		t.Fatal("unit properties carry the exec's environment")
+	}
 	if got := byName["KillMode"].Value.Value(); got != "control-group" {
 		t.Errorf("KillMode = %v, want control-group", got)
 	}
@@ -61,14 +66,6 @@ func TestUnitStartKeepsShimRootAndPassesUserToShim(t *testing.T) {
 	}
 	if _, ok := byName["ExecStart"]; !ok {
 		t.Error("unit properties carry no ExecStart")
-	}
-}
-
-func TestUnitEnvironmentIsSortedKeyValuePairs(t *testing.T) {
-	env := unitEnvironment(map[string]string{"ZED": "1", "ALPHA": "2", "  ": "skipped"})
-	want := []string{"ALPHA=2", "ZED=1"}
-	if !slices.Equal(env, want) {
-		t.Fatalf("environment = %v, want %v", env, want)
 	}
 }
 

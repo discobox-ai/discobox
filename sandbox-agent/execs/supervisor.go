@@ -187,7 +187,7 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 	// the agent too. Stop is what ends it.
 	cmd := exec.CommandContext(context.Background(), argv[0], argv[1:]...) //nolint:gosec // this binary, as its own exec shim.
 	cmd.Dir = strings.TrimSpace(req.Workdir)
-	cmd.Env = shimEnvironment(req.Env)
+	cmd.Env = shimEnvironment()
 	// The shim's own diagnostics, which systemd would have sent to the journal.
 	// Never this process's stderr: a shim outlives the agent, and a Go program
 	// writing to a pipe whose reader is gone is killed by SIGPIPE.
@@ -223,19 +223,16 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 	return StartResult{Unit: unit, PID: int64(pid)}, nil
 }
 
-// shimEnvironment is a shim's environment: the exec's, as a systemd unit's is
-// its Environment property, and never nil, which os/exec would read as
-// "inherit this process's". What the exec does not set, the shim does not get —
-// except PATH, which systemd gives every service it starts and the shim needs
-// to find the command at all; the agent's own is the nearest equivalent.
-func shimEnvironment(env map[string]string) []string {
-	out := append([]string{}, unitEnvironment(env)...)
-	if _, ok := env["PATH"]; !ok {
-		if path, ok := os.LookupEnv("PATH"); ok {
-			out = append(out, "PATH="+path)
-		}
+// shimEnvironment is a shim's own environment: what systemd gives every
+// service, PATH, and never nil, which os/exec would read as "inherit this
+// process's". The agent's own PATH is the nearest equivalent. The exec's
+// environment is not the shim's: the shim reads it from the exec's runtime
+// record and gives it to the command alone (shimArgv).
+func shimEnvironment() []string {
+	if path, ok := os.LookupEnv("PATH"); ok {
+		return []string{"PATH=" + path}
 	}
-	return out
+	return []string{}
 }
 
 // Stop asks the unit's shim to end, which ends its command's process group,

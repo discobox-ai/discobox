@@ -1,7 +1,9 @@
 package execs
 
 import (
+	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -32,15 +34,20 @@ func TestShimArgsRoundTrip(t *testing.T) {
 		Command:        []string{"sh", "-c", "echo 'it''s'"},
 		StartupCommand: []string{"claude", "--resume"},
 		Workdir:        "/workspace",
-		Env:            map[string]string{"A": "1"},
 		User:           &User{Name: "sandbox", UID: &uid, GID: &gid},
 		TTY:            true,
 		Metadata:       map[string]string{"harnessId": "shell"},
 		SocketPath:     "/run/discobox/execs/ex_1.sock",
-		RuntimePath:    "/run/discobox/execs/ex_1.json",
+		RuntimePath:    filepath.Join(t.TempDir(), "ex_1.json"),
 		DatabasePath:   "/var/lib/discobox/agent.db",
 		Rows:           40,
 		Cols:           120,
+	}
+	// The environment is not on the command line: the shim reads it from the
+	// runtime record the Manager writes before every start.
+	env := map[string]string{"A": "1"}
+	if err := writeRuntime(req.RuntimePath, Exec{ID: req.ID, Env: env}); err != nil {
+		t.Fatal(err)
 	}
 	argv, err := shimArgv("/bin/agent", req)
 	if err != nil {
@@ -48,6 +55,9 @@ func TestShimArgsRoundTrip(t *testing.T) {
 	}
 	if argv[0] != "/bin/agent" || argv[1] != "exec-shim" {
 		t.Fatalf("argv = %v, want this binary as the exec shim", argv[:2])
+	}
+	if slices.Contains(argv, "--env") {
+		t.Fatalf("argv = %v, carries the environment", argv)
 	}
 	parsed, err := ParseShimArgs(append(argv[2:], "--lifetime", "3"))
 	if err != nil {
@@ -64,7 +74,7 @@ func TestShimArgsRoundTrip(t *testing.T) {
 		Rows:           req.Rows,
 		Cols:           req.Cols,
 		TTY:            true,
-		Env:            req.Env,
+		Env:            env,
 		User:           req.User,
 		Metadata:       req.Metadata,
 	}
@@ -90,5 +100,18 @@ func TestShimArgsRoundTrip(t *testing.T) {
 func TestShimArgsRequireACommand(t *testing.T) {
 	if _, err := ParseShimArgs([]string{"--exec-id", "ex_1"}); err == nil {
 		t.Fatal("a shim with no command parsed")
+	}
+}
+
+// A shim whose runtime record is gone has no environment to give its command,
+// and refuses to start rather than run without one.
+func TestShimArgsRequireTheRuntimeRecord(t *testing.T) {
+	req := StartRequest{ID: "ex_1", Unit: "discobox-exec-ex_1", Command: []string{"true"}, RuntimePath: filepath.Join(t.TempDir(), "ex_1.json")}
+	argv, err := shimArgv("/bin/agent", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseShimArgs(argv[2:]); err == nil {
+		t.Fatal("a shim with no runtime record parsed")
 	}
 }

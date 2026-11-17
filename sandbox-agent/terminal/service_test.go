@@ -11,6 +11,7 @@ import (
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs/execstest"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -66,10 +67,13 @@ func TestTerminalFallsBackToShellWhenNoHarnessConfigured(t *testing.T) {
 
 type fakeUnits struct {
 	starts []execs.StartRequest
+	// envs is each start's environment, as its shim reads it.
+	envs []map[string]string
 }
 
 func (f *fakeUnits) Start(_ context.Context, req execs.StartRequest) (execs.StartResult, error) {
 	f.starts = append(f.starts, req)
+	f.envs = append(f.envs, execstest.StartEnv(req))
 	return execs.StartResult{Unit: req.Unit}, nil
 }
 func (f *fakeUnits) Stop(context.Context, string) error { return nil }
@@ -169,7 +173,7 @@ func TestServiceCreateResolvesAgentAndTagsMetadata(t *testing.T) {
 	if len(installer.calls) != 1 || installer.calls[0].ID != "codex" {
 		t.Fatalf("installer calls = %v", installer.calls)
 	}
-	if env := units.starts[0].Env["DISCOBOX_TERMINAL_ID"]; env != ex.ID {
+	if env := units.envs[0]["DISCOBOX_TERMINAL_ID"]; env != ex.ID {
 		t.Fatalf("DISCOBOX_TERMINAL_ID = %q, want exec id %q", env, ex.ID)
 	}
 }
