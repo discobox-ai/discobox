@@ -292,8 +292,8 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	// the machine includes fetching the disk image the first time, which on a
 	// cold Mac is minutes; a driver that can say more about that says it from
 	// inside EnsureVM.
-	releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
-	vmInfo, err := e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
+	vmCtx, releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
+	vmInfo, err := e.driver.EnsureVM(vmCtx, pool.ID, e.vmSpec(provider, pool))
 	releaseVM()
 	if err != nil {
 		return err
@@ -302,8 +302,8 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 		steps.BringingUp(ctx)
 	}
 	steps.Step(ctx, "the pool's VM is running")
-	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
-	lease, waited, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
+	dockerCtx, releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
+	lease, waited, err := e.acquireDockerReady(dockerCtx, pool.ID, e.dockerReadyTimeout())
 	releaseDocker()
 	if err != nil {
 		return err
@@ -396,15 +396,15 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		}
 		steps.Step(ctx, "stopped the pool's VM to replace it")
 	}
-	releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
-	vmInfo, err = e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
+	vmCtx, releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
+	vmInfo, err = e.driver.EnsureVM(vmCtx, pool.ID, e.vmSpec(provider, pool))
 	releaseVM()
 	if err != nil {
 		return err
 	}
 	steps.Step(ctx, "the pool's VM is running")
-	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
-	lease, _, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
+	dockerCtx, releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
+	lease, _, err := e.acquireDockerReady(dockerCtx, pool.ID, e.dockerReadyTimeout())
 	releaseDocker()
 	if err != nil {
 		return err
@@ -935,7 +935,7 @@ func (e *Engine) poolContainerSpec(pool *model.Pool, image string, labels map[st
 // the pool's box (poolruntime.ProvisionBox) before it waits for the agent the box's
 // bundles start.
 func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox, steps *poolruntime.HostSteps) (*container.InspectResponse, poolruntime.BoxRecord, error) {
-	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	startCtx, releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	defer releaseStart()
 	config, hostConfig, waitForHealth, err := e.poolContainerSpec(pool, image, labels)
 	if err != nil {
@@ -949,14 +949,14 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// Create the per-pool internal network so the pool's container can be
 	// aliased as the proxy server name on it and sandboxes can reach only the
 	// proxy.
-	if err := e.ensureSandboxNetwork(ctx, cli, pool.ID); err != nil {
+	if err := e.ensureSandboxNetwork(startCtx, cli, pool.ID); err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
-	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, NetworkingConfig: networkConfig, Name: name})
+	created, err := cli.ContainerCreate(startCtx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, NetworkingConfig: networkConfig, Name: name})
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
-	if _, err := cli.NetworkConnect(ctx, proxyagent.SandboxNetworkName(pool.ID), client.NetworkConnectOptions{
+	if _, err := cli.NetworkConnect(startCtx, proxyagent.SandboxNetworkName(pool.ID), client.NetworkConnectOptions{
 		Container:      created.ID,
 		EndpointConfig: &network.EndpointSettings{Aliases: []string{proxyagent.ServerName}},
 	}); err != nil {
@@ -965,12 +965,12 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// A new container runs no agent until it is provisioned, so the pool's
 	// agent counts as started from just before it starts (ADR 26-11-15-294
 	// §1), told now: its first report can land before this pass settles.
-	sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartBox)
-	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+	sandbox.ReportAgentStarted(startCtx, time.Now(), sandbox.AgentStartBox)
+	if _, err := cli.ContainerStart(startCtx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
 	steps.Step(ctx, "started the pool's container", "container", shortContainerID(created.ID))
-	record, err := poolruntime.ProvisionBox(ctx, provisioner.ContainerGuest{Client: cli, Container: created.ID, Env: pool.RuntimeOutbound.Environment()}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound})
+	record, err := poolruntime.ProvisionBox(startCtx, provisioner.ContainerGuest{Client: cli, Container: created.ID, Env: pool.RuntimeOutbound.Environment()}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound})
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
@@ -979,14 +979,14 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	}
 	releaseStart()
-	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
+	agentCtx, releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
 	defer releaseAgent()
 	if waitForHealth {
-		if err := e.waitAgentAfterApply(ctx, cli, created.ID); err != nil {
+		if err := e.waitAgentAfterApply(agentCtx, cli, created.ID); err != nil {
 			return nil, poolruntime.BoxRecord{}, err
 		}
 	}
-	inst, err := e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
+	inst, err := e.waitContainerReady(agentCtx, cli, created.ID, waitForHealth)
 	if err == nil {
 		steps.Step(ctx, "the pool's container is healthy")
 	}

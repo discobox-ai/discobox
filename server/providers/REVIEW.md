@@ -218,3 +218,12 @@
   coming back and wait minutes on it, instead of failing on a daemon that is
   down. Mark a service that does not answer there with
   `sandbox.ErrProviderNotReachable`, which only the provider check reads.
+- Run a held phase's work under the context `sandbox.PoolProgressReporter.Hold`
+  returns, never the caller's own (`_, release := Hold(...)`): a report a
+  driver makes from inside it, such as the guest image fetch inside the
+  engine's `starting_vm`, reaches the hold only through that context. Under
+  any other, it compiles and passes every test that does not report from
+  inside, while the heartbeat restates the bare phase over the fetch's byte
+  counts every five seconds (#1145). A driver that refines a held phase
+  reports the held phase again once its refinement is over, or the hold
+  restates the refinement to the end of the held call.
