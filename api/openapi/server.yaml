@@ -4312,7 +4312,7 @@ components:
                         type: string
                     type: array
                 routes:
-                    description: "Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses the request."
+                    description: "Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses the request."
                     items:
                         type: string
                     type: array
@@ -4671,6 +4671,13 @@ components:
                     description: Bytes the sandbox sent over the upgraded connection
                     format: int64
                     type: integer
+                upgradeC2sSentBytes:
+                    description: "Bytes that reached the upstream of what the sandbox sent, on a connection whose messages were inspected for credentials: it differs from upgradeC2sBytes where a credential was swapped into a message, or a message was refused"
+                    format: int64
+                    type: integer
+                upgradeInspected:
+                    description: "True for a WebSocket connection whose messages the proxy read to swap a credential at a place a route names"
+                    type: boolean
                 upgradeS2cBytes:
                     description: Bytes the upstream sent over the upgraded connection
                     format: int64
@@ -5931,6 +5938,8 @@ components:
                     items:
                         type: string
                     type: array
+                websocket:
+                    $ref: '#/components/schemas/SecretRouteWebSocket'
             required:
                 - hosts
             type: object
@@ -5963,8 +5972,37 @@ components:
                     items:
                         type: string
                     type: array
+                websocket:
+                    $ref: '#/components/schemas/SecretRouteWebSocket'
             required:
                 - hosts
+            type: object
+        SecretRouteWebSocket:
+            additionalProperties: false
+            description: "Narrows a route to places in the JSON text messages a client sends on the WebSocket connection the route's request upgrades: the credential is carried there and swapped there, as the whole of the JSON string at one of places, and nowhere else. A route with a WebSocket block allows the credential at the places it names and nowhere else, not in the handshake's headers, query or body; a route without one, any host included, allows it in no message. Hosts, methods and paths match the upgrade request. A blocked WebSocket route refuses the credential at its places. Only a client message that is exactly one JSON object, valid UTF-8 with each member named once, is read for places; a credential anywhere else in a message, in another kind of message, or past 64 KiB closes the connection without sending it."
+            properties:
+                places:
+                    description: Where in a message the credential may be. At least one.
+                    items:
+                        $ref: '#/components/schemas/SecretRouteMessagePlace'
+                    minItems: 1
+                    type: array
+            required:
+                - places
+            type: object
+        SecretRouteMessagePlace:
+            additionalProperties: false
+            description: "One place in a client message: the string at a JSON pointer, in a message whose top-level members hold every condition."
+            properties:
+                at:
+                    description: "A JSON pointer (RFC 6901) into the message, such as /d/token, naming one member or array element; the string there must be exactly the credential's placeholder. No `-` append index and no `*` or `**` segment."
+                    type: string
+                when:
+                    additionalProperties: true
+                    description: "Top-level member names and the JSON scalar (string, number, true, false or null) each must hold, compared exactly: strings as decoded, numbers as exact decimals, so 2 and 2.0 are equal. A missing member is not null. Empty or absent is every message."
+                    type: object
+            required:
+                - at
             type: object
         SecretRouteBody:
             additionalProperties: false
@@ -6636,6 +6674,9 @@ components:
                     type: boolean
                 sentinelBodyPlaces:
                     description: "The agent takes a sentinel route's body block, and its proxy swaps a sentinel at the body places it names. Declared on every report; an agent from before body places sends none, and is sent no route with a body block."
+                    type: boolean
+                sentinelWebSocket:
+                    description: "The agent takes a sentinel route's WebSocket block, and its proxy swaps a sentinel at the message places it names. Declared on every report; an agent from before message places sends none, and is sent no route with a WebSocket block."
                     type: boolean
                 sentinelGenerations:
                     description: "The agent takes each sentinel's value generation as sentinelGenerations, and its proxy drops a value it holds of another (#1022). Declared on every report; an agent from before generations sends none, and is sent none."

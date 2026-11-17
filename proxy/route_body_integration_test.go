@@ -437,6 +437,8 @@ func TestHTTPProxyHoldsAMethodOverrideToItsRoutes(t *testing.T) {
 	}
 }
 
-func (*routeResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*routeResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*routeResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }
 
-func (*narrowingResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*narrowingResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*narrowingResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }

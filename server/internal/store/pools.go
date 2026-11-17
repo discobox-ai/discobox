@@ -264,6 +264,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		stored.SentinelGrants = takes.Grants
 		stored.SentinelGenerations = takes.Generations
 		stored.SentinelBodyPlaces = takes.BodyPlaces
+		stored.SentinelWebSocket = takes.WebSocket
 		stored.SourceDefaultBranch = takes.SourceDefaultBranch
 		stored.Ready = ready
 		// A pool whose agent does not declare the OS the pool names takes no
@@ -304,6 +305,9 @@ type AgentDeclarations struct {
 	// BodyPlaces: it takes a route's body block, and its proxy swaps a
 	// sentinel at the places it names (#1012).
 	BodyPlaces bool
+	// WebSocket: it takes a route's WebSocket block, and its proxy swaps a
+	// sentinel at the message places it names (ADR 26-11-06-442).
+	WebSocket bool
 	// SourceDefaultBranch: it takes a git source's defaultBranch (#245). It
 	// is read when a sandbox is created, so a change of it resends nothing.
 	SourceDefaultBranch bool
@@ -315,7 +319,7 @@ type AgentDeclarations struct {
 // resends nothing.
 func (d AgentDeclarations) sentinelShapeChanged(stored *model.Pool) bool {
 	return stored.SentinelGrants != d.Grants || stored.SentinelGenerations != d.Generations ||
-		stored.SentinelBodyPlaces != d.BodyPlaces
+		stored.SentinelBodyPlaces != d.BodyPlaces || stored.SentinelWebSocket != d.WebSocket
 }
 
 // RecordPoolProvisionProgress stores what a provider driver is doing to bring a

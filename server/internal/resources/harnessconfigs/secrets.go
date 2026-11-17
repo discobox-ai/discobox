@@ -182,7 +182,7 @@ func declaredRoutesByEnv(config *model.HarnessConfig) map[string][]model.SecretR
 
 // removeStrandedBindingsTx takes from the standing bindings of secret the
 // routes that the route constraint a harness writer just added to it, from
-// prior's, strands (store.StrandedBodyPlaceBindings, #1105): a body place no
+// prior's, strands (store.StrandedPlaceBindings, #1105): a body place no
 // list allows any more, which the proxy would refuse on every use while the
 // binding stood reported as granted. A config apply and a login save-back run
 // with nobody to read a refusal, and refusing would fail the apply or lose the
@@ -194,7 +194,7 @@ func declaredRoutesByEnv(config *model.HarnessConfig) map[string][]model.SecretR
 // changed as it now stands, so a person's edit to it is kept. Their holders
 // are marked in the same transaction.
 func (s *Service) removeStrandedBindingsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, prior, secret *model.Secret, by string) error {
-	stranded, err := txStore.StrandedBodyPlaceBindings(ctx, prior, secret, time.Now().UTC())
+	stranded, err := txStore.StrandedPlaceBindings(ctx, prior, secret, time.Now().UTC())
 	if err != nil {
 		return err
 	}

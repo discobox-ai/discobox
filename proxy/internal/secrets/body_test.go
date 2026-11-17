@@ -41,6 +41,7 @@ func TestMatchBodyFindsASentinelOnlyAtAPlace(t *testing.T) {
 		{name: "trailing data", body: `{"api_key":"bxd_SENTINEL"} {}`, places: []string{"/api_key"}, err: true},
 		{name: "truncated", body: `{"api_key":"bxd_SENTINEL"`, places: []string{"/api_key"}, err: true},
 		{name: "a member twice", body: `{"api_key":"x","api_key":"bxd_SENTINEL"}`, places: []string{"/api_key"}, err: true},
+		{name: "an unpaired surrogate", body: `{"n":"\ud800","api_key":"bxd_SENTINEL"}`, places: []string{"/api_key"}, err: true},
 		{name: "invalid UTF-8", body: "{\"n\":\"\xff\",\"api_key\":\"bxd_SENTINEL\"}", places: []string{"/api_key"}, err: true},
 		{name: "too deep", body: strings.Repeat("[", maxBodyDepth+1) + `"bxd_SENTINEL"` + strings.Repeat("]", maxBodyDepth+1), places: []string{"/0"}, err: true},
 	} {

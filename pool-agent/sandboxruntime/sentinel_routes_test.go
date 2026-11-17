@@ -1,9 +1,12 @@
 package sandboxruntime
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/go-faster/jx"
 
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	poolagentapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -90,5 +93,19 @@ func TestSentinelRouteKeepsEveryPart(t *testing.T) {
 	}
 	if got := sentinelRoute(mcp); !reflect.DeepEqual(got.MCP, &secretroute.MCP{Tools: []string{"get_*"}}) || got.GraphQL != nil {
 		t.Fatalf("sentinelRoute(mcp) = %+v, want its tools and no GraphQL block", got)
+	}
+	ws := workerapimodel.SentinelRoute{
+		Hosts: []string{"gateway.discord.gg"},
+		Websocket: poolagentapi.NewOptSentinelRouteWebSocket(poolagentapi.SentinelRouteWebSocket{Places: []poolagentapi.SentinelRouteMessagePlace{
+			{At: "/d/token", When: poolagentapi.NewOptSentinelRouteMessagePlaceWhen(poolagentapi.SentinelRouteMessagePlaceWhen{"op": jx.Raw("2")})},
+			{At: "/auth"},
+		}}),
+	}
+	wantWS := &secretroute.WebSocket{Places: []secretroute.MessagePlace{
+		{At: "/d/token", When: map[string]json.RawMessage{"op": json.RawMessage("2")}},
+		{At: "/auth"},
+	}}
+	if got := sentinelRoute(ws); !reflect.DeepEqual(got.WebSocket, wantWS) {
+		t.Fatalf("sentinelRoute(ws) = %+v, want its message places", got.WebSocket)
 	}
 }

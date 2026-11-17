@@ -2316,7 +2316,16 @@ flowchart LR
   does not know, SecretsFile keeps body routes apart from the lists they
   belong to (`bodyRoutes`, `secretsFileOf`), so such an agent holds the lists
   without them, which only narrows, rather than a body route read as an open
-  route for the headers.
+  route for the headers. A route with a WebSocket block (ADR 26-11-06-442)
+  goes the same way: the agent declares `sentinelWebSocket`, a control plane
+  sends such a route only to an agent that did, and SecretsFile keeps it in a
+  key of its own (`websocketRoutes`), never `bodyRoutes`, which an agent from
+  before message places reads and would take it there as an open route for
+  the headers. A sentinel the proxy found in a WebSocket message
+  (`AuthorizeRequest.Message`) is held to each pointer it stands at in that
+  message, in one grant, and `InspectsMessages` answers from the routes held
+  here whether an upgrade's messages are read at all
+  (`secretroute.WebSocketCandidate`).
 - **Routes are written normalized** (`UpsertSandboxSentinels`,
   `secretroute.Normalize`). One that does not normalize — the control plane
   validates every route, so only a pool of another version meets one — fails

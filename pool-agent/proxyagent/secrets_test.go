@@ -820,10 +820,10 @@ func TestAuthorizeHoldsEveryUseOfASentinelToOneGrant(t *testing.T) {
 	}
 	r := &secretResolver{}
 	r.setSentinelRoutes(doc.Routes)
-	if got := r.BodyPlaces(context.Background(), proxy.SecretBodyPlacesRequest{ClientID: "sb-1", Method: "POST", Host: "app.boxd.sh", URL: exchange}); len(got) != 1 || got[0] != "/api_key" {
+	if got := r.BodyPlaces(context.Background(), proxy.SecretPlacesRequest{ClientID: "sb-1", Method: "POST", Host: "app.boxd.sh", URL: exchange}); len(got) != 1 || got[0] != "/api_key" {
 		t.Fatalf("BodyPlaces = %q, want /api_key", got)
 	}
-	if got := r.BodyPlaces(context.Background(), proxy.SecretBodyPlacesRequest{ClientID: "sb-1", Method: "GET", Host: "app.boxd.sh", URL: "https://app.boxd.sh/other"}); len(got) != 0 {
+	if got := r.BodyPlaces(context.Background(), proxy.SecretPlacesRequest{ClientID: "sb-1", Method: "GET", Host: "app.boxd.sh", URL: "https://app.boxd.sh/other"}); len(got) != 0 {
 		t.Fatalf("BodyPlaces elsewhere = %q, want none", got)
 	}
 	authorize := func(headers bool, places ...string) bool {
@@ -894,5 +894,53 @@ func TestSecretsFileKeepsBodyRoutesFromAnOlderReader(t *testing.T) {
 	got := doc.Routes["sb-1"]["SENT"]
 	if len(got) != 2 || len(got[0].Lists[0]) != 2 || len(got[1].Lists[0]) != 1 || got[1].Lists[0][0].Body == nil {
 		t.Fatalf("read back %+v, want each body route in its grant and list", got)
+	}
+}
+
+// SecretsFile keeps WebSocket routes in a key of their own, where neither an
+// agent from before body places nor one from before message places reads
+// them: an agent that reads bodyRoutes would otherwise read a WebSocket route
+// there as an open route for the headers. Read back, each is in its grant and
+// list again.
+func TestSecretsFileKeepsWebSocketRoutesFromAnOlderReader(t *testing.T) {
+	root := withTestRoot(t)
+	grants := map[string][]secretroute.Grant{"SENT": {
+		{Lists: [][]secretroute.Route{parsedRoutes(t, "api.x.test", `GET gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}}]`)}},
+	}}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, grants, nil); err != nil {
+		t.Fatal(err)
+	}
+	path := root.ProxySecretsFile(testProjectID, testPoolID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An agent from after body places, before message places: it reads
+	// routes and bodyRoutes, and knows no websocket field.
+	type olderRoute struct {
+		Hosts []string `json:"hosts"`
+	}
+	var older struct {
+		Routes map[string]map[string][]struct {
+			Lists [][]olderRoute `json:"lists"`
+		} `json:"routes"`
+		BodyRoutes map[string]map[string][]struct {
+			Route olderRoute `json:"route"`
+		} `json:"bodyRoutes"`
+	}
+	if err := json.Unmarshal(data, &older); err != nil {
+		t.Fatal(err)
+	}
+	held := older.Routes["sb-1"]["SENT"]
+	if len(held) != 1 || len(held[0].Lists[0]) != 1 || held[0].Lists[0][0].Hosts[0] != "api.x.test" || len(older.BodyRoutes) != 0 {
+		t.Fatalf("an older reader holds %+v and body routes %+v, want the header route alone", held, older.BodyRoutes)
+	}
+	doc, err := readSecretsDoc(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := doc.Routes["sb-1"]["SENT"]
+	if len(got) != 1 || len(got[0].Lists[0]) != 2 || got[0].Lists[0][1].WebSocket == nil || string(got[0].Lists[0][1].WebSocket.Places[0].When["op"]) != "2" {
+		t.Fatalf("read back %+v, want the WebSocket route in its grant and list", got)
 	}
 }

@@ -1723,6 +1723,19 @@ func sentinelRoute(in workerapimodel.SentinelRoute) secretroute.Route {
 	if body, ok := in.Body.Get(); ok {
 		route.Body = &secretroute.Body{Places: body.Places}
 	}
+	if ws, ok := in.Websocket.Get(); ok {
+		route.WebSocket = &secretroute.WebSocket{Places: make([]secretroute.MessagePlace, 0, len(ws.Places))}
+		for _, place := range ws.Places {
+			next := secretroute.MessagePlace{At: place.At}
+			if when, ok := place.When.Get(); ok && len(when) > 0 {
+				next.When = make(map[string]json.RawMessage, len(when))
+				for name, value := range when {
+					next.When[name] = json.RawMessage(value)
+				}
+			}
+			route.WebSocket.Places = append(route.WebSocket.Places, next)
+		}
+	}
 	return route
 }
 

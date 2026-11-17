@@ -69,11 +69,17 @@ type HTTPEvent struct {
 	UpgradeType          string
 	UpgradeC2SBytes      int64
 	UpgradeS2CBytes      int64
-	StreamSessionID      string
-	StreamFile           string
-	StreamFormat         string
-	StreamDroppedChunks  uint64
-	StreamDroppedBytes   uint64
+	// UpgradeInspected is a WebSocket connection whose client messages were
+	// read for credentials (ADR 26-11-06-442), and UpgradeC2SSentBytes what
+	// of them reached the origin: UpgradeC2SBytes is what the client sent,
+	// which differs where a message was swapped or refused.
+	UpgradeInspected    bool
+	UpgradeC2SSentBytes int64
+	StreamSessionID     string
+	StreamFile          string
+	StreamFormat        string
+	StreamDroppedChunks uint64
+	StreamDroppedBytes  uint64
 	// Tunnel is a passthrough CONNECT's record (ADR 26-10-31-819 §4); zero
 	// on every other row.
 	Tunnel Tunnel
@@ -200,22 +206,27 @@ type HTTPExchange struct {
 	// 26-10-27-840 §5); each one's secret is in SwappedSecretIDs too. Like
 	// it, never a value and unindexed, and AutoMigrate adds it to a database
 	// written before it, whose rows read it as empty.
-	RawBindingIDs       string
-	RequestHeaders      string
-	ResponseHeaders     string
-	ResponseBytes       int64
-	RequestBodyFile     string
-	RequestBodyFormat   string
-	RequestBodyBytes    int64
-	RequestBodyError    string
-	ResponseBodyFile    string
-	ResponseBodyFormat  string
-	ResponseBodyBytes   int64
-	ResponseBodyError   string
-	Upgrade             bool
-	UpgradeType         string
-	UpgradeC2SBytes     int64
-	UpgradeS2CBytes     int64
+	RawBindingIDs      string
+	RequestHeaders     string
+	ResponseHeaders    string
+	ResponseBytes      int64
+	RequestBodyFile    string
+	RequestBodyFormat  string
+	RequestBodyBytes   int64
+	RequestBodyError   string
+	ResponseBodyFile   string
+	ResponseBodyFormat string
+	ResponseBodyBytes  int64
+	ResponseBodyError  string
+	Upgrade            bool
+	UpgradeType        string
+	UpgradeC2SBytes    int64
+	UpgradeS2CBytes    int64
+	// UpgradeInspected and UpgradeC2SSentBytes are HTTPEvent's. AutoMigrate
+	// adds them to a database written before them, whose rows read them as
+	// not inspected.
+	UpgradeInspected    bool
+	UpgradeC2SSentBytes int64
 	StreamSessionID     string
 	StreamFile          string
 	StreamFormat        string
@@ -788,6 +799,8 @@ func (r *Recorder) write(event any) {
 			UpgradeType:         e.UpgradeType,
 			UpgradeC2SBytes:     e.UpgradeC2SBytes,
 			UpgradeS2CBytes:     e.UpgradeS2CBytes,
+			UpgradeInspected:    e.UpgradeInspected,
+			UpgradeC2SSentBytes: e.UpgradeC2SSentBytes,
 			StreamSessionID:     e.StreamSessionID,
 			StreamFile:          e.StreamFile,
 			StreamFormat:        e.StreamFormat,

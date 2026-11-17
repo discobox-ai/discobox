@@ -348,7 +348,8 @@ and responses. HTTP/2 and HTTP/3 WebSocket establishment are outside this path.
 
 The bounded asynchronous stream worker decodes before applying the client's
 redactor, so masked, compressed and fragmented values are redacted as whole
-messages. Wire bytes are forwarded unchanged. Each wire frame, assembled
+messages. Wire bytes are forwarded unchanged, except on a connection whose
+messages are inspected for credentials (below). Each wire frame, assembled
 compressed message and expanded message is bounded to 16 MiB; queued wire bytes
 are bounded to 8 MiB per connection as well as the existing queue count.
 Unknown extensions, invalid frames, excessive message sizes or lost queue bytes
@@ -661,6 +662,55 @@ Key properties:
     is what the key was exchanged for, and every response header value but
     those of `framingHeaders` is redacted (`responseHeaders`), since a header
     may carry what came back under any name.
+- **A WebSocket message place is where a route says a credential goes in a
+  client's message** (`secretroute.WebSocket`, `wsinspect.go`,
+  `internal/secrets/message.go`, `internal/wsframe`; ADR 26-11-06-442), such
+  as a gateway's IDENTIFY at `/d/token` in messages with `op` 2:
+  - The resolver says whether some open WebSocket route of the client's live
+    grants covers an upgrade (`Resolver.InspectsMessages`, on method, host
+    and path alone). Only a valid HTTP/1.1, version-13 handshake it covers is
+    inspected; its `Sec-WebSocket-Extensions` offer is removed, and a 101
+    that negotiates an extension anyway, or another protocol, is answered
+    502 and recorded blocked. Every other connection is copied byte for byte
+    and has no message swapped.
+  - On an inspected connection the client's frames are parsed by the
+    enforcing side itself, never by the fail-open audit capture: masked,
+    RSV-free, ordered frames, reassembled into complete messages before any
+    of a message is sent. A message is bounded to 64 KiB payload, 80 KiB of
+    frames and 1024 frames, and so is everything held at once; past that the
+    connection closes 1009, and a full queue stops reading the client.
+    Control frames are forwarded at once, serialized with message writes; a
+    close goes in order after the messages before it.
+  - `MatchMessage` takes a sentinel only as the whole of a string value in a
+    text message that is one strictly read JSON object
+    (`secretroute.ParseMessage`). Anywhere else — inside a longer string, in
+    a member name, base64-encoded, in a binary or non-JSON message, in a
+    control frame, or a sentinel the connection recognized and the sandbox no
+    longer holds — closes the connection 1008 with nothing of the message sent.
+  - Each `(sentinel, pointer)` is authorized with the message
+    (`AuthorizeRequest.Message`) against current routes before any value is
+    read; a refusal closes 1008. Resolution shares one `ResolveRetry` window
+    per message: a denial leaves the sentinel and sends; a transient failure
+    past the window closes 1011. A changed value is sent as one text frame
+    with a fresh mask; an unchanged message keeps its frames.
+  - **A connection freezes no grant.** The message is authorized again just
+    before it is written, inside `Swapper.Decide`, which no `Reconfigure`
+    overlaps and which does no network I/O; the write follows it. A
+    configuration installed while it was resolved has it read and decided
+    again. A lapsed binding or a removed sentinel stops it there.
+  - Ending a connection sends a close frame to the origin and, at the next
+    server frame boundary (`wsframe.Tracker`), to the client, and records the
+    connection's one row as blocked with its reason (`route:` or
+    `credential unavailable:`). The capture keeps what the client sent, with
+    its placeholders; `UpgradeC2SSentBytes` is what reached the origin, and
+    both reach the server's audit detail. Server messages are not
+    rewritten: an origin that echoes the credential hands it to the sandbox,
+    as an HTTP response would. The capture is kept clean of it: every value
+    swapped in is added to the connection's redactions before it is sent
+    (`StreamSession.Redact`).
+  - Body places read through the same strict reader
+    (`secretroute.ParseDocument`), so a body and a message resolve pointers,
+    escapes and duplicate members alike.
 - **A sentinel is also matched through base64.** Git's HTTP transport sends a
   credential as `Authorization: Basic base64(user:password)`, so a sentinel
   traveling that way is invisible to a literal scan and the upstream is handed

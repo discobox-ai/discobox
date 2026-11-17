@@ -261,3 +261,26 @@ func TestABodyPlaceTheDelegationNeverNamesIsRefusedOnUpdate(t *testing.T) {
 		t.Fatalf("update = %v, want 400 naming the delegation and the body place", err)
 	}
 }
+
+// A WebSocket message place is held the same way: a grant naming one that the
+// secret's routes never name is refused when it is written, naming the
+// place, since `*` grants no message place and the proxy would refuse it on
+// every message; once the secret names the place, the same grant is written.
+func TestAMessagePlaceGrantNoListAllowsIsRefused(t *testing.T) {
+	const gatewayText = `GET gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}}]`
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	wide := createBoxdKey(ctx, t, svc, "*")
+	mustBindAs(t, st, &model.SecretBinding{SecretID: wide.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
+	_, err := approveRoutesAs(t, svc, createAgentRequest(ctx, t, svc).ID, wide.ID, apigen.SecretRequestPartDecisionAsReplace, gatewayText)
+	if err == nil || !strings.Contains(err.Error(), "message place") {
+		t.Fatalf("approve under a secret routed to *: %v, want a refusal naming the message place", err)
+	}
+
+	svc, st = newAgentCredentialService(t)
+	named := createBoxdKey(ctx, t, svc, "*", gatewayText)
+	mustBindAs(t, st, &model.SecretBinding{SecretID: named.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
+	if _, err := approveRoutesAs(t, svc, createAgentRequest(ctx, t, svc).ID, named.ID, apigen.SecretRequestPartDecisionAsReplace, gatewayText); err != nil {
+		t.Fatalf("approve under a secret naming the place: %v", err)
+	}
+}

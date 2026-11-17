@@ -725,10 +725,14 @@ func (r *flakyResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets
 	return secrets.RawResult{}, secrets.ErrDenied
 }
 
-func (*rotatingResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*rotatingResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*rotatingResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }
 
-func (*settableResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*settableResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*settableResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }
 
-func (*revokingResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*revokingResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*revokingResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }
 
-func (*flakyResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+func (*flakyResolver) BodyPlaces(context.Context, secrets.PlacesRequest) []string   { return nil }
+func (*flakyResolver) InspectsMessages(context.Context, secrets.PlacesRequest) bool { return false }

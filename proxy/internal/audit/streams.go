@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,7 +62,9 @@ type StreamSession struct {
 	// onWrite counts written frames toward the recorder's spool budget.
 	onWrite func(int64)
 	// patterns are the client's raw secrets, kept out of every chunk
-	// (Recorder.SetRedactor).
+	// (Recorder.SetRedactor), and any value Redact adds; read through
+	// redactions.
+	patternsMu  sync.RWMutex
 	patterns    [][]byte
 	websocket   bool
 	extensions  string
@@ -136,6 +139,28 @@ func newStreamSession(writer io.WriteCloser, queueSize int, wg *sync.WaitGroup) 
 	return session
 }
 
+// Redact keeps patterns out of everything the session writes from now on:
+// a value the proxy put into the stream, which the other end may send back
+// (ADR 26-11-06-442 §4). A chunk queued before is written after, so it is
+// kept out of that too. Longer patterns are replaced first, so a form that
+// holds another is not left half redacted.
+func (s *StreamSession) Redact(patterns [][]byte) {
+	if s == nil || len(patterns) == 0 {
+		return
+	}
+	s.patternsMu.Lock()
+	defer s.patternsMu.Unlock()
+	next := append(slices.Clone(s.patterns), patterns...)
+	slices.SortStableFunc(next, func(a, b []byte) int { return len(b) - len(a) })
+	s.patterns = next
+}
+
+func (s *StreamSession) redactions() [][]byte {
+	s.patternsMu.RLock()
+	defer s.patternsMu.RUnlock()
+	return s.patterns
+}
+
 // RecordChunk queues an upgraded-stream payload for asynchronous spooling.
 func (s *StreamSession) RecordChunk(direction StreamDirection, payload []byte) {
 	if s == nil || len(payload) == 0 {
@@ -156,7 +181,7 @@ func (s *StreamSession) RecordChunk(direction StreamDirection, payload []byte) {
 	}
 	copied := bytes.Clone(payload)
 	if !s.websocket {
-		copied = redactPatterns(copied, s.patterns)
+		copied = redactPatterns(copied, s.redactions())
 	}
 	event := streamEvent{direction: byte(direction), at: time.Now().UTC(), payload: copied}
 	s.queuedBytes.Add(int64(len(copied)))
@@ -359,7 +384,7 @@ func (s *StreamSession) runWebSocket() {
 		if storageErr != nil {
 			return storageErr
 		}
-		record.Payload = redactPatterns(bytes.Clone(record.Payload), s.patterns)
+		record.Payload = redactPatterns(bytes.Clone(record.Payload), s.redactions())
 		if len(record.Payload) > wsrecord.MaxPayload {
 			record.Opcode = wsrecord.CaptureError
 			record.Payload = []byte("redacted message exceeds capture limit")

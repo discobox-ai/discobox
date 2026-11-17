@@ -1,6 +1,10 @@
 package services
 
 import (
+	"encoding/json"
+
+	"github.com/go-faster/jx"
+
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -26,6 +30,9 @@ func SecretRoutesToModel(in []serverapi.SecretRouteInput) []model.SecretRoute {
 		}
 		if block, ok := route.Body.Get(); ok {
 			next.Body = &secretroute.Body{Places: block.Places}
+		}
+		if block, ok := route.Websocket.Get(); ok {
+			next.WebSocket = webSocketToModel(block)
 		}
 		out = append(out, next)
 	}
@@ -53,10 +60,48 @@ func SecretRoutesFromModel(in []model.SecretRoute) []serverapi.SecretRoute {
 		if route.Body != nil {
 			api.Body = serverapi.NewOptSecretRouteBody(serverapi.SecretRouteBody{Places: route.Body.Places})
 		}
+		if route.WebSocket != nil {
+			api.Websocket = serverapi.NewOptSecretRouteWebSocket(webSocketFromModel(route.WebSocket))
+		}
 		if route.Blocked {
 			api.Blocked = serverapi.NewOptBool(true)
 		}
 		out = append(out, api)
+	}
+	return out
+}
+
+// webSocketToModel reads a route's WebSocket block as the API carries it.
+// A condition's value is kept as written; Normalize reads it exactly and
+// refuses one that is not a JSON scalar.
+func webSocketToModel(block serverapi.SecretRouteWebSocket) *secretroute.WebSocket {
+	out := &secretroute.WebSocket{Places: make([]secretroute.MessagePlace, 0, len(block.Places))}
+	for _, place := range block.Places {
+		next := secretroute.MessagePlace{At: place.At}
+		if when, ok := place.When.Get(); ok && len(when) > 0 {
+			next.When = make(map[string]json.RawMessage, len(when))
+			for name, value := range when {
+				next.When[name] = json.RawMessage(value)
+			}
+		}
+		out.Places = append(out.Places, next)
+	}
+	return out
+}
+
+// webSocketFromModel is a route's WebSocket block as the API serves it.
+func webSocketFromModel(block *secretroute.WebSocket) serverapi.SecretRouteWebSocket {
+	out := serverapi.SecretRouteWebSocket{Places: make([]serverapi.SecretRouteMessagePlace, 0, len(block.Places))}
+	for _, place := range block.Places {
+		next := serverapi.SecretRouteMessagePlace{At: place.At}
+		if len(place.When) > 0 {
+			when := make(serverapi.SecretRouteMessagePlaceWhen, len(place.When))
+			for name, value := range place.When {
+				when[name] = jx.Raw(value)
+			}
+			next.When = serverapi.NewOptSecretRouteMessagePlaceWhen(when)
+		}
+		out.Places = append(out.Places, next)
 	}
 	return out
 }

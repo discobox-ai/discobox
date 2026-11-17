@@ -51,7 +51,7 @@ func (r *placeResolver) Authorize(_ context.Context, req secrets.AuthorizeReques
 	}
 	for _, at := range uses {
 		if allowed, reason := secretroute.DecideGrants(r.grants, time.Now(), secretroute.Request{
-			Method: req.Method, Host: req.Host, URL: req.URL, Header: req.Header, Body: req.Body, At: at,
+			Method: req.Method, Host: req.Host, URL: req.URL, Header: req.Header, Body: req.Body, At: at, Message: req.Message,
 		}); !allowed {
 			return secrets.Verdict{Reason: reason}, nil
 		}
@@ -59,8 +59,12 @@ func (r *placeResolver) Authorize(_ context.Context, req secrets.AuthorizeReques
 	return secrets.Verdict{Allow: true}, nil
 }
 
-func (r *placeResolver) BodyPlaces(_ context.Context, req secrets.BodyPlacesRequest) []string {
+func (r *placeResolver) BodyPlaces(_ context.Context, req secrets.PlacesRequest) []string {
 	return secretroute.BodyPlaces(r.grants, time.Now(), secretroute.Request{Method: req.Method, Host: req.Host, URL: req.URL})
+}
+
+func (r *placeResolver) InspectsMessages(_ context.Context, req secrets.PlacesRequest) bool {
+	return secretroute.WebSocketCandidate(r.grants, time.Now(), secretroute.Request{Method: req.Method, Host: req.Host, URL: req.URL})
 }
 
 func (r *placeResolver) Resolve(context.Context, secrets.ResolveRequest) (secrets.ResolveResult, error) {

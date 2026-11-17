@@ -388,6 +388,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			SentinelGenerations:  true,
 			SentinelBodyPlaces:   true,
 			SourceDefaultBranch:  true,
+			SentinelWebSocket:    true,
 			FirstReport:          first,
 			Ready:                true,
 			Schedulable:          status.schedulable,

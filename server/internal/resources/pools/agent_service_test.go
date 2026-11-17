@@ -929,6 +929,34 @@ func TestAReportRecordsWhetherAnAgentTakesASourcesDefaultBranch(t *testing.T) {
 	}
 }
 
+// An agent that now takes a route's WebSocket block is recorded as taking
+// it, and sent its sandboxes' sentinels again, its WebSocket routes with
+// them.
+func TestAReportThatAnAgentTakesWebSocketPlacesResendsItsSentinels(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(ws bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(true), SentinelGenerations: serverapi.NewOptBool(true),
+			SentinelBodyPlaces: serverapi.NewOptBool(true), SentinelWebSocket: serverapi.NewOptBool(ws),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	marked := len(recorded.sentinels)
+	report(true)
+	report(true)
+	if len(recorded.sentinels) != marked+1 {
+		t.Fatalf("marked %v, want pool-a's sentinels once more, when its agent first declared WebSocket places", recorded.sentinels)
+	}
+	if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || !pool.SentinelWebSocket {
+		t.Fatalf("pool = %+v, %v; want it recorded as taking WebSocket places", pool, err)
+	}
+}
+
 // A ready report the agent marks as its process's first is told to the
 // upgrade watch, at the time the report was stored with; a heartbeat, and a
 // first report that is not ready, are not (ADR 26-11-15-602 §2).

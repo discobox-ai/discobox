@@ -1229,7 +1229,10 @@ does the grants. A route with a body block (a credential swapped at a place
 in a JSON request body, #1012) goes only to a pool whose agent declared it
 takes one (`Pool.SentinelBodyPlaces`); any other is sent its lists without
 such routes, which only narrows them, since it swaps nothing in a body and
-its decoder would refuse the field. The set and the secret environment are each sent empty, never left
+its decoder would refuse the field. A route with a WebSocket block (a
+credential swapped at a place in a client's WebSocket message, ADR
+26-11-06-442) goes the same way, only to a pool that declared
+`Pool.SentinelWebSocket`. The set and the secret environment are each sent empty, never left
 out, when nothing is in them: the pool keeps what it was last sent of a field
 left out, so the last sentinel removed, or turned raw, would otherwise stay in
 the sandbox — where an `env` raw delivery's variable would still hold the

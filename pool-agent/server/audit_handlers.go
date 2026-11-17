@@ -193,6 +193,8 @@ func poolHTTPAuditExchangeDetail(row proxy.AuditHTTPExchange) workerapimodel.Poo
 		StreamRecorded:       workerapi.NewOptBool(row.StreamFile != ""),
 		Upgrade:              workerapi.NewOptBool(row.Upgrade),
 		UpgradeC2sBytes:      workerapi.NewOptInt64(row.UpgradeC2SBytes),
+		UpgradeInspected:     workerapi.NewOptBool(row.UpgradeInspected),
+		UpgradeC2sSentBytes:  workerapi.NewOptInt64(row.UpgradeC2SSentBytes),
 		UpgradeS2cBytes:      workerapi.NewOptInt64(row.UpgradeS2CBytes),
 		StreamDroppedChunks:  workerapi.NewOptInt64(int64(row.StreamDroppedChunks)),
 		StreamDroppedBytes:   workerapi.NewOptInt64(int64(row.StreamDroppedBytes)),

@@ -286,21 +286,30 @@ func updateSecretsDoc(root layout.Root, projectID, poolID string, update func(*s
 // agent never sees the route at all, which only narrows its lists — it swaps
 // nothing in a body, and a list left with no route refuses everything — until
 // the control plane, told by its report, sends it routes it takes.
+//
+// Every route with a WebSocket block (ADR 26-11-06-442) is moved aside the
+// same way, into a key of its own, WebSocketRoutes: an agent from after body
+// places but before message places reads BodyRoutes, and would read a
+// WebSocket route there as an open route for the headers.
 type secretsFile struct {
 	secretsDoc
 	// BodyRoutes are, per sandbox and sentinel, the body routes of Routes,
 	// each with the grant and list it belongs to.
 	BodyRoutes map[string]map[string][]placedRoute `json:"bodyRoutes,omitempty"`
+	// WebSocketRoutes are the WebSocket routes of Routes, the same way.
+	WebSocketRoutes map[string]map[string][]placedRoute `json:"websocketRoutes,omitempty"`
 }
 
-// placedRoute is a body route and where in a sentinel's grants it belongs.
+// placedRoute is a body or WebSocket route and where in a sentinel's grants
+// it belongs.
 type placedRoute struct {
 	Grant int               `json:"grant"`
 	List  int               `json:"list"`
 	Route secretroute.Route `json:"route"`
 }
 
-// secretsFileOf moves doc's body routes aside, leaving doc as it was.
+// secretsFileOf moves doc's body and WebSocket routes aside, leaving doc as
+// it was.
 func secretsFileOf(doc secretsDoc) secretsFile {
 	file := secretsFile{secretsDoc: doc}
 	file.Routes = make(map[string]map[string][]secretroute.Grant, len(doc.Routes))
@@ -313,17 +322,21 @@ func secretsFileOf(doc secretsDoc) secretsFile {
 				for l, list := range grant.Lists {
 					routes := make([]secretroute.Route, 0, len(list))
 					for _, route := range list {
-						if route.Body == nil {
+						aside := &file.BodyRoutes
+						switch {
+						case route.WebSocket != nil:
+							aside = &file.WebSocketRoutes
+						case route.Body == nil:
 							routes = append(routes, route)
 							continue
 						}
-						if file.BodyRoutes == nil {
-							file.BodyRoutes = map[string]map[string][]placedRoute{}
+						if *aside == nil {
+							*aside = map[string]map[string][]placedRoute{}
 						}
-						if file.BodyRoutes[sandboxID] == nil {
-							file.BodyRoutes[sandboxID] = map[string][]placedRoute{}
+						if (*aside)[sandboxID] == nil {
+							(*aside)[sandboxID] = map[string][]placedRoute{}
 						}
-						file.BodyRoutes[sandboxID][sentinel] = append(file.BodyRoutes[sandboxID][sentinel], placedRoute{Grant: g, List: l, Route: route})
+						(*aside)[sandboxID][sentinel] = append((*aside)[sandboxID][sentinel], placedRoute{Grant: g, List: l, Route: route})
 					}
 					lists = append(lists, routes)
 				}
@@ -351,8 +364,9 @@ func WriteResolveContext(root layout.Root, projectID, poolID string, controlPlan
 // or refused (pool-agent/proxyagent/REVIEW.md).
 type secretsDocOnDisk struct {
 	secretsDoc
-	Routes     map[string]map[string]json.RawMessage `json:"routes,omitempty"`
-	BodyRoutes map[string]map[string][]placedRoute   `json:"bodyRoutes,omitempty"`
+	Routes          map[string]map[string]json.RawMessage `json:"routes,omitempty"`
+	BodyRoutes      map[string]map[string][]placedRoute   `json:"bodyRoutes,omitempty"`
+	WebSocketRoutes map[string]map[string][]placedRoute   `json:"websocketRoutes,omitempty"`
 }
 
 // heldList is one route list as the proxy holds a sentinel to it, every route
@@ -500,17 +514,19 @@ func readSecretsDoc(path string) (secretsDoc, error) {
 			set(sandboxID, sentinel, grants)
 		}
 	}
-	// Body routes go back where secretsFileOf took them from. One that names
-	// a grant or list its sentinel no longer has belongs to nothing it can
-	// widen, and is left out.
-	for sandboxID, sentinels := range onDisk.BodyRoutes {
-		for sentinel, placed := range sentinels {
-			grants := doc.Routes[sandboxID][sentinel]
-			for _, p := range placed {
-				if p.Grant < 0 || p.Grant >= len(grants) || p.List < 0 || p.List >= len(grants[p.Grant].Lists) {
-					continue
+	// Body and WebSocket routes go back where secretsFileOf took them from.
+	// One that names a grant or list its sentinel no longer has belongs to
+	// nothing it can widen, and is left out.
+	for _, aside := range []map[string]map[string][]placedRoute{onDisk.BodyRoutes, onDisk.WebSocketRoutes} {
+		for sandboxID, sentinels := range aside {
+			for sentinel, placed := range sentinels {
+				grants := doc.Routes[sandboxID][sentinel]
+				for _, p := range placed {
+					if p.Grant < 0 || p.Grant >= len(grants) || p.List < 0 || p.List >= len(grants[p.Grant].Lists) {
+						continue
+					}
+					grants[p.Grant].Lists[p.List] = append(grants[p.Grant].Lists[p.List], p.Route)
 				}
-				grants[p.Grant].Lists[p.List] = append(grants[p.Grant].Lists[p.List], p.Route)
 			}
 		}
 	}
@@ -881,6 +897,8 @@ func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportReque
 // A sentinel is held to every use the request makes of it, its headers and
 // each body place it stands at (secretroute.Request.At), and one grant must
 // allow them all: two grants each allowing one use allow neither together.
+// A sentinel in a WebSocket message (req.Message) is held the same way to
+// each place it stands in the message (ADR 26-11-06-442 §2).
 func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
 	now := time.Now()
 	uses := map[string][]string{}
@@ -901,12 +919,13 @@ func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeR
 	}
 	for _, sentinel := range order {
 		if allowed, reason := secretroute.DecideGrants(r.heldGrants(req.ClientID, sentinel), now, secretroute.Request{
-			Method: req.Method,
-			Host:   req.Host,
-			URL:    req.URL,
-			Header: req.Header,
-			Body:   req.Body,
-			At:     uses[sentinel],
+			Method:  req.Method,
+			Host:    req.Host,
+			URL:     req.URL,
+			Header:  req.Header,
+			Body:    req.Body,
+			At:      uses[sentinel],
+			Message: req.Message,
 		}); !allowed {
 			return proxy.SecretVerdict{Reason: reason}, nil
 		}
@@ -917,7 +936,7 @@ func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeR
 // BodyPlaces are the body places some live grant of the client's sentinels
 // names for a request (secretroute.BodyPlaces): what the proxy reads its body
 // for. It asks nothing of the control plane.
-func (r *secretResolver) BodyPlaces(_ context.Context, req proxy.SecretBodyPlacesRequest) []string {
+func (r *secretResolver) BodyPlaces(_ context.Context, req proxy.SecretPlacesRequest) []string {
 	r.routesMu.RLock()
 	defer r.routesMu.RUnlock()
 	var grants []secretroute.Grant
@@ -925,6 +944,21 @@ func (r *secretResolver) BodyPlaces(_ context.Context, req proxy.SecretBodyPlace
 		grants = append(grants, held...)
 	}
 	return secretroute.BodyPlaces(grants, time.Now(), secretroute.Request{Method: req.Method, Host: req.Host, URL: req.URL})
+}
+
+// InspectsMessages reports whether some live grant of the client's
+// sentinels has an open WebSocket route covering an upgrade request
+// (secretroute.WebSocketCandidate): whether the proxy reads its connection's
+// messages. It asks nothing of the control plane.
+func (r *secretResolver) InspectsMessages(_ context.Context, req proxy.SecretPlacesRequest) bool {
+	r.routesMu.RLock()
+	defer r.routesMu.RUnlock()
+	for _, held := range r.sentinelRoutes[req.ClientID] {
+		if secretroute.WebSocketCandidate(held, time.Now(), secretroute.Request{Method: req.Method, Host: req.Host, URL: req.URL}) {
+			return true
+		}
+	}
+	return false
 }
 
 func readResolveContext(path string) (resolveContext, error) {
