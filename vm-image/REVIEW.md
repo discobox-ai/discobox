@@ -63,6 +63,14 @@ together, where before it broke one".
   then a guest release, as for an Ubuntu bump. Docker's key is held to
   `DOCKER_APT_KEY_FINGERPRINT`; never take it on first download, because the
   server that serves it serves the packages too.
+- **A libkrun guest's poweroff ends its VM only through the kernel's patch.**
+  `kernel/patches` makes an x86 power-off reset the CPU, which is the one exit
+  libkrun has. Don't move that into the guest image (a shutdown hook that
+  reboots under libkrun): the guest image boots on every backend and must not
+  name one. A libkrunfw or kernel bump must still apply the patch: the
+  build fails if it doesn't, and `vm:verify-kernel` fails on a `vmlinux`
+  without the handler. That check finds it by its symbol, `krun_power_off`, so
+  renaming the function in the patch means changing the Taskfile check too.
 - **Guest image changes are a separate release.** Editing this directory does
   not ship with the server; it ships when a `vm/v*` tag is cut and
   `guestimage.DefaultVMImage` is re-pinned to the new `discobox-vm` digest.

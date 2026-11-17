@@ -116,6 +116,12 @@ stopped, so the engine replaces the VM in place and keeps its disks. `DeleteVM`
 is reserved for an authorized pool deletion and removes the disks and the
 runtime directory.
 
+The orderly poweroff is what ends the launcher: libkrun exits on the guest's CPU
+reset, and the kernel's power-off does that reset (see the kernel in
+[`vm-image/DESIGN.md`](../../../vm-image/DESIGN.md)), so `StopVM` returns as
+soon as the guest has unmounted its disks. The escalation is for a guest that
+does not finish shutting down.
+
 ## Transport boundary
 
 Every byte is VSOCK, and libkrun terminates each port at a Unix socket:

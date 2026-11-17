@@ -165,8 +165,16 @@ func TestLibkrunEndToEnd(t *testing.T) {
 			`if touch /host/libkrun-e2e-root-write 2>/dev/null; then exit 42; fi`,
 		}, "\n"))
 
+	// An orderly stop ends when the guest has powered off, not when the
+	// driver gives up waiting for it: a guest that halts instead leaves the
+	// launcher running until gracefulStopTimeout and a SIGTERM.
+	stopStarted := time.Now()
 	if err := driver.StopVM(ctx, poolID); err != nil {
 		t.Fatalf("gracefully stop VM: %v%s", err, launcherDiagnostics(driver, poolID))
+	}
+	if took := time.Since(stopStarted); took >= gracefulStopTimeout/2 {
+		t.Fatalf("StopVM took %s, want the launcher to exit once the guest powers off (well under %s)%s",
+			took.Round(100*time.Millisecond), gracefulStopTimeout, launcherDiagnostics(driver, poolID))
 	}
 	if info, err := driver.InspectVM(ctx, poolID); err != nil || info.Status != sandbox.StatusStopped {
 		t.Fatalf("stopped VM inspect = %#v, %v", info, err)

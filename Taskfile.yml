@@ -2389,6 +2389,13 @@ tasks:
         if grep -q '^CONFIG_BASE_SMALL=y' kernel.config; then
           echo "kernel is built with CONFIG_BASE_SMALL; pid_max is capped at 32768" >&2; exit 1
         fi
+        # libkrun has no power-off device and ends the VM only on a CPU reset,
+        # so a kernel without vm-image/kernel/patches' handler halts on
+        # poweroff and every orderly stop waits out the driver's timeout. A
+        # boot is the only other way to see it gone.
+        nm vmlinux | grep -qw krun_power_off || {
+          echo "kernel lacks the power-off-by-reset handler (vm-image/kernel/patches)" >&2; exit 1
+        }
         echo "kernel verified"
 
   vm:publish:
