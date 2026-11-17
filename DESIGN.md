@@ -467,7 +467,7 @@ bundle alone for a pool:
 
 ```mermaid
 flowchart TD
-    base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian sid, Docker, systemd unit mask"]
+    base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Ubuntu resolute, Docker, systemd unit mask"]
     agent["sandbox-agent/<br/>discobox-agent<br/>bundle, FROM scratch"]
     platform["sandbox-agent/<br/>discobox-platform<br/>bundle, FROM scratch"]
     bundle["harness/&lt;type&gt;/<br/>discobox-harness-*<br/>bundle, FROM scratch"]
@@ -528,67 +528,85 @@ is one image for every VM backend: `vz` boots its `linux/arm64` variant and
 needs is the one artifact it cannot take from there, so it has a third line of
 its own, `vm-kernel/v*`.
 
-### Debian
+### Ubuntu
 
-Every Debian stage this repository builds is Debian **sid**: the sandbox base
-image, the pool VM guest and the kernel it boots, the libkrun kernel's build
-stage, and the Go builders (sid's own Go; there is no golang image on sid).
-One Debian, so one version of everything to maintain; the owner chose it, for
-a 7.x guest kernel among other things, in #1133.
+Every Linux stage this repository builds is Ubuntu 26.04 LTS, **resolute**:
+the sandbox base image, the pool VM guest and the kernel it boots on vz, the
+libkrun kernel's build stage, and the Go builders (ADR 26-11-16-365). One
+release, so one version of everything to maintain. Moving to the next LTS is a
+change of its own, made after that release's first point release.
 
-- **One pin.** Each Dockerfile carries the same two build arguments:
-  `DEBIAN_IMAGE`, a dated `debian:sid-YYYYMMDD-slim` by digest, and
-  `DEBIAN_SNAPSHOT`, the snapshot.debian.org timestamp apt reads instead of
-  the moving archive, over http, since the sid image has no CA certificates
-  until apt installs them. apt verifies every index against Debian's archive
-  key; because a snapshot needs `Check-Valid-Until: no`, which would let any
-  older signed index pass, an apt hook (`discobox-apt-snapshot`) fails every
-  update whose sid index is not dated within the day before the snapshot. No stage adds another suite or an apt pin. A Dockerfile
-  cannot import another, so `scripts/debian-pin.sh` keeps the copies one:
-  `go tool task check:debian` (in `ci:check`) fails on two values, an image
-  not older than the snapshot's day, a stage built on any other base, another
-  suite named in a build, an apt pin, an https snapshot source, or a snapshot
-  source without that hook.
-- **Bumping it** is `go tool task debian:bump SNAPSHOT=<YYYYMMDDTHHMMSSZ>`,
-  a snapshot listed at `https://snapshot.debian.org/archive/debian/`: it moves
-  every copy to that snapshot and to the newest dated sid image from a day
-  before it, since apt never downgrades what the image already holds. Then rebuild
-  and verify what it moves: the guest (`vm:build` / `vm:verify` on both
-  architectures), the sandbox base, and the libkrun kernel, whose
-  `vm-image/kernel/Dockerfile` the bump rewrites too. A broken sid package is
-  answered with the nearest snapshot that works, never with another suite.
-- **When to bump.** Nothing moves without one: a rebuild, scheduled ones
-  included, installs exactly what the last one did, Docker's buildx and
-  Compose plugins in the sandbox base excepted (the newest Docker's suite
-  has). So security fixes in Debian's packages, the guest kernel among them,
-  reach an image only through a bump, and so does a Go point release: the Go
-  stages run with `GOTOOLCHAIN=local`, so a `go.mod` asking for a newer Go
-  than the snapshot's fails the build until the pin moves. Fixes in Docker,
-  containerd and the runc containerd.io bundles reach an image only through
-  `go tool task docker:bump` (below).
-- **The risks taken.** sid is unstable and has no security team: a snapshot
-  can catch a transition half done, a bump can bring a regression, and fixes
-  land when its maintainers upload them. Builds depend on snapshot.debian.org,
-  which is slower than the mirrors and has been down for hours at a time;
-  `Acquire::Retries` rides out a short outage, a long one stops builds.
-- **Exceptions.** libkrun boots libkrunfw's patched kernel, never Debian's;
-  only its build toolchain follows the pin. Docker is Docker CE, not sid's
+- **One pin.** Each Dockerfile carries the same three build arguments:
+  `UBUNTU_IMAGE`, a dated `ubuntu:resolute-YYYYMMDD[.N]` by digest, and
+  `UBUNTU_MIRROR_AMD64` / `UBUNTU_MIRROR_ARM64`, the mirror apt reads first.
+  Every stage built on it writes the same mirror list
+  (`/etc/apt/mirrors/ubuntu.list`, read through apt's `mirror+file:`
+  method): that mirror, then Ubuntu's own archive (`archive.ubuntu.com`, or
+  `ports.ubuntu.com` on arm64) as the fallback, for `resolute`,
+  `resolute-updates` and `resolute-security`, components `main` and
+  `universe`. Every entry is plain http, since the image has no CA
+  certificates until apt installs them; apt verifies every index against
+  Ubuntu's archive key, whichever host served it. Ubuntu's Release files carry
+  no `Valid-Until`, so a signature alone would accept any older index; the
+  moving pockets (`-updates`, `-security`) are their own source with
+  `Valid-Until-Max` (a week), so apt refuses one dated before that and a host
+  cannot replay an old, validly signed index of them. The release pocket is
+  frozen at its release date and carries no fixes, so it stays out of that.
+  A Dockerfile cannot import another, so `scripts/ubuntu-pin.sh` keeps the
+  copies one: `go tool task check:ubuntu` (in `ci:check`) fails on two values,
+  a stage built on any other base, an apt-get before the stage writes the
+  list, the list or an apt source written outside that setup, another release
+  named in a build, a snapshot, an expired or unsigned index allowed, an apt
+  pin or a PPA, a source other than the list and the two third-party
+  repositories (Docker's, GitHub CLI's), or a copy of the list's setup that
+  differs from the others.
+- **No snapshot.** A rebuild installs the newest packages in the release's
+  pockets, so a security fix, the guest kernel's included, reaches the next
+  build without a bump, and a scheduled build proves what a release would
+  ship. Rebuilds are therefore not byte-for-byte reproducible: the guest
+  artifact carries the package list it was built from (`packages.txt`), every
+  shipped artifact is pinned by digest where it is consumed, and the build log
+  shows the mirror each package came from. A bad update is held back where
+  the package is installed, by naming the version that works
+  (`pkg=<version>`) from whichever pocket still carries it (the release
+  pocket keeps the LTS's original), with a comment naming the bug, and taken
+  out once a fix lands; `check:ubuntu` refuses apt preferences so that a hold
+  is never anywhere else.
+- **The mirror.** Canonical's Azure mirror (`azure.archive.ubuntu.com`,
+  `azure.ports.ubuntu.com`) serves both architectures over http and was the
+  fastest of those that do. apt falls back per file, so a mirror that fails
+  costs time, not a build; one that hangs costs `Acquire::http::Timeout`
+  (5 s) per attempt, and `Acquire::Retries "5"` multiplies it (#1227
+  measured 11 min for `apt-get update` behind a dead first entry), so a
+  mirror that stays down is taken out of the pin, not left to the fallback.
+- **Bumping the image** is `go tool task ubuntu:bump` (`TAG=` names one;
+  by default the newest dated resolute image). It moves only what apt would
+  otherwise upgrade on top of. Then rebuild and verify what it moves: the
+  guest (`vm:build` / `vm:verify` on both architectures), the sandbox base,
+  and the libkrun kernel, whose `vm-image/kernel/Dockerfile` the bump rewrites
+  too.
+- **Boxes keep the same sources.** The sandbox base and the guest are built
+  with the mirror list and keep it, so a box's own `apt`, and every feature
+  provisioned onto it, read the fast mirror with Ubuntu's archive behind it.
+  A box on another provider's image keeps that image's sources.
+- **Docker** is Docker CE from Docker's resolute suite, not Ubuntu's
   `docker.io`, in the sandbox base and in the pool VM guest, so a pool's
   daemon is the one its sandboxes run; Debian's build of Docker 28.5.2
-  refused archive copies Docker's own builds accept (#1164). Docker
-  publishes no sid suite, so both install from Docker's trixie suite
-  (`DOCKER_DEBIAN_SUITE`), the one place a build names trixie, on a pin of
-  their own: `DOCKER_CE_VERSION` and `CONTAINERD_IO_VERSION` name the
-  upstream versions, `DOCKER_APT_KEY_FINGERPRINT` the key the build holds
-  Docker's to, and `check:debian` fails unless every copy agrees. Docker's
-  repository is not a snapshot, so the pin is what makes a rebuild install the
-  same daemon. It moves on its own clock, with `go tool task docker:bump`
-  (`VERSION=`/`CONTAINERD=`, or the newest Docker publishes for both
-  architectures), so going back to an older Debian snapshot never moves
-  Docker, and a bad Docker release can be held back; a move of it is a guest
-  release like a Debian bump. A box built
-  from the snapshot is handed back the live sid archive, so its own `apt`, and
-  the features provisioned onto it, get today's sid.
+  refused archive copies Docker's own builds accept (#1164). It has a pin of
+  its own: `DOCKER_CE_VERSION` and `CONTAINERD_IO_VERSION` name the upstream
+  versions, `DOCKER_APT_KEY_FINGERPRINT` the key the build holds Docker's to,
+  and `check:ubuntu` fails unless every copy agrees. It moves on its own
+  clock, with `go tool task docker:bump` (`VERSION=`/`CONTAINERD=`, or the
+  newest Docker publishes for both architectures), so a bad Docker release
+  can be held back; a move of it is a guest release.
+- **Go** is upstream's release, not Ubuntu's (older than `go.mod` asks for)
+  and not a `golang` image (Debian): `GO_VERSION`, `GO_SHA256_AMD64` and
+  `GO_SHA256_ARM64`, one pin wherever Go is installed (the Go builders and the
+  sandbox base), moved by `go tool task go:bump`. The builders run with
+  `GOTOOLCHAIN=local`, so a `go.mod` asking for a newer Go than the pin fails
+  the build rather than fetching a toolchain.
+- **libkrun** boots libkrunfw's patched kernel, never Ubuntu's; only its build
+  toolchain follows the pin.
 
 ## Local server discovery
 

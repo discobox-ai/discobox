@@ -262,12 +262,12 @@ also supply startup cache staging; see
 ## Sandbox Base Image
 
 The Docker driver owns its sandbox base image
-(`dockerworker/sandbox-image/Dockerfile`, ADR 26-10-16-423 §10): Debian sid,
-systemd, Docker socket-activated, a uid-1000 `discobox` login user and the
-tools exe.dev's and boxd's images share. Those two are Ubuntu; the base is
-Debian sid, the repository's one Debian ([Debian](../../DESIGN.md#debian)),
-and the platform's features provision onto either. Docker CE comes from
-Docker's trixie suite, since Docker has none for sid. Every sandbox container runs it,
+(`dockerworker/sandbox-image/Dockerfile`, ADR 26-10-16-423 §10): Ubuntu
+26.04 LTS (resolute), systemd, Docker socket-activated, a uid-1000 `discobox`
+login user and the tools exe.dev's and boxd's images share. It is the
+repository's one Ubuntu ([Ubuntu](../../DESIGN.md#ubuntu)), and keeps its
+fast-mirror apt sources, so a box's own `apt` reads them too. Docker CE comes
+from Docker's resolute suite. Every sandbox container runs it,
 with the platform's and its harness's features provisioned on top, and a
 Docker pool's own container runs it too, provisioned as a pool
 ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
@@ -275,7 +275,7 @@ Docker pool's own container runs it too, provisioned as a pool
 Docker socket bound where the image's `docker.socket` listens, so the engine
 masks that unit there (`/dev/null` bound over its file) and the container boots
 with no failed unit; sandboxes keep it. No harness is an image (ADR 26-10-16-423
-§10). Common Debian apt requirements of core, build, cli, python and
+§10). Common apt requirements of core, build, cli, python and
 shells-editors are installed in the base before application inputs
 (ADR 26-11-06-664). Feature declarations remain portable requirements; the
 provisioner checks the local package database and skips satisfied apt work.

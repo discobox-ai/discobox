@@ -13,7 +13,7 @@ together, where before it broke one".
   offline. It belongs with the units the guest enables, not with the ones a
   headless guest masks. Both backends take a lease, so this is not vz's alone.
   The explicit `systemctl enable` in the Dockerfile is the guarantee, and it is
-  the one this repository owns. Debian's preset enables the unit as well
+  the one this repository owns. systemd's preset enables the unit as well
   (`90-systemd.preset`), so deleting that line builds clean and changes nothing
   observable today — which is exactly the trap. It hands enablement to a third
   party, and the day the preset drops the unit it is a silent regression on both
@@ -29,7 +29,7 @@ together, where before it broke one".
 - **Nothing here may name a backend.** No build arg or `TARGETARCH` branch that
   selects backend behaviour, and no unit that only one hypervisor can satisfy.
   The one architecture branch is `assemble-guest-image`'s kernel case, and it
-  decides only whether Debian's kernel can be published in a form a hypervisor
+  decides only whether the distribution's kernel can be published in a form a hypervisor
   loads directly (ADR 0101 §4). It never changes the root filesystem. A
   difference a backend genuinely needs and the other cannot take belongs in a
   separate artifact with its own release line, as the libkrunfw-patched kernel
@@ -55,12 +55,12 @@ together, where before it broke one".
   `Dockerfile`'s delete list. If the root filesystem depends on it, add it to
   the list the `Dockerfile` writes to `/etc/initramfs-tools/modules`. A missing
   module is a guest that boots to no device or does not boot at all.
-- **Docker is Docker CE at the shared pin, never sid's `docker.io`.** The guest's
+- **Docker is Docker CE at the shared pin, never a distribution's `docker.io`.** The guest's
   daemon is the sandbox base's: same repository, same `DOCKER_CE_VERSION` and
-  `CONTAINERD_IO_VERSION` (`check:debian` keeps the copies one). Debian's build
-  of 28.5.2 refuses archive copies Docker's own builds accept, and a pool's box
+  `CONTAINERD_IO_VERSION` (`check:ubuntu` keeps the copies one). Debian's build
+  of 28.5.2 refused archive copies Docker's own builds accept, and a pool's box
   is placed by one (#1164). Moving the version is `go tool task docker:bump`,
-  then a guest release, as for a Debian bump. Docker's key is held to
+  then a guest release, as for an Ubuntu bump. Docker's key is held to
   `DOCKER_APT_KEY_FINGERPRINT`; never take it on first download, because the
   server that serves it serves the packages too.
 - **Guest image changes are a separate release.** Editing this directory does
@@ -102,22 +102,25 @@ together, where before it broke one".
   `containerd-overlayfs/`, `executor/` and `history_c8d.db`). Check a list
   change, and any `docker:bump` that moves the guest's Docker, against a
   guest booted on each store.
-- **The guest's Debian is the repository's one pin.** Every stage is sid, from
-  `DEBIAN_IMAGE` and `DEBIAN_SNAPSHOT`; never add an apt pin, a second suite,
-  or another base to take one package from elsewhere. Docker CE from Docker's
-  trixie suite is the one exception, on its own pin (above). A broken sid package is
-  answered with a nearer snapshot (`go tool task debian:bump`).
-  `check:debian` catches a literal base, a suite named in a build, and an apt
-  pin, but not a stage that fetches packages some other way (a `.deb` by URL,
-  a tarball): that is still review's to catch. Bumping the pin moves the guest
-  kernel, so it is a guest release: `vm:verify` on both architectures and a
-  boot on each backend.
-- **The snapshot hook is what makes reading it over http safe; keep every
-  copy one.** A snapshot source needs `Check-Valid-Until: no`, so any older
-  Debian-signed index would pass for it; `discobox-apt-snapshot` fails each
-  `apt-get update` whose sid `InRelease` or `Release` is not dated within the
-  day before `DEBIAN_SNAPSHOT`. It must fail when it finds no date at all:
-  apt falls back to `Release` when `InRelease` is withheld, and `date -d ""`
-  is today's midnight, not an error. It is written out in every Dockerfile
-  with a snapshot source; `check:debian` fails when a copy differs, so a fix
-  goes into all of them.
+- **The guest's Ubuntu is the repository's one pin.** Every stage is
+  resolute, from `UBUNTU_IMAGE`, reading the mirror list; never add an apt
+  pin, another release, a PPA, a snapshot, or another base to take one
+  package from elsewhere. Docker CE (Docker's resolute suite) and Go
+  (upstream's) are on pins of their own. A bad update in the pockets is held
+  back by naming the working version (`pkg=<version>`) in the install line,
+  with a comment naming the bug (see "Ubuntu" in the root `DESIGN.md`).
+  `check:ubuntu` catches a
+  literal base, another release named in a build, an apt pin, and a source
+  other than the mirror list, but not a stage that fetches packages some
+  other way (a `.deb` by URL, a tarball): that is still review's to catch.
+  Bumping the image is a guest release: `vm:verify` on both architectures and
+  a boot on each backend.
+- **The mirror list is what makes a fast mirror safe; keep every copy one.**
+  Every entry is plain http, so trust is the archive's signature and the
+  index's age. Ubuntu's Release files carry no `Valid-Until`, so
+  `Check-Valid-Until` alone protects nothing: the `-updates`/`-security`
+  stanza's `Valid-Until-Max` is what refuses a replayed old index. Never drop
+  it, never turn `Check-Valid-Until` off, and never add an https entry the
+  bare image cannot verify before `ca-certificates` is installed. The list's
+  setup is written out in every stage on the pin; `check:ubuntu` fails when a
+  copy differs, so a fix goes into all of them.

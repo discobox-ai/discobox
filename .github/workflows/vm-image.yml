@@ -1,9 +1,9 @@
 # The pool VM artifacts have their own builds and their own release lines
 # (ADR 0062 §3).
 #
-# They are not cut with the discobox release. The guest image is a Debian
+# They are not cut with the discobox release. The guest image is an Ubuntu
 # userland that boots dockerd and two VSOCK helpers, so its inputs change when
-# Debian, the kernel, or Docker changes — not when Discobox does. Publishing it
+# Ubuntu, the kernel, or Docker changes — not when Discobox does. Publishing it
 # per discobox tag would push hundreds of megabytes per release and, worse,
 # would make a VM fix require a product release and a product release imply a
 # new VM image.
@@ -37,11 +37,11 @@ on:
       - "pkg/vsock/**"
       - "pool-agent/cmd/discobox-vsock-guest/**"
       - ".github/workflows/vm-image.yml"
-  # Rebuilt on a cadence even when nothing in this repository changed. apt is
-  # pinned to a Debian snapshot, so this installs what the last build did and
-  # proves the pinned build still builds; security fixes arrive by bumping
-  # the Debian pin (`task debian:bump`). This run only builds: publishing stays
-  # tag-driven, a release someone pins.
+  # Rebuilt on a cadence even when nothing in this repository changed. apt
+  # reads resolute's live pockets, so this installs today's updates and proves
+  # what a release would ship; security fixes arrive with the next release,
+  # no bump needed. This run only builds: publishing stays tag-driven, a
+  # release someone pins.
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:

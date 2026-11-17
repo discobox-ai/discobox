@@ -8,7 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 )
 
-// DefaultSandboxBaseImage is the Docker driver's sandbox base image: Debian,
+// DefaultSandboxBaseImage is the Docker driver's sandbox base image: Ubuntu,
 // systemd, Docker and a login user, built from sandbox-image/Dockerfile, which
 // every sandbox container and a Docker pool's own container run (ADR
 // 26-10-16-423 §10, ADR 26-10-24-953 §2). A release overwrites it at link

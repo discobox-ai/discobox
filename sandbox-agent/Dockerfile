@@ -1,35 +1,58 @@
-# Go is Debian sid's own, from the repository's one Debian pin (see "Debian"
-# in the root DESIGN.md): there is no golang image on sid. Built natively on
-# the host platform and cross-compiled, so the platform
+# Go is upstream's release, on the repository's one Go pin, and the stage is
+# Ubuntu, on its one Ubuntu pin (see "Ubuntu" in the root DESIGN.md): the
+# LTS's Go is older than go.mod asks for, and the golang images are Debian.
+# Built natively on the host platform and cross-compiled, so the platform
 # bundle's every architecture is built with nothing emulated.
-ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:sid-20261104-slim@sha256:07a3205e8583fdff12d2b05bd030f50437e9fd340ee616df0c05dc77af75767b
-ARG DEBIAN_SNAPSHOT=20261111T202414Z
+ARG UBUNTU_IMAGE=public.ecr.aws/docker/library/ubuntu:resolute-20261105.1@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
+ARG UBUNTU_MIRROR_AMD64=http://azure.archive.ubuntu.com/ubuntu
+ARG UBUNTU_MIRROR_ARM64=http://azure.ports.ubuntu.com/ubuntu-ports
+ARG GO_VERSION=1.27.3
+ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 
-FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS go
-ARG DEBIAN_SNAPSHOT
-RUN printf '%s\n' 'Types: deb' "URIs: http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
-        'Suites: sid' 'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
-        'Check-Valid-Until: no' > /etc/apt/sources.list.d/debian.sources \
-    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-discobox-retries \
-    && s=$(date -u -d "$(echo "$DEBIAN_SNAPSHOT" | sed -E 's/^(.{4})(..)(..)T(..)(..)(..)Z$/\1-\2-\3 \4:\5:\6 UTC/')" +%s) \
-    && printf '%s\n' '#!/bin/sh' \
-        'set -eu' \
-        "released=\$(sed -n 's/^Date: //p' /var/lib/apt/lists/*_dists_sid_InRelease /var/lib/apt/lists/*_dists_sid_Release 2>/dev/null | head -n 1)" \
-        "[ -n \"\$released\" ] || { echo 'apt fetched no signed sid Release to check against snapshot ${DEBIAN_SNAPSHOT}: refusing it' >&2; exit 1; }" \
-        "d=\$(date -u -d \"\$released\" +%s)" \
-        "[ \"\$d\" -le $s ] && [ \"\$d\" -gt $((s - 86400)) ] && exit 0" \
-        "echo \"the sid index apt fetched is dated \$released, not snapshot ${DEBIAN_SNAPSHOT}'s: refusing it\" >&2" \
-        'exit 1' > /usr/local/sbin/discobox-apt-snapshot \
-    && chmod 0755 /usr/local/sbin/discobox-apt-snapshot \
-    && echo 'APT::Update::Post-Invoke-Success { "/usr/local/sbin/discobox-apt-snapshot"; };' > /etc/apt/apt.conf.d/81-discobox-snapshot \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates golang-go \
+FROM --platform=$BUILDPLATFORM ${UBUNTU_IMAGE} AS go
+ARG UBUNTU_MIRROR_AMD64
+ARG UBUNTU_MIRROR_ARM64
+ARG GO_VERSION
+ARG GO_SHA256_AMD64
+ARG GO_SHA256_ARM64
+RUN set -eu \
+    && case "$(dpkg --print-architecture)" in \
+        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
+        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && mkdir -p /etc/apt/mirrors \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
+        'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
+        'Suites: resolute-updates resolute-security' 'Components: main universe' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
+        > /etc/apt/sources.list.d/ubuntu.sources \
+    && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
+    && echo "apt reads $mirror, then $fallback"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-# The snapshot's Go is the Go that builds: a go.mod that asks for a newer one
-# fails here, rather than fetching a toolchain nothing pins (Debian's Go
-# defaults to GOTOOLCHAIN=auto). Moving to it is a bump of the Debian pin.
-ENV GOPATH=/go GOTOOLCHAIN=local
+RUN set -eu \
+    && arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+        amd64) go_sha=$GO_SHA256_AMD64 ;; \
+        arm64) go_sha=$GO_SHA256_ARM64 ;; \
+        *) echo "no Go for $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL --retry 5 --retry-all-errors -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+    && echo "$go_sha  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && /usr/local/go/bin/go version
+# The pinned Go is the Go that builds: a go.mod that asks for a newer one
+# fails here, rather than fetching a toolchain nothing pins. Moving it is
+# `go tool task go:bump`.
+ENV PATH=/usr/local/go/bin:${PATH} GOPATH=/go GOTOOLCHAIN=local
 
 FROM go AS sandbox-agent-builder
 ARG TARGETOS TARGETARCH

@@ -980,6 +980,14 @@ d admin pool create krunpool --provider <prov_id>
 
 - `d admin pool rm` of a failed libkrun pool can leave it listed, and the
   provider then refuses deletion (`provider instance has pools`).
+- A libkrun pool in a dev box has no way out: its pool proxy dials upstream
+  directly through passt, and the discobox refuses direct connections (only
+  its own proxy env gets out), so every download a box of it makes answers
+  502 `upstream failed: … connect: connection refused`, and features that
+  download (go, rust, nix, brew…) fail. What the guest itself is shows without
+  egress: a box is privileged, so `sudo mount -o ro /dev/vda /mnt` in one
+  reads the booted guest's root (`/etc/os-release`, `/usr/lib/modules`), and
+  `uname -r` is the kernel libkrun booted.
 
 # Verifying a machine's wiring (`discobox-wire.service` on a machine)
 
@@ -1097,19 +1105,20 @@ d exec <box> -- cat /run/discobox/provision.json
 
 # Verifying a feature's Ubuntu path
 
-The sandbox base image is Debian, so a feature's `ubuntu:` packages and its
-`when: {distro: [ubuntu]}` steps only run in a box of an Ubuntu base:
+The sandbox base image is Ubuntu resolute, so a feature's `ubuntu:` packages
+and its `when: {distro: [ubuntu]}` steps run in every box of a Docker pool. To
+see them apply on a base you just rebuilt:
 
 ```bash
-go tool task build:ubuntu-sandbox-base > $S/ubuntu.log 2>&1
+go tool task build:sandbox-base-image BASE_IMAGE=discobox-sandbox-base:check > $S/base.log 2>&1
 # start the isolated server above with
-# DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:ubuntu, then
+# DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:check, then
 e new -d --no-source -H shell -p x
 e admin exec create <id> -- discobox-provision wait <f>
 d exec <id> -- sudo cat /var/log/discobox/provision/<f>.log   # result=applied per step
 ```
 
-Remove `discobox-sandbox-base:ubuntu`, and the isolated server's pool,
+Remove `discobox-sandbox-base:check`, and the isolated server's pool,
 afterwards.
 
 # Verifying a container's boot (`discobox-wire.service`)
