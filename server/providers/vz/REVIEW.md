@@ -39,6 +39,12 @@
   own reboot is what recovers the pool, not repair. Do not write recovery code
   or docs that wait for the VM to stop on a panic; that belief was written into
   four places before a real Mac showed otherwise.
+- **A host-side cache of guest connections lives as long as the guest's boot,
+  not the VM's.** A panicked guest reboots inside the same VM, and nothing
+  promises the old boot's connections end with it: a request left on one can
+  wait until its caller gives up. Anything that keeps VSOCK connections across
+  requests must drop them, in flight included, when the guest refuses a dial,
+  as `dockerworker.PoolAgentClient` does (#1335).
 - **Writable disks attach cached, with fsync sync.** The framework's default
   attachment corrupts ext4 on Apple silicon; do not go back to
   `NewDiskImageStorageDeviceAttachment` for a new disk.

@@ -136,8 +136,10 @@ type guestVM struct {
 	listener       net.Listener
 	// agent is the pool agent's keep-alive client. Every dial is a new VSOCK
 	// connection into the guest, so it belongs to the VM, not to a lease, and
-	// closes with it (#1335).
-	agent *http.Client
+	// closes with it (#1335). It also drops its connections when the guest
+	// refuses a dial, which is how a guest panic's reboot reaches the host:
+	// the framework keeps the VM running through it.
+	agent *dockerworker.PoolAgentClient
 	// size is what the VM was started with, compared on every EnsureVM so a
 	// pool or provider size change replaces it rather than waiting for a
 	// restart nobody asked for.
@@ -494,7 +496,7 @@ func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*tran
 	if err != nil {
 		return nil, err
 	}
-	return transport.NewHTTPClientLeaseWithBaseURL(guest.agent, "http://pool.local", nil), nil
+	return transport.NewHTTPClientLeaseWithBaseURL(guest.agent.Client, "http://pool.local", nil), nil
 }
 
 // PoolLogs reads the guest's serial console, which the VM appends to a file in
@@ -676,7 +678,7 @@ func (g *guestVM) close() {
 		if g.listener != nil {
 			_ = g.listener.Close()
 		}
-		g.agent.CloseIdleConnections()
+		g.agent.Close()
 		_ = g.vm.Close()
 	})
 }

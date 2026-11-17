@@ -137,8 +137,9 @@ VM, owned by the VM rather than by a lease (`dockerworker.NewPoolAgentClient`):
 every connection to it is a new VSOCK connection into the guest, and every
 pool-agent call takes its own lease, so a per-lease client dialed the guest for
 each proxied request and each poll of an attached console (#1335). A lease's
-release leaves the client alone; stopping or replacing the VM closes its idle
-connections, and the VM that replaces it gets a client of its own.
+release leaves the client alone; stopping or replacing the VM drops its
+connections, idle and in flight, and the VM that replaces it gets a client of
+its own.
 
 The implicit VSOCK device libkrun would add is TSI, which terminates guest
 sockets on the host's network stack. It is disabled: this guest reaches the host
