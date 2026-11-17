@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	iroh "github.com/discobox-ai/iroh-go"
 )
 
 // Stress and recovery tests for the transport. The functional tests drive one
@@ -644,6 +645,16 @@ func TestIrohAStarvedConnectionIsRetired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acquire() error = %v", err)
 	}
+	// Every stream is held to the end of the test. One left unreferenced is
+	// freed by the garbage collector (iroh-go attaches a cleanup to each),
+	// which ends it on the peer and hands its slot back: the connection is
+	// then not starved at all.
+	var held []*iroh.StreamConn
+	t.Cleanup(func() {
+		for _, stream := range held {
+			_ = stream.Close()
+		}
+	})
 	for i := 0; ; i++ {
 		openCtx, openCancel := context.WithTimeout(ctx, time.Second)
 		stream, err := first.conn.OpenConn(openCtx)
@@ -651,6 +662,7 @@ func TestIrohAStarvedConnectionIsRetired(t *testing.T) {
 		if err != nil {
 			break
 		}
+		held = append(held, stream)
 		if _, err := stream.Write([]byte("GET /echo HTTP/1.1\r\nHost: discobox.local\r\n\r\n")); err != nil {
 			t.Fatalf("write on stream %d: %v", i, err)
 		}
