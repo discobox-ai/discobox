@@ -21,6 +21,9 @@ func TestARouteSurvivesTheAPI(t *testing.T) {
 		"mcp.example.com/mcp mcp=search*,fetch",
 		"mcp.example.com mcp=*=blocked",
 		"api.github.com/repos/*/*/pulls/*/merge=blocked",
+		"POST app.boxd.sh/api/v1/auth/token body=/api_key",
+		`GET *.discord.gg,gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6,"s":null}},{"at":"/x~1y"}]`,
+		`gateway.discord.gg ws=[{"at":"/d/token","when":{"op":"a b"}}]=blocked`,
 	} {
 		route, err := secretroute.Parse(text)
 		if err != nil {

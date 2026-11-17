@@ -160,7 +160,12 @@ func usage(w io.Writer) {
       they select; mcp= the MCP tools a tools/call may name. body= names
       places in a JSON request body, JSON pointers joined by ,/: the
       credential is sent there, as the whole string at one of them, and
-      nowhere else. =blocked carves a route out of a wider one. For example:
+      nowhere else. ws= names places in the JSON messages sent on the
+      WebSocket connection the route's request upgrades, one JSON array of
+      {"at": POINTER, "when": {MEMBER: VALUE}}: the credential is sent as the
+      whole string at a pointer, in a message whose top-level members hold
+      every condition, and in no other message. =blocked carves a route out
+      of a wider one. For example:
 
         --route 'GET api.github.com/repos/acme/web/**'
         --route 'api.github.com/graphql graphql=query'
@@ -168,6 +173,7 @@ func usage(w io.Writer) {
         --route 'api.github.com/graphql graphql=mutation:markPullRequestReadyForReview'
         --route 'github.com/acme/web.git/**,/acme/web/**'
         --route 'POST app.boxd.sh/api/v1/auth/token body=/api_key'
+        --route 'GET gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}}]'
 
       --hosts HOST[,HOST...] is shorthand for one route to each exact host,
       any method and path.

@@ -45,6 +45,15 @@ func approvalRouteCells(routes []secretroute.Route) []approvalRouteRow {
 			// shows every one, since each is somewhere it goes.
 			base.protocol = 3
 			base.names = strings.Join(route.Body.Places, ",")
+		case route.WebSocket != nil:
+			// Each message place in plain words, its pointer and every
+			// condition, and "in any message" for one with none: what
+			// the approver lets the credential be sent as.
+			base.protocol = 4
+			operations = nil
+			for _, place := range route.WebSocket.Places {
+				operations = append(operations, place.Describe())
+			}
 		}
 		paths := route.Paths
 		if len(paths) == 0 {
@@ -96,7 +105,7 @@ func approvalRouteSection(label string, part *RequestPart) section {
 		return sec
 	}
 	rows := approvalRouteCells(part.Routes)
-	protocols := []string{"HTTP", "GraphQL", "MCP", "HTTP body"}
+	protocols := []string{"HTTP", "GraphQL", "MCP", "HTTP body", "WebSocket messages"}
 	for start := 0; start < len(rows); {
 		end := start + 1
 		for end < len(rows) && rows[end].protocol == rows[start].protocol && rows[end].host == rows[start].host {
@@ -109,7 +118,7 @@ func approvalRouteSection(label string, part *RequestPart) section {
 		}
 		sec.lines = append(sec.lines, line{text: protocols[protocol] + " " + group[0].host, tone: toneAccent})
 
-		showMethod := protocol == 0 || protocol == 3 || slices.ContainsFunc(group, func(r approvalRouteRow) bool { return r.method != "*" })
+		showMethod := protocol == 0 || protocol == 3 || protocol == 4 || slices.ContainsFunc(group, func(r approvalRouteRow) bool { return r.method != "*" })
 		showEffect := slices.ContainsFunc(group, func(r approvalRouteRow) bool { return r.blocked })
 		headers := []string{}
 		if showEffect {
@@ -126,6 +135,8 @@ func approvalRouteSection(label string, part *RequestPart) section {
 			headers = append(headers, "TOOLS")
 		case 3:
 			headers = append(headers, "BODY PLACES")
+		case 4:
+			headers = append(headers, "MESSAGE PLACE")
 		}
 		table := [][]string{headers}
 		for _, row := range group {
@@ -146,6 +157,8 @@ func approvalRouteSection(label string, part *RequestPart) section {
 				cells = append(cells, row.operation, row.names)
 			case 2, 3:
 				cells = append(cells, row.names)
+			case 4:
+				cells = append(cells, row.operation)
 			}
 			table = append(table, cells)
 		}
@@ -213,6 +226,12 @@ func approvalTableFits(routes []secretroute.Route) bool {
 		}
 		if r.Body != nil {
 			names += joined(r.Body.Places)
+		}
+		if r.WebSocket != nil {
+			operations = len(r.WebSocket.Places)
+			for _, place := range r.WebSocket.Places {
+				operationBytes = max(operationBytes, len(place.Describe()))
+			}
 		}
 		count := hosts
 		if count > rowsLeft/paths {

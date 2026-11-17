@@ -197,6 +197,43 @@ func TestRouteTableBoundsCartesianOutputAndPreservesCompactRoutes(t *testing.T) 
 	}
 }
 
+// A WebSocket route's places are each shown in plain words, its pointer and
+// conditions, and one with no conditions as in any message.
+func TestRouteTableShowsWebSocketPlacesInPlainWords(t *testing.T) {
+	route, err := secretroute.Parse(`GET gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}},{"at":"/auth"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := approvalRouteSection("Routes", &RequestPart{Routes: []secretroute.Route{route}})
+	var text []string
+	for _, l := range sec.lines {
+		text = append(text, l.text)
+	}
+	all := strings.Join(text, "\n")
+	for _, want := range []string{"WebSocket messages gateway.discord.gg", "MESSAGE PLACE", "the string at \"/d/token\" in messages where \"op\" is 2", "the string at \"/auth\" in any message", "GET"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("section lacks %q:\n%s", want, all)
+		}
+	}
+}
+
+// A route that names nothing but WebSocket places is no bare host: where a
+// credential is stored for, or why it cannot be used, shows its places.
+func TestRoutesSectionShowsAWebSocketOnlyRoute(t *testing.T) {
+	route, err := secretroute.Parse(`gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := routesSection("Stored for", []secretroute.Route{route})
+	var text []string
+	for _, l := range sec.lines {
+		text = append(text, l.text)
+	}
+	if all := strings.Join(text, "\n"); !strings.Contains(all, `"/d/token"`) {
+		t.Fatalf("section shows no place:\n%s", all)
+	}
+}
+
 func TestScrolledFormHoverMatchesVisibleMouseRegion(t *testing.T) {
 	f := newForm(textRow("one", "One", "", "1"), textRow("two", "Two", "", "2"), textRow("three", "Three", "", "3"), textRow("four", "Four", "", "4"), textRow("five", "Five", "", "5"))
 	f.rowRoom = 3

@@ -199,7 +199,7 @@ string
 ([ADR 26-10-27-880](adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §4):
 
 ```
-[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]
+[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked]
 ```
 
 - `METHODS`, optional: upper-case methods joined by commas (`GET`,
@@ -226,6 +226,18 @@ string
   Content-Type is read for its places; any other is sent as it is. A JSON
   body that cannot be read for them (too large, chunked, compressed, or not
   valid JSON) is refused.
+- `ws=PLACES`: places in the JSON text messages a client sends on the
+  WebSocket connection the route's request upgrades, for a service that
+  takes its credential in a message (Discord's Gateway IDENTIFY and
+  RESUME): one JSON array of `{"at": POINTER, "when": {MEMBER: VALUE}}`,
+  read as one JSON value whatever whitespace it holds, such as
+  `ws=[{"at":"/d/token","when":{"op":2}}]`. The credential is sent as the
+  whole JSON string at a pointer, in a message whose top-level members hold
+  every condition (scalars compared exactly; a missing member is not
+  null), and nowhere else: a route with `ws=` allows it in no header or
+  body, and a route without one, `*` included, in no message. A message
+  holding the credential anywhere else, or past 64 KiB, is not sent and the
+  connection is closed.
 - `=blocked` at the end marks a carve-out: the route refuses what it is the
   most specific route for.
 

@@ -96,7 +96,7 @@ discobox-access request \
   anywhere else is refused by the egress (§6). A route is
 
   ```
-  [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][=blocked]
+  [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked]
   ```
 
   - `METHODS`: upper-case, joined by commas (`GET`, `GET,HEAD`). Left out,
@@ -128,6 +128,15 @@ discobox-access request \
     else. Send it with `Content-Type: application/json` (plain `curl -d`
     sends a form type, and a body that is not JSON is never swapped in), a
     `Content-Length` and no compression, or it is refused.
+  - `ws=PLACES`: for a WebSocket service that takes its token in a message
+    after the upgrade (Discord's Gateway IDENTIFY), one JSON array of
+    `{"at": POINTER, "when": {MEMBER: VALUE}}`, such as
+    `GET gateway.discord.gg,*.discord.gg ws=[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6}}]`.
+    Put the variable's value as the whole JSON string at the pointer, in a
+    message whose top-level members hold the conditions; it is swapped
+    there and in no other message. Send each such message as one JSON
+    object of at most 64 KiB; the connection is closed (1008) if the value
+    appears anywhere else, and no WebSocket compression is negotiated.
   - `=blocked` at the end carves a route out of a wider one.
 
   A route that does not parse is refused by the service as `invalid`, with

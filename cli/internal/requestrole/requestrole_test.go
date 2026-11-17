@@ -58,3 +58,12 @@ func TestSummarySaysThePathScope(t *testing.T) {
 		t.Errorf("summary %q, want any path", got)
 	}
 }
+
+func TestSummarySaysTheMessagePlaces(t *testing.T) {
+	got := Summary([]secretroute.Route{route(t, `GET gateway.discord.gg ws=[{"at":"/d/token","when":{"op":2}},{"at":"/auth"}]`)})
+	for _, want := range []string{"gateway.discord.gg", "the string at \"/d/token\" in messages where \"op\" is 2", "the string at \"/auth\" in any message"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary %q lacks %q", got, want)
+		}
+	}
+}

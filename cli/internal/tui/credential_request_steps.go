@@ -1352,7 +1352,7 @@ func routePieces(r secretroute.Route) []secretroute.Route {
 func routesSection(label string, routes []secretroute.Route) section {
 	var hosts []string
 	for _, r := range routes {
-		if r.Blocked || len(r.Methods) > 0 || len(r.Paths) > 0 || r.GraphQL != nil || r.MCP != nil || r.Body != nil {
+		if r.Blocked || !r.HostWide() {
 			return approvalRouteSection(label, &RequestPart{Routes: routes})
 		}
 		hosts = append(hosts, r.Hosts...)
