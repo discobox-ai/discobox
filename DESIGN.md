@@ -390,9 +390,11 @@ flowchart LR
   addressed by name: those the build's `release.json` pins at its version. An
   image a later build no longer pushes keeps its main-build tags until deleted
   by hand.
-  Untagged versions stay: reproducible bundles share platform manifests across
-  builds and releases. A main CLI whose build is gone says so when it stages
-  its server or images, and how to install the newest.
+  Untagged versions stay: the reproducible agent, pool and harness bundles
+  share manifests across builds and releases. The platform bundle shares only
+  its unchanged layers, since its in-box CLI layer carries each build's
+  version and so moves its manifests. A main CLI whose build is gone says so
+  when it stages its server or images, and how to install the newest.
 
 The two package channels are fed in opposite directions, and the difference is
 ownership.
