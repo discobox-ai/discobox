@@ -1007,12 +1007,23 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef
 // running (#1322). Unlike Remove's fallback, that pool is waited on, and an
 // unreachable one is reported as such, never as not-found: not-found is what
 // the reconciler settles an archive on.
+//
+// An archive the agent was not there to answer (poolAgentUnanswered) is the
+// pool not being reachable, as an instruction's is (instruct), which the
+// sandbox reconciler retries rather than settling a failure. A libkrun pool's
+// agent is a VM the server boots again after every restart, and an archive
+// accepted just before a shutdown, retried there, has been seen reset with only
+// "connection reset by peer" to say why (#1043).
 func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	client, err := p.agentClientForSandbox(ctx, ref, state)
 	if err != nil {
 		return state, err
 	}
-	return client.Archive(ctx, ref, state)
+	archived, err := client.Archive(ctx, ref, state)
+	if poolAgentUnanswered(ctx, err) {
+		return state, poolAgentLostError("archive sandbox on", client.poolID, err)
+	}
+	return archived, err
 }
 
 // Remove deletes the sandbox on its pool.
@@ -1028,15 +1039,32 @@ func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []
 // not-found and the row goes. What the pool made is its reaper's, once the
 // pool is back and holds no such sandbox for the retention (pool-agent
 // DESIGN.md, the tree reaper and its orphan sweeps).
+//
+// A remove the agent was not there to answer is the pool not being reachable,
+// as an archive's is (Archive), and the delete is retried. Not for a sandbox
+// with no state: its pool was reached only if it could be at once, and one
+// whose agent then does not answer is the same pool not there, so the answer
+// is not-found as it is when the acquire refuses (#1095).
 func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	placed := false
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if errors.Is(err, sandbox.ErrNotFound) && strings.TrimSpace(ref.PoolID) != "" {
 		client, err = p.placedPoolClient(ctx, ref)
+		placed = true
 	}
 	if err != nil {
 		return state, err
 	}
-	return client.Remove(ctx, ref, state)
+	removed, err := client.Remove(ctx, ref, state)
+	if !poolAgentUnanswered(ctx, err) {
+		return removed, err
+	}
+	if placed {
+		slog.WarnContext(ctx, "pool agent did not answer the remove of a sandbox it never reported; leaving what it made to its reaper",
+			"pool", client.poolID, "sandbox", ref.SandboxID, "error", err)
+		return state, fmt.Errorf("%w: pool %s did not answer: %w", sandbox.ErrNotFound, client.poolID, poolAgentTransportError("remove sandbox from", client.poolID, err))
+	}
+	return state, poolAgentLostError("remove sandbox from", client.poolID, err)
 }
 
 // placedPoolClient reaches the agent of the pool the control plane placed a
