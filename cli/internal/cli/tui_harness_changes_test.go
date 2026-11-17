@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -108,8 +109,30 @@ func TestHarnessChangeDiffDoesNotIndentADeepDocumentWithoutBound(t *testing.T) {
 	if got, want := diffText(`{"a":[1,2]}`), "{\n  \"a\": [\n    1,\n    2\n  ]\n}\n"; got != want {
 		t.Fatalf("small document = %q, want %q", got, want)
 	}
-	if size, got := indentedSize(`{"a":[1,2]}`), len("{\n  \"a\": [\n    1,\n    2\n  ]\n}"); size < got {
+	if size, got := indentedSize(`{"a":[1,2]}`, harnessDiffIndentBytes), len("{\n  \"a\": [\n    1,\n    2\n  ]\n}"); size < got {
 		t.Fatalf("indentedSize %d is under the indented size %d", size, got)
+	}
+}
+
+// indentedSize is what keeps a layout bounded, so it is never under what
+// json.Indent writes: not for whitespace the document already has, which
+// indenting drops, and not for whitespace after its last token, which it keeps.
+func TestIndentedSizeIsAnUpperBound(t *testing.T) {
+	for _, doc := range []string{
+		`{"a":[1,2]}`,
+		"  \n\t{\"a\":[1,2]}",
+		"[1]" + strings.Repeat(" ", 100),
+		"{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": {}\n}\n\n",
+		`{"s":"  spaces, inside: [a string] "}`,
+		`[[],{},[[]],""]`,
+	} {
+		var indented bytes.Buffer
+		if err := json.Indent(&indented, []byte(doc), "", "  "); err != nil {
+			t.Fatalf("%q: %v", doc, err)
+		}
+		if size := indentedSize(doc, harnessDiffIndentBytes); size < indented.Len() {
+			t.Errorf("%q: indentedSize %d is under the indented size %d", doc, size, indented.Len())
+		}
 	}
 }
 

@@ -185,7 +185,7 @@ func (a *App) printSandboxTrailRecord(ctx context.Context, out io.Writer, asJSON
 		if canonical := hook.CanonicalEvent.Or(""); canonical != "" {
 			fields = append(fields, auditField{"canonical", terminalSafe(canonical)})
 		}
-		fields = append(fields, auditField{"payload", terminalSafeMultiline(indentAuditJSON(hook.Payload))})
+		fields = append(fields, auditField{"payload", auditJSONField(hook.Payload)})
 		return writeAuditFields(out, fields)
 	}
 	events, eventErr := a.readOneExecEvent(ctx, client, projectID, sandboxID, recordID)
@@ -201,7 +201,7 @@ func (a *App) printSandboxTrailRecord(ctx context.Context, out io.Writer, asJSON
 			{"exec", terminalSafe(event.ExecId.Or(""))},
 			{"type", terminalSafe(event.Type)},
 			{"message", terminalSafe(event.Message.Or(""))},
-			{"details", terminalSafeMultiline(indentAuditJSON(event.Details))},
+			{"details", auditJSONField(event.Details)},
 		})
 	}
 	// Either read failing is worth reporting as itself: a stopped discobox
@@ -454,14 +454,31 @@ func auditBodyField(recorded bool, bytes int64, format, recordError string) stri
 
 // indentAuditJSON is a payload a discobox wrote, laid out to be read. What is
 // not valid JSON is printed as the bytes it is: the trail's job is to show what
-// was recorded, not what it should have been.
-func indentAuditJSON(raw []byte) string {
-	if len(raw) == 0 {
-		return ""
+// was recorded, not what it should have been. Laying out writes each value on
+// a line of its own as deep as it is nested, so a box's small, deeply nested
+// document would grow by its depth times its values; one that would pass
+// auditBodyShown laid out is printed as recorded, and note says so.
+func indentAuditJSON(raw []byte) (text, note string) {
+	if !json.Valid(raw) {
+		return string(raw), ""
+	}
+	if indentedSize(string(raw), auditBodyShown) > auditBodyShown {
+		return string(raw), fmt.Sprintf("… shown as recorded: laid out, it would pass %d bytes.", auditBodyShown)
 	}
 	var indented bytes.Buffer
 	if err := json.Indent(&indented, raw, "", "  "); err != nil {
-		return string(raw)
+		return string(raw), ""
 	}
-	return indented.String()
+	return indented.String(), ""
+}
+
+// auditJSONField is a payload laid out by indentAuditJSON for a field, with
+// its note, if any, under it.
+func auditJSONField(raw []byte) string {
+	text, note := indentAuditJSON(raw)
+	text = terminalSafeMultiline(text)
+	if note != "" {
+		text += "\n\n" + note
+	}
+	return text
 }

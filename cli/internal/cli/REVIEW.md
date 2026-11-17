@@ -15,3 +15,11 @@
   route. Name every one that may, as `errNoFilesAPI` does, and the remedy that
   fits each; `admin box reprovision` first blamed only the box's agent and sent
   people to an upgrade that cannot help a server or pool that is behind.
+
+- `indentedSize` must stay an upper bound on exactly what `json.Indent`
+  writes, since every layout of a box's JSON (`diffText`, `indentAuditJSON`)
+  is bounded by it: the whitespace indenting drops (before and between tokens)
+  may be taken off, the whitespace it keeps (after the last token) may not.
+  `TestIndentedSizeIsAnUpperBound` holds it; add a case for any change to the
+  scan. Its first fix counted a pretty-printed document twice, and the next
+  under-counted a trailing run of spaces.
