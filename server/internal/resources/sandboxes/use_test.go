@@ -40,8 +40,17 @@ type containerProvider struct {
 	createGate atomic.Pointer[chan struct{}]
 	// ensureErr answers every ensure, in place of looking for the container.
 	ensureErr atomic.Pointer[error]
+	// removeErr answers every removal.
+	removeErr atomic.Pointer[error]
 
 	creates, archives, ensures, starts atomic.Int32
+}
+
+func (p *containerProvider) Remove(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+	if err := p.removeErr.Load(); err != nil {
+		return nil, *err
+	}
+	return nil, nil
 }
 
 func (p *containerProvider) Create(context.Context, sandbox.SandboxRef, []byte, sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {

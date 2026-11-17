@@ -122,18 +122,20 @@ func (r *SandboxReconciler) armArchiveExpiry(sb *model.Sandbox, retention time.D
 	return reconcile.RequeueAt(archiveDeadline(sb, retention))
 }
 
-// teardownNotAnswered is whether a teardown — an archive, a delete, or the
-// archive a repair runs before it rebuilds — failed without the pool's answer
-// to it: the pool was not reachable, or the reconcile's context
-// ended. Neither is the reconciler giving up on the intent, so neither settles
-// it (ADR 0017 §3): the generation stays unobserved and the engine retries with
+// teardownNotAnswered is whether an archive, or the archive a repair runs
+// before it rebuilds, failed without the pool's answer to it: the pool was not
+// reachable, its agent is older than this server (the window of an upgrade,
+// which ends when the pool's reconcile replaces it), or the reconcile's context
+// ended. None is the reconciler giving up on the intent, so none settles it
+// (ADR 0017 §3): the generation stays unobserved and the engine retries with
 // backoff. A pool is unreachable for a while after every server restart, until
 // the pool reconciler brings its host back, and an archive accepted just
 // before a shutdown is retried in exactly that window; settled there, it was
 // left `failed` with nothing to drive it again (#1043). The pool's own refusal
-// still settles, as any other failure does.
+// still settles, as any other failure does. A delete never settles at all
+// (SandboxReconciler.delete).
 func teardownNotAnswered(ctx context.Context, err error) bool {
-	return ctx.Err() != nil || errors.Is(err, sandbox.ErrPoolNotReachable)
+	return ctx.Err() != nil || errors.Is(err, sandbox.ErrPoolNotReachable) || errors.Is(err, ErrPoolAgentUnsupported)
 }
 
 // archiveSandbox is the provider call. A sandbox with no provider — one that

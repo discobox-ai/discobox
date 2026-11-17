@@ -314,7 +314,9 @@ func TestReconcileWaitsOutAPoolAgentOlderThanTheServer(t *testing.T) {
 	}
 }
 
-func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
+// A removal the pool refuses is not settled: the purge stays unobserved, reads
+// `deleting`, and the engine retries it (ADR 0022 §3).
+func TestReconcileSandboxKeepsAFailedDeletePending(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)
 
@@ -332,7 +334,14 @@ func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 		t.Fatalf("reconcile error = %v, want %v", err, removeErr)
 	}
 
-	assertSandboxFailed(t, appStore, sb.ProjectID, sb.ID, removeErr.Error())
+	pending, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.Converged() || pending.ErrorMessage != nil || pending.DisplayState() != "deleting" {
+		t.Fatalf("after a removal the pool refused: state %q, converged %v, error %v, display %q; want deleting, unsettled",
+			pending.State, pending.Converged(), pending.ErrorMessage, pending.DisplayState())
+	}
 }
 
 func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {

@@ -481,14 +481,16 @@ reach those routes for the discoboxes they lead
 §2). `archive.go` holds the archive branch and retention; `reconciler.go` holds
 the rest.
 
-An archive, a delete, or a repair's teardown the pool did not answer —
-`ErrPoolNotReachable`, or the reconcile's context ended — is not finished, so
-it never settles as a failure (ADR 0017 §3, `teardownNotAnswered`): the
-sandbox stays `archiving`, `deleting` or `repairing` and the engine retries
-with backoff. A pool is unreachable for a while after every server restart,
-which is when an archive accepted just before a shutdown is retried. The
-pool's own refusal settles, as any failure does, and `ErrNotFound` from the
-pool counts as done.
+An archive or a repair's teardown the pool did not answer —
+`ErrPoolNotReachable`, an agent older than the server
+(`ErrPoolAgentUnsupported`), or the reconcile's context ended — is not
+finished, so it never settles as a failure (ADR 0017 §3,
+`teardownNotAnswered`): the sandbox stays `archiving` or `repairing` and the
+engine retries with backoff. A pool is unreachable for a while after every
+server restart, which is when an archive accepted just before a shutdown is
+retried. The pool's own refusal settles, as any failure does, and
+`ErrNotFound` from the pool counts as done. A delete never settles at all
+(below).
 
 Purge is the one existence change that is not fire-and-forget. Its whole content
 is a destructive side effect on a machine the control plane does not own, and a
@@ -498,7 +500,13 @@ ordinary `recordSandboxIntent` and then drives that sandbox's reconcile inline,
 returning the provider's answer. It is not a second deletion path: the intent and
 its dirty mark are durable before the inline attempt starts, so a purge that
 fails or loses its client still converges in the background. The row is deleted
-only after the provider confirms the data is gone.
+only after the provider confirms the data is gone. A removal that fails is never
+settled, whatever failed it, the pool's own refusal included: the purge stays
+unobserved and records nothing, so it reads `deleting`, the engine retries it
+with its backoff, and the request answers 409, saying it will be retried, with
+the cause (ADR 0022 §3). The scan re-drives every row asking
+for deletion whatever its generations say (`ListSandboxRefsNeedingReconcile`),
+so a purge an earlier server settled as failed is retried too.
 
 Repair (ADR 0035) is archive, unarchive, and start as one operation, for a
 sandbox that is wedged — typically a settled failure whose container or

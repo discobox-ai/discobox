@@ -880,20 +880,32 @@ func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string)
 	// The Result is discarded rather than honored: a delete converges to the row
 	// being gone and never arms a timer, and this call is outside the engine, so
 	// there is no claimed row to arm one on.
+	//
+	// A removal that fails is never settled: the reconcile leaves the purge
+	// unobserved and returns why, and the engine retries it until the pool
+	// confirms (ADR 0022 §3). The row is the proof either way: the purge
+	// deletes it, so a sandbox still present is one whose removal has not
+	// completed.
 	if _, err := s.NewSandboxReconciler().Reconcile(ctx, SandboxDirtyID(projectID, sandboxID)); err != nil {
-		return fmt.Errorf("purge sandbox: %w", err)
+		return purgePending(err.Error(), err)
 	}
-	// Reconcile settles rather than returning an error when it records a failure
-	// on the resource (ADR 0017 §4), so a clean return is not by itself proof the
-	// data is gone. The row is: the purge deletes it, so a sandbox still present
-	// here is one whose removal did not complete.
-	if _, err := s.store.GetSandbox(ctx, projectID, sandboxID); err == nil {
-		return apperrors.NewStatusError(http.StatusConflict,
-			"sandbox purge did not complete; it will be retried in the background")
+	if remaining, err := s.store.GetSandbox(ctx, projectID, sandboxID); err == nil {
+		cause := "its removal has not been confirmed"
+		if remaining.ErrorMessage != nil {
+			cause = *remaining.ErrorMessage
+		}
+		return purgePending(cause, nil)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 	return nil
+}
+
+// purgePending is the answer to a purge whose removal has not completed. Its
+// leading text is matched by test/ux-smoke to wait for the background purge.
+func purgePending(cause string, err error) error {
+	return apperrors.StatusError{Status: http.StatusConflict,
+		Message: fmt.Sprintf("sandbox purge did not complete; it will be retried in the background (%s)", cause), Cause: err}
 }
 
 // StartSandbox, StopSandbox, and RestartSandbox forward an instruction to the
