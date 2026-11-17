@@ -266,7 +266,14 @@ func statusError(resp *http.Response) error {
 	case CodeInvalid:
 		return fmt.Errorf("%w: %s", ErrInvalid, message)
 	default:
-		return fmt.Errorf("credentials service returned %d: %s", resp.StatusCode, message)
+		// An answer that carried its own code came from a protocol handler, so
+		// its message is already the service's sentence; only an unclassified
+		// response (a proxy's 502, say) needs the status to say where it came
+		// from. Prefixing both would repeat the status once per relay hop.
+		if strings.TrimSpace(parsed.Code) != "" {
+			return fmt.Errorf("%w: %s", ErrUnavailable, message)
+		}
+		return fmt.Errorf("%w: credentials service returned %d: %s", ErrUnavailable, resp.StatusCode, message)
 	}
 }
 

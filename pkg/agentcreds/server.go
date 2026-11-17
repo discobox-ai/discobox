@@ -49,6 +49,12 @@ var ErrDenied = errors.New("denied")
 // ErrInvalid makes a handler answer 400.
 var ErrInvalid = errors.New("invalid request")
 
+// ErrUnavailable makes a handler answer 500: the server could not answer now.
+// Any error that is none of the other sentinels answers the same; the client
+// wraps an unavailable answer in it so Message can strip it again, which keeps
+// a relay from stacking its own prefix on the message it passes on.
+var ErrUnavailable = errors.New("unavailable")
+
 // NewHandler serves the protocol over svc. The handler carries no
 // authentication of its own: the transport it is mounted on decides who the
 // caller is, which is what lets Discobox serve it on sandbox loopback with no
@@ -229,7 +235,7 @@ func Message(err error) string {
 		return ""
 	}
 	message := strings.TrimSpace(err.Error())
-	for _, sentinel := range []error{ErrNotFound, ErrDenied, ErrInvalid} {
+	for _, sentinel := range []error{ErrNotFound, ErrDenied, ErrInvalid, ErrUnavailable} {
 		if !errors.Is(err, sentinel) {
 			continue
 		}

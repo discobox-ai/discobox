@@ -225,6 +225,46 @@ func TestDenialRoundTripsAsDenial(t *testing.T) {
 	}
 }
 
+// An unavailable answer relayed through a second hop (the sandbox relay is an
+// agentcreds client of the pool, serving the agent) must reach the agent with
+// the service's sentence once, not with each hop's prefix stacked on it.
+func TestUnavailableThroughARelayStatesTheMessageOnce(t *testing.T) {
+	pool := &fakeService{statusErr: errors.New("the control plane is not reachable from the pool right now")}
+	relay := newTestClient(t, pool)
+	agent := newTestClient(t, relay)
+
+	_, err := agent.RequestStatus(context.Background(), "req-1")
+	if code := agentcreds.Code(err); code != agentcreds.CodeUnavailable {
+		t.Fatalf("code = %q, want %q", code, agentcreds.CodeUnavailable)
+	}
+	message := agentcreds.Message(err)
+	if n := strings.Count(message, "credentials service returned"); n > 1 {
+		t.Fatalf("message = %q, states the client prefix %d times, want at most once", message, n)
+	}
+	if !strings.Contains(message, "the control plane is not reachable from the pool right now") {
+		t.Fatalf("message = %q, lost the service's sentence", message)
+	}
+}
+
+// A response with no code of its own (a proxy's 502 in front of the service)
+// keeps its status in the message, stated once, however many relays pass it
+// on: only the first client could see the status line it describes.
+func TestUnclassifiedFailureThroughARelayStatesTheStatusOnce(t *testing.T) {
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "upstream connect error", http.StatusBadGateway)
+	}))
+	t.Cleanup(gateway.Close)
+	agent := newTestClient(t, agentcreds.NewClient(gateway.URL))
+
+	_, err := agent.RequestStatus(context.Background(), "req-1")
+	if !errors.Is(err, agentcreds.ErrUnavailable) {
+		t.Fatalf("error = %v, want ErrUnavailable", err)
+	}
+	if got, want := agentcreds.Message(err), "credentials service returned 502: upstream connect error"; got != want {
+		t.Fatalf("message = %q, want %q", got, want)
+	}
+}
+
 func TestWaitForRequestPollsUntilSettled(t *testing.T) {
 	svc := &fakeService{statuses: []agentcreds.RequestStatus{
 		{RequestID: "req-1", Status: agentcreds.StatusPending},
