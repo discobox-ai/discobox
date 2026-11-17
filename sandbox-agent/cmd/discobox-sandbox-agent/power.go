@@ -89,7 +89,9 @@ func power(d powerDirs, args []string, now time.Time, out io.Writer) error {
 }
 
 // sleep writes the wake first, when there is one, so the status that carries
-// the sleep carries the wake too.
+// the sleep carries the wake too. A note with no wake is a note for the next
+// start (ADR 26-11-17-583): whatever next starts or thaws the sandbox hands it
+// over, as it hands over a wake that fell due, and it asks for no start itself.
 func sleep(d powerDirs, args []string, now time.Time, out io.Writer) error {
 	fs := flag.NewFlagSet("sleep", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -110,7 +112,10 @@ func sleep(d powerDirs, args []string, now time.Time, out io.Writer) error {
 		fmt.Fprintf(out, "wake at %s\n", when.Local().Format(time.RFC3339))
 		warnUnwoken(d, out)
 	} else if *note != "" {
-		return usageError{"--note needs --wake-in or --wake-at"}
+		if err := put(filepath.Join(d.wake, autostop.WakeNextDir), "sleep", *note, now); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "note kept for the next start")
 	}
 	if err := put(d.sleep, "agent", "", now); err != nil {
 		return err
@@ -202,7 +207,7 @@ func status(d powerDirs, now time.Time, out io.Writer) error {
 	for _, section := range []struct {
 		title    string
 		requests []autostop.Request
-	}{{"keepalive", autostop.ReadLeases(d.lease)}, {"sleep", autostop.ReadRequests(d.sleep)}, {"wake", autostop.ReadRequests(d.wake)}} {
+	}{{"keepalive", autostop.ReadLeases(d.lease)}, {"sleep", autostop.ReadRequests(d.sleep)}, {"wake", autostop.ReadRequests(d.wake)}, {"note for the next start", autostop.ReadRequests(filepath.Join(d.wake, autostop.WakeNextDir))}} {
 		requests := sortedByTime(section.requests)
 		if len(requests) == 0 {
 			fmt.Fprintf(out, "%s: none\n", section.title)

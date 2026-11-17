@@ -1517,10 +1517,10 @@ func (UnimplementedHandler) RestartSandboxService(ctx context.Context, params Re
 
 // ResumeSandboxAutostop implements resume-sandbox-autostop operation.
 //
-// Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing
-// booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and
-// the wake that brought it back is not returned again by its next power-down's confirmation. Only a
-// token carrying the pool-only autostop scope may call it.
+// Tells the sandbox its pool has just thawed it from a suspend. Nothing booted, so the sandbox moves
+// the wakes now due, and the notes kept for the next start, into ~/.discobox/wake/.done/ as a boot
+// does, and the wake that brought it back is not returned again by its next power-down's
+// confirmation. Only a token carrying the pool-only autostop scope may call it.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
 func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (r ResumeSandboxAutostopRes, _ error) {

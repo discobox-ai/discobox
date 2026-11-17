@@ -531,7 +531,10 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   can steer where root makes a directory. A machine's `wireMachineSources`,
   and `wireMachineBoot`'s `wireVolumes`, do the same in the data root the
   user writes, at every boot and onto a fresh root too, and `moveIn` renames
-  what a path held into a directory there. That crosses nothing
+  what a path held into a directory there. The autostop wake hand-over
+  (`TakeDueWakes`, `Resumed`) renames, as root, out of `~/.discobox/wake/`
+  and its `.next/` into `.done/`, every one a path the user can make a link.
+  That crosses nothing
   only because boot gives the sandbox user passwordless sudo. A change that
   offers a box without it must make all of them refuse links race-free first
   (`os.Root`, or `openat` with `O_NOFOLLOW` per component). Why: security

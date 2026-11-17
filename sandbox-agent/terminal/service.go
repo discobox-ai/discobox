@@ -134,7 +134,8 @@ type Service struct {
 	// an exec plus this layer, so install belongs here rather than in execs.
 	installingMu sync.Mutex
 	// wake is the DISCOBOX_WAKE value the next launch of the primary carries:
-	// the due wakes boot handed over (HandWake), given to one launch only.
+	// the due wakes and notes for the next start boot handed over (HandWake),
+	// given to one launch only.
 	wakeMu     sync.Mutex
 	wake       string
 	installing map[string]struct{}
@@ -536,15 +537,17 @@ func resumeStartupCommand(harness config.Harness) []string {
 	return append([]string{}, harness.Command...)
 }
 
-// WakeEnv is the variable a primary launched by a wake carries: the paths of
-// the wakes that fell due, oldest first, one per line (ADR 26-10-16-337 §7).
+// WakeEnv is the variable the primary a boot launches carries, whatever
+// started the sandbox: the paths of the wakes that fell due and of the notes
+// left for the next start, oldest first, one per line (ADR 26-10-16-337 §7,
+// ADR 26-11-17-583).
 // What the harness's wrapper does with them is its own business; an
 // environment variable, unlike an argument, is ignored by a program that does
 // not know it.
 const WakeEnv = "DISCOBOX_WAKE"
 
-// HandWake sets the wakes the next launch of the primary terminal carries in
-// WakeEnv. Boot calls it before it ensures the primary, which is the only
+// HandWake sets the wakes and notes the next launch of the primary terminal
+// carries in WakeEnv. Boot calls it before it ensures the primary, which is the only
 // place a wake is handed over; whichever launches the primary first — boot or
 // an attach that beat it — takes them.
 func (s *Service) HandWake(paths []string) {

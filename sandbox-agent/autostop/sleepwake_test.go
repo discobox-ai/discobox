@@ -126,6 +126,72 @@ func TestTakeDueWakesMovesThemAsideOldestFirst(t *testing.T) {
 	}
 }
 
+// A note for the next start is handed over with the wakes that fell due, in
+// time order, by the boot that comes next whatever started it, and asks for no
+// start of its own (ADR 26-11-17-583).
+func TestTakeDueWakesHandsOverTheNotesForTheNextStart(t *testing.T) {
+	c := &clock{now: epoch}
+	p := newPolicy(t, c, nil)
+	next := filepath.Join(p.wakeDir, WakeNextDir)
+	writeRequest(t, next, "done-for-now", epoch.Add(-time.Minute))
+	writeRequest(t, p.wakeDir, "check-ci", epoch.Add(-time.Hour))
+	writeRequest(t, p.wakeDir, "future", epoch.Add(time.Hour))
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
+	if wake, err := p.Confirm(ReasonSleep); err != nil || wake.Name != "check-ci" {
+		t.Fatalf("confirm = %+v, %v, want the due wake: a note is not one", wake, err)
+	}
+	paths, err := p.TakeDueWakes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := filepath.Join(p.wakeDir, WakeDoneDir)
+	want := []string{filepath.Join(done, "check-ci"), filepath.Join(done, "done-for-now")}
+	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	if left := ReadRequests(next); len(left) != 0 {
+		t.Fatalf("notes left = %v, want every one handed over", left)
+	}
+}
+
+// A note does not ask for a start: alone, it leaves the confirmation with no
+// wake to schedule, so a box that sleeps with one stays asleep.
+func TestANoteAloneSchedulesNoStart(t *testing.T) {
+	c := &clock{now: epoch}
+	p := newPolicy(t, c, nil)
+	writeRequest(t, filepath.Join(p.wakeDir, WakeNextDir), "sleep", epoch)
+	if state := p.Evaluate(epoch); !state.NextWake.IsZero() {
+		t.Fatalf("next wake = %+v, want none", state.NextWake)
+	}
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
+	if wake, err := p.Confirm(ReasonSleep); err != nil || !wake.IsZero() {
+		t.Fatalf("confirm = %+v, %v, want no wake", wake, err)
+	}
+}
+
+// A pending "sleep" wake and a later "sleep" note handed over together both
+// reach .done: the note steps aside to a free name rather than overwrite.
+func TestANoteNamedLikeADueWakeIsNotLost(t *testing.T) {
+	c := &clock{now: epoch}
+	p := newPolicy(t, c, nil)
+	writeRequest(t, p.wakeDir, "sleep", epoch.Add(-time.Hour))
+	writeRequest(t, p.wakeDir, "sleep.1", epoch.Add(-time.Hour))
+	writeRequest(t, filepath.Join(p.wakeDir, WakeNextDir), "sleep", epoch.Add(-time.Minute))
+	paths, err := p.TakeDueWakes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := filepath.Join(p.wakeDir, WakeDoneDir)
+	if len(paths) != 3 || paths[2] != filepath.Join(done, "sleep.2") {
+		t.Fatalf("paths = %v, want the note last, at sleep.2", paths)
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("handed over %s, which is not there: %v", path, err)
+		}
+	}
+}
+
 func TestRunNeverPowersOffOnceTheControlPlaneHoldsThePower(t *testing.T) {
 	c := &clock{now: epoch}
 	p, calls, _ := runPolicy(t, c, nil, func() error { return nil })
@@ -201,12 +267,15 @@ func TestResumedSetsAsideTheWakesDueWithinABoot(t *testing.T) {
 	}
 	writeRequest(t, p.wakeDir, "check-ci", epoch.Add(-time.Minute))
 	writeRequest(t, p.wakeDir, "later", epoch.Add(time.Hour))
+	// The thaw is the next start a note was kept for.
+	writeRequest(t, filepath.Join(p.wakeDir, WakeNextDir), "sleep", epoch.Add(-30*time.Second))
 	paths, err := p.Resumed()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(p.wakeDir, WakeDoneDir, "check-ci"); len(paths) != 1 || paths[0] != want {
-		t.Fatalf("paths = %v, want [%s]", paths, want)
+	done := filepath.Join(p.wakeDir, WakeDoneDir)
+	if want := []string{filepath.Join(done, "check-ci"), filepath.Join(done, "sleep")}; len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
+		t.Fatalf("paths = %v, want %v", paths, want)
 	}
 	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
 	wake, err := p.Confirm(ReasonSleep)

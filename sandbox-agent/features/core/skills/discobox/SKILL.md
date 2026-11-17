@@ -363,6 +363,7 @@ say when to wake it:
 
 ```bash
 discobox-power sleep --wake-in 45m --note 'check CI on PR 412'
+discobox-power sleep --note 'PR 412 green, waiting for review'  # no wake: a note for the next start
 discobox-power wake ci --at 14:00 --note 'look at the review'   # a wake on its own
 discobox-power wake ls                                          # what is scheduled
 discobox-power wake rm ci                                       # cancel one
@@ -379,17 +380,23 @@ discobox-power status                                           # leases, sleep,
 - **Where the pool can, sleep freezes the box rather than shutting it down.**
   Memory, `/run`, your harness and every terminal are kept as they are, and
   on waking everything carries on from where it froze: nothing is relaunched
-  and nothing is handed `DISCOBOX_WAKE`. The wakes that fell due are moved to
-  `~/.discobox/wake/.done/` as they would be at a boot — read them there. The
+  and nothing is handed `DISCOBOX_WAKE`. The wakes that fell due, and the
+  notes kept for the next start, are moved to `~/.discobox/wake/.done/` as
+  they would be at a boot — read them there. The
   clock has jumped, and connections you held may be gone.
 - **A wake is a file in `~/.discobox/wake/` whose modification time is when to
   wake.** Discobox starts the box at that time; the note, if you left one, is
   the file's contents. It survives the stop, and the box being started early
   by use — someone attaching, a request to it — which does not cancel it.
+- **A note with no wake is kept for the next start.** `sleep --note` without
+  `--wake-in` or `--wake-at` writes it to `~/.discobox/wake/.next/sleep`. It
+  starts nothing: the box sleeps until someone uses it. Whatever starts it
+  next hands the note over, as it would a wake that fell due.
 - **Woken from a shutdown, your harness is relaunched with `DISCOBOX_WAKE`** set to the
-  paths of the wakes that fell due — moved to `~/.discobox/wake/.done/`, one
-  per line, notes still in them. Whether the harness turns that into a turn
-  is the harness's business. If you wake with no prompt, read them.
+  paths of the wakes that fell due and the notes kept for this start — moved
+  to `~/.discobox/wake/.done/`, one per line, notes still in them. Whether the
+  harness turns that into a turn is the harness's business. If you wake with
+  no prompt, read them.
 - **A person explicitly stopping, starting (`discobox start`) or archiving
   the box cancels the scheduled start.** They decide. Your wake file stays where it is — `wake ls` still
   lists it — and is scheduled again the next time the box powers down; it is
