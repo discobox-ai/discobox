@@ -458,6 +458,24 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   does not until it runs `eval "$(discobox-access env)"`.
 - Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret rm N`.
 
+## The pool's control plane unreachable (an `unavailable` answer)
+
+- The box's relay takes only an mTLS pool URL (`credentialsUrl` must be
+  https, vsock, unix or wss), so a plain-HTTP stand-in for the pool is
+  refused; break the real pool instead.
+- The pool's proxy dials the control plane's unix socket from
+  `DISCOBOX_CONTROL_PLANE_URL` whatever `resolve-context.json` says, and keeps
+  that connection alive: editing the file, or hiding the socket under a
+  running proxy, changes nothing.
+- For a Docker pool on the local socket: in the pool container, `mount
+  --bind <empty dir>` over the directory of the socket that
+  `DISCOBOX_CONTROL_PLANE_URL` in `/etc/discobox/proxy.env` names (it follows
+  the server's `XDG_RUNTIME_DIR`), then `kill -9` the `discobox-pool-agent
+  proxy` pid (walk `/proc/*/cmdline`); the unit restarts it unable to dial.
+  `discobox-access list --json` in the box then answers `unavailable` with
+  the pool's `dial unix …` sentence. `umount` it afterwards; the proxy dials
+  afresh on its next call.
+
 ## A request from a box, and its approval forms
 
 - A pool provisioned from the released pool bundle
