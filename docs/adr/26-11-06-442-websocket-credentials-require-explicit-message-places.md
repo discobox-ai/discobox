@@ -1,7 +1,8 @@
 # 26-11-06-442 — WebSocket credentials require explicit message places
 
-- **Status**: Proposed (would narrow ADR 26-10-27-880 §4's unreadable upgraded bodies and absent-protocol-block permission for WebSocket messages; extend ADR 26-11-04-389 §2's containment proof; apply ADR 26-10-14-482 §§1–3 to message resolution)
+- **Status**: Accepted (narrows ADR 26-10-27-880 §4's unreadable upgraded bodies and absent-protocol-block permission for WebSocket messages; extends ADR 26-11-04-389 §2's containment proof; applies ADR 26-10-14-482 §§1–3 to message resolution)
 - **Date**: 2026-11-06
+- Accepted by the owner by merging #748, 2026-11-17
 - **Issue**: [#741](https://github.com/discobox-ai/discobox/issues/741)
 
 ## Context
