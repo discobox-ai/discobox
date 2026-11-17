@@ -16,9 +16,10 @@ func TestCommandName(t *testing.T) {
 	}{
 		{"discobox", "discobox"},
 		{"/opt/homebrew/bin/discobox", "discobox"},
+		{"/opt/homebrew/bin/discobox-beta", "discobox-beta"},
 		{"/opt/homebrew/bin/discobox-dev", "discobox-dev"},
 		{"discobox.exe", "discobox"},
-		{"discobox-dev.exe", "discobox-dev"},
+		{"discobox-beta.exe", "discobox-beta"},
 		// Not a discobox name: a test binary, `go run`'s temporary file, a copy
 		// someone renamed. Output must not depend on where the binary lives.
 		{"/tmp/go-build123/b001/cli.test", "discobox"},
@@ -37,13 +38,13 @@ func TestCommandName(t *testing.T) {
 // The name reaches the places a reader actually sees it: the usage line, the
 // examples in the long help, and the completion command's own instructions.
 func TestCommandNameReachesHelp(t *testing.T) {
-	defer withArgv0(t, "/opt/homebrew/bin/discobox-dev")()
+	defer withArgv0(t, "/opt/homebrew/bin/discobox-beta")()
 
 	root := NewRootCommand()
-	if got := root.Name(); got != "discobox-dev" {
-		t.Fatalf("root command name = %q, want discobox-dev", got)
+	if got := root.Name(); got != "discobox-beta" {
+		t.Fatalf("root command name = %q, want discobox-beta", got)
 	}
-	if !strings.Contains(root.Long, "discobox-dev run . 'fix the failing tests'") {
+	if !strings.Contains(root.Long, "discobox-beta run . 'fix the failing tests'") {
 		t.Fatalf("long help does not name the binary it was run as:\n%s", root.Long)
 	}
 
@@ -56,10 +57,23 @@ func TestCommandNameReachesHelp(t *testing.T) {
 	if completion == "" {
 		t.Fatal("no completion command")
 	}
-	// Writing _discobox from a discobox-dev install would overwrite the stable
-	// install's completions.
-	if !strings.Contains(completion, `"${fpath[1]}/_discobox-dev"`) {
+	// Writing _discobox from a discobox-beta install would overwrite the
+	// stable install's completions.
+	if !strings.Contains(completion, `"${fpath[1]}/_discobox-beta"`) {
 		t.Fatalf("completion help writes the wrong file:\n%s", completion)
+	}
+}
+
+// discobox-dev was the beta channel's command, and still runs, saying what
+// replaced it. No other name says anything.
+func TestRenamedCommandNotice(t *testing.T) {
+	if got := renamedCommandNotice("discobox-dev"); !strings.Contains(got, "discobox-beta") {
+		t.Fatalf("discobox-dev's notice %q does not name discobox-beta", got)
+	}
+	for _, name := range []string{"discobox", "discobox-beta"} {
+		if got := renamedCommandNotice(name); got != "" {
+			t.Errorf("%s prints %q", name, got)
+		}
 	}
 }
 

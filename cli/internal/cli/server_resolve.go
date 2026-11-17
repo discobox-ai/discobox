@@ -246,12 +246,31 @@ func (r serverResolver) stage(ctx context.Context, manifest serverstage.Manifest
 	if err := ensureStateDir(r.stageRoot); err != nil {
 		return "", err
 	}
-	return serverstage.Stage(ctx, manifest, serverstage.Options{
+	dir, err := serverstage.Stage(ctx, manifest, serverstage.Options{
 		Root:       r.stageRoot,
 		Client:     r.client,
 		Force:      r.source.force,
 		OnProgress: r.onProgress,
 	})
+	return dir, withDeletedMainBuildHint(manifest.Version, err)
+}
+
+// withDeletedMainBuildHint says what a main build's missing download means.
+// Main builds are deleted after fourteen days, server and images alike (ADR
+// 26-11-16-249 §6), so a main CLI that had not yet staged them finds them
+// gone, and only installing a newer main build gets it a server again.
+func withDeletedMainBuildHint(v string, err error) error {
+	if err == nil || !version.MainBuild(v) {
+		return err
+	}
+	if !errors.Is(err, serverstage.ErrNotPublished) && !errors.Is(err, imagecache.ErrNoManifest) {
+		return err
+	}
+	install := "curl -sSfL https://main.discobox.ai | sh"
+	if runtime.GOOS == "windows" {
+		install = "irm https://main.discobox.ai/install.ps1 | iex"
+	}
+	return fmt.Errorf("%w\ndiscobox %s is a main build, and main builds are deleted after fourteen days, so it can no longer be downloaded. Install the newest main build with: %s", err, v, install)
 }
 
 // stageImages asks the server about to be started which images a first run on
@@ -271,7 +290,8 @@ func (r serverResolver) stageImages(ctx context.Context, server string) ([]image
 		if err := ensureStateDir(r.imageRoot); err != nil {
 			return nil, err
 		}
-		return imagecache.Open(r.imageRoot).Stage(ctx, m.Images.References(runtime.GOOS, runtime.GOARCH), imagecache.Options{Client: r.client, OnProgress: r.onImageProgress})
+		staged, err := imagecache.Open(r.imageRoot).Stage(ctx, m.Images.References(runtime.GOOS, runtime.GOARCH), imagecache.Options{Client: r.client, OnProgress: r.onImageProgress})
+		return staged, withDeletedMainBuildHint(m.Version, err)
 	}
 
 	manifest, err := r.manifest(ctx)
@@ -303,10 +323,11 @@ func (r serverResolver) stageImages(ctx context.Context, server string) ([]image
 	if err := ensureStateDir(r.imageRoot); err != nil {
 		return nil, err
 	}
-	return imagecache.Open(r.imageRoot).Stage(ctx, images, imagecache.Options{
+	staged, err := imagecache.Open(r.imageRoot).Stage(ctx, images, imagecache.Options{
 		Client:     r.client,
 		OnProgress: r.onImageProgress,
 	})
+	return staged, withDeletedMainBuildHint(manifest.Version, err)
 }
 
 // serverImagesTimeout bounds asking a server which images it runs. It is the

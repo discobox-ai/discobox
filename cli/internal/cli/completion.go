@@ -11,7 +11,7 @@ func (a *App) newCompletionCommand() *cobra.Command {
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate shell completion script",
 		// Named for the binary this is, not for the one it usually is: the
-		// latest channel installs the same CLI as `discobox-dev`, and a script
+		// beta channel installs the same CLI as `discobox-beta`, and a script
 		// telling somebody to write `_discobox` would have them overwrite the
 		// completions of the stable install sitting beside it (ADR 0105).
 		Long: fmt.Sprintf(`Generate shell completion script.

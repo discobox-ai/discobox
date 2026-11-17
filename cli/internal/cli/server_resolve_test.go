@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -494,5 +496,29 @@ func TestReleaseManifestRejectsCorruptServerDownload(t *testing.T) {
 	resolver := serverResolver{source: serverSource{releaseManifest: path}, executable: filepath.Join(fakeInstall(t, true), "discobox"), stageRoot: t.TempDir()}
 	if _, err := resolver.resolve(context.Background()); err == nil {
 		t.Fatal("accepted corrupt release server")
+	}
+}
+
+// A main build's server or images every source says it does not have were
+// deleted with the build, and the failure says to install a newer one. A
+// release's, or a main build's source that is merely down, is left as it was.
+func TestWithDeletedMainBuildHint(t *testing.T) {
+	gone := fmt.Errorf("download discobox-server: %w", serverstage.ErrNotPublished)
+	noImage := fmt.Errorf("ghcr.io/x/y:v1: %w", imagecache.ErrNoManifest)
+	down := errors.New("download discobox-server: 502 Bad Gateway")
+	const main = "v1.2.4-main.42.gabcdef0"
+	for _, err := range []error{gone, noImage} {
+		got := withDeletedMainBuildHint(main, err)
+		if !errors.Is(got, err) || !strings.Contains(got.Error(), "main.discobox.ai") || !strings.Contains(got.Error(), main) {
+			t.Errorf("a deleted main build's %v: %v", err, got)
+		}
+	}
+	for v, err := range map[string]error{main: down, "v1.2.3": gone, "abc123": noImage} {
+		if got := withDeletedMainBuildHint(v, err); got != err { //nolint:errorlint // The same error back, unwrapped, is what is asserted.
+			t.Errorf("%s, %v: hinted %v", v, err, got)
+		}
+	}
+	if withDeletedMainBuildHint(main, nil) != nil {
+		t.Error("no error became one")
 	}
 }

@@ -418,7 +418,45 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 			break
 		}
 	}
-	return errors.Join(failures...)
+	joined := errors.Join(failures...)
+	if everySourceMissing(failures) {
+		return notPublished{joined}
+	}
+	return joined
+}
+
+// ErrNotPublished is an asset every source answered it does not have: a
+// release that was deleted, or never published there. A main build is deleted
+// after fourteen days, and that is what its CLI says when it meets this (ADR
+// 26-11-16-249 §6).
+var ErrNotPublished = errors.New("no source has the asset")
+
+// notPublished carries the sources' own answers, and is ErrNotPublished.
+type notPublished struct{ error }
+
+func (e notPublished) Is(target error) bool { return target == ErrNotPublished }
+func (e notPublished) Unwrap() error        { return e.error }
+
+// statusError is a source that answered something other than the asset.
+type statusError struct {
+	asset, source, status string
+	code                  int
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("download %s: %s: %s", e.asset, e.source, e.status)
+}
+
+// everySourceMissing reports whether every source tried answered that it has
+// no such asset.
+func everySourceMissing(failures []error) bool {
+	for _, failure := range failures {
+		var status *statusError
+		if !errors.As(failure, &status) || status.code != http.StatusNotFound {
+			return false
+		}
+	}
+	return len(failures) > 0
 }
 
 func downloadFrom(ctx context.Context, client *http.Client, asset Asset, source, path string, report func(current, total int64)) error {
@@ -441,7 +479,7 @@ func downloadFrom(ctx context.Context, client *http.Client, asset Asset, source,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: %s: %s", asset.Name, source, resp.Status)
+		return &statusError{asset: asset.Name, source: source, status: resp.Status, code: resp.StatusCode}
 	}
 
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, assetMode(asset))
