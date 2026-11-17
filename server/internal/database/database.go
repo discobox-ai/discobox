@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
@@ -36,16 +36,16 @@ type Config struct {
 	Driver  gormdb.Driver
 	DSN     string
 	ReadDSN string
-	Logger  logger.Interface
 }
 
-// New opens database pools using the shared GORM database opener.
+// New opens database pools using the shared GORM database opener. Both pools
+// log through newSQLLogger, which never writes a statement's bound values.
 func New(cfg Config) (*DB, error) {
 	pools, err := gormdb.Open(gormdb.Config{
 		Driver:  cfg.Driver,
 		DSN:     cfg.DSN,
 		ReadDSN: cfg.ReadDSN,
-		Logger:  cfg.Logger,
+		Logger:  newSQLLogger(os.Stdout, slowSQL),
 	})
 	if err != nil {
 		return nil, err
