@@ -199,6 +199,24 @@ it only when the HTTP and SOCKS queue is empty, and each sandbox has a budget in
 it. A lookup past either is dropped and counted apart (`dnsDropped` beside
 `dropped` on `/audit/dropped`).
 
+`Server.Close` closes every client connection, then waits (at most 30s in all)
+for each connection's serving goroutine to return and for every body stream
+still to record its row, and only then closes the recorder, so a request in
+flight at shutdown is recorded, not dropped. A connection goproxy hijacks is
+served after net/http lets go of it: a MITM'd `CONNECT` on goproxy's own
+goroutine, which closes the connection when its last request is done; a
+passthrough tunnel in the handler, which writes its close row after closing the
+connection. So `httpProxy.serveConn` returns only once the handler has returned
+and the connection is closed (a plain request's upgrade, which goproxy leaves
+open, it closes itself). A row written when its body stream finishes (a
+response body, an upgraded stream) is counted from the stream's creation to its
+`finish` (`httpProxy.recording`), since that can end on a goroutine no
+connection waits for: the relay's other direction, or an h2 stream's handler.
+An h2 stream's row that is written before its body (a refusal) is not counted,
+so one Close lands on mid-refusal can still be dropped. A request still waiting
+on its upstream holds `Close` until it ends or the 30s pass, as one not
+hijacked always has.
+
 Normal HTTP request and response bodies are streamed to disk spool files. SQLite
 stores only relative spool paths, byte counts, format names, metadata, redacted
 headers, cache state, policy decisions, authenticated client identity, and the

@@ -2080,3 +2080,211 @@ func (noGatewayHeaders) ResolveGatewayHeaders(context.Context, GatewayHeadersReq
 }
 
 func (stubResolver) BodyPlaces(context.Context, secrets.BodyPlacesRequest) []string { return nil }
+
+// Close must not close the audit recorder while a MITM'd request is still
+// being served: the exchange is recorded when goproxy finishes the response
+// body, on a goroutine of its own, and it has to land.
+func TestCloseWaitsForInFlightMITMExchange(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	release := make(chan struct{})
+	origin := newTLSOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = io.WriteString(w, "first")
+		w.(http.Flusher).Flush()
+		<-release
+		_, _ = io.WriteString(w, "rest")
+	})
+	defer origin.Close()
+
+	dir := t.TempDir()
+	dsn := filepath.Join(dir, "audit.db")
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dsn,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	server.http.proxy.Tr = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test origin is self-signed
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	addr := waitForAddr(t, server)
+
+	material := prepared.Clients["sandbox-1"]
+	clientCert, err := tls.LoadX509KeyPair(material.ClientCertPath, material.ClientKeyPath)
+	if err != nil {
+		t.Fatalf("load client cert: %v", err)
+	}
+	pool := x509.NewCertPool()
+	for _, p := range []string{material.MTLSCAPath, material.MITMCAPath} {
+		pem, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read CA %s: %v", p, err)
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			t.Fatalf("parse CA %s", p)
+		}
+	}
+	proxyURL, _ := url.Parse("https://" + addr.String())
+	client := &http.Client{Transport: &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+		TLSClientConfig: &tls.Config{
+			RootCAs:      pool,
+			Certificates: []tls.Certificate{clientCert},
+			MinVersion:   tls.VersionTLS12,
+			NextProtos:   []string{"http/1.1"},
+		},
+	}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL+"/in-flight", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	// The MITM'd request is now mid-body: the client has the first bytes and
+	// the origin holds the rest.
+	first := make([]byte, len("first"))
+	if _, err := io.ReadFull(resp.Body, first); err != nil {
+		t.Fatalf("read first bytes: %v", err)
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- server.Close() }()
+	// Let the response finish while Close is waiting on it. Close may instead
+	// cut it short: when goproxy is still writing to the client as Close
+	// closes the connection, the write fails and the exchange ends there.
+	// Either way its row has to land.
+	time.Sleep(500 * time.Millisecond)
+	close(release)
+	if err := <-closed; err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	<-errCh
+
+	// Give a late record the time to be counted as dropped, so the failure
+	// says what happened to it.
+	deadline := time.Now().Add(2 * time.Second)
+	for server.audit.Dropped() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if dropped := server.audit.Dropped(); dropped != 0 {
+		t.Errorf("audit dropped %d event(s) after Close, want 0", dropped)
+	}
+	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	defer pools.Close()
+	var count int64
+	if err := pools.Read.Model(&audit.HTTPExchange{}).Where("url LIKE ?", "%/in-flight").Count(&count).Error; err != nil {
+		t.Fatalf("count exchanges: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("http_exchanges rows for the in-flight request = %d, want 1", count)
+	}
+}
+
+// Close must not close the audit recorder before a plain-HTTP upgrade cut by
+// shutdown records its row: goproxy relays the upgrade in the handler of a
+// hijacked connection, and the row is written when the relay's last
+// direction ends, which can be after the handler returns.
+func TestCloseRecordsAnUpgradeItCuts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		conn, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
+		_ = rw.Flush()
+		// Hold the upgraded stream open until the proxy ends it.
+		_, _ = io.Copy(io.Discard, rw)
+	})
+	defer origin.Close()
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	dbPath := filepath.Join(dir, "audit.db")
+	server, err := NewServer(ctx, Config{
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16, StreamDir: filepath.Join(dir, "streams")},
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	addr := waitForAddr(t, server)
+
+	conn := dialProxyMTLS(ctx, t, addr.String(), prepared.Clients["sandbox-1"])
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", origin.URL, originURL.Host); err != nil {
+		t.Fatalf("write upgrade request: %v", err)
+	}
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read upgrade response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+
+	if err := server.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	<-errCh
+	if dropped := server.audit.Dropped(); dropped != 0 {
+		t.Errorf("audit dropped %d event(s) at Close, want 0", dropped)
+	}
+	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	defer pools.Close()
+	var count int64
+	if err := pools.Read.Model(&audit.HTTPExchange{}).Where("upgrade = ?", true).Count(&count).Error; err != nil {
+		t.Fatalf("count upgrade rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("upgrade rows = %d, want 1", count)
+	}
+}

@@ -202,3 +202,66 @@ func TestPassthroughNeverSplicesTheGate(t *testing.T) {
 		t.Fatalf("the gate was passed through: %+v", rows[0].Tunnel)
 	}
 }
+
+// Close must not close the audit recorder before a passthrough tunnel it cuts
+// writes its close row. The row is written after both directions end, and the
+// tunnel closes the client's connection before that, so the connection
+// closing is not the end of recording on it. The origin here takes a moment
+// to hang up once the proxy half-closes toward it, as a real one may.
+func TestCloseRecordsAPassthroughTunnelsCloseRow(t *testing.T) {
+	f := newTrustFixture(t, "")
+	f.applyPassthrough(t, nil, map[string][]string{"sandbox-1": {"127.0.0.1"}})
+	relay := lingeringRelay(t, f.origin.Listener.Addr().String(), 300*time.Millisecond)
+
+	client := f.passthroughClient(t, "sandbox-1")
+	resp, err := getURL(t, client, "https://"+relay+"/")
+	if err != nil {
+		t.Fatalf("GET through passthrough: %v", err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	waitForTunnelRows(t, f.dsn, 1)
+
+	// The client keeps the tunnel open, idle, for its next request.
+	if err := f.server.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if dropped := f.server.audit.Dropped(); dropped != 0 {
+		t.Errorf("audit dropped %d event(s) at Close, want 0", dropped)
+	}
+	rows := readTunnelRows(t, f.dsn)
+	if len(rows) != 2 || rows[1].Tunnel.Phase != "close" {
+		t.Fatalf("tunnel rows = %d, want an open and a close row", len(rows))
+	}
+}
+
+// lingeringRelay forwards each connection to target, and once the client
+// side has finished sending, waits linger before it hangs up.
+func lingeringRelay(t *testing.T, target string, linger time.Duration) string {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				upstream, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", target)
+				if err != nil {
+					return
+				}
+				defer upstream.Close()
+				go func() { _, _ = io.Copy(conn, upstream) }()
+				_, _ = io.Copy(upstream, conn)
+				time.Sleep(linger)
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}

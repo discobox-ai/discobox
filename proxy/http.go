@@ -62,6 +62,11 @@ type httpProxy struct {
 	// Git origins and its bundle assets; nil answers none. Set once, before
 	// the proxy serves.
 	poolHosts *poolHosts
+	// recording counts the exchanges whose row is written when their body
+	// stream finishes, which can be after the goroutine serving the
+	// connection has moved on (an upgrade's relay, an h2 stream).
+	// Server.Close waits for it before it closes the recorder.
+	recording inFlight
 }
 
 type requestMeta struct {
@@ -171,6 +176,8 @@ type responseStream struct {
 	finalizeOnce sync.Once
 	sawEOF       bool
 	bytesRead    int64
+	// recording is released once the row is recorded; nil tracks nothing.
+	recording *inFlight
 }
 
 type upgradedResponseStream struct {
@@ -184,8 +191,10 @@ type upgradedResponseStream struct {
 	headers      http.Header
 	upgradeType  string
 	finalizeOnce sync.Once
-	c2sBytes     atomic.Int64
-	s2cBytes     atomic.Int64
+	// recording is released once the row is recorded; nil tracks nothing.
+	recording *inFlight
+	c2sBytes  atomic.Int64
+	s2cBytes  atomic.Int64
 }
 
 // connectTunnel is the CONNECT a MITM'd request arrived through. goproxy
@@ -508,6 +517,7 @@ func (h *httpProxy) setupHandlers() {
 					cacheBody: true,
 					status:    resp.StatusCode,
 					headers:   resp.Header.Clone(),
+					recording: h.recording.add(),
 				}
 				return req, resp
 			} else if !errors.Is(err, cache.ErrMiss) {
@@ -587,6 +597,7 @@ func (h *httpProxy) setupHandlers() {
 					status:       resp.StatusCode,
 					headers:      resp.Header.Clone(),
 					upgradeType:  upgradedProtocol,
+					recording:    h.recording.add(),
 				}
 			} else {
 				h.audit.RecordHTTP(h.auditEvent(ctx.Req, resp, meta, time.Since(meta.start), false))
@@ -647,6 +658,7 @@ func (h *httpProxy) setupHandlers() {
 			bodySpool:    bodySpool,
 			status:       resp.StatusCode,
 			headers:      resp.Header.Clone(),
+			recording:    h.recording.add(),
 		}
 		return resp
 	})
@@ -1435,6 +1447,7 @@ func (s *upgradedResponseStream) Close() error {
 
 func (s *upgradedResponseStream) finish() {
 	s.finalizeOnce.Do(func() {
+		defer s.recording.done()
 		_ = s.stream.Close()
 		duration := time.Since(s.meta.start)
 		event := s.auditEvent(duration)
@@ -1528,6 +1541,7 @@ func (s *responseStream) Close() error {
 
 func (s *responseStream) finish(aborted bool, readErr error) {
 	s.finalizeOnce.Do(func() {
+		defer s.recording.done()
 		cacheStored := false
 		if s.cacheStore != nil {
 			_, cacheSpan := proxyTracer().Start(s.meta.ctx, "proxy.cache.store.finish")
@@ -1803,28 +1817,51 @@ func headerContainsToken(header http.Header, key, token string) bool {
 	return false
 }
 
-func (h *httpProxy) serveConn(ctx context.Context, conn *peekedConn, identity clientIdentity) bool {
-	// Bind the client identity to the connection's RemoteAddr for the lifetime of
-	// the connection. The entry is removed when the connection closes rather than
-	// when serveConn returns, because goproxy hijacks the connection for HTTPS
-	// MITM and keeps dispatching requests after serveConn has returned; deleting
-	// on return would leave those MITM'd requests without a client identity.
-	var served net.Conn = conn
+// serveConn serves one client connection and returns once nothing serving it
+// is left, so the caller's accounting of live connections (which
+// Server.Close waits on before it closes the audit recorder) covers what is
+// recorded on it. A hijacked connection outlives net/http's Serve: goproxy
+// serves a MITM'd CONNECT's requests on a goroutine of its own, recording
+// each there, until it closes the connection; a passthrough tunnel is served
+// in the handler, which writes its close row after it has closed the
+// connection. So serveConn waits for both the handler to return and the
+// connection to close. What is recorded when a body stream finishes is
+// counted apart, in recording.
+func (h *httpProxy) serveConn(ctx context.Context, conn *peekedConn, identity clientIdentity) {
+	served := &servedConn{Conn: conn, closed: make(chan struct{})}
+	// Bind the client identity to the connection's RemoteAddr for as long as
+	// the connection is open: MITM'd requests read it on goproxy's goroutine.
 	if conn.RemoteAddr() != nil {
 		key := conn.RemoteAddr().String()
 		h.mu.Lock()
 		h.ids[key] = identity
 		h.mu.Unlock()
-		served = &identityConn{Conn: conn, onClose: func() {
+		defer func() {
 			h.mu.Lock()
 			delete(h.ids, key)
 			h.mu.Unlock()
-		}}
+		}()
 	}
 	listener := &singleConnListener{conn: served, done: make(chan struct{})}
 	var hijacked atomic.Bool
+	// net/http serves a connection's requests one at a time, so this counts
+	// at most one handler.
+	var handlers sync.WaitGroup
 	server := &http.Server{
-		Handler:           h.proxy,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			handlers.Add(1)
+			defer handlers.Done()
+			h.proxy.ServeHTTP(w, req)
+			// goproxy hands a hijacked CONNECT on to its MITM loop or a
+			// tunnel, each of which closes the connection when done. A plain
+			// request is hijacked only to relay an upgrade, and goproxy is
+			// done with the connection once ServeHTTP returns but leaves it
+			// open. The relay's other direction may still be running; its
+			// row is the upgraded stream's, counted in recording.
+			if req.Method != http.MethodConnect && hijacked.Load() {
+				_ = served.Close()
+			}
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context {
 			return contextOrBackground(ctx)
@@ -1842,7 +1879,10 @@ func (h *httpProxy) serveConn(ctx context.Context, conn *peekedConn, identity cl
 	}
 	_ = server.Serve(listener)
 	_ = listener.Close()
-	return hijacked.Load()
+	if hijacked.Load() {
+		handlers.Wait()
+		<-served.closed
+	}
 }
 
 func (h *httpProxy) clientIdentity(req *http.Request) clientIdentity {
@@ -1857,19 +1897,64 @@ func (h *httpProxy) clientIdentity(req *http.Request) clientIdentity {
 	return clientIdentityFromRequest(req)
 }
 
-// identityConn removes the connection's stored client identity when the
-// connection is closed, so the identity outlives serveConn (which returns early
-// once goproxy hijacks the connection for MITM) but does not leak.
-type identityConn struct {
+// servedConn is the connection handed to net/http and, on a hijack, to
+// goproxy. closed is closed once it is: on a hijacked connection, the signal
+// that goproxy is done with it.
+type servedConn struct {
 	net.Conn
-	onClose func()
-	once    sync.Once
+	closed chan struct{}
+	once   sync.Once
 }
 
-func (c *identityConn) Close() error {
+func (c *servedConn) Close() error {
 	err := c.Conn.Close()
-	c.once.Do(c.onClose)
+	c.once.Do(func() { close(c.closed) })
 	return err
+}
+
+// inFlight counts work in progress and says when there is none. Unlike a
+// sync.WaitGroup it may be added to from zero while something waits on it:
+// an h2 stream can begin an exchange while Server.Close is waiting.
+type inFlight struct {
+	mu   sync.Mutex
+	n    int
+	idle chan struct{}
+}
+
+// add counts one more, and returns t for the caller to release with done.
+func (t *inFlight) add() *inFlight {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.n == 0 {
+		t.idle = make(chan struct{})
+	}
+	t.n++
+	return t
+}
+
+// done releases one add. It does nothing on a nil t.
+func (t *inFlight) done() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.n--
+	if t.n == 0 {
+		close(t.idle)
+	}
+}
+
+// wait returns a channel that is closed once nothing is counted.
+func (t *inFlight) wait() <-chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.n == 0 {
+		idle := make(chan struct{})
+		close(idle)
+		return idle
+	}
+	return t.idle
 }
 
 type singleConnListener struct {

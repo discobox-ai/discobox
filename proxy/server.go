@@ -437,6 +437,11 @@ func (s *Server) Close() error {
 		_ = conn.Close()
 	}
 	s.connMu.Unlock()
+	// Every connection's serving goroutine, then every exchange still to be
+	// recorded when its body stream finishes, before the recorder closes;
+	// the two share one 30s bound.
+	timeout := time.NewTimer(30 * time.Second)
+	defer timeout.Stop()
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -444,7 +449,13 @@ func (s *Server) Close() error {
 	}()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+		if s.http != nil {
+			select {
+			case <-s.http.recording.wait():
+			case <-timeout.C:
+			}
+		}
+	case <-timeout.C:
 	}
 	if s.http != nil {
 		s.http.reports.close()
@@ -467,11 +478,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	s.connMu.Lock()
 	s.conns[conn] = struct{}{}
 	s.connMu.Unlock()
-	handoff := false
 	defer func() {
-		if handoff {
-			return
-		}
 		s.connMu.Lock()
 		_, stillTracked := s.conns[conn]
 		if stillTracked {
@@ -503,10 +510,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	span.SetAttributes(attribute.String("proxy.protocol", proto.String()))
 	switch proto {
 	case protocolHTTP:
-		if hijacked := s.http.serveConn(ctx, peeked, client); hijacked {
-			handoff = true
-			return
-		}
+		s.http.serveConn(ctx, peeked, client)
 	case protocolSOCKS5:
 		if err := s.socks.serveConn(ctx, peeked, client); err != nil {
 			recordSpanError(span, err)

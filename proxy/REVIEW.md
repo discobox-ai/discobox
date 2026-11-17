@@ -154,6 +154,14 @@
   just the bounded drop: `Server.Close` stops waiting for in-flight connections
   after 30s, so an enqueue after the close is reachable and would panic the
   proxy rather than drop.
+- Whatever takes over a hijacked connection must close it when done, and
+  `Server.Close` keeps the recorder open until then (`httpProxy.serveConn`
+  waits for the close and the handler's return). A hijack path that never
+  closes holds every shutdown for its full 30s. Closing the connection is not
+  the end of recording on it, though: a passthrough tunnel closes the client
+  before writing its close row, and an upgrade's relay or an h2 stream records
+  on goroutines no connection waits for. A row written off the serving
+  goroutine is counted in `httpProxy.recording` from when its work begins.
 - Only a 2xx retracts a rejection. A 3xx is frequently how an upstream says a
   session is dead.
 - Only a request this proxy swapped a credential into may be reported. A 401 on
