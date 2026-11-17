@@ -23,8 +23,8 @@ flowchart LR
 
 ## Database Connections
 
-`New(Config)` passes the configured driver, DSN, read DSN, and logger through to
-`gormdb.Open` unchanged and returns a `DB` whose exported `Write`/`Read` GORM
+`New(Config)` passes the configured driver, DSN, and read DSN through to
+`gormdb.Open` unchanged, with the one SQL logger both pools use, and returns a `DB` whose exported `Write`/`Read` GORM
 handles are backed by pools it owns; `Close` releases them and is nil-safe.
 Driver-specific setup belongs to `gormdb`, not here: for SQLite that means
 WAL/foreign-key pragmas, a single-connection write pool, and a read-only read
@@ -32,6 +32,15 @@ pool (in-memory databases share the write pool); Postgres gets a separate read
 pool only when a read DSN is set. The server passes the opened handles to
 `internal/store`. `cmd/discobox-secret-dump` opens the same database the same
 way, for reading.
+
+The SQL logger is this package's, never a caller's: it logs a statement that
+is slow (200ms) or fails, with its placeholders and never its bound values.
+Rows hold key material and secrets, and with no encryption provider a sealed
+value is only base64 of the plaintext, so a value in a log line is a leaked
+key. GORM renders a `Scan` through its process-wide `RecorderParamsFilter`
+instead of the logger's setting, so this package's `init` makes that drop the
+values too. The server owns this rather than relying on `gormdb`'s default,
+which inlines values.
 
 `CurrentRead` is the read handle for a read that decides a write but must not
 queue on SQLite's one write connection (the store's encryption keys): the read
