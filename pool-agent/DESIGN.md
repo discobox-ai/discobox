@@ -2148,6 +2148,12 @@ flowchart LR
   with the value, which the proxy records on every request it swaps the value
   into
   ([ADR 26-10-01-240](../docs/adr/26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md)).
+  A `401` from the control plane, and a resolve made before the file holds a
+  token, are about the pool's own credential and transient, never a denial:
+  the proxy holds the request and the file is read again on every ask. A
+  `403`, a `404` and an answer that is not `approved` are denials. The
+  credential broker answers the sandbox "unavailable" for the same two cases
+  ([ADR 26-11-17-078](../docs/adr/26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md)).
 - The same resolver reports back what an upstream made of a credential it
   handed over: a `401` the proxy's retry could not save, and the clearance when
   one starts working again

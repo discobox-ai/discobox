@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -145,9 +146,10 @@ func (c *controlPlaneCredentials) requestStatus(ctx context.Context, sandboxID, 
 func (c *controlPlaneCredentials) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	rc, err := readResolveContext(c.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
-		// No usable credential yet: fail closed, the same way the resolver does
-		// when it cannot prove who it is.
-		return fmt.Errorf("%w: pool has no control-plane credential yet", agentcreds.ErrDenied)
+		// No usable credential yet is about the pool, not the sandbox: the
+		// sandbox is told to try again, the way the resolver holds a request
+		// it cannot prove who it is for (ADR 26-11-17-078).
+		return errors.New("pool has no control-plane credential yet")
 	}
 	endpoint := fmt.Sprintf("%s/api/pools/%s/%s", rc.ControlPlaneURL, url.PathEscape(rc.PoolID), path)
 	if len(query) > 0 {
@@ -208,7 +210,13 @@ func controlPlaneError(resp *http.Response) error {
 	switch resp.StatusCode {
 	case http.StatusNotFound:
 		return fmt.Errorf("%w: %s", agentcreds.ErrNotFound, message)
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized:
+		// About the pool's own assertion, never the sandbox's request: one
+		// that expired across a host sleep is replaced within seconds, so the
+		// sandbox is told to try again rather than that it was refused
+		// (ADR 26-11-17-078 §3).
+		return fmt.Errorf("control plane did not take this pool's credential: %s", message)
+	case http.StatusForbidden:
 		return fmt.Errorf("%w: %s", agentcreds.ErrDenied, message)
 	case http.StatusBadRequest, http.StatusConflict:
 		return fmt.Errorf("%w: %s", agentcreds.ErrInvalid, message)

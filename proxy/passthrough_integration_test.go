@@ -105,7 +105,7 @@ func TestPassthroughNeverAdmitsAHost(t *testing.T) {
 		_ = resp.Body.Close()
 		t.Fatalf("a host passthrough names but allow does not was reached: %d", resp.StatusCode)
 	}
-	blocked := waitForBlockedRows(t, f.dsn, 1)
+	blocked := waitForAuditRows(t, f.dsn, true, 1)
 	if blocked[0].BlockedReason != "host denied" || blocked[0].Tunnel.Phase != "" {
 		t.Fatalf("blocked row = %q, tunnel %+v; want a host denial and no tunnel", blocked[0].BlockedReason, blocked[0].Tunnel)
 	}

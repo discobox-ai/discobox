@@ -126,6 +126,7 @@ func TestResolverTellsAnUnansweredResolveFromADenial(t *testing.T) {
 		http.StatusRequestTimeout:      true,
 		http.StatusTooEarly:            true,
 		http.StatusTooManyRequests:     true,
+		http.StatusUnauthorized:        true,
 		http.StatusForbidden:           false,
 		http.StatusNotFound:            false,
 	} {
@@ -149,12 +150,57 @@ func TestResolverTellsAnUnansweredResolveFromADenial(t *testing.T) {
 	}
 }
 
-func TestResolverNoContextIsDenied(t *testing.T) {
+// A 401 from the control plane is about the pool's own assertion — expired
+// across a host sleep, or minted by a guest whose clock lags — not about the
+// sandbox's credential. It is transient, so the proxy keeps serving what it
+// cached or holds the request, and never sends the sentinel upstream for the
+// harness to read as a dead login.
+func TestResolverTreatsAnExpiredPoolAssertionAsTransient(t *testing.T) {
+	root := withTestRoot(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// What the server's PoolAuthenticator answers for an assertion past
+		// its exp (server/internal/auth/middleware.go).
+		http.Error(w, "invalid pool agent assertion: token has expired (control plane clock 2026-11-17T04:45:59Z)", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok-expired")
+
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
+	_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "api.anthropic.com"})
+	if err == nil {
+		t.Fatal("resolved, want a transient error")
+	}
+	if errors.Is(err, proxy.ErrSecretResolveDenied) {
+		t.Fatalf("err = %v, want transient: a 401 for the pool's assertion is not a denial of the sandbox's credential", err)
+	}
+}
+
+// A proxy that serves before the pool agent has written its first assertion
+// holds the request rather than sending the sentinel: having no credential yet
+// says nothing about the sandbox's (ADR 26-11-17-078 §1).
+func TestResolverWithNoContextIsTransient(t *testing.T) {
 	root := withTestRoot(t)
 	resolver := newSecretResolver(root, testProjectID, testPoolID)
 	_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
-	if !errors.Is(err, proxy.ErrSecretResolveDenied) {
-		t.Fatalf("err = %v, want ErrSecretResolveDenied when no context file", err)
+	if err == nil || errors.Is(err, proxy.ErrSecretResolveDenied) {
+		t.Fatalf("err = %v, want a transient error when there is no context file", err)
+	}
+}
+
+// A raw resolve answered 401 keeps a value already held standing, as any
+// transient failure does (ADR 26-11-17-078 §1).
+func TestResolveRawTreatsA401AsTransient(t *testing.T) {
+	root := withTestRoot(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok-expired")
+
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
+	_, err := resolver.ResolveRaw(context.Background(), proxy.SecretRawRequest{ClientID: "sb-1", Sentinel: "SENT"})
+	if err == nil || errors.Is(err, proxy.ErrSecretResolveDenied) {
+		t.Fatalf("err = %v, want a transient error", err)
 	}
 }
 

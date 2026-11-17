@@ -653,8 +653,10 @@ type rejectionRequestBody struct {
 func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveRequest) (proxy.SecretResolveResult, error) {
 	rc, err := readResolveContext(r.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
-		// No usable credential yet: fail closed so the sentinel is left in place.
-		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
+		// No usable credential yet says nothing about the sandbox's: it is
+		// transient, so the request is held while the pool agent writes one,
+		// and never sent with its sentinel (ADR 26-11-17-078 §1).
+		return proxy.SecretResolveResult{}, errors.New("resolve secret: no control plane credential yet")
 	}
 	url := fmt.Sprintf("%s/api/pools/%s/resolve-sandbox-secret", rc.ControlPlaneURL, rc.PoolID)
 	payload, err := json.Marshal(resolveRequestBody{SandboxID: req.ClientID, Sentinel: req.Sentinel, Host: req.Host})
@@ -673,16 +675,16 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusInternalServerError || resolveStatusTransient(resp.StatusCode) {
-		// No answer about the credential, only about the control plane: treat
-		// it as transient, not an authoritative denial, so a cached value
-		// keeps serving until its grant expires and a request with nothing
-		// cached is held and then refused rather than sent with its sentinel
-		// (ADR 26-10-14-482 §2).
+		// No answer about the credential, only about the control plane or the
+		// pool's own assertion: treat it as transient, not an authoritative
+		// denial, so a cached value keeps serving until its grant expires and
+		// a request with nothing cached is held and then refused rather than
+		// sent with its sentinel (ADR 26-10-14-482 §2, ADR 26-11-17-078 §1).
 		return proxy.SecretResolveResult{}, fmt.Errorf("resolve secret: control plane returned %d", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
-		// Not found / forbidden: the control plane's answer. Leave the
-		// sentinel in place.
+		// Not found / forbidden: the control plane's answer about the
+		// sandbox or its credential. Leave the sentinel in place.
 		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
 	}
 	var out resolveResponseBody
@@ -812,10 +814,17 @@ func (r *secretResolver) ResolveGatewayHeaders(ctx context.Context, req proxy.Ga
 
 // resolveStatusTransient reports whether a status below 500 says the resolve
 // was not answered rather than answered no: the request timed out, came too
-// early, or was rate limited. Asked again, any of them can be approved.
+// early, or was rate limited, or the control plane did not take the pool's own
+// assertion. Asked again, any of them can be approved.
+//
+// A 401 is only ever about the caller (ADR 26-11-17-078): an assertion that
+// expired across a host sleep, or was minted by a guest whose clock lags, is
+// replaced by the pool agent within seconds, and every ask re-reads it. A
+// revoked pool gets the same 401 and is not told apart; it has no sandboxes
+// left to answer (§4).
 func resolveStatusTransient(status int) bool {
 	switch status {
-	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
+	case http.StatusUnauthorized, http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
 		return true
 	}
 	return false

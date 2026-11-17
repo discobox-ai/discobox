@@ -563,6 +563,12 @@ func (h *httpProxy) setupHandlers() {
 		}
 		if retried := h.retryRejectedSwap(resp, ctx, meta); retried != nil {
 			resp = retried
+			if meta.answered {
+				// The retry could not resolve the credential and answered
+				// the sandbox itself, already audited.
+				meta.span.End()
+				return resp
+			}
 		}
 		// A swapped credential the upstream took clears a rejection this proxy
 		// reported earlier, however the credential came to be fixed —
@@ -1233,6 +1239,23 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	// previous candidate is sent only when it covers all of them.
 	case previousResult.Swapped() && coversAll(previousResult.Sentinels, meta.swappedSentinels) && !sameHeaderValues(req.Header, previous.Header, meta.swappedHeaders):
 		retryReq, source, sent = previous, "previous", previousResult
+	case len(resolvedResult.Errors) > 0:
+		// Nothing to send, and the fresh resolve did not answer: the control
+		// plane is unreachable, or did not take the pool's own assertion. The
+		// refusal is no verdict from the control plane that the refused value
+		// is the credential, so it is not passed through: a harness reads it
+		// as a dead login. The sandbox is answered as a request that could not
+		// be resolved is, and retries (ADR 26-11-17-078 §2).
+		span.SetAttributes(attribute.Bool("proxy.secret_swap.retry.attempted", false))
+		// The upstream still refused the value it was sent.
+		rejected(req.Host, secrets.OutcomeRejected)
+		// The refusal was a real exchange with the upstream and is audited as
+		// one; the 503 is audited as a refusal by refuseUnresolved.
+		h.audit.RecordHTTP(h.auditEvent(req, resp, meta, time.Since(meta.start), false))
+		drainAndClose(resp.Body)
+		// Rebuilt, it carries the sentinels again: what was sent carries the
+		// values, which the trail never holds.
+		return h.refuseUnresolved(h.rebuiltRequest(req, meta), meta, meta.client, meta.url(req), resolvedResult.Errors)
 	default:
 		// Nothing to send that is not the value just refused, which means the
 		// credential the resolver would hand out now is the rejected one.

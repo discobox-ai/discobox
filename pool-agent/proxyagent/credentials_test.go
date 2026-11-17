@@ -270,6 +270,30 @@ func TestAControlPlaneRefusalIsADenial(t *testing.T) {
 	}
 }
 
+// A 401 is the control plane not taking the pool's own assertion, which says
+// nothing of the sandbox's request: the sandbox is told to try again, not that
+// it was refused (ADR 26-11-17-078 §3).
+func TestAControlPlane401IsUnavailable(t *testing.T) {
+	plane, fake := newFakeControlPlane(t, nil)
+	fake.refuse = http.StatusUnauthorized
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane}
+	_, err := b.RequestStatus(context.Background(), "sreq_other")
+	if err == nil || agentcreds.Code(err) != agentcreds.CodeUnavailable {
+		t.Fatalf("err = %v (code %q), want unavailable", err, agentcreds.Code(err))
+	}
+}
+
+// Before the pool agent has written its first assertion, the broker says try
+// again, as the resolver holds a request it cannot yet resolve.
+func TestABrokerWithNoCredentialYetIsUnavailable(t *testing.T) {
+	root := withTestRoot(t)
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: newControlPlaneCredentials(root, testProjectID, testPoolID)}
+	_, err := b.RequestStatus(context.Background(), "sreq_other")
+	if err == nil || agentcreds.Code(err) != agentcreds.CodeUnavailable {
+		t.Fatalf("err = %v (code %q), want unavailable", err, agentcreds.Code(err))
+	}
+}
+
 // The environment read is the calling sandbox's credential variables and the
 // sentinel delivered in each, as the pool agent last delivered them, and
 // nobody else's.

@@ -283,7 +283,7 @@ func TestGatewayRefusesWhatItHasNoValueFor(t *testing.T) {
 	if seen, provided := f.requests(); len(seen) != 0 || provided != 0 {
 		t.Fatalf("sent anyway: gateway %d, provider %d", len(seen), provided)
 	}
-	rows := waitForBlockedRows(t, f.dsn, 1)
+	rows := waitForAuditRows(t, f.dsn, true, 1)
 	if rows[0].AppliedRuleID != "anthropic" || strings.Contains(rows[0].RequestHeaders, gatewayReal) {
 		t.Fatalf("row %+v", rows[0])
 	}

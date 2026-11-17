@@ -173,7 +173,7 @@ func TestHTTPProxyRefusesARequestWhoseSentinelCannotResolve(t *testing.T) {
 		t.Fatalf("resolver asked %d times, want it asked again inside the window", calls)
 	}
 
-	rows := waitForBlockedRows(t, dsn, 1)
+	rows := waitForAuditRows(t, dsn, true, 1)
 	if len(rows) != 1 {
 		t.Fatalf("blocked rows = %d, want one", len(rows))
 	}
@@ -255,8 +255,10 @@ func (r *rotationResolver) Resolve(_ context.Context, req secrets.ResolveRequest
 
 // The 401 retry's displaced-value candidate covers only the sentinels that
 // rotated lately. With the control plane gone after the rejection, sending it
-// would put every other sentinel on the wire as itself, so the upstream's 401 is
-// passed through instead (ADR 26-10-14-482 §2).
+// would put every other sentinel on the wire as itself, so it is not sent, and
+// the sandbox is answered 503 rather than the upstream's 401: the fresh resolve
+// never said the refused value is the credential (ADR 26-10-14-482 §2,
+// ADR 26-11-17-078 §2).
 func TestHTTPProxyRetrySendsNoSentinelThePreviousValueCannotCover(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -306,8 +308,8 @@ func TestHTTPProxyRetrySendsNoSentinelThePreviousValueCannotCover(t *testing.T) 
 		t.Fatalf("first request status = %d, want 200", status)
 	}
 	time.Sleep(100 * time.Millisecond) // A's first value expires
-	if status := send(); status != http.StatusUnauthorized {
-		t.Fatalf("second request status = %d, want the upstream's own 401", status)
+	if status := send(); status != http.StatusServiceUnavailable {
+		t.Fatalf("second request status = %d, want 503: the retry could not resolve", status)
 	}
 
 	mu.Lock()
@@ -319,6 +321,77 @@ func TestHTTPProxyRetrySendsNoSentinelThePreviousValueCannotCover(t *testing.T) 
 	}
 	if len(sawB) != 2 {
 		t.Fatalf("upstream saw %d requests, want 2: the retry must not be sent", len(sawB))
+	}
+}
+
+// A refused credential whose fresh resolve fails transiently (the control
+// plane gone, or not taking the pool's own assertion after a host sleep) is not
+// passed through as the upstream's 401, which a harness reads as a dead login.
+// The sandbox gets the proxy's 503, which it retries. The upstream's refusal is
+// still audited as the exchange it was, and still reported, since the upstream
+// did refuse the value it was sent (ADR 26-11-17-078 §2).
+func TestHTTPProxyAnswers503WhenTheRetryCannotResolve(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-NAPSENTINEL0000000000000000000000"
+	const value = "sk-ant-oat01-NAPREALVALUE000000000000000000000"
+	resolver := &outageResolver{value: value}
+	var hits atomic.Int32
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		// The control plane stops answering between the refusal and the
+		// retry's fresh resolve.
+		resolver.takeDown()
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	defer origin.Close()
+
+	var dsn string
+	_, client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
+		dsn = cfg.DatabaseDSN
+		cfg.Secrets.ResolveRetrySeconds = 1
+	})
+
+	status, header, body := sendWithAuth(ctx, t, client, origin.URL, "Bearer "+sentinel)
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d (%q), want 503, never the upstream's 401", status, body)
+	}
+	if got := header.Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After = %q, want the configured window, 1", got)
+	}
+	if got := header.Get("X-Should-Retry"); got != "true" {
+		t.Fatalf("X-Should-Retry = %q, want true", got)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Fatalf("upstream received %d requests, want 1: there is nothing to retry with", n)
+	}
+
+	reports := waitForReports(t, &resolver.reportLog, 1)
+	if len(reports) != 1 || reports[0].Outcome != secrets.OutcomeRejected || reports[0].Sentinel != sentinel {
+		t.Fatalf("reports = %+v, want one rejection of the sentinel", reports)
+	}
+
+	rows := waitForAuditRows(t, dsn, true, 1)
+	if len(rows) != 1 {
+		t.Fatalf("blocked rows = %d, want one", len(rows))
+	}
+	row := rows[0]
+	if row.Status != http.StatusServiceUnavailable {
+		t.Fatalf("row status = %d, want 503", row.Status)
+	}
+	if !strings.HasPrefix(row.BlockedReason, "credential unavailable: ") || !strings.Contains(row.BlockedReason, "control plane unreachable") {
+		t.Fatalf("row reason = %q, want it to say the credential could not be resolved, and why", row.BlockedReason)
+	}
+	if strings.Contains(row.RequestHeaders, value) {
+		t.Fatalf("row headers = %q, want never the value", row.RequestHeaders)
+	}
+	exchanges := waitForAuditRows(t, dsn, false, 1)
+	if len(exchanges) != 1 || exchanges[0].Status != http.StatusUnauthorized {
+		t.Fatalf("exchanges = %+v, want the upstream's 401 recorded once", exchanges)
+	}
+	if strings.Contains(exchanges[0].RequestHeaders, value) {
+		t.Fatalf("exchange headers = %q, want never the value", exchanges[0].RequestHeaders)
 	}
 }
 
