@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -301,7 +302,7 @@ func TestWriterRefusesAMemberNamedLikeTheSums(t *testing.T) {
 }
 
 // The point of the format is that it is not ours: extract the archive and
-// `sha256sum -c` checks it, awkward names included.
+// GNU `sha256sum -c` checks it, awkward names included.
 func TestSumsAreCheckedBySha256sum(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// The names below hold a backslash, a newline and a carriage return,
@@ -309,10 +310,7 @@ func TestSumsAreCheckedBySha256sum(t *testing.T) {
 		// them to for sha256sum to check.
 		t.Skip("windows file names cannot hold these characters")
 	}
-	sha256sum, err := exec.LookPath("sha256sum")
-	if err != nil {
-		t.Skip("sha256sum is not installed")
-	}
+	sha256sum := gnuSha256sum(t)
 	// "Icon\r" is macOS's folder-icon file, and sha256sum -c strips a trailing
 	// carriage return from an unescaped line.
 	names := []string{"plain", "with space", "back\\slash", "new\nline", "Icon\r", "carriage\rreturn"}
@@ -357,4 +355,37 @@ func TestSumsAreCheckedBySha256sum(t *testing.T) {
 	if strings.Count(string(out), "OK") != len(names) {
 		t.Fatalf("sha256sum checked:\n%s\nwant %d files", out, len(names))
 	}
+}
+
+// gnuSha256sum finds GNU coreutils' sha256sum, the reader the format is held
+// to (ADR 0123 §8), or skips naming what it found instead. Another
+// implementation is not a stand-in: uutils coreutils 0.10.0, Ubuntu 26.04's
+// default sha256sum, writes the same escaped lines for a name holding a
+// backslash, newline or carriage return, but cannot check them, its own
+// included. Ubuntu 26.04 also installs GNU's as gnusha256sum, so that name is
+// tried first. A sha256sum that refuses --version is not GNU's either.
+func gnuSha256sum(t *testing.T) string {
+	t.Helper()
+	var others []string
+	for _, name := range []string{"gnusha256sum", "sha256sum"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		out, err := exec.CommandContext(t.Context(), path, "--version").Output()
+		if err != nil {
+			others = append(others, fmt.Sprintf("%s refuses --version (%v)", path, err))
+			continue
+		}
+		version, _, _ := strings.Cut(string(out), "\n")
+		if strings.Contains(version, "(GNU coreutils)") {
+			return path
+		}
+		others = append(others, fmt.Sprintf("%s is %q", path, version))
+	}
+	if len(others) == 0 {
+		t.Skip("sha256sum is not installed")
+	}
+	t.Skipf("no GNU coreutils sha256sum, whose escaped lines are what the format promises: %s", strings.Join(others, "; "))
+	return ""
 }
