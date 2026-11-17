@@ -118,6 +118,55 @@ func TestProviderManagerFactoryCachesProviderInstances(t *testing.T) {
 	}
 }
 
+// A changed instance row rebuilds its provider, and the previous one is closed
+// before the new one is handed to anyone. A VM-backed provider's Close powers
+// its VMs off in order, which takes seconds, and the new provider starts VMs on
+// the same pool disks: published first, a pool reconcile could boot a second
+// guest on a disk the first still had mounted.
+func TestProviderManagerClosesThePreviousProviderBeforePublishingItsReplacement(t *testing.T) {
+	ctx := context.Background()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
+	var built []*fakeProvider
+	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		provider := &fakeProvider{image: "remote:latest"}
+		built = append(built, provider)
+		return provider, nil
+	})
+	instance := &model.SandboxProviderInstance{ID: "provider-1", Type: "remote", UpdatedAt: time.Now().UTC()}
+	if _, err := manager.ResolveInstance(ctx, instance); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	changed := *instance
+	changed.UpdatedAt = instance.UpdatedAt.Add(time.Second)
+
+	var resolvedDuringClose atomic.Bool
+	built[0].onClose = func() {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _ = manager.ResolveInstance(ctx, &changed)
+		}()
+		select {
+		case <-done:
+			resolvedDuringClose.Store(true)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	replacement, err := manager.ResolveInstance(ctx, &changed)
+	if err != nil {
+		t.Fatalf("resolve changed: %v", err)
+	}
+	if !built[0].closed {
+		t.Fatal("previous provider was not closed")
+	}
+	if resolvedDuringClose.Load() {
+		t.Fatal("the replacement provider was handed out while the previous one was still closing")
+	}
+	if replacement != built[1] {
+		t.Fatal("expected the rebuilt provider")
+	}
+}
+
 // Two first resolves of one instance at once — a pool reconcile and the
 // startup pass over every instance, which run together at every start — build
 // it once. Built twice, the one cached second closed the first, which was
@@ -274,10 +323,14 @@ type fakeProvider struct {
 	removeProjectID string
 	initErr         error
 	onInitialize    func(*model.SandboxProviderInstance)
+	onClose         func()
 	closed          bool
 }
 
 func (p *fakeProvider) Close() error {
+	if p.onClose != nil {
+		p.onClose()
+	}
 	p.closed = true
 	return nil
 }

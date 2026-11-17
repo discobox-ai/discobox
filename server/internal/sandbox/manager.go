@@ -407,11 +407,15 @@ func (m *ProviderManager) RemoveProjectResources(ctx context.Context, projectID 
 	return errors.Join(errs...)
 }
 
-// Shutdown closes registered providers that implement Close.
+// Shutdown closes every provider, all at once: a VM-backed provider's Close
+// powers its VMs off in order, and one instance's wait is no reason for
+// another's to start later.
 func (m *ProviderManager) Shutdown() {
+	var wg sync.WaitGroup
 	for _, provider := range m.snapshotAllProviders() {
-		_ = provider.Close()
+		wg.Go(func() { closeProvider(provider) })
 	}
+	wg.Wait()
 }
 
 func (m *ProviderManager) factory(providerType string) ProviderFactory {
@@ -453,13 +457,21 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 		closeProvider(provider)
 		return nil, err
 	}
-	m.mu.Lock()
+	// The previous provider is closed before this one is published, not after:
+	// a VM-backed provider's Close powers its VMs off in order, which takes
+	// seconds, and the new one starts VMs on the same pool disks. Until it is
+	// published every caller misses the cache (the row has moved on) and
+	// waits on this build's lock, so no second guest boots on a disk the
+	// first still has mounted.
+	m.mu.RLock()
 	previous := m.cache[instance.ID].provider
-	m.cache[instance.ID] = cachedProvider{provider: provider, updatedAt: instance.UpdatedAt}
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	if previous != nil && previous != provider {
 		closeProvider(previous)
 	}
+	m.mu.Lock()
+	m.cache[instance.ID] = cachedProvider{provider: provider, updatedAt: instance.UpdatedAt}
+	m.mu.Unlock()
 	return provider, nil
 }
 

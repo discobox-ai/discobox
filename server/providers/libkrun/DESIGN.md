@@ -111,7 +111,7 @@ the VM in the server process.
 
 `StopVM` requests an orderly poweroff over the lifecycle socket, escalating to
 `SIGTERM` and then `SIGKILL`, and preserves `data.raw` and `cache.raw` for
-repair. `InspectVM` reports a pool with no running VM but a data disk as
+repair. `Close`, on server shutdown, stops every VM that way, all at once. `InspectVM` reports a pool with no running VM but a data disk as
 stopped, so the engine replaces the VM in place and keeps its disks. `DeleteVM`
 is reserved for an authorized pool deletion and removes the disks and the
 runtime directory.

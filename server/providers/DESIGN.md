@@ -164,6 +164,23 @@ survives is `StopVM`'s guarantee — the pool's data and cache disks — which i
 sufficient, because the guest keeps all image, container, and volume state on
 them. The cost is restart latency, not data.
 
+A server shutdown keeps that guarantee. The `vz` and `libkrun` drivers' `Close`
+stops every VM as their `StopVM` does — an orderly poweroff, escalating to a
+hard stop only after its bounded wait — never a bare kill, because the guest's
+Docker may be writing to its disks at that moment (a first box's pulled layers,
+an unpacked bundle), and a dirty unmount there breaks every later box in the
+pool. A driver stops its VMs all at once, and `ProviderManager.Shutdown` closes
+every provider instance at once, so a slow guest costs the shutdown its own
+wait, not one per pool. The death-with-the-server mechanisms are for a server
+that crashes or is killed.
+
+`Close` also runs when an instance's row changes and its provider is rebuilt.
+The manager closes the previous provider before it publishes the new one, so
+the new driver cannot boot a second guest on disks the old one still has
+mounted; and a closed driver refuses to start a VM (`ErrPoolNotReachable`, so
+the caller retries against the new provider), so a reconcile still holding the
+old one cannot either.
+
 `DeleteVM` is the only thing that removes a disk, and it is reserved for an
 authorized pool deletion; `StopVM` is what repair uses.
 

@@ -255,3 +255,10 @@
   counts every five seconds (#1145). A driver that refines a held phase
   reports the held phase again once its refinement is over, or the hold
   restates the refinement to the end of the held call.
+- A VM-backed driver's `Close` runs on a provider rebuild (an instance's row
+  changed), not only at server shutdown, and it powers VMs off in order, which
+  takes seconds. Anything that publishes a replacement provider must close the
+  previous one first: the replacement's driver knows no running VM and would
+  boot a second guest on the same `data.raw` and `cache.raw` (#1317). For the
+  same reason a closed driver must refuse to start a VM: a reconcile can still
+  hold the old provider, and `Close` stops only the VMs it found.

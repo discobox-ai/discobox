@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +79,11 @@ const (
 	consoleLogName = "console.log"
 )
 
+// errDriverClosed refuses a VM start on a closed driver. It is the pool not
+// taking traffic yet, so the caller retries, and a retry resolves the
+// provider that replaced this one.
+var errDriverClosed = fmt.Errorf("vz: the VM driver is closed: %w", sandbox.ErrPoolNotReachable)
+
 var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 // StreamSink receives control-plane connections opened by a guest. The driver
@@ -127,8 +134,11 @@ type Driver struct {
 	streams      StreamSink
 	progress     sandbox.PoolProgressReporter
 
-	mu       sync.Mutex
-	vms      map[string]*guestVM
+	mu  sync.Mutex
+	vms map[string]*guestVM
+	// closed is set by Close, which stops the VMs it finds then; a VM started
+	// after it would outlive its driver on disks a replacement now owns.
+	closed   bool
 	wake     *vzvm.WakeMonitor
 	wakeDone chan struct{}
 }
@@ -201,21 +211,30 @@ func (d *Driver) Check(context.Context) error {
 	return vzvm.Supported()
 }
 
-// Close tears down every VM. Unlike libkrun's launcher there is nothing to
+// Close powers off every VM. Unlike libkrun's launcher there is nothing to
 // leave running for the next process to adopt: the VMs belong to this one.
+//
+// Each VM is stopped the way StopVM stops it, not torn down: a guest's Docker
+// may be writing to its disks when the server shuts down, and a hard stop is a
+// dirty unmount of both that every later box in the pool inherits. The VMs stop
+// all at once, so a slow guest costs the shutdown its own wait rather than one
+// per pool, and StopVM's escalation to a hard stop bounds that wait.
 func (d *Driver) Close() error {
 	if d.wake != nil {
 		d.wake.Close()
 		<-d.wakeDone
 	}
 	d.mu.Lock()
-	running := d.vms
-	d.vms = map[string]*guestVM{}
+	d.closed = true
+	poolIDs := slices.Collect(maps.Keys(d.vms))
 	d.mu.Unlock()
-	for _, guest := range running {
-		guest.close()
+	errs := make([]error, len(poolIDs))
+	var wg sync.WaitGroup
+	for i, poolID := range poolIDs {
+		wg.Go(func() { errs[i] = d.StopVM(context.Background(), poolID) })
 	}
-	return nil
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // syncClocksOnWake uses the host's existing Docker-over-vsock connection.
@@ -321,6 +340,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.closed {
+		return nil, errDriverClosed
+	}
 	// A VM that died while this call was resolving is replaced, not reused.
 	if existing, ok := d.vms[poolID]; ok {
 		if existing.vm.Running() {
