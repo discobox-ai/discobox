@@ -64,11 +64,15 @@ func (r *Reconciler) Run(ctx context.Context) {
 	if err := r.ensureEnabledDir(); err != nil {
 		logger.Warn("monitors: make the enabled directory", "dir", r.Dirs.Enabled, "error", err)
 	}
-	var changes <-chan fsnotify.Event
+	// Errors as well as Events: fsnotify sends both from one reader on
+	// unbuffered channels, so an unread error (an inotify overflow) would
+	// hold back every later event. Both are nil with no watch.
+	var events <-chan fsnotify.Event
+	var errs <-chan error
 	if watcher, err := fsnotify.NewWatcher(); err == nil {
 		defer watcher.Close()
 		if err := watcher.Add(r.Dirs.Enabled); err == nil {
-			changes = watcher.Events
+			events, errs = watcher.Events, watcher.Errors
 		}
 	}
 	ticker := time.NewTicker(resync)
@@ -78,15 +82,44 @@ func (r *Reconciler) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-changes:
-			// A burst of writes is one change: an enable is a temp file and a
-			// rename.
-			if sleep(ctx, 200*time.Millisecond) != nil {
-				return
-			}
 		case <-ticker.C:
+			continue
+		case <-events:
+		case err := <-errs:
+			// An error is a change: what was lost is read again by the sync.
+			r.watchError(logger, err)
+		}
+		if r.settle(ctx, logger, events, errs) != nil {
+			return
 		}
 	}
+}
+
+// debounce is how long a change waits for the rest of its burst: an enable
+// is a temp file and a rename.
+const debounce = 200 * time.Millisecond
+
+// settle receives events and errors until the debounce has passed, so a
+// burst costs one sync, and a flood is read at the rate it comes rather than
+// one event a sync.
+func (r *Reconciler) settle(ctx context.Context, logger *slog.Logger, events <-chan fsnotify.Event, errs <-chan error) error {
+	timer := time.NewTimer(debounce)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return nil
+		case <-events:
+		case err := <-errs:
+			r.watchError(logger, err)
+		}
+	}
+}
+
+func (r *Reconciler) watchError(logger *slog.Logger, err error) {
+	logger.Debug("monitors: watch the enabled directory", "dir", r.Dirs.Enabled, "error", err)
 }
 
 // Sync is one convergence: start or relaunch the runner of each enabled
