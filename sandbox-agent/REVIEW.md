@@ -904,6 +904,13 @@ user waits on every single start.
   long enough for a status check-in to raise the band and the explainer over
   a review that then said `clean`. A new early observer, or a new way files
   are laid down, keeps that order.
+- **Never call an fsnotify watcher's `Add` or `Remove` on the goroutine that
+  drains its `Events` and `Errors`** (`terminal/capture_watch.go`
+  `forwardCaptureEvents`). fsnotify's Windows backend services `Add` and
+  `Remove` on the thread that sends those events, `Errors` is unbuffered, and
+  a `Remove` sends while it is serviced: the loop waits on the reply, the
+  thread waits on the send, and capture stops for good. Linux's inotify can't
+  hit it, so only the `windows` job shows it, as a flake (#1303).
 
 ## Clearing caches
 

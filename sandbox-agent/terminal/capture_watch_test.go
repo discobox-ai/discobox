@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -55,12 +56,18 @@ func TestCaptureNotificationsFollowAtomicWritesAndDirectoryReplacement(t *testin
 	wait("first")
 	write("second") // Atomic replacement must not detach the watch.
 	wait("second")
-	if err := os.RemoveAll(filepath.Join(home, "config")); err != nil {
-		t.Fatal(err)
+	// Deleting watched directories is where Windows' fsnotify backend sends
+	// events and errors while servicing Remove; repeat it to catch a loop that
+	// stops draining them (#1303).
+	for i := range 50 {
+		if err := os.RemoveAll(filepath.Join(home, "config")); err != nil {
+			t.Fatal(err)
+		}
+		wait("")
+		value := fmt.Sprintf("third-%d", i)
+		write(value)
+		wait(value)
 	}
-	wait("")
-	write("third")
-	wait("third")
 	// Windows rejects renaming a directory with watched descendants;
 	// fsnotify's rename-nested-watched-dir fixture excludes it too. Keep the
 	// creation, atomic replacement, deletion and cancellation checks above/below.
