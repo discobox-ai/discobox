@@ -1,7 +1,8 @@
 # 26-11-06-596 — Built-in harnesses have one declaration and one vendor adapter
 
-- **Status**: Proposed (would narrow [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §3's authored feature layout for built-ins: those files become generated bundle content; its provision protocol and script-file rule remain)
+- **Status**: Accepted (narrows [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §3's authored feature layout for built-ins: those files become generated bundle content; its provision protocol and script-file rule remain)
 - **Date**: 2026-11-06
+  Accepted by the owner by merging #747, 2026-11-17.
 - **Issue**: [#745](https://github.com/discobox-ai/discobox/issues/745)
 
 ## Context
