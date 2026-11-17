@@ -379,6 +379,10 @@ flowchart LR
   than fourteen days, always keeping the newest: releases and tags with
   `MAIN_RELEASE_TOKEN` (contents on that repository alone), then ghcr versions
   whose every tag is a deleted build's with this repository's `GITHUB_TOKEN`.
+  That token cannot list the organization's packages, so the images are
+  addressed by name: those the build's `release.json` pins at its version. An
+  image a later build no longer pushes keeps its main-build tags until deleted
+  by hand.
   Untagged versions stay: reproducible bundles share platform manifests across
   builds and releases. A main CLI whose build is gone says so when it stages
   its server or images, and how to install the newest.

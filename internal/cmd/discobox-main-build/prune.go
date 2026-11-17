@@ -78,10 +78,6 @@ type githubRelease struct {
 	Draft bool `json:"draft"`
 }
 
-type githubPackage struct {
-	Name string `json:"name"`
-}
-
 type packageVersion struct {
 	ID        int64     `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
@@ -95,9 +91,14 @@ type packageVersion struct {
 type pruner struct {
 	releases, packages *client
 	repo, owner        string
-	cutoff             time.Time
-	dryRun             bool
-	log                io.Writer
+	// images are the owner's discobox-* container packages to prune, by
+	// name. GitHub lists an organization's packages only to a classic token,
+	// never to the workflow's GITHUB_TOKEN, which can still read and delete a
+	// named package's versions when its repository pushed them.
+	images []string
+	cutoff time.Time
+	dryRun bool
+	log    io.Writer
 }
 
 // prune deletes the main builds older than the cutoff, the newest published
@@ -105,8 +106,15 @@ type pruner struct {
 // that are gone. A draft is a publish that failed partway and is never what
 // the channel serves, so it is never the one kept, and it has no tag to delete.
 // Releases first, so a build whose images could not be deleted is no longer
-// installable, and the next run retries its images on their own.
+// installable, and the next run retries its images on their own. Only a
+// discobox-* package is ever pruned, and an image that is not one fails the
+// run before anything is deleted.
 func (p pruner) prune(ctx context.Context) error {
+	for _, name := range p.images {
+		if !strings.HasPrefix(name, "discobox-") {
+			return fmt.Errorf("image %q is not a discobox-* package", name)
+		}
+	}
 	releases, err := pages[githubRelease](ctx, p.releases, "/repos/"+p.repo+"/releases")
 	if err != nil {
 		return err
@@ -148,9 +156,13 @@ func (p pruner) prune(ctx context.Context) error {
 	return p.pruneImages(ctx, kept)
 }
 
-// pruneImages deletes each discobox-* image version older than the cutoff
-// whose every tag is a main build's that is no longer kept. A version that
-// also carries a release's tag, or :latest, is never one.
+// pruneImages deletes each version of p.images older than the cutoff whose
+// every tag is a main build's that is no longer kept. A version that also
+// carries a release's tag, or :latest, is never one.
+//
+// The images are the ones the build being published pushed (releaseImages),
+// so an image a later build no longer pushes is no longer pruned: its old
+// main-build tags stay until it is deleted by hand.
 //
 // An untagged version, an index's per-platform or attestation manifest, is
 // never deleted, even once the index that named it is gone. The bundles are
@@ -164,15 +176,8 @@ func (p pruner) pruneImages(ctx context.Context, kept map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	pkgs, err := pages[githubPackage](ctx, p.packages, base+"?package_type=container")
-	if err != nil {
-		return err
-	}
-	for _, pkg := range pkgs {
-		if !strings.HasPrefix(pkg.Name, "discobox-") {
-			continue
-		}
-		path := base + "/container/" + url.PathEscape(pkg.Name) + "/versions"
+	for _, name := range p.images {
+		path := base + "/container/" + url.PathEscape(name) + "/versions"
 		versions, err := pages[packageVersion](ctx, p.packages, path)
 		if err != nil {
 			return err
@@ -192,7 +197,7 @@ func (p pruner) pruneImages(ctx context.Context, kept map[string]bool) error {
 			if !prunable {
 				continue
 			}
-			fmt.Fprintf(p.log, "deleting %s:%s\n", pkg.Name, strings.Join(tags, ","))
+			fmt.Fprintf(p.log, "deleting %s:%s\n", name, strings.Join(tags, ","))
 			if p.dryRun {
 				continue
 			}
