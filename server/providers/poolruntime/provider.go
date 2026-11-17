@@ -649,7 +649,7 @@ func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool, b
 		return false, nil
 	})
 	if errors.Is(err, errPoolWaitExpired) && lastErr != nil {
-		return nil, lastErr
+		return nil, withPoolFailure(lastErr, err)
 	}
 	if err != nil {
 		return nil, err
@@ -686,7 +686,12 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox, budge
 		return err == nil, err
 	})
 	if errors.Is(err, errPoolWaitExpired) {
-		return nil, &sandbox.PoolFailure{PoolID: sb.PoolID, Message: "timed out waiting for the pool agent to become ready"}
+		message := "timed out waiting for the pool agent to become ready"
+		var expired *poolWaitExpiredWithFailure
+		if errors.As(err, &expired) {
+			message += "; " + expired.Error()
+		}
+		return nil, &sandbox.PoolFailure{PoolID: sb.PoolID, Message: message}
 	}
 	if err != nil {
 		return nil, err
@@ -697,6 +702,35 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox, budge
 // errPoolWaitExpired is waitForPool giving up on a pool that went quiet. Each
 // caller turns it into the error that explains its own wait.
 var errPoolWaitExpired = errors.New("pool wait expired")
+
+// poolWaitExpiredWithFailure is errPoolWaitExpired on a pool that has a
+// reconcile failure recorded. A created pool's failure does not end the wait
+// (settledFailure), but once the wait runs out it is the likeliest reason the
+// pool never answered, so the caller's error carries it.
+type poolWaitExpiredWithFailure struct{ message string }
+
+func (e *poolWaitExpiredWithFailure) Error() string {
+	return "the pool's last reconcile failed: " + e.message
+}
+
+func (e *poolWaitExpiredWithFailure) Is(target error) bool { return target == errPoolWaitExpired }
+
+// poolWaitExpired is the expiry of a wait on pool.
+func poolWaitExpired(pool *model.Pool) error {
+	if pool.ErrorMessage == nil {
+		return errPoolWaitExpired
+	}
+	return &poolWaitExpiredWithFailure{message: *pool.ErrorMessage}
+}
+
+// withPoolFailure adds to err the pool failure a wait's expiry recorded, if any.
+func withPoolFailure(err, expiry error) error {
+	var expired *poolWaitExpiredWithFailure
+	if errors.As(expiry, &expired) {
+		return fmt.Errorf("%w; %s", err, expired.Error())
+	}
+	return err
+}
 
 // waitForPool polls attempt until it reports done, for as long as the pool is
 // worth waiting for. attempt is handed the pool as just read, and ends the wait
@@ -786,7 +820,7 @@ func (p *Provider) waitForPool(ctx context.Context, projectID, poolID string, bu
 			return err
 		}
 		if poolCapacityWaitTimeout > 0 && !poolWaitNow().Before(deadline) {
-			return errPoolWaitExpired
+			return poolWaitExpired(pool)
 		}
 		probeCtx, cancel := context.WithDeadline(ctx, deadline)
 		done, err := attempt(probeCtx, pool)
@@ -805,7 +839,7 @@ func (p *Provider) waitForPool(ctx context.Context, projectID, poolID string, bu
 			return err
 		}
 		if !eligible && (!poolWaitNow().Before(deadline) || poolCapacityWaitTimeout <= 0) {
-			return errPoolWaitExpired
+			return poolWaitExpired(pool)
 		}
 		timer := time.NewTimer(min(poolCapacityPollInterval, max(time.Until(deadline), time.Duration(0))))
 		select {
@@ -827,6 +861,15 @@ func settledFailure(pool *model.Pool) error {
 	// A failure is settled only when the latest intent was attempted and lost;
 	// a bumped generation means a retry is pending.
 	if pool.ErrorMessage == nil || !pool.Converged() {
+		return nil
+	}
+	// A created pool's reconcile failure is never terminal (server/providers
+	// REVIEW.md): it keeps its state and its runtime, which goes on serving
+	// what it hosts while the pool is driven back to health. A create waiting
+	// on it is ended by the wait's own budget and ceiling, not by a recorded
+	// message the next attempt may already disprove — taking one for the
+	// box's settled failure left a box that ran listed as failed (#1300).
+	if pool.EverCreated() {
 		return nil
 	}
 	// Startup invalidates the previous runtime verdict as well as confidence

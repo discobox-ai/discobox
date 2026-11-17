@@ -1236,7 +1236,11 @@ still handed out, and a create is one attempt that settles the sandbox failed.
 When the lease cannot be acquired, the create marks the pool for reconcile and
 polls the driver on the placement wait's budget, ending early on a settled
 failure and at `poolAgentWaitCeiling` for recovery, since routine reconciles
-stamp progress too. Eligible initial bootstrap instead uses durable executor
+stamp progress too. Only a pool that never registered settles: a created
+pool whose reconcile or repair fails keeps its runtime and its state, with an
+`ErrorMessage` against the generation, and goes on serving, so a create waits
+it out on the budget and ceiling rather than settling the box with the pool's
+message while the box runs (#1300). Eligible initial bootstrap instead uses durable executor
 work evidence as described below. It polls the driver, not the row: the mark is drift, which
 bumps no generation, so the row reads converged throughout. Every other
 operation does not wait for the host: it retries once, after any reconcile the

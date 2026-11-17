@@ -38,8 +38,11 @@
   that generation (`offline` only when its heartbeat is also stale) and keeps
   being re-driven (`SchedulePoolRepair`), not latched. Do not add checks that
   treat every `state==failed` or `errorMessage` pool as terminal (the pool
-  reconciler's pending stamp and `failReconcile`, and the docker watcher, all
-  special-case `EverCreated`).
+  reconciler's pending stamp and `failReconcile`, the docker watcher, and
+  `poolruntime`'s `settledFailure`, all special-case `EverCreated`). A
+  sandbox waiting on a pool is where this was missed twice (#454, #1300): a
+  created pool's message ended a create's wait, and the box that then ran was
+  settled `failed` with it.
 - Keep Docker out of `poolruntime` and `internal/sandbox`. Container mechanics
   belong in `dockerworker.Engine`; anything backend-specific belongs behind
   `dockerworker.Driver`. A new Docker backend implements only the driver: VM
