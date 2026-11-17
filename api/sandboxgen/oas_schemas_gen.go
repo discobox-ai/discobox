@@ -5734,8 +5734,8 @@ func (s *SandboxAutostopConfirmation) SetWakeAt(val OptDateTime) {
 // What the sandbox did on being told it was thawed.
 // Ref: #/components/schemas/SandboxAutostopResumption
 type SandboxAutostopResumption struct {
-	// Paths of the wakes that were due and were moved into ~/.discobox/wake/.done/, oldest first. Text
-	// the sandbox chose.
+	// Paths of the wakes that were due, and of the notes kept for the next start, moved into ~/.
+	// discobox/wake/.done/, oldest first. Text the sandbox chose.
 	Wakes []string `json:"wakes"`
 }
 

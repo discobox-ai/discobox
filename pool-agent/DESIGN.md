@@ -731,7 +731,7 @@ a pause that fails is an error, and a sandbox not running a typed 409
 than boots, so an explicit start, the scheduled wake's, and every on-use
 `EnsureSandboxRunning` alike — then delivers the runtime-config document and
 calls the sandbox agent's pool-only `POST .../autostop/resumed`, which sets
-aside the wakes now due. Stop, restart, archive, delete and a cache clear act
+aside the wakes now due and the notes kept for the next start. Stop, restart, archive, delete and a cache clear act
 on a suspended sandbox as on a running one; Docker delivers the stop signal as
 it thaws.
 

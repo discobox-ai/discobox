@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 )
 
 var now = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
@@ -57,15 +59,42 @@ func TestSleepKeepsANoteWithSpacesAndPunctuationWhole(t *testing.T) {
 	if note, _ := os.ReadFile(filepath.Join(d.wake, "sleep")); strings.TrimSpace(string(note)) != text {
 		t.Fatalf("note = %q, want %q", note, text)
 	}
-	// A note is a wake's contents, so with no wake it is refused for that
-	// reason, not as a stray argument, and nothing is written.
-	d = testDirs(t)
-	err := power(d, []string{"sleep", "--note", text}, now, io.Discard)
-	if err == nil || err.Error() != "--note needs --wake-in or --wake-at" {
-		t.Fatalf("sleep --note with no wake: err = %v", err)
+	if _, err := os.Stat(filepath.Join(d.wake, autostop.WakeNextDir, "sleep")); !os.IsNotExist(err) {
+		t.Fatalf("a note with a wake was also kept for the next start: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(d.sleep, "agent")); !os.IsNotExist(err) {
-		t.Fatalf("sleep requested despite the refusal: %v", err)
+}
+
+// A note with no wake is accepted and kept for the next start, out of the
+// wake directory's reading, so it asks for no start (ADR 26-11-17-583).
+func TestSleepWithANoteAndNoWakeKeepsItForTheNextStart(t *testing.T) {
+	const text = "discobox#518: PR 1262 green, ready (a96f8d1)"
+	d := testDirs(t)
+	var out strings.Builder
+	if err := power(d, []string{"sleep", "--note", text}, now, &out); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(d.wake, autostop.WakeNextDir, "sleep")
+	if note, _ := os.ReadFile(path); strings.TrimSpace(string(note)) != text {
+		t.Fatalf("note = %q, want %q", note, text)
+	}
+	if got := mtime(t, path); !got.Equal(now) {
+		t.Fatalf("note dated %v, want now", got)
+	}
+	if wakes := autostop.ReadRequests(d.wake); len(wakes) != 0 {
+		t.Fatalf("wakes = %v, want none: a note asks for no start", wakes)
+	}
+	if got := mtime(t, filepath.Join(d.sleep, "agent")); !got.Equal(now) {
+		t.Fatalf("sleep requested at %v, want now", got)
+	}
+	if strings.Contains(out.String(), "warning") {
+		t.Fatalf("out = %q, want no warning that nothing will wake it: nothing was asked to", out.String())
+	}
+	out.Reset()
+	if err := power(d, []string{"status"}, now, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "note for the next start:\n  sleep\t") {
+		t.Fatalf("status = %q, want the note listed", out.String())
 	}
 }
 

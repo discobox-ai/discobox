@@ -719,8 +719,9 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		return err
 	}
 	manager, execManager, localStore := built.terminals, built.execs, built.store
-	// The wakes that fell due while the sandbox was down are handed to the
-	// harness this boot launches, and nowhere else (ADR 26-10-16-337 §7).
+	// The wakes that fell due while the sandbox was down, and the notes left
+	// for the next start, are handed to the harness this boot launches, and
+	// nowhere else (ADR 26-10-16-337 §7, ADR 26-11-17-583).
 	// They are taken before the launch starts, so an attach that beats
 	// boot to the primary carries them as well as boot would.
 	if paths, err := built.autostop.TakeDueWakes(); err != nil {

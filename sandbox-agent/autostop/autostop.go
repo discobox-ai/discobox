@@ -72,6 +72,12 @@ const (
 	// readable (ADR 26-10-16-337 §7). Its leading "." keeps it from being read
 	// as a wake.
 	WakeDoneDir = ".done"
+	// WakeNextDir holds the notes for the next start, inside the wake
+	// directory: every regular non-dot file in it is a note with no time,
+	// set aside into WakeDoneDir with the wakes that are due by whatever next
+	// starts or thaws the sandbox (ADR 26-11-17-583). A note asks for no
+	// start, and its leading "." keeps it from being read as a wake.
+	WakeNextDir = ".next"
 	// DefaultControlPlaneMarker exists while the control plane holds the
 	// sandbox's power, so a process in the sandbox — discobox-power above all
 	// — can tell whether a wake will be acted on (ADR 26-10-16-337 §8). It is
@@ -557,13 +563,14 @@ func (p *Policy) Confirm(reason Reason) (Request, error) {
 	return pending, nil
 }
 
-// TakeDueWakes moves every wake whose time has come into WakeDoneDir and
-// returns the moved files' paths, oldest first: what a boot hands the harness
-// it launches (ADR 26-10-16-337 §7). A boot is the only place a wake is handed
-// over, so one that falls due while the sandbox runs stays where it is until
-// the boot after the next power-down — and the agent restarting within a boot
-// takes nothing (handoverMarker): it would park the wakes for a primary
-// launch that is not coming.
+// TakeDueWakes moves every wake whose time has come, and every note for the
+// next start, into WakeDoneDir and returns the moved files' paths, oldest
+// first: what a boot hands the harness it launches (ADR 26-10-16-337 §7,
+// ADR 26-11-17-583). A boot is the only place a wake is handed over, so one
+// that falls due while the sandbox runs stays where it is until the boot after
+// the next power-down — and the agent restarting within a boot takes nothing
+// (handoverMarker): it would park the wakes for a primary launch that is not
+// coming.
 func (p *Policy) TakeDueWakes() ([]string, error) {
 	if p == nil || p.wakeDir == "" {
 		return nil, nil
@@ -585,7 +592,9 @@ func (p *Policy) TakeDueWakes() ([]string, error) {
 // still running, so nothing is handed to a launch: the wakes now due are moved
 // into WakeDoneDir as a boot moves them, so the wake that brought the sandbox
 // back is not returned by its next power-down's confirmation and does not undo
-// its next sleep. It returns the moved files' paths, oldest first.
+// its next sleep. The notes for the next start go with them: this thaw is that
+// start, and a note left waiting would reach a later boot's harness stale.
+// It returns the moved files' paths, oldest first.
 //
 // A thaw is a start for the idle clock, as the agent's own start is for a
 // boot: the freeze stopped every terminal and client from counting, and the
@@ -605,24 +614,36 @@ func (p *Policy) Resumed() ([]string, error) {
 	if err != nil {
 		return paths, err
 	}
-	p.logger.Info("sandbox resumed from a suspend", "wakesDue", len(paths))
+	p.logger.Info("sandbox resumed from a suspend", "setAside", len(paths))
 	return paths, nil
 }
 
-// setAsideDueWakes moves every wake whose time has come into WakeDoneDir and
-// returns the moved files' paths, oldest first.
+// setAsideDueWakes moves every wake whose time has come, and every note for
+// the next start, into WakeDoneDir and returns the moved files' paths, oldest
+// first. A note keeps its name there unless a wake moved in the same pass
+// already took it (a pending "sleep" wake and a later "sleep" note), when it
+// takes the first free "<name>.<n>": one pass never moves two files onto one
+// path, so nothing it hands over is lost.
 func (p *Policy) setAsideDueWakes() ([]string, error) {
 	now := p.now().UTC()
-	var due []Request
+	type move struct {
+		Request
+		dir string
+	}
+	var due []move
 	for _, wake := range p.wakes() {
 		if !wake.At.After(now) {
-			due = append(due, wake)
+			due = append(due, move{wake, p.wakeDir})
 		}
+	}
+	next := filepath.Join(p.wakeDir, WakeNextDir)
+	for _, note := range ReadRequests(next) {
+		due = append(due, move{note, next})
 	}
 	if len(due) == 0 {
 		return nil, nil
 	}
-	sort.Slice(due, func(i, j int) bool { return due[i].At.Before(due[j].At) })
+	sort.SliceStable(due, func(i, j int) bool { return due[i].At.Before(due[j].At) })
 	done := filepath.Join(p.wakeDir, WakeDoneDir)
 	if err := os.MkdirAll(done, 0o755); err != nil {
 		return nil, err
@@ -632,11 +653,26 @@ func (p *Policy) setAsideDueWakes() ([]string, error) {
 			return nil, err
 		}
 	}
+	// Every wake's own name is reserved first: wakes in one directory never
+	// share a name, so only a note can have to step aside.
+	taken := make(map[string]bool, len(due))
+	for _, m := range due {
+		if m.dir == p.wakeDir {
+			taken[m.Name] = true
+		}
+	}
 	paths := make([]string, 0, len(due))
-	for _, wake := range due {
-		target := filepath.Join(done, wake.Name)
-		if err := os.Rename(filepath.Join(p.wakeDir, wake.Name), target); err != nil {
-			return paths, fmt.Errorf("hand over wake %s: %w", wake.Name, err)
+	for _, m := range due {
+		name := m.Name
+		if m.dir != p.wakeDir {
+			for n := 1; taken[name]; n++ {
+				name = fmt.Sprintf("%s.%d", m.Name, n)
+			}
+			taken[name] = true
+		}
+		target := filepath.Join(done, name)
+		if err := os.Rename(filepath.Join(m.dir, m.Name), target); err != nil {
+			return paths, fmt.Errorf("hand over wake %s: %w", m.Name, err)
 		}
 		paths = append(paths, target)
 	}

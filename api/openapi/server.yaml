@@ -2259,7 +2259,7 @@ components:
             description: What the sandbox did on being told it was thawed.
             properties:
                 wakes:
-                    description: Paths of the wakes that were due and were moved into ~/.discobox/wake/.done/, oldest first. Text the sandbox chose.
+                    description: Paths of the wakes that were due, and of the notes kept for the next start, moved into ~/.discobox/wake/.done/, oldest first. Text the sandbox chose.
                     items:
                         type: string
                     type: array
@@ -12205,7 +12205,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed:
         post:
-            description: Tells the sandbox its pool has just thawed it from a suspend (ADR 26-10-16-420 §4). Nothing booted, so the sandbox moves the wakes now due into ~/.discobox/wake/.done/ as a boot does, and the wake that brought it back is not returned again by its next power-down's confirmation. Only a token carrying the pool-only autostop scope may call it.
+            description: Tells the sandbox its pool has just thawed it from a suspend. Nothing booted, so the sandbox moves the wakes now due, and the notes kept for the next start, into ~/.discobox/wake/.done/ as a boot does, and the wake that brought it back is not returned again by its next power-down's confirmation. Only a token carrying the pool-only autostop scope may call it.
             operationId: resume-sandbox-autostop
             parameters:
                 - description: Project that owns the sandbox.
