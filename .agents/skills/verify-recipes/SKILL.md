@@ -240,10 +240,27 @@ and that the process started after the build (no `ps` in the image: walk
 - Drive it from a `-H shell` box: its `HTTPS_PROXY` is the box's bridge to the
   pool proxy, and `SSL_CERT_FILE` trusts the MITM CA. `d cp` a static binary in
   for anything the image lacks (python3, perl, curl are there).
-- An origin on this box at `172.17.0.1:<port>` is in the pool proxy's
-  `NO_PROXY`, so it is dialed directly. Anything else leaves through the outer
-  discobox's proxy — older code, HTTP/1.1-only MITM — so a public endpoint
-  cannot show what the dev pool proxy sends upstream.
+- An origin on this box at `172.17.0.1:<port>` may not be reachable: on a
+  dev pool whose proxy `NO_PROXY` is only `127.0.0.1,localhost,::1,discobox-pool-proxy`
+  (check `/proc/<proxy pid>/environ` in the pool container) it leaves through the
+  outer discobox's proxy and answers `502 ... connect: connection refused`, and
+  adding it to `/etc/discobox/proxy.env` does not help (seen 2026-11-17, #1282).
+  The pool's own loopback is refused by design. Everything else leaves through the
+  outer discobox's proxy — older code, HTTP/1.1-only MITM — so a public endpoint
+  cannot show what the dev pool proxy sends upstream, but the audit row does
+  (`swapped_secret_ids`, blocked reason; `python3` + `sqlite3` on the pool's
+  `.../pools/<pool>/audit.db`). `api.anthropic.com` answers `401` to any fake
+  `x-api-key`, which drives the refused-credential retry: `d run -d -H shell
+  --no-source -s ANTHROPIC_API_KEY=sk-ant-api03-fake@api.anthropic.com -p x`.
+- The pool's control-plane credential (the resolve token, a `401` from the
+  control plane): write a copy of the pool's `resolve-context.json` (in the
+  pool container, under `/var/lib/discobox/proxy/projects/<p>/pools/<pool>/`)
+  with a forged `token`, `mv` it into place, drive a request, and put the
+  agent's file back. The resolver reads the file on every ask. The agent
+  rewrites it 20 minutes (wall clock) after its own last mint, whatever is in
+  the file, so a forged one stands only until then: note the file's mtime
+  before you forge it and finish inside that window. Snapshot the agent's file
+  again for each run; an older copy may hold a token past its 30 minutes.
 - A self-signed TLS origin is refused (`502`, audited `blocked / policy`) until
   trusted: `discobox-access trust HOST:PORT --justification "..."` in the box, then
   `d trust request approve <treq>`.
