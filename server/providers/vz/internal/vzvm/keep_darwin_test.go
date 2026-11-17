@@ -164,8 +164,8 @@ func startAndForget(t *testing.T, guestDir, dir string) weak.Pointer[vz.VirtualM
 // the vz driver's StopVM does first.
 func requestStressShutdown(t *testing.T, vm *VM) {
 	t.Helper()
-	transport := &http.Transport{DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-		return vm.Connect(stressLifecyclePort)
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return vm.Connect(ctx, stressLifecyclePort)
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 15 * time.Second}

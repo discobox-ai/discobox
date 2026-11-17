@@ -3,6 +3,7 @@
 package vzvm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -272,22 +273,39 @@ func consoleDevice(path string) (*vz.VirtioConsoleDeviceSerialPortConfiguration,
 	return device, nil
 }
 
-// Connect opens a connection to a guest VSOCK port.
+// Connect opens a connection to a guest VSOCK port. It returns when ctx is
+// done or the VM is closed, whichever comes first: the framework may never
+// answer a connect to a guest that has stopped responding, and a dial left
+// waiting on it would outlive the VM.
 //
 // The returned connection deliberately does not implement CloseWrite. The
 // framework hands back a socket whose write side cannot be shut down
 // independently through this binding, and a no-op CloseWrite would be worse
 // than none: a caller that finds the method believes the guest saw EOF. Callers
 // that check for it take their full-close fallback instead, which is correct.
-func (v *VM) Connect(port uint32) (net.Conn, error) {
+func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 	v.mu.Lock()
-	socket, closed := v.socket, v.closed
+	socket, closed, closing := v.socket, v.closed, v.closing
 	v.mu.Unlock()
 	if closed || socket == nil {
 		return nil, fmt.Errorf("vzvm: VM %s is not running", v.name)
 	}
-	conn, err := socket.Connect(port)
+	dialCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-closing:
+			cancel()
+		case <-dialCtx.Done():
+		}
+	}()
+	conn, err := socket.ConnectContext(dialCtx, port)
 	if err != nil {
+		select {
+		case <-closing:
+			return nil, fmt.Errorf("vzvm: connect to %s guest port %d: the VM was closed", v.name, port)
+		default:
+		}
 		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, socketError("dial", "connect", err))
 	}
 	return conn, nil
