@@ -96,7 +96,7 @@ func guestRefused(err error) bool {
 
 // poolAgentConn removes itself from its client when the transport closes it.
 // It deliberately embeds net.Conn alone, so it exposes no CloseWrite the
-// underlying connection might not honour.
+// underlying connection might not honor.
 type poolAgentConn struct {
 	net.Conn
 	owner *PoolAgentClient
