@@ -123,6 +123,12 @@ func (w *UpgradeWatch) Begin(ctx context.Context) error {
 		}
 	}
 	sortPending(pending)
+	// Named now, not at the first pass: refresh logs only a change from
+	// this answer, so a pool that goes straight from it to upgraded would
+	// otherwise never be named.
+	if len(pending) > 0 {
+		slog.InfoContext(ctx, "waiting for pools to upgrade", "pools", describePending(pending))
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.watched, w.last, w.begun = watched, pending, true
@@ -293,13 +299,8 @@ const waitingForReconcile = "waiting for its reconcile"
 // run's health checks began, its provider did not keep the previous box in
 // it, and a ready status report that is its current agent's (agentReported).
 func upgradeWaitingOn(pool *model.Pool, kept keptBox, started agentStart, first time.Time, now time.Time) string {
-	began := pool.CreatedAt
-	if pool.HealthCheckStartedAt != nil {
-		began = *pool.HealthCheckStartedAt
-	}
-	reconciled := pool.ReconciledAt != nil && !pool.ReconciledAt.Before(began)
 	switch {
-	case !reconciled:
+	case !reconciledThisRun(pool):
 		return waitingForReconcile
 	case pool.ErrorMessage != nil:
 		return "its reconcile failed: " + firstLine(*pool.ErrorMessage)
@@ -315,6 +316,18 @@ func upgradeWaitingOn(pool *model.Pool, kept keptBox, started agentStart, first 
 		return "its agent reports " + pool.Health(now)
 	}
 	return ""
+}
+
+// reconciledThisRun is whether a reconcile of pool has settled since this
+// run's health checks began (HealthCheckStartedAt, or the pool's creation when
+// it has none). The upgrade watch waits for one, and the reconciler logs the
+// first at info.
+func reconciledThisRun(pool *model.Pool) bool {
+	began := pool.CreatedAt
+	if pool.HealthCheckStartedAt != nil {
+		began = *pool.HealthCheckStartedAt
+	}
+	return pool.ReconciledAt != nil && !pool.ReconciledAt.Before(began)
 }
 
 // agentReported is whether the pool's agent has reported since it is the

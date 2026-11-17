@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +85,13 @@ type PoolReconciler struct {
 	// pool this reconcile makes active while it reports ready sends its
 	// sandboxes' due wakes (ADR 26-11-15-829 §2).
 	sandboxes SandboxDelivery
+
+	// hostWaits is, by pool, when its passes began waiting on a host still
+	// coming up (sandbox.ErrPoolNotReachable). Those passes requeue every
+	// few seconds, so the wait is logged when it begins and when a pass
+	// ends it, not on every pass.
+	hostWaitsMu sync.Mutex
+	hostWaits   map[string]time.Time
 }
 
 func NewPoolReconciler(appStore *store.Store, manager *sandbox.ProviderManager, controlPlane *ControlPlane, sandboxes SandboxDelivery) *PoolReconciler {
@@ -166,6 +174,15 @@ func (r *PoolReconciler) noteWaiting(ctx context.Context, pool *model.Pool, gene
 }
 
 func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, generation int64) (reconcile.Result, error) {
+	start := time.Now()
+	// A pass that does not wait on the host ends any wait earlier passes
+	// began, however it ends; one that settles says how long it was.
+	waitingOnHost := false
+	defer func() {
+		if !waitingOnHost {
+			r.endHostWait(pool.ID)
+		}
+	}()
 	// An attempt that expired without saying so ends on this pass: record why,
 	// show the pool failed, and settle with the error. The next attempt starts
 	// on a later pass (ADR 26-11-09-593 §2).
@@ -236,7 +253,11 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// at the settle: the pass that starts it is often not the one that
 	// settles (ADR 26-11-15-294 §1, 26-11-15-602 §1).
 	poolID := pool.ID
+	var agentStarted bool
 	ctx = sandbox.WithAgentStartReporter(ctx, func(at time.Time, kind sandbox.AgentStartKind) {
+		keptMu.Lock()
+		agentStarted = true
+		keptMu.Unlock()
 		if r.pools != nil {
 			r.pools.Upgrades().agentStarted(poolID, at, kind)
 		}
@@ -300,6 +321,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// the state it had, and this generation is not marked observed over a
 		// runtime the reconcile never reached.
 		if errors.Is(err, sandbox.ErrPoolNotReachable) {
+			waitingOnHost = true
+			r.beginHostWait(ctx, pool.ID, err)
 			r.noteWaiting(ctx, pool, generation, err.Error())
 			return reconcile.RequeueAfter(poolHostComingUpRequeue), nil
 		}
@@ -337,6 +360,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err, begin); repairErr != nil {
 			err = repairErr
 		} else {
+			// The settle says this pass repaired the pool, and why.
+			repair = firstLine(err.Error())
 			err = nil
 		}
 	}
@@ -404,15 +429,82 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// whether it kept the previous box, or it would take the old agent's next
 	// report for the new one's. A row write that then fails leaves the record
 	// for an earlier settle, which only keeps the pool waited on.
+	keptMu.Lock()
 	if r.pools != nil {
-		keptMu.Lock()
 		r.pools.Upgrades().settled(current.ID, settledAt, kept)
-		keptMu.Unlock()
 	}
+	did := settleNews{repair: repair, agentStarted: agentStarted, kept: kept}
+	keptMu.Unlock()
 	if err := r.settle(ctx, &found, current, generation); err != nil {
 		return reconcile.Result{}, err
 	}
+	did.hostWait = r.endHostWait(pool.ID)
+	logSettled(ctx, &found, current, did, settledAt.Sub(start))
 	return armRegistrationTimeout(current), nil
+}
+
+// beginHostWait records that the pool's passes now wait on its host coming
+// up, and logs it if they were not already.
+func (r *PoolReconciler) beginHostWait(ctx context.Context, poolID string, reason error) {
+	r.hostWaitsMu.Lock()
+	defer r.hostWaitsMu.Unlock()
+	if _, ok := r.hostWaits[poolID]; ok {
+		return
+	}
+	if r.hostWaits == nil {
+		r.hostWaits = map[string]time.Time{}
+	}
+	r.hostWaits[poolID] = time.Now()
+	slog.InfoContext(ctx, "waiting for the pool's host to come up", "pool", poolID, "reason", firstLine(reason.Error()))
+}
+
+// endHostWait ends the pool's wait on its host, and answers how long it
+// was, zero when there was none.
+func (r *PoolReconciler) endHostWait(poolID string) time.Duration {
+	r.hostWaitsMu.Lock()
+	defer r.hostWaitsMu.Unlock()
+	began, ok := r.hostWaits[poolID]
+	if !ok {
+		return 0
+	}
+	delete(r.hostWaits, poolID)
+	return time.Since(began)
+}
+
+// settleNews is what a settling pass did beyond re-checking the pool.
+type settleNews struct {
+	repair       string
+	agentStarted bool
+	kept         error
+	hostWait     time.Duration
+}
+
+// logSettled logs a pass that settled, and how long it took. The drift scan
+// re-checks every pool every minute, so a pass that found the pool as it was
+// and did nothing to it logs at debug; one that is the pool's first settle in
+// this run, observed a new generation, moved its state, repaired it, started
+// its agent, kept its previous box or waited on its host logs at info: the
+// steps of a restart are those.
+func logSettled(ctx context.Context, found, current *model.Pool, did settleNews, took time.Duration) {
+	level := slog.LevelDebug
+	if !reconciledThisRun(found) || found.ObservedGeneration != current.ObservedGeneration || found.State != current.State ||
+		did.repair != "" || did.agentStarted || did.kept != nil || did.hostWait > 0 {
+		level = slog.LevelInfo
+	}
+	attrs := []any{"pool", current.ID, "state", current.State, "generation", current.ObservedGeneration, "duration", took.Round(time.Millisecond)}
+	if did.hostWait > 0 {
+		attrs = append(attrs, "host_wait", did.hostWait.Round(time.Millisecond))
+	}
+	if did.repair != "" {
+		attrs = append(attrs, "repair", did.repair)
+	}
+	if did.agentStarted {
+		attrs = append(attrs, "agent_started", true)
+	}
+	if did.kept != nil {
+		attrs = append(attrs, "kept_previous_box", firstLine(did.kept.Error()))
+	}
+	slog.Log(ctx, level, "pool reconcile settled", attrs...)
 }
 
 // armRegistrationTimeout is the deadline half of registrationExpired: a pool

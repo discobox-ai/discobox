@@ -242,7 +242,20 @@ Once none is left the watch has cleared for the run. It reads rows and writes
 nothing, resolves no provider, and runs one pass at a time under its own
 bounded context, at most once a second; a probe that cannot wait, or a pass
 that fails, is answered the last answer. Its count is what health serves;
-the names and reasons go to the log when they change.
+the names and reasons go to the log when `Begin` fixes them and whenever they
+change.
+
+So a restart's log says where its wait went, the reconciler logs a pass that
+settles, with how long it took (`logSettled`). The drift scan re-checks every
+pool every minute, so the line is at info only for a pass that did something:
+the pool's first settle this run (`reconciledThisRun`, the rule the watch
+waits on), a new generation observed, a state moved, a repair (owed, or one
+after a failed pass of an assigned pool), an agent started by this pass, a
+box kept, or a wait on a host coming up. Any other
+pass logs at debug. That wait (`ErrPoolNotReachable`) requeues every few
+seconds, so it is logged once when it begins, and the pass that ends it says
+how long it was (`host_wait`). The steps inside a pass are the provider's to
+log (`server/providers/DESIGN.md`, "Logging the Steps of Bringing a Pool Up").
 
 Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks
