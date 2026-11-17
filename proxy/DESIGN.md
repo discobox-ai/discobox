@@ -502,7 +502,10 @@ Key properties:
   sentinel is left in place and the request is sent: the upstream receives the
   placeholder and rejects it, which is the right answer for a credential that
   is not granted. A resolve that fails for any other reason — the control
-  plane unreachable, or a `408`/`425`/`429`/`5xx` from it — is asked again,
+  plane unreachable, a `408`/`425`/`429`/`5xx` from it, or a `401`, which is
+  only ever about the pool's own assertion (one that expired across a host
+  sleep, say), never the sandbox's credential
+  ([ADR 26-11-17-078](../docs/adr/26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md)) — is asked again,
   with backoff, for `ResolveRetrySeconds` (5 s by default), which outlasts a
   control-plane restart. Each ask is bounded by the window as well, but never
   given less than a second, so a control plane that hangs holds the request no
@@ -717,7 +720,11 @@ Key properties:
   the last rotation displaced, still within `previousValueGrace` (the proxy
   moved onto a credential the upstream has not started honouring yet). If
   neither differs from what was rejected there is nothing new to send, and the
-  401 is passed through. Only header swaps with a body small enough to hold
+  401 is passed through, unless the fresh resolve failed transiently: then
+  nothing says the refused value is the credential, and the sandbox gets the
+  outage `503` above, audited blocked, with the upstream's refusal audited as
+  the exchange it was and still reported
+  ([ADR 26-11-17-078](../docs/adr/26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md) §2). Only header swaps with a body small enough to hold
   (8 MiB) are retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
   A body of declared length is held before the request goes out. One of
   undeclared length (chunked, or any HTTP/2 stream) is copied as it is sent

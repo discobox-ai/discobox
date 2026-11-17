@@ -124,7 +124,10 @@
   error, never send it: retry within the window, then refuse the whole request
   with a `503` (ADR 26-10-14-482 §2). A raw sentinel reaching an upstream
   because the control plane blinked is the bug that ADR fixes; no path —
-  first attempt or the `401` retry — may send one for that reason.
+  first attempt or the `401` retry — may send one for that reason. Nor may
+  the retry pass the upstream's refusal through when its fresh resolve failed
+  transiently: that is the same dead login by another route (ADR 26-11-17-078
+  §2).
 - Keep one `Swapper` for the life of the proxy. `ApplyConfig` reconfigures it
   in place (`Swapper.Reconfigure`); building a new one empties the resolve
   cache on every trust refresh, and a control-plane outage then finds nothing

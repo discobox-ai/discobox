@@ -535,7 +535,7 @@ func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
 
 	// And the trail has to show a verdict refused the retry, rather than
 	// leaving it indistinguishable from having had nothing new to send.
-	blocked := waitForBlockedRows(t, dsn, 1)
+	blocked := waitForAuditRows(t, dsn, true, 1)
 	if len(blocked) != 1 {
 		t.Fatalf("blocked rows = %d, want the refused retry recorded once", len(blocked))
 	}
@@ -549,10 +549,10 @@ func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
 	}
 }
 
-// waitForBlockedRows polls the proxy's audit database for blocked rows. The
+// waitForAuditRows polls the proxy's audit database for rows blocked or not. The
 // recorder writes off the request path, so a row can land after the response
 // the test already has.
-func waitForBlockedRows(t *testing.T, dsn string, want int) []audit.HTTPExchange {
+func waitForAuditRows(t *testing.T, dsn string, blocked bool, want int) []audit.HTTPExchange {
 	t.Helper()
 	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
 	if err != nil {
@@ -561,7 +561,7 @@ func waitForBlockedRows(t *testing.T, dsn string, want int) []audit.HTTPExchange
 	t.Cleanup(func() { _ = pools.Close() })
 	read := func() []audit.HTTPExchange {
 		var rows []audit.HTTPExchange
-		if err := pools.Read.Where("blocked = ?", true).Find(&rows).Error; err != nil {
+		if err := pools.Read.Where("blocked = ?", blocked).Find(&rows).Error; err != nil {
 			t.Fatalf("read audit exchanges: %v", err)
 		}
 		return rows
@@ -576,7 +576,7 @@ func waitForBlockedRows(t *testing.T, dsn string, want int) []audit.HTTPExchange
 			return read()
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("blocked audit rows = %d, want %d", len(rows), want)
+			t.Fatalf("audit rows (blocked %v) = %d, want %d", blocked, len(rows), want)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

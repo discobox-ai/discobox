@@ -223,7 +223,7 @@ func TestHTTPProxySwapsASentinelAtABodyPlace(t *testing.T) {
 			t.Fatalf("%s: a refused request reached the origin", tc.name)
 		}
 	}
-	blocked := waitForBlockedRows(t, dbPath, 6)
+	blocked := waitForAuditRows(t, dbPath, true, 6)
 	for _, row := range blocked {
 		if !strings.HasPrefix(row.BlockedReason, "route: ") {
 			t.Fatalf("blocked row reason = %q, want a route refusal", row.BlockedReason)
