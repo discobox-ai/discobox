@@ -213,3 +213,37 @@ func TestAnArgumentIsAtMostOneShortSegment(t *testing.T) {
 		t.Fatalf("a %d-byte argument was refused: %v", maxSegmentBytes, err)
 	}
 }
+
+func TestResolveDocumentWebSocketPlaces(t *testing.T) {
+	doc := `{"version":1,"routes":[{"hosts":["gateway.discord.gg","*.discord.gg"],"methods":["GET"],"websocket":{"places":[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6.0,"s":null}}]}}]}`
+	resolved, err := ResolveDocument([]byte(doc), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := resolved.Routes[0].WebSocket
+	if ws == nil || len(ws.Places) != 2 || string(ws.Places[1].When["op"]) != "6" || string(ws.Places[1].When["s"]) != "null" {
+		t.Fatalf("routes = %+v", resolved.Routes)
+	}
+	for name, body := range map[string]string{
+		"placeholder in at":     `{"version":1,"parameters":{"p":{"type":"pathSegment"}},"routes":[{"hosts":["h"],"websocket":{"places":[{"at":"/${p}"}]}}]}`,
+		"placeholder in when":   `{"version":1,"parameters":{"p":{"type":"pathSegment"}},"routes":[{"hosts":["h"],"websocket":{"places":[{"at":"/a","when":{"op":"${p}"}}]}}]}`,
+		"object condition":      `{"version":1,"routes":[{"hosts":["h"],"websocket":{"places":[{"at":"/a","when":{"op":{}}}]}}]}`,
+		"array condition":       `{"version":1,"routes":[{"hosts":["h"],"websocket":{"places":[{"at":"/a","when":{"op":[]}}]}}]}`,
+		"duplicate condition":   `{"version":1,"routes":[{"hosts":["h"],"websocket":{"places":[{"at":"/a","when":{"op":1,"op":2}}]}}]}`,
+		"unknown place field":   `{"version":1,"routes":[{"hosts":["h"],"websocket":{"places":[{"at":"/a","where":{}}]}}]}`,
+		"no places":             `{"version":1,"routes":[{"hosts":["h"],"websocket":{"places":[]}}]}`,
+		"websocket beside body": `{"version":1,"routes":[{"hosts":["h"],"body":{"places":["/a"]},"websocket":{"places":[{"at":"/a"}]}}]}`,
+	} {
+		args := map[string]string{}
+		if strings.Contains(body, "${p}") {
+			args["p"] = "x"
+		}
+		_, err := ResolveDocument([]byte(body), args)
+		if err == nil {
+			t.Errorf("%s: resolved", name)
+		}
+		if strings.Contains(body, "${p}") && !strings.Contains(err.Error(), "parameters are supported only in paths") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

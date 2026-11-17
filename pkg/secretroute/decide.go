@@ -41,13 +41,19 @@ import (
 // own and every one needing to be allowed: InHeaders for its headers or
 // query, or a body place, the JSON pointer of a string in a JSON body that
 // is exactly the credential's sentinel. None is InHeaders alone.
+//
+// Message is set for a credential carried in a message a client sent on the
+// WebSocket connection the request upgraded (ADR 26-11-06-442): the request
+// is the upgrade's, as the client sent it, and every At is then a JSON
+// pointer into the message, at a string that is exactly the sentinel.
 type Request struct {
-	Method string
-	Host   string // without port, normalized as hostscope does
-	URL    string // raw request URL; the path is read with RequestPaths
-	Header http.Header
-	Body   func() ([]byte, bool)
-	At     []string
+	Method  string
+	Host    string // without port, normalized as hostscope does
+	URL     string // raw request URL; the path is read with RequestPaths
+	Header  http.Header
+	Body    func() ([]byte, bool)
+	At      []string
+	Message *Message
 }
 
 // InHeaders is a credential carried in a request's headers or query, as At
@@ -134,6 +140,14 @@ func RequestPaths(rawURL string) []string {
 // for any use, so a body place is held to the same carve-outs as a header.
 // No route grants a body place it does not name.
 //
+// A credential in a WebSocket message (Request.Message) is decided the same
+// way, at each place it stands in the message: a route with a WebSocket
+// block is a candidate only where one of its places names that pointer and
+// the message holds the place's conditions, an open route without one never
+// (`*` included), and a blocked route without a protocol block always, as a
+// carve-out on the upgrade's host, path and methods. A body route is no
+// candidate for a message, nor a WebSocket route for anything else.
+//
 // A refusal's reason says what refused, in a short sentence that never
 // carries the body beyond an operation type, a root field, a tool or method
 // name, each escaped when it is not plain: "route X refuses WHAT" for a
@@ -150,6 +164,9 @@ func Decide(lists [][]Route, req Request) (allowed bool, reason string) {
 	match := newMatcher(req)
 	uses := req.At
 	if len(uses) == 0 {
+		if req.Message != nil {
+			return false, "a message carries no credential to decide"
+		}
 		uses = []string{InHeaders}
 	}
 	for _, routes := range lists {
@@ -191,8 +208,11 @@ func (m *matcher) decideList(routes []Route, at string) (allowed bool, reason st
 			}
 		}
 		where := m.describe(requestPath)
-		if at != InHeaders {
-			where = "the body place " + safe(at) + " of " + where
+		switch {
+		case m.req.Message != nil:
+			where = "the message place " + Safe(at) + " on the WebSocket connection of " + where
+		case at != InHeaders:
+			where = "the body place " + Safe(at) + " of " + where
 		}
 		if len(decided) == 0 {
 			if nearReason != "" {
@@ -239,7 +259,7 @@ func HostAllowed(lists [][]Route, host string) bool {
 func hostOpen(routes []Route, host string) bool {
 	shut, shutFound := 0, false
 	for _, route := range routes {
-		if !route.Blocked || len(route.Methods) > 0 || len(route.Paths) > 0 || route.GraphQL != nil || route.MCP != nil || route.Body != nil {
+		if !route.Blocked || !route.HostWide() {
 			continue
 		}
 		if score, ok := hostScore(route.Hosts, host); ok && (!shutFound || score > shut) {
@@ -467,9 +487,9 @@ func displayHeader(name string) string {
 // named is a method and what named it, for a reason.
 func (n namedMethod) named() string {
 	if n.by == "" {
-		return safe(n.method)
+		return Safe(n.method)
 	}
-	return safe(n.method) + ", named by " + n.by
+	return Safe(n.method) + ", named by " + n.by
 }
 
 // overrideMethods are the methods one override value names: each of its
@@ -718,6 +738,13 @@ func (m *matcher) hasContentType(mediaType string) bool {
 // candidate only for a body place it names; an open route without one only
 // for the headers. A blocked route without one is a candidate for either: a
 // carve-out refuses a credential wherever in the request it is carried.
+//
+// For a credential in a WebSocket message (Request.Message), at is its
+// pointer in the message: a route with a WebSocket block is a candidate only
+// where a place of it allows the credential (MessagePlace.allows), an open
+// route without one never, a body route never, and a blocked route without
+// one as for any other use. A WebSocket route is no candidate for a use that
+// is not in a message.
 func (m *matcher) route(route Route, requestPath, at string) (r rank, candidate, near bool, reason string) {
 	host, ok := hostScore(route.Hosts, m.host)
 	if !ok {
@@ -728,14 +755,36 @@ func (m *matcher) route(route Route, requestPath, at string) (r rank, candidate,
 		return rank{}, false, false, ""
 	}
 	r = rank{host: host, path: pathRank}
+	if m.req.Message != nil {
+		switch {
+		case route.WebSocket != nil:
+			if ok, why := route.WebSocket.messageAllowed(at, m.req.Message); !ok {
+				return r, false, true, why
+			}
+		case route.Body != nil:
+			return r, false, false, ""
+		case !route.Blocked:
+			return r, false, true, "names no message place, so does not allow the credential at " + Safe(at) + " in a WebSocket message"
+		}
+		return m.routeRequest(route, r)
+	}
 	switch {
+	case route.WebSocket != nil:
+		return r, false, false, ""
 	case route.Body != nil && at == InHeaders:
 		return r, false, false, ""
 	case route.Body != nil && !slices.Contains(route.Body.Places, at):
-		return r, false, true, "does not name the body place " + safe(at)
+		return r, false, true, "does not name the body place " + Safe(at)
 	case route.Body == nil && at != InHeaders && !route.Blocked:
-		return r, false, true, "names no body place, so does not allow the credential at " + safe(at) + " in the body"
+		return r, false, true, "names no body place, so does not allow the credential at " + Safe(at) + " in the body"
 	}
+	return m.routeRequest(route, r)
+}
+
+// routeRequest is route's match of what a route says of the request itself,
+// its methods and protocol block, once its hosts, paths and use matched.
+func (m *matcher) routeRequest(route Route, r rank) (rank, bool, bool, string) {
+	reason := ""
 	if len(route.Methods) > 0 {
 		ok, why := m.methodsMatch(route.Methods, route.Blocked)
 		if !ok {
@@ -778,15 +827,15 @@ func (m *matcher) readBody() ([]byte, bool) {
 // describe names the request at one reading of its path, for a refusal.
 func (m *matcher) describe(requestPath string) string {
 	if m.method == "" {
-		return safe(m.host + requestPath)
+		return Safe(m.host + requestPath)
 	}
-	return safe(m.method) + " " + safe(m.host+requestPath)
+	return Safe(m.method) + " " + Safe(m.host+requestPath)
 }
 
-// safe is text from a request as a reason may show it: as it is when it is
+// Safe is text from a request as a reason may show it: as it is when it is
 // printable and has no space, quoted with Go's escapes otherwise. A reason
 // reaches a terminal, so nothing from a request may move it.
-func safe(text string) string {
+func Safe(text string) string {
 	// A request names these, so a request bounds their length only by the
 	// body limit: a megabyte tool name would become a megabyte reason in the
 	// sandbox's answer, the audit row and every view of it.

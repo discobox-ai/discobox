@@ -724,11 +724,11 @@ func ExampleFormat() {
 // refusal, and the audit row that keeps it, as long as its body.
 func TestReasonsCutLongNamesShort(t *testing.T) {
 	long := strings.Repeat("a", 4096)
-	got := safe(long)
+	got := Safe(long)
 	if n := len([]rune(got)); n != reasonNameLimit+1 || !strings.HasSuffix(got, "…") {
-		t.Fatalf("safe(4096 runes) = %d runes ending %q, want %d and an ellipsis", n, got[len(got)-8:], reasonNameLimit+1)
+		t.Fatalf("Safe(4096 runes) = %d runes ending %q, want %d and an ellipsis", n, got[len(got)-8:], reasonNameLimit+1)
 	}
-	if got := safe("write_file"); got != "write_file" {
-		t.Fatalf("safe(short) = %q, want it unchanged", got)
+	if got := Safe("write_file"); got != "write_file" {
+		t.Fatalf("Safe(short) = %q, want it unchanged", got)
 	}
 }
