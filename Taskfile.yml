@@ -98,22 +98,23 @@ vars:
           --prerelease) printf yes ;;
         esac
       done
-  # Which Homebrew channel a brew: target acts on: `task brew:publish -- --dev
-  # v1.2.3` writes discobox-dev.rb rather than discobox.rb (ADR 0105).
-  BREW_DEV:
+  # Which Homebrew channel a brew: target acts on: `task brew:publish -- --beta
+  # v1.2.3` writes discobox-beta.rb rather than discobox.rb (ADR 0105, the
+  # formula renamed by ADR 26-11-16-249).
+  BREW_BETA:
     sh: |
       args="{{.CLI_ARGS}}"
       for word in $args; do
         case "$word" in
-          --dev) printf yes ;;
+          --beta) printf yes ;;
         esac
       done
   # Whether that tag is a dot release: exactly vMAJOR.MINOR.PATCH.
   # An explicit prerelease (v1.2.3-rc1), a partial tag (v1.2), or anything else
   # is not.
   #
-  # This is the *latest* channel's rule, not the stable one (ADR 0105). A dot
-  # release moves ghcr's :latest and the discobox-dev formula the moment it is
+  # This is the *beta* channel's rule, not the stable one (ADR 0105). A dot
+  # release moves ghcr's :latest and the discobox-beta formula the moment it is
   # cut; an explicit prerelease exists only under its own tag, reachable by
   # pinning. Whether a release is *stable* is not a property of its tag at all —
   # it is a human clearing the prerelease box on GitHub, later.
@@ -143,6 +144,21 @@ vars:
           esac
           ;;
       esac
+  # Whether that tag is a main build's version, v<next patch>-main.<N>.g<sha7>
+  # (ADR 26-11-16-249 §5): a release of a green main commit, published in its
+  # own repository rather than this one. Never a dot release, so nothing that
+  # asks DOT_RELEASE moves for it. Pure shell, like DOT_RELEASE.
+  MAIN_BUILD:
+    sh: |
+      case "{{.TAG}}" in
+        v*-main.*) printf yes ;;
+      esac
+  # The repository the tag's release is published to and its assets are
+  # downloaded from: RELEASE_REPO for a tagged release, and its -main sibling
+  # for a main build, which holds nothing but main builds so that none of them
+  # reaches what resolves the tagged channels (ADR 26-11-16-249 §4).
+  MAIN_REPO: '{{.RELEASE_REPO}}-main'
+  PUBLISH_REPO: '{{if .MAIN_BUILD}}{{.MAIN_REPO}}{{else}}{{.RELEASE_REPO}}{{end}}'
   # Multi-architecture and multi-output builds both need the docker-container
   # driver; the default docker driver supports neither.
   BUILDX_BUILDER: discobox
@@ -1382,17 +1398,19 @@ tasks:
       - |
         set -eu
         manifest=""
-        if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.RELEASE_REPO}}" ]; then
+        if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.PUBLISH_REPO}}" ]; then
           set -- -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
             -command "{{.SERVER_NAME}}" \
             -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}"
           # Order is the fallback order. The mirror is tried first because
           # staging a server is the heaviest download we serve; the release URL
           # is last because it is the one that outlives everything else.
-          if [ "{{.RELEASE_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
+          # A main build is on GitHub alone: the mirror has no namespace for
+          # its repository (ADR 26-11-16-249 §4).
+          if [ "{{.PUBLISH_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
             set -- "$@" -base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
           fi
-          set -- "$@" -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
+          set -- "$@" -base-url "https://github.com/{{.PUBLISH_REPO}}/releases/download/{{.PIN_TAG}}"
           # Export from a host build even when the server asset targets Windows.
           go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}" \
             ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
@@ -1583,7 +1601,7 @@ tasks:
         [ "$found" -gt 0 ] || { echo "release:verify: no binaries found" >&2; exit 1; }
 
   brew:publish:
-    desc: Push a Homebrew formula for a tag to the tap (task brew:publish -- [--dev] [--prerelease] TAG)
+    desc: Push a Homebrew formula for a tag to the tap (task brew:publish -- [--beta] [--prerelease] TAG)
     # Nothing automatic runs this. The tap updates itself from this repository's
     # public releases (see its update-formula workflow), which is why no token
     # for it is stored here; this is the button for publishing a tag the tap's
@@ -1594,7 +1612,7 @@ tasks:
     vars:
       TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
       # Which of the tap's two formulae this writes (ADR 0105).
-      NAME: '{{if .BREW_DEV}}discobox-dev{{else}}discobox{{end}}'
+      NAME: '{{if .BREW_BETA}}discobox-beta{{else}}discobox{{end}}'
       FORMULA: '{{.BREW_OUT | default (printf "build/%s.rb" .NAME)}}'
     cmds:
       # Before generating: refusing after downloading a release's assets wastes
@@ -1606,13 +1624,13 @@ tasks:
           v*) ;;
           *) echo "brew:publish: expected a v* tag, got '$tag'" >&2; exit 1 ;;
         esac
-        # Neither channel serves an explicit prerelease: discobox-dev tracks the
+        # Neither channel serves an explicit prerelease: discobox-beta tracks the
         # newest dot release, not every tag that ever built, and `brew install
         # discobox` should give the version people are meant to run. So a
         # v1.2.3-rc1 reaching either is a decision somebody makes out loud.
         if [ -z "{{.DOT_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
           echo "brew:publish: $tag is a prerelease, and neither tap channel serves one." >&2
-          echo "Publish it anyway with: task brew:publish -- {{if .BREW_DEV}}--dev {{end}}--prerelease $tag" >&2
+          echo "Publish it anyway with: task brew:publish -- {{if .BREW_BETA}}--beta {{end}}--prerelease $tag" >&2
           exit 1
         fi
       - task: brew:formula
@@ -1665,23 +1683,60 @@ tasks:
           echo "release:publish: build/release/bin is empty; run release:build first" >&2
           exit 1
         fi
-        # Every release is created as a prerelease, dot releases included
-        # (ADR 0105). Nothing this workflow knows makes a release stable: a tag
-        # is a thing that built, and blessing one is a human clearing this box
-        # afterwards, which is what feeds `brew install discobox` and winget.
-        # Until then GitHub's own "Latest release" header keeps pointing at the
-        # last blessed one, which is the right answer for someone landing on the
-        # repository.
-        #
-        # A release:check-vm-pins override is recorded at the top of the
-        # notes: gh puts what --notes-file gives it ahead of the generated ones.
-        set -- --generate-notes
-        if [ -s build/release/notes/vm-pins.md ]; then
-          set -- "$@" --notes-file build/release/notes/vm-pins.md
+        repo="{{.PUBLISH_REPO}}"
+        # A release:check-vm-pins override, or a main build's record of a
+        # stale pin, is at the top of the notes: gh puts what --notes-file
+        # gives it ahead of the generated ones.
+        notes=build/release/notes/vm-pins.md
+        if [ -n "{{.MAIN_BUILD}}" ]; then
+          # A main build is a full release marked latest, in a repository that
+          # holds nothing else, so GitHub's own releases/latest there is the
+          # newest main build: what main.discobox.ai and --channel main read
+          # (ADR 26-11-16-249 §4). Its tag is created on that repository's own
+          # placeholder commit and means nothing; the commit it was built from
+          # is in its version and in these notes.
+          #
+          # Only a build newer than the channel's latest is published: re-running
+          # an old CI run would otherwise make an older commit the main
+          # channel's newest build.
+          latest=$(gh release view --repo "$repo" --json tagName --jq .tagName 2>/dev/null || true)
+          if ! go run ./internal/cmd/discobox-main-build newer "$tag" "$latest"; then
+            echo "release:publish: the main channel is already at $latest; not publishing $tag" >&2
+            exit 0
+          fi
+          commit=$(git rev-parse HEAD)
+          mkdir -p build/release/notes
+          {
+            if [ -s "$notes" ]; then cat "$notes"; echo; fi
+            echo "A main build of [\`${commit}\`](https://github.com/{{.RELEASE_REPO}}/commit/${commit})."
+            echo
+            echo "Main builds are kept for fourteen days. Install the newest with:"
+            echo
+            echo '    curl -sSfL https://main.discobox.ai | sh'
+          } > build/release/notes/main.md
+          # A draft until every asset is up: a release marked latest with no
+          # assets would be what --channel main installs, and fail as if the
+          # build had been deleted.
+          gh release view "$tag" --repo "$repo" >/dev/null 2>&1 ||
+            gh release create "$tag" --repo "$repo" --title "$tag" --draft --notes-file build/release/notes/main.md
+          gh release upload "$tag" --repo "$repo" build/release/bin/* --clobber
+          gh release edit "$tag" --repo "$repo" --draft=false --latest
+        else
+          # Every release is created as a prerelease, dot releases included
+          # (ADR 0105). Nothing this workflow knows makes a release stable: a
+          # tag is a thing that built, and blessing one is a human clearing
+          # this box afterwards, which is what feeds `brew install discobox`
+          # and winget. Until then GitHub's own "Latest release" header keeps
+          # pointing at the last blessed one, which is the right answer for
+          # someone landing on the repository.
+          set -- --generate-notes
+          if [ -s "$notes" ]; then
+            set -- "$@" --notes-file "$notes"
+          fi
+          gh release view "$tag" --repo "$repo" >/dev/null 2>&1 ||
+            gh release create "$tag" --repo "$repo" --verify-tag --title "$tag" --prerelease "$@"
+          gh release upload "$tag" --repo "$repo" build/release/bin/* --clobber
         fi
-        gh release view "$tag" >/dev/null 2>&1 ||
-          gh release create "$tag" --verify-tag --title "$tag" --prerelease "$@"
-        gh release upload "$tag" build/release/bin/* --clobber
 
   release:check-vm-pins:
     desc: Fail unless the pinned pool VM guest and kernel include vm-image/ at the release tag
@@ -1693,6 +1748,10 @@ tasks:
     # A Release-Stale-VM-Pin: <reason> trailer in the tag's annotation (never
     # a commit message) releases anyway; the record of it lands in
     # build/release/notes, which release:publish puts in the release notes.
+    #
+    # A main build has no tag here: it checks the commit checked out, and
+    # records a stale pin in its notes rather than refusing it (ADR
+    # 26-11-16-249 §9).
     cmds:
       - |
         set -eu
@@ -1702,7 +1761,35 @@ tasks:
           *) echo "release:check-vm-pins: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
         esac
         mkdir -p build/release/notes
-        go run ./internal/cmd/discobox-vm-pins -rev "$tag" -notes build/release/notes/vm-pins.md
+        if [ -n "{{.MAIN_BUILD}}" ]; then
+          go run ./internal/cmd/discobox-vm-pins -rev HEAD -record -notes build/release/notes/vm-pins.md
+        else
+          go run ./internal/cmd/discobox-vm-pins -rev "$tag" -notes build/release/notes/vm-pins.md
+        fi
+
+  release:main-version:
+    desc: Print the version a main build of the checked-out commit takes
+    # v<next patch>-main.<first-parent count>.g<sha7> (ADR 26-11-16-249 §5).
+    # Needs the whole history and every v* tag.
+    silent: true
+    cmds:
+      - go run ./internal/cmd/discobox-main-build version
+
+  release:prune-main:
+    desc: Delete main builds older than fourteen days, their releases, tags and images, keeping the newest
+    # GH_TOKEN writes the main builds' repository; PACKAGES_TOKEN deletes the
+    # images' main-build tags from ghcr (ADR 26-11-16-249 §6). DRY_RUN=yes
+    # says what it would delete and deletes nothing.
+    cmds:
+      - |
+        set -eu
+        owner="{{.REGISTRY}}"
+        owner="${owner#ghcr.io/}"
+        if [ -z "$owner" ] || [ -z "{{.RELEASE_REPO}}" ]; then
+          echo "release:prune-main: could not resolve the repository and registry; pass RELEASE_REPO= and REGISTRY=" >&2
+          exit 1
+        fi
+        go run ./internal/cmd/discobox-main-build prune -repo "{{.MAIN_REPO}}" -registry-owner "$owner" {{if .DRY_RUN}}-dry-run{{end}}
 
   release:manifest:
     desc: Assemble every platform's CLI, server, and image metadata into release.json
@@ -1963,7 +2050,7 @@ tasks:
 
   brew:refresh:
     desc: Tell the tap to regenerate both formulae from this repository's releases
-    # One dispatch, both channels: the tap recomputes discobox-dev from the
+    # One dispatch, both channels: the tap recomputes discobox-beta from the
     # newest dot release and discobox from the newest release a human has
     # marked stable, and commits whichever actually moved (ADR 0105). So the
     # same call is right after a tag is cut and after a release is blessed, and
@@ -1991,15 +2078,15 @@ tasks:
       - echo "asked {{.TAP_REPO}} to update its formula"
 
   brew:formula:
-    desc: Write a Homebrew formula for a released tag to BREW_OUT (task brew:formula -- [--dev] TAG)
+    desc: Write a Homebrew formula for a released tag to BREW_OUT (task brew:formula -- [--beta] TAG)
     # The rule lives in scripts/brew-formula.sh so the tap's own update workflow
     # runs exactly this, without needing a Go toolchain to reach it — including
     # which of the two formulae it is writing.
     vars:
-      NAME: '{{if .BREW_DEV}}discobox-dev{{else}}discobox{{end}}'
+      NAME: '{{if .BREW_BETA}}discobox-beta{{else}}discobox{{end}}'
       BREW_OUT: '{{.BREW_OUT | default (printf "build/%s.rb" .NAME)}}'
     cmds:
-      - scripts/brew-formula.sh {{if .BREW_DEV}}--dev {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
+      - scripts/brew-formula.sh {{if .BREW_BETA}}--beta {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
 
   release:images:
     desc: Build and push the multi-arch sandbox base image, the pool, agent and platform bundles, and the harness bundles for RELEASE_TAG
@@ -2139,6 +2226,8 @@ tasks:
         tags="-t $ref"
         if [ -n "{{.DOT_RELEASE}}" ]; then
           tags="$tags -t {{.REGISTRY}}/discobox-{{.IMAGE}}:latest"
+        elif [ -n "{{.MAIN_BUILD}}" ]; then
+          echo "$tag is a main build; not moving :latest" >&2
         else
           echo "$tag is an explicit prerelease; not moving :latest" >&2
         fi

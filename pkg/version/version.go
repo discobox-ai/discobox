@@ -7,6 +7,7 @@
 package version
 
 import (
+	"fmt"
 	"runtime/debug"
 	"strings"
 )
@@ -53,4 +54,36 @@ func String() string {
 		b.WriteString("+dirty")
 	}
 	return b.String()
+}
+
+// mainBuildMarker is what sets a main build's version apart from a tagged
+// release's: v<next patch>-main.<count>.g<sha7> (ADR 26-11-16-249 §5).
+const mainBuildMarker = "-main."
+
+// MainBuild reports whether v is the version of a main build, a release of a
+// main commit published apart from the tagged releases and deleted after
+// fourteen days, rather than a tagged release.
+func MainBuild(v string) bool {
+	return strings.HasPrefix(v, "v") && strings.Contains(v, mainBuildMarker)
+}
+
+// MainBuildVersion is the version of a main build of the commit sha, the
+// first-parent count-th on main, made after the release latest (the highest
+// vMAJOR.MINOR.PATCH tag). It is a semver prerelease of latest's next patch,
+// so it sorts above latest and below the next dot release, and above every
+// main build before it.
+func MainBuildVersion(latest string, count int, sha string) (string, error) {
+	var major, minor, patch int
+	var rest string
+	if n, _ := fmt.Sscanf(latest, "v%d.%d.%d%s", &major, &minor, &patch, &rest); n != 3 ||
+		fmt.Sprintf("v%d.%d.%d", major, minor, patch) != latest {
+		return "", fmt.Errorf("%q is not a vMAJOR.MINOR.PATCH release", latest)
+	}
+	if count <= 0 {
+		return "", fmt.Errorf("commit count %d is not positive", count)
+	}
+	if len(sha) < 7 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return "", fmt.Errorf("%q is not a commit hash", sha)
+	}
+	return fmt.Sprintf("v%d.%d.%d%s%d.g%s", major, minor, patch+1, mainBuildMarker, count, sha[:7]), nil
 }

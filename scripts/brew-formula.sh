@@ -1,18 +1,24 @@
 #!/bin/sh
 # Write a Homebrew formula for a released discobox tag.
 #
-# Usage: scripts/brew-formula.sh [--dev] <tag> [repo] [output]
+# Usage: scripts/brew-formula.sh [--beta | --dev] <tag> [repo] [output]
 #
 # Two formulae come out of here, from the same assets and the same rules:
 #
-#   discobox      the stable channel, installed as `discobox`
-#   discobox-dev  the latest channel (--dev), installed as `discobox-dev`
+#   discobox       the stable channel, installed as `discobox`
+#   discobox-beta  the beta channel (--beta), installed as `discobox-beta`,
+#                  with `discobox-dev` beside it, the command's old name
 #
 # They are separate formulae rather than one with a version switch because
 # Homebrew refuses to link two formulae that install the same file, and the
-# point of the dev channel is being able to hold both at once. So the dev
+# point of the beta channel is being able to hold both at once. So the beta
 # formula installs its command under its own name; the CLI reads that name off
 # argv[0] and calls itself by it.
+#
+# The beta formula was called discobox-dev (ADR 26-11-16-249 renamed it). The
+# tap renames an installed keg through its formula_renames.json, and until its
+# update workflow asks for --beta, --dev still writes the discobox-dev formula
+# it asks for today.
 #
 # Generated rather than hand-edited because the checksums have to be of the
 # assets the release actually uploaded — a formula with a stale sha256 fails for
@@ -25,9 +31,10 @@
 # cannot reach into a Taskfile that assumes a Go toolchain.
 set -eu
 
-dev=""
+channel=stable
 case "${1:-}" in
-  --dev) dev=yes; shift ;;
+  --beta) channel=beta; shift ;;
+  --dev) channel=dev; shift ;;
 esac
 
 tag="${1:-}"
@@ -39,18 +46,30 @@ case "$tag" in
 esac
 version="${tag#v}"
 
-# Everything that differs between the two channels, decided once.
-if [ -n "$dev" ]; then
-  class=DiscoboxDev
-  cmdname=discobox-dev
-  desc="Sandboxed development environments for coding agents (latest channel)"
-  default_out=build/discobox-dev.rb
-else
-  class=Discobox
-  cmdname=discobox
-  desc="Sandboxed development environments for coding agents"
-  default_out=build/discobox.rb
-fi
+# Everything that differs between the channels, decided once. alias is a
+# second command the formula links to the same binary.
+alias=""
+case "$channel" in
+  beta)
+    class=DiscoboxBeta
+    cmdname=discobox-beta
+    alias=discobox-dev
+    desc="Sandboxed development environments for coding agents (beta channel)"
+    default_out=build/discobox-beta.rb
+    ;;
+  dev)
+    class=DiscoboxDev
+    cmdname=discobox-dev
+    desc="Sandboxed development environments for coding agents (beta channel)"
+    default_out=build/discobox-dev.rb
+    ;;
+  *)
+    class=Discobox
+    cmdname=discobox
+    desc="Sandboxed development environments for coding agents"
+    default_out=build/discobox.rb
+    ;;
+esac
 out="${3:-$default_out}"
 
 work="$(mktemp -d)"
@@ -62,21 +81,28 @@ done
 
 sha() { sha256sum "$work/$1" | cut -d' ' -f1; }
 
-# The paragraph about holding both channels at once, which only the dev formula
-# has anything to say about. Written here so the caveats heredoc below stays one
-# block for both.
+# The paragraph about holding both channels at once, which only the beta
+# formula has anything to say about. Written here so the caveats heredoc below
+# stays one block for both.
 both=""
-if [ -n "$dev" ]; then
-  both='      This is the latest channel: it tracks the newest tagged release, which
-      has not been marked stable. Install it beside "discobox" and run it as
-      "discobox-dev".
+if [ "$channel" != stable ]; then
+  both="      This is the beta channel: it tracks the newest vX.Y.Z release, which
+      has not necessarily been marked stable. Install it beside \"discobox\" and
+      run it as \"$cmdname\".
 
       Both share one state directory, one configuration, and one server stage,
       so their servers cannot run at the same time — that is deliberate, and
       whichever you start second will say so. Stop one before starting the
       other.
 
-'
+"
+fi
+# The old command name, linked to the same binary so a script that runs it
+# keeps working; the CLI says what replaced it when run that way.
+link=""
+if [ -n "$alias" ]; then
+  link="
+    bin.install_symlink \"$cmdname\" => \"$alias\""
 fi
 
 mkdir -p "$(dirname "$out")"
@@ -110,7 +136,7 @@ class $class < Formula
   end
 
   def install
-    bin.install Dir["discobox-*"].first => "$cmdname"
+    bin.install Dir["discobox-*"].first => "$cmdname"$link
   end
 
   def caveats

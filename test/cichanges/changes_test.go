@@ -240,6 +240,57 @@ func TestCICancelsSupersededRuns(t *testing.T) {
 	}
 }
 
+// A main build publishes, so it is never canceled in progress, and its runs
+// share one group so a newer green commit replaces a pending build rather than
+// queueing behind it. Only a run that builds joins that group: CI's own
+// canceled runs on main complete too, and in the shared group each would
+// replace a pending build and then skip it.
+func TestMainBuildCoalescesOnlyBuildingRuns(t *testing.T) {
+	data, err := os.ReadFile("../../.github/workflows/main-build.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		On struct {
+			WorkflowRun struct {
+				Workflows []string `yaml:"workflows"`
+				Branches  []string `yaml:"branches"`
+			} `yaml:"workflow_run"`
+		} `yaml:"on"`
+		Concurrency struct {
+			Group            string `yaml:"group"`
+			CancelInProgress any    `yaml:"cancel-in-progress"`
+		} `yaml:"concurrency"`
+		Jobs map[string]struct {
+			If string `yaml:"if"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(workflow.Concurrency.CancelInProgress); got != "false" {
+		t.Errorf("cancel-in-progress %q, want false", got)
+	}
+	group := workflow.Concurrency.Group
+	const gate = "github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'"
+	// A dispatch from another branch builds nothing, so it must not join
+	// the group either.
+	const dispatch = "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'"
+	for _, want := range []string{gate, dispatch, "'main-build'", "github.run_id"} {
+		if !strings.Contains(group, want) {
+			t.Errorf("concurrency group %q lacks %q", group, want)
+		}
+	}
+	for _, want := range []string{gate, dispatch} {
+		if !strings.Contains(workflow.Jobs["version"].If, want) {
+			t.Errorf("the version job's if %q does not gate on %q", workflow.Jobs["version"].If, want)
+		}
+	}
+	if got := workflow.On.WorkflowRun; strings.Join(got.Workflows, ",") != "CI" || strings.Join(got.Branches, ",") != "main" {
+		t.Errorf("runs after %v on %v, want CI on main", got.Workflows, got.Branches)
+	}
+}
+
 func write(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, name)
