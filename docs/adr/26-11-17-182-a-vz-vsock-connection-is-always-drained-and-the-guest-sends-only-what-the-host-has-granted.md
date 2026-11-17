@@ -59,7 +59,8 @@ What `main` (`190d5647a`) has between the framework and its consumers:
 
 **Measured: a larger host buffer is not backpressure.** macos-worker patched
 the binding to set `SO_RCVBUF` on every host connection and ran the hairpin
-(A) and a stalled reader from the Mac (B) on v0.20.0-rc.1:
+(A) and a stalled reader from the Mac (B) on v0.20.0-rc.1 (full report:
+#1334, comment 6963495913):
 
 | `SO_RCVBUF` | A: hairpin | B: stalled reader |
 | --- | --- | --- |
@@ -67,9 +68,17 @@ the binding to set `SO_RCVBUF` on every host connection and ran the hairpin
 | 256 KiB | lockup | lockup |
 | 1 MiB | lockup | lockup |
 | 4 MiB | lockup | guest stalls ~30 s, recovers, stream cut at 98,304 B |
+| 8 MiB (the kernel maximum) | lockup | not healthy; 98,304 B counted |
+
+B counted 98,304 bytes in every run. At 1, 4 and 8 MiB alike, the Mac showed
+the stalled connection's Unix socket at Recv-Q 8192, and `SO_SNDBUF` stayed
+8192. Raising the host end's receive buffer does not enlarge what the socket
+holds: the space is set on the framework's sending end, which the host does
+not own.
 
 The framework does not hold the guest to the host socket's free space: it
-credits the guest more than the host buffer holds, then blocks in `writev`.
+credits the guest more than the socket holds, about 8 KiB whatever the host
+sets, then blocks in `writev`.
 Because of that, the host cannot apply per-connection backpressure through
 the framework at all. Any stop in reading, at any buffer size, eventually
 blocks the shared queue. Flow control has to live above VSOCK, between the
@@ -119,7 +128,7 @@ stream closes the session and the connection.
 window, which is also its minimum. Its `MaxStreamWindowSize` is set to the
 same value, so the window never grows past it. Host memory for a stalled
 connection is therefore at most 256 KiB in the stream's buffer, plus the
-socket buffer of §4. It never grows with the size of the stream.
+socket's 8 KiB. It never grows with the size of the stream.
 
 At VSOCK's latency, 256 KiB is far above the bandwidth-delay product, so the
 window costs no throughput. The delivering change confirms this on the
@@ -136,30 +145,22 @@ session. Because each session carries one connection, that is a reset of one
 connection, never of the pool. A framed peer never does this. It happens only
 with a peer that does not speak the framing (§5).
 
-### 4. The host socket holds a whole window before anyone reads it (vz fork change)
+### 4. Nothing is asked of the socket buffer, and the binding is unchanged
 
+The host socket holds about 8 KiB, and the host cannot raise it (Context).
 yamux lets a sender put one full initial window, 256 KiB, on a new stream
-before the receiver has granted anything. Between the framework handing over
-a connection and §2's session reading it, those bytes can only wait in the
-host socket. At 8 KiB that is the original deadlock, for as long as the
-session's goroutine is not scheduled.
+before the receiver has granted anything, so the socket fills whenever the
+guest sends faster than §2's session reads. That is safe for one reason: the
+session waits on nothing but the CPU. A `writev` that finds the socket full
+waits only until that goroutine next runs. It does not wait on a consumer,
+on another connection, or on the queue itself, so it cannot close a cycle.
+The deadlock in Context needed a reader waiting on the queue; §2 makes that
+impossible, and is the whole guarantee.
 
-So `vzvm` sets the host end's `SO_RCVBUF` to at least 512 KiB, one window
-plus slack for frame headers and window updates, and reads the value back.
-A connection whose buffer the kernel refuses to raise to a window is closed
-at once, with an error naming the size, rather than used. With the framing,
-the framework can never have more than a window in flight for a connection,
-so a socket that holds a window can never block its `writev`, read or not.
-
-The measurement shows the buffer alone is not enough: without the framing
-the guest is not bounded by it. Together with §1 it is sufficient.
-
-The binding exposes nothing to set it on. The change to `discobox-ai/vz` is
-that `VirtioSocketConnection` implements `syscall.Conn` (`SyscallConn`,
-delegating to its `net.Conn`). It's a general accessor, upstreamable, and
-it sets no policy in the binding. It goes as a PR to the fork. The server
-can pin it only once that PR is merged. The fork bump needs
-`test:vz-stress` and `test:vz-teardown` on a real guest (vz `REVIEW.md`).
+So the host sets no `SO_RCVBUF`, and `discobox-ai/vz` needs no change: `vzvm`
+wraps the `net.Conn` the binding already returns. The binding's one-slot
+accept channel is drained by `vzvm`'s own accept loop (§2), never by a
+consumer.
 
 ### 5. The framing is part of the guest compatibility surface, selected by the endpoint
 
@@ -209,7 +210,7 @@ would be the deadlock this ADR removes.
   reader, a stalled outbound upstream, and a slow Docker client. The guest is
   told to wait, and no legitimate transfer is reset.
 - Per connection, the host holds at most one window in the stream plus one
-  socket buffer, about 768 KiB, whatever the stream's length. Connections in
+  socket's 8 KiB, about 264 KiB, whatever the stream's length. Connections in
   flight times that is the worst case.
 - Every vz VSOCK byte pays a 12-byte frame header per frame and periodic
   window updates. That is negligible at these sizes.
@@ -235,10 +236,9 @@ would be the deadlock this ADR removes.
   server's memory.
 - **(c) A bounded buffer that spills to disk.** Same unboundedness on disk,
   and a stalled reader of a large stream fills the user's disk.
-- **A larger host `SO_RCVBUF` alone** (cloudnautique's fix 2 on #1330).
-  Measured above: at no size does the framework stop crediting the guest, so
-  any stop in reading still blocks the queue. It is kept only as §4's
-  complement to the framing.
+- **A larger host `SO_RCVBUF`** (cloudnautique's fix 2 on #1330), alone or
+  beside the framing. Measured above: up to the kernel maximum, the socket
+  still holds 8 KiB, so it changes nothing.
 - **One session per guest for all traffic, as wslc's `cpmux` channel.**
   Fewer connections and cancellable stream opens would also serve #1335 and
   #1336. Rejected here because it changes the connection model and the
@@ -249,5 +249,5 @@ would be the deadlock this ADR removes.
   implementation to get right. yamux is already a dependency and already the
   framing of a pool channel (`cpmux`).
 - **Policy in the binding** (the fork drains and buffers). Rejected because
-  the fork stays a thin, upstreamable binding (vz `REVIEW.md`), and §4's
-  accessor is all it needs.
+  the fork stays a thin, upstreamable binding (vz `REVIEW.md`), and `vzvm`
+  can do all of it on the `net.Conn` the binding already returns (§4).
