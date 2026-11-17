@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -117,9 +116,9 @@ func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part
 	if err != nil && !errors.Is(err, errCapped) {
 		return "", err
 	}
-	text := body.String()
-	if !shown.cut && json.Valid(body.Bytes()) {
-		text = indentAuditJSON(body.Bytes())
+	text, layoutNote := body.String(), ""
+	if !shown.cut {
+		text, layoutNote = indentAuditJSON(body.Bytes())
 	}
 	var out strings.Builder
 	if note := strings.TrimSpace(spooled.String()); note != "" {
@@ -130,6 +129,10 @@ func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part
 		out.WriteString("(empty)")
 	}
 	out.WriteString(terminalSafeMultiline(text))
+	if layoutNote != "" {
+		out.WriteString("\n\n")
+		out.WriteString(layoutNote)
+	}
 	if shown.cut {
 		fmt.Fprintf(&out, "\n\n… the first %d bytes. All of it: discobox admin audit http --discobox %s --body %s --part %s",
 			auditBodyShown, terminalSafe(sandboxID), id, part)

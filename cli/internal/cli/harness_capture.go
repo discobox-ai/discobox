@@ -109,7 +109,7 @@ const harnessDiffIndentBytes = 4 << 20
 // saved are indented, and a diff of the two would show every line changed for
 // a change to one. Only the layout goes; a field the save drops still shows.
 func diffText(content string) string {
-	if !json.Valid([]byte(content)) || indentedSize(content) > harnessDiffIndentBytes {
+	if !json.Valid([]byte(content)) || indentedSize(content, harnessDiffIndentBytes) > harnessDiffIndentBytes {
 		return content
 	}
 	var indented bytes.Buffer
@@ -120,13 +120,18 @@ func diffText(content string) string {
 }
 
 // indentedSize is an upper bound on the size of valid JSON re-indented two
-// spaces a level, found in one pass without writing it: the text itself plus,
-// for each line break indenting adds, the break and its indent, and the space
-// after each colon.
-func indentedSize(content string) int {
+// spaces a level, found in one pass without writing it: the text itself less
+// the whitespace between its tokens, which indenting drops, plus, for each
+// line break indenting adds, the break and its indent, and the space after
+// each colon. A document already indented so counts as what it is, not twice.
+// Whitespace after the last token is counted as it is: indenting keeps it.
+// It stops counting once past limit: all a caller needs to know then is that
+// the layout would not fit.
+func indentedSize(content string, limit int) int {
 	size, depth, inString, escaped := len(content), 0, false, false
-	for i := 0; i < len(content) && size <= harnessDiffIndentBytes; i++ {
-		c := content[i]
+	tokens := strings.TrimRight(content, " \t\n\r")
+	for i := 0; i < len(tokens) && size <= limit; i++ {
+		c := tokens[i]
 		switch {
 		case inString:
 			switch {
@@ -139,6 +144,8 @@ func indentedSize(content string) int {
 			}
 		case c == '"':
 			inString = true
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
+			size--
 		case c == '{' || c == '[':
 			depth++
 			size += 1 + 2*depth
