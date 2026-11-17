@@ -8,7 +8,7 @@ the ones a release uploads. The decision and the alternatives rejected are
 ```mermaid
 flowchart TD
     user["curl -sSfL https://discobox.ai | sh"]
-    site["discobox-ai/site Worker<br/>discobox.ai: stable<br/>edge.discobox.ai: edge"]
+    site["discobox-ai/site Worker<br/>discobox.ai: stable<br/>edge.discobox.ai: edge<br/>main.discobox.ai: main"]
     script["install.sh of release X<br/>stamped: X + SHA-256 per binary"]
     api["GitHub Releases API<br/>(only for --channel)"]
     other["install.sh of release Y"]
@@ -33,14 +33,20 @@ flowchart TD
   pattern that cannot close a quote in either language, and requires each marker
   exactly once. `internal/cmd/discobox-installers` is its one caller, run by
   `release:installers` over the CLI binaries `release:publish` uploads.
-- **Channels** are resolved by the script from one unauthenticated Releases API
-  request, never on the default path: `stable` is the newest non-prerelease,
-  `latest` the newest `vMAJOR.MINOR.PATCH`, and `edge` the newer (by version
-  core, stable winning a tie) of the newest stable release and the newest
-  prerelease. Only `v[0-9]*` tags count.
+- **Channels** are resolved by the script, never on the default path
+  ([ADR 26-11-16-249](../../docs/adr/26-11-16-249-main-is-a-channel-built-into-its-own-repository-and-latest-is-no-channels-name.md)
+  names them). `stable`, `beta` and `edge` come from one unauthenticated
+  Releases API request: `stable` is the newest non-prerelease, `beta` the
+  newest `vMAJOR.MINOR.PATCH`, and `edge` the newer (by version core, stable
+  winning a tie) of the newest stable release and the newest prerelease. Only
+  `v[0-9]*` tags count. `main` is the newest main build, read from where
+  `github.com/discobox-ai/discobox-main/releases/latest` redirects, with no API
+  call. `latest`, the old name for `beta`, still installs `beta` and says so.
 - **Downloads** try `assets.discobox.ai/discobox/<tag>/` and then the GitHub
   release URL, moving on when a source is missing or its bytes miss the digest
-  (ADR 0106).
+  (ADR 0106). A main build's version (`-main.` in it) is fetched from
+  `discobox-ai/discobox-main`'s release URL alone; a missing one says main
+  builds are deleted after fourteen days and to install `--channel main`.
 - **Verification** runs `discobox version --client`, checking the installed
   binary without contacting or starting the server.
 - **The server is not part of the install.** Both scripts close by saying what
@@ -56,9 +62,9 @@ flowchart TD
   options, environment variables, precedence (a flag beats the environment, a
   version beats a channel), channel rules, and refusals. Change them together.
 - The channel rules are written three times — here in both scripts, in the
-  Homebrew tap's `update-formula.yml` (`stable`, `latest`), and in the site
-  Worker (`edge`, from the mirror's two aliases). A change to one is a change to
-  all of them.
+  Homebrew tap's `update-formula.yml` (`stable`, `beta`), and in the site
+  Worker (`edge`, from the mirror's two aliases; `main`, from the main builds'
+  repository's latest release). A change to one is a change to all of them.
 - Everything runs inside `main` / `Install-Discobox`, called on the last line:
   a truncated download runs nothing, and `iex` leaves no preference behind.
   `install.ps1` never calls `exit`, which would close the caller's session.

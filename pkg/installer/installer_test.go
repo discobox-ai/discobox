@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -91,6 +92,9 @@ type release struct {
 	prerelease bool
 	// noInstaller is a release cut before install.sh existed.
 	noInstaller bool
+	// main is a main build: published in its own repository, absent from
+	// the Releases API's list, and the newest one is that repository's latest.
+	main bool
 }
 
 // server fakes both places a release's assets are published and the Releases
@@ -112,6 +116,11 @@ type server struct {
 	hideTag string
 	// apiCalls counts the requests the API has answered.
 	apiCalls atomic.Int32
+	// mainLatest is the main builds' repository's latest release, "" for none.
+	mainLatest string
+	// mainSlash ends the page latest redirects to in a slash, as a static
+	// file server serving a directory does.
+	mainSlash bool
 }
 
 func newServer(t *testing.T, releases []release) *server {
@@ -123,6 +132,9 @@ func newServer(t *testing.T, releases []release) *server {
 		sum := sha256.Sum256(binary)
 		asset := hostAsset()
 		s.files[r.tag] = map[string][]byte{asset: binary}
+		if r.main && s.mainLatest == "" {
+			s.mainLatest = r.tag
+		}
 		if !r.noInstaller {
 			scripts, err := Stamp(r.tag, []Asset{{Name: asset, SHA256: hex.EncodeToString(sum[:])}})
 			if err != nil {
@@ -131,6 +143,9 @@ func newServer(t *testing.T, releases []release) *server {
 			for name, script := range scripts {
 				s.files[r.tag][name] = script
 			}
+		}
+		if r.main {
+			continue
 		}
 		list = append(list, githubRelease{
 			URL:        "https://api.github.com/repos/discobox-ai/discobox/releases/1",
@@ -174,6 +189,31 @@ func newServer(t *testing.T, releases []release) *server {
 	}
 	mux.HandleFunc("GET /mirror/{tag}/{asset}", serve(&s.mirror))
 	mux.HandleFunc("GET /github/{tag}/{asset}", serve(&s.github))
+	// The main builds' repository: its assets, served only for main builds,
+	// and its latest release, a redirect to the newest one's page as GitHub
+	// answers it.
+	mux.HandleFunc("GET /main/download/{tag}/{asset}", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.PathValue("tag"), "-main.") {
+			http.NotFound(w, r)
+			return
+		}
+		serve(new(string))(w, r)
+	})
+	mux.HandleFunc("GET /main/latest", func(w http.ResponseWriter, r *http.Request) {
+		if s.mainLatest == "" {
+			// GitHub's answer for a repository with no release: its list.
+			http.Redirect(w, r, "/main/releases", http.StatusFound)
+			return
+		}
+		page := "/main/tag/" + s.mainLatest
+		if s.mainSlash {
+			page += "/"
+		}
+		http.Redirect(w, r, page, http.StatusFound)
+	})
+	mux.HandleFunc("GET /main/tag/{tag}/", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "a release page") })
+	mux.HandleFunc("GET /main/releases", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "no releases") })
+	mux.HandleFunc("GET /main/tag/{tag}", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "a release page") })
 	mux.HandleFunc("GET /api/releases", func(w http.ResponseWriter, _ *http.Request) {
 		s.apiCalls.Add(1)
 		if s.rateLimited {
@@ -213,6 +253,8 @@ func (s *server) env() []string {
 	return []string{
 		"DISCOBOX_INSTALL_SOURCES=" + s.URL + "/mirror " + s.URL + "/github",
 		"DISCOBOX_INSTALL_API=" + s.URL + "/api",
+		"DISCOBOX_INSTALL_MAIN_SOURCES=" + s.URL + "/main/download",
+		"DISCOBOX_INSTALL_MAIN_LATEST=" + s.URL + "/main/latest",
 	}
 }
 
@@ -287,6 +329,9 @@ func TestMain(m *testing.M) {
 // leaves them: an explicit alpha on top, then a dot release nobody has blessed
 // yet, then the newest blessed one, then one from before install.sh existed.
 var ladder = []release{
+	// Main builds, newest first, in the repository of their own.
+	{tag: "v1.2.1-main.42.gbbbbbbb", main: true},
+	{tag: "v1.2.1-main.41.gaaaaaaa", main: true},
 	{tag: "v1.3.0-alpha.1", prerelease: true},
 	{tag: "v1.2.0", prerelease: true},
 	{tag: "v1.1.0"},
@@ -389,11 +434,16 @@ func TestShellChannelsAndVersions(t *testing.T) {
 	}{
 		"source installs stable":              {source, nil, nil, "v1.1.0"},
 		"stable":                              {stamped, nil, []string{"--channel", "stable"}, "v1.1.0"},
-		"latest is the newest dot release":    {stamped, nil, []string{"--channel", "latest"}, "v1.2.0"},
+		"beta is the newest dot release":      {stamped, nil, []string{"--channel", "beta"}, "v1.2.0"},
+		"latest is still beta":                {stamped, nil, []string{"--channel", "latest"}, "v1.2.0"},
 		"edge includes an alpha":              {stamped, nil, []string{"--channel=edge"}, "v1.3.0-alpha.1"},
+		"main is the newest main build":       {stamped, nil, []string{"--channel", "main"}, "v1.2.1-main.42.gbbbbbbb"},
+		"main from the source":                {source, []string{"DISCOBOX_CHANNEL=main"}, nil, "v1.2.1-main.42.gbbbbbbb"},
+		"a main build by version":             {stamped, nil, []string{"--version", "v1.2.1-main.41.gaaaaaaa"}, "v1.2.1-main.41.gaaaaaaa"},
+		"a main build installs itself":        {s.script(t, "v1.2.1-main.41.gaaaaaaa", ShellName), nil, nil, "v1.2.1-main.41.gaaaaaaa"},
 		"a version":                           {stamped, nil, []string{"--version", "v1.2.0"}, "v1.2.0"},
 		"a version without its v":             {source, nil, []string{"--version", "1.3.0-alpha.1"}, "v1.3.0-alpha.1"},
-		"channel from the environment":        {stamped, []string{"DISCOBOX_CHANNEL=latest"}, nil, "v1.2.0"},
+		"channel from the environment":        {stamped, []string{"DISCOBOX_CHANNEL=beta"}, nil, "v1.2.0"},
 		"version beats channel in env":        {stamped, []string{"DISCOBOX_CHANNEL=edge", "DISCOBOX_VERSION=v1.2.0"}, nil, "v1.2.0"},
 		"a flag beats the environment":        {stamped, []string{"DISCOBOX_VERSION=v1.2.0"}, []string{"--channel", "stable"}, "v1.1.0"},
 		"a version flag beats a channel flag": {stamped, nil, []string{"--channel", "edge", "--version", "v1.2.0"}, "v1.2.0"},
@@ -408,11 +458,50 @@ func TestShellChannelsAndVersions(t *testing.T) {
 	}
 }
 
+// latest was the beta channel's name, and still installs it, saying so.
+func TestShellLatestSaysItIsNowBeta(t *testing.T) {
+	requireShell(t)
+	s := newServer(t, ladder)
+	got := runShell(t, s, s.script(t, "v1.1.0", ShellName), nil, "--channel", "latest")
+	if got.err != nil || got.version != "v1.2.0" {
+		t.Fatalf("installed %q, want v1.2.0; err %v:\n%s", got.version, got.err, got.output)
+	}
+	if !strings.Contains(got.output, "the latest channel is now called beta") {
+		t.Errorf("--channel latest did not say it is now beta:\n%s", got.output)
+	}
+}
+
+// Main builds are looked up in their own repository, never in the Releases
+// API, and a repository with none yet says so.
+func TestShellMainChannel(t *testing.T) {
+	requireShell(t)
+	s := newServer(t, ladder)
+	got := runShell(t, s, s.script(t, "v1.1.0", ShellName), nil, "--channel", "main")
+	if got.err != nil || got.version != "v1.2.1-main.42.gbbbbbbb" {
+		t.Fatalf("installed %q; err %v:\n%s", got.version, got.err, got.output)
+	}
+	if calls := s.apiCalls.Load(); calls != 0 {
+		t.Errorf("the Releases API was asked %d times for the main channel", calls)
+	}
+
+	s.mainSlash = true
+	got = runShell(t, s, s.script(t, "v1.1.0", ShellName), nil, "--channel", "main")
+	if got.err != nil || got.version != "v1.2.1-main.42.gbbbbbbb" {
+		t.Fatalf("a release page ending in a slash: installed %q; err %v:\n%s", got.version, got.err, got.output)
+	}
+
+	empty := newServer(t, []release{{tag: "v1.1.0"}})
+	got = runShell(t, empty, empty.script(t, "v1.1.0", ShellName), nil, "--channel", "main")
+	if got.err == nil || !strings.Contains(got.output, "no build on the main channel yet") {
+		t.Fatalf("an empty main channel: installed %q, err %v:\n%s", got.version, got.err, got.output)
+	}
+}
+
 func TestShellReadsTheReleaseListWhateverItsKeyOrder(t *testing.T) {
 	requireShell(t)
 	s := newServer(t, ladder)
 	s.sortedAPI = true
-	for channel, want := range map[string]string{"stable": "v1.1.0", "latest": "v1.2.0", "edge": "v1.3.0-alpha.1"} {
+	for channel, want := range map[string]string{"stable": "v1.1.0", "beta": "v1.2.0", "edge": "v1.3.0-alpha.1"} {
 		got := runShell(t, s, s.script(t, "", ShellName), nil, "--channel", channel)
 		if got.err != nil || got.version != want {
 			t.Errorf("%s: installed %q, want %s; err %v:\n%s", channel, got.version, want, got.err, got.output)
@@ -437,7 +526,7 @@ func TestShellFallsBackFromTheMirror(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			s := newServer(t, ladder)
 			s.mirror = mode
-			got := runShell(t, s, s.script(t, "v1.1.0", ShellName), nil, "--channel", "latest")
+			got := runShell(t, s, s.script(t, "v1.1.0", ShellName), nil, "--channel", "beta")
 			if got.err != nil || got.version != "v1.2.0" {
 				t.Fatalf("installed %q, err %v:\n%s", got.version, got.err, got.output)
 			}
@@ -456,7 +545,8 @@ func TestShellRefuses(t *testing.T) {
 		"bytes that match no digest":  {mirror: "corrupt", github: "corrupt", want: "SHA-256"},
 		"a release with no installer": {args: []string{"--version", "v1.0.0"}, want: "v1.0.0 has no installer"},
 		"a rate-limited lookup":       {rateLimited: true, args: []string{"--channel", "edge"}, want: "rate limiting"},
-		"an unknown channel":          {args: []string{"--channel", "beta"}, want: "no channel called beta"},
+		"an unknown channel":          {args: []string{"--channel", "nightly"}, want: "no channel called nightly"},
+		"a deleted main build":        {args: []string{"--version", "v1.2.1-main.7.gccccccc"}, want: "--channel main"},
 		"an unknown option":           {args: []string{"--force"}, want: "unknown option --force"},
 		"a version that is not one":   {args: []string{"--version", "main"}, want: "not a release version"},
 	} {
@@ -543,7 +633,10 @@ func TestPowerShell(t *testing.T) {
 				"server unavailable":                {false, []string{"DISCOBOX_FAKE_SERVER_UNAVAILABLE=1"}, "", "v1.1.0"},
 				"its own release through iex":       {true, nil, "", "v1.1.0"},
 				"edge":                              {false, nil, "-Channel edge", "v1.3.0-alpha.1"},
-				"latest through iex":                {true, []string{"DISCOBOX_CHANNEL=latest"}, "", "v1.2.0"},
+				"beta through iex":                  {true, []string{"DISCOBOX_CHANNEL=beta"}, "", "v1.2.0"},
+				"latest is still beta":              {false, nil, "-Channel latest", "v1.2.0"},
+				"main":                              {false, nil, "-Channel main", "v1.2.1-main.42.gbbbbbbb"},
+				"a main build by version":           {false, nil, "-Version v1.2.1-main.41.gaaaaaaa", "v1.2.1-main.41.gaaaaaaa"},
 				"a version":                         {false, nil, "-Version 1.2.0", "v1.2.0"},
 				"a parameter beats the environment": {false, []string{"DISCOBOX_VERSION=v1.2.0"}, "-Channel stable", "v1.1.0"},
 			} {
@@ -575,7 +668,7 @@ func TestPowerShellFallsBackAndRefuses(t *testing.T) {
 			}
 
 			s.mirror, s.github, s.rateLimited = "", "", true
-			got = runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "-Channel latest")
+			got = runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "-Channel beta")
 			if got.err == nil || !strings.Contains(got.output, "rate limiting") {
 				t.Fatalf("a rate-limited lookup did not say so: err %v:\n%s", got.err, got.output)
 			}
@@ -584,6 +677,17 @@ func TestPowerShellFallsBackAndRefuses(t *testing.T) {
 			got = runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "-Version v1.0.0")
 			if got.err == nil || !strings.Contains(got.output, "v1.0.0 has no installer") {
 				t.Fatalf("a release with no installer did not say so: err %v:\n%s", got.err, got.output)
+			}
+
+			got = runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "-Version v1.2.1-main.7.gccccccc")
+			if got.err == nil || !strings.Contains(got.output, "-Channel main") {
+				t.Fatalf("a deleted main build did not say to install the newest: err %v:\n%s", got.err, got.output)
+			}
+
+			empty := newServer(t, []release{{tag: "v1.1.0"}})
+			got = runPowerShell(t, shell, empty, empty.script(t, "v1.1.0", PowerShellName), false, nil, "-Channel main")
+			if got.err == nil || !strings.Contains(got.output, "no build on the main channel yet") {
+				t.Fatalf("an empty main channel did not say so: err %v:\n%s", got.err, got.output)
 			}
 		})
 	}
