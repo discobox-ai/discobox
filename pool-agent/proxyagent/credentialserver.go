@@ -66,6 +66,7 @@ func newControlPlaneCredentials(root layout.Root, projectID, poolID string) *con
 // exactly what a fake listener would skip.
 func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, secretsPath string, trusts *hostTrusts, proxyServer *proxy.Server) error {
 	handler := &credentialsHandler{
+		logger:       logger,
 		controlPlane: controlPlane,
 		secretsPath:  secretsPath,
 		trusts:       trusts,
@@ -102,6 +103,7 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 // request rather than once is what makes the identity structural: there is no
 // shared handler a caller could reach that is not already scoped to it.
 type credentialsHandler struct {
+	logger       *slog.Logger
 	controlPlane *controlPlaneCredentials
 	secretsPath  string
 	trusts       *hostTrusts
@@ -126,6 +128,7 @@ func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		secretsPath: h.secretsPath,
 		trusts:      h.trusts,
 		proxy:       h.proxy,
+		logger:      h.logger,
 	}).ServeHTTP(w, r.WithContext(ctx))
 }
 
