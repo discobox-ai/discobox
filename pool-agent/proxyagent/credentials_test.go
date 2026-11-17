@@ -332,7 +332,7 @@ func TestAnUnreachableControlPlaneTellsTheSandboxNoHostDetail(t *testing.T) {
 		sandboxID:   "sb-1",
 		controlPlan: plane,
 		trusts:      newHostTrusts(nil, plane, nil, nil),
-		logger:      slog.New(slog.NewTextHandler(&logged, nil)),
+		logger:      slog.New(slog.NewJSONHandler(&logged, nil)),
 	}
 	ctx := context.Background()
 	calls := map[string]func() error{
@@ -362,8 +362,13 @@ func TestAnUnreachableControlPlaneTellsTheSandboxNoHostDetail(t *testing.T) {
 					t.Errorf("message sent to the sandbox = %q, names host detail %q", sent, leak)
 				}
 			}
-			if !strings.Contains(logged.String(), socket) {
-				t.Errorf("pool log = %q, want the dial error naming %q", logged.String(), socket)
+			// Read the logged error back as its value: a rendered line
+			// escapes it, and a Windows path's backslashes with it.
+			var line struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(logged.Bytes(), &line); err != nil || !strings.Contains(line.Error, socket) {
+				t.Errorf("pool log = %q, want one line whose error names %q", logged.String(), socket)
 			}
 		})
 	}
