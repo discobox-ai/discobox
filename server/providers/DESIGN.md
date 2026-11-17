@@ -225,6 +225,32 @@ client for its status line, and ordinary readiness waits outside eligible
 initial bootstrap (ADR 0081). Initial bootstrap uses its independent work
 record, not these telemetry timestamps.
 
+## Logging the Steps of Bringing a Pool Up
+
+Progress is for a waiting client and is overwritten as it goes. The server's
+log keeps the steps, so a restart's log alone says where the time between a VM
+starting and its pool settling went. A pool provider times one reconcile pass
+with `poolruntime.HostSteps`, and each step it ends is logged with the pool,
+its own `duration` and the pass's `elapsed` time. The Docker engine's steps are
+VM stopped to replace it (a repair), VM running, Docker ready, image ready,
+container kept / removed / started, box provisioned (or provisioned in place),
+agent restarted, and container healthy or still starting. discovm's are
+machine stopped to restart it (a repair), machine made or started, machine
+reached, box current or provisioned, and agent restarted.
+
+The drift scan walks the same steps every minute, so they log at info only
+once the pass says it brings the host up (`BringingUp`): the engine says so
+when `EnsureVM` started the VM (`VMInfo.Started`), when the daemon did not
+answer its first ping (a driver that cannot tell it started the VM), or when
+it makes or replaces the container or applies moved bundles; discovm when it
+makes or starts the machine or provisions it. A repair always does. Steps before that are held
+and logged with it, and a pass that never says so logs its steps at debug.
+After the host's steps, `poolruntime.Provider` syncs the agent's known pools,
+best effort and with retries: a sync that failed, or that succeeded only after
+retrying, logs its `duration` and `attempts`, so the time it took is not lost
+between the last step and the settle. How the pass ended is the reconciler's
+line ([pools](../internal/resources/pools/DESIGN.md)).
+
 ## Pool Image Acquisition
 
 Docker does not fetch on container create: an image the daemon does not hold is

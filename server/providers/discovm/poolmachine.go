@@ -222,7 +222,9 @@ func onceBegin(begin func(context.Context) error) func(context.Context) error {
 }
 
 func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
-	return h.converge(ctx, pool, maker, onceBegin(begin), false)
+	steps := poolruntime.NewHostSteps(pool.ID)
+	defer steps.Finish(ctx)
+	return h.converge(ctx, pool, maker, onceBegin(begin), false, steps)
 }
 
 // repairPoolHost restarts the pool's machine in place, on the same disk, and
@@ -230,10 +232,14 @@ func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, make
 // lost the pool's key is mended by the provider (ADR 26-10-24-953 §4). A pool
 // with no machine is made one.
 func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
+	// A repair provisions the pool's machine again: every step of it is
+	// bringing the host up.
+	steps := poolruntime.NewHostSteps(pool.ID)
+	steps.BringingUp(ctx)
 	gate := onceBegin(begin)
 	inst, err := h.instance(ctx, pool)
 	if errors.Is(err, errNoPoolMachine) {
-		return h.converge(ctx, pool, maker, gate, true)
+		return h.converge(ctx, pool, maker, gate, true, steps)
 	}
 	if err != nil {
 		return err
@@ -248,7 +254,8 @@ func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, make
 	if err := h.engine.Stop(ctx, inst, poolStopTimeout); err != nil && h.engine.State(ctx, inst) != engine.Stopped {
 		return fmt.Errorf("stop pool %s's machine: %w", pool.ID, err)
 	}
-	return h.converge(ctx, pool, maker, gate, true)
+	steps.Step(ctx, "stopped the pool's machine to restart it", "machine", inst.ID)
+	return h.converge(ctx, pool, maker, gate, true, steps)
 }
 
 // converge brings the pool's machine to what the provider wants (ADR
@@ -257,8 +264,9 @@ func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, make
 // for renewal, and provisioned when what it was placed with moved — its
 // bundles, or its bootstrap and environment, which the provider's
 // configuration decides — or always when force. Its record is written to the pool as it goes, so a pass that
-// fails part way still says what it placed, a key above all.
-func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, gate func(context.Context) error, force bool) error {
+// fails part way still says what it placed, a key above all. Each step it
+// takes is logged to steps, which the caller started with the pass.
+func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, gate func(context.Context) error, force bool, steps *poolruntime.HostSteps) error {
 	if err := pool.Outbound.RejectLocalEndpoints(); err != nil {
 		return err
 	}
@@ -316,6 +324,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 				return err
 			}
 			created = true
+			steps.BringingUp(ctx)
+			steps.Step(ctx, "made the pool's machine", "machine", inst.ID)
 			// create ran the driver's Check, so its limit is read.
 			record.MaxMachines, record.LimitCheckedAt = machineLimit(h.engine.Driver.Capabilities()), time.Now()
 		}
@@ -340,6 +350,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 			return fmt.Errorf("start pool %s's machine: %w", pool.ID, err)
 		}
 		started = true
+		steps.BringingUp(ctx)
+		steps.Step(ctx, "started the pool's machine", "machine", inst.ID)
 	}
 	if made || started {
 		markStarted(pool)
@@ -354,6 +366,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err != nil {
 		return fmt.Errorf("reach pool %s's machine: %w", pool.ID, notReachable(err))
 	}
+	steps.Step(ctx, "reached the pool's machine")
 	// The key is placed before anything the agent runs on, and recorded the
 	// moment it is: an issued key whose record is lost would be one nobody
 	// renews.
@@ -385,6 +398,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return err
 	}
 	if !force && current {
+		steps.Step(ctx, "the pool's box is current")
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 		// A pass that applied the in-machine placement and stopped before
 		// its old key was retired retires it now.
@@ -392,6 +406,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
 	// closed first, as it is before any agent is replaced.
+	steps.BringingUp(ctx)
 	if err := gate(ctx); err != nil {
 		return err
 	}
@@ -416,10 +431,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
 	}
+	steps.Step(ctx, "provisioned the pool's box")
 	if provisioned && record.Box.Placement != box.Placement {
 		if err := poolruntime.RestartPoolUnits(ctx, guest, false); err != nil {
 			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
+		steps.Step(ctx, "restarted the pool's agent on its new placement")
 	}
 	record.Box = box
 	pool.OutboundAppliedRevision = pool.Outbound.Revision()

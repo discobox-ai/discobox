@@ -285,6 +285,8 @@ func configRevision(cfg Config) string {
 func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) (resultErr error) {
 	defer func() { resultErr = pool.Outbound.RedactError(resultErr) }()
 	previousOutboundRevision := pool.OutboundAppliedRevision
+	steps := poolruntime.NewHostSteps(pool.ID)
+	defer steps.Finish(ctx)
 	// The phases of bringing a host up, in the order they happen, for a client
 	// whose sandbox is waiting for a pool to take it. On a VM backend starting
 	// the machine includes fetching the disk image the first time, which on a
@@ -296,13 +298,23 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
+	if vmInfo.Started {
+		steps.BringingUp(ctx)
+	}
+	steps.Step(ctx, "the pool's VM is running")
 	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
-	lease, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
+	lease, waited, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
 	releaseDocker()
 	if err != nil {
 		return err
 	}
 	defer lease.Release()
+	// A driver that cannot say it started the VM still shows it here: a
+	// daemon that did not answer at once is one coming up.
+	if waited {
+		steps.BringingUp(ctx)
+	}
+	steps.Step(ctx, "the pool's Docker daemon is ready")
 	delivery, err := e.driver.PoolOutbound(ctx, pool.ID, pool.Outbound)
 	if err != nil {
 		return err
@@ -332,7 +344,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, box, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, false, begin)
+	inst, box, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, false, begin, steps)
 	if err != nil {
 		return err
 	}
@@ -362,7 +374,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		// Only a VM hosted here is judged this way: a daemon behind a network
 		// can be silent because of the network, and restarting the VM for that
 		// would kill a healthy pool on every retry.
-		lease, answerErr := e.acquireDockerReady(ctx, pool.ID, dockerAnswerWait)
+		lease, _, answerErr := e.acquireDockerReady(ctx, pool.ID, dockerAnswerWait)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -374,10 +386,15 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 			lease.Release()
 		}
 	}
+	// A repair replaces the pool's box, and its VM too when replaceVM: every
+	// step of it is bringing the host up.
+	steps := poolruntime.NewHostSteps(pool.ID)
+	steps.BringingUp(ctx)
 	if replaceVM {
 		if err := e.driver.StopVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
 		}
+		steps.Step(ctx, "stopped the pool's VM to replace it")
 	}
 	releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
 	vmInfo, err = e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
@@ -385,13 +402,15 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
+	steps.Step(ctx, "the pool's VM is running")
 	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
-	lease, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
+	lease, _, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
 	releaseDocker()
 	if err != nil {
 		return err
 	}
 	defer lease.Release()
+	steps.Step(ctx, "the pool's Docker daemon is ready")
 	delivery, err := e.driver.PoolOutbound(ctx, pool.ID, pool.Outbound)
 	if err != nil {
 		return err
@@ -421,7 +440,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, box, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, true, begin)
+	inst, box, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, true, begin, steps)
 	if err != nil {
 		return err
 	}
@@ -541,23 +560,24 @@ func (e *Engine) dockerReadyTimeout() time.Duration {
 }
 
 // acquireDockerReady acquires the pool's Docker client and waits up to timeout
-// for the daemon to answer pings. Drivers do not implement readiness waiting
-// themselves.
+// for the daemon to answer pings, and says whether it had to: a daemon that
+// does not answer the first ping is one coming up. Drivers do not implement
+// readiness waiting themselves.
 //
 // The timeout bounds every attempt, not only the polling between them: a guest
 // wedged in its kernel can accept a connection and never answer it, and a
 // caller's context (the reconcile engine's lifetime) need not end at all. An
 // attempt the deadline cuts off is a daemon not ready, reported as such.
-func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout time.Duration) (*DockerClientLease, error) {
+func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout time.Duration) (*DockerClientLease, bool, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
 		lease, err := e.pingDocker(ctx, poolID, deadline)
 		if err == nil {
-			return lease, nil
+			return lease, lastErr != nil, nil
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
+			return nil, false, ctxErr
 		}
 		lastErr = err
 		// No attempt starts with no time left: it could only fail on the
@@ -565,17 +585,17 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout 
 		// by the deadline rather than by its own error.
 		wait := min(dockerReadyPollDelay, time.Until(deadline))
 		if wait <= 0 {
-			return nil, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
+			return nil, false, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
 		}
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, ctx.Err()
+			return nil, false, ctx.Err()
 		case <-timer.C:
 		}
 		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
+			return nil, false, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
 		}
 	}
 }
@@ -600,12 +620,12 @@ func (e *Engine) pingDocker(ctx context.Context, poolID string, deadline time.Ti
 // given Docker daemon, provisions it as a pool's box when it is new or its
 // bundles have moved since (ADR 26-10-24-953 §§2, 5), and waits for it to be
 // ready. It reports what it placed, and whether the container was
-// (re)created.
+// (re)created, and logs each step to steps.
 //
 // A box is enrolled each time it is provisioned: its key is made in it on
 // first ask, and the same one answered after, so enrolling again changes
 // nothing and mends a server that lost the key.
-func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, forceRecreate bool, begin func(context.Context) error) (*container.InspectResponse, poolruntime.BoxRecord, bool, error) {
+func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, forceRecreate bool, begin func(context.Context) error, steps *poolruntime.HostSteps) (*container.InspectResponse, poolruntime.BoxRecord, bool, error) {
 	cli := lease.Client
 	name := ContainerName(pool.ID)
 	labels := e.containerLabels(provider, pool)
@@ -616,6 +636,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		return nil, recorded, false, existingErr
 	}
 	if existingErr != nil {
+		steps.BringingUp(ctx)
 		if err := begin(ctx); err != nil {
 			return nil, recorded, false, err
 		}
@@ -624,6 +645,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 	if err != nil {
 		return nil, recorded, false, fmt.Errorf("hosting Docker daemon cannot fetch the pool base image; configure proxy and trust on that daemon before creating a pool: %w", err)
 	}
+	steps.Step(ctx, "the pool's image is ready", "image", image)
 
 	if existingErr == nil {
 		// Against the resolved image, not the configured one: a container
@@ -640,23 +662,31 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 			if err != nil {
 				return nil, recorded, false, err
 			}
+			steps.BringingUp(ctx)
 			if err := begin(ctx); err != nil {
 				return nil, recorded, false, err
 			}
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, recorded, false, err
 			}
-			inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image, bootstrap, box)
+			steps.Step(ctx, "removed the pool's container to replace it", "container", shortContainerID(existing.Container.ID))
+			inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image, bootstrap, box, steps)
 			if err != nil {
 				return nil, recorded, false, err
 			}
 			return inst, record, true, nil
 		}
-		recorded, err = e.applyMovedPoolBundles(ctx, cli, existing.Container.ID, pool, maker, recorded, begin)
+		steps.Step(ctx, "kept the pool's container", "container", shortContainerID(existing.Container.ID))
+		recorded, err = e.applyMovedPoolBundles(ctx, cli, existing.Container.ID, pool, maker, recorded, begin, steps)
 		if err != nil {
 			return nil, recorded, false, err
 		}
 		inst, err := e.waitContainerReady(ctx, cli, existing.Container.ID, false)
+		if err == nil {
+			steps.Step(ctx, "the pool's container is healthy")
+		} else if inst != nil && containerHealthStarting(*inst) {
+			steps.Step(ctx, "the pool's container is still starting")
+		}
 		if err != nil && inst != nil && containerHealthStarting(*inst) {
 			// A container whose healthcheck has not passed yet is a host
 			// still coming up, not a broken one, and it is reported as
@@ -675,7 +705,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 	if err != nil {
 		return nil, recorded, false, err
 	}
-	inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image, bootstrap, box)
+	inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image, bootstrap, box, steps)
 	if err != nil {
 		return nil, recorded, false, err
 	}
@@ -698,7 +728,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 // the sandboxes' host with it — over bundles it did not need. Only begin's
 // error is returned for bundle changes. Outbound changes return ErrPoolConfigApply
 // instead, which records an actionable retry without repairing the running host.
-func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, containerID string, pool *model.Pool, maker poolruntime.PoolMaker, recorded poolruntime.BoxRecord, begin func(context.Context) error) (poolruntime.BoxRecord, error) {
+func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, containerID string, pool *model.Pool, maker poolruntime.PoolMaker, recorded poolruntime.BoxRecord, begin func(context.Context) error, steps *poolruntime.HostSteps) (poolruntime.BoxRecord, error) {
 	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
@@ -721,6 +751,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
 	// closed first, as it is before any agent is replaced.
+	steps.BringingUp(ctx)
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
@@ -738,6 +769,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 		}
 		return recorded, nil
 	}
+	steps.Step(ctx, "provisioned the pool's box in place")
 	if recorded.Placement != record.Placement {
 		if err := poolruntime.RestartPoolUnits(ctx, guest, recorded.OutboundRevision != record.OutboundRevision); err != nil {
 			slog.WarnContext(ctx, "the pool's agent did not restart on its new placement; the next reconcile places it again", "pool", pool.ID, "error", err)
@@ -747,6 +779,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 			}
 			return recorded, nil
 		}
+		steps.Step(ctx, "restarted the pool's agent on its new placement")
 	}
 	if !pool.OutboundRestartRequired {
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
@@ -901,7 +934,7 @@ func (e *Engine) poolContainerSpec(pool *model.Pool, image string, labels map[st
 // in bringing a pool up — starts it, systemd as PID 1, and provisions it as
 // the pool's box (poolruntime.ProvisionBox) before it waits for the agent the box's
 // bundles start.
-func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolruntime.BoxRecord, error) {
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox, steps *poolruntime.HostSteps) (*container.InspectResponse, poolruntime.BoxRecord, error) {
 	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	defer releaseStart()
 	config, hostConfig, waitForHealth, err := e.poolContainerSpec(pool, image, labels)
@@ -936,10 +969,12 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
+	steps.Step(ctx, "started the pool's container", "container", shortContainerID(created.ID))
 	record, err := poolruntime.ProvisionBox(ctx, provisioner.ContainerGuest{Client: cli, Container: created.ID, Env: pool.RuntimeOutbound.Environment()}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound})
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
+	steps.Step(ctx, "provisioned the pool's box")
 	if !pool.OutboundRestartRequired {
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	}
@@ -952,6 +987,9 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		}
 	}
 	inst, err := e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
+	if err == nil {
+		steps.Step(ctx, "the pool's container is healthy")
+	}
 	return inst, record, err
 }
 

@@ -247,7 +247,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	d.relays[poolID] = relay
 	d.sizes[poolID] = want
 	slog.InfoContext(ctx, "started wslc pool VM", "pool_id", poolID, "vcpus", want.VCPUs, "memory_mib", want.MemoryMiB)
-	return runningVM(poolID), nil
+	info := runningVM(poolID)
+	info.Started = true
+	return info, nil
 }
 
 // sizeFor resolves the size a pool's VM should have: the pool's own size,

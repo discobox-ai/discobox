@@ -226,9 +226,16 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 	}
 	// Best-effort: hand the now-ready pool-agent the authoritative pool set so it
 	// reaps any orphaned pools sharing its host daemon. A no-op on isolated
-	// per-pool daemons, and never fatal to the reconcile.
-	if err := p.syncKnownPools(ctx, manager, provider, pool); err != nil {
-		slog.Warn("pool-sync failed", "pool", pool.ID, "error", err)
+	// per-pool daemons, and never fatal to the reconcile. Its retries are the
+	// last step of the pass, and can be its longest, so a sync that retried
+	// says how long it took, as the host's steps do (HostSteps).
+	started := time.Now()
+	attempts, err := p.syncKnownPools(ctx, manager, provider, pool)
+	took := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		slog.WarnContext(ctx, "pool-sync failed", "pool", pool.ID, "duration", took, "attempts", attempts, "error", err)
+	} else if attempts > 1 {
+		slog.InfoContext(ctx, "synced the pool's agent after retrying", "pool", pool.ID, "duration", took, "attempts", attempts)
 	}
 	return nil
 }
@@ -240,10 +247,10 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 // authority for a reaper that scans project-scoped host trees. Narrowing it to
 // this provider instance would make a sibling instance's live pools look like
 // orphans, and the reaper would delete their data and proxy material.
-func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManager, provider *model.SandboxProviderInstance, pool *model.Pool) error {
+func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManager, provider *model.SandboxProviderInstance, pool *model.Pool) (int, error) {
 	pools, err := manager.ListPools(ctx, provider.ProjectID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	known := make([]string, 0, len(pools))
 	for i := range pools {
@@ -291,20 +298,24 @@ var poolSyncRetryBackoff = []time.Duration{
 	8 * time.Second,
 }
 
-func syncWithRetry(ctx context.Context, attempt func(context.Context) error) error {
+// syncWithRetry runs attempt until it succeeds or the backoff is spent, and
+// answers how many attempts it made.
+func syncWithRetry(ctx context.Context, attempt func(context.Context) error) (int, error) {
+	attempts := 1
 	err := attempt(ctx)
 	for _, wait := range poolSyncRetryBackoff {
 		if err == nil {
-			return nil
+			return attempts, nil
 		}
 		select {
 		case <-ctx.Done():
-			return err
+			return attempts, err
 		case <-time.After(wait):
 		}
+		attempts++
 		err = attempt(ctx)
 	}
-	return err
+	return attempts, err
 }
 
 func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, begin func(context.Context) error) error {

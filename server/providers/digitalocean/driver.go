@@ -133,6 +133,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 			if err != nil {
 				return nil, err
 			}
+			info := vmInfoFromDroplet(*existing)
+			info.Started = true
+			return info, nil
 		}
 		return vmInfoFromDroplet(*existing), nil
 	}
@@ -153,7 +156,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	if err := d.do(ctx, http.MethodPost, "/v2/droplets", req, &out); err != nil {
 		return nil, err
 	}
-	return vmInfoFromDroplet(out.Droplet), nil
+	info := vmInfoFromDroplet(out.Droplet)
+	info.Started = true
+	return info, nil
 }
 
 // StopVM powers off the Droplet while preserving its root disk. It first asks
