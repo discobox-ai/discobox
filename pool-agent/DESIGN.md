@@ -104,7 +104,8 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    plane stamps `RegisteredAt` on a pool's first heartbeat. It alone carries
    `firstReport`, which is how a server upgrading the pool tells a restarted
    agent's report from the old agent's heartbeat (ADR 26-11-15-602 §2).
-7. The agent starts the proxy unit's resolve-token refresher. A Docker pool
+7. The agent starts the proxy unit's resolve-token refresher, which replaces
+   the token by its wall-clock age. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
    loop. A machine pool opens its own disco-vm engine before its first report,
    refuses a driver that cannot isolate and fence a sandbox's machine
