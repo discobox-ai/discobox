@@ -353,3 +353,108 @@ func TestLongDispatchedCreateGetsRecoveryFromItsFirstLoss(t *testing.T) {
 		t.Fatalf("result=%v creates=%d", result, creates.Load())
 	}
 }
+
+// A pool whose repair fails while it hosts sandboxes keeps serving them: its
+// reconcile failure is an ErrorMessage on an active, ready pool, not a dead
+// host (pools reconciler, failReconcile). A create lost to that repair is
+// sent again to the agent that is still there, rather than settling the
+// sandbox as failed with the pool's message while its box goes on to run.
+func TestPoolProviderCreateIsSentAgainWhenThePoolRecordsARepairFailureMidRequest(t *testing.T) {
+	oldInterval := poolCapacityPollInterval
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityPollInterval = oldInterval })
+
+	manager := &fakePoolManager{pool: hostingPool("pool-1"), schedulable: true}
+	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandboxes", 1, recordRepairFailure(manager))
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+
+	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
+		PoolID: "pool-1",
+	})
+	if err != nil {
+		t.Fatalf("create on a serving pool whose repair failed mid-request: %v", err)
+	}
+	if runtimeSandbox == nil || runtimeSandbox.SandboxID != "sandbox-1" {
+		t.Fatalf("runtime sandbox = %#v", runtimeSandbox)
+	}
+	if got := creates.Load(); got != 2 {
+		t.Fatalf("creates sent = %d, want 2: the dropped one and the one answered", got)
+	}
+}
+
+// hostingPool is a pool that registered and has hosted sandboxes: what a pool
+// repair runs on.
+func hostingPool(id string) *model.Pool {
+	pool := activePool(id)
+	registered := time.Now().UTC().Add(-time.Hour)
+	pool.RegisteredAt = &registered
+	return pool
+}
+
+// recordRepairFailure records on the manager's pool what the pools reconciler
+// records when a repair of a created pool fails (failReconcile): a message
+// against the generation it attempted, state and readiness untouched.
+func recordRepairFailure(manager *fakePoolManager) func() {
+	return func() {
+		manager.mu.Lock()
+		defer manager.mu.Unlock()
+		message := "Error response from daemon: container is marked for removal and cannot be started; repair pool: Error response from daemon: container is marked for removal and cannot be started"
+		settled := time.Now().UTC()
+		manager.pool.ErrorMessage = &message
+		manager.pool.ReconciledAt = &settled
+	}
+}
+
+// The repair that failed is still replacing the pool's container, so its agent
+// leaves the create unanswered for more than one pass. The recorded failure
+// does not end the wait at any of them: a created pool's failure is never
+// terminal, and the agent that comes back takes the create.
+func TestPoolProviderCreateWaitsOutACreatedPoolsRecordedFailure(t *testing.T) {
+	oldInterval := poolCapacityPollInterval
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityPollInterval = oldInterval })
+
+	manager := &fakePoolManager{pool: hostingPool("pool-1"), schedulable: true}
+	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandboxes", 3, recordRepairFailure(manager))
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+
+	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
+		PoolID: "pool-1",
+	})
+	if err != nil {
+		t.Fatalf("create on a created pool whose repair failed while its agent was away: %v", err)
+	}
+	if runtimeSandbox == nil || runtimeSandbox.SandboxID != "sandbox-1" {
+		t.Fatalf("runtime sandbox = %#v", runtimeSandbox)
+	}
+	if got := creates.Load(); got != 4 {
+		t.Fatalf("creates sent = %d, want 4: three dropped and the one answered", got)
+	}
+}
+
+// A created pool's recorded failure does not end the wait, but a wait that
+// runs out on a pool that never answered still says what the pool last
+// recorded, beside what the last attempt was refused with.
+func TestPoolProviderCreateOnACreatedPoolThatNeverAnswersSaysWhatItRecorded(t *testing.T) {
+	oldTimeout, oldInterval := poolCapacityWaitTimeout, poolCapacityPollInterval
+	poolCapacityWaitTimeout = 20 * time.Millisecond
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldInterval })
+
+	pool := hostingPool("pool-1")
+	message := "Cannot connect to the Docker daemon"
+	pool.ErrorMessage = &message
+	notRunning := errors.New(`pool "pool-1" container is exited`)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.unreachable = notRunning
+	manager := &fakePoolManager{pool: pool, schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+
+	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	if !errors.Is(err, notRunning) || !strings.Contains(err.Error(), message) {
+		t.Fatalf("create error = %v, want %q and the pool's recorded %q", err, notRunning, message)
+	}
+	if runtimeProvider.acquireCalls < 2 {
+		t.Fatalf("AcquirePoolAgentClient calls = %d, want the wait to keep trying", runtimeProvider.acquireCalls)
+	}
+}
