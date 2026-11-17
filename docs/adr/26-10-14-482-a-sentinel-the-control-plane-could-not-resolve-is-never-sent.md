@@ -1,6 +1,6 @@
 # 26-10-14-482 — A sentinel the control plane could not resolve is never sent
 
-- **Status**: Accepted (§1's cache surviving every publish that keeps the sentinel superseded by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md) for a replaced value; §2's reading of a `401`, and of a resolve made before the pool holds a credential, as a denial, and its retry passing the upstream's refusal through when the fresh resolve failed transiently, superseded by [26-11-17-078](26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md))
+- **Status**: Accepted (§1's cache surviving every publish that keeps the sentinel superseded by [26-11-11-539](26-11-11-539-a-replaced-secret-value-reaches-the-proxy-cache-and-a-rejection-report-names-the-value-it-refused.md) for a replaced value; §2's reading of a `401`, and of a resolve made before the pool holds a credential, as a denial, and its retry passing the upstream's refusal through when the fresh resolve failed transiently, superseded by [26-11-17-078](26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md); §§1–3 applied to WebSocket message resolution by [26-11-06-442](26-11-06-442-websocket-credentials-require-explicit-message-places.md))
 - **Date**: 2026-10-14
 - **Relates to**: [ADR 0059](0059-a-rejected-swapped-credential-is-retried-once.md),
   whose retry this leaves as it is, and
