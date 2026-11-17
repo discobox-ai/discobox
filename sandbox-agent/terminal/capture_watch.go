@@ -24,11 +24,24 @@ func watchHarnessConfig(ctx context.Context, home string, paths []string, observ
 		targets = append(targets, filepath.Join(home, filepath.FromSlash(path)))
 	}
 	watcher, err := fsnotify.NewWatcher()
-	var events <-chan fsnotify.Event
-	var errors <-chan error
-	if err == nil {
-		defer watcher.Close()
-		events, errors = watcher.Events, watcher.Errors
+	if err != nil {
+		watcher = nil // Only the backstop runs.
+	}
+	// changed carries drained notifications to the loop below (nil without a
+	// watcher). See forwardCaptureEvents for why they are not drained here.
+	var changed <-chan captureChange
+	if watcher != nil {
+		forwarded := make(chan captureChange, 1)
+		forwarderDone := make(chan struct{})
+		go forwardCaptureEvents(watcher, targets, forwarded, forwarderDone)
+		changed = forwarded
+		defer func() {
+			// A failed Close (Windows: the reader was never woken) leaves the
+			// channels open; waiting for the forwarder then would never return.
+			if watcher.Close() == nil {
+				<-forwarderDone
+			}
+		}()
 	}
 	refresh := func() {
 		if watcher == nil {
@@ -77,29 +90,16 @@ func watchHarnessConfig(ctx context.Context, home string, paths []string, observ
 		select {
 		case <-ctx.Done():
 			return
-		case event, ok := <-events:
-			if !ok {
-				events = nil
-				continue
-			}
-			if !captureEventRelevant(event.Name, targets) {
-				continue
-			}
-			if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+		case change := <-changed:
+			for _, gone := range change.gone {
 				for _, dir := range watcher.WatchList() {
-					if withinCaptureHome(filepath.Clean(event.Name), dir) {
+					if withinCaptureHome(gone, dir) {
 						_ = watcher.Remove(dir)
 					}
 				}
 			}
-			refresh()
-			schedule()
-		case _, ok := <-errors:
-			if !ok {
-				errors = nil
-				continue
-			}
-			// Overflow means events were lost; rescan after the burst settles.
+			// An error (overflow) means events were lost; the refresh and the
+			// observation after the burst settles rescan regardless.
 			refresh()
 			schedule()
 		case <-settled:
@@ -111,6 +111,55 @@ func watchHarnessConfig(ctx context.Context, home string, paths []string, observ
 			refresh()
 			observe()
 		}
+	}
+}
+
+// captureChange is what the forwarder accumulated since the loop last took it:
+// the relevant paths removed or renamed away, whose descendant watches must be
+// dropped. A change with no paths still means "refresh and observe".
+type captureChange struct {
+	gone []string
+}
+
+// forwardCaptureEvents drains the watcher's Events and Errors for as long as
+// they are open, and never blocks on the loop that calls Add and Remove.
+// fsnotify's Windows backend services Add and Remove on the same thread that
+// sends events and errors (Errors is unbuffered), and sends on them while
+// servicing a Remove: a caller that drains them on the goroutine that calls
+// Add or Remove deadlocks with it. Changes accumulate into the one pending
+// value in out (capacity 1) until the loop takes it.
+func forwardCaptureEvents(watcher *fsnotify.Watcher, targets []string, out chan captureChange, done chan<- struct{}) {
+	defer close(done)
+	events, errors := watcher.Events, watcher.Errors
+	for events != nil || errors != nil {
+		var gone string
+		select {
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if !captureEventRelevant(event.Name, targets) {
+				continue
+			}
+			if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+				gone = filepath.Clean(event.Name)
+			}
+		case _, ok := <-errors:
+			if !ok {
+				errors = nil
+				continue
+			}
+		}
+		var pending captureChange
+		select {
+		case pending = <-out:
+		default:
+		}
+		if gone != "" {
+			pending.gone = append(pending.gone, gone)
+		}
+		out <- pending
 	}
 }
 
