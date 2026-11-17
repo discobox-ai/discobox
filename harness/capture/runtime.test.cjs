@@ -1164,6 +1164,18 @@ test("Codex model tooltip state is excluded from current and baseline settings",
   }
 });
 
+test("Codex screen reader detection state is not a settings change", () => {
+  const f = fixture("codex"), p = ".codex/config.toml";
+  try {
+    // Codex writes this on its first start, before any input.
+    f.write(p, "[tui]\nscreen_reader_detection_done = true\n");
+    assert.deepEqual(f.run().files, []);
+    assert.deepEqual(f.run({ ...f.input, baselineOnly: true }).files, []);
+  } finally {
+    f.close();
+  }
+});
+
 test("Codex parses local project tables without corrupting multiline strings", () => {
  const f=fixture("codex"), p=".codex/config.toml";
  try {

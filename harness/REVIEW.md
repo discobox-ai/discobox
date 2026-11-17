@@ -27,3 +27,11 @@
   A prompt reached with those policies alone does not prove folder trust.
   Check direct starts after the launcher and retain earlier system trust
   entries when a later launch runs in a different folder.
+
+- A settings key a harness CLI writes by itself, before any input, is local
+  bookkeeping and goes in its manifest's `saveBack.settings` exclude. Otherwise
+  every fresh box opens the save-back prompt (Codex: `tui.model_availability_nux`,
+  then `tui.screen_reader_detection_done`). CLIs install at their latest
+  release, so a new such key arrives with no change here. When touching a
+  harness's settings, start a fresh box, give it no input, and check that
+  `admin harness changes` reports `clean`.
