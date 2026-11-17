@@ -105,10 +105,11 @@ type App struct {
 // example, usage line, and generated completion script calls it.
 //
 // There is more than one, because Homebrew refuses to link two formulae that
-// install the same file: the latest channel installs the same binary as
-// `discobox-dev` so it can sit beside a stable `discobox` (ADR 0105). One
-// build, two names, and neither is knowable until it runs — so this reads
-// argv[0] rather than a linker stamp.
+// install the same file: the beta channel installs the same binary as
+// `discobox-beta` so it can sit beside a stable `discobox` (ADR 0105, renamed
+// from `discobox-dev` by ADR 26-11-16-249). One build, several names, and none
+// is knowable until it runs — so this reads argv[0] rather than a linker
+// stamp.
 //
 // Anything that is not a discobox name is one: a `go test` binary, `go run`'s
 // temporary file, a copy someone renamed. Those get the real name back, so that

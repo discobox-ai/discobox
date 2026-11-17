@@ -27,6 +27,12 @@ func TestOlderServer(t *testing.T) {
 		"unversioned server":  {expected: "v0.5.1"},
 		"development client":  {server: "v0.5.0", expected: "accd52c7"},
 		"prerelease is older": {server: "v0.5.1-rc.1", expected: "v0.5.1", older: true},
+		// A main build sorts between the dot releases around it, and by its
+		// commit count among other main builds.
+		"stable is older than main":   {server: "v0.5.1", expected: "v0.5.2-main.900.gabcdef0", older: true},
+		"main is older than the next": {server: "v0.5.2-main.900.gabcdef0", expected: "v0.5.2", older: true},
+		"an older main build":         {server: "v0.5.2-main.9.g1234567", expected: "v0.5.2-main.10.gabcdef0", older: true},
+		"a newer main build stays":    {server: "v0.5.2-main.900.gabcdef0", expected: "v0.5.1"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

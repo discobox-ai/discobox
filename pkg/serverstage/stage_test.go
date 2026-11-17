@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -249,6 +250,32 @@ func TestStageReportsAMissingAsset(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// An asset every source answered it does not have is ErrNotPublished, which
+// is how a CLI tells a deleted main build from a source that is down.
+func TestStageSaysWhenNoSourceHasTheAsset(t *testing.T) {
+	served := serveAssets(t, map[string][]byte{"other": []byte("x")})
+	gone := served.manifest("v1.2.4-main.42.gabcdef0", "discobox-server", "discobox-server")
+	gone.Assets[0].URLs = append(gone.Assets[0].URLs, served.server.URL+"/elsewhere/discobox-server")
+	gone.Assets[0].SHA256 = strings.Repeat("0", 64)
+	gone.Assets[0].Size = 1
+	_, err := Stage(context.Background(), gone, Options{Root: t.TempDir()})
+	if !errors.Is(err, ErrNotPublished) || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("every source missing: %v", err)
+	}
+
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(broken.Close)
+	down := gone
+	down.Assets = []Asset{gone.Assets[0]}
+	down.Assets[0].URLs = []string{gone.Assets[0].URLs[0], broken.URL + "/discobox-server"}
+	_, err = Stage(context.Background(), down, Options{Root: t.TempDir()})
+	if err == nil || errors.Is(err, ErrNotPublished) {
+		t.Fatalf("a source that is down is not one without the asset: %v", err)
 	}
 }
 

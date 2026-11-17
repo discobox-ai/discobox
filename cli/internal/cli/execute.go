@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -11,11 +12,25 @@ import (
 
 // Execute runs the Discobox CLI root command.
 func Execute(ctx context.Context) error {
+	if notice := renamedCommandNotice(commandName()); notice != "" {
+		fmt.Fprintln(os.Stderr, notice)
+	}
 	cmd, err := NewRootCommand().ExecuteContextC(ctx)
 	if err == nil {
 		return nil
 	}
 	return withRemovedCloneHint(cmd, withRunFlagHint(cmd, withUnreachableServerHint(cmd, err)))
+}
+
+// renamedCommandNotice is the line a command run under a name it no longer
+// has prints first, or "". The beta channel's Homebrew formula was
+// discobox-dev, and still links that command beside discobox-beta so nothing
+// that runs it breaks (ADR 26-11-16-249 §2).
+func renamedCommandNotice(name string) string {
+	if name == "discobox-dev" {
+		return "discobox-dev is now discobox-beta; run discobox-beta instead, as discobox-dev will be removed"
+	}
+	return ""
 }
 
 // withRemovedCloneHint answers -C and --clone, which named the source every
