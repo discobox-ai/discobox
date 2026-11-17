@@ -1,6 +1,8 @@
 # 0110 — The install script is a release asset, and a channel names which one runs
 
-- **Status**: Accepted
+- **Status**: Accepted (§3's `latest` channel renamed `beta`, and the `main`
+  channel and its address `main.discobox.ai` added to §§3–4, by
+  [26-11-16-249](26-11-16-249-main-is-a-channel-built-into-its-own-repository-and-latest-is-no-channels-name.md))
 - **Date**: 2026-09-11
 - **Amends**: [0105](0105-a-release-is-cut-as-a-prerelease-and-blessed-stable-later.md)
   §2 in one respect — an explicit prerelease tag reaches one channel, `edge`,

@@ -2,8 +2,10 @@
 
 - **Status**: Accepted (§2 amended by
   [0110](0110-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md):
-  an explicit prerelease tag reaches the opt-in `edge` channel; everything else
-  stands)
+  an explicit prerelease tag reaches the opt-in `edge` channel; §2's channel
+  name `latest` and §4's `discobox-dev` formula renamed `beta` and
+  `discobox-beta` by
+  [26-11-16-249](26-11-16-249-main-is-a-channel-built-into-its-own-repository-and-latest-is-no-channels-name.md); everything else stands)
 - **Date**: 2026-09-10
 
 ## Context
