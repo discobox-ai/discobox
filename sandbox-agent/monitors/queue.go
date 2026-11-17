@@ -401,9 +401,14 @@ func (q *Queue) Wait(ctx context.Context, f Filter) error {
 	} else {
 		watcher = nil
 	}
+	// Errors is drained as well as Events: fsnotify sends both from one
+	// reader, so an error left unread (an inotify overflow) holds back every
+	// later event. An error is treated as a wake: look again.
 	var events <-chan fsnotify.Event
+	var errs <-chan error
 	if watcher != nil {
 		events = watcher.Events
+		errs = watcher.Errors
 	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -419,6 +424,10 @@ func (q *Queue) Wait(ctx context.Context, f Filter) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-events:
+		case _, ok := <-errs:
+			if !ok {
+				errs = nil
+			}
 		case <-ticker.C:
 		}
 	}
