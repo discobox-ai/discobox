@@ -128,6 +128,13 @@ full-close fallback, which is correct. Nothing the engine does over this client
 — container lifecycle, BuildKit's grpc session, TTY console attach — needs a
 half-close.
 
+A host → guest dial ends with its caller's context or with the VM, whichever
+comes first (`vzvm.(*VM).Connect`). The framework cannot cancel a connect and
+may never complete one to a guest that has stopped answering, so a dial that
+waited on the framework alone would outlive a replaced VM and hold its HTTP
+handler with it. A connection that completes after its caller has gone is
+closed in the binding.
+
 VSOCK connect and listen failures in `NSPOSIXErrorDomain` expose the native
 errno through a Go `net.OpError`, preserving the framework error and the VM
 name and port. Callers can recognize a refused or reset connection with

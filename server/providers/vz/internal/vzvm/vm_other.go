@@ -3,6 +3,7 @@
 package vzvm
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"runtime"
@@ -50,7 +51,7 @@ func CreateDiskImage(string, int64) error { return unsupported() }
 // Start is unavailable without the bindings.
 func Start(Options) (*VM, error) { return nil, unsupported() }
 
-func (*VM) Connect(uint32) (net.Conn, error) { return nil, unsupported() }
+func (*VM) Connect(context.Context, uint32) (net.Conn, error) { return nil, unsupported() }
 
 func (*VM) Listen(uint32) (net.Listener, error) { return nil, unsupported() }
 

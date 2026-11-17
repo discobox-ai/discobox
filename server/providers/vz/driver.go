@@ -370,8 +370,8 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		size:     want,
 		stopped:  make(chan struct{}),
 		outbound: spec.Outbound,
-		agent: dockerworker.NewPoolAgentClient(func(context.Context) (net.Conn, error) {
-			return vm.Connect(agentVSOCKPort)
+		agent: dockerworker.NewPoolAgentClient(func(ctx context.Context) (net.Conn, error) {
+			return vm.Connect(ctx, agentVSOCKPort)
 		}),
 	}
 	resolved, err := spec.Outbound.ResolveLocalForwarder()
@@ -474,8 +474,8 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 	if err != nil {
 		return nil, err
 	}
-	cli, err := dockerworker.NewDockerClientForDialer(func(_ context.Context, _, _ string) (net.Conn, error) {
-		return guest.vm.Connect(dockerVSOCKPort)
+	cli, err := dockerworker.NewDockerClientForDialer(func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return guest.vm.Connect(ctx, dockerVSOCKPort)
 	})
 	if err != nil {
 		return nil, err
@@ -595,8 +595,8 @@ func growDiskImage(path string, size int64) error {
 // requestGuestShutdown asks the guest's lifecycle service to power off. The
 // same service serves libkrun, so the guest side is one implementation.
 func (d *Driver) requestGuestShutdown(ctx context.Context, guest *guestVM) {
-	httpTransport := &http.Transport{DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-		return guest.vm.Connect(lifecycleVSOCKPort)
+	httpTransport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return guest.vm.Connect(ctx, lifecycleVSOCKPort)
 	}}
 	defer httpTransport.CloseIdleConnections()
 	client := &http.Client{Transport: httpTransport, Timeout: 5 * time.Second}

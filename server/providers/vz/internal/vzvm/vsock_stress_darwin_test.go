@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -45,6 +44,8 @@ const (
 	// stressDockerPort is the guest's Docker socket relay. It answers as soon
 	// as the guest's daemon is up, with no pool agent needed.
 	stressDockerPort = 3004
+	// stressDialTimeout bounds one connect to the guest.
+	stressDialTimeout = 15 * time.Second
 	// stressLifecyclePort is the guest's lifecycle service, which powers it
 	// off on POST /shutdown: the vz driver's lifecycleVSOCKPort, which this
 	// package cannot import.
@@ -264,26 +265,27 @@ func stressGuestOptions(t *testing.T, name, guestDir, dir string) Options {
 }
 
 // waitStressDocker waits for the guest's Docker daemon to answer through the
-// VSOCK relay. Each attempt is bounded separately because a connect to a port
-// nothing in the guest listens on yet may never complete.
+// VSOCK relay. Each attempt is bounded by its dial's context, because a
+// connect to a port nothing in the guest listens on yet may never complete.
 func waitStressDocker(t *testing.T, vm *VM, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	var last error
 	for time.Now().Before(deadline) {
-		done := make(chan error, 1)
-		go func() { done <- pingStressDocker(vm, false) }()
-		select {
-		case last = <-done:
-			if last == nil {
-				return
-			}
-		case <-time.After(15 * time.Second):
-			last = errors.New("connect did not complete")
+		if last = pingStressDocker(vm, false); last == nil {
+			return
 		}
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("guest Docker did not answer over VSOCK within %s: %v", timeout, last)
+}
+
+// dialStressDocker opens a connection to the guest's Docker port, giving up
+// after stressDialTimeout.
+func dialStressDocker(vm *VM) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), stressDialTimeout)
+	defer cancel()
+	return vm.Connect(ctx, stressDockerPort)
 }
 
 // pauseStressGuest pauses the guest through the framework for hold, resumes
@@ -333,7 +335,7 @@ func pauseStressGuest(vm *VM, hold time.Duration) string {
 // returns how far it is behind the host's, measured against the midpoint of
 // the request.
 func stressGuestClockLag(vm *VM) (time.Duration, error) {
-	conn, err := vm.Connect(stressDockerPort)
+	conn, err := dialStressDocker(vm)
 	if err != nil {
 		return 0, err
 	}
@@ -357,7 +359,7 @@ func stressGuestClockLag(vm *VM) (time.Duration, error) {
 }
 
 func pingStressDocker(vm *VM, abrupt bool) error {
-	conn, err := vm.Connect(stressDockerPort)
+	conn, err := dialStressDocker(vm)
 	if err != nil {
 		return err
 	}
