@@ -302,6 +302,11 @@ func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop,
 const (
 	resolveTokenTTL     = 30 * time.Minute
 	resolveTokenRefresh = 20 * time.Minute
+	// resolveTokenCheck is how often the refresher reads the wall clock to
+	// decide whether the token is due. Reading it is the whole cost, so it is
+	// short: it bounds how long after a machine wakes, or after its clock is
+	// stepped, the proxy unit holds a token the control plane refuses.
+	resolveTokenCheck = 5 * time.Second
 )
 
 const (
@@ -430,6 +435,15 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 // discobox API (ADR 0140). They stay separate scopes so a future split of those
 // roles across processes is a change of who holds which token, not a change of
 // what a token means.
+//
+// When the token is due is read off the wall clock, never a ticker's period.
+// A ticker runs on the monotonic clock, which stands still while the machine
+// sleeps — a laptop's suspend, or the Mac under a pool's VM — while the token's
+// expiry is a wall-clock time the control plane checks. Timed by a ticker, a
+// token minted before a nap was still held for up to resolveTokenRefresh of
+// waking time after it had lapsed, and every resolve in that window was refused:
+// read as a denial, which sends the sandbox's sentinel upstream, and a harness
+// answered 401 for it concludes its login is dead.
 func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity) {
 	write := func() error {
 		token, err := poolauth.CreateTokenWithTTL(identity.PrivateKey, poolauth.Claims{
@@ -442,23 +456,47 @@ func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, root l
 		}
 		return proxyagent.WriteResolveContext(root, bootstrap.ProjectID, bootstrap.PoolID, bootstrap.ControlPlaneURL, token)
 	}
-	if err := write(); err != nil {
-		logger.Warn("write proxy resolve token", "error", err)
+	// minted is the wall-clock time the token on disk was minted, the zero
+	// time while none has been written. Round(0) strips the monotonic reading,
+	// so the age it is measured against below is wall-clock time.
+	var minted time.Time
+	mint := func(now time.Time) {
+		if err := write(); err != nil {
+			logger.Warn("write proxy resolve token", "error", err)
+			return
+		}
+		if !minted.IsZero() && now.Sub(minted) >= resolveTokenTTL {
+			logger.Info("renewed a lapsed proxy resolve token; the machine was likely asleep", "lapsedFor", now.Sub(minted)-resolveTokenTTL)
+		}
+		minted = now
 	}
+	mint(time.Now().Round(0))
 	go func() {
-		ticker := time.NewTicker(resolveTokenRefresh)
+		ticker := time.NewTicker(resolveTokenCheck)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := write(); err != nil {
-					logger.Warn("refresh proxy resolve token", "error", err)
+				if now := time.Now().Round(0); resolveTokenDue(minted, now) {
+					mint(now)
 				}
 			}
 		}
 	}()
+}
+
+// resolveTokenDue reports whether the resolve token minted at minted is due
+// for a new one at now, both wall-clock times: none written yet, at least
+// resolveTokenRefresh old, or minted in what is now the future, which is a
+// clock stepped back since.
+func resolveTokenDue(minted, now time.Time) bool {
+	if minted.IsZero() {
+		return true
+	}
+	age := now.Sub(minted)
+	return age >= resolveTokenRefresh || age < 0
 }
 
 // ExecSystemdChildIfRequested starts the child systemd process when requested by the systemd helper.
