@@ -121,9 +121,6 @@ type MachineSandboxRuntime struct {
 	// urls is each running sandbox's instance URL, asked of the driver once
 	// per start rather than on every dial.
 	urls sync.Map
-	// agentReadyTimeout bounds the wait for a started machine's agent; zero
-	// is machineAgentReadyTimeout. Only a test sets it.
-	agentReadyTimeout time.Duration
 }
 
 var _ Runtime = (*MachineSandboxRuntime)(nil)
@@ -1322,11 +1319,6 @@ func urlDialer(target string) (Dialer, error) {
 	return func(ctx context.Context) (net.Conn, error) { return tlsDialer.DialContext(ctx, "tcp", address) }, nil
 }
 
-// machineAgentReadyTimeout bounds the wait for a machine's agent once the
-// machine runs: `discobox-provision apply` has started it, and a VM's agent
-// provisions the sandbox user before it listens (ADR 26-10-09-143 §1).
-const machineAgentReadyTimeout = 5 * time.Minute
-
 // machineAgentPollInterval paces that wait: every pass is a request over the
 // network to the machine's URL.
 const machineAgentPollInterval = 250 * time.Millisecond
@@ -1341,15 +1333,16 @@ var errAgentNeverUp = errors.New("the sandbox agent did not come up")
 // waitForSandboxAgent waits for the agent of a machine just started to answer
 // at its URL, or for the machine to stop.
 func (r *MachineSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxID string) error {
-	timeout := r.agentReadyTimeout
-	if timeout == 0 {
-		timeout = machineAgentReadyTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, r.agentReadyBound())
 	defer cancel()
 	var lastErr error
 	for {
 		sb, err := r.GetSandbox(ctx, sandboxID)
+		if errors.Is(err, ErrNotFound) {
+			// Deleted or archived under the boot: its agent is never coming,
+			// and spinning on it would hold the boot mark for minutes.
+			return err
+		}
 		if err != nil {
 			lastErr = err
 		} else if err := sandboxAgentTerminalStateError(sb); err != nil {

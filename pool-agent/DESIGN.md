@@ -656,7 +656,18 @@ and a CLI that predates clone progress cannot decode one carrying it (ADR 0118).
 
 Waiting for the sandbox agent is the last phase this agent can see. What happens
 after it is the sandbox agent's own boot, which reports on no channel this one
-owns; a client names that stage by inference instead (ADR 0060).
+owns; a client names that stage by inference instead (ADR 0060). The boot
+(`finishBoot`) restates the phase every 10s for as long as it runs — the wait
+for the agent and the delivery of its runtime-config document — as the settle
+wait does for a clone: on a loaded host the agent can take minutes, and a
+phase stated once ages out of a client's 30s and the attach wait's two-minute
+stall budget long before. It restates beside the boot's steps, not between
+them, because a starved agent is slow at everything: one `/healthz` was seen
+to take 56s, and the delivery to it another 40s. The wait ends when the box
+exits or is removed, and otherwise only at its backstop
+(`sandboxAgentReadyTimeout`, five minutes for both runtimes), and the delivery
+at its own call timeout, so the restating cannot hold an attach open on a box
+that is not coming up.
 
 The Docker runtime makes three deliveries, all load-bearing:
 

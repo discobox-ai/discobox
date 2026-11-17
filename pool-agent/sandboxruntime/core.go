@@ -61,6 +61,9 @@ type sandboxCore struct {
 	// booting holds the boot under way of each sandbox whose box is started
 	// and whose sandbox agent has not answered yet (see beginBoot).
 	booting sync.Map
+	// agentReadyTimeout bounds a boot's wait for its sandbox agent; zero is
+	// sandboxAgentReadyTimeout. Only a test sets it.
+	agentReadyTimeout time.Duration
 	// statePublisher is the state channel's sink while a watcher is running
 	// (see statereport.go). Power operations use it to announce a transition
 	// they are about to make.
@@ -104,7 +107,8 @@ type boxes interface {
 	// runtime-config documents.
 	takesRuntimeConfig(ctx context.Context, sandboxID string) (bool, error)
 	// waitForSandboxAgent blocks until the agent of a box just started
-	// answers, or the box reaches a state it will not answer from.
+	// answers, the box reaches a state it will not answer from or is removed,
+	// or agentReadyBound passes.
 	waitForSandboxAgent(ctx context.Context, sandboxID string) error
 	// stopRefusedSandbox stops a box whose agent refused the pool's
 	// runtime-config delivery outright, from inside its boot.

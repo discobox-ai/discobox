@@ -444,9 +444,9 @@ type sandboxBoot struct {
 // removes only its own, so the mark lasts until the newest boot ends; a caller
 // waiting on the older one wakes when it ends and looks again.
 //
-// A sandbox deleted or archived mid-boot reads as booting until the wait gives
-// up, at most sandboxAgentReadyTimeout. Nothing routes on the mark for a
-// sandbox that is gone.
+// A sandbox deleted or archived mid-boot reads as booting until the wait sees
+// its box gone, or at most until sandboxAgentReadyTimeout. Nothing routes on
+// the mark for a sandbox that is gone.
 func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
 	boot := &sandboxBoot{done: make(chan struct{})}
 	r.booting.Store(sandboxID, boot)
@@ -530,6 +530,81 @@ func (r *DockerSandboxRuntime) removeForRebuild(ctx context.Context, sb *Sandbox
 	return nil
 }
 
+// sandboxAgentReadyTimeout bounds a boot's wait for its sandbox agent, once its
+// box runs. It is a backstop for an agent that will never answer from a box
+// that keeps running — systemd, not the agent, is PID 1, so an agent that
+// fails leaves its box up — and not a measure of a slow boot: a box that
+// exits or is removed ends the wait at once, whatever is left of it.
+//
+// It is generous on purpose. Every create waits here, so giving up on a box
+// still booting fails the create while the box goes on to come up by itself.
+// A container's agent answers in about a second on an idle host, and was seen
+// taking minutes on one with five runnable threads for every CPU;
+// a VM's provisions the sandbox user before it listens (ADR 26-10-09-143 §1).
+const sandboxAgentReadyTimeout = 5 * time.Minute
+
+// agentReadyBound is this runtime's sandboxAgentReadyTimeout.
+func (r *sandboxCore) agentReadyBound() time.Duration {
+	if r.agentReadyTimeout > 0 {
+		return r.agentReadyTimeout
+	}
+	return sandboxAgentReadyTimeout
+}
+
+// agentWaitRestateInterval is how often a boot's wait for its sandbox agent
+// restates PhaseWaitingForAgent (restateWaitingForAgent).
+var agentWaitRestateInterval = 10 * time.Second
+
+// agentWaitRestateTimeout bounds one restatement. It is a report to the
+// control plane over a client with no timeout of its own, so a slow or wedged
+// control plane must not hold the wait past an agent that has come up, or run
+// it into its bound and fail the create.
+const agentWaitRestateTimeout = 3 * time.Second
+
+// restateWaitingForAgent restates PhaseWaitingForAgent every
+// agentWaitRestateInterval for as long as a boot runs: finishBoot starts it
+// before the wait for the sandbox agent, and stops it once the runtime-config
+// document is delivered, before the boot ends. stop returns once no
+// restatement is in flight, so none lands after what is reported next.
+//
+// The restatement is what keeps a slow boot from reading as a stalled one, as
+// the settle wait's restating keeps a long clone current. Nothing else about
+// the sandbox moves while its agent comes up, and both of the things watching
+// it give up on a phase that goes unrestated: the attach wait's stall budget
+// (two minutes, ADR 0039) and a client's freshness for a recorded phase
+// (thirty seconds, ADR 0060).
+//
+// It lasts exactly as long as the boot, which is the observation: the boot
+// runs detached from any request, its wait ends on the box exiting or being
+// removed and at agentReadyBound, and its delivery at runtimeConfigCallTimeout,
+// so it cannot keep an attach waiting on a box that is not coming up. It runs
+// beside the boot rather than between the wait's passes because a starved
+// agent is slow at everything: one /healthz was seen to take 56 s, and the
+// delivery to it another 40 s after it first answered.
+func (r *sandboxCore) restateWaitingForAgent(ctx context.Context, sandboxID string) (stop func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(agentWaitRestateInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				reportCtx, cancelReport := context.WithTimeout(ctx, agentWaitRestateTimeout)
+				r.publishSandboxPhase(reportCtx, sandboxID, PhaseWaitingForAgent)
+				cancelReport()
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
 // finishBoot waits for the sandbox agent of a container that has just started,
 // delivers it the sandbox's runtime-config document, and ends the boot when
 // that is done or the wait gives up.
@@ -545,21 +620,27 @@ func (r *DockerSandboxRuntime) removeForRebuild(ctx context.Context, sb *Sandbox
 // going away — a client that reconnects, an attach canceled mid-start — must
 // not end the mark while the agent is still not listening, or every request
 // behind it would be proxied into a 502. So the wait runs detached, bounded by
-// its own sandboxAgentReadyTimeout, and the caller only waits on it for as long
-// as its own context allows.
+// its own agentReadyBound, and the caller only waits on it for as long as its
+// own context allows.
 func (r *sandboxCore) finishBoot(ctx context.Context, sandboxID string, boot *sandboxBoot) error {
 	go func() {
 		detached := context.WithoutCancel(ctx)
+		stopRestating := r.restateWaitingForAgent(detached, sandboxID)
 		err := r.boxes.waitForSandboxAgent(detached, sandboxID)
+		refused := false
 		if err == nil {
 			err = logRuntimeConfigFailure(detached, sandboxID, r.deliverRuntimeConfig(detached, sandboxID, nil))
-			if err != nil {
-				// The agent will never take this pool's document. Left running,
-				// the container would read as a healthy sandbox to the next
-				// request once this boot's mark is gone; stopped, every start
-				// meets the refusal again and says so.
-				r.boxes.stopRefusedSandbox(detached, sandboxID, err)
-			}
+			refused = err != nil
+		}
+		// Before anything else is reported of the sandbox: a restatement still
+		// in flight must not land after it.
+		stopRestating()
+		if refused {
+			// The agent will never take this pool's document. Left running,
+			// the container would read as a healthy sandbox to the next
+			// request once this boot's mark is gone; stopped, every start
+			// meets the refusal again and says so.
+			r.boxes.stopRefusedSandbox(detached, sandboxID, err)
 		}
 		r.endBoot(sandboxID, boot, err)
 	}()

@@ -62,13 +62,19 @@ import (
 const (
 	// SandboxAgentPort is the port the sandbox-agent's HTTP API listens on
 	// inside every sandbox, which callers of SandboxDialer name to reach it.
-	SandboxAgentPort         = 3003
-	sandboxAgentReadyTimeout = 30 * time.Second
+	SandboxAgentPort = 3003
 	// A pass is one container inspect and one loopback GET, so the interval is
 	// what actually bounds how late a ready sandbox is noticed. It is short
 	// because this is create latency a person waits through, and because a pass
 	// lists no containers and costs well under a millisecond.
 	sandboxAgentPollInterval = 25 * time.Millisecond
+	// A boot still not answering after sandboxAgentFastPollWindow is a slow
+	// one, on a host that is likely loaded, and is polled at
+	// sandboxAgentSlowPollInterval from then on: the wait can run for minutes
+	// (agentReadyBound), and forty Docker inspects and health checks a second
+	// for all of it would add to the load that is slowing it.
+	sandboxAgentFastPollWindow   = 10 * time.Second
+	sandboxAgentSlowPollInterval = 250 * time.Millisecond
 
 	// The pool host provisions host-backed roots and mounts them at these
 	// fixed container paths. The sandbox-agent (running as PID 1) wires
@@ -2830,7 +2836,7 @@ func containerDialer(sandboxID string, inspect container.InspectResponse, port i
 // binding its port. Polling overhead never had more than ~120ms to give back.
 // Shortening this loop is not the lever; the boot is.
 func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxID string) error {
-	ctx, cancel := context.WithTimeout(ctx, sandboxAgentReadyTimeout)
+	ctx, cancel := context.WithTimeout(ctx, r.agentReadyBound())
 	defer cancel()
 	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters(sandboxID)})
 	if err != nil {
@@ -2841,8 +2847,16 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 	}
 	containerID := containers.Items[0].ID
 	var lastErr error
+	started := time.Now()
 	for {
 		inspect, err := r.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		if cerrdefs.IsNotFound(err) {
+			// Removed under the boot: a delete, an archive or a rebuild. Its
+			// agent is never coming, and the wait is long enough that
+			// spinning on a container that is gone would hold the boot mark
+			// for minutes.
+			return ErrNotFound
+		}
 		if err != nil {
 			lastErr = err
 		} else {
@@ -2867,13 +2881,17 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 				}
 			}
 		}
+		interval := sandboxAgentPollInterval
+		if time.Since(started) >= sandboxAgentFastPollWindow {
+			interval = sandboxAgentSlowPollInterval
+		}
 		select {
 		case <-ctx.Done():
 			if lastErr != nil {
 				return fmt.Errorf("wait for sandbox-agent: %w", lastErr)
 			}
 			return ctx.Err()
-		case <-time.After(sandboxAgentPollInterval):
+		case <-time.After(interval):
 		}
 	}
 }
