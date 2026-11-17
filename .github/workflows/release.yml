@@ -134,7 +134,7 @@ jobs:
           target: release:publish
       # Nix is installed by the step above. Asked here rather than decided in
       # YAML so the rule stays the Taskfile's (ADR 0066 §1). A dot release joins
-      # the latest channel the moment it is cut; an explicit prerelease exists
+      # the beta channel the moment it is cut; an explicit prerelease exists
       # only under its own tag (ADR 0105).
       - id: dot
         run: echo "dot=$(nix develop -c go tool task release:dot)" >> "$GITHUB_OUTPUT"
@@ -143,14 +143,14 @@ jobs:
       # Nix is installed: this is one API call, and standing up another runner
       # to make it would cost minutes to save seconds.
       #
-      # This feeds `brew install discobox-dev`. It cannot feed
+      # This feeds `brew install discobox-beta`. It cannot feed
       # `brew install discobox`: what was just published is a prerelease, and
       # the tap builds the stable formula from the newest release a human has
       # marked stable. That is promote.yml's job, later and by hand.
       #
       # Nothing else updates the tap — it has no cron any more — so a missing
       # token is a broken release, not a slow one, and fails here rather than
-      # leaving `brew install discobox-dev` on the previous version with nobody
+      # leaving `brew install discobox-beta` on the previous version with nobody
       # aware of it.
       - if: steps.dot.outputs.dot == 'yes' && env.TAP_TOKEN == ''
         run: |

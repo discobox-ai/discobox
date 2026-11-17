@@ -12,7 +12,8 @@
 // release tag's annotation — never a commit message, which whoever wrote a
 // merged pull request controls, while only the owner cuts a release tag. It
 // turns the refusal into a warning and a note, written to -notes, that the
-// release carries.
+// release carries. A main build, which has no tag, passes -record for the same
+// warning and note without a refusal (ADR 26-11-16-249 §9).
 package main
 
 import (
@@ -83,6 +84,7 @@ func run(ctx context.Context, args []string, reg resolver) error {
 	repo := flags.String("repo", ".", "git checkout holding the release commit and the vm/ and vm-kernel/ tags")
 	rev := flags.String("rev", "", "the release tag (or any commit-ish) being released")
 	notes := flags.String("notes", "", "file to write the release-notes record of an override to (written empty when there is none)")
+	record := flags.Bool("record", false, "record a stale pin in -notes rather than refusing (a main build)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -96,6 +98,7 @@ func run(ctx context.Context, args []string, reg resolver) error {
 	if err != nil {
 		return err
 	}
+	report.Record = *record
 	text := report.String()
 	fmt.Print(text)
 	if summary := os.Getenv("GITHUB_STEP_SUMMARY"); summary != "" {

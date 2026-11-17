@@ -117,8 +117,15 @@ Global review expectations:
   dispatch runs off a branch, so it is grouped by the tag it names.
   `promote.yml` (`release` events) shares one group, which is safe only
   because each run recomputes from the newest blessed release.
-  `test/cichanges` checks the tag-triggered workflows (`on.push.tags`) and
-  `ci.yml`, not the rest.
+  `main-build.yml` shares one group on purpose (ADR 26-11-16-249 §3): a
+  newer green commit replacing a pending main build is the coalescing it
+  wants, and a pending run has published nothing. Only a run that will build
+  may join it; any other (a cancelled or failed CI run, a dispatch off
+  another branch) gets a group of its own, or it would replace the pending
+  build and then skip, leaving main unbuilt. Its `if` and its group's
+  expression state the same condition.
+  `test/cichanges` checks the tag-triggered workflows (`on.push.tags`),
+  `ci.yml` and `main-build.yml`, not the rest.
 - A Taskfile target that must force an environment variable sets it on the
   command (`VAR=value go tool task <target>`), never as a task's `env:`. Task
   lets a variable the caller already exports win over `env:`, so a forced

@@ -202,7 +202,9 @@ var trailingNumber = regexp.MustCompile(`(\d+)$`)
 // release, so the builds of one release can be told apart. That puts a
 // prerelease numerically after the release it precedes, which nothing reads the
 // field to decide — winget and Homebrew order by the tag — and the full tag is
-// in the resource's version strings.
+// in the resource's version strings. A main build's is its commit count
+// (v1.2.4-main.4210.g0123abc is 1.2.4.4210), never the digits its commit hash
+// happens to end in.
 func parseTag(tag string) (release, error) {
 	if tag == "" {
 		return release{}, nil
@@ -221,7 +223,11 @@ func parseTag(tag string) (release, error) {
 	}
 	if prerelease := match[4]; prerelease != "" {
 		parsed.prerelease = true
-		if number := trailingNumber.FindString(prerelease); number != "" {
+		number := trailingNumber.FindString(prerelease)
+		if count, ok := strings.CutPrefix(prerelease, "main."); ok {
+			number, _, _ = strings.Cut(count, ".")
+		}
+		if number != "" {
 			value, err := field16(tag, number)
 			if err != nil {
 				return release{}, err

@@ -18,6 +18,7 @@ func TestParseTag(t *testing.T) {
 		{tag: "v0.8.0-alpha.2", want: [4]uint16{0, 8, 0, 2}, prerelease: true},
 		{tag: "v1.2.3-rc1", want: [4]uint16{1, 2, 3, 1}, prerelease: true},
 		{tag: "v1.2.3-beta", want: [4]uint16{1, 2, 3, 0}, prerelease: true},
+		{tag: "v1.2.4-main.4210.g0123456", want: [4]uint16{1, 2, 4, 4210}, prerelease: true},
 	} {
 		t.Run(tc.tag, func(t *testing.T) {
 			got, err := parseTag(tc.tag)

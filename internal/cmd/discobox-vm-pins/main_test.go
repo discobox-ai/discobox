@@ -300,6 +300,34 @@ func TestRunRecordsOverride(t *testing.T) {
 	}
 }
 
+// A main build has no tag to carry an override, and is built anyway with the
+// stale pin at the top of its notes.
+func TestRunRecordsAStalePinForAMainBuild(t *testing.T) {
+	f := newFixture(t)
+	f.write("vm-image/Dockerfile", "FROM debian:sid\n")
+	f.commit("guest change")
+
+	notes := filepath.Join(t.TempDir(), "notes.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", "")
+	if err := run(context.Background(), []string{"-repo", f.dir, "-rev", "HEAD", "-record", "-notes", notes}, published()); err != nil {
+		t.Fatalf("run -record refused: %v", err)
+	}
+	data, _ := os.ReadFile(notes)
+	if !strings.Contains(string(data), "stale VM pin") || !strings.Contains(string(data), "DefaultVMImage") {
+		t.Errorf("notes do not record the stale pin: %q", data)
+	}
+
+	f.pin(digest('a'), digest('b'))
+	f.write("vm-image/Dockerfile", "FROM debian\n")
+	f.commit("back to the published guest")
+	if err := run(context.Background(), []string{"-repo", f.dir, "-rev", "HEAD", "-record", "-notes", notes}, published()); err != nil {
+		t.Fatalf("run -record: %v", err)
+	}
+	if data, _ := os.ReadFile(notes); len(data) != 0 {
+		t.Errorf("notes for a build with current pins: %q", data)
+	}
+}
+
 func TestStringConst(t *testing.T) {
 	src := "package p\n\nconst (\n\ta = 1\n\tB, C = \"b\", \"c\"\n)\n"
 	if got, err := stringConst(src, "C"); err != nil || got != "c" {

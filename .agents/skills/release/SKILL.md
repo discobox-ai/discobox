@@ -19,14 +19,16 @@ un-published cleanly — so the order is: green, then tag. Never the reverse.
 ## Three states, and only one of them is this skill
 
 Cutting a tag does **not** ship to users (ADR 0105). It publishes a GitHub
-prerelease and moves the *latest* channel — ghcr's `:latest` and
-`brew install discobox-dev`. `brew install discobox` and winget do not move.
+prerelease and moves the *beta* channel — ghcr's `:latest` and
+`brew install discobox-beta`. `brew install discobox` and winget do not move.
+(Main builds, the *main* channel, are not this skill's: `main-build.yml` cuts
+one after every green CI run on `main`, into `discobox-ai/discobox-main`.)
 
 They move when a human opens the GitHub release and unticks **"Set as a
 pre-release"**. That fires `promote.yml`, and it is a separate, deliberate act.
 
 So this skill ends at a published prerelease. Say so when you hand back: name
-the version, say it is on the dev channel, and say that promoting it is the
+the version, say it is on the beta channel, and say that promoting it is the
 user's call. Do not untick that box for them and do not run `promote.yml`
 unless they ask for it in those terms — see §7.
 
@@ -81,11 +83,11 @@ picks the first two; a human picks the third.
 | tag | reaches | when |
 | --- | --- | --- |
 | `v0.6.0-alpha.2`, `-beta.1`, `-rc.1` | that tag's own assets and images, and the installer's opt-in `edge` channel — **nothing else**: neither brew formula, no `:latest`, no winget, no default install | lowest confidence. You want a real release build that lands in front of nobody who did not ask for edge. |
-| `v0.6.0` | GitHub prerelease, ghcr `:latest`, `brew install discobox-dev`, the installer's `latest` channel | the normal case, and what a dot release is for |
+| `v0.6.0` | GitHub prerelease, ghcr `:latest`, `brew install discobox-beta`, the installer's `beta` channel | the normal case, and what a dot release is for |
 | the same release, blessed | `brew install discobox`, `curl -sSfL https://discobox.ai \| sh`; winget by hand (§6) | §7 — a human's decision, later |
 
 A dot release is the default; take the patch bump without asking. It is cheap
-now, because it only reaches people who went and installed `discobox-dev`.
+now, because it only reaches people who went and installed `discobox-beta`.
 
 **An `-alpha`/`-beta`/`-rc` tag is a deliberate choice, not a lesser one.** It is
 how you get a genuine release build — signed darwin binary, multi-arch images
@@ -391,20 +393,22 @@ Every step is a Taskfile target that also runs locally (ADR 0066 §1):
 
 ## 5. The Homebrew tap
 
-**For a dot release this is automatic, and it feeds `discobox-dev` only.** The
+**For a dot release this is automatic, and it feeds the beta formula only.** The
 release workflow's `publish` job dispatches `update-formula.yml` in
 `discobox-ai/homebrew-tap` as soon as the GitHub release exists (`brew:refresh`,
 using `HOMEBREW_TAP_TOKEN`). The tap regenerates **both** formulae with this
 repository's `scripts/brew-formula.sh` and commits whichever changed:
 
-- `discobox-dev.rb` from the newest dot release — which is what you just cut.
+- the beta formula from the newest dot release — which is what you just cut.
+  It is `discobox-beta.rb` once the tap's workflow asks `brew-formula.sh` for
+  `--beta`; until then the tap still writes `discobox-dev.rb` with `--dev`.
 - `discobox.rb` from the newest release a human has marked stable — which this
   is not, so it does not move here.
 
 Check the one that should have moved:
 
 ```bash
-gh api repos/discobox-ai/homebrew-tap/contents/Formula/discobox-dev.rb \
+gh api repos/discobox-ai/homebrew-tap/contents/Formula/discobox-beta.rb \
   -q '.content' | base64 -d | grep -m1 version
 ```
 
@@ -412,7 +416,7 @@ gh api repos/discobox-ai/homebrew-tap/contents/Formula/discobox-dev.rb \
 cron; that was deleted on purpose. A backstop that quietly covers for a broken
 release step is a backstop that stops anyone noticing the step is broken, so the
 release fails instead — a missing or expired `HOMEBREW_TAP_TOKEN` turns the
-`publish` job red rather than leaving `brew install discobox-dev` a version
+`publish` job red rather than leaving `brew install discobox-beta` a version
 behind.
 
 The consequence for this skill: **a red `publish` step here is a real failure and
@@ -427,12 +431,12 @@ And the override, which regenerates and pushes one formula directly rather than
 asking the tap to, for a tag the tap's own rule will not take at all:
 
 ```bash
-go tool task brew:publish -- --dev vX.Y.Z                   # discobox-dev
-go tool task brew:publish -- vX.Y.Z                         # discobox (stable)
-go tool task brew:publish -- --dev --prerelease vX.Y.Z-rc1  # an rc, said out loud
+go tool task brew:publish -- --beta vX.Y.Z                   # discobox-beta
+go tool task brew:publish -- vX.Y.Z                          # discobox (stable)
+go tool task brew:publish -- --beta --prerelease vX.Y.Z-rc1  # an rc, said out loud
 ```
 
-`--dev` picks the formula; without it you are writing `discobox.rb`, which is
+`--beta` picks the formula; without it you are writing `discobox.rb`, which is
 the stable channel and not this skill's to move. `--prerelease` is required for
 anything that is not exactly `vMAJOR.MINOR.PATCH`, and nothing sets it
 automatically: neither channel serves an rc, so one reaching either is a
@@ -595,7 +599,7 @@ cheaper before `publish` creates the GitHub release. Ask the user which:
 - **Let it finish and supersede it** with the next number. The bad release stays
   in the release list as a prerelease, which is what every release is until
   somebody blesses it — so nothing about it reaches `brew install discobox` or
-  winget, and the only channel to correct is `discobox-dev`, which the next tag
+  winget, and the only channel to correct is beta, which the next tag
   moves anyway.
 
 That second option is cheap, and usually right. Deleting a

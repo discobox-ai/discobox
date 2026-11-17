@@ -53,6 +53,10 @@ type report struct {
 	Commit    string
 	Results   []pinResult
 	Overrides []string
+	// Record builds anyway and only records a stale pin: a main build, which
+	// has no tag annotation to carry an override and is for trying main, not
+	// for staying on (ADR 26-11-16-249 §9).
+	Record bool
 }
 
 // check compares every pin with vm-image/ at rev.
@@ -197,14 +201,15 @@ func (r report) StaleConsts() []string {
 }
 
 // Releasable reports whether the release may go ahead: every pin is current,
-// or the owner overrode the refusal.
+// the owner overrode the refusal, or this build only records it.
 func (r report) Releasable() bool {
-	return len(r.StaleConsts()) == 0 || len(r.Overrides) > 0
+	return len(r.StaleConsts()) == 0 || len(r.Overrides) > 0 || r.Record
 }
 
-// Overridden reports whether the release goes ahead only by an override.
+// Overridden reports whether the release goes ahead only by an override or
+// by recording the stale pin.
 func (r report) Overridden() bool {
-	return len(r.StaleConsts()) > 0 && len(r.Overrides) > 0
+	return len(r.StaleConsts()) > 0 && (len(r.Overrides) > 0 || r.Record)
 }
 
 func (r pinResult) describe(b *strings.Builder, bullet string) {
@@ -233,6 +238,9 @@ func (r report) String() string {
 		for _, reason := range r.Overrides {
 			fmt.Fprintf(&b, "Releasing anyway, by %s: %s\n", overrideTrailer, reason)
 		}
+		if len(r.Overrides) == 0 {
+			b.WriteString("Building anyway: a main build records a stale pin rather than refusing\n")
+		}
 	}
 	return b.String()
 }
@@ -258,9 +266,14 @@ func (r report) Notes() string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "> [!WARNING]\n> Released with a stale VM pin (%s):\n", overrideTrailer)
-	for _, reason := range r.Overrides {
-		fmt.Fprintf(&b, "> - %s\n", reason)
+	if len(r.Overrides) > 0 {
+		fmt.Fprintf(&b, "> [!WARNING]\n> Released with a stale VM pin (%s):\n", overrideTrailer)
+		for _, reason := range r.Overrides {
+			fmt.Fprintf(&b, "> - %s\n", reason)
+		}
+	} else {
+		b.WriteString("> [!WARNING]\n> Built with a stale VM pin: this main build boots a pool VM guest or kernel\n" +
+			"> older than vm-image/ at its commit.\n")
 	}
 	b.WriteString(">\n")
 	for _, res := range r.Results {

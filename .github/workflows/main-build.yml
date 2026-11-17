@@ -1,0 +1,205 @@
+# A main build: a release of the newest green commit on main, published in
+# discobox-ai/discobox-main and installed by `--channel main` or
+# main.discobox.ai (ADR 26-11-16-249). It runs the same Taskfile targets as
+# release.yml; only the version and the repository it publishes to differ, and
+# both follow from the version (MAIN_BUILD, PUBLISH_REPO). This workflow decides
+# only where each step runs (ADR 0066 §1).
+name: Main build
+
+on:
+  # When CI finishes on a push to main. A workflow_run workflow always runs from
+  # the default branch's copy of this file; what it builds is the commit CI ran
+  # on, which the jobs check out by its SHA.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # By hand, to build main's newest commit when its CI went green but this
+  # did not run (the secret was missing, a runner failed).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One group for every main build, and never cancelled in progress, so a build
+# that has started finishes. GitHub keeps one pending run per group and a newer
+# one replaces it, which is the point: main is built at most once per build's
+# duration, always at the newest green commit, and not every commit gets a
+# build (ADR 26-11-16-249 §3). A replaced pending run has published nothing.
+#
+# Only a run that will build joins it. CI cancels its superseded runs on main,
+# and each of those completes too; in the shared group its run here would
+# replace a pending green build and then skip, so main would go unbuilt; so
+# would a dispatch from any branch but main. A run that builds nothing gets a
+# group of its own. The condition is the version job's.
+concurrency:
+  group: >-
+    ${{ ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+    (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    && 'main-build' || format('main-build-skip-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  # Decides whether to build and what the build is called. A CI run that did
+  # not succeed, or ran for anything but a push to main, builds nothing.
+  version:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    env:
+      MAIN_RELEASE_TOKEN: ${{ secrets.MAIN_RELEASE_TOKEN }}
+    steps:
+      # Nothing else can publish there, so in discobox-ai/discobox a missing
+      # token is a broken channel, and fails here before anything is built. A
+      # fork without one has no main builds, and builds nothing: the jobs below
+      # run only for a version.
+      - id: token
+        if: env.MAIN_RELEASE_TOKEN == ''
+        run: |
+          if [ "$GITHUB_REPOSITORY" != discobox-ai/discobox ]; then
+            echo "::notice::MAIN_RELEASE_TOKEN is not set in $GITHUB_REPOSITORY, so it has no main builds"
+            echo "skip=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::MAIN_RELEASE_TOKEN is not set, so nothing can publish to discobox-ai/discobox-main"
+          exit 1
+      # The whole history and every tag: the version counts main's
+      # first-parent commits and follows the highest vX.Y.Z tag.
+      - if: steps.token.outputs.skip != 'yes'
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      # The action installs Nix and shows the version; the step after it
+      # keeps it for the other jobs.
+      - if: steps.token.outputs.skip != 'yes'
+        uses: ./.github/actions/task
+        with:
+          target: release:main-version
+      - id: version
+        if: steps.token.outputs.skip != 'yes'
+        run: |
+          tag=$(nix develop -c go tool task release:main-version | tail -n 1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Building main at $(git rev-parse --short HEAD) as $tag" >> "$GITHUB_STEP_SUMMARY"
+
+  # Records rather than refuses a stale pool VM pin: a main build has no tag
+  # to carry an override (ADR 26-11-16-249 §9).
+  vm-pins:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: ./.github/actions/task
+        with:
+          target: release:check-vm-pins
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-notes
+          path: build/release/notes
+          if-no-files-found: error
+
+  binaries:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: depot-ubuntu-24.04-4
+            artifact: linux
+          - runs-on: depot-macos-15
+            artifact: darwin
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+      - uses: ./.github/actions/task
+        with:
+          target: release:build
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-bin-${{ matrix.artifact }}
+          path: build/release/bin
+          if-no-files-found: error
+
+  # The same images a release pushes, under the main build's tag. A main
+  # version is never a dot release, so :latest does not move.
+  images:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      DEPOT_PROJECT_ID: ${{ vars.DEPOT_PROJECT_ID }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+      - uses: depot/setup-action@v1.7.2
+        if: vars.DEPOT_PROJECT_ID != ''
+      - uses: docker/login-action@v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/task
+        with:
+          target: release:images
+
+  # Publishes into discobox-ai/discobox-main with a token that can write only
+  # there, then prunes builds older than fourteen days: their releases and
+  # tags with that token, their ghcr tags with this repository's own.
+  publish:
+    needs: [version, vm-pins, binaries, images]
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      GH_TOKEN: ${{ secrets.MAIN_RELEASE_TOKEN }}
+      PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          merge-multiple: true
+          path: build/release/bin
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-notes
+          path: build/release/notes
+      - uses: ./.github/actions/task
+        with:
+          target: release:publish
+      - run: nix develop -c go tool task release:prune-main

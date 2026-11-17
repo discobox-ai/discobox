@@ -251,7 +251,7 @@ modules — or Go gives the location meaning (`internal`).
 | [`pkg/layout`](pkg/layout) | Where Discobox stores state, scoped so no two pools share a writable path. Every path resolves against a `Root` the pool's shape picks: the container's view (`ContainerRoot`) for a pool whose agent runs in a container, or the user's per-OS data directory for one whose agent runs on the host ([ADR 0144](docs/adr/0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md) §1). It also keeps the modes of the trees a pool's state hangs from, which a pool machine's agent sets at every start (`PreparePoolTrees`). |
 | [`pkg/controlplane`](pkg/controlplane) | Shared control-plane endpoint defaults. |
 | [`pkg/health`](pkg/health) | Wire contract for the server's readiness endpoint, which the CLI polls after launching a server. |
-| [`pkg/version`](pkg/version) | The release a binary was cut from, for `discobox --version` and the server's `/healthz`. |
+| [`pkg/version`](pkg/version) | The release a binary was cut from, for `discobox --version` and the server's `/healthz`, and the shape of a main build's version (`v<next patch>-main.<count>.g<sha7>`, ADR 26-11-16-249 §5): `MainBuildVersion` makes one, `MainBuild` recognises one. |
 | [`pkg/randomname`](pkg/randomname) | Friendly Docker-style random names. |
 
 Submodule package docs belong in their owning module trees and are intentionally
@@ -335,16 +335,18 @@ at push time claims it.
 ```mermaid
 flowchart LR
     tag["push vX.Y.Z<br/>release.yml"] --> pre["GitHub prerelease"]
-    pre --> latest["latest channel<br/>ghcr :latest<br/>brew discobox-dev"]
+    pre --> beta["beta channel<br/>ghcr :latest<br/>brew discobox-beta"]
     pre -.->|"a human unticks<br/>“Set as a pre-release”"| stable
     stable["stable channel<br/>brew discobox<br/>winget<br/>discobox.ai installer"]
     rc["push vX.Y.Z-rc1"] --> only["that tag, and the<br/>installer's edge channel"]
+    green["CI green on main<br/>main-build.yml"] --> mainb["discobox-ai/discobox-main<br/>release, marked latest there"]
+    mainb --> mainc["main channel<br/>main.discobox.ai installer"]
 ```
 
-- **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *latest* channel's
+- **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *beta* channel's
   rule, and the only thing the tag itself decides. A dot release moves ghcr's
   `:latest` (`dockerworker.DefaultSandboxBaseImage`, what a pool boots when nothing
-  named a version) and the `discobox-dev` formula the moment it is cut. An
+  named a version) and the `discobox-beta` formula the moment it is cut. An
   explicit prerelease tag (`-alpha`, `-beta`, `-rc`) moves neither, deliberately:
   it is the lowest confidence level — a real release build, signed and pushed,
   that reaches no brew channel at all and is had by pinning the version or by
@@ -358,6 +360,28 @@ flowchart LR
   edit emits is not something GitHub documents plainly. There is no un-promote —
   both stable channels are recomputed from the newest blessed release, so
   backing one out means blessing a different one.
+- **Main builds** (ADR 26-11-16-249) are releases of green main commits.
+  `main-build.yml` runs after CI succeeds on a push to `main`, in one
+  concurrency group that is never cancelled in progress, so builds coalesce:
+  one runs, the newest waits, and older waiting ones are dropped. It runs the
+  release targets with `RELEASE_TAG` set by `release:main-version`,
+  `v<next patch>-main.<first-parent count>.g<sha7>`, a semver prerelease that
+  sorts between the dot releases around it. `MAIN_BUILD` follows from that tag:
+  `PUBLISH_REPO` becomes `discobox-ai/discobox-main`, a repository holding only
+  main builds, each a full release marked latest there, so nothing that resolves
+  the tagged channels (the installer's one page of releases, the mirror's
+  aliases, GitHub's badge) ever sees one. Their server manifests name GitHub
+  alone, since the mirror has no namespace for that repository. Images are
+  pushed under the main tag and never move `:latest`; a stale VM pin is
+  recorded in the notes rather than refused. A build is published only when it
+  is newer than that repository's latest (a re-run of an old CI run is not), as
+  a draft until its assets are up. `release:prune-main` deletes builds older
+  than fourteen days, always keeping the newest: releases and tags with
+  `MAIN_RELEASE_TOKEN` (contents on that repository alone), then ghcr versions
+  whose every tag is a deleted build's with this repository's `GITHUB_TOKEN`.
+  Untagged versions stay: reproducible bundles share platform manifests across
+  builds and releases. A main CLI whose build is gone says so when it stages
+  its server or images, and how to install the newest.
 
 The two package channels are fed in opposite directions, and the difference is
 ownership.
@@ -365,16 +389,19 @@ ownership.
 The Homebrew tap is ours, so it **pulls**: `discobox-ai/homebrew-tap` generates
 both formulae from this repository's public releases with
 `scripts/brew-formula.sh` — `discobox` from the newest blessed release,
-`discobox-dev` (`--dev`) from the newest dot release — needing no credential of
+`discobox-beta` (`--beta`) from the newest dot release — needing no credential of
 ours to read them and its own `GITHUB_TOKEN` to commit. They are two formulae
 rather than one because Homebrew will not link two that install the same file,
-and holding both at once is the point; `discobox-dev` installs its command under
-that name, and the CLI reads which one it is off `argv[0]`. `brew:refresh` is
+and holding both at once is the point; `discobox-beta` installs its command under
+that name, and the CLI reads which one it is off `argv[0]`. The beta formula was
+`discobox-dev`: it also links a `discobox-dev` command, which prints that it is
+now `discobox-beta`, and `--dev` still writes the old formula until the tap's
+own workflow renames it. `brew:refresh` is
 one dispatch that recomputes both, and is the only thing that starts the tap.
 The tap deliberately has no cron: a backstop that covers for a broken release
 step is a backstop that stops anyone noticing the step is broken. So a release
 that cannot reach the tap fails rather than quietly leaving `brew install` a
-version behind. `brew:publish -- [--dev] TAG` remains
+version behind. `brew:publish -- [--beta] TAG` remains
 the by-hand override for a tag the tap's own rule will not take.
 
 winget cannot be inverted, because `microsoft/winget-pkgs` is not ours and
@@ -405,8 +432,8 @@ express and a winget manifest, once merged, is permanent and not ours to amend.
 
 The mirror's aliases read the same prerelease bit the channels above do, which makes
 `/{namespace}/latest/` the newest blessed release and `/{namespace}/prerelease/`
-the newest unblessed one. `prerelease` is not `discobox-dev`, which follows the
-newest dot release whether or not it has been blessed, and it drifts back to an
+the newest unblessed one. `prerelease` is not the beta channel, which follows
+the newest dot release whether or not it has been blessed, and it drifts back to an
 old alpha once every newer release is blessed — so the one consumer of the
 aliases, the installer's site below, never takes `prerelease` alone.
 
@@ -414,12 +441,15 @@ Every release also uploads `install.sh` and `install.ps1`, stamped by
 `release:installers` with the tag and the SHA-256 of each CLI binary beside
 them (ADR 0110; see [`pkg/installer/DESIGN.md`](pkg/installer/DESIGN.md)). A stamped
 installer installs its own release. Asked for a version, or for a channel —
-`stable`, `latest`, or `edge`, the newest release of any shape — it hands over
-to that release's own installer, so a release is always installed by the code
-it shipped. The `discobox-ai/site` Worker serves them: `discobox.ai` gives
+`stable`, `beta`, `edge` (the newest release of any shape), or `main` — it hands
+over to that release's own installer, so a release is always installed by the
+code it shipped. The `discobox-ai/site` Worker serves them: `discobox.ai` gives
 curl, wget, and PowerShell the stable release's installer, read through the
-mirror's `latest` alias with GitHub behind it, and `edge.discobox.ai` gives
-the newer of the two aliases' releases.
+mirror's `latest` alias with GitHub behind it, `edge.discobox.ai` gives
+the newer of the two aliases' releases, and `main.discobox.ai` the newest main
+build's. The channels' names are ADR 26-11-16-249's: `latest` is no channel's
+name, only GitHub's and the mirror's alias for the newest blessed release and
+ghcr's tag for the newest dot release.
 
 Windows is the one platform whose asset is an archive rather than a bare binary.
 winget resolves a portable package's command from the file name whenever it
