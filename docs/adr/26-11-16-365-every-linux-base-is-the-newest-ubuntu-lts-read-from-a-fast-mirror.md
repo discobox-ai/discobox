@@ -258,3 +258,27 @@ snapshot was.
   toolchain pinned like Go.
 - The connect timeout's value, and whether apt can be made to skip a dead
   entry for the rest of a run rather than once per file.
+
+## Amendment, 2026-11-17 (before anything shipped against it)
+
+§2 and §3 rest trust in an index on its signature with `Check-Valid-Until`
+on. Ubuntu's `InRelease` files carry a `Date` and no `Valid-Until`, so that
+setting has nothing to expire against, and any older validly signed index of
+a pocket would pass. The moving pockets (`resolute-updates`,
+`resolute-security`) are therefore their own source stanza with
+`Valid-Until-Max: 604800`: apt ages each index from its `Date` and refuses one
+more than a week old, whichever host served it. The release pocket
+(`resolute`) is dated its release day and carries no fixes, so it stays out
+of that stanza. `check:ubuntu` requires the bound in every copy of the mirror
+list's setup.
+
+§7 says the guest's lockup checks apply unchanged to Ubuntu's kernel. They
+do, but what they prove changed: Debian's arm64 kernel built the buddy
+hard-lockup detector, which runs anywhere; Ubuntu's builds the perf detector
+(`HARDLOCKUP_DETECTOR_PERF`), which runs only where the guest has a PMU to
+take an NMI from. Whether vz gives the guest one is unverified, and without
+one no hard-lockup detector runs on vz and its `nmi_watchdog=panic` (#1101's
+recovery from a hard-locked guest) does nothing. Open, with a boot of the
+guest on a Mac as the condition: if its log shows no hard-lockup detector
+running, the vz guest needs a kernel that builds the buddy detector, decided
+then.
