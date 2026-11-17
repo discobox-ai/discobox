@@ -4,6 +4,7 @@ package endpoint
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,17 @@ import (
 
 // errConnRefused is a refused connection, for listenerGone.
 var errConnRefused error = syscall.ECONNREFUSED
+
+// backlogFull reports a unix socket dial refused because its listener's
+// accept backlog is full: Linux fails a non-blocking connect then with EAGAIN,
+// and only a listening socket has a backlog, so a server is there. Only a
+// unix socket's EAGAIN means that — a TCP connect's means something else — so
+// probeEndpoint asks it of no other scheme. macOS refuses a full backlog with
+// ECONNREFUSED instead, the same as a socket whose server has exited, so there
+// a server that is not even accepting still reads as absent.
+func backlogFull(err error) bool {
+	return errors.Is(err, syscall.EAGAIN)
+}
 
 func acquireLaunchLock(path string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

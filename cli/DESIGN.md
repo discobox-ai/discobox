@@ -912,6 +912,21 @@ without leaving a phase per line scrolled above unrelated output. The child's ou
 reports — discarding it would make a server dying on startup indistinguishable
 from one that was merely slow.
 
+A server too busy to answer is still a server, and "never answers" above means
+nothing is listening. A probe that runs out its own timeout after its
+connection was accepted — or, on a named pipe, while every instance is busy,
+since a missing pipe fails at once — found a listener, and so does a unix
+connect that Linux refuses because the accept backlog is full. `EnsureRunning`
+waits on that server for `ReadyTimeout`, as on one starting, saying it waits
+for the server to answer, and never launches beside it: a second server would
+ask the first to shut down at the singleton lock. Once it answers, it is judged
+like any other answer, so an older one is still replaced; one found under the
+launch lock and waited out is otherwise left alone. Two cases still read as
+absent: a TCP dial that times out (Windows refuses a closed loopback port only
+after about two seconds, past the probe timeout, so reading that as a server
+would stall every cold start there), and a full backlog on macOS, which refuses
+it the same way as a socket whose server has exited.
+
 Neither deadline is what ends the wait for a server that is already gone.
 `EnsureRunning` watches the process it started and reports it the moment it
 exits, and a server that answered `starting` and then stopped answering is
@@ -920,14 +935,11 @@ connection refused, the socket or pipe gone — never a probe that ran out its
 own timeout: that reached a live server too busy to answer in time, which on a
 loaded host can go on for minutes of an upgrade, so the wait goes on to its
 deadline. Run out, that deadline is reported by what the last probe found: a
-server still running that did not finish, or one that stopped answering, with
-the step it was on either way. The probes before a launch, and the wait for an
-older server to let go, still read a timeout as no server: on Windows a closed
-loopback TCP port is refused only after the probe has timed out, so reading a
-timeout as a server would stall every cold start on an `http://` endpoint
-there (the default, a named pipe, is reported missing at once). A server launched
-beside a busy one meets it at the singleton lock, which asks the incumbent to
-shut down and hand over. A server refusing to start — a Windows host with no WSL
+server still running that did not finish, one listening that never answered,
+or one that stopped answering, with the step it was on either way. The probes
+before a launch, and the wait for an older server to let go, read a timeout as
+no server only where nothing was found listening, as the paragraph above says.
+A server refusing to start — a Windows host with no WSL
 Containers, a project with no harness — is a failure in milliseconds whose
 explanation is already in the log, so nothing is gained by sitting out the rest
 of `StartTimeout` on every command that autolaunches. A server started as a user

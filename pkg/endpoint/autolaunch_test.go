@@ -2,7 +2,9 @@ package endpoint
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -133,7 +135,7 @@ func TestWaitReadyGivesUpgradingPoolsItsOwnDeadline(t *testing.T) {
 	}))
 	defer server.Close()
 	opts := LaunchOptions{Endpoint: server.URL, UpgradeTimeout: time.Minute, ProbeInterval: 5 * time.Millisecond}
-	if err := waitReady(context.Background(), opts, time.Now().Add(20*time.Millisecond)); err != nil {
+	if _, err := waitReady(context.Background(), opts, time.Now().Add(20*time.Millisecond)); err != nil {
 		t.Fatalf("waitReady() = %v, want the upgrade waited out past the start's deadline", err)
 	}
 }
@@ -168,7 +170,7 @@ func TestWaitReadyKeepsWaitingOnAServerSlowToAnswer(t *testing.T) {
 	}))
 	defer server.Close()
 	opts := LaunchOptions{Endpoint: server.URL, ProbeTimeout: 20 * time.Millisecond, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond}
-	if err := waitReady(context.Background(), opts, time.Now().Add(time.Minute)); err != nil {
+	if _, err := waitReady(context.Background(), opts, time.Now().Add(time.Minute)); err != nil {
 		t.Fatalf("waitReady() = %v, want the wait to go on through slow answers", err)
 	}
 }
@@ -193,7 +195,7 @@ func TestWaitReadyEndsWhenTheListenerIsGone(t *testing.T) {
 	// port (about two seconds), so the refusal is what each probe sees there.
 	opts := LaunchOptions{Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"), ProbeTimeout: 5 * time.Second, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond}
 	start := time.Now()
-	err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
+	_, err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
 	if err == nil || !strings.Contains(err.Error(), "stopped while starting") {
 		t.Fatalf("waitReady() = %v, want a server that stopped", err)
 	}
@@ -213,7 +215,7 @@ func TestWaitReadyReportsAServerGoneBeforeItsFirstProbe(t *testing.T) {
 	server.Close()
 	opts := LaunchOptions{Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"), ProbeTimeout: 5 * time.Second, ProbeInterval: time.Millisecond}
 	start := time.Now()
-	err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
+	_, err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
 	if err == nil || !strings.Contains(err.Error(), "stopped while starting") {
 		t.Fatalf("waitReady() = %v, want a server that stopped", err)
 	}
@@ -231,7 +233,7 @@ func TestWaitReadyDeadlineSaysTheServerIsStillRunning(t *testing.T) {
 	}))
 	defer server.Close()
 	opts := LaunchOptions{Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"), UpgradeTimeout: 50 * time.Millisecond, ProbeInterval: time.Millisecond}
-	err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
+	_, err := waitReady(context.Background(), opts, time.Now().Add(time.Minute))
 	if err == nil {
 		t.Fatal("waitReady() = nil, want the deadline to end the wait")
 	}
@@ -242,5 +244,174 @@ func TestWaitReadyDeadlineSaysTheServerIsStillRunning(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("error %q says a running server stopped", err)
+	}
+}
+
+// A server that is up but too busy to answer within the probe timeout is a
+// server, not an absent one: a second launch beside it would ask it to shut
+// down. EnsureRunning must wait on it and never resolve a command to start.
+func TestEnsureRunningWaitsOnAServerSlowerThanTheProbe(t *testing.T) {
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Busy for the first few probes, each answered after its timeout.
+		if probes.Add(1) <= 3 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
+	}))
+	defer server.Close()
+	var resolved atomic.Bool
+	opts := LaunchOptions{
+		Endpoint: server.URL, LockPath: filepath.Join(t.TempDir(), "launch.lock"),
+		Command: func(context.Context) (Command, error) {
+			resolved.Store(true)
+			return Command{}, fmt.Errorf("a command was resolved beside a running server")
+		},
+		ProbeTimeout: 20 * time.Millisecond, ProbeInterval: time.Millisecond, ReadyTimeout: 10 * time.Second,
+	}
+	started, err := EnsureRunning(context.Background(), opts)
+	if resolved.Load() || started || err != nil {
+		t.Fatalf("EnsureRunning() = %v, %v (command resolved: %v); want a wait on the running server", started, err, resolved.Load())
+	}
+}
+
+// The probe under the launch lock can find a server the first probe did not:
+// one another CLI started while this one waited for the lock. Whether it
+// answers "starting" or is too busy to answer in time, it is waited on, and
+// then nothing more: launching after the wait would start a second server
+// beside it, which asks the first to shut down.
+func TestEnsureRunningUnderTheLockWaitsOnAServerThatAppeared(t *testing.T) {
+	for name, handler := range map[string]func(n int32, w http.ResponseWriter){
+		"starting": func(n int32, w http.ResponseWriter) {
+			if n <= 2 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"status":"starting","phase":"migrating"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+		},
+		"busy": func(n int32, w http.ResponseWriter) {
+			if n <= 2 {
+				time.Sleep(time.Second)
+			}
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// An address nothing listens on yet, for the first probe to find
+			// empty.
+			reserved, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			addr := reserved.Addr().String()
+			_ = reserved.Close()
+
+			lockPath := filepath.Join(t.TempDir(), "launch.lock")
+			unlock, err := acquireLaunchLock(lockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waiting := make(chan struct{})
+			var resolved atomic.Bool
+			opts := LaunchOptions{
+				Endpoint: "http://" + addr, LockPath: lockPath,
+				Command: func(context.Context) (Command, error) {
+					resolved.Store(true)
+					return Command{}, fmt.Errorf("a command was resolved beside a running server")
+				},
+				// The default probe timeout: on Windows a closed loopback port
+				// is refused only after it, and must still read as empty.
+				ProbeInterval: time.Millisecond, ReadyTimeout: time.Minute,
+				OnProgress: func(status health.Status) {
+					if status.Phase == "waiting for the startup lock" {
+						close(waiting)
+					}
+				},
+			}
+			type result struct {
+				started bool
+				err     error
+			}
+			done := make(chan result, 1)
+			go func() {
+				started, err := EnsureRunning(context.Background(), opts)
+				done <- result{started, err}
+			}()
+			select {
+			case <-waiting:
+			case r := <-done:
+				t.Fatalf("EnsureRunning() = %v, %v before it waited for the lock", r.started, r.err)
+			}
+
+			listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var probes atomic.Int32
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handler(probes.Add(1), w)
+			}))
+			_ = server.Listener.Close()
+			server.Listener = listener
+			server.Start()
+			defer server.Close()
+			unlock()
+
+			r := <-done
+			if resolved.Load() || r.started || r.err != nil {
+				t.Fatalf("EnsureRunning() = %v, %v (command resolved: %v); want a wait on the server that appeared", r.started, r.err, resolved.Load())
+			}
+		})
+	}
+}
+
+// A busy server is waited on until it answers, and its answer is then judged
+// like any other: one older than this CLI is still replaced. Here the
+// replacement's command is resolved, which is the first step of replacing it.
+func TestEnsureRunningReplacesAnOlderServerItWaitedOn(t *testing.T) {
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if probes.Add(1) <= 2 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		_, _ = w.Write([]byte(`{"status":"ready","version":"v0.5.0"}`))
+	}))
+	defer server.Close()
+	errResolved := fmt.Errorf("the replacement's command was resolved")
+	opts := LaunchOptions{
+		Endpoint: server.URL, LockPath: filepath.Join(t.TempDir(), "launch.lock"),
+		Command:         func(context.Context) (Command, error) { return Command{}, errResolved },
+		ExpectedVersion: "v0.5.1",
+		ProbeTimeout:    20 * time.Millisecond, ProbeInterval: time.Millisecond, ReadyTimeout: 10 * time.Second,
+	}
+	if _, err := EnsureRunning(context.Background(), opts); !errors.Is(err, errResolved) {
+		t.Fatalf("EnsureRunning() = %v, want the older server it waited on replaced", err)
+	}
+}
+
+// A server that is listening and never answers is waited on, not replaced.
+// The wait says so on the progress line, once, and ends at the deadline with
+// an error that says the server is listening and not answering — not that it
+// was starting, which it never said.
+func TestWaitReadyOnASilentServerSaysItIsNotAnswering(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+	var reported []health.Status
+	opts := LaunchOptions{
+		Endpoint: server.URL, LogPath: filepath.Join(t.TempDir(), "server.log"),
+		ProbeTimeout: 10 * time.Millisecond, ProbeInterval: time.Millisecond,
+		OnProgress: func(status health.Status) { reported = append(reported, status) },
+	}
+	_, err := waitReady(context.Background(), opts, time.Now().Add(200*time.Millisecond))
+	if err == nil || !strings.Contains(err.Error(), "is listening but has not answered") {
+		t.Fatalf("waitReady() = %v, want a server listening and not answering", err)
+	}
+	if len(reported) != 1 || !reported[0].Waiting() || reported[0].Phase != "waiting for the server to answer" {
+		t.Fatalf("progress = %+v, want one line saying it waits for the server to answer", reported)
 	}
 }

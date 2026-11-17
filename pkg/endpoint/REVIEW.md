@@ -28,11 +28,24 @@
   `/healthz` answers in a row ended the wait of a server busy upgrading its
   pools (#1298); the earlier fix, a short run of failures before giving up,
   was the same mistake.
-- **The probes before a launch, and `replaceOlderServer`'s wait for an older
-  server to let go, read a timeout as no server on purpose** (`cli/DESIGN.md`,
-  autolaunch). Windows refuses a closed loopback TCP port only after about two
-  seconds, past the default probe timeout, so reading a timeout there as a
-  server stalls every cold start on an `http://` endpoint. Do not "fix" them
-  into the `waitReady` rule; telling a dial that timed out from an answer that
-  did is #1308. A test that needs to see a refusal on Windows gives its probe
-  longer than two seconds.
+- **A probe that timed out against a listener is a busy server, not an
+  absent one** (`errProbeUnanswered`). A listener is an accepted connection,
+  a named pipe whose dial waited (a missing pipe fails at once), or a unix
+  connect refused with EAGAIN (a full accept backlog, Linux). Reading it as
+  absent launched a second server, which shut the busy one down (#1308).
+  `isProbeConnectionError` is false for it, so a caller that does not handle
+  it gives up rather than launching.
+- **To the probes that decide whether to launch, a TCP dial that timed out
+  is not a listener.** Windows refuses a closed loopback port only after about
+  two seconds, past the probe timeout; do not widen `errProbeUnanswered` to
+  every timeout, or every cold start there stalls. (Inside `waitReady` the
+  server is already known to be there, so such a timeout keeps the wait going,
+  as above.)
+- **Every wait that decides whether to launch ends on the server's answer,
+  and that answer is judged for its version** (`probeSettled`). A busy server
+  says nothing about its version until it answers; returning once it is ready
+  kept an older server the CLI should have replaced. The waits after a launch
+  and in `replaceOlderServer` have nothing to judge, and drop it.
+- **A wait under the launch lock ends the call** unless the server it found
+  is older. Falling through to the launch after waiting out a server that
+  appeared started a second one beside it.

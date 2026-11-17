@@ -3,13 +3,18 @@
 package endpoint
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Microsoft/go-winio"
 	"golang.org/x/sys/windows"
 )
 
@@ -78,4 +83,51 @@ func attachedToAConsole() bool {
 func consoleWindow() uintptr {
 	handle, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleWindow").Call()
 	return handle
+}
+
+// A named pipe whose server is not accepting — every instance busy, as on a
+// loaded host — makes go-winio's dial retry until the probe times out. That
+// is a server too busy to answer, not an absent one. A pipe nobody has
+// created is absent, and says so at once, so a cold start waits for nothing.
+func TestProbeTellsABusyPipeFromAMissingOne(t *testing.T) {
+	pipe := fmt.Sprintf(`\\.\pipe\discobox-test-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	opts := LaunchOptions{Endpoint: "npipe:" + strings.ReplaceAll(pipe, `\`, "/"), ProbeTimeout: 200 * time.Millisecond}
+
+	start := time.Now()
+	_, err := probeEndpoint(context.Background(), opts)
+	if err == nil || errors.Is(err, errProbeUnanswered) || !isProbeConnectionError(err) {
+		t.Fatalf("probe of a missing pipe = %v, want no server", err)
+	}
+	if elapsed := time.Since(start); elapsed >= opts.ProbeTimeout {
+		t.Fatalf("probe of a missing pipe took %s, want it reported at once", elapsed)
+	}
+
+	// Listening, and never accepting: go-winio keeps no instance open for a
+	// client until Accept is called, so every dial finds the pipe busy.
+	listener, err := winio.ListenPipe(pipe, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	_, err = probeEndpoint(context.Background(), opts)
+	if !errors.Is(err, errProbeUnanswered) || isProbeConnectionError(err) {
+		t.Fatalf("probe of a busy pipe = %v, want a server too busy to answer", err)
+	}
+}
+
+// A loopback TCP port nothing listens on is refused on Windows only after
+// about two seconds, past the default probe timeout. It must still read as no
+// server, or every cold start on an http:// endpoint would wait out
+// ReadyTimeout on a server that is not there.
+func TestProbeReadsASlowRefusalAsNoServer(t *testing.T) {
+	reserved, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := reserved.Addr().String()
+	_ = reserved.Close()
+	_, err = probeEndpoint(context.Background(), LaunchOptions{Endpoint: "http://" + addr})
+	if err == nil || errors.Is(err, errProbeUnanswered) || !isProbeConnectionError(err) {
+		t.Fatalf("probe of a closed port = %v, want no server", err)
+	}
 }
