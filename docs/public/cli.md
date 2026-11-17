@@ -57,6 +57,60 @@ discobox admin [flags]
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
+## discobox admin api
+
+~~~~text
+Serve the Discobox API to a program on this machine
+~~~~
+
+```text
+discobox admin api [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for api Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox admin api serve
+
+~~~~text
+Serve every registered server's API on a local socket, for a program on this
+machine that speaks HTTP: an admin UI, a script.
+
+The socket is a unix socket only you can open, in the CLI's state directory
+unless --listen names another. Behind it:
+
+  GET /v1/servers                        the servers, the primary first, read
+                                         again on every request, so a server
+                                         "discobox admin remote add" registers
+                                         is listed at once
+  /v1/servers/NAME/api/PATH              the API of the server listed as NAME,
+                                         reached the way this CLI reaches it:
+                                         iroh, a socket or HTTPS, with its token
+  GET /v1/health                         whether this command is serving
+
+It runs until it is interrupted.
+~~~~
+
+```text
+discobox admin api serve [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for serve Value when passed without an argument: true. |
+| --listen | string |  | listen on &#96;ADDRESS&#96;, unix:///PATH or a loopback http://127.0.0.1:PORT; defaults to api.sock in the CLI's state directory |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
 ## discobox admin audit
 
 ~~~~text
