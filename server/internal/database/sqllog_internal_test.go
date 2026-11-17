@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
@@ -31,9 +32,10 @@ func TestNewLogsNoBoundValues(t *testing.T) {
 	}
 }
 
-// TestSQLLogCarriesNoKeyMaterial writes, as slow statements and as a failed
-// one, the rows that hold key material with no encryption provider set, and
-// checks the log names the statements but none of the values.
+// TestSQLLogCarriesNoKeyMaterial writes and reads the rows that hold key
+// material with no encryption provider set, logging every statement, a failed
+// one and a Scan among them, and checks the log names the statements but none
+// of the values.
 func TestSQLLogCarriesNoKeyMaterial(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
@@ -42,8 +44,10 @@ func TestSQLLogCarriesNoKeyMaterial(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	// Every statement is slow: each one reaches the log.
-	tx := db.Write.Session(&gorm.Session{Logger: newSQLLogger(&out, time.Nanosecond)})
+	// Every statement reaches the log. A 1ns threshold alone is not enough:
+	// Windows' clock times a fast statement at 0, which is never slow. Info
+	// logs it anyway, rendered the same way as a slow one.
+	tx := db.Write.Session(&gorm.Session{Logger: newSQLLogger(&out, time.Nanosecond).LogMode(logger.Info)})
 
 	privateKey := []byte("PRIVATE-KEY-MATERIAL-0123456789")
 	secrets := []string{
@@ -80,9 +84,9 @@ func TestSQLLogCarriesNoKeyMaterial(t *testing.T) {
 	}
 
 	logged := out.String()
-	if !strings.Contains(logged, "SLOW SQL") || !strings.Contains(logged, "INSERT INTO `server_state`") ||
+	if !strings.Contains(logged, "INSERT INTO `server_state`") || !strings.Contains(logged, "UPDATE `server_state`") ||
 		!strings.Contains(logged, "SELECT key FROM server_state WHERE value <> ?") {
-		t.Fatalf("log does not record the slow statements:\n%s", logged)
+		t.Fatalf("log does not record the statements:\n%s", logged)
 	}
 	for _, secret := range secrets {
 		if strings.Contains(logged, secret) {
