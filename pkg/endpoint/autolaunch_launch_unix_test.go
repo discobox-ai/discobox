@@ -5,6 +5,8 @@ package endpoint
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -455,5 +457,55 @@ func TestEnsureRunningReportsWarningsOnFirstReadyProbe(t *testing.T) {
 	warnings = nil
 	if started, err := EnsureRunning(t.Context(), LaunchOptions{Endpoint: endpointURL, OnProgress: func(s health.Status) { warnings = append(warnings, s.Warnings...) }}); err != nil || started || len(warnings) != 0 {
 		t.Fatalf("already running: started=%t warnings=%q err=%v", started, warnings, err)
+	}
+}
+
+// A socket something listens on but nobody answers is a server too busy to
+// answer, not an absent one; a socket path nothing listens on is absent, and
+// says so at once rather than after the probe timeout, so a cold start waits
+// for nothing.
+func TestProbeTellsABusySocketFromAnEmptyOne(t *testing.T) {
+	socket := testSocketPath(t)
+	opts := LaunchOptions{Endpoint: "unix://" + socket, ProbeTimeout: 200 * time.Millisecond}
+
+	start := time.Now()
+	_, err := probeEndpoint(context.Background(), opts)
+	if err == nil || errors.Is(err, errProbeUnanswered) || !isProbeConnectionError(err) {
+		t.Fatalf("probe of a missing socket = %v, want no server", err)
+	}
+	if elapsed := time.Since(start); elapsed >= opts.ProbeTimeout {
+		t.Fatalf("probe of a missing socket took %s, want it refused at once", elapsed)
+	}
+
+	// Accepts, and never answers.
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan net.Conn, 4)
+	go func() {
+		defer close(accepted)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- conn
+		}
+	}()
+	_, err = probeEndpoint(context.Background(), opts)
+	if !errors.Is(err, errProbeUnanswered) || isProbeConnectionError(err) {
+		t.Fatalf("probe of a busy socket = %v, want a server too busy to answer", err)
+	}
+
+	// Left behind by a server that is gone: refused, so absent.
+	listener.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = listener.Close()
+	for conn := range accepted {
+		_ = conn.Close()
+	}
+	_, err = probeEndpoint(context.Background(), opts)
+	if err == nil || errors.Is(err, errProbeUnanswered) || !isProbeConnectionError(err) {
+		t.Fatalf("probe of a stale socket = %v, want no server", err)
 	}
 }

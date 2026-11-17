@@ -22,6 +22,11 @@ import (
 // default, a named pipe, is reported gone at once (fs.ErrNotExist).
 var errConnRefused error = windows.WSAECONNREFUSED
 
+// backlogFull is never so on Windows: a named pipe with no free instance is
+// busy, which its dial waits out (see probeEndpoint), and a TCP backlog that
+// is full looks like a slow refusal.
+func backlogFull(error) bool { return false }
+
 // acquireLaunchLock takes an exclusive lock on path, waiting for whoever holds
 // it. LockFileEx without LOCKFILE_FAIL_IMMEDIATELY blocks, which is what the
 // flock on Unix does and what this needs: the caller is about to decide whether

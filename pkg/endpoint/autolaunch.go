@@ -10,11 +10,13 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/health"
@@ -87,17 +89,14 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	if opts.Endpoint == "" {
 		opts.Endpoint = DefaultEndpoint()
 	}
-	// A server that is already up needs nothing, and one that is still starting
-	// needs waiting on rather than a second process started alongside it.
-	if status, err := probeEndpoint(ctx, opts); err == nil {
-		if !olderServer(status, opts.ExpectedVersion) {
-			if !status.Waiting() {
-				return false, nil
-			}
-			return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
-		}
-	} else if !isProbeConnectionError(err) {
+	// A server that is already up needs nothing, unless it is older, and one
+	// that is still starting, or too busy to answer in time, needs waiting on
+	// rather than a second process started alongside it: that one would ask it
+	// to shut down (#1308).
+	if status, found, err := probeSettled(ctx, opts); err != nil {
 		return false, err
+	} else if found && !olderServer(status, opts.ExpectedVersion) {
+		return false, nil
 	}
 	opts.progress(health.Status{Status: health.StatusStarting, Phase: "waiting for the startup lock"})
 	unlock, err := acquireLaunchLock(opts.lockPath())
@@ -106,18 +105,16 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	}
 	defer unlock()
 	replaceOlder := false
-	if status, err := probeEndpoint(ctx, opts); err == nil {
-		if olderServer(status, opts.ExpectedVersion) {
-			replaceOlder = true
-		} else if status.Waiting() {
-			if err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout())); err != nil {
-				return false, err
-			}
-		} else {
+	// A server found here, waited on or not, is done with unless it is older:
+	// launching after a wait would start a second server beside the one just
+	// waited out.
+	if status, found, err := probeSettled(ctx, opts); err != nil {
+		return false, err
+	} else if found {
+		if !olderServer(status, opts.ExpectedVersion) {
 			return false, nil
 		}
-	} else if !isProbeConnectionError(err) {
-		return false, err
+		replaceOlder = true
 	}
 	// Resolved before an older server is stopped, never after. Resolving can
 	// mean downloading a server and the images it runs (ADR 0099, ADR 0113) —
@@ -184,7 +181,14 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 				opts.progress(status)
 				return true, nil
 			}
-			return true, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+			_, err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+			return true, err
+		}
+		if errors.Is(err, errProbeUnanswered) {
+			// Listening, and too busy to answer: it has come up, and what is
+			// left is the wait for it to be ready.
+			_, err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+			return true, err
 		}
 		lastErr = err
 		// Cancellation first, because it is also what killed the process. A
@@ -254,7 +258,7 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 		}
 		status, probeErr := probeEndpoint(ctx, opts)
 		if resp.StatusCode == http.StatusServiceUnavailable && probeErr == nil && status.Waiting() {
-			if err := waitReady(ctx, opts, readinessDeadline); err != nil {
+			if _, err := waitReady(ctx, opts, readinessDeadline); err != nil {
 				return err
 			}
 			continue
@@ -270,7 +274,8 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 		if isProbeConnectionError(err) {
 			return nil
 		}
-		if err != nil {
+		// One too busy to answer has not let go yet.
+		if err != nil && !errors.Is(err, errProbeUnanswered) {
 			return err
 		}
 		select {
@@ -282,28 +287,51 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 	return fmt.Errorf("older local server at %s did not stop", opts.Endpoint)
 }
 
-// waitReady polls a server that has answered "starting" or "upgrading pools"
-// until it is ready. Every caller enters on such an answer, so the server is
-// known to be there from the first probe on.
+// probeSettled probes the endpoint and reports whether a server is there.
+// When one is there but not ready to be judged — starting, upgrading its
+// pools, or too busy to answer — it waits until the server is ready and
+// returns that answer, which says its version. A server already known to be
+// older is returned as it is: it is replaced, not waited on. Nothing there is
+// found false with no error; an error is one to give up on, a wait that
+// failed included.
+func probeSettled(ctx context.Context, opts LaunchOptions) (health.Status, bool, error) {
+	status, err := probeEndpoint(ctx, opts)
+	switch {
+	case errors.Is(err, errProbeUnanswered) || (err == nil && status.Waiting() && !olderServer(status, opts.ExpectedVersion)):
+		status, err = waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+		return status, err == nil, err
+	case err == nil:
+		return status, true, nil
+	case isProbeConnectionError(err):
+		return health.Status{}, false, nil
+	default:
+		return health.Status{}, false, err
+	}
+}
+
+// waitReady polls a server that has answered "starting" or "upgrading pools",
+// or is listening and too busy to answer, until it is ready, and returns the
+// ready answer. Every caller enters on such a server, so it is known to be
+// there from the first probe on.
 //
 // Upgrading pools gets a deadline of its own, from when it is first seen: the
 // server bounds it (health.PoolUpgradeWait) and reports ready once that runs
 // out, so the client's deadline is that and a margin, never the start's.
-func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) error {
+func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) (health.Status, error) {
 	var last health.Status
-	unanswered, upgrading := 0, false
+	unanswered, upgrading, silent := 0, false, false
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		switch {
 		case err == nil && !status.Waiting():
 			opts.progress(status)
-			return nil
+			return status, nil
 		case err == nil:
 			if status.UpgradingPools() && !upgrading {
 				upgrading = true
 				deadline = time.Now().Add(opts.upgradeTimeout())
 			}
-			unanswered = 0
+			unanswered, silent = 0, false
 			// On the step changing, not on every poll: uptime moves with each
 			// answer, so comparing whole statuses reports the same step over
 			// and over.
@@ -311,8 +339,15 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 				opts.progress(status)
 				last = status
 			}
+		case errors.Is(err, errProbeUnanswered):
+			// Listening, and too busy to answer in time: still there. Said
+			// once, since a server that has not answered has drawn no line.
+			if !silent {
+				opts.progress(health.Status{Status: health.StatusStarting, Phase: "waiting for the server to answer"})
+			}
+			unanswered, silent = 0, true
 		case !isProbeConnectionError(err):
-			return err
+			return health.Status{}, err
 		case listenerGone(err):
 			// It was answering and now nothing listens. A server holds its
 			// listeners for the whole of startup and releases them only when
@@ -322,30 +357,37 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 			// of saying nothing when its last words are already in the log.
 			unanswered++
 			if unanswered >= probesBeforeGone {
-				return fmt.Errorf("local server at %s stopped while starting (last step: %s)%s",
+				return health.Status{}, fmt.Errorf("local server at %s stopped while starting (last step: %s)%s",
 					opts.Endpoint, lastStep(last), opts.logTail())
 			}
 		default:
-			// Anything else — above all a probe that ran out its own timeout —
-			// reached a listener, so the process is still there: a slow answer
-			// on a loaded machine, not a dead server. The deadline bounds it
-			// (#1298: three timeouts in a row read as "stopped" while the
-			// server went on upgrading its pools for minutes).
+			// Anything else is no proof that the listener is gone — above all
+			// a TCP dial that ran out the probe timeout, which a loaded
+			// machine produces as well as a closed port on Windows — so the
+			// wait goes on, and the deadline bounds it (#1298: three timeouts
+			// in a row read as "stopped" while the server went on upgrading
+			// its pools for minutes). A timeout against a listener is the
+			// case above.
 			unanswered = 0
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return health.Status{}, ctx.Err()
 		case <-time.After(opts.probeInterval()):
 		}
 	}
 	// Said by what the last probe found: a server whose listener has just gone
-	// is not one to call running.
+	// is not one to call running, and one that is listening but has never
+	// answered was not starting.
 	if unanswered > 0 {
-		return fmt.Errorf("local server at %s stopped answering before it finished starting (last step: %s)%s",
+		return health.Status{}, fmt.Errorf("local server at %s stopped answering before it finished starting (last step: %s)%s",
 			opts.Endpoint, lastStep(last), opts.logTail())
 	}
-	return fmt.Errorf("local server at %s is still running but did not finish starting in time (last step: %s)%s",
+	if silent {
+		return health.Status{}, fmt.Errorf("local server at %s is listening but has not answered its health check (last step: %s)%s",
+			opts.Endpoint, lastStep(last), opts.logTail())
+	}
+	return health.Status{}, fmt.Errorf("local server at %s is still running but did not finish starting in time (last step: %s)%s",
 		opts.Endpoint, lastStep(last), opts.logTail())
 }
 
@@ -362,9 +404,14 @@ func lastStep(status health.Status) string {
 	return "unknown"
 }
 
+// errProbeUnanswered is a probe that ran out its own timeout against a
+// listener: a server is there, too busy to answer in time. See probeEndpoint.
+var errProbeUnanswered = errors.New("local server did not answer in time")
+
 // probeEndpoint asks the endpoint how it is. A reachable server answers with a
-// status; anything else is an error, and only a connection error means "not
-// running" (see isProbeConnectionError).
+// status; anything else is an error. A server that is there but did not answer
+// within the probe timeout is errProbeUnanswered; otherwise only a connection
+// error means "not running" (see isProbeConnectionError).
 func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, error) {
 	target, err := Parse(opts.Endpoint)
 	if err != nil {
@@ -376,12 +423,37 @@ func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, erro
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
 	defer cancel()
-	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, baseURL+opts.probePath(), nil)
+	var connected atomic.Bool
+	traceCtx := httptrace.WithClientTrace(probeCtx, &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+	})
+	req, err := http.NewRequestWithContext(traceCtx, http.MethodGet, baseURL+opts.probePath(), nil)
 	if err != nil {
 		return health.Status{}, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		// The probe's own timeout, against something listening, is a server
+		// too busy to answer — on a loaded host, for seconds at a time — and
+		// not an absent one (#1308). Something is listening when the
+		// connection was accepted, or when a named pipe's dial ran out the
+		// time: a missing pipe fails at once, so only one whose instances are
+		// all busy makes the dial wait (go-winio retries ERROR_PIPE_BUSY until
+		// the context ends). A unix socket's dial never waits; a full backlog
+		// fails it at once (below). A TCP dial that
+		// runs out the timeout is not a listener: Windows refuses a closed
+		// loopback port only after about two seconds, and reading that as a
+		// server would stall every cold start there.
+		if ctx.Err() == nil && errors.Is(probeCtx.Err(), context.DeadlineExceeded) &&
+			(connected.Load() || target.Scheme == "npipe") {
+			return health.Status{}, fmt.Errorf("%w (%s): %w", errProbeUnanswered, opts.probeTimeout(), err)
+		}
+		// A dial that fails at once is no server, but for one failure: a
+		// listener whose accept backlog is full, which is a server too busy
+		// even to accept. See backlogFull.
+		if target.Scheme == "unix" && backlogFull(err) {
+			return health.Status{}, fmt.Errorf("%w (accept backlog full): %w", errProbeUnanswered, err)
+		}
 		return health.Status{}, err
 	}
 	defer resp.Body.Close()
@@ -628,7 +700,7 @@ func isProbeConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, errProbeUnanswered) {
 		return false
 	}
 	return true
