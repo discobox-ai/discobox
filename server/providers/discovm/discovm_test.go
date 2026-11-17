@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -479,10 +481,48 @@ func TestUnreachableIsATransportFailureOnly(t *testing.T) {
 		{fmt.Errorf("boxd: api: %w", grpcstatus.Error(codes.Unavailable, "no route")), true},
 		{fmt.Errorf("boxd: api: %w", grpcstatus.Error(codes.Unauthenticated, "bad key")), false},
 		{errors.New("boxd: no credentials: set BOXD_API_KEY"), false},
+		{fmt.Errorf("archil: list sandboxes: %w", machine.ErrUnavailable), true},
 	} {
 		if got := unreachable(tc.err); got != tc.want {
 			t.Errorf("unreachable(%v) = %v, want %v", tc.err, got, tc.want)
 		}
+	}
+}
+
+// archil's REST API not serving for now (a 502, 503 or 504 from Archil or its
+// gateway), or not answering at all, is waited on; any other answer, a 500
+// or a 429 included, is Archil's and the pool shows it.
+func TestArchilsUnavailableAnswersAreUnreachable(t *testing.T) {
+	isolateStateRoot(t)
+	for _, tc := range []struct {
+		status int
+		want   bool
+	}{
+		{http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true},
+		{http.StatusGatewayTimeout, true},
+		{http.StatusInternalServerError, false},
+		{http.StatusTooManyRequests, false},
+		{http.StatusUnauthorized, false},
+		{0, true}, // the service gone: its connection refused
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+			_, _ = io.WriteString(w, `{"success":false,"error":"down"}`)
+		}))
+		if tc.status == 0 {
+			srv.Close()
+		}
+		config, err := json.Marshal(map[string]string{"baseUrl": srv.URL})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := openRuntime(t, settings{name: "archil", driverConfig: config, key: "key-k"})
+		_, err = r.engine.List(t.Context())
+		if err == nil || errors.Is(notReachable(err), sandbox.ErrPoolNotReachable) != tc.want {
+			t.Errorf("archil answering %d: %v, want not reachable %v", tc.status, err, tc.want)
+		}
+		srv.Close()
 	}
 }
 

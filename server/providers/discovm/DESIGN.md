@@ -210,10 +210,11 @@ as ADR 26-10-09-106 §1 places it:
   ask, so the machine is asked again through `Engine.Guest`, which makes the
   same call and returns its error. A service that cannot be reached
   (`unreachable`: a network error, a deadline, gRPC `Unavailable` or
-  `DeadlineExceeded`) answers `sandbox.ErrPoolNotReachable`, which the
-  reconciler waits on, rather than booting a second time or stopping a
-  healthy pool for a network fault; any other error, such as a missing,
-  refused or too narrow key, is the pool's. Every other call that asks the
+  `DeadlineExceeded`, or disco-vm's `machine.ErrUnavailable`, which archil
+  gives for its REST API's 502, 503 and 504) answers
+  `sandbox.ErrPoolNotReachable`, which the reconciler waits on, rather than
+  booting a second time or stopping a healthy pool for a network fault; any
+  other error, such as a missing, refused or too narrow key, is the pool's. Every other call that asks the
   driver's service about the machine — the lookup in front of every operation
   (`instance`), its guest, URLs, create, keys — reads its error the
   same way (`notReachable`), so a service that drops for a moment during a
