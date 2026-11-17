@@ -1013,3 +1013,13 @@ user waits on every single start.
   same keys as the sandbox base image's `GH_APT_KEY_FINGERPRINTS`; a change to
   one moves the other. Why: #1168 pinned the image's key while this feature
   still downloaded it unchecked.
+
+## File watches
+
+- **An fsnotify watcher's `Errors` is read wherever its `Events` is.**
+  fsnotify creates `Errors` unbuffered and sends events and errors from one
+  reader, so one error left unread (an inotify overflow) holds back every
+  later event until `Close`, and the watch quietly falls back to its resync
+  ticker. Treat an error as a wake: look again. `monitors.Queue.Wait` and
+  `monitors.Reconciler.Run` both missed it; `terminal/capture_watch.go`
+  reads it.
