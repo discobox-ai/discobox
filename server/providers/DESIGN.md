@@ -781,13 +781,16 @@ state is only written once a create has returned a runtime sandbox.
 `ImportTree` names its pool because the row does not exist yet (ADR 0123 §3);
 it resolves and waits for a schedulable pool the way a create does, and returns
 the pool the tree landed on so the row created afterwards names where the data
-actually is. `ExportTree`, `Remove` and `AcquireHTTPClient` prefer runtime state
+actually is. `ExportTree`, `Archive`, `Remove` and `AcquireHTTPClient` prefer runtime state
 when there is any and fall back to the pool on the sandbox's row
 (`agentClientForSandbox`; `placedPoolClient` for `Remove`). A sandbox whose create failed before its agent
 reported has no state; it is exactly the one somebody wants to export, broken
 where it is with a tree on the pool the row still names, and a delete of it
 must still reach that pool: answering not-found from the empty state lets the
-row go while the container stays. The agent's delete finds the container by
+row go while the container stays. So must an archive: a create the archive
+intent superseded made its container but never wrote its state, and an archive
+answered not-found settles `archived` with the container still running. An
+archive waits on that pool as one with state does. The agent's delete finds the container by
 its labels, so asking it with no state removes whatever it made. That delete
 does not wait for its pool, though, as one with state does: a pool that
 cannot be reached at once answers not-found and the row goes, since a pool

@@ -72,6 +72,15 @@
   would hold both forever. The pool's reaper collects what it made. A path
   that newly asks a pool on delete must not make the delete depend on that
   pool coming back (#1095).
+- A `poolruntime.Provider` method whose not-found the sandbox reconciler
+  settles on (`Remove`, `Archive`) must not find its pool from provider state
+  alone (`agentClientFromState`): a create that failed, went unanswered, or
+  was superseded by a newer intent made its container but wrote no state, so
+  not-found there settles the row while the container keeps running. Fall back
+  to the row's pool: `agentClientForSandbox`, which waits on it, for `Archive`
+  and any new such method; `placedPoolClient` for `Remove` only, per the note
+  above. This was missed twice, for `Remove` (#1095) and then `Archive`
+  (#1322); check any other method on that path that still reads state alone.
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.
