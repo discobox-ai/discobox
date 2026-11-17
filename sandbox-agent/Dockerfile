@@ -144,8 +144,14 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # the agent whenever any of that changed. The directories are the root-module
 # packages it imports (go list -deps ./cli/cmd/discobox), then its own module
 # and termpane, which its go.mod replaces with the paths beside it.
+#
+# DISCOBOX_VERSION is the release the bundle is cut from, which the release
+# build passes so that `discobox --version` in a box names it and a bug report
+# filed from one can say which release it was. The build context has no .git,
+# so without it the CLI reports "unknown"; a development build leaves it so.
 FROM go AS discobox-cli-builder
 ARG TARGETOS TARGETARCH
+ARG DISCOBOX_VERSION=
 
 WORKDIR /src
 
@@ -196,7 +202,7 @@ COPY cli ./cli
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C cli build -trimpath -ldflags="-s -w" -o /out/discobox ./cmd/discobox
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C cli build -trimpath -ldflags="-s -w${DISCOBOX_VERSION:+ -X github.com/discobox-ai/discobox/pkg/version.Version=$DISCOBOX_VERSION}" -o /out/discobox ./cmd/discobox
 
 # The agent bundle (ADR 26-10-24-953 §2): the agent alone, one layer, which
 # whoever makes a box places in it before the box applies its bundles — a pool
