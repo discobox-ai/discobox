@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -82,7 +81,7 @@ func (m *Manager) RunOnce(ctx context.Context, req OnceRequest) ([]byte, error) 
 	// process's. They are not the same PATH — the agent is root and the
 	// command runs as the run user — and a name is looked up where the
 	// command's own PATH says, or the wrong binary answers to it.
-	program, err := lookPath(req.Command[0], env["PATH"])
+	program, err := lookPath(req.Command[0], envList(env))
 	if err != nil {
 		return nil, err
 	}
@@ -140,35 +139,6 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 		b.buf.Write(p)
 	}
 	return len(p), nil
-}
-
-// lookPath resolves a program name against a PATH of its own.
-//
-// A name carrying a separator is a path already and is taken as one. Anything
-// else is looked for in the PATH's absolute entries only: a relative entry
-// would be read here against this process's directory and then run against the
-// command's, which are not the same place — that mismatch is the whole of what
-// os/exec's ErrDot exists to refuse.
-//
-// The executable bit is a filter, not a permission: this process is root and
-// the command runs as the run user, so what it finds is what would be tried,
-// not what will be allowed.
-func lookPath(program, path string) (string, error) {
-	if strings.ContainsAny(program, `/\`) {
-		return program, nil
-	}
-	for _, dir := range filepath.SplitList(path) {
-		if !filepath.IsAbs(dir) {
-			continue
-		}
-		candidate := filepath.Join(dir, program)
-		info, err := os.Stat(candidate)
-		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-			continue
-		}
-		return candidate, nil
-	}
-	return "", fmt.Errorf("%s is not on this command's PATH", program)
 }
 
 // OnceFailure is a command that did not succeed.
