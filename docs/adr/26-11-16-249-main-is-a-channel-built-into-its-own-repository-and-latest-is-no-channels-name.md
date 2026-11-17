@@ -1,8 +1,9 @@
 # 26-11-16-249 — Main is a channel, built into its own repository, and `latest` is no channel's name
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
-- **Would amend**:
+- Accepted by the owner by merging #1244, 2026-11-17
+- **Amends**:
   [0105](0105-a-release-is-cut-as-a-prerelease-and-blessed-stable-later.md)
   §2's channel name (`latest` becomes `beta`) and §4's dev formula name
   (`discobox-dev` becomes `discobox-beta`);
