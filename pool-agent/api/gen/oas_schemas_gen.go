@@ -411,7 +411,10 @@ type GitSource struct {
 	// for the sandbox, which the client pushes into. Defaults to clone.
 	Delivery OptGitSourceDelivery `json:"delivery"`
 	// Opaque stable key for durable pool-local data shared by sandboxes using this source.
-	DataKey        OptString               `json:"dataKey"`
+	DataKey OptString `json:"dataKey"`
+	// The branch the source's remote's HEAD names, as the client last knew it. A cache-delivered
+	// source's checkout has origin/HEAD name it when that branch was delivered.
+	DefaultBranch  OptString               `json:"defaultBranch"`
 	Destination    OptGitSourceDestination `json:"destination"`
 	Kind           GitSourceKind           `json:"kind"`
 	LocalDirectory OptString               `json:"localDirectory"`
@@ -442,6 +445,11 @@ func (s *GitSource) GetDelivery() OptGitSourceDelivery {
 // GetDataKey returns the value of DataKey.
 func (s *GitSource) GetDataKey() OptString {
 	return s.DataKey
+}
+
+// GetDefaultBranch returns the value of DefaultBranch.
+func (s *GitSource) GetDefaultBranch() OptString {
+	return s.DefaultBranch
 }
 
 // GetDestination returns the value of Destination.
@@ -497,6 +505,11 @@ func (s *GitSource) SetDelivery(val OptGitSourceDelivery) {
 // SetDataKey sets the value of DataKey.
 func (s *GitSource) SetDataKey(val OptString) {
 	s.DataKey = val
+}
+
+// SetDefaultBranch sets the value of DefaultBranch.
+func (s *GitSource) SetDefaultBranch(val OptString) {
+	s.DefaultBranch = val
 }
 
 // SetDestination sets the value of Destination.

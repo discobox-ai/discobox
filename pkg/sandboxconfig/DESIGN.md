@@ -44,7 +44,8 @@ control plane's resolved harness config.
   pool cannot know them), the `BaseCommit`/`UpstreamRef` the agent's diff stat
   measures from, `AwaitsDelivery` (see Readiness), and how the sandbox agent
   checks it out when it clones it (ADR 0126 §4): `RefName`/`RefType`,
-  `UpstreamURL`, `PoolRemote`, and a dirty `Workspace` snapshot. `PoolRemote`
+  `UpstreamURL` and its `DefaultBranch` (what the remote's HEAD names, for
+  `origin/HEAD`), `PoolRemote`, and a dirty `Workspace` snapshot. `PoolRemote`
   names the remote the checkout reaches its pool under, for a source delivered
   into the pool's cache
   ([ADR 26-10-10-545](../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md) §6):

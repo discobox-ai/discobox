@@ -523,10 +523,15 @@ type GitSource struct {
 	// remote. A cache-delivered source has it as origin in the sandbox and is
 	// keyed by it on the pool (ADR 26-10-10-545 §§2, 6); a source delivered
 	// before that has it as a remote named upstream.
-	UpstreamURL *string               `json:"upstreamUrl,omitempty" doc:"Network URL of a local source's remote on the client. It is the remote its checked-out branch tracks, else origin, else its only remote. A cache-delivered source has it as the sandbox's origin remote, and it names the pool cache the source is delivered into. A source delivered before that has it as a remote named upstream."`
-	Checkout    *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
-	Workspace   *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
-	Destination *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
+	UpstreamURL *string `json:"upstreamUrl,omitempty" doc:"Network URL of a local source's remote on the client. It is the remote its checked-out branch tracks, else origin, else its only remote. A cache-delivered source has it as the sandbox's origin remote, and it names the pool cache the source is delivered into. A source delivered before that has it as a remote named upstream."`
+	// DefaultBranch is the branch the source's remote's HEAD names, as the
+	// client last knew it: a local checkout's own origin/HEAD, or what the
+	// remote answered for a remote-URL source. The sandbox's origin/HEAD
+	// names it, as a clone's would (ADR 26-10-10-545 §6).
+	DefaultBranch *string               `json:"defaultBranch,omitempty" doc:"The branch the source's remote's HEAD names, as the client last knew it. A cache-delivered source's checkout has origin/HEAD name it, as a clone of the remote would, when that branch was delivered."`
+	Checkout      *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
+	Workspace     *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
+	Destination   *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
 	// Purpose is what the source is in the sandbox for (ADR 26-10-14-294 §2).
 	// Empty is GitSourcePurposeWork, which is every source created before it,
 	// so their manifests fingerprint as they did.
@@ -756,7 +761,12 @@ type Pool struct {
 	// declared it is sent no route with one: its decoder refuses a field it
 	// does not know, and it swaps nothing in a body, so leaving such a route
 	// out only narrows what its lists allow.
-	SentinelBodyPlaces    bool    `gorm:"column:sentinel_body_places;not null;default:false" json:"-"`
+	SentinelBodyPlaces bool `gorm:"column:sentinel_body_places;not null;default:false" json:"-"`
+	// SourceDefaultBranch is whether the pool's agent takes a git source's
+	// defaultBranch, and hands it to the sandbox for its origin/HEAD (#245),
+	// declared on every status report. A pool whose agent has not declared
+	// it is sent none: its decoder refuses a field it does not know.
+	SourceDefaultBranch   bool    `gorm:"column:source_default_branch;not null;default:false" json:"-"`
 	PublicKey             string  `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
 	KeyType               string  `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
 	Ready                 bool    `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`

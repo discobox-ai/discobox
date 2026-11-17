@@ -3815,6 +3815,10 @@ type GitSource struct {
 	// when the source has no remote. Sources that share it share one object store on a pool, so a
 	// delivery sends only what the pool has not been sent before.
 	CacheKey OptString `json:"cacheKey"`
+	// The branch the source's remote's HEAD names, as the client last knew it. A cache-delivered
+	// source's checkout has origin/HEAD name it, as a clone of the remote would, when that branch was
+	// delivered.
+	DefaultBranch OptString `json:"defaultBranch"`
 	// How the source reaches the sandbox, decided by the server and recorded at create. cache is every
 	// source created now. A client delivers it into a Git namespace of the pool's cache for the source's
 	// remote, and the sandbox clones it from the pool; the sandbox waits in the awaiting_source phase
@@ -3867,6 +3871,11 @@ func (s *GitSource) GetCheckout() OptGitSourceCheckout {
 // GetCacheKey returns the value of CacheKey.
 func (s *GitSource) GetCacheKey() OptString {
 	return s.CacheKey
+}
+
+// GetDefaultBranch returns the value of DefaultBranch.
+func (s *GitSource) GetDefaultBranch() OptString {
+	return s.DefaultBranch
 }
 
 // GetDelivery returns the value of Delivery.
@@ -3937,6 +3946,11 @@ func (s *GitSource) SetCheckout(val OptGitSourceCheckout) {
 // SetCacheKey sets the value of CacheKey.
 func (s *GitSource) SetCacheKey(val OptString) {
 	s.CacheKey = val
+}
+
+// SetDefaultBranch sets the value of DefaultBranch.
+func (s *GitSource) SetDefaultBranch(val OptString) {
+	s.DefaultBranch = val
 }
 
 // SetDelivery sets the value of Delivery.
@@ -33373,6 +33387,9 @@ type UpdatePoolStatusBody struct {
 	// expiry, and takes them as sentinelGrants. Declared on every report; an agent from before grants
 	// sends none, and is sent each sentinel's first grant's route lists as sentinelRoutes.
 	SentinelGrants OptBool `json:"sentinelGrants"`
+	// The agent takes a git source's defaultBranch and hands it to the sandbox, whose origin/HEAD names
+	// it. Declared on every report; an agent from before it sends none, and is sent no defaultBranch.
+	SourceDefaultBranch OptBool `json:"sourceDefaultBranch"`
 }
 
 // GetSchema returns the value of Schema.
@@ -33445,6 +33462,11 @@ func (s *UpdatePoolStatusBody) GetSentinelGrants() OptBool {
 	return s.SentinelGrants
 }
 
+// GetSourceDefaultBranch returns the value of SourceDefaultBranch.
+func (s *UpdatePoolStatusBody) GetSourceDefaultBranch() OptBool {
+	return s.SourceDefaultBranch
+}
+
 // SetSchema sets the value of Schema.
 func (s *UpdatePoolStatusBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -33513,6 +33535,11 @@ func (s *UpdatePoolStatusBody) SetSentinelGenerations(val OptBool) {
 // SetSentinelGrants sets the value of SentinelGrants.
 func (s *UpdatePoolStatusBody) SetSentinelGrants(val OptBool) {
 	s.SentinelGrants = val
+}
+
+// SetSourceDefaultBranch sets the value of SourceDefaultBranch.
+func (s *UpdatePoolStatusBody) SetSourceDefaultBranch(val OptBool) {
+	s.SourceDefaultBranch = val
 }
 
 // Ref: #/components/schemas/UpdateProjectBody

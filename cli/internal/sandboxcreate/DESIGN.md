@@ -306,6 +306,11 @@ sandbox create requests.
   a real URL. Credentials written into it are dropped, and a remote the
   sandbox cannot reach (another local branch, a path on this machine) sends
   nothing rather than a broken remote.
+- A source records its remote's default branch (`defaultBranch`), which the
+  sandbox's `origin/HEAD` names: a local checkout's own `<remote>/HEAD`
+  (`localUpstream`), and for a remote source the HEAD symref of the same
+  `ls-remote` that pins it (`resolveRemoteGitRef`). Unknown, it is left out,
+  and the sandbox has no `origin/HEAD`, as a clone that lacks one.
 - Do not depend on `internal/cli` or `internal/tui`. Both frontends consume this
   package through their adapters.
 - Keep terminal waiting, attach, and rendering in the frontend packages; those

@@ -1192,3 +1192,81 @@ func TestResolveRunSourceWarnsAboutWorkLeftOut(t *testing.T) {
 		t.Fatalf("warnings = %q", warnings)
 	}
 }
+
+// A remote source learns the branch its remote's HEAD names in the lookup that
+// pins it, whichever ref it pins, so the sandbox's origin/HEAD can name it.
+// The remote's own HEAD, and any ref of the remote ending in /HEAD, is listed
+// beside an explicit ref and never taken for it.
+func TestResolveRunSourceRemoteKnowsItsDefaultBranch(t *testing.T) {
+	repo := newRunSourceTestRepoIn(t, t.TempDir(), "widget")
+	git := runSourceTestGit(t, repo)
+	base := strings.TrimSpace(git("rev-parse", "HEAD"))
+	git("tag", "v1")
+	git("checkout", "-q", "-b", "feature")
+	git("commit", "-q", "--allow-empty", "-m", "on feature")
+	feature := strings.TrimSpace(git("rev-parse", "HEAD"))
+	git("checkout", "-q", "main")
+	git("commit", "-q", "--allow-empty", "-m", "on main")
+	head := strings.TrimSpace(git("rev-parse", "HEAD"))
+	// A ref named like a remote's HEAD, at a commit no answer below is.
+	git("update-ref", "refs/remotes/upstream/HEAD", feature)
+	remoteURL := "file://" + filepath.ToSlash(repo)
+
+	for _, tc := range []struct {
+		arg, commit, name, refType string
+	}{
+		{remoteURL, head, "main", runSourceRefTypeBranch},
+		{remoteURL + "@feature", feature, "feature", runSourceRefTypeBranch},
+		{remoteURL + "@v1", base, "v1", runSourceRefTypeTag},
+	} {
+		source, err := resolveRunSource(context.Background(), tc.arg, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
+		if err != nil {
+			t.Fatalf("resolveRunSource(%s): %v", tc.arg, err)
+		}
+		if source.Checkout.Commit != tc.commit || source.Checkout.RefName != tc.name || source.Checkout.RefType != tc.refType {
+			t.Fatalf("%s: checkout = %#v, want %s %q at %s", tc.arg, source.Checkout, tc.refType, tc.name, tc.commit)
+		}
+		if source.DefaultBranch != "main" {
+			t.Fatalf("%s: default branch = %q, want main", tc.arg, source.DefaultBranch)
+		}
+		api, err := source.apiGitSource()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := api.DefaultBranch.Or(""); got != "main" {
+			t.Fatalf("%s: request's defaultBranch = %q, want main", tc.arg, got)
+		}
+	}
+}
+
+// A local checkout's default branch is its own record of its remote's HEAD,
+// as a clone wrote it, and nothing when it has none.
+func TestResolveRunSourceLocalKnowsItsRemotesDefaultBranch(t *testing.T) {
+	remote := newRunSourceTestRepoIn(t, t.TempDir(), "widget")
+	runSourceTestGit(t, remote)("branch", "trunk")
+	clone := filepath.Join(testWorkspace(t), "widget")
+	runSourceTestGit(t, filepath.Dir(clone))("clone", "--quiet", remote, clone)
+	git := runSourceTestGit(t, clone)
+	git("remote", "set-url", "origin", "https://git.invalid/acme/widget.git")
+	git("checkout", "-q", "-b", "work")
+
+	resolve := func() resolvedRunSource {
+		t.Helper()
+		source, err := resolveRunSource(context.Background(), clone, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever})
+		if err != nil {
+			t.Fatalf("resolveRunSource: %v", err)
+		}
+		return source
+	}
+	if got := resolve().DefaultBranch; got != "main" {
+		t.Fatalf("default branch = %q, want main, as the clone recorded it", got)
+	}
+	git("remote", "set-head", "origin", "trunk")
+	if got := resolve().DefaultBranch; got != "trunk" {
+		t.Fatalf("default branch = %q, want trunk, as the checkout now records it", got)
+	}
+	git("remote", "set-head", "origin", "--delete")
+	if got := resolve().DefaultBranch; got != "" {
+		t.Fatalf("default branch = %q, want none for a checkout with no origin/HEAD", got)
+	}
+}

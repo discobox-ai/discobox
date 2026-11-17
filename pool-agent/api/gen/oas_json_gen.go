@@ -1043,6 +1043,12 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DefaultBranch.Set {
+			e.FieldStart("defaultBranch")
+			s.DefaultBranch.Encode(e)
+		}
+	}
+	{
 		if s.Destination.Set {
 			e.FieldStart("destination")
 			s.Destination.Encode(e)
@@ -1084,18 +1090,19 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfGitSource = [11]string{
+var jsonFieldsNameOfGitSource = [12]string{
 	0:  "checkout",
 	1:  "cacheKey",
 	2:  "delivery",
 	3:  "dataKey",
-	4:  "destination",
-	5:  "kind",
-	6:  "localDirectory",
-	7:  "slug",
-	8:  "upstreamUrl",
-	9:  "url",
-	10: "workspace",
+	4:  "defaultBranch",
+	5:  "destination",
+	6:  "kind",
+	7:  "localDirectory",
+	8:  "slug",
+	9:  "upstreamUrl",
+	10: "url",
+	11: "workspace",
 }
 
 // Decode decodes GitSource from json.
@@ -1147,6 +1154,16 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"dataKey\"")
 			}
+		case "defaultBranch":
+			if err := func() error {
+				s.DefaultBranch.Reset()
+				if err := s.DefaultBranch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"defaultBranch\"")
+			}
 		case "destination":
 			if err := func() error {
 				s.Destination.Reset()
@@ -1158,7 +1175,7 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"destination\"")
 			}
 		case "kind":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				if err := s.Kind.Decode(d); err != nil {
 					return err
@@ -1227,7 +1244,7 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00100000,
+		0b01000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

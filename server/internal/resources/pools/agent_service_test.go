@@ -889,6 +889,35 @@ func TestAReportThatAnAgentTakesBodyPlacesResendsItsSentinels(t *testing.T) {
 	}
 }
 
+// An agent's declaration that it takes a git source's default branch is
+// recorded from every report, both ways, and resends no sentinels: it is
+// read when a sandbox is created (#245).
+func TestAReportRecordsWhetherAnAgentTakesASourcesDefaultBranch(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(takes bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(true), SentinelGenerations: serverapi.NewOptBool(true),
+			SentinelBodyPlaces: serverapi.NewOptBool(true), SourceDefaultBranch: serverapi.NewOptBool(takes),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	marked := len(recorded.sentinels)
+	for _, takes := range []bool{true, false} {
+		report(takes)
+		if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || pool.SourceDefaultBranch != takes {
+			t.Fatalf("pool = %+v, %v; want it recorded as taking a default branch: %v", pool, err, takes)
+		}
+	}
+	if len(recorded.sentinels) != marked {
+		t.Fatalf("marked %v, want no sentinels sent again for a source declaration", recorded.sentinels)
+	}
+}
+
 // A ready report the agent marks as its process's first is told to the
 // upgrade watch, at the time the report was stored with; a heartbeat, and a
 // first report that is not ready, are not (ADR 26-11-15-602 §2).

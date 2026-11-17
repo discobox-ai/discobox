@@ -2795,6 +2795,9 @@ components:
                 cacheKey:
                     description: The pool's Git cache this source is delivered into, set by the server for a cache-delivered source. It is the source's remote, normalized to host and path, or a key for the client's own directory when the source has no remote. Sources that share it share one object store on a pool, so a delivery sends only what the pool has not been sent before.
                     type: string
+                defaultBranch:
+                    description: The branch the source's remote's HEAD names, as the client last knew it. A cache-delivered source's checkout has origin/HEAD name it, as a clone of the remote would, when that branch was delivered.
+                    type: string
                 delivery:
                     description: How the source reaches the sandbox, decided by the server and recorded at create. cache is every source created now. A client delivers it into a Git namespace of the pool's cache for the source's remote, and the sandbox clones it from the pool; the sandbox waits in the awaiting_source phase until the delivery is reported complete. clone and push are how earlier discoboxes were delivered and keep their meaning for them. clone means the sandbox fetched it from url, or from localDirectory through its pool. push means the client pushed it into a repository the pool made for that sandbox.
                     enum:
@@ -6474,6 +6477,9 @@ components:
                     type: boolean
                 sentinelGrants:
                     description: The agent holds each sentinel to grants, any one of which may allow a request, each with its own expiry, and takes them as sentinelGrants. Declared on every report; an agent from before grants sends none, and is sent each sentinel's first grant's route lists as sentinelRoutes.
+                    type: boolean
+                sourceDefaultBranch:
+                    description: "The agent takes a git source's defaultBranch and hands it to the sandbox, whose origin/HEAD names it. Declared on every report; an agent from before it sends none, and is sent no defaultBranch."
                     type: boolean
             required:
                 - ready

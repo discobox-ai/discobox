@@ -167,7 +167,12 @@ machine billed to the org). The agent's driver does not read it: the server
 reads it at the driver's `Check` with the provider's credential and passes it
 in the bootstrap (`Bootstrap.MaxMachines`, ADR 26-11-15-831), and the key is
 absent when the driver reports none or that credential may not read it.
-Nothing schedules on either limit. The same platform is the runtime's
+Nothing schedules on either limit. It declares too what it takes that an
+older agent's decoder would refuse — the sentinel shapes
+([Agent Credentials](#agent-credentials)) and a git source's `defaultBranch`
+(`sourceDefaultBranch`, #245), which it forwards into `sandbox.json` for the
+sandbox's `origin/HEAD` — so a control plane sends each only to an agent
+that declared it. The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
 a sandbox — a source's target, the user's home, the working directory, the
 working root it writes into the manifest — is judged by its `sandboxpath`

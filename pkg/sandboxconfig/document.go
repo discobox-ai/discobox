@@ -247,6 +247,12 @@ type Source struct {
 	// sandbox: as origin when PoolRemote is set, and otherwise as a remote
 	// named upstream.
 	UpstreamURL string `json:"upstreamUrl,omitempty"`
+	// DefaultBranch is the branch UpstreamURL's HEAD names, as the client
+	// last knew it. A source delivered into its pool's cache gets an
+	// origin/HEAD naming origin/<DefaultBranch>, as a clone of the remote
+	// would, when that branch was delivered. Empty when the client did not
+	// know it: origin/HEAD is then left unset, as in a clone that lacks one.
+	DefaultBranch string `json:"defaultBranch,omitempty"`
 	// PoolRemote names the remote the checkout reaches its pool through,
 	// for a source delivered into the pool's cache (ADR 26-10-10-545 §6):
 	// the sandbox clones from the pool under this name, and origin is the

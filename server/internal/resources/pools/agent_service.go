@@ -104,10 +104,11 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 		if err != nil {
 			return err
 		}
-		reported, sentinelsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, store.AgentSentinels{
-			Grants:      input.SentinelGrants.Or(false),
-			Generations: input.SentinelGenerations.Or(false),
-			BodyPlaces:  input.SentinelBodyPlaces.Or(false),
+		reported, sentinelsChanged, err := txStore.UpdatePoolStatus(ctx, poolID, hosts, runs, store.AgentDeclarations{
+			Grants:              input.SentinelGrants.Or(false),
+			Generations:         input.SentinelGenerations.Or(false),
+			BodyPlaces:          input.SentinelBodyPlaces.Or(false),
+			SourceDefaultBranch: input.SourceDefaultBranch.Or(false),
 		}, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 		if err != nil {
 			return err

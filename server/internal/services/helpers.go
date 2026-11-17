@@ -744,6 +744,9 @@ func GitSourceToModel(input serverapi.GitSource) model.GitSource {
 	if value, ok := input.UpstreamUrl.Get(); ok {
 		out.UpstreamURL = &value
 	}
+	if value, ok := input.DefaultBranch.Get(); ok {
+		out.DefaultBranch = &value
+	}
 	if checkout, ok := input.Checkout.Get(); ok {
 		out.Checkout = &model.GitSourceCheckout{}
 		if value, ok := checkout.Commit.Get(); ok {

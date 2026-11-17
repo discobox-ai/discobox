@@ -58,11 +58,13 @@ type remoteRefLookup struct {
 }
 
 // remoteRef is what one ref of a remote resolved to: the commit, and the
-// branch or tag it was named by (resolveRemoteGitRef).
+// branch or tag it was named by (resolveRemoteGitRef); and the branch the
+// remote's HEAD named, when it said.
 type remoteRef struct {
-	commit  string
-	name    string
-	refType string
+	commit        string
+	name          string
+	refType       string
+	defaultBranch string
 }
 
 // newRemoteRefs starts no lookups yet. Every one it starts ends with ctx.
