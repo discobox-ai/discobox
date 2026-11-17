@@ -727,13 +727,33 @@ var pasteMarkers = []string{"\x1b[200~", "\x1b[201~", "\x9b200~", "\x9b201~"}
 // with it, a paste that appears to begin twice being nothing the far end asked
 // for.
 //
+// Taking a marker out can join its two sides into another: "\x1b[20" +
+// "\x1b[201~" + "1~" leaves "\x1b[201~". So the text is stripped until none is
+// left, in one linear scan rather than a pass per layer, which would be
+// quadratic in a clipboard a box can fill through OSC 52. The output is built a
+// byte at a time and holds no marker before each byte goes on, so a marker can
+// only ever appear at its tail, and is cut there as it forms. Nested layers and
+// the 7-bit and 8-bit forms mixed collapse the same way.
+//
 // Nothing else is touched. A paste is the user's own text, and a terminal that
-// second-guesses it is a terminal that mangles what people paste.
+// second-guesses it is a terminal that mangles what people paste. The one cost
+// is the 8-bit form, matched on bytes: 0x9b also ends some characters in UTF-8
+// ("ț" is C8 9B), so one followed by "200~" or "201~" loses that byte. Skipping
+// 0x9b where it continues a character would let "\xc8\x9b201~" through to the
+// only far ends the 8-bit form is stripped for, the ones reading bytes rather
+// than UTF-8.
 func stripPasteMarkers(text string) string {
-	for _, marker := range pasteMarkers {
-		text = strings.ReplaceAll(text, marker, "")
+	out := make([]byte, 0, len(text))
+	for i := 0; i < len(text); i++ {
+		out = append(out, text[i])
+		for _, marker := range pasteMarkers {
+			if n := len(out) - len(marker); n >= 0 && string(out[n:]) == marker {
+				out = out[:n]
+				break
+			}
+		}
 	}
-	return text
+	return string(out)
 }
 
 // handleKey applies the reserved prefix, if there is one, and sends the rest.

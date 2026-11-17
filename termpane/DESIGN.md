@@ -195,8 +195,14 @@ is over is the reader's to report, so nothing is reported twice.
 **Paste markers are stripped from pasted text.** Text carrying `ESC [ 201 ~`
 would close its own paste early on the far end, and everything after it would
 arrive as though typed — a clipboard ending `\x1b[201~rm -rf /\r` would run.
-Every terminal filters this and a pane is a terminal. Nothing else about a paste
-is touched: it is the user's own text.
+Every terminal filters this and a pane is a terminal. They are stripped until
+none is left, in one linear scan: taking one out can join its two sides into
+another (`\x1b[20` `\x1b[201~` `1~`), and a pass per layer would be quadratic in
+a clipboard a box can fill through OSC 52. Nothing else about a paste is
+touched: it is the user's own text. The one cost is the 8-bit form, matched on
+bytes for the far ends that read bytes rather than UTF-8: a character whose
+UTF-8 ends in 0x9b ("ț"), followed directly by `200~` or `201~`, loses that
+byte.
 
 **Detaching the drain is a handshake, not a kill.** `Emulator.Read` and
 `Emulator.Close` both touch the emulator's `closed` flag with no synchronization

@@ -14,6 +14,13 @@ Global review expectations:
   rewriting it. The move to `pkg/` missed `api/model/DESIGN.md`'s backticked
   `../../sandboxconfig/DESIGN.md`, and rewrote the GitHub labels
   `platform/windows` and `platform/macos` because they looked like paths.
+- A paste's bracketed-paste markers are stripped until none is left, not in
+  one pass, and in one linear scan, not a pass per layer: taking one out of
+  `\x1b[20\x1b[201~1~` joins its two sides into another, which ends the paste
+  early and runs the rest as typed, and a pass per layer is quadratic in a
+  clipboard a box can fill (OSC 52). termpane's `stripPasteMarkers` cuts a
+  marker off the output's tail as it forms; sandbox-agent's
+  `shimruntime.Runtime.EncodeInput` still strips in one pass (#1292).
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming
