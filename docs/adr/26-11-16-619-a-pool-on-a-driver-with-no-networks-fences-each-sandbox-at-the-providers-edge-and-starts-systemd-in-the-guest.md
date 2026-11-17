@@ -1,7 +1,8 @@
 # 26-11-16-619 — A pool on a driver with no networks fences each sandbox at the provider's edge, and starts systemd in the guest
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
+- Accepted by the owner by merging #1270, 2026-11-17
 - **Issue**: #1053 (row A0 of the remote-drivers plan, #947)
 - **Supersedes in part** (implementation of each has shipped, so these are
   superseded, not amended):

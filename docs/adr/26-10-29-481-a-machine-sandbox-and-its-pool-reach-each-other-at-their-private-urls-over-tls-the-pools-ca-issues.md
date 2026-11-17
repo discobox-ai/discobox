@@ -6,6 +6,7 @@
   narrows [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)
   §2's one URL the pool reaches a machine sandbox's agent at; §2's provider resolution narrowed to a persistent record by [26-11-12-355](26-11-12-355-a-machine-sandboxs-resolver-is-the-dns-stub-and-its-bridges-resolve-the-pool-against-the-providers.md))
 - **Narrowed by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — §1's three hops at two URLs and its private-URL requirement, §2's endpoints derived from the private URL, and §4's fence and scheduling rule
+- **Narrowed by**: [26-11-16-619](26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md) — §3's edge row: on a driver with no networks the edge must also check a credential
 - **Date**: 2026-10-29
 - **Relates to**:
   [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)

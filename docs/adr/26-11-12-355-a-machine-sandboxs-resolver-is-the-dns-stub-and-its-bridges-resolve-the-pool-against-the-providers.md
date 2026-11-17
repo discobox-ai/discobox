@@ -9,6 +9,7 @@
   [26-10-29-481](26-10-29-481-a-machine-sandbox-and-its-pool-reach-each-other-at-their-private-urls-over-tls-the-pools-ca-issues.md)
   §2's "resolve through the provider at each dial" to the provider's resolver
   the sandbox recorded, still at each dial)
+- **Narrowed by**: [26-11-16-619](26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md) — §3: on a driver whose fence closes DNS, a bridge dials the address it is given and resolves nothing
 - **Date**: 2026-11-12
 
 Accepted by the owner by merging #1062, 2026-11-12.
