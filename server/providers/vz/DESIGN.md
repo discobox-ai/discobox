@@ -102,6 +102,14 @@ opens no TCP listener:
 The numbering matches the libkrun guest, so one `discobox-vsock-guest` serves
 both backends.
 
+The pool-agent port (3002) is reached through one keep-alive HTTP client per
+VM, owned by the VM rather than by a lease (`dockerworker.NewPoolAgentClient`):
+every connection to it is a new VSOCK connection into the guest, and every
+pool-agent call takes its own lease, so a per-lease client dialed the guest for
+each proxied request and each poll of an attached console (#1335). A lease's
+release leaves the client alone; stopping or replacing the VM closes its idle
+connections, and the VM that replaces it gets a client of its own.
+
 Connections deliberately do not implement `CloseWrite`. The framework's
 connection cannot have its write side shut down independently through this
 binding, and a no-op `CloseWrite` would be worse than none: a caller that finds

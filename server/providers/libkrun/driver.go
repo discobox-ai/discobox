@@ -135,6 +135,14 @@ type guestVM struct {
 	alive           <-chan struct{}
 	exited          chan struct{}
 	stopOnce        sync.Once
+
+	// agent is the pool agent's keep-alive client, made on the first lease.
+	// Every connection to the agent's socket is a new VSOCK connection into
+	// the guest, so it belongs to the VM, not to a lease, and closes with it
+	// (#1335).
+	agentMu     sync.Mutex
+	agent       *http.Client
+	agentClosed bool
 }
 
 // NewDriver validates configuration without starting anything.
@@ -467,7 +475,7 @@ func (d *Driver) InspectVM(_ context.Context, poolID string) (*dockerworker.VMIn
 }
 
 func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*dockerworker.DockerClientLease, error) {
-	socket, err := d.runningSocket(poolID, dockerSocketName)
+	_, socket, err := d.runningSocket(poolID, dockerSocketName)
 	if err != nil {
 		return nil, err
 	}
@@ -492,22 +500,23 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 // reachable yet, for a caller that can wait to wait out, and not a failure.
 // The Docker socket keeps its plain error: the engine's readiness wait owns
 // what a daemon that never comes up means.
+//
+// The lease is the VM's own keep-alive client, so sequential requests reuse a
+// connection rather than opening a VSOCK connection into the guest for each.
+// Releasing the lease leaves the client to the VM, which closes it on stop.
 func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*transport.HTTPClientLease, error) {
-	socket, err := d.runningSocket(poolID, agentSocketName)
+	guest, socket, err := d.runningSocket(poolID, agentSocketName)
 	if errors.Is(err, errSocketNotBound) {
 		return nil, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
 	}
 	if err != nil {
 		return nil, err
 	}
-	dialer := &net.Dialer{}
-	httpTransport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "unix", socket)
-		},
+	client, ok := guest.agentClient(socket)
+	if !ok {
+		return nil, fmt.Errorf("libkrun VM %s: %w", poolID, sandbox.ErrNotFound)
 	}
-	client := &http.Client{Transport: httpTransport}
-	return transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool.local", httpTransport.CloseIdleConnections), nil
+	return transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool.local", nil), nil
 }
 
 // PoolLogs reads the guest's serial console, which the launcher appends to a
@@ -780,19 +789,19 @@ func (d *Driver) ensureDisks(stateDir string) (string, string, error) {
 // sockets yet: libkrun binds them as the guest activates its devices.
 var errSocketNotBound = errors.New("socket is not bound yet")
 
-func (d *Driver) runningSocket(poolID, name string) (string, error) {
+func (d *Driver) runningSocket(poolID, name string) (*guestVM, string, error) {
 	if err := validatePoolID(poolID); err != nil {
-		return "", err
+		return nil, "", err
 	}
 	guest := d.runningVM(poolID)
 	if guest == nil {
-		return "", fmt.Errorf("libkrun VM %s: %w", poolID, sandbox.ErrNotFound)
+		return nil, "", fmt.Errorf("libkrun VM %s: %w", poolID, sandbox.ErrNotFound)
 	}
 	path := filepath.Join(guest.runtimeDir, name)
 	if !isUnixSocket(path) {
-		return "", fmt.Errorf("libkrun VM %s %s: %w", poolID, name, errSocketNotBound)
+		return nil, "", fmt.Errorf("libkrun VM %s %s: %w", poolID, name, errSocketNotBound)
 	}
-	return path, nil
+	return guest, path, nil
 }
 
 // sizeFor resolves the size a pool's VM should have - the pool's own size, then
@@ -827,6 +836,24 @@ func (g *guestVM) running() bool {
 	default:
 		return true
 	}
+}
+
+// agentClient returns the VM's keep-alive client to its agent's socket,
+// making it on first use. It is false once the VM is closed, so a lease that
+// races close cannot make a client nothing will close.
+func (g *guestVM) agentClient(socket string) (*http.Client, bool) {
+	g.agentMu.Lock()
+	defer g.agentMu.Unlock()
+	if g.agentClosed {
+		return nil, false
+	}
+	if g.agent == nil {
+		dialer := &net.Dialer{}
+		g.agent = dockerworker.NewPoolAgentClient(func(ctx context.Context) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", socket)
+		})
+	}
+	return g.agent, true
 }
 
 func (g *guestVM) socketsReady() bool {
@@ -871,6 +898,12 @@ func (g *guestVM) close() {
 			_ = g.cmd.Process.Kill()
 		}
 		_ = g.watchdog.Close()
+		g.agentMu.Lock()
+		g.agentClosed = true
+		if g.agent != nil {
+			g.agent.CloseIdleConnections()
+		}
+		g.agentMu.Unlock()
 	})
 }
 

@@ -46,6 +46,14 @@
   lifecycle, the two connection leases, `PoolLogs`, and `GuestImageBuildSpec`
   (the last two may return `sandbox.ErrPoolLogsUnsupported` /
   `sandbox.ErrGuestImageBuildUnsupported`).
+- A driver where every pool-agent dial opens a new connection into the guest
+  (vz's VSOCK, libkrun's socket that libkrun maps to one) leases one keep-alive
+  client the VM owns (`dockerworker.NewPoolAgentClient`), closed when the VM
+  stops or is replaced. Never build an `http.Transport` per lease there: every
+  pool-agent call takes its own lease, so a per-lease transport dials the guest
+  for every proxied request and every poll of an attached console (#1335).
+  wslc is the exception: its dials are streams on one multiplexed relay
+  session, so a per-lease transport opens no new guest connection.
 - A pool container whose healthcheck is still `starting` is not a failed
   reconcile. Report it as `sandbox.ErrPoolNotReachable` and let the pool
   reconciler come back: a failure on a pool with sandboxes assigned repairs it,

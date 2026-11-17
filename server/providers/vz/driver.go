@@ -134,6 +134,10 @@ type guestVM struct {
 	outboundCancel context.CancelFunc
 	vm             *vzvm.VM
 	listener       net.Listener
+	// agent is the pool agent's keep-alive client. Every dial is a new VSOCK
+	// connection into the guest, so it belongs to the VM, not to a lease, and
+	// closes with it (#1335).
+	agent *http.Client
 	// size is what the VM was started with, compared on every EnsureVM so a
 	// pool or provider size change replaces it rather than waiting for a
 	// restart nobody asked for.
@@ -359,7 +363,15 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return nil, fmt.Errorf("start vz VM for pool %s: %w", poolID, err)
 	}
 
-	guest := &guestVM{vm: vm, size: want, stopped: make(chan struct{}), outbound: spec.Outbound}
+	guest := &guestVM{
+		vm:       vm,
+		size:     want,
+		stopped:  make(chan struct{}),
+		outbound: spec.Outbound,
+		agent: dockerworker.NewPoolAgentClient(func(context.Context) (net.Conn, error) {
+			return vm.Connect(agentVSOCKPort)
+		}),
+	}
 	resolved, err := spec.Outbound.ResolveLocalForwarder()
 	if err != nil {
 		guest.close()
@@ -474,18 +486,15 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 	return dockerworker.NewDockerClientLease(cli, dockerworker.DaemonOnThisMachine, func() { _ = cli.Close() }), nil
 }
 
+// AcquirePoolAgentClient leases the VM's own keep-alive client, so sequential
+// requests reuse a VSOCK connection rather than dialing the guest for each.
+// Releasing the lease leaves the client to the VM, which closes it on stop.
 func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*transport.HTTPClientLease, error) {
 	guest, err := d.guestVM(poolID)
 	if err != nil {
 		return nil, err
 	}
-	httpTransport := &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return guest.vm.Connect(agentVSOCKPort)
-		},
-	}
-	client := &http.Client{Transport: httpTransport}
-	return transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool.local", httpTransport.CloseIdleConnections), nil
+	return transport.NewHTTPClientLeaseWithBaseURL(guest.agent, "http://pool.local", nil), nil
 }
 
 // PoolLogs reads the guest's serial console, which the VM appends to a file in
@@ -667,6 +676,7 @@ func (g *guestVM) close() {
 		if g.listener != nil {
 			_ = g.listener.Close()
 		}
+		g.agent.CloseIdleConnections()
 		_ = g.vm.Close()
 	})
 }
