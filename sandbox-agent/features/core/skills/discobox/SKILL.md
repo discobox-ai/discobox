@@ -1,6 +1,6 @@
 ---
 name: discobox
-description: You are in a discobox, a disposable sandbox holding the user's source. Read this for anything about the environment — what you can reach, how the user reaches what you run, naming and tagging this box, and its power: keeping it up, or sleeping it and waking later (e.g. to check back on CI).
+description: You are in a discobox, a disposable sandbox holding the user's source. Read this for anything about the environment — what you can reach, how the user reaches what you run, naming and tagging this box, its power: keeping it up, or sleeping it and waking later (e.g. to check back on CI), and where to report a problem with discobox itself.
 ---
 
 # You are in a discobox
@@ -626,3 +626,33 @@ Approval replaces any current parent. Your authority is the same as over a box
 you created; its secrets stay its own. A child wider than your egress is read-only.
 `discobox release <box>` gives it back; `discobox ls --parent me` lists your
 children. `PARENT` shows the current parent; JSON also keeps the immutable creator.
+
+## Reporting a problem with discobox
+
+Discobox's issue tracker is https://github.com/discobox-ai/discobox/issues.
+File an issue there only when the user asks you to; otherwise tell them what
+went wrong and that this is where it would go.
+
+1. Search the open and closed issues first. When one already describes it,
+   tell the user and offer to comment there with what is new, instead of
+   filing another. When GitHub refuses the search without a credential, ask
+   the user to search instead: a search route cannot be held to one
+   repository, so do not ask for one.
+2. Say what happened, the exact error, and the smallest steps that reproduce
+   it, and name the versions: `discobox --version` in this box, and
+   `jq -r ._provenance.runtime.image /etc/discobox/sandbox.json`. In a box
+   without API access `discobox --version` says `server version unavailable`;
+   that is expected, not part of the problem. Ask the user for the version
+   `discobox version` prints on their machine when the problem is the
+   server's or the console's.
+3. Posting needs a GitHub credential that can write there. Check what you
+   hold first (`discobox-access list`); when nothing covers it, ask with
+   `discobox-access`, as its skill says, with a route only for the write you
+   will make: `POST api.github.com/repos/discobox-ai/discobox/issues` to
+   file, or `POST api.github.com/repos/discobox-ai/discobox/issues/1234/comments`
+   (the issue's own number) to comment. No route narrows to one new issue:
+   the first lets its holder create any number of issues in that repository.
+   Say so in the justification, not that it is limited to one.
+4. Leave the user's own work out — their repository's name, its code, paths,
+   tokens and hostnames — unless they say to include it. Show them the issue
+   before you post it.
