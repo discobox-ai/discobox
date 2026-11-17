@@ -797,11 +797,14 @@ func notReachable(err error) error {
 }
 
 // unreachable reports whether err is a remote driver's service not answering,
-// rather than answering with a refusal. disco-vm gives no error of its own for
-// that, so this reads the transports the linked remote drivers use: a network
-// connection, and gRPC (boxd's API). It is the one place this package reads a
-// driver's errors, and a remote driver on another transport is added here
-// (REVIEW.md).
+// rather than answering with a refusal. It reads disco-vm's
+// machine.ErrUnavailable, which a driver over HTTP gives for a 502, 503 or
+// 504 (archil's REST API), and the transports the linked remote drivers use:
+// a network connection (archil's HTTP client fails as one), and gRPC (boxd's
+// API). archil's process API, a WebSocket, is reached only by a guest
+// operation, whose error is the guest's, so nothing of it is read here. It is
+// the one place this package reads a driver's errors, and a remote driver on
+// another transport is added here (REVIEW.md).
 func unreachable(err error) bool {
 	// An endpoint the server's policy refuses is the provider's to fix,
 	// never a fault to wait out, though it fails as a dial does (ADR
@@ -810,7 +813,7 @@ func unreachable(err error) bool {
 		return false
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, machine.ErrUnavailable) || errors.As(err, &netErr) || errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 	switch status.Code(err) {
