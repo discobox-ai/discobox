@@ -764,3 +764,14 @@ copies.
   writes or closes. `discobox-vsock-guest`'s Docker proxy did exactly that
   when its listener was first framed, before a framed connection had
   `CloseWrite`.
+
+## A timer guarding a wall-clock expiry reads the wall clock
+
+Anything that replaces a credential before its `exp` (the proxy unit's
+resolve token, `startResolveTokenRefresher`) decides when by the wall clock
+(`time.Now().Round(0)`), checked often, never by a ticker's or timer's period.
+Why: Go's tickers run on the monotonic clock, which stands still while a laptop
+sleeps or a `vz` pool's VM is suspended, while the control plane checks `exp`
+against its own wall clock. Timed by a 20-minute ticker, a token that expired
+across a nap was held for up to 20 more minutes of waking time, and every
+resolve in that window was refused (#1282).
