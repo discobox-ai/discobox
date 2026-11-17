@@ -162,3 +162,10 @@ func readExecRecord(path string) execs.Exec {
 	_ = json.Unmarshal(data, &record)
 	return record
 }
+
+// StartEnv is the environment a start's shim reads: its exec's runtime
+// record's, as the Manager wrote it before the start. A fake unit manager
+// takes it in Start, before a later start rewrites the record.
+func StartEnv(req execs.StartRequest) map[string]string {
+	return readExecRecord(req.RuntimePath).Env
+}

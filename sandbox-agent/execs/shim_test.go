@@ -916,3 +916,43 @@ func TestRecordSignalNeverCallsAFailedDeliveryDelivered(t *testing.T) {
 		t.Fatalf("delivered = %+v, want the successful mapping", delivered)
 	}
 }
+
+// The shim's own environment is not the exec's (#1076), so a command named
+// bare is found on the PATH the exec gives it, as it was when the exec's
+// environment was the shim's too.
+func TestRunShimFindsTheCommandOnTheExecsPath(t *testing.T) {
+	dir := shimDir(t)
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "only-on-exec-path"), []byte("#!/bin/sh\nexit 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(os.Getenv("PATH"), bin) {
+		t.Fatal("the test's own PATH already holds the command")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_path",
+			Command:     []string{"only-on-exec-path"},
+			Workdir:     dir,
+			Env:         map[string]string{"PATH": bin + string(os.PathListSeparator) + os.Getenv("PATH")},
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			Logs:        newFakeLogSink(),
+		})
+	}()
+	exit := attachReadExit(ctx, t, socketPath, true)
+	if exit.ExitCode == nil || *exit.ExitCode != 5 {
+		t.Fatalf("exit = %+v, want the command on the exec's PATH to run and exit 5", exit)
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}

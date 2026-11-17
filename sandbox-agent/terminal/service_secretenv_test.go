@@ -29,7 +29,7 @@ func TestTerminalUsesSharedSecretEnvironment(t *testing.T) {
 	if _, err := svc.Create(context.Background(), CreateRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	env := units.starts[0].Env
+	env := units.envs[0]
 	if env["GH_TOKEN"] != "sentinel-env" {
 		t.Fatal("terminal did not receive shared secret environment")
 	}

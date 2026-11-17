@@ -558,8 +558,17 @@ func (r *shimRuntime) startCommand() error {
 		return err
 	}
 
+	// Found on the command's PATH, not the shim's: the exec's environment is
+	// not this process's (shimArgv), so os/exec's own lookup would search
+	// whatever PATH the unit manager started the shim with.
+	program, err := lookPath(r.cfg.Command[0], env)
+	if err != nil {
+		r.markStartFailed(err)
+		return err
+	}
+	command := append([]string{program}, r.cfg.Command[1:]...)
 	if err := r.startProcess(procio.Options{
-		Command:     r.cfg.Command,
+		Command:     command,
 		Dir:         r.cfg.Workdir,
 		Env:         env,
 		SysProcAttr: sysProcAttr,

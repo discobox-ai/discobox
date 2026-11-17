@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs/execstest"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
@@ -593,11 +594,14 @@ func sandboxAgentTestSigner(t *testing.T) (string, func(projectID, sandboxID, wo
 
 type sandboxAgentFakeRunner struct {
 	starts []execs.StartRequest
-	stops  []string
+	// envs is each start's environment, as its shim reads it.
+	envs  []map[string]string
+	stops []string
 }
 
 func (r *sandboxAgentFakeRunner) Start(_ context.Context, req execs.StartRequest) (execs.StartResult, error) {
 	r.starts = append(r.starts, req)
+	r.envs = append(r.envs, execstest.StartEnv(req))
 	return execs.StartResult{Unit: req.Unit, PID: 1234}, nil
 }
 
@@ -750,7 +754,7 @@ func TestEveryExecPathReceivesSecretEnvironment(t *testing.T) {
 		if resp.Code != http.StatusCreated {
 			t.Fatalf("%s: status %d: %s", body, resp.Code, resp.Body.String())
 		}
-		env := runner.starts[len(runner.starts)-1].Env
+		env := runner.envs[len(runner.envs)-1]
 		if env["GH_TOKEN"] != secrets["GH_TOKEN"] {
 			t.Fatalf("%s: secret not injected", body)
 		}

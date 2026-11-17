@@ -35,7 +35,7 @@ func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
 		t.Fatalf("create exec: %v", err)
 	}
 
-	env := runner.starts[0].Env
+	env := runner.envs[0]
 	if env["BASE"] != "sandbox" || env["OVERRIDE"] != "exec" || env["LOCAL"] != "exec" {
 		t.Fatalf("env = %#v, want config env with request override", env)
 	}
@@ -66,7 +66,7 @@ func TestManagerResolvesLocalSubnetsTokenPerExec(t *testing.T) {
 		t.Fatalf("create exec: %v", err)
 	}
 
-	noProxy := runner.starts[0].Env["NO_PROXY"]
+	noProxy := runner.envs[0]["NO_PROXY"]
 	if strings.Contains(noProxy, sandboxconfig.LocalSubnetsToken) {
 		t.Fatalf("token left unresolved: %q", noProxy)
 	}
@@ -99,7 +99,7 @@ func TestManagerPreservesExecTermOverrides(t *testing.T) {
 		t.Fatalf("create exec: %v", err)
 	}
 
-	if got := runner.starts[0].Env["TERM"]; got != "vt100" {
+	if got := runner.envs[0]["TERM"]; got != "vt100" {
 		t.Fatalf("TERM = %q, want exec override", got)
 	}
 }
@@ -201,19 +201,19 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 	if runner.starts[0].User == nil || runner.starts[0].User.Name != "darren" {
 		t.Fatalf("start user = %#v, want darren", runner.starts[0].User)
 	}
-	if runner.starts[0].Env["HOME"] != "/home/darren" || runner.starts[0].Env["USER"] != "darren" || runner.starts[0].Env["LOGNAME"] != "darren" {
-		t.Fatalf("start env = %#v, want default user env", runner.starts[0].Env)
+	if runner.envs[0]["HOME"] != "/home/darren" || runner.envs[0]["USER"] != "darren" || runner.envs[0]["LOGNAME"] != "darren" {
+		t.Fatalf("start env = %#v, want default user env", runner.envs[0])
 	}
-	if runner.starts[0].Env["NPM_CONFIG_PREFIX"] != "/home/darren/.npm-global" {
-		t.Fatalf("NPM_CONFIG_PREFIX = %q, want user prefix", runner.starts[0].Env["NPM_CONFIG_PREFIX"])
+	if runner.envs[0]["NPM_CONFIG_PREFIX"] != "/home/darren/.npm-global" {
+		t.Fatalf("NPM_CONFIG_PREFIX = %q, want user prefix", runner.envs[0]["NPM_CONFIG_PREFIX"])
 	}
 	// The guest image declares PATH as one colon-separated string, so the
 	// separator here is the guest's, not the host's os.PathListSeparator.
-	if got := runner.starts[0].Env["PATH"]; !strings.HasPrefix(got, "/home/darren/.npm-global/bin:") {
+	if got := runner.envs[0]["PATH"]; !strings.HasPrefix(got, "/home/darren/.npm-global/bin:") {
 		t.Fatalf("PATH = %q, want npm prefix bin first", got)
 	}
-	if strings.Contains(runner.starts[0].Env["PATH"], "/root/") {
-		t.Fatalf("PATH = %q, should not include root home paths", runner.starts[0].Env["PATH"])
+	if strings.Contains(runner.envs[0]["PATH"], "/root/") {
+		t.Fatalf("PATH = %q, should not include root home paths", runner.envs[0]["PATH"])
 	}
 }
 
@@ -251,10 +251,10 @@ func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
 		t.Fatalf("create exec: %v", err)
 	}
 
-	if got := runner.starts[0].Env["NPM_CONFIG_PREFIX"]; got != "/custom/npm" {
+	if got := runner.envs[0]["NPM_CONFIG_PREFIX"]; got != "/custom/npm" {
 		t.Fatalf("NPM_CONFIG_PREFIX = %q, want override", got)
 	}
-	if got := runner.starts[0].Env["PATH"]; got != "/custom/bin" {
+	if got := runner.envs[0]["PATH"]; got != "/custom/bin" {
 		t.Fatalf("PATH = %q, want override", got)
 	}
 }
@@ -389,6 +389,9 @@ func TestManagerRelativeWorkdirCanCleanOutsideWorkingRoot(t *testing.T) {
 
 type fakeUnitManager struct {
 	starts []StartRequest
+	// envs is each start's environment, as its shim would read it: from the
+	// exec's runtime record when the start was asked for.
+	envs []map[string]string
 	// changes, when set, is what Watch hands out, so a test can deliver a unit
 	// change the way systemd would.
 	changes chan string
@@ -396,6 +399,8 @@ type fakeUnitManager struct {
 
 func (m *fakeUnitManager) Start(_ context.Context, req StartRequest) (StartResult, error) {
 	m.starts = append(m.starts, req)
+	record, _ := readRuntime(req.RuntimePath)
+	m.envs = append(m.envs, record.Env)
 	return StartResult{Unit: req.Unit, PID: 1234}, nil
 }
 
@@ -1170,7 +1175,7 @@ func TestManagerExpandsDeferredHomeTokenInEnv(t *testing.T) {
 	if _, err := manager.Create(context.Background(), CreateRequest{Command: []string{"pwd"}}); err != nil {
 		t.Fatalf("create exec: %v", err)
 	}
-	if got := runner.starts[0].Env["CLAUDE_CONFIG_DIR"]; got != "/home/dev/.claude" {
+	if got := runner.envs[0]["CLAUDE_CONFIG_DIR"]; got != "/home/dev/.claude" {
 		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want /home/dev/.claude", got)
 	}
 }
@@ -1194,7 +1199,7 @@ func TestManagerLeavesTheHomeTokenWhenNoHomeIsKnown(t *testing.T) {
 	if _, err := manager.Create(context.Background(), CreateRequest{Command: []string{"pwd"}}); err != nil {
 		t.Fatalf("create exec: %v", err)
 	}
-	if got := runner.starts[0].Env["CLAUDE_CONFIG_DIR"]; got != harness.HomeToken+"/.claude" {
+	if got := runner.envs[0]["CLAUDE_CONFIG_DIR"]; got != harness.HomeToken+"/.claude" {
 		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want the token left in place", got)
 	}
 }

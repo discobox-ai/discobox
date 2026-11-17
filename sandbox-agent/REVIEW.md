@@ -491,6 +491,24 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   missing: never committed, gitignored, or removed since. It falls back to
   `SourceRoot` (`resolveWorkdir`). A new default must have a fallback that
   always exists.
+- A raw secret's value (ADR 26-10-27-840) is read from its file under
+  `/run/discobox/raw-secrets` by whatever starts the process, into that
+  process's environment and nothing else. A new start path passes
+  `RawEnv` through rather than putting the value in `Env`: `Env` is recorded
+  in the exec's runtime file, answered by the exec API and posted in the
+  inventory.
+- **Nothing of an exec's environment goes on the shim's command line, in its
+  unit's properties, or in the shim's own environment** (#1076). Every user in
+  the sandbox reads the first two (`/proc/<pid>/cmdline`, `systemctl show`),
+  and the command line is reported outside the sandbox as process telemetry;
+  the environment holds sentinels and whatever a caller passed. The shim reads
+  it from the exec's runtime record (`--runtime`, owner-only, written by the
+  `Manager` before every start) and gives it to the command alone, so the
+  command is looked up on the command's PATH (`lookPath`), not the shim's.
+- A new way to start a process goes through `execs.Manager` (or calls its
+  `awaitRawSecrets` first). The hold for raw secrets lives there, so a start
+  path of its own would launch before the pool has answered for the raw
+  secrets the applied document names, and run without them for good.
 
 ## Reading the working tree at boot
 
@@ -913,16 +931,6 @@ user waits on every single start.
   when emptying a cache. Why: the Docker clear empties `/.discobox/cache`,
   where no data lives, so a machine's clear is the first to walk a cache that
   holds data.
-- A raw secret's value (ADR 26-10-27-840) is read from its file under
-  `/run/discobox/raw-secrets` by whatever starts the process, into that
-  process's environment and nothing else. A new start path passes
-  `RawEnv` through rather than putting the value in `Env`: `Env` is recorded
-  in the exec's runtime file, answered by the exec API, posted in the
-  inventory and written into the shim's arguments.
-- A new way to start a process goes through `execs.Manager` (or calls its
-  `awaitRawSecrets` first). The hold for raw secrets lives there, so a start
-  path of its own would launch before the pool has answered for the raw
-  secrets the applied document names, and run without them for good.
 
 ## Bridge configs
 

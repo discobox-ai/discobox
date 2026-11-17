@@ -217,7 +217,9 @@ func (r *SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResul
 // unitProperties are what `systemd-run --collect --property=...` used to spell
 // on a command line. CollectMode is --collect: a transient unit that failed is
 // unloaded rather than kept for a reset-failed, which is what lets every run
-// take a fresh unit generation (ADR 0038 §2).
+// take a fresh unit generation (ADR 0038 §2). No Environment: any user in the
+// sandbox can read a unit's properties, so the shim reads the exec's
+// environment from its runtime record and gives it to the command (shimArgv).
 func unitProperties(req StartRequest, argv []string) []sddbus.Property {
 	props := []sddbus.Property{
 		sddbus.PropDescription("Discobox exec " + req.ID),
@@ -229,12 +231,6 @@ func unitProperties(req StartRequest, argv []string) []sddbus.Property {
 		props = append(props, sddbus.Property{
 			Name:  "WorkingDirectory",
 			Value: godbus.MakeVariant(workdir),
-		})
-	}
-	if env := unitEnvironment(req.Env); len(env) > 0 {
-		props = append(props, sddbus.Property{
-			Name:  "Environment",
-			Value: godbus.MakeVariant(env),
 		})
 	}
 	return props
