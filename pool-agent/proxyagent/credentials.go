@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -33,6 +35,13 @@ import (
 // round trip; a hung control plane must fail the agent's call, not hold its
 // process open.
 const credentialBrokerTimeout = 15 * time.Second
+
+// errControlPlaneUnreachable marks a control-plane call that got no answer
+// from the control plane: no request was sent, or no response or no whole
+// body came back. Every such error the client returns wraps it beside its
+// cause, so the pool's own callers log the cause, and the broker can tell it
+// from an answer the control plane gave (forSandbox).
+var errControlPlaneUnreachable = errors.New("the control plane is not reachable from the pool right now")
 
 // controlPlaneCredentials calls the control plane's agent credentials broker
 // routes with the scoped token from ResolveContextFile — the same file the
@@ -163,7 +172,7 @@ func (c *controlPlaneCredentials) do(ctx context.Context, method, path string, q
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errControlPlaneUnreachable, err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -171,7 +180,7 @@ func (c *controlPlaneCredentials) do(ctx context.Context, method, path string, q
 	req.Header.Set("Authorization", "Bearer "+rc.Token)
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errControlPlaneUnreachable, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -180,7 +189,17 @@ func (c *controlPlaneCredentials) do(ctx context.Context, method, path string, q
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+	// Read the body apart from decoding it: a read that breaks off is no
+	// answer, but a whole body that does not decode is one the control plane
+	// gave, and is reported as such.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("%w: %w", errControlPlaneUnreachable, err)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("control plane answered %s %s with a body the pool cannot read: %w", method, path, err)
+	}
+	return nil
 }
 
 // controlPlaneError maps a control-plane failure onto the protocol's errors, so
@@ -230,6 +249,25 @@ type credentialBroker struct {
 	// proxy is the server this process runs, whose audit trail the broker
 	// reads this sandbox's rows from.
 	proxy *proxy.Server
+	// logger records what forSandbox keeps from the sandbox.
+	logger *slog.Logger
+}
+
+// forSandbox is a control-plane call's error as the sandbox is told it. A call
+// that got no answer is told as errControlPlaneUnreachable alone: its cause
+// names how this host reaches the control plane (a socket path, a URL, the
+// pool's route), which the sandbox can neither act on nor be told, so it is
+// logged here instead, unless the sandbox hung up first. The sentence carries
+// no protocol code, so it reads as unavailable and a waiting client keeps
+// polling through it. An answer the control plane gave passes as it is.
+func (b *credentialBroker) forSandbox(ctx context.Context, err error) error {
+	if !errors.Is(err, errControlPlaneUnreachable) {
+		return err
+	}
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		b.logger.Warn("agent credentials: no answer from the control plane", "sandbox", b.sandboxID, "error", err)
+	}
+	return errControlPlaneUnreachable
 }
 
 var _ agentcreds.Service = (*credentialBroker)(nil)
@@ -237,7 +275,7 @@ var _ agentcreds.Service = (*credentialBroker)(nil)
 func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, error) {
 	docs, err := b.controlPlan.list(ctx, b.sandboxID)
 	if err != nil {
-		return nil, err
+		return nil, b.forSandbox(ctx, err)
 	}
 	out := make([]agentcreds.Credential, 0, len(docs))
 	for _, doc := range docs {
@@ -300,7 +338,7 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		GrantTTLSeconds: body.GrantTTLSeconds,
 	})
 	if err != nil {
-		return agentcreds.RequestStatus{}, err
+		return agentcreds.RequestStatus{}, b.forSandbox(ctx, err)
 	}
 	return doc.protocol(), nil
 }
@@ -308,7 +346,7 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) (agentcreds.RequestStatus, error) {
 	doc, err := b.controlPlan.requestStatus(ctx, b.sandboxID, requestID)
 	if err != nil {
-		return agentcreds.RequestStatus{}, err
+		return agentcreds.RequestStatus{}, b.forSandbox(ctx, err)
 	}
 	return doc.protocol(), nil
 }

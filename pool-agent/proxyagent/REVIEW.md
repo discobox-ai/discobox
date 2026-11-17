@@ -41,3 +41,11 @@
   the response instead of handing the sandbox a revoked or broken files read
   as a whole, shorter file (#655; Incomplete Response Bodies in
   `proxy/DESIGN.md`).
+- A `credentialBroker` method returns a control-plane call's error through
+  `b.forSandbox(ctx, err)`, never as it is. A call that got no answer wraps
+  `errControlPlaneUnreachable` beside a cause that names the host's socket
+  path, the control plane's URL and the pool's route; `forSandbox` logs it on
+  the pool and tells the sandbox the bare sentence, which has no protocol code
+  and so reads as unavailable to a waiting client (#33). Redact there, not in
+  `controlPlaneCredentials.do`: the pool's own callers (the host trusts loop)
+  need the cause in their log, and each already filters its own shutdown.

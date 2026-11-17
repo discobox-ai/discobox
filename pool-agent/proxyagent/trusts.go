@@ -237,7 +237,7 @@ func (c *controlPlaneCredentials) listPoolHostTrusts(ctx context.Context) ([]hos
 func (b *credentialBroker) Trusts(ctx context.Context) ([]agentcreds.Trust, error) {
 	docs, err := b.trusts.refresh(ctx)
 	if err != nil {
-		return nil, err
+		return nil, b.forSandbox(ctx, err)
 	}
 	out := []agentcreds.Trust{}
 	for _, doc := range docs {
@@ -303,7 +303,7 @@ func (b *credentialBroker) RequestTrust(ctx context.Context, body agentcreds.Tru
 		SuppliedCA:      supplied,
 	})
 	if err != nil {
-		return agentcreds.TrustRequestStatus{}, err
+		return agentcreds.TrustRequestStatus{}, b.forSandbox(ctx, err)
 	}
 	status := doc.protocol()
 	status.ObservedChain = chain
@@ -316,11 +316,11 @@ func (b *credentialBroker) RequestTrust(ctx context.Context, body agentcreds.Tru
 func (b *credentialBroker) TrustRequestStatus(ctx context.Context, requestID string) (agentcreds.TrustRequestStatus, error) {
 	doc, err := b.controlPlan.trustRequestStatus(ctx, b.sandboxID, requestID)
 	if err != nil {
-		return agentcreds.TrustRequestStatus{}, err
+		return agentcreds.TrustRequestStatus{}, b.forSandbox(ctx, err)
 	}
 	if doc.Status == agentcreds.StatusGranted {
 		if _, err := b.trusts.refresh(ctx); err != nil {
-			return agentcreds.TrustRequestStatus{}, fmt.Errorf("the trust was granted, but could not be applied yet: %w", err)
+			return agentcreds.TrustRequestStatus{}, fmt.Errorf("the trust was granted, but could not be applied yet: %w", b.forSandbox(ctx, err))
 		}
 	}
 	return doc.protocol(), nil

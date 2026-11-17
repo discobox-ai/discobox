@@ -1,12 +1,16 @@
 package proxyagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -297,5 +301,122 @@ func TestEnvironmentIsTheCertificatesSandboxsCredentialVariables(t *testing.T) {
 	}
 	if got, _ := (&credentialBroker{sandboxID: "sb-1", secretsPath: path}).Environment(context.Background()); len(got) != 0 {
 		t.Fatalf("environment = %v after the sandbox's policy was removed, want none", got)
+	}
+}
+
+// unreachableControlPlane is a client of a control plane the pool cannot
+// reach: its transport dials a unix socket nothing listens on, as the pool's
+// does when the server is down.
+func unreachableControlPlane(t *testing.T) (*controlPlaneCredentials, string) {
+	t.Helper()
+	plane, _ := newFakeControlPlane(t, nil)
+	socket := filepath.Join(t.TempDir(), "server.sock")
+	plane.client = &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socket)
+		},
+	}}
+	return plane, socket
+}
+
+// A control plane the pool cannot reach is reported to the sandbox as just
+// that, on every call that goes to it: the pool's own dial detail (a host
+// socket path, a host URL) is host layout the sandbox can neither use nor be
+// told. It is unavailable, which a waiting client polls through rather than
+// ending on, and the detail is in the pool's log instead.
+func TestAnUnreachableControlPlaneTellsTheSandboxNoHostDetail(t *testing.T) {
+	plane, socket := unreachableControlPlane(t)
+	var logged bytes.Buffer
+	b := &credentialBroker{
+		sandboxID:   "sb-1",
+		controlPlan: plane,
+		trusts:      newHostTrusts(nil, plane, nil, nil),
+		logger:      slog.New(slog.NewTextHandler(&logged, nil)),
+	}
+	ctx := context.Background()
+	calls := map[string]func() error{
+		"List": func() error { _, err := b.List(ctx); return err },
+		"Request": func() error {
+			_, err := b.Request(ctx, agentcreds.RequestBody{Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"}})
+			return err
+		},
+		"RequestStatus":      func() error { _, err := b.RequestStatus(ctx, "sreq_1"); return err },
+		"Trusts":             func() error { _, err := b.Trusts(ctx); return err },
+		"TrustRequestStatus": func() error { _, err := b.TrustRequestStatus(ctx, "treq_1"); return err },
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			logged.Reset()
+			err := call()
+			if code := agentcreds.Code(err); code != agentcreds.CodeUnavailable {
+				t.Errorf("code = %q, want %q", code, agentcreds.CodeUnavailable)
+			}
+			// What the sandbox is sent: the protocol handler writes Message(err).
+			sent := agentcreds.Message(err)
+			if want := "the control plane is not reachable from the pool right now"; sent != want {
+				t.Errorf("message sent to the sandbox = %q, want %q", sent, want)
+			}
+			for _, leak := range []string{socket, "dial unix", "/api/pools/"} {
+				if strings.Contains(sent, leak) {
+					t.Errorf("message sent to the sandbox = %q, names host detail %q", sent, leak)
+				}
+			}
+			if !strings.Contains(logged.String(), socket) {
+				t.Errorf("pool log = %q, want the dial error naming %q", logged.String(), socket)
+			}
+		})
+	}
+}
+
+// The pool's own callers of the control plane keep the cause: the host trusts
+// loop logs why its refresh failed, not the sentence the sandbox is told.
+func TestAnUnreachableControlPlaneKeepsItsCauseForThePool(t *testing.T) {
+	plane, socket := unreachableControlPlane(t)
+	_, err := plane.listPoolHostTrusts(context.Background())
+	if !errors.Is(err, errControlPlaneUnreachable) || !strings.Contains(err.Error(), socket) {
+		t.Errorf("listPoolHostTrusts error = %v, want it unreachable and naming %q", err, socket)
+	}
+}
+
+// A sandbox that hung up is not the control plane being unreachable: nothing
+// is logged for it.
+func TestASandboxThatHungUpLogsNothing(t *testing.T) {
+	plane, _ := unreachableControlPlane(t)
+	var logged bytes.Buffer
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane, logger: slog.New(slog.NewTextHandler(&logged, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := b.RequestStatus(ctx, "sreq_1"); !errors.Is(err, errControlPlaneUnreachable) {
+		t.Errorf("RequestStatus error = %v, want %v", err, errControlPlaneUnreachable)
+	}
+	if logged.Len() != 0 {
+		t.Errorf("pool log = %q, want nothing for a sandbox that hung up", logged.String())
+	}
+}
+
+// A control plane that answers with a body the pool cannot decode did answer:
+// that is not reported as unreachable, to the sandbox or in the pool's log.
+func TestAnUndecodableAnswerIsNotUnreachable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"requestId": 7}`)
+	}))
+	t.Cleanup(server.Close)
+	root := withTestRoot(t)
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
+		t.Fatalf("write resolve context: %v", err)
+	}
+	plane := &controlPlaneCredentials{contextPath: root.ProxyResolveContextFile(testProjectID, testPoolID), client: server.Client()}
+	var logged bytes.Buffer
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane, logger: slog.New(slog.NewTextHandler(&logged, nil))}
+	_, err := b.RequestStatus(context.Background(), "sreq_1")
+	if err == nil {
+		t.Fatal("RequestStatus decoded a request id that is a number")
+	}
+	if errors.Is(err, errControlPlaneUnreachable) {
+		t.Errorf("error = %v, want it not reported as unreachable", err)
+	}
+	if logged.Len() != 0 {
+		t.Errorf("pool log = %q, want no 'no answer' line for an answer", logged.String())
 	}
 }
