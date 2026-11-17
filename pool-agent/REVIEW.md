@@ -222,6 +222,26 @@ archive, delete, import and stop, so waiting on it (or failing a `TryLock`)
 stalls healthy traffic behind unrelated work, and re-reading the container
 after it adds a Docker round trip to every request.
 
+Do not shorten the boot's wait for its agent to fit a fast boot. Every create waits on it, so its
+bound giving up on a box still booting fails the create while the box comes up
+by itself afterwards: the container runtime's 30 s did that on a loaded host.
+What ends it early is the box exiting or being removed; the bound
+(`sandboxAgentReadyTimeout`, one for both runtimes) is only a backstop for an
+agent that will never answer from a box that keeps running, so every runtime's
+wait ends at once when its box is removed (deleted, archived, rebuilt) rather
+than holding the boot mark until the bound. For exactly as long as the boot
+runs, through the runtime-config delivery, `finishBoot`'s detached goroutine
+restates `waiting_for_agent` (`restateWaitingForAgent`): a phase left
+unrestated reads as stalled to the attach wait's stall budget and to a client.
+Never restate it from the caller's side of `finishBoot`, whose context ends
+with the request while the boot goes on. Never restate it between the wait's
+passes either: a starved agent is slow at everything, and one `/healthz` was
+seen to block a pass for 56 s, its delivery another 40 s, while the phase aged
+out. Each restatement is a report to the
+control plane over a client with no timeout, so it is bounded on its own
+(`agentWaitRestateTimeout`), or one the control plane never answers stops the
+rest.
+
 Never take a machine as started on its power state alone. A machine is
 placed into only while it runs, so one can run with nothing placed in it: its
 start's placement failed, its caller went away, or the pool agent died

@@ -35,7 +35,8 @@ import (
 // finished provisioning yesterday still carries the phase it finished in. Work
 // that is genuinely underway reports continuously — the pull reports twice a
 // second, the pool restates materializing a source on every read of the
-// sandbox's clone, and every other phase is published as it is entered — so a
+// sandbox's clone and waiting for the agent every ten seconds of a slow boot,
+// and every other phase is published as it is entered — so a
 // phase that has not been restated in this long is describing the past.
 const ProvisionProgressFresh = 30 * time.Second
 
