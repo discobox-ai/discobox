@@ -111,6 +111,17 @@ Tables show PARENT; JSON preserves the creator beside it.
 provisioning watcher as attach. Canceling ends the request and the watcher;
 the status row is cleared before terminal output begins.
 
+## Serving the API to a local program
+
+`admin api serve` (`api_serve.go`, ADR 26-11-17-264) puts every server's API
+behind one local socket for a program that speaks HTTP. `apiHandler` reads the
+registry on every request (`serverSet`: the primary as a command run now would
+choose it, then the registered servers), and keeps one `App` per address
+(`appFor`), so each server's client, and over iroh its connection, outlives the
+request. A request is proxied through that client's transport, streaming, with
+the caller's `Authorization` dropped. The unix socket's mode 0600 is the access
+control; `--listen` takes a loopback TCP address too, and refuses any other.
+
 ## Public command reference
 
 `WriteReference` walks the same Cobra tree as the CLI, initializes help and
