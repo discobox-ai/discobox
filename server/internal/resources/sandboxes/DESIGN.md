@@ -481,6 +481,15 @@ reach those routes for the discoboxes they lead
 §2). `archive.go` holds the archive branch and retention; `reconciler.go` holds
 the rest.
 
+An archive, a delete, or a repair's teardown the pool did not answer —
+`ErrPoolNotReachable`, or the reconcile's context ended — is not finished, so
+it never settles as a failure (ADR 0017 §3, `teardownNotAnswered`): the
+sandbox stays `archiving`, `deleting` or `repairing` and the engine retries
+with backoff. A pool is unreachable for a while after every server restart,
+which is when an archive accepted just before a shutdown is retried. The
+pool's own refusal settles, as any failure does, and `ErrNotFound` from the
+pool counts as done.
+
 Purge is the one existence change that is not fire-and-forget. Its whole content
 is a destructive side effect on a machine the control plane does not own, and a
 202 would be a promise the server could not later verify — the row it would check

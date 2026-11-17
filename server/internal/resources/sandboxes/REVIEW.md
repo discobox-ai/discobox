@@ -69,6 +69,18 @@
   the sandbox is frozen finds it not running and is refused. Do not move it
   back before the send.
 
+## Settling a failure
+
+- **A teardown settles only on the pool's answer.** Archive, delete and a
+  repair's teardown record `failed` and advance `ObservedGeneration` only for
+  something the pool said; nothing re-drives a settled failure (ADR 0017
+  §§3–4). `ErrPoolNotReachable` or an ended context is no answer: return the
+  error unsettled so the engine retries (`teardownNotAnswered`). A pool is
+  unreachable after every server restart, and an archive settled there stayed
+  `error` for good (#1043). Create is not a teardown: it already waits up to
+  `poolAgentWaitCeiling` for its host and then settles, by design
+  (`server/providers/DESIGN.md`).
+
 ## Marks a pool observation earns
 
 - **A delivery a pool's report earns is marked as drift (`MarkDirtyDriftTx`),
