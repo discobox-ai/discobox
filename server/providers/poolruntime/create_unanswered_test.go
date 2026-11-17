@@ -24,8 +24,9 @@ import (
 )
 
 // newDroppingRuntimeProvider is a pool agent that closes the connection under
-// the first drops POSTs to a path ending in route without answering them, the
-// way one whose container is replaced mid-request does, and counts them.
+// the first drops writes (any method but GET) to a path ending in route without
+// answering them, the way one whose container is replaced mid-request does,
+// and counts them.
 func newDroppingRuntimeProvider(t *testing.T, projectID, poolID, route string, drops int32, beforeDrop func()) (*testRuntimeProvider, *atomic.Int32) {
 	t.Helper()
 	runtime := sandboxruntime.NewMemorySandboxRuntime()
@@ -37,7 +38,7 @@ func newDroppingRuntimeProvider(t *testing.T, projectID, poolID, route string, d
 	})
 	var sent atomic.Int32
 	agent := newCreateProtocolTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, route) && sent.Add(1) <= drops {
+		if r.Method != http.MethodGet && strings.HasSuffix(r.URL.Path, route) && sent.Add(1) <= drops {
 			if beforeDrop != nil {
 				beforeDrop()
 			}
@@ -278,6 +279,47 @@ func TestPoolProviderInstructionLostToTheAgentLeavingIsThePoolNotReachable(t *te
 			}
 			if got := sent.Load(); got != 1 {
 				t.Fatalf("%s sent = %d, want 1: an instruction is not resent here", tc.route, got)
+			}
+		})
+	}
+}
+
+// A teardown the agent was not there to answer is the pool not being reachable
+// too, never a verdict: the sandbox reconciler retries it rather than settling
+// the sandbox failed. A libkrun pool's agent is reset under the first archive
+// after a server restart while its VM is still coming up (#1043).
+func TestPoolProviderTeardownLostToTheAgentLeavingIsThePoolNotReachable(t *testing.T) {
+	ref := sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}
+	for _, tc := range []struct {
+		name, route string
+		send        func(*Provider, []byte) ([]byte, error)
+	}{
+		{"archive", "/archive", func(p *Provider, state []byte) ([]byte, error) { return p.Archive(context.Background(), ref, state) }},
+		{"remove", "/sandbox-1", func(p *Provider, state []byte) ([]byte, error) { return p.Remove(context.Background(), ref, state) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtimeProvider, sent := newDroppingRuntimeProvider(t, "project-1", "pool-1", tc.route, 1, nil)
+			manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+			state := createdOn(t, provider)
+
+			kept, err := tc.send(provider, state)
+			if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+				t.Fatalf("%s lost to the agent leaving = %v, want the pool not reachable", tc.name, err)
+			}
+			if !strings.Contains(err.Error(), "pool pool-1") || strings.Contains(err.Error(), runtimeProvider.baseURL) {
+				t.Fatalf("error = %q, want the pool named and the agent's address left out", err)
+			}
+			if string(kept) != string(state) {
+				t.Fatalf("%s returned state %q, want the state it was given", tc.name, kept)
+			}
+			if got := sent.Load(); got != 1 {
+				t.Fatalf("%s sent = %d, want 1", tc.name, got)
+			}
+
+			// The agent is back: the retry is answered.
+			if _, err := tc.send(provider, state); err != nil {
+				t.Fatalf("%s once the agent is back: %v", tc.name, err)
 			}
 		})
 	}

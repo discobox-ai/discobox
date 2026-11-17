@@ -74,3 +74,22 @@ func TestPoolProviderRemoveWithoutProviderStateDoesNotWaitOnAnUnreachablePool(t 
 		t.Fatalf("remove with state on an unreachable pool: %v, want it to fail and be retried", err)
 	}
 }
+
+// A pool reached for a sandbox with no state whose agent then does not answer
+// the remove is the same pool not there: the answer is not-found and the row
+// goes, as when the acquire refuses, never a retry that holds the delete (and
+// the pool) on that agent coming back (#1095, #1043).
+func TestPoolProviderRemoveWithoutProviderStateDoesNotWaitOnAnUnansweringAgent(t *testing.T) {
+	runtimeProvider, sent := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandbox-1", 1, nil)
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+	ref := sandbox.SandboxRef{ProjectID: "project-1", PoolID: "pool-1", SandboxID: "sandbox-1"}
+
+	_, err := provider.Remove(context.Background(), ref, nil)
+	if !errors.Is(err, sandbox.ErrNotFound) || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("remove without state lost to the agent leaving = %v, want not found", err)
+	}
+	if got := sent.Load(); got != 1 {
+		t.Fatalf("remove sent = %d, want 1", got)
+	}
+}

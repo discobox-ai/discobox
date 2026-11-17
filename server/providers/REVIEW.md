@@ -66,7 +66,8 @@
   (discovm's missing machine) maps its own.
 - The one place an unreachable pool becomes `ErrNotFound` on purpose is
   `poolruntime.Provider.Remove` of a sandbox with no state
-  (`placedPoolClient`), and only after the acquire itself refused. Such a
+  (`placedPoolClient`), and only after the acquire itself refused or the
+  agent it reached did not answer the remove. Such a
   sandbox is most likely to sit on a pool that never came up, and a pool
   cannot be deleted while it holds sandboxes, so a delete that waited on it
   would hold both forever. The pool's reaper collects what it made. A path
@@ -81,6 +82,16 @@
   and any new such method; `placedPoolClient` for `Remove` only, per the note
   above. This was missed twice, for `Remove` (#1095) and then `Archive`
   (#1322); check any other method on that path that still reads state alone.
+- A `poolruntime` call the agent was not there to answer (`poolAgentUnanswered`:
+  refused, reset or closed under it) is `sandbox.ErrPoolNotReachable`
+  (`poolAgentLostError`) wherever its caller waits or retries, never the bare
+  transport error: that reads as the agent's answer, and the caller settles
+  it. Create, then the power instructions after an upgrade replaced every
+  agent, then archive and remove after a restart (#1043) each shipped without
+  it; check every new call to the agent against it. `Remove` of a sandbox with
+  no state is the exception, by the #1095 note above: unanswered there is
+  not-found too. `Archive`'s fallback pool is waited on, so its unanswered
+  archive is `ErrPoolNotReachable` like any other.
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.

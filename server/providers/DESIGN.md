@@ -1266,6 +1266,13 @@ resent here, because every caller would then wait: the power reconciler's wake
 start, which must not land after a stop sent while it waited, holding a
 reconcile slot; and a restart, which is two steps.
 
+A teardown (archive, remove) the agent was not there to answer is reported the
+same way, and is not resent here either: the sandbox reconciler leaves it
+unsettled and the engine retries it with backoff. A libkrun pool's agent is a
+VM the server boots again after every restart, and an archive accepted just
+before a shutdown has been seen reset there with only "connection reset by
+peer" to say why.
+
 Only a driver whose acquire can see the pool container can refuse it. The
 local driver inspects the container for its port anyway, and refuses one that
 is not running or whose healthcheck is still starting
