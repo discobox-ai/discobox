@@ -33,6 +33,11 @@
   added to it in the same change that links the driver. Why: the reconciler
   waits on `ErrPoolNotReachable` forever, so a server started without its key
   would leave every pool waiting with the cause hidden.
+- `checkDriver` takes the marker for a service that does not answer: a
+  pool's create (and its machine-limit check) passes `ErrPoolNotReachable`,
+  `Runtime.Check` passes `ErrProviderNotReachable`. Why: a provider check has
+  no pool, and `ErrPoolNotReachable`'s text names a pool agent that does not
+  exist (#1287); the pool reconciler waits only on `ErrPoolNotReachable`.
 - Every call that asks a remote driver's service about the pool's machine or
   its keys — `engine.Get`, `Guest`, `URL`, `Create`, `Bases`, a key's issue,
   list or revoke, and any new one — wraps its error with `notReachable`, not

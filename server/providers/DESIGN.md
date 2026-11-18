@@ -106,9 +106,8 @@ reading the engine:
 
 - `Check`: what the first `EnsureVM` needs first (its API's account, the
   Docker daemon it is pointed at, the host's hypervisor), asked without
-  making anything; nothing answering wraps `sandbox.ErrPoolNotReachable`, or
-  `sandbox.ErrProviderNotReachable` for what the driver's constructor can
-  return too — see [Provider Check](#provider-check).
+  making anything; nothing answering wraps `sandbox.ErrProviderNotReachable`
+  — see [Provider Check](#provider-check).
 - `EnsureVM` / `StopVM` / `DeleteVM` / `InspectVM`: idempotent VM lifecycle
   keyed by pool ID. `StopVM` preserves driver-owned persistent state for
   repair; `DeleteVM` removes it after pool deletion is authorized. The
@@ -651,17 +650,20 @@ request (see [providers](../internal/resources/providers/DESIGN.md)).
 
 An error wrapping `sandbox.ErrPoolNotReachable` or
 `sandbox.ErrProviderNotReachable` is nothing answering (fix the server's
-network); any other is a refusal (fix the instance's config). The second is
-for an error a provider's build returns too (the `docker` driver pings its
-daemon at build): a build error reaches every resolver, and sandbox calls
-wait on `ErrPoolNotReachable` but must fail at once on a provider that
-cannot be built.
+network); any other is a refusal (fix the instance's config). A check marks
+what does not answer with the second: a check has no pool, and the first's
+text names a pool agent. It is also what an error a provider's build returns
+too must carry (the `docker` driver pings its daemon at build): a build error
+reaches every resolver, and sandbox calls wait on `ErrPoolNotReachable` but
+must fail at once on a provider that cannot be built. A pool's create runs the
+same driver check (`checkDriver`) and marks its unanswered service
+`ErrPoolNotReachable`, which the pool reconciler waits on.
 
 | Driver | Checks | Unreachable when |
 | --- | --- | --- |
-| `vm` (disco-vm) | the driver's `Check`: boxd's account and region, a held driver's hypervisor | `notReachable`: a dial or gRPC unavailability |
+| `vm` (disco-vm) | the driver's `Check`: boxd's account and region, a held driver's hypervisor | `unreachable`: a dial or gRPC unavailability; `ErrProviderNotReachable` |
 | `docker` | a ping of the daemon it is pointed at, the same one its build makes | the client cannot connect (not a socket it may not open); `ErrProviderNotReachable` |
-| `digitalocean` | `GET /v2/account` with the token | the request got no answer |
+| `digitalocean` | `GET /v2/account` with the token | the request got no answer; `ErrProviderNotReachable` |
 | `execvm` | the command's `check` op, with no pool | never: a non-zero exit refuses, with stderr |
 | `libkrun` | `CheckHost` with KVM: libkrun, passt, `/dev/kvm` | never: no service |
 | `vz` | `vzvm.Supported` | never: no service |

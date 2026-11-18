@@ -33,9 +33,10 @@ type Provider interface {
 	// needs (its service's account, a Docker daemon, the host's hypervisor),
 	// and makes nothing (ADR 26-11-15-089 §3). An error wrapping
 	// ErrPoolNotReachable or ErrProviderNotReachable is nothing answering;
-	// any other is a refusal. Mark with ErrProviderNotReachable what a
-	// provider's build can return too: the sandbox paths wait on
-	// ErrPoolNotReachable.
+	// any other is a refusal. Mark what does not answer with
+	// ErrProviderNotReachable: a check has no pool, so no pool agent to name,
+	// and what a provider's build returns too must not be
+	// ErrPoolNotReachable, which the sandbox paths wait on.
 	Check(ctx context.Context) error
 	Reconcile(ctx context.Context) error
 	RemoveProject(ctx context.Context, projectID string) error

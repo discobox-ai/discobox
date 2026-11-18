@@ -1155,11 +1155,26 @@ func TestRuntimeCheckIsTheDriversCheckAndMakesNothing(t *testing.T) {
 	}
 
 	driver.checkErr = status.Error(codes.Unavailable, "connection refused")
-	if err := r.Check(ctx); !errors.Is(err, sandbox.ErrPoolNotReachable) || !strings.Contains(err.Error(), "connection refused") {
-		t.Fatalf("Check() while the service does not answer = %v, want ErrPoolNotReachable naming the error", err)
+	if err := r.Check(ctx); !errors.Is(err, sandbox.ErrProviderNotReachable) || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("Check() while the service does not answer = %v, want ErrProviderNotReachable naming the error", err)
 	}
 	if len(driver.created) != 0 {
 		t.Fatalf("a check created %+v", driver.created)
+	}
+}
+
+// A provider check has no pool, so a driver's service that does not answer
+// is named as the service, never as a pool agent; the check still reads as
+// unreachable.
+func TestRuntimeCheckUnreachableNamesTheServiceNotAPoolAgent(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	driver.checkErr = status.Error(codes.Unavailable, "connection refused")
+	err := r.Check(context.Background())
+	if !errors.Is(err, sandbox.ErrProviderNotReachable) || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("Check() while the service does not answer = %v, want ErrProviderNotReachable and not ErrPoolNotReachable", err)
+	}
+	if strings.Contains(err.Error(), "pool agent") || !strings.Contains(err.Error(), "the "+driver.Name()+" driver's") {
+		t.Fatalf("Check() while the service does not answer = %q, want the driver named and no pool agent", err)
 	}
 }
 

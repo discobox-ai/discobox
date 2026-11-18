@@ -320,7 +320,7 @@ func TestCheckReadsTheAccount(t *testing.T) {
 	refused := newTestDriver(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"id":"unauthorized","message":"Unable to authenticate you"}`, http.StatusUnauthorized)
 	}), nil)
-	if err := refused.Check(context.Background()); err == nil || errors.Is(err, sandbox.ErrPoolNotReachable) || !strings.Contains(err.Error(), "Unable to authenticate you") {
+	if err := refused.Check(context.Background()); err == nil || errors.Is(err, sandbox.ErrProviderNotReachable) || !strings.Contains(err.Error(), "Unable to authenticate you") {
 		t.Fatalf("check err = %v, want a refusal naming the API's answer", err)
 	}
 
@@ -330,7 +330,9 @@ func TestCheckReadsTheAccount(t *testing.T) {
 		cfg.APIBaseURL = server.URL
 		cfg.HTTPClient = nil
 	})
-	if err := unreachable.Check(context.Background()); !errors.Is(err, sandbox.ErrPoolNotReachable) {
-		t.Fatalf("check err = %v, want unreachable", err)
+	// A provider check has no pool, so the API not answering names no pool
+	// agent; it still reads as unreachable.
+	if err := unreachable.Check(context.Background()); !errors.Is(err, sandbox.ErrProviderNotReachable) || strings.Contains(err.Error(), "pool agent") {
+		t.Fatalf("check err = %v, want ErrProviderNotReachable naming no pool agent", err)
 	}
 }

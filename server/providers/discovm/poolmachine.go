@@ -478,7 +478,7 @@ func (h *poolMachine) checkMachineLimit(ctx context.Context, pool *model.Pool, r
 	record.LimitCheckedAt = now
 	checkCtx, cancel := context.WithTimeout(ctx, machineLimitCheckTimeout)
 	defer cancel()
-	if err := checkDriver(checkCtx, h.engine); err != nil {
+	if err := checkDriver(checkCtx, h.engine, sandbox.ErrPoolNotReachable); err != nil {
 		slog.WarnContext(ctx, "keeping the pool's recorded machine limit: its driver's check failed", "pool", pool.ID, "error", err)
 		return true
 	}
@@ -519,7 +519,7 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string
 	// Check: that the key is accepted, and the region enabled), so an
 	// account it refuses fails here, saying why, rather than at the machine.
 	// A service that does not answer is waited on, as any other call is.
-	if err := checkDriver(ctx, h.engine); err != nil {
+	if err := checkDriver(ctx, h.engine, sandbox.ErrPoolNotReachable); err != nil {
 		return engine.Instance{}, fmt.Errorf("pool %s: %w", pool.ID, err)
 	}
 	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}})
@@ -766,16 +766,18 @@ func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst engine.I
 
 // checkDriver is the engine's driver checking what its first machine needs
 // (boxd's account and region, a held driver's hypervisor), saying which it
-// was: a service that does not answer, marked sandbox.ErrPoolNotReachable,
-// or a refusal. A pool's create asks it first, and so does a check of the
-// provider (ADR 26-11-15-089 §3), so both say the same thing.
-func checkDriver(ctx context.Context, e *engine.Engine) error {
+// was: a service that does not answer, marked with unanswered, or a refusal.
+// A pool's create asks it first, marking sandbox.ErrPoolNotReachable so the
+// pool waits it out, and so does a check of the provider (ADR 26-11-15-089
+// §3), marking sandbox.ErrProviderNotReachable: a provider check has no pool,
+// so its message never names a pool agent. Both say the same thing otherwise.
+func checkDriver(ctx context.Context, e *engine.Engine, unanswered error) error {
 	err := e.Driver.Check(ctx)
 	if err == nil {
 		return nil
 	}
-	if err = notReachable(err); errors.Is(err, sandbox.ErrPoolNotReachable) {
-		return fmt.Errorf("the %s driver's account cannot be checked yet: %w", e.Driver.Name(), err)
+	if unreachable(err) {
+		return fmt.Errorf("the %s driver's account cannot be checked yet: %w: %w", e.Driver.Name(), err, unanswered)
 	}
 	if isLocal(e.Driver) {
 		return fmt.Errorf("the %s driver cannot run a machine on this host: %w", e.Driver.Name(), err)

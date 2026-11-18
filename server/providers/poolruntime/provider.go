@@ -88,8 +88,8 @@ type RuntimeProvider interface {
 	Close() error
 	// Check asks whether the runtime reaches what its first EnsurePool needs,
 	// and makes nothing (ADR 26-11-15-089 §3). A service or daemon that does
-	// not answer wraps sandbox.ErrPoolNotReachable or
-	// sandbox.ErrProviderNotReachable (sandbox.Provider.Check says which).
+	// not answer wraps sandbox.ErrProviderNotReachable (sandbox.Provider.Check
+	// says why).
 	Check(ctx context.Context) error
 	// EnsurePool creates or drift-corrects the pool's host runtime. It is
 	// idempotent and updates the pool row's runtime state and scheduling flags

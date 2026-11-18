@@ -30,10 +30,9 @@ type Driver interface {
 	// Check asks whether the driver reaches what its first EnsureVM needs
 	// first (its API's account, the Docker daemon it is pointed at, the
 	// host's hypervisor), and makes nothing (ADR 26-11-15-089 §3). Nothing
-	// answering wraps sandbox.ErrPoolNotReachable, or
-	// sandbox.ErrProviderNotReachable for what the driver's constructor can
-	// return too (the sandbox paths wait on the first); any other error is a
-	// refusal. A driver with no service to reach never answers unreachable.
+	// answering wraps sandbox.ErrProviderNotReachable (sandbox.Provider.Check
+	// says why); any other error is a refusal. A driver with no service to
+	// reach never answers unreachable.
 	Check(ctx context.Context) error
 	// PoolOutbound translates host endpoints for the pool container, after daemon readiness.
 	PoolOutbound(context.Context, string, pooloutbound.Resolved) (pooloutbound.Delivery, error)

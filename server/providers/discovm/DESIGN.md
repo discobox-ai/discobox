@@ -306,9 +306,12 @@ driver's machine limit), never against anything the machine reports (551 §1):
   error names why (boxd's: its key, its region, and a host-bound secret in
   its org or its key owner's scope, which boxd lets every machine reach
   whatever its fence). A check the service does not answer is
-  `notReachable`. The same check (`checkDriver`) is `Runtime.Check`, the
-  provider check the server runs on request (ADR 26-11-15-089), and the
-  running pool's machine-limit check below, so all say the same thing;
+  `sandbox.ErrPoolNotReachable`, as `notReachable` marks, and waited on. The
+  same check (`checkDriver`) is `Runtime.Check`, the provider check the
+  server runs on request (ADR 26-11-15-089), and the running pool's
+  machine-limit check below, so all say the same thing, except that the
+  provider check marks a service that does not answer
+  `sandbox.ErrProviderNotReachable`: it has no pool, so no pool agent to name;
 - a machine under the pool's name that is not the one the record names (a
   pass made it and stopped before its record was saved): it is taken as made —
   the pool's keys revoked, the record reset, the agent placed and keyed — but
