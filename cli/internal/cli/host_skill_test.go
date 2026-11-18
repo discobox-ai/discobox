@@ -107,7 +107,7 @@ func TestHostSkillProjectScopeUsesWorktreeRoot(t *testing.T) {
 	if _, err := runLocalSkillCommand(t, "skill", "--install", "--scope", "project"); err == nil {
 		t.Fatal("accepted --scope project outside a worktree")
 	}
-	if out, err := exec.Command("git", "init", root).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(t.Context(), "git", "init", root).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	if _, err := runLocalSkillCommand(t, "skill", "--install", "--scope", "project"); err != nil {
@@ -125,7 +125,7 @@ func TestHostSkillProjectScopeConfinesLinkedDirectories(t *testing.T) {
 	uninstallHome(t)
 	root := t.TempDir()
 	t.Chdir(root)
-	if out, err := exec.Command("git", "init").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(t.Context(), "git", "init").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	outside := t.TempDir()
@@ -154,7 +154,7 @@ func TestHostSkillProjectScopeConfinesLinkedDirectories(t *testing.T) {
 	if out, err := runLocalSkillCommand(t, "skill", "--uninstall", "--scope", "project"); err != nil || strings.Count(out, "Removed ") != 1 {
 		t.Fatalf("expected one uninstall through the in-tree link: %v, %q", err, out)
 	}
-	if out, err := exec.Command("git", "status", "--porcelain", "--", ".agents").CombinedOutput(); err != nil || len(out) != 0 {
+	if out, err := exec.CommandContext(t.Context(), "git", "status", "--porcelain", "--", ".agents").CombinedOutput(); err != nil || len(out) != 0 {
 		t.Fatalf("project uninstall left artifacts: %v, %q", err, out)
 	}
 }

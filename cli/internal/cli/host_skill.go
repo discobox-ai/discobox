@@ -213,7 +213,7 @@ func changeHostSkill(dir *os.Root, install bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 
 	exists, marked, err := inspectHostSkill(dir, hostskill.Name)
 	if err != nil {
@@ -256,12 +256,12 @@ func changeHostSkill(dir *os.Root, install bool) (bool, error) {
 	if err := dir.Mkdir(next, 0o755); err != nil {
 		return false, err
 	}
-	defer dir.RemoveAll(next)
+	defer func() { _ = dir.RemoveAll(next) }()
 	file, err := fsdurable.CreateIn(dir, filepath.Join(next, sandboxconfig.SkillFileName), 0o644)
 	if err != nil {
 		return false, err
 	}
-	defer file.Discard()
+	defer func() { _ = file.Discard() }()
 	if _, err := io.WriteString(file, hostskill.Content()); err != nil {
 		return false, err
 	}
