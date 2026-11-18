@@ -11,6 +11,7 @@ import urllib.request
 import run as stack
 
 RELEASE = "v0.19.5"
+RELEASE_BASE = f"ghcr.io/discobox-ai/discobox-sandbox-base:{RELEASE}"
 DIGESTS = {
     "discobox-linux-amd64": "5662fb2a18aeb5611579431353ed0d7a0b51327c03f076ec4353d4983dfbed1b",
     "discobox-server-linux-amd64": "1ed7d18083196f95ec5c91d3f665101481845c44f826fe538424595ee50457ef",
@@ -161,6 +162,8 @@ def stop_server():
 
 def create_fixture(release_cli, release_server):
     select_cli(release_cli)
+    # Keep a cold image download outside the released pool bootstrap deadline.
+    stack.command(["docker", "pull", RELEASE_BASE], limit=600)
     stack.start_server(release_server, seconds=180)
     pools = stack.obj("admin", "pool", "ls")["pools"]
     stack.POOLS.extend(p["id"] for p in pools)
@@ -208,15 +211,18 @@ def stage_prior_alias(box, env):
     stack.eventually("reminted Codex assignment", lambda: run_in_box(
         box, "sh", "-ec", 'case "$(printenv "$1")" in sk-fixture-*) printf ready;; esac',
         "fixture", env) == "ready", seconds=90)
-    # The private capture state must remember the prior delivery before the
-    # old agent is replaced. Compare inside the box without logging either.
-    stack.eventually("prior alias recorded", lambda: run_in_box(
+    stack.eventually("prior alias recorded", lambda: has_prior_alias(box, env), seconds=90)
+
+
+def has_prior_alias(box, env):
+    # Compare inside the box without logging either the old or current value.
+    return run_in_box(
         box, "sh", "-ec",
         'old=$(jq -r .OPENAI_API_KEY "$HOME/.codex/migration-prior-auth.json"); '
         'if test -n "$old" && jq -e --arg env "$1" --arg old "$old" '
         '\'(.knownSentinels[$env] // []) | index($old) != null\' '
         '"$HOME/.config/discobox/harness-sentinels.json" >/dev/null 2>&1; then printf ready; fi',
-        "fixture", env) == "ready", seconds=90)
+        "fixture", env) == "ready"
 
 
 def upgrade_fixture(boxes, baseline):
@@ -248,11 +254,14 @@ def upgrade_fixture(boxes, baseline):
             path = fixture["settings"]
             expected = LITERAL + (" pending across upgrade" if slug == CHILD else " after restart")
             if slug == "codex":
+                assert has_prior_alias(box, baseline[slug]["bindings"][0][3]), "lost prior Codex sentinel"
                 run_in_box(box, "sh", "-ec",
                            'mv "$HOME/.codex/migration-prior-auth.json" "$HOME/.codex/auth.json"')
             if slug != CHILD:
                 write_home(box, path, settings(path, expected))
             candidate = pending(box, path, credential_count=0)
+            if slug == "codex":
+                assert not candidate.get("diagnostics"), candidate
             assert any(expected in f["file"]["content"]
                        for f in candidate["files"] if f["path"] == path), candidate
             save(box, candidate)
