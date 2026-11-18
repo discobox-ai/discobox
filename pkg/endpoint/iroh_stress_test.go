@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -590,11 +591,26 @@ func TestIrohStreamsPastOneConnectionsShareOpenAnother(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stream %d: %v", i, err)
 		}
-		// A stream exists on the peer only once bytes flow on it.
+		streams = append(streams, stream)
+		deadline, _ := ctx.Deadline()
+		if err := stream.SetDeadline(deadline); err != nil {
+			t.Fatalf("deadline on stream %d: %v", i, err)
+		}
 		if _, err := stream.Write([]byte("GET /echo HTTP/1.1\r\nHost: discobox.local\r\n\r\n")); err != nil {
 			t.Fatalf("write on stream %d: %v", i, err)
 		}
-		streams = append(streams, stream)
+		// A local write can finish before the server authorizes its connection.
+		// Wait for the response while keeping the stream open for the burst.
+		resp, err := http.ReadResponse(bufio.NewReader(stream), nil)
+		if err != nil {
+			t.Fatalf("response on stream %d: %v", i, err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			t.Fatalf("close response body on stream %d: %v", i, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("response on stream %d: status %s, want 200 OK", i, resp.Status)
+		}
 	}
 	if got, want := admitted.Load(), int64((held+irohStreamsPerConn-1)/irohStreamsPerConn); got != want {
 		t.Fatalf("the server admitted %d connections for %d open streams, want %d", got, held, want)
