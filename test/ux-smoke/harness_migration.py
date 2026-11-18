@@ -125,8 +125,7 @@ def make_home(slug, fixture, box):
     write_home(box, "local-personal.txt", LITERAL)
     if not fixture:
         return
-    if "export" not in fixture:
-        stop_fixture_app(box, slug)
+    stop_fixture_app(box, slug)
     path = fixture["settings"]
     write_home(box, path, settings(path, LITERAL))
     document = json.dumps(fixture["document"])
@@ -137,6 +136,12 @@ def make_home(slug, fixture, box):
                    input=document)
     else:
         run_in_box(box, *fixture["import"], input=document)
+    if slug == "omp":
+        account = fixture["document"]["credentials"][0]["credential"]["accountId"]
+        run_in_box(box, "sh", "-ec",
+                   "omp auth export | jq -e --arg account \"$1\" "
+                   "'.credentials | any(.credential.accountId == $account)' >/dev/null",
+                   "fixture", account)
     candidate, state = save_change(box, path, credential_count=1, expected=LITERAL)
     assert_saved(slug, path, LITERAL)
     if state == "saved-handoff-pending" and "export" in fixture:
