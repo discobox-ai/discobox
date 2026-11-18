@@ -155,7 +155,7 @@ func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mirrorSSHIdentity: %v", err)
 	}
-	if want := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\id_ed25519`; mirrored.client != want {
+	if want := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\id_ed25519` + target.wslArtifactSuffix(); mirrored.client != want {
 		t.Fatalf("mirrored key = %q, want %q", mirrored.client, want)
 	}
 	if got := readFile(t, mirrored.local); got != "PRIVATE" {
@@ -209,7 +209,7 @@ func TestSSHTargetRemovesAKeyItCannotNarrow(t *testing.T) {
 	// Where the copy would have landed, worked out here rather than taken from
 	// the return: a failed mirror reports no path at all, which is the whole
 	// reason the file it wrote has to be gone.
-	copied := target.join(target.sshDir(), "id_ed25519").local
+	copied := target.join(target.sshDir(), "id_ed25519"+target.wslArtifactSuffix()).local
 	_, err := target.mirrorSSHIdentity(t.Context(), source)
 	if err == nil {
 		t.Fatal("expected a key another principal can read to be refused")
@@ -235,8 +235,8 @@ func TestSSHTargetMirrorsAKeyWithNoPublicHalf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mirrorSSHIdentity: %v", err)
 	}
-	if !strings.HasSuffix(mirrored.client, `\id_rsa`) {
-		t.Fatalf("mirrored key = %q, want the source's own name", mirrored.client)
+	if !strings.HasSuffix(mirrored.client, `\id_rsa`+target.wslArtifactSuffix()) {
+		t.Fatalf("mirrored key = %q, want the source name scoped to this distribution", mirrored.client)
 	}
 }
 

@@ -92,8 +92,9 @@ func TestCredentialQuestionGoesBackToTheWait(t *testing.T) {
 func TestCredentialExplanationFollowsSelectionAndHoverBeforeConfirm(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	feed, _ := m.narrate()
-	question := &credentialQuestion{remote: "forge.example/repo", answer: make(chan credentialAnswer, 1)}
-	m.credentialQuestion(narrationMsg{source: feed, question: question})
+	question := gitCredentialQuestion("forge.example/repo")
+	question.answer = make(chan narrationAnswer, 1)
+	m.askNarrationQuestion(narrationMsg{source: feed, question: &question})
 	m.screenWidth, m.height = 70, 18
 	view := m.View().Content
 	if !strings.Contains(view, "forge.example/repo") || !strings.Contains(view, "Git's credential helper") {

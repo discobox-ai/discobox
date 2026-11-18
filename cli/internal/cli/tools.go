@@ -247,7 +247,7 @@ func (a *App) runTool(cmd *cobra.Command, id, source, program string, args []str
 	if def.Runs == tools.RunsHost {
 		// The user typed this command, so what it does on their behalf is
 		// printed where its own reporting goes.
-		return target.app.runHostTool(ctx, def, target, program, rest, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), printedNotes(cmd.ErrOrStderr()))
+		return target.app.runHostTool(ctx, def, target, program, rest, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), inlineSSHIncludePrompt(cmd, nil), printedNotes(cmd.ErrOrStderr()))
 	}
 	if program != "" {
 		return fmt.Errorf("tool %s runs in the discobox, and --program names the program a tool that runs here runs", id)

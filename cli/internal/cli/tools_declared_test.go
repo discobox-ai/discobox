@@ -129,6 +129,7 @@ func TestAServerWithoutTheToolsRouteStillRunsTheCLIsTools(t *testing.T) {
 	setHome(t, home)
 	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	enableSSHIncludesForTest(t)
 	cmd := NewRootCommand()
 	var out strings.Builder
 	cmd.SetOut(&out)
@@ -187,6 +188,7 @@ func TestAHostScriptIsHandedTheServersAddressNotItsName(t *testing.T) {
 	setHome(t, home)
 	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	enableSSHIncludesForTest(t)
 	// The registry is found through xdg's cached directories: re-read them
 	// for this test's, and again after, so the server registered here is not
 	// every later test's.
@@ -320,6 +322,7 @@ func runToolsWithToken(t *testing.T, home, token, tool string) {
 	setHome(t, home)
 	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	enableSSHIncludesForTest(t)
 	server := vscodeFakeServer().start(t)
 	cmd := NewRootCommand()
 	var errOut strings.Builder

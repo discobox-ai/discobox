@@ -505,9 +505,11 @@ run's staged copy), and this user's Discobox files in the temporary directory
   files `DISCOBOX_CONFIG_FILE` and `DISCOBOX_CLIENT_CONFIG_FILE` name (the
   user's own, anywhere), and Docker's
   containers, volumes and images. The help says so.
-- **Only this machine's ssh.** On WSL the Windows side's managed files sit
-  beside a Windows install's state, so they are left alone. An Include is
-  removed only when the file it names is being removed or is already gone.
+- On the local side, uninstall removes Includes whose generated files are being
+  removed or are already gone. From WSL it also removes the distribution's
+  Includes in the Windows SSH config, identified by the generated file's
+  distribution marker or legacy ProxyCommand. Windows-side generated files
+  sit beside the native installation's state and are kept.
   The lines the plan listed, and only those, are cut from the file as it is
   once the user has answered, read again under the ssh_config lock rather
   than the copy the plan showed: another install may have added its own line
@@ -2200,8 +2202,12 @@ level or layering on the attach transports above.
   written again: after any one write, no name an older CLI keyed a stanza by
   is left in any of them.
 - `--write` writes the stanzas and the server's host key to two files under the
-  CLI state directory, beside the generated key, and adds one `Include` line to
-  `~/.ssh/config`. It also normalizes the `Include` lines it owns
+  CLI state directory, beside the generated key. An install's
+  `ssh/include-preference` records permission to edit the user's SSH config.
+  On the first interactive sync, the CLI asks with No selected. A sync without
+  a terminal leaves the preference unset and prints the opt-in command. Generated
+  files are refreshed regardless. With permission, the sync adds one `Include`
+  line to `~/.ssh/config` and normalizes the `Include` lines it owns
   (`normalizeManagedIncludes`, recognizing the
   `.../discobox/cli/ssh/<project>/config` shape it writes and nothing else
   does): a stale one is removed, and the ones an older version wrote with an
@@ -2220,7 +2226,9 @@ level or layering on the attach transports above.
   project's stanzas on each write, and two projects can live on different
   servers with different addresses and host keys. The ID is resolved first, so
   the same project reached as `default` and by ID does not end up owning two
-  files. Older project-only generated files are retained; matching-route stanzas
+  files. A WSL distribution scopes its copy of the project files and SSH key
+  in Windows state by distribution so neither a native CLI nor another
+  distribution can overwrite those copies. Older project-only generated files are retained; matching-route stanzas
   are retired with a migration note, while other routes remain untouched. Nothing else in `~/.ssh` is edited, and the one file
   added there is the lock that edit is made under (below): this command owns those
   two files and rewrites them wholesale, so it never has to parse or merge into
@@ -2228,7 +2236,10 @@ level or layering on the attach transports above.
   ssh takes the first value obtained for each keyword and an `Include` placed
   after an existing `Host *` block would lose every setting that block sets. It
   is idempotent — re-running after creating a sandbox refreshes the stanzas and
-  leaves one `Include`.
+  leaves one `Include`. `admin ssh-config enable` saves consent and refreshes Includes from the
+  configured servers.
+  `admin ssh-config disable` removes the install's Includes and keeps them disabled.
+  Include removal preserves all remaining SSH config bytes.
 - **Two locks, by who shares what.** The managed files are one install's own
   and are written under `config.lock` in its state directory
   (`sshConfigLockName`), around the write and the re-key of every other
@@ -2254,8 +2265,8 @@ level or layering on the attach transports above.
 - A successful prompt sandbox create refreshes these files after its source has
   been delivered, from both `discobox run` and the console. This is the same
   operation as `admin ssh-config --write`, including key enrollment and WSL's
-  two targets, so a newly created sandbox is immediately available to OpenSSH
-  clients without a separate command.
+  two targets. With the Includes enabled, a newly created sandbox is available
+  to OpenSSH clients after the sync.
 - **WSL** is the one place where the ssh that connects is not on the same side
   of the machine as the CLI (ADR 0074). A Windows VS Code or Zed runs Windows
   `ssh.exe`, which reads `%USERPROFILE%\.ssh\config`, opens files by their
@@ -2268,8 +2279,8 @@ level or layering on the attach transports above.
   sandboxes exist or which key authenticates. Printed output stays this side
   only — it is for pasting in by hand. The Windows side's own files are stanzas
   under
-  `%LOCALAPPDATA%\discobox\cli\ssh\<project>\`, an `Include` in the Windows
-  user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e sh -c
+  `%LOCALAPPDATA%\discobox\cli\ssh\<scope>\`, an optional `Include` in
+  the Windows user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e sh -c
   "exec '<linux discobox>' --server '…' admin ssh-proxy"`, and a copy of the
   enrolled private key beside them, refreshed on every run. Everything on that
   side runs through interop, a Windows profile and a Windows ACL, and any of it

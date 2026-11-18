@@ -29,10 +29,61 @@ type narration struct {
 	ch  chan narrationLine
 }
 
+// narrationQuestion pauses one operation for a choice in the active console.
+type narrationQuestion struct {
+	title, body  string
+	choices      []action
+	descriptions []string
+	yes          string
+	cancel       error
+	answer       chan narrationAnswer
+}
+
+type narrationAnswer struct {
+	yes bool
+	err error
+}
+
+func (n narration) confirm(ctx context.Context, question narrationQuestion) (bool, error) {
+	question.answer = make(chan narrationAnswer, 1)
+	select {
+	case n.ch <- narrationLine{question: &question}:
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	select {
+	case result := <-question.answer:
+		return result.yes, result.err
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+}
+
+func (m *Model) askNarrationQuestion(msg narrationMsg) tea.Cmd {
+	question := msg.question
+	if msg.source.gen != m.busyGen {
+		question.answer <- narrationAnswer{err: context.Canceled}
+		return m.nextNarration(msg.source)
+	}
+	previous := m.dialog
+	m.dialog = actionsDialog(question.title, question.body, question.choices, func(choice string) tea.Cmd {
+		question.answer <- narrationAnswer{yes: choice == question.yes}
+		return nil
+	})
+	m.dialog.onCancel = func() tea.Cmd {
+		question.answer <- narrationAnswer{err: question.cancel}
+		return nil
+	}
+	m.dialog.choiceDescriptions = question.descriptions
+	m.dialog.wrapDetails = len(question.descriptions) > 0
+	m.dialog.back = previous
+	return m.nextNarration(msg.source)
+}
+
 // narrationLine is one line of a feed: a step of the work, or a warning about
 // it, which is not a step and is not drawn as one (narrated).
 type narrationLine struct {
-	question *credentialQuestion
+	question *narrationQuestion
 	process  *credentialProcess
 	text     string
 	warning  bool
@@ -60,7 +111,7 @@ func (n narration) close() { close(n.ch) }
 
 // narrationMsg is one line from a narrated operation.
 type narrationMsg struct {
-	question *credentialQuestion
+	question *narrationQuestion
 	process  *credentialProcess
 	source   narration
 	text     string
@@ -101,7 +152,7 @@ func (m *Model) nextNarration(feed narration) tea.Cmd {
 // narrated reports one line, and asks for the next.
 func (m *Model) narrated(msg narrationMsg) tea.Cmd {
 	if msg.question != nil {
-		return m.credentialQuestion(msg)
+		return m.askNarrationQuestion(msg)
 	}
 	if msg.process != nil {
 		process := msg.process

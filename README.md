@@ -40,6 +40,14 @@ irm https://discobox.ai/install.ps1 | iex
 Each of those installs the stable channel. [Release channels](#release-channels)
 covers the newer ones and how to pin a version.
 
+Discobox generates SSH aliases in its local state directory. On the first
+interactive SSH config sync, it asks whether it may add Include lines to
+`~/.ssh/config` (and the Windows SSH config under WSL). The default is No.
+The Includes let OpenSSH reach a discobox by ID with `ssh BOX_ID` through the
+Discobox server. Use `discobox admin ssh-config enable` or
+`discobox admin ssh-config disable` to change your choice. `discobox admin uninstall`
+removes the managed Includes.
+
 For a guided first experience, run:
 
 ```bash
@@ -142,9 +150,9 @@ remote. Open a pull request or fetch and merge that branch on your machine.
 
 ## Working with a box
 
-- **Terminal and SSH:** Use the console or `discobox exec`. SSH configuration syncs
-  automatically when a box is created, so `ssh $DISCOBOX_ID` works without manual
-  setup. You can also connect by box name.
+- **Terminal and SSH:** Use the console, `discobox exec`, or
+  `discobox tools ssh BOX`. Opt in to SSH Includes to connect directly with
+  `ssh BOX_ID` or use an editor that reads your SSH config.
 - **Editor and tools:** Use `discobox tools vscode` or `discobox tools zed` to
   open VS Code or Zed in the box's working directory; `discobox tools ls` lists
   every tool a box offers. Declare your own as a `.yaml` or a front-matter script

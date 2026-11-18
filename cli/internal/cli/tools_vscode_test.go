@@ -71,6 +71,7 @@ func runToolsCmd(t *testing.T, fake *sshConfigFakeServer, home, tool string, arg
 	setHome(t, home)
 	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := fake.start(t)
 	cmd := NewRootCommand()

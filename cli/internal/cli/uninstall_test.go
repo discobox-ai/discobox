@@ -191,7 +191,8 @@ func TestUninstallRemovesWhatItListed(t *testing.T) {
 	mustWriteFile(t, filepath.Join(home, ".cache", "discobox", "images", "x"), "x")
 	mustWriteFile(t, filepath.Join(home, ".config", "other", "keep"), "keep")
 	sshConfig := filepath.Join(home, ".ssh", "config")
-	mustWriteFile(t, sshConfig, "Include "+sshConfigPath(managed)+"\n\nHost mine\n  User me\n")
+	const original = "\r\n\r\nHost mine\r\n  User me  "
+	mustWriteFile(t, sshConfig, "Include "+sshConfigPath(managed)+"\n"+original)
 
 	out, err := runUninstall(t, "y\n", "--server", "unix://"+filepath.Join(home, "none.sock"))
 	if err != nil {
@@ -214,7 +215,7 @@ func TestUninstallRemovesWhatItListed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(data), "Host mine\n  User me\n"; got != want {
+	if got, want := string(data), original; got != want {
 		t.Fatalf("ssh_config = %q, want %q", got, want)
 	}
 }
@@ -262,7 +263,7 @@ func TestUninstallKeepsAnIncludeAddedAfterThePlan(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("uninstall: %v\n%s", err, out.String())
 	}
-	want := "Include " + sshConfigPath(other) + "\n" + "Include " + sshConfigPath(late) + "\n\nHost mine\n  User me\n"
+	want := "Include " + sshConfigPath(other) + "\n" + "Include " + sshConfigPath(late) + "\n\n\nHost mine\n  User me\n"
 	if got := readFile(t, sshConfig); got != want {
 		t.Fatalf("ssh_config = %q, want %q", got, want)
 	}

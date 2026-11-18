@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -17,7 +16,6 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/internal/filelock"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -31,8 +29,8 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			"the server's known_hosts line, suitable for `discobox admin ssh-config >> ~/.ssh/config`\n" +
 			"or an ssh_config Include directive.\n\n" +
 			"With --write, the stanzas and the server's host key are written to files this\n" +
-			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
-			"at them. Nothing else in ~/.ssh is edited; a lock file beside it,\n" +
+			"command owns and rewrites. If SSH Includes are enabled, ~/.ssh/config gains an\n" +
+			"Include line pointing at them. A lock file beside it,\n" +
 			".discobox-ssh-config.lock, keeps another install of Discobox from editing\n" +
 			"~/.ssh/config at the same moment.\n\n" +
 			"--write covers every server: the primary and the ones `discobox admin remote`\n" +
@@ -59,7 +57,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			// reporting goes.
 			notes := printedNotes(cmd.ErrOrStderr())
 			if write {
-				return a.writeEverySSHConfig(cmd.Context(), identityFile, notes)
+				return a.writeEverySSHConfig(cmd.Context(), identityFile, inlineSSHIncludePrompt(cmd, nil), notes)
 			}
 			// The written files are named after the project and the host key
 			// is verified under a name derived from it, so resolve what the
@@ -107,6 +105,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&identityFile, "identity-file", "", "Private key to use, generated and enrolled if absent (default: the CLI's own managed key)")
 	cmd.Flags().BoolVarP(&write, "write", "w", false, "Write the config where ssh will find it, instead of printing it")
+	cmd.AddCommand(a.newEnableSSHIncludeCommand(), newDisableSSHIncludeCommand())
 	return cmd
 }
 
@@ -119,7 +118,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 // other server is still written. Which server a note is about is said where
 // there is more than one: the paths it names are project IDs, which nobody
 // reads as a server.
-func (a *App) writeEverySSHConfig(ctx context.Context, identityFile string, notes noteFunc) error {
+func (a *App) writeEverySSHConfig(ctx context.Context, identityFile string, prompt sshIncludePrompt, notes noteFunc) error {
 	set, err := a.servers()
 	if err != nil {
 		return err
@@ -131,7 +130,7 @@ func (a *App) writeEverySSHConfig(ctx context.Context, identityFile string, note
 				notes("%s: "+format, append([]any{s.name}, args...)...)
 			}
 		}
-		if err := s.writeSSHConfig(ctx, identityFile, about); err != nil {
+		if err := s.writeSSHConfig(ctx, identityFile, prompt, about); err != nil {
 			if s.primary {
 				return err
 			}
@@ -147,7 +146,7 @@ func (a *App) writeEverySSHConfig(ctx context.Context, identityFile string, note
 const sshSyncTimeout = time.Minute
 
 // writeSSHConfig syncs one server's stanzas, in that server's own project.
-func (s *server) writeSSHConfig(ctx context.Context, identityFile string, notes noteFunc) error {
+func (s *server) writeSSHConfig(ctx context.Context, identityFile string, prompt sshIncludePrompt, notes noteFunc) error {
 	ctx, cancel := s.boundedBy(ctx, sshSyncTimeout)
 	defer cancel()
 	if _, err := s.app.resolveServerAddress(ctx); err != nil {
@@ -161,7 +160,7 @@ func (s *server) writeSSHConfig(ctx context.Context, identityFile string, notes 
 	if err != nil {
 		return err
 	}
-	return s.app.writeProjectSSHConfig(ctx, client, projectID, identityFile, notes)
+	return s.app.writeProjectSSHConfig(ctx, client, projectID, identityFile, prompt, notes)
 }
 
 // writeProjectSSHConfig is the one operation behind both `admin ssh-config
@@ -174,7 +173,7 @@ func (s *server) writeSSHConfig(ctx context.Context, identityFile string, notes 
 // the command happens to hold. A create runs this on its way to a full-screen
 // terminal — the launcher's window, or the attach `discobox run` ends in — and
 // neither of those has a stream to spare.
-func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Client, projectID, identityFile string, notes noteFunc) error {
+func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Client, projectID, identityFile string, prompt sshIncludePrompt, notes noteFunc) error {
 	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)
 	if err != nil {
 		return err
@@ -198,6 +197,7 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 		hostKey:           hostKey,
 		write:             true,
 		notes:             notes,
+		includePrompt:     prompt,
 	}, targets.all)
 	return err
 }
@@ -208,8 +208,8 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 // every discobox in the project — has no use for it, and the create stands
 // (ADR 26-09-24-630 §4). `admin ssh-config --write` calls writeProjectSSHConfig
 // directly: there the sync is what was asked for, and a refusal is its answer.
-func (a *App) syncSSHConfigAfterCreate(ctx context.Context, client *apiclientgen.Client, projectID string, notes noteFunc) error {
-	err := a.writeProjectSSHConfig(ctx, client, projectID, "", notes)
+func (a *App) syncSSHConfigAfterCreate(ctx context.Context, client *apiclientgen.Client, projectID string, prompt sshIncludePrompt, notes noteFunc) error {
+	err := a.writeProjectSSHConfig(ctx, client, projectID, "", prompt, notes)
 	var refused *plainStatusError
 	if errors.As(err, &refused) && refused.code == http.StatusForbidden {
 		notes("SSH config not synced: the server refused it (%s)", refused.body)
@@ -239,7 +239,8 @@ type managedSSHConfigRequest struct {
 	// notes is where the key enrollment says what it did. It is required: this
 	// work generates and enrolls keys on the caller's behalf, and no caller may
 	// have that happen silently.
-	notes noteFunc
+	notes         noteFunc
+	includePrompt sshIncludePrompt
 }
 
 // managedSSHConfig is a project's emitted ssh_config: the stanzas, the name the
@@ -248,13 +249,14 @@ type managedSSHConfigRequest struct {
 type managedSSHConfig struct {
 	// target is the ssh installation this rendering is for: where its files
 	// go, how their paths are spelled, and what its ProxyCommand runs.
-	projectID    string
-	namespace    string
-	target       sshTarget
-	stanzas      string
-	proxyCommand string
-	hostKeyAlias string
-	hostKey      string
+	projectID     string
+	namespace     string
+	artifactScope string
+	target        sshTarget
+	stanzas       string
+	proxyCommand  string
+	hostKeyAlias  string
+	hostKey       string
 }
 
 // buildManagedSSHConfig resolves the key, lists the project's sandboxes, and
@@ -293,26 +295,29 @@ func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigReq
 		}
 		// Only the written config can name a known_hosts file, because only it
 		// owns one: printed output would be naming a file this run never wrote.
+		namespace := sshConfigNamespace(a.serverURL, req.resolvedProjectID)
+		scope := namespace + target.wslArtifactSuffix()
 		knownHostsFile := ""
 		if req.write {
-			knownHostsFile = target.knownHostsPath(sshConfigNamespace(a.serverURL, req.resolvedProjectID)).client
+			knownHostsFile = target.knownHostsPath(scope).client
 		}
 		render := sshConfigRender{
 			sandboxes:      sandboxes,
-			namespace:      sshConfigNamespace(a.serverURL, req.resolvedProjectID),
+			namespace:      namespace,
 			proxyCommand:   proxyCommand,
-			hostKeyAlias:   sshHostKeyAlias(sshConfigNamespace(a.serverURL, req.resolvedProjectID)),
+			hostKeyAlias:   sshHostKeyAlias(namespace),
 			identityFile:   identity.client,
 			knownHostsFile: knownHostsFile,
 		}
 		return managedSSHConfig{
-			target:       target,
-			projectID:    req.resolvedProjectID,
-			namespace:    sshConfigNamespace(a.serverURL, req.resolvedProjectID),
-			stanzas:      renderSSHConfig(render),
-			proxyCommand: proxyCommand,
-			hostKeyAlias: render.hostKeyAlias,
-			hostKey:      req.hostKey,
+			target:        target,
+			projectID:     req.resolvedProjectID,
+			namespace:     namespace,
+			artifactScope: scope,
+			stanzas:       renderSSHConfig(render),
+			proxyCommand:  proxyCommand,
+			hostKeyAlias:  render.hostKeyAlias,
+			hostKey:       req.hostKey,
 		}, nil
 	}
 
@@ -356,20 +361,41 @@ func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRe
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(cliStateDir(), "ssh")
-	if err := ensureStateDir(dir); err != nil {
-		return err
-	}
-	lock, err := acquireFileLock(filepath.Join(dir, sshConfigLockName), sshConfigLockWait)
-	if errors.Is(err, filelock.ErrBusy) {
-		return errors.New("another discobox command is still writing the SSH config; try again")
-	}
+	dir, release, err := lockManagedSSH()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = lock.Release() }()
+	defer func() { release() }()
+	pref, err := readSSHIncludePreference(dir)
+	if err != nil {
+		return err
+	}
+	if pref == "" && req.includePrompt != nil {
+		release()
+		release = func() {}
+		answer, err := req.includePrompt(ctx)
+		if err != nil {
+			return err
+		}
+		dir, release, err = lockManagedSSH()
+		if err != nil {
+			release = func() {}
+			return err
+		}
+		pref, err = readSSHIncludePreference(dir)
+		if err != nil {
+			return err
+		}
+		if pref == "" && answer != "" {
+			pref = answer
+			if err := writeSSHIncludePreference(dir, pref); err != nil {
+				return err
+			}
+		}
+	}
 	for _, config := range built {
-		if err := writeManagedSSHConfig(ctx, config, req.notes); err != nil {
+		err := writeManagedSSHConfig(ctx, config, pref == sshIncludeEnabled, req.notes)
+		if err != nil {
 			if !config.target.optional {
 				return err
 			}
@@ -602,7 +628,7 @@ func (t sandboxSSHRemote) describe() string {
 // prints for copying:
 // the same three questions — which config, which alias, which directory — and
 // the same write behind them.
-func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string, notes noteFunc) (sandboxSSHRemote, error) {
+func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string, prompt sshIncludePrompt, notes noteFunc) (sandboxSSHRemote, error) {
 	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)
 	if err != nil {
 		return sandboxSSHRemote{}, err
@@ -618,6 +644,7 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 		hostKey:           hostKey,
 		write:             true,
 		notes:             notes,
+		includePrompt:     prompt,
 	}, targets)
 	if err != nil {
 		return sandboxSSHRemote{}, err
