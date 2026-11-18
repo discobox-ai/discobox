@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -238,6 +239,18 @@ func (t sshTarget) restrict(ctx context.Context, p sshPath) error {
 // directory of whichever side reads them, one directory per project.
 func (t sshTarget) sshDir() sshPath { return t.join(t.state, "ssh") }
 
+const wslArtifactMarker = "-wsl-"
+
+// The Windows state directory is shared by the native CLI and every WSL
+// distribution. Each distribution owns a separate copy of its SSH artifacts.
+func (t sshTarget) wslArtifactSuffix() string {
+	if !t.acrossWSL() {
+		return ""
+	}
+	hash := sha256.Sum256([]byte(t.wslDistro))
+	return fmt.Sprintf("%s%x", wslArtifactMarker, hash[:8])
+}
+
 func (t sshTarget) configPath(projectID string) sshPath {
 	return t.join(t.sshDir(), projectID, "config")
 }
@@ -318,7 +331,7 @@ func (t sshTarget) mirrorSSHIdentity(ctx context.Context, source string) (sshPat
 	if !t.acrossWSL() {
 		return samePath(source), nil
 	}
-	mirrored := t.join(t.sshDir(), filepath.Base(source))
+	mirrored := t.join(t.sshDir(), filepath.Base(source)+t.wslArtifactSuffix())
 	if err := ensureStateDir(filepath.Dir(mirrored.local)); err != nil {
 		return sshPath{}, fmt.Errorf("create Windows SSH directory: %w", err)
 	}

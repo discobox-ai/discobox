@@ -47,6 +47,15 @@ needs Docker installed and accessible to the server user. First use can
 download the server, images and agent bundles, so allow time and network
 access. A remote server runs its pools on the server side.
 
+Discobox stores generated SSH aliases in its local state directory. Adding
+Includes to your SSH config is optional. The first interactive SSH config sync
+asks for permission and defaults to No. With the Includes enabled, OpenSSH can
+connect through the Discobox server with `ssh BOX_ID`, and SSH-based editors can
+use the same configuration. Under WSL, the setting covers both Linux and Windows
+OpenSSH. Change your choice with `discobox admin ssh-config enable` or
+`discobox admin ssh-config disable`. Uninstalling with `discobox admin uninstall`
+removes the managed Includes.
+
 ## Take the tour
 
 Start the guided tour from your host:

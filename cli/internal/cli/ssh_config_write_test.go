@@ -21,6 +21,7 @@ func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, st
 	state = t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := fake.start(t)
 	cmd := NewRootCommand()
@@ -177,6 +178,7 @@ func TestSSHConfigWriteClearsANameKeyedStanza(t *testing.T) {
 
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 	server := writeFakeServer().start(t)
 	cmd := NewRootCommand()
 	cmd.SetOut(new(strings.Builder))
@@ -263,6 +265,7 @@ func TestSSHConfigWritePreservesAndPrecedesExistingConfig(t *testing.T) {
 	state := t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -321,6 +324,7 @@ func TestSSHConfigWriteEmptiesTheConfigWhenTheProjectDoes(t *testing.T) {
 	state := t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 	// First a run with a sandbox, so there are stanzas to be replaced.
 	populated := writeFakeServer()
 	server := populated.start(t)
@@ -370,6 +374,7 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 	state := t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	// Independent servers reuse both project and sandbox IDs.
 	first := writeFakeServer()
@@ -441,6 +446,7 @@ func TestSSHConfigWriteDropsAnIncludeFromAnOldStateDirectory(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	// What a previous version left: its own Include, plus one of the user's
 	// own that has nothing to do with us.
@@ -492,6 +498,7 @@ func TestSSHConfigWriteKeepsAnotherInstallsInclude(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	otherState := filepath.Join(t.TempDir(), "other-install")
 	other := filepath.Join(otherState, "discobox", "cli", "ssh", "proj_other000000001", "config")
@@ -546,6 +553,7 @@ func TestSSHConfigWriteTwoInstallsKeepEachOthersIncludes(t *testing.T) {
 	write := func(state string) string {
 		t.Helper()
 		t.Setenv("XDG_STATE_HOME", state)
+		enableSSHIncludesForTest(t)
 		cmd := NewRootCommand()
 		var errOut strings.Builder
 		cmd.SetOut(&strings.Builder{})
@@ -600,6 +608,7 @@ func TestSSHConfigWriteKeepsOtherProjectsIncludes(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	other := filepath.Join(state, "discobox", "cli", "ssh", "proj_other000000001", "config")
 	userConfig := filepath.Join(home, ".ssh", "config")
@@ -661,6 +670,7 @@ func TestSSHConfigWriteIncludesAPathWithAPercentSign(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "100% state")
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := writeFakeServer().start(t)
 	for range 2 {
@@ -692,6 +702,7 @@ func TestSSHConfigWriteRepairsAnUnescapedInclude(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "100% state")
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := writeFakeServer().start(t)
 	configPath := filepath.Join(state, "discobox", "cli", "ssh", sshConfigNamespace(server.URL, resolvedTestProjectID), "config")
@@ -830,6 +841,7 @@ func TestSSHConfigWriteWaitsForAnotherInstallsWrite(t *testing.T) {
 
 	// Install B writes meanwhile.
 	t.Setenv("XDG_STATE_HOME", stateB)
+	enableSSHIncludesForTest(t)
 	server := writeFakeServer().start(t)
 	cmd := NewRootCommand()
 	cmd.SetOut(&strings.Builder{})

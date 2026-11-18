@@ -481,7 +481,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// same step in the same words. The line comes down before either of the two
 	// things that follow — printing the discobox, or attaching to it.
 	status.set("syncing SSH config")
-	err = a.syncSSHConfigAfterCreate(cmd.Context(), client, projectID, notes)
+	err = a.syncSSHConfigAfterCreate(cmd.Context(), client, projectID, inlineSSHIncludePrompt(cmd, status), notes)
 	status.clear()
 	if err != nil {
 		return err

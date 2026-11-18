@@ -3595,8 +3595,8 @@ the server's known_hosts line, suitable for `discobox admin ssh-config >> ~/.ssh
 or an ssh_config Include directive.
 
 With --write, the stanzas and the server's host key are written to files this
-command owns and rewrites, and ~/.ssh/config gains a single Include line pointing
-at them. Nothing else in ~/.ssh is edited; a lock file beside it,
+command owns and rewrites. If SSH Includes are enabled, ~/.ssh/config gains an
+Include line pointing at them. A lock file beside it,
 .discobox-ssh-config.lock, keeps another install of Discobox from editing
 ~/.ssh/config at the same moment.
 
@@ -3628,6 +3628,44 @@ discobox admin ssh-config [flags]
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 | --write, -w | bool | false | Write the config where ssh will find it, instead of printing it Value when passed without an argument: true. |
+
+## discobox admin ssh-config disable
+
+~~~~text
+Remove Discobox Includes and keep them disabled
+~~~~
+
+```text
+discobox admin ssh-config disable [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for disable Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox admin ssh-config enable
+
+~~~~text
+Enable SSH Includes and refresh them from the configured servers
+~~~~
+
+```text
+discobox admin ssh-config enable [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for enable Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox admin ssh-key
 

@@ -3613,6 +3613,17 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 		var taken bool
 		deliveryRequest := req
 		deliveryRequest.Credentials = feed.credentials()
+		deliveryRequest.ConfirmSSHInclude = func(ctx context.Context) (bool, error) {
+			return feed.confirm(ctx, narrationQuestion{
+				title: "Enable SSH aliases?",
+				body:  "Add Discobox Include lines to your SSH config (~/.ssh/config and Windows SSH config under WSL)?",
+				choices: []action{
+					{key: "no", label: "No", enabled: true},
+					{key: "yes", label: "Yes", enabled: true},
+				},
+				yes: "yes",
+			})
+		}
 		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func(box Sandbox) {
 			taken = true
 			select {

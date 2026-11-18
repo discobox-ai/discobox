@@ -229,7 +229,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	}
 
 	windowsState := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local", "discobox", "cli", "ssh")
-	config := readFile(t, filepath.Join(windowsState, sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config"))
+	config := readFile(t, filepath.Join(windowsState, wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)), "config"))
 	for _, want := range []string{
 		// Windows ssh.exe cannot run a Linux binary: the ProxyCommand
 		// re-enters the distribution and runs it there, quoted for the shell
@@ -238,8 +238,8 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 		` admin ssh-proxy"` + "\n",
 		// Every file the config names is named the way Windows spells it, and
 		// quoted because the profile has a space in it.
-		`    IdentityFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\id_ed25519"` + "\n",
-		`    UserKnownHostsFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + sshConfigNamespace(sshFixture.url, resolvedTestProjectID) + `\known_hosts"` + "\n",
+		`    IdentityFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + wslTestArtifact("id_ed25519") + `"` + "\n",
+		`    UserKnownHostsFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)) + `\known_hosts"` + "\n",
 		"Host sbx_devbox00000001 ",
 	} {
 		if !strings.Contains(config, want) {
@@ -250,7 +250,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	// The key is on the Windows side too, because ssh.exe opens it itself --
 	// and narrowed to the three principals ssh reads a private key for, since
 	// what it would inherit is not among them (ADR 0078 §2, ADR 0102).
-	if _, err := os.Stat(filepath.Join(windowsState, "id_ed25519")); err != nil {
+	if _, err := os.Stat(filepath.Join(windowsState, wslTestArtifact("id_ed25519"))); err != nil {
 		t.Fatalf("the identity was not mirrored for Windows: %v", err)
 	}
 	acl := readFile(t, aclLog(windowsToolsDir(root)))
@@ -260,7 +260,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 
 	// The Include goes in the Windows user's ssh_config, quoted.
 	userConfig := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", ".ssh", "config"))
-	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + sshConfigNamespace(sshFixture.url, resolvedTestProjectID) + `\config"` + "\n"; userConfig != want {
+	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)) + `\config"` + "\n"; userConfig != want {
 		t.Fatalf("Windows ssh_config = %q, want %q", userConfig, want)
 	}
 	// And this distribution's own ssh is configured too: the machine has two,
@@ -299,7 +299,7 @@ func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
 		t.Fatalf("the local ssh_config does not include the managed one: %q", got)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config")
+		"discobox", "cli", "ssh", wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)), "config")
 	if _, err := os.Stat(windowsConfig); err != nil {
 		t.Fatalf("the Windows config was not written for a Linux editor: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestToolsVSCodeOnWSLWithoutTheWindowsPATH(t *testing.T) {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config")
+		"discobox", "cli", "ssh", wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)), "config")
 	if _, err := os.Stat(windowsConfig); err != nil {
 		t.Fatalf("the Windows config was not written: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestToolsVSCodeOnWSLReportsTheWindowsSideForALinuxEditor(t *testing.T) {
 		t.Fatalf("the local ssh_config does not include the managed one: %q", got)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config")
+		"discobox", "cli", "ssh", wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)), "config")
 	if _, err := os.Stat(windowsConfig); err == nil {
 		t.Fatal("a config was written for a key ssh will not read")
 	}
@@ -386,6 +386,7 @@ func TestSSHConfigWriteOnWSLReportsTheWindowsSide(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := writeFakeServer().start(t)
 	cmd := NewRootCommand()
@@ -422,6 +423,7 @@ func TestSSHConfigWriteOnWSLWritesBothSides(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := writeFakeServer().start(t)
 	cmd := NewRootCommand()
@@ -438,7 +440,7 @@ func TestSSHConfigWriteOnWSLWritesBothSides(t *testing.T) {
 		t.Fatalf("this distribution's config re-enters WSL to reach itself:\n%s", got)
 	}
 	windows := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", sshConfigNamespace(server.URL, resolvedTestProjectID), "config"))
+		"discobox", "cli", "ssh", wslTestArtifact(sshConfigNamespace(server.URL, resolvedTestProjectID)), "config"))
 	if !strings.Contains(windows, `ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`) {
 		t.Fatalf("the Windows config does not re-enter the distribution:\n%s", windows)
 	}
@@ -488,7 +490,7 @@ func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	}
 
 	config := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config"))
+		"discobox", "cli", "ssh", wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)), "config"))
 	if !strings.Contains(config, `    ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`) {
 		t.Fatalf("the Windows config does not re-enter the distribution:\n%s", config)
 	}
@@ -515,6 +517,7 @@ func TestSSHConfigOnWSLNarrowsEveryFileWindowsReads(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 	server := writeFakeServer().start(t)
 
 	write := func() {
@@ -530,7 +533,7 @@ func TestSSHConfigOnWSLNarrowsEveryFileWindowsReads(t *testing.T) {
 	}
 
 	write()
-	windowsSSH := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + sshConfigNamespace(server.URL, resolvedTestProjectID)
+	windowsSSH := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + wslTestArtifact(sshConfigNamespace(server.URL, resolvedTestProjectID))
 	acl := readFile(t, aclLog(windowsToolsDir(root)))
 	for _, want := range []string{
 		windowsSSH + `\config`,
@@ -570,6 +573,7 @@ func TestSSHConfigOnWSLRemovesAConfigItCannotNarrow(t *testing.T) {
 	home, state := t.TempDir(), t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
+	enableSSHIncludesForTest(t)
 
 	server := writeFakeServer().start(t)
 	cmd := NewRootCommand()
@@ -586,7 +590,7 @@ func TestSSHConfigOnWSLRemovesAConfigItCannotNarrow(t *testing.T) {
 		}
 	}
 	windowsSSH := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID)
+		"discobox", "cli", "ssh", wslTestArtifact(sshConfigNamespace(server.URL, resolvedTestProjectID)))
 	for _, name := range []string{"config", "known_hosts"} {
 		if _, err := os.Stat(filepath.Join(windowsSSH, name)); !os.IsNotExist(err) {
 			t.Fatalf("%s was left behind under an ACL ssh refuses: %v", name, err)
@@ -602,5 +606,76 @@ func TestSSHConfigOnWSLRemovesAConfigItCannotNarrow(t *testing.T) {
 	local, _ := managedPaths(t, state)
 	if _, err := os.Stat(local); err != nil {
 		t.Fatalf("this distribution's config was not written: %v", err)
+	}
+}
+
+func wslTestArtifact(base string) string {
+	return base + (sshTarget{wslDistro: "Ubuntu"}).wslArtifactSuffix()
+}
+
+func TestSSHIncludesOnWSLKeepAnotherInstallConfig(t *testing.T) {
+	root, _ := fakeWSLMachine(t)
+	useTempSSHMachine(t)
+	server := writeFakeServer().start(t)
+	target, err := windowsSSHTarget(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespace := sshConfigNamespace(server.URL, resolvedTestProjectID)
+	native := target.configPath(namespace)
+	const originalNative = "# Generated by `discobox admin ssh-config --write` for project native\n\nHost native\n"
+	mustWriteFile(t, native.local, originalNative)
+	originalWindows := "Include " + sshConfigPath(native.client) + "\r\n\r\nHost mine\r\n"
+	mustWriteFile(t, target.userConfig.local, originalWindows)
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := NewRootCommand()
+		cmd.SetIn(strings.NewReader(""))
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config"}, args...))
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("ssh-config %v: %v", args, err)
+		}
+	}
+	run("--write")
+	if got := readFile(t, target.userConfig.local); got != originalWindows {
+		t.Fatalf("sync without consent changed Windows SSH config: %q", got)
+	}
+	if got := readFile(t, native.local); got != originalNative {
+		t.Fatalf("WSL sync overwrote native config: %q", got)
+	}
+	local, err := localSSHTarget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Dir(local.userConfig.local)); !os.IsNotExist(err) {
+		t.Fatalf("sync without consent created the WSL SSH directory: %v", err)
+	}
+
+	run("enable")
+	mirror := target.configPath(wslTestArtifact(namespace))
+	if got := readFile(t, target.userConfig.local); got != "Include "+sshConfigPath(mirror.client)+"\n"+originalWindows {
+		t.Fatalf("enable did not add only the WSL Include: %q", got)
+	}
+	mirrorData := readFile(t, mirror.local)
+	if err := os.Remove(mirror.local); err != nil {
+		t.Fatal(err)
+	}
+	run("disable")
+	if got := readFile(t, target.userConfig.local); got != originalWindows {
+		t.Fatalf("disable did not restore Windows SSH config: %q", got)
+	}
+
+	mustWriteFile(t, mirror.local, mirrorData)
+	run("enable")
+	edit := (&App{}).planUninstall(t.Context())
+	var found bool
+	for _, config := range edit.ssh {
+		if config.target.acrossWSL() {
+			found = len(config.removed) == 1 && config.removed[0] == "Include "+sshConfigPath(mirror.client)
+		}
+	}
+	if !found {
+		t.Fatalf("uninstall did not list the WSL Include: %+v (Windows root %s)", edit.ssh, root)
 	}
 }

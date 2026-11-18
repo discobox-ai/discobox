@@ -237,7 +237,7 @@ func (l hostToolLaunch) run(ctx context.Context, cliEnv []string, remote tools.R
 // runHostTool hands one discobox to a host tool: the program is found, the
 // project's managed ssh_config refreshed for every ssh it might use, and the
 // tool run with the discobox's host and working tree.
-func (a *App) runHostTool(ctx context.Context, def tools.Definition, target toolTarget, named string, args []string, stdin io.Reader, stdout, stderr io.Writer, notes noteFunc) error {
+func (a *App) runHostTool(ctx context.Context, def tools.Definition, target toolTarget, named string, args []string, stdin io.Reader, stdout, stderr io.Writer, prompt sshIncludePrompt, notes noteFunc) error {
 	launch, err := resolveHostTool(ctx, def, named)
 	if err != nil {
 		return err
@@ -246,7 +246,7 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 	if err != nil {
 		return err
 	}
-	remote, err := target.app.sandboxSSHRemote(ctx, targets, target.client, target.projectID, target.sandboxID, target.source, notes)
+	remote, err := target.app.sandboxSSHRemote(ctx, targets, target.client, target.projectID, target.sandboxID, target.source, prompt, notes)
 	if err != nil {
 		return err
 	}

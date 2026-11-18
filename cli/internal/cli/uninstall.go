@@ -93,11 +93,11 @@ type uninstallPlan struct {
 	servers []uninstallServer
 	entries []uninstallEntry
 	kept    []uninstallKept
-	ssh     uninstallSSHConfig
+	ssh     []uninstallSSHConfig
 }
 
 func (p uninstallPlan) empty() bool {
-	return len(p.servers) == 0 && len(p.entries) == 0 && len(p.ssh.removed) == 0
+	return len(p.servers) == 0 && len(p.entries) == 0 && len(p.ssh) == 0
 }
 
 func (a *App) newUninstallCommand() *cobra.Command {
@@ -185,11 +185,11 @@ func (a *App) uninstall(cmd *cobra.Command) error {
 	}
 
 	var errs []error
-	if len(plan.ssh.removed) > 0 {
-		if removed, err := removeUninstalledSSHIncludes(ctx, plan.ssh); err != nil {
+	for _, edit := range plan.ssh {
+		if removed, err := removeSSHIncludes(ctx, edit); err != nil {
 			errs = append(errs, err)
 		} else if removed > 0 {
-			fmt.Fprintf(out, "Removed %s from %s\n", plural(removed, "Include line", "Include lines"), plan.ssh.target.userConfig.local)
+			fmt.Fprintf(out, "Removed %s from %s\n", plural(removed, "Include line", "Include lines"), edit.target.userConfig.local)
 		}
 	}
 	for _, entry := range plan.entries {
@@ -215,14 +215,28 @@ func (a *App) planUninstall(ctx context.Context) uninstallPlan {
 	var plan uninstallPlan
 	plan.servers = a.answeringLocalServers(ctx)
 	plan.entries, plan.kept = uninstallEntries(uninstallLocations(), runningExecutables(), protectedDirs())
-	// No home directory is no ssh_config to have written an Include into.
-	if target, err := localSSHTarget(); err == nil {
-		ssh, err := uninstallSSHIncludes(target, plan.entries)
+	targets, err := machineSSHTargets(ctx)
+	if err != nil {
+		return plan
+	}
+	if targets.windowsErr != nil {
+		plan.kept = append(plan.kept, uninstallKept{path: "Windows SSH config", what: "discobox Include lines", reason: targets.windowsErr.Error()})
+	}
+	for _, target := range targets.all {
+		edit, err := target.findSSHIncludes(func(path string) bool {
+			if target.acrossWSL() {
+				return target.ownsInclude(path)
+			}
+			return uninstallRemoves(plan.entries, path)
+		})
 		if err != nil {
 			plan.kept = append(plan.kept, uninstallKept{path: target.userConfig.local, what: "discobox Include lines", reason: err.Error()})
 		}
-		plan.ssh = ssh
+		if len(edit.removed) > 0 {
+			plan.ssh = append(plan.ssh, edit)
+		}
 	}
+
 	return plan
 }
 
@@ -630,15 +644,7 @@ func stopUninstallServer(ctx context.Context, server uninstallServer) error {
 	return waitForServerShutdown(ctx, server.baseURL, server.client, uninstallServerStopTimeout)
 }
 
-// uninstallSSHIncludes finds the Include lines this CLI added to this
-// machine's ssh_config that name a file the uninstall removes, or one already
-// gone. An Include of a config that is still there — under a location that is
-// kept — still works, and stays.
-//
-// Only this machine's ssh. On WSL the Windows side has an ssh_config of its
-// own, and its files sit beside a Windows install's state, which an uninstall
-// from inside a distribution has no business deciding about.
-func uninstallSSHIncludes(target sshTarget, entries []uninstallEntry) (uninstallSSHConfig, error) {
+func (target sshTarget) findSSHIncludes(owned func(string) bool) (uninstallSSHConfig, error) {
 	edit := uninstallSSHConfig{target: target}
 	existing, err := os.ReadFile(target.userConfig.local)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -650,12 +656,12 @@ func uninstallSSHIncludes(target sshTarget, entries []uninstallEntry) (uninstall
 	_, edit.removed = cutSSHConfigLines(string(existing), func(line string) bool {
 		field, ok := target.includeField(line)
 		path := target.clean(unescapeSSHPercent(field))
-		return ok && target.isManagedConfigPath(path) && uninstallRemoves(entries, path)
+		return ok && target.isManagedConfigPath(path) && owned(path)
 	})
 	return edit, nil
 }
 
-// removeUninstalledSSHIncludes removes the Include lines the plan listed,
+// removeSSHIncludes removes the Include lines the plan listed,
 // reporting how many it removed. It reads the file again under the target's
 // lockUserConfig rather than writing back the copy the plan read, since that
 // was read before the user answered and another install's write since would be
@@ -663,7 +669,7 @@ func uninstallSSHIncludes(target sshTarget, entries []uninstallEntry) (uninstall
 // and no others, since what the plan lists is exactly what is removed: a line
 // added meanwhile is kept even when it names a file this run deletes, which
 // costs nothing, as ssh passes over an Include of a missing file.
-func removeUninstalledSSHIncludes(ctx context.Context, edit uninstallSSHConfig) (int, error) {
+func removeSSHIncludes(ctx context.Context, edit uninstallSSHConfig) (int, error) {
 	target := edit.target
 	release, err := target.lockUserConfig()
 	if err != nil {
@@ -693,16 +699,14 @@ func removeUninstalledSSHIncludes(ctx context.Context, edit uninstallSSHConfig) 
 // config without them and the lines removed, trimmed.
 func cutSSHConfigLines(config string, cut func(line string) bool) (string, []string) {
 	var kept, removed []string
-	for _, line := range strings.Split(config, "\n") {
+	for _, line := range strings.SplitAfter(config, "\n") {
 		if cut(line) {
 			removed = append(removed, strings.TrimSpace(line))
 			continue
 		}
 		kept = append(kept, line)
 	}
-	// The Include was written at the top with a blank line after it, and the
-	// blank would otherwise be what the file now starts with.
-	return strings.TrimLeft(collapseBlankRuns(strings.Join(kept, "\n")), "\n"), removed
+	return strings.Join(kept, ""), removed
 }
 
 // uninstallRemoves reports whether path will be gone once the uninstall has
@@ -731,9 +735,9 @@ func writeUninstallPlan(out io.Writer, plan uninstallPlan) {
 			fmt.Fprintf(out, "      %s\n", strings.Join(entry.what, "; "))
 		}
 	}
-	if len(plan.ssh.removed) > 0 {
-		fmt.Fprintf(out, "\n  %s from %s\n", plural(len(plan.ssh.removed), "Include line", "Include lines"), plan.ssh.target.userConfig.local)
-		for _, line := range plan.ssh.removed {
+	for _, edit := range plan.ssh {
+		fmt.Fprintf(out, "\n  %s from %s\n", plural(len(edit.removed), "Include line", "Include lines"), edit.target.userConfig.local)
+		for _, line := range edit.removed {
 			fmt.Fprintf(out, "      %s\n", line)
 		}
 	}

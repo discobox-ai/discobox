@@ -1241,6 +1241,7 @@ func managedSSHConfigs(t *testing.T, state string) map[string]string {
 func TestSSHConfigWritesEveryServer(t *testing.T) {
 	useTempServersFile(t)
 	state := useTempSSHMachine(t)
+	enableSSHIncludesForTest(t)
 	primary := fakeServer(t, "alpha", sandboxA)
 	other := fakeServer(t, "beta", sandboxB)
 	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
@@ -1873,5 +1874,31 @@ func TestAddressedServerMatchesByEndpointAndPeerID(t *testing.T) {
 	}
 	if name, known, _ := ds.AddressedServer(context.Background(), "discobox+http://"+strings.TrimPrefix(primary.URL, "http://")); name != "" || !known {
 		t.Errorf("AddressedServer(the only server) = %q, %v, want it known and unnamed", name, known)
+	}
+}
+
+func TestServersAddWithoutTTYLeavesUserSSHConfigUnchanged(t *testing.T) {
+	useTempServersFile(t)
+	useTempSSHMachine(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(home, ".ssh", "config")
+	const original = "Host personal\n    User me\n"
+	mustWriteFile(t, config, original)
+
+	primary := fakeServer(t, "alpha")
+	other := fakeServer(t, "beta", sandboxB)
+	cmd := NewRootCommand()
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	cmd.SetArgs([]string{"--server", primary.URL, "admin", "remote", "add", other.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("remote add: %v", err)
+	}
+	if got := readFile(t, config); got != original {
+		t.Fatalf("remote add without consent changed ssh config from %q to %q", original, got)
 	}
 }

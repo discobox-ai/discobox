@@ -1338,7 +1338,13 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 			report(fmt.Sprintf(format, args...))
 		}
 	})
-	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, projectID, notes); err != nil {
+	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, projectID, func(ctx context.Context) (sshIncludePreference, error) {
+		if req.ConfirmSSHInclude == nil {
+			return "", nil
+		}
+		yes, err := req.ConfirmSSHInclude(ctx)
+		return sshIncludeAnswer(yes), err
+	}, notes); err != nil {
 		return made, err
 	}
 	return made, nil
@@ -1570,7 +1576,7 @@ func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Ad
 		return tui.Addresses{}, err
 	}
 	silent := noteFunc(func(string, ...any) {})
-	remote, err := d.app.sandboxSSHRemote(ctx, targets.all, d.client, d.projectID, sandboxID, "", silent)
+	remote, err := d.app.sandboxSSHRemote(ctx, targets.all, d.client, d.projectID, sandboxID, "", nil, silent)
 	if err != nil {
 		return tui.Addresses{}, err
 	}
@@ -1628,7 +1634,7 @@ func (d *apiDataSource) RunHostTool(ctx context.Context, sandboxID, toolID strin
 	}
 	target := toolTarget{app: d.app, client: d.client, projectID: d.projectID, sandboxID: sandboxID}
 	silent := noteFunc(func(string, ...any) {})
-	return d.app.runHostTool(ctx, def, target, "", nil, strings.NewReader(""), io.Discard, io.Discard, silent)
+	return d.app.runHostTool(ctx, def, target, "", nil, strings.NewReader(""), io.Discard, io.Discard, nil, silent)
 }
 
 func tuiCredentialDeliveryOptions(ctx context.Context, ui tui.CredentialUI) sandboxcreate.DeliveryOptions {

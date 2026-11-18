@@ -231,7 +231,7 @@ func (a *App) addServer(cmd *cobra.Command, address, name string) error {
 	// `discobox admin ssh-config --write` is the way to try again.
 	notes := printedNotes(cmd.ErrOrStderr())
 	registered := &server{name: name, address: address, registered: true, app: a.forServer(address)}
-	if err := registered.writeSSHConfig(ctx, "", notes); err != nil {
+	if err := registered.writeSSHConfig(ctx, "", inlineSSHIncludePrompt(cmd, nil), notes); err != nil {
 		notes("could not sync the SSH config for %s: %v", name, err)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), name)
