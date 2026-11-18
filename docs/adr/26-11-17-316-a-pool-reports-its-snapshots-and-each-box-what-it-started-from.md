@@ -1,9 +1,12 @@
 # 26-11-17-316 — A pool reports its snapshots, and each box what it started from
 
-- **Status**: Proposed (would narrow [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+- **Status**: Accepted (narrows [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §8's "the control plane never knows which a box started from": the control
   plane is told, and still decides nothing from it)
 - **Date**: 2026-11-17
+
+  Accepted by the owner by merging #1313, 2026-11-18.
+
 - **Issue**: [#339](https://github.com/discobox-ai/discobox/issues/339)
 - **Relates to**: [26-11-03-986](26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md),
   whose builds, done records and failures this reports;
