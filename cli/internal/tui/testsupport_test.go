@@ -307,7 +307,7 @@ type fakeSource struct {
 	merges   []string
 	mergeErr error
 
-	// forward is what the workspace's port forward reports, and forwardErr
+	// forward is the port forward opened last, and forwardErr
 	// fails opening one. forwards counts the ones opened and closed, so a test
 	// can hold the window to the rule that a workspace releases its ports.
 	forward       *fakeForward
@@ -498,13 +498,6 @@ func (f *fakeSource) savedDrafts() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.drafts...)
-}
-
-// forwardsAskedFor is the discobox of every forward asked for so far.
-func (f *fakeSource) forwardsAskedFor() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.forwardIDs...)
 }
 
 // SaveView records the filters the window handed the store, in order.
@@ -907,11 +900,9 @@ func (f *fakeSource) Forward(_ context.Context, id string) (Forward, error) {
 	}
 	f.forwardsOpen++
 	f.forwardIDs = append(f.forwardIDs, id)
-	// A forward closed is gone: the next one asked for is a new one, as the
-	// real data source's is.
-	if f.forward == nil || f.forward.isClosed() {
-		f.forward = newFakeForward()
-	}
+	// Every forward asked for is a new one, as the real data source's is: a
+	// parked box keeps its own while the box on screen holds another.
+	f.forward = newFakeForward()
 	f.forward.source = f
 	return f.forward, nil
 }

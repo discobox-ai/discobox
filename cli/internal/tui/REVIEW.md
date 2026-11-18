@@ -210,6 +210,16 @@
   on screen after a switch. What is the screen's alone — the generation, the
   opens in flight, the audit — is ended in `endLiveScreen`, the one teardown
   closing and parking share.
+- **What the attach holds is never torn down in `parkWorkspace`.** The push
+  loop (`pushGen`) and the port forward belong to the attach, not the screen:
+  a parked box still pushes, and its local ports still answer. The forward
+  ends only in `closeStreams` (detach, quit, the box's session ending); the
+  push loop ends when its workspace leaves the window (`pushLoop` finds it
+  neither on screen nor in `m.parked`). A wait on one
+  of them is keyed by what it waits on, not by `wsGen`, or the park's new
+  generation drops its next wake — `forwardChanged` re-arms a parked
+  forward's wait. Parking once closed the forward, and a page open on a
+  forwarded port stopped answering while another box was on screen.
 - **The busy line is the screen's to end only when the screen owns it.** A
   create's narration is the window's: it keeps reporting into the workspace
   the create goes to (`watchCreate`), so `endLiveScreen` leaves it running

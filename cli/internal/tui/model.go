@@ -1481,12 +1481,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.workspaceForward(msg)
 
 	case workspaceForwardChangedMsg:
-		// Nothing to apply: the header reads the forward itself. This is the
-		// redraw, and re-arming the wait is what keeps it coming.
-		if msg.gen != m.wsGen || m.forward == nil {
-			return nil
-		}
-		return m.forwardEvents(msg.gen, m.forward)
+		return m.forwardChanged(msg)
 
 	case paneMsg:
 		// Addressed to the pane it came from, which may exist before the

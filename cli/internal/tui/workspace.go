@@ -98,8 +98,8 @@ type workspaceForwardMsg struct {
 }
 
 // workspaceForwardChangedMsg is the forward saying its bindings differ. It
-// carries nothing: the header redraws from the forward itself.
-type workspaceForwardChangedMsg struct{ gen int }
+// carries only which forward: the header redraws from the forward itself.
+type workspaceForwardChangedMsg struct{ forward Forward }
 
 // workspace is one discobox's workspace: what a window holds for it while it
 // is open, and all of what has to survive for it to come back as it was left
@@ -128,9 +128,10 @@ type workspace struct {
 	// listings overlap, so no one answer is proof the kill has landed. See
 	// endPane.
 	ending map[string]bool
-	// forward holds the workspace's port forward while it is on screen: the
-	// local ports standing in for what the discobox is serving, which the
-	// header draws as arrows. A parked workspace has none. See workspace.go.
+	// forward holds the workspace's port forward: the local ports standing in
+	// for what the discobox is serving, which the header draws as arrows. It
+	// lives as long as the attach, parked or not, and closes with the
+	// workspace's streams. See workspace.go.
 	forward Forward
 	// pushHeld is the commit each source's automatic push failed on, keyed by
 	// slug, for as long as the workspace is open. A source is not pushed again
@@ -166,9 +167,9 @@ func (w *workspace) closeStreams() {
 	// listing.
 	w.shells.closeAll()
 	if w.forward != nil {
-		// The local ports go with the screen that opened them. A forward left
-		// running behind a closed workspace is a listener nothing on screen
-		// accounts for.
+		// The local ports go with the attach that opened them. A forward left
+		// running behind a closed workspace is a listener nothing in the
+		// window accounts for.
 		_ = w.forward.Close()
 		w.forward = nil
 	}
@@ -332,13 +333,15 @@ func (m *Model) workspaceForward(msg workspaceForwardMsg) tea.Cmd {
 		return nil
 	}
 	m.forward = msg.forward
-	return m.forwardEvents(msg.gen, msg.forward)
+	return m.forwardEvents(msg.forward)
 }
 
 // forwardEvents waits for the next change to what is bound. Like the panes'
 // connection events it re-arms itself, and like them it stops when the window's
-// context ends or the channel closes.
-func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
+// context ends or the channel closes. It is the forward's wait rather than the
+// screen's: one runs for each forward as long as it is open, parked or on
+// screen (forwardChanged).
+func (m *Model) forwardEvents(forward Forward) tea.Cmd {
 	ctx := m.ctx
 	return listen(func() tea.Msg {
 		select {
@@ -348,9 +351,25 @@ func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
 			if !ok {
 				return nil
 			}
-			return workspaceForwardChangedMsg{gen: gen}
+			return workspaceForwardChangedMsg{forward: forward}
 		}
 	})
+}
+
+// forwardChanged re-arms the wait of a forward the window still holds, on
+// screen or parked. Nothing else needs doing: the header reads the forward
+// itself, and this message is its redraw. A forward the window no longer
+// holds has been closed, and its wait ends here.
+func (m *Model) forwardChanged(msg workspaceForwardChangedMsg) tea.Cmd {
+	if m.forward == msg.forward {
+		return m.forwardEvents(msg.forward)
+	}
+	for _, ws := range m.parked {
+		if ws.forward == msg.forward {
+			return m.forwardEvents(msg.forward)
+		}
+	}
+	return nil
 }
 
 // forwardedPorts is what the header draws its arrows from: the sandbox port a
