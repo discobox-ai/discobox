@@ -253,8 +253,6 @@ type Policy struct {
 const (
 	// MaxPolicyBytes bounds one policy document.
 	MaxPolicyBytes = 64 << 10
-	// MaxRequestPolicies bounds the policies of one request, across its parts.
-	MaxRequestPolicies = 32
 	// MaxPartRoutes bounds the routes one part resolves to.
 	MaxPartRoutes = 512
 	// MaxRequestRouteBytes bounds what a whole request resolves to: the JSON

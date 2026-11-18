@@ -172,10 +172,9 @@ func NewHandler(svc Service) http.Handler {
 
 // MaxBodyBytes bounds a request body. Every body in this protocol is a
 // handful of short strings but one: a credential request may carry policy
-// documents (ADR 26-11-02-022 §2). It bounds the whole body, not each
-// document: MaxRequestPolicies documents of the full MaxPolicyBytes do not
-// fit, so a client refuses a body over it naming this limit, and the
-// service refuses one the same way.
+// documents (ADR 26-11-02-022 §2). The limit includes all policy
+// documents and arguments. The client and service name it when they refuse
+// an oversized body.
 const MaxBodyBytes = 1 << 20
 
 // MaxResponseBytes bounds a response body a client decodes. Every answer but

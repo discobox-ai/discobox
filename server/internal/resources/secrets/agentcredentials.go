@@ -143,10 +143,6 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential name is required")
 	}
-	if count := len(input.Policies) + len(input.Delegate.Or(services.SandboxCredentialRequestDelegate{}).Policies); count > agentcreds.MaxRequestPolicies {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("a request names at most %d policies across its parts, not %d", agentcreds.MaxRequestPolicies, count))
-	}
 	hosts := hostscope.List(input.Hosts...)
 	budget := agentcreds.MaxRequestRouteBytes
 	use, err := requestedPart("use", hosts, input.Routes, input.Policies, &budget)

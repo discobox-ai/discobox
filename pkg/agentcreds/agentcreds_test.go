@@ -169,8 +169,7 @@ func TestRequestRefusesAnUnknownField(t *testing.T) {
 	}
 }
 
-// A request carrying policy documents may be as large as MaxBodyBytes: the
-// limit is what MaxRequestPolicies documents of MaxPolicyBytes need.
+// A request carrying policy documents may be as large as MaxBodyBytes.
 func TestRequestBodyUpToTheLimitIsRead(t *testing.T) {
 	svc := &fakeService{}
 	var policies []agentcreds.Policy
