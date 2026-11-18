@@ -82,6 +82,7 @@ duplicated number.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [26-11-18-571](26-11-18-571-a-server-routes-path-says-who-answers-it-and-nothing-is-under-api.md) | A server route's path says who answers it, and nothing is under `/api` | Accepted |
+| [26-11-18-127](26-11-18-127-pool-artifacts-are-fetched-when-a-pool-needs-them.md) | Pool artifacts are fetched when a pool needs them | Proposed (amends 0113 §§1–2 for automatic staging) |
 | [26-11-18-067](26-11-18-067-a-framed-vz-vsock-connection-half-closes.md) | A framed vz VSOCK connection half-closes | Accepted (supersedes [26-11-17-182](26-11-17-182-a-vz-vsock-connection-is-always-drained-and-the-guest-sends-only-what-the-host-has-granted.md)'s deferral of `CloseWrite`: a framed connection's `CloseWrite` is its stream's half-close, and yamux's stream close timeout is off) |
 | [26-11-18-245](26-11-18-245-credential-requests-bound-bytes-and-routes.md) | Credential requests bound bytes and routes | Proposed (would supersede 26-11-02-022 §2’s policy-count limit) |
 | [26-11-17-503](26-11-17-503-a-stopped-pool-container-that-has-not-drifted-is-started-in-place.md) | A stopped pool container that has not drifted is started in place | Proposed (carries [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §5 to a stopped Docker pool container; uses [26-11-15-294](26-11-15-294-a-report-after-the-reconcile-started-the-pools-agent-is-the-new-agents.md) §1's box-start row) |
