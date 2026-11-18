@@ -124,6 +124,10 @@ reported failure names code you have already fixed, run
 what runs them is the `discobox-hooks` tool from `discobox-ai/hooks`,
 declared in the root `go.mod`.
 
+`go tool task dev:pprof` profiles the running dev server (`DISCOBOX_PPROF_LISTEN=off
+go tool task dev` turns its listener off); see `server/DESIGN.md` "Runtime
+Observability".
+
 Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
 commands here.
 

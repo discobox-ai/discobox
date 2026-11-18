@@ -5,6 +5,11 @@ vars:
   # build carries the transport (ADR 0067), so this applies everywhere;
   # DISCOBOX_DEV_IROH=0 drops it for anyone who wants the socket alone.
   DEV_LISTEN: '{{if ne .DISCOBOX_DEV_IROH "0"}}iroh://{{end}}'
+  # Where `task dev` serves the server's pprof endpoints and writes the token
+  # they require, and so where `task dev:pprof` finds both: named here for both
+  # tasks rather than derived from the server's state directory.
+  DEV_PPROF_LISTEN: 127.0.0.1:18060
+  DEV_PPROF_TOKEN_FILE: '{{.ROOT_DIR}}/.tmp/pprof.token'
   # Windows resolves an extensionless name through PATHEXT, so `discobox` there
   # finds `discobox.exe` first. Without the suffix a build lands beside whatever
   # .exe was left by an earlier one, and the shell keeps running the stale
@@ -549,6 +554,25 @@ tasks:
     cmds:
       - ./{{.CLI_BINARY}} admin server
 
+  dev:pprof:
+    desc: "Profile the running dev server and open it in go tool pprof: a CPU profile of SECONDS (30), or PROFILE=heap|goroutine|allocs|block|mutex|threadcreate (`-- -http=:` opens the web UI)"
+    vars:
+      PROFILE: '{{.PROFILE | default "profile"}}'
+      SECONDS: '{{.SECONDS | default "30"}}'
+      PPROF_LISTEN: '{{.DISCOBOX_PPROF_LISTEN | default .DEV_PPROF_LISTEN}}'
+      TOKEN_FILE: '{{.DISCOBOX_PPROF_TOKEN_FILE | default .DEV_PPROF_TOKEN_FILE}}'
+      OUT: '{{.ROOT_DIR}}/.tmp/pprof/{{.PROFILE}}.pb.gz'
+    preconditions:
+      - sh: test -f "{{.TOKEN_FILE}}"
+        msg: "no pprof token at {{.TOKEN_FILE}}: is `task dev` running, with DISCOBOX_PPROF_LISTEN not off?"
+    cmds:
+      - mkdir -p "{{.ROOT_DIR}}/.tmp/pprof"
+      # Fetched by curl with the token as the basic-auth password, given on
+      # stdin (`-K -`) rather than on a command line every local user can
+      # read, then opened from the file.
+      - printf 'user = "pprof:%s"\n' "$(cat '{{.TOKEN_FILE}}')" | curl -fsS -K - -o "{{.OUT}}" "http://{{.PPROF_LISTEN}}/debug/pprof/{{.PROFILE}}{{if eq .PROFILE "profile"}}?seconds={{.SECONDS}}{{end}}"
+      - go tool pprof {{.CLI_ARGS}} "{{.OUT}}"
+
   dev:server:
     desc: Run discobox-server with watchnbuild hot reload on the local socket
     deps:
@@ -564,7 +588,8 @@ tasks:
       # no --server and no port to look up, and the dev loop exercises the
       # transport users actually get.
       #
-      # No TCP endpoint. It is opt-in everywhere else because it is a
+      # No TCP endpoint for the API (the pprof listener below is not one). It
+      # is opt-in everywhere else because it is a
       # machine-wide surface — and on Windows a firewall prompt (server/DESIGN.md
       # "Listen Endpoints") — and defaulting it here made the one configuration
       # nobody ships the only one anybody develops against. Ask for it when a
@@ -593,6 +618,17 @@ tasks:
       # --archive-retention 24h`), or for the whole server on the command line:
       #     DISCOBOX_ARCHIVE_RETENTION=24h go tool task dev
       DISCOBOX_ARCHIVE_RETENTION: '{{.DISCOBOX_ARCHIVE_RETENTION | default "15m"}}'
+      # Serve Go's pprof endpoints on loopback, behind the token written to
+      # DEV_PPROF_TOKEN_FILE, so a dev server burning CPU can be profiled
+      # where it runs (`go tool task dev:pprof`) rather than restarted under a
+      # debugger (server/DESIGN.md "Runtime Observability"). A fixed port, so
+      # it stays put across hot reloads, and not Go's customary 6060, which
+      # other programs take. The server will not start while something else
+      # holds it: name another, or `off` (an empty value reads as unset here):
+      #     DISCOBOX_PPROF_LISTEN=127.0.0.1:18061 go tool task dev
+      #     DISCOBOX_PPROF_LISTEN=off go tool task dev
+      DISCOBOX_PPROF_LISTEN: '{{.DISCOBOX_PPROF_LISTEN | default .DEV_PPROF_LISTEN}}'
+      DISCOBOX_PPROF_TOKEN_FILE: '{{.DISCOBOX_PPROF_TOKEN_FILE | default .DEV_PPROF_TOKEN_FILE}}'
     cmds:
       - touch .env
       # Through discobox-dev-lock, so a second `task dev` in this checkout says

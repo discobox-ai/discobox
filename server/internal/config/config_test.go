@@ -327,6 +327,8 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_SERVER",
 		"DISCOBOX_SERVER_LISTEN",
 		"DISCOBOX_SERVER_NAME",
+		"DISCOBOX_PPROF_LISTEN",
+		"DISCOBOX_PPROF_TOKEN_FILE",
 		"DISCOBOX_RELEASE_MANIFEST",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_CONFIG_DIR",
@@ -445,5 +447,102 @@ func TestLoadNameDefaultsToTheHostname(t *testing.T) {
 	}
 	if cfg.Name != "workstation" {
 		t.Fatalf("Name = %q, want %q", cfg.Name, "workstation")
+	}
+}
+
+// Profiling is opt-in and loopback-only: unset or off opens nothing, a
+// loopback address is kept as written, and anything another machine could
+// reach is refused at load rather than bound.
+func TestLoadPprofListen(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  string
+		ok    bool
+	}{
+		{value: "", want: "", ok: true},
+		{value: "off", want: "", ok: true},
+		{value: " OFF ", want: "", ok: true},
+		{value: "127.0.0.1:6060", want: "127.0.0.1:6060", ok: true},
+		{value: "127.0.0.2:6060", want: "127.0.0.2:6060", ok: true},
+		{value: "[::1]:6060", want: "[::1]:6060", ok: true},
+		{value: "localhost:6060", want: "localhost:6060", ok: true},
+		{value: "127.0.0.1:0", want: "127.0.0.1:0", ok: true},
+		{value: ":6060"},
+		{value: "0.0.0.0:6060"},
+		{value: "[::]:6060"},
+		{value: "192.168.1.10:6060"},
+		{value: "example.com:6060"},
+		{value: "127.0.0.1"},
+		{value: "127.0.0.1:"},
+		{value: "127.0.0.1:http"},
+		{value: "127.0.0.1:70000"},
+		{value: "http://127.0.0.1:6060"},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			clearConfigEnv(t)
+			if tc.value != "" {
+				t.Setenv("DISCOBOX_PPROF_LISTEN", tc.value)
+			}
+			cfg, err := Load()
+			if !tc.ok {
+				if err == nil {
+					t.Fatalf("Load() accepted DISCOBOX_PPROF_LISTEN=%q as %q", tc.value, cfg.PprofListen)
+				}
+				if !strings.Contains(err.Error(), "pprofListen") {
+					t.Fatalf("Load() error = %v, want it to name pprofListen", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.PprofListen != tc.want {
+				t.Fatalf("PprofListen = %q, want %q", cfg.PprofListen, tc.want)
+			}
+		})
+	}
+}
+
+// The token file defaults into the state directory, follows it when it moves,
+// and can be named outright. Named empty, it takes the default rather than
+// leaving the token nowhere to go.
+func TestLoadPprofTokenFile(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DISCOBOX_STATE_DIR", "/tmp/discobox/state")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if want := filepath.Join("/tmp/discobox/state", PprofTokenFileName); cfg.PprofTokenFile != want {
+		t.Fatalf("PprofTokenFile = %q, want %q", cfg.PprofTokenFile, want)
+	}
+
+	clearConfigEnv(t)
+	t.Setenv("DISCOBOX_PPROF_TOKEN_FILE", "/tmp/elsewhere/pprof.token")
+	if cfg, err = Load(); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.PprofTokenFile != "/tmp/elsewhere/pprof.token" {
+		t.Fatalf("PprofTokenFile = %q, want the configured file", cfg.PprofTokenFile)
+	}
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "server.yaml")
+	if err := os.WriteFile(file, []byte("stateDir: /tmp/discobox/state\npprofTokenFile: \"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, setEmpty := range []func(){
+		func() { t.Setenv("DISCOBOX_PPROF_TOKEN_FILE", " ") },
+		func() { t.Setenv(ConfigFileVar, file) },
+	} {
+		clearConfigEnv(t)
+		t.Setenv("DISCOBOX_STATE_DIR", "/tmp/discobox/state")
+		setEmpty()
+		if cfg, err = Load(); err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if want := filepath.Join("/tmp/discobox/state", PprofTokenFileName); cfg.PprofTokenFile != want {
+			t.Fatalf("PprofTokenFile = %q, want the default %q when written empty", cfg.PprofTokenFile, want)
+		}
 	}
 }
