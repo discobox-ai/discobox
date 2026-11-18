@@ -21,6 +21,8 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
+	"github.com/discobox-ai/discobox/pkg/wire"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -1037,5 +1039,7 @@ func (d *Driver) PoolOutbound(ctx context.Context, poolID string, want pooloutbo
 		return pooloutbound.Delivery{}, err
 	}
 	defer lease.Release()
-	return dockerworker.VMOutbound(ctx, lease.Client, guest.outbound, want)
+	return dockerworker.VMOutbound(ctx, lease.Client, guest.outbound, want, func(port uint32) string {
+		return wire.VSOCKURL(guestvsock.HostCID, port)
+	})
 }

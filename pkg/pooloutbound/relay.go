@@ -90,8 +90,13 @@ func splice(ctx context.Context, a, b net.Conn, source io.Reader) {
 
 // RelaySettings contains addresses only; credentials and trust are placed
 // separately in the consuming host/container's private configuration.
+//
+// HTTP and HTTPS are the URLs the relay dials to reach the host's forwarder
+// for each (HTTPPort, HTTPSPort), read by pkg/wire, so the driver that renders
+// them decides the transport: plain vsock:// for libkrun, vsock+yamux:// for
+// vz (ADR 26-11-17-182). Empty means that forwarder is off.
 type RelaySettings struct {
-	HTTP   bool   `json:"http"`
-	HTTPS  bool   `json:"https"`
+	HTTP   string `json:"http"`
+	HTTPS  string `json:"https"`
 	Bridge string `json:"bridge"`
 }

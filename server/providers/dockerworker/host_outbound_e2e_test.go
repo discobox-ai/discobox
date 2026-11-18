@@ -18,6 +18,8 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+	"github.com/discobox-ai/discobox/pkg/vsock"
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	relay "github.com/discobox-ai/discobox/server/providers/guestrelay"
 )
@@ -72,7 +74,11 @@ func TestHostOutboundRetriesFailedRevisionE2E(t *testing.T) {
 	}
 	var resolved pooloutbound.Resolved
 	read(pooloutbound.RuntimeFile, &resolved)
-	delivery, err := VMOutbound(ctx, cli, resolved, resolved)
+	// The relay's upstream is not what this checks; it is rendered plain, as
+	// libkrun renders it.
+	delivery, err := VMOutbound(ctx, cli, resolved, resolved, func(port uint32) string {
+		return wire.VSOCKURL(vsock.HostCID, port)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

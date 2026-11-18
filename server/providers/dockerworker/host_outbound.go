@@ -39,7 +39,11 @@ const hostOutboundProgramName = "host-outbound"
 // owns the raw VSOCK relay; the engine places everything the guest needs over
 // its existing Docker connection. No guest image helper is assumed. A direct
 // boot configuration has nothing to install on the host, so it has no Host.
-func VMOutbound(ctx context.Context, cli *client.Client, boot, want pooloutbound.Resolved) (pooloutbound.Delivery, error) {
+//
+// upstream renders the URL the VM host's relay dials to reach the driver's
+// relay listener on a port (pooloutbound.HTTPPort, HTTPSPort): the driver's
+// transport, which is the driver's to name.
+func VMOutbound(ctx context.Context, cli *client.Client, boot, want pooloutbound.Resolved, upstream func(port uint32) string) (pooloutbound.Delivery, error) {
 	if boot.Direct() {
 		return pooloutbound.Delivery{Runtime: boot, AppliedRevision: boot.Revision(), RestartRequired: boot.Revision() != want.Revision()}, nil
 	}
@@ -62,7 +66,14 @@ func VMOutbound(ctx context.Context, cli *client.Client, boot, want pooloutbound
 	host.HTTPS = pooloutbound.RelayEndpoint(boot.HTTPS, "127.0.0.1:17009")
 	runtime.HTTP = pooloutbound.RelayEndpoint(boot.HTTP, net.JoinHostPort(bridge, "17008"))
 	runtime.HTTPS = pooloutbound.RelayEndpoint(boot.HTTPS, net.JoinHostPort(bridge, "17009"))
-	return pooloutbound.Delivery{Host: &host, Runtime: runtime, AppliedRevision: boot.Revision(), RestartRequired: boot.Revision() != want.Revision()}, nil
+	relaySettings := pooloutbound.RelaySettings{Bridge: bridge}
+	if boot.HTTP != "" {
+		relaySettings.HTTP = upstream(pooloutbound.HTTPPort)
+	}
+	if boot.HTTPS != "" {
+		relaySettings.HTTPS = upstream(pooloutbound.HTTPSPort)
+	}
+	return pooloutbound.Delivery{Host: &host, Relay: &relaySettings, Runtime: runtime, AppliedRevision: boot.Revision(), RestartRequired: boot.Revision() != want.Revision()}, nil
 }
 
 // prepareHostOutbound imports a tiny command image from the server's embedded
@@ -170,18 +181,7 @@ func (e *Engine) prepareHostOutbound(ctx context.Context, cli *client.Client, po
 	for name, data := range files {
 		staged["root"+name] = data
 	}
-	bridge := ""
-	network, err := cli.NetworkInspect(ctx, "bridge", client.NetworkInspectOptions{})
-	if err != nil {
-		return err
-	}
-	for _, config := range network.Network.IPAM.Config {
-		if config.Gateway.Is4() {
-			bridge = config.Gateway.String()
-			break
-		}
-	}
-	staged["relay.json"], err = json.Marshal(pooloutbound.RelaySettings{HTTP: delivery.Host.HTTP != "", HTTPS: delivery.Host.HTTPS != "", Bridge: bridge})
+	staged["relay.json"], err = json.Marshal(delivery.Relay)
 	if err != nil {
 		return err
 	}

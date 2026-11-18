@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/Code-Hex/vz/v3"
+
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
 )
 
 // VM is one running guest.
@@ -278,21 +280,26 @@ func consoleDevice(path string) (*vz.VirtioConsoleDeviceSerialPortConfiguration,
 // in milliseconds, so this only ever ends a dial the framework will not.
 const connectTimeout = 30 * time.Second
 
-// Connect opens a connection to a guest VSOCK port. It returns when ctx is
-// done, the VM is closed, or connectTimeout has passed, whichever comes first:
-// the framework may never answer a connect to a guest that has stopped
-// responding, and a dial left waiting on it would outlive the VM.
+// Connect opens a connection to a guest VSOCK port, framed as one
+// flow-controlled stream (ADR 26-11-17-182): its session reads the
+// framework's socket from the moment it is returned, whatever the caller
+// does, so a caller that stops reading stalls the guest's writes to this
+// connection and never the framework's queue.
+//
+// It returns when ctx is done, the VM is closed, or connectTimeout has passed,
+// whichever comes first: the framework may never answer a connect to a guest
+// that has stopped responding, and a dial left waiting on it would outlive the
+// VM.
 //
 // The timeout is here, not left to ctx, because most callers are an
 // http.Transport's dialer, and the context a Transport dials with is detached
 // from the request that asked for the connection: it ends when the Transport
 // closes its idle connections, not when that request gives up.
 //
-// The returned connection deliberately does not implement CloseWrite. The
-// framework hands back a socket whose write side cannot be shut down
-// independently through this binding, and a no-op CloseWrite would be worse
-// than none: a caller that finds the method believes the guest saw EOF. Callers
-// that check for it take their full-close fallback instead, which is correct.
+// The returned connection deliberately does not implement CloseWrite. A
+// caller that found one would believe the guest saw EOF while the connection
+// stays open; callers that check for it take their full-close fallback
+// instead, which is correct.
 func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 	v.mu.Lock()
 	socket, closed, closing := v.socket, v.closed, v.closing
@@ -319,7 +326,15 @@ func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 		}
 		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, connectError(err, ctx.Err(), vmClosed))
 	}
-	return conn, nil
+	name := v.name
+	framed, err := guestvsock.FrameDialed(&unframedCheck{Conn: conn, report: func() {
+		slog.Warn("vz guest answered without framing: the guest does not frame its VSOCK services; boot a guest image that does",
+			"vm", name, "port", port)
+	}})
+	if err != nil {
+		return nil, fmt.Errorf("vzvm: frame connection to %s guest port %d: %w", v.name, port, err)
+	}
+	return framed, nil
 }
 
 // errVMClosed ends a dial whose VM was closed under it.
@@ -353,6 +368,12 @@ func connectError(err, callerErr error, vmClosed bool) error {
 // Listen accepts connections the guest opens to the host on a VSOCK port. This
 // is the control-plane direction: the guest dials, the host serves, and macOS
 // never opens a TCP listener.
+//
+// Every connection is framed (ADR 26-11-17-182). The returned listener's own
+// accept loop starts each connection's session as soon as the framework hands
+// it over, so it is read whether or not the caller has accepted it yet. A
+// connection from a guest that does not speak the framing is closed and
+// logged, never returned.
 func (v *VM) Listen(port uint32) (net.Listener, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -364,7 +385,11 @@ func (v *VM) Listen(port uint32) (net.Listener, error) {
 		return nil, fmt.Errorf("vzvm: listen on %s guest port %d: %w", v.name, port, socketError("listen", "listen", err))
 	}
 	v.listeners = append(v.listeners, listener)
-	return listener, nil
+	name := v.name
+	return guestvsock.FrameListener(listener, func(err error) {
+		slog.Warn("vz guest connection refused: the guest does not frame its VSOCK connections; boot a guest image that does",
+			"vm", name, "port", port, "error", err)
+	}), nil
 }
 
 // Running reports whether the VM is still up. A guest that powered itself off

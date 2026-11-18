@@ -15,3 +15,8 @@ the enclosing sandbox's declared delivered proxy material. It records the same
 logical forwarder as initial bootstrap, so Docker translates it through the
 dynamic bridge and local VM drivers use their private relay. An unrelated
 localhost endpoint and an explicitly configured endpoint are never reclassified.
+
+That relay, placed on the VM host, dials the URL `RelaySettings` carries for
+each forwarder, through `pkg/wire`. The driver renders it, so the driver's
+transport is the relay's: plain `vsock://` for libkrun, `vsock+yamux://` for
+vz (ADR 26-11-17-182). The relay assumes none.
