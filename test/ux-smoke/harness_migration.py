@@ -96,6 +96,22 @@ def save(box, candidate):
     return result["state"]
 
 
+def save_change(box, path, credential_count, expected):
+    def attempt():
+        candidate = pending(box, path, credential_count)
+        assert any(expected in f["file"]["content"]
+                   for f in candidate["files"] if f["path"] == path), candidate
+        try:
+            return candidate, save(box, candidate)
+        except stack.CommandFailure as exc:
+            if "409 Conflict: harness capture request was refused" not in exc.result.stderr:
+                raise
+            # The agent re-observed a concurrent home write between preview
+            # and save. Review the latest version of our controlled change.
+            return None
+    return stack.eventually("save " + path, attempt, seconds=60)
+
+
 def wait_home(box):
     def ready():
         runtime = stack.obj("admin", "box", "get", box)["runtime"]
@@ -109,6 +125,8 @@ def make_home(slug, fixture, box):
     write_home(box, "local-personal.txt", LITERAL)
     if not fixture:
         return
+    if "export" not in fixture:
+        stop_fixture_app(box, slug)
     path = fixture["settings"]
     write_home(box, path, settings(path, LITERAL))
     document = json.dumps(fixture["document"])
@@ -119,18 +137,18 @@ def make_home(slug, fixture, box):
                    input=document)
     else:
         run_in_box(box, *fixture["import"], input=document)
-    candidate = pending(box, path, credential_count=1)
-    state = save(box, candidate)
+    candidate, state = save_change(box, path, credential_count=1, expected=LITERAL)
     assert_saved(slug, path, LITERAL)
     if state == "saved-handoff-pending" and "export" in fixture:
         # Open native stores defer handoff until the coding process exits.
-        stop_native_harness(box, slug)
+        stop_fixture_app(box, slug)
         stack.eventually("replayed native handoff " + slug,
                          lambda: save(box, candidate) == "saved", seconds=120)
 
 
-def stop_native_harness(box, slug):
+def stop_fixture_app(box, slug):
     # End only the fixture app for this home, leaving its login shell running.
+    names = {"claude-code": "claude", CHILD: "codex"}
     run_in_box(box, "node", "-e", r"""
 const fs = require("node:fs");
 const path = require("node:path");
@@ -146,7 +164,7 @@ for (const pid of fs.readdirSync("/proc")) {
     if (!["EACCES", "ENOENT", "EPERM", "ESRCH"].includes(error.code)) throw error;
   }
 }
-""", slug)
+""", names.get(slug, slug))
 
 
 def assert_saved(slug, path, expected):
@@ -279,6 +297,7 @@ def upgrade_fixture(boxes, baseline):
         # binding. A sentinel re-captured as a new credential would replace it.
         fixture = FIXTURES[slug]
         if fixture:
+            stop_fixture_app(box, slug)
             path = fixture["settings"]
             expected = LITERAL + (" pending across upgrade" if slug == CHILD else " after restart")
             if slug == "codex":
@@ -287,12 +306,9 @@ def upgrade_fixture(boxes, baseline):
                            'mv "$HOME/.codex/migration-prior-auth.json" "$HOME/.codex/auth.json"')
             if slug != CHILD:
                 write_home(box, path, settings(path, expected))
-            candidate = pending(box, path, credential_count=0)
+            candidate, _ = save_change(box, path, credential_count=0, expected=expected)
             if slug == "codex":
                 assert not candidate.get("diagnostics"), candidate
-            assert any(expected in f["file"]["content"]
-                       for f in candidate["files"] if f["path"] == path), candidate
-            save(box, candidate)
             assert_saved(slug, path, expected)
             assert bindings(slug) == baseline[slug]["bindings"], slug
         assert config(slug)["id"] == baseline[slug]["id"]
