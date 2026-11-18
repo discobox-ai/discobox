@@ -7,6 +7,10 @@
   shipped: a guest service whose listen address is fixed in the image takes
   the framing from the kernel command line the driver renders,
   `discobox.vsock=yamux`.
+- **Superseded in part by**: [26-11-18-067](26-11-18-067-a-framed-vz-vsock-connection-half-closes.md) —
+  Consequences' "`CloseWrite` stays unimplemented … a separate decision": a
+  framed connection's `CloseWrite` is its stream's half-close. The rest
+  stands.
 - **Extends**: [ADR 0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md)'s
   transport ("VSOCK in both directions, terminated by the driver itself") with
   a rule for every connection on it. Nothing in 0062 is superseded.
