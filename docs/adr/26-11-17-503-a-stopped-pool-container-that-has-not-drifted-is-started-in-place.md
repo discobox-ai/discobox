@@ -1,7 +1,8 @@
 # 26-11-17-503 — A stopped pool container that has not drifted is started in place
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-17
+  Accepted by the owner by merging #1312, 2026-11-18.
 - **Issue**: [#1301](https://github.com/discobox-ai/discobox/issues/1301)
 - **Relates to**: [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §5 (a pool is provisioned once and keeps what it provisioned), which this carries to a stopped Docker pool container; [26-11-15-294](26-11-15-294-a-report-after-the-reconcile-started-the-pools-agent-is-the-new-agents.md) §1 (its row for a provider that starts a box that was not running); [26-11-15-602](26-11-15-602-an-in-place-restart-is-recorded-before-it-begins-and-the-new-agents-first-report-counts.md) §§1, 3.
 - **Preserves**: every reason a pool container is rebuilt today other than being stopped (a moved image, a moved `configRevision` label, a repair); the moved-bundles path for a running box (`applyMovedPoolBundles`); the upgrade watch and its boundaries; the VM lifetime rule that a VM dies with the server and its disks do not (`server/providers/DESIGN.md`, VM Lifetime).
