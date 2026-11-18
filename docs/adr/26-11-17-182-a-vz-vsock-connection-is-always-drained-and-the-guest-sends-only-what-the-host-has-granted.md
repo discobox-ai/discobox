@@ -1,7 +1,12 @@
 # 26-11-17-182 — A vz VSOCK connection is always drained, and the guest sends only what the host has granted
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-17
+- Accepted by the owner by merging #1344, 2026-11-17
+- **Amended**: 2026-11-18, §5, during implementation and before anything
+  shipped: a guest service whose listen address is fixed in the image takes
+  the framing from the kernel command line the driver renders,
+  `discobox.vsock=yamux`.
 - **Extends**: [ADR 0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md)'s
   transport ("VSOCK in both directions, terminated by the driver itself") with
   a rule for every connection on it. Nothing in 0062 is superseded.
@@ -169,6 +174,13 @@ is a distinct `pkg/wire` scheme for a framed VSOCK endpoint, as the scheme
 alone decides a transport today. libkrun keeps plain `vsock://` and is
 unchanged. Its host side is libkrun's own forward, not this framework, and it
 is out of scope here.
+
+*Amended:* `discobox-vsock-guest`'s listeners have no endpoint to render:
+their ports are fixed in the image's units, and libkrun boots the same image
+plain. The driver renders their framing on the guest's kernel command line
+instead: `discobox.vsock=yamux` frames them, and its absence leaves them
+plain. vz's command line carries it; libkrun's does not. It is still the
+host's statement, never a probe, and it joins the compatibility surface below.
 
 Guest-side owners:
 
