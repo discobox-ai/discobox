@@ -23,8 +23,12 @@ const (
 	ProvisioningKeyFile = "/etc/discobox/pool-agent/provisioning-key.json"
 )
 
+// AgentUnit is the pool agent's own unit. It is Type=notify: active once the
+// agent has written what its proxy and builder read and said it is ready.
+const AgentUnit = "discobox-pool-agent.service"
+
 // BootstrapUnits are the pool-agent feature's units that read the bootstrap
 // and the environment beside it, once, at start: a maker that places either
 // again in a running box restarts them, since apply restarts only what moved
 // bundles move.
-var BootstrapUnits = []string{"discobox-pool-agent.service", "discobox-proxy.service"}
+var BootstrapUnits = []string{AgentUnit, "discobox-proxy.service"}

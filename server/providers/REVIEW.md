@@ -71,6 +71,20 @@
   it. The same sentinel is what lets a caller that can wait (the attach wait,
   ADR 0039 tier 1) wait instead of failing, so do not flatten it into a plain
   error anywhere on the acquire or reconcile path.
+- `begin`, and the reconcile's every write of the pool row
+  (`store.UpdatePoolWithGeneration`), stores the lifecycle and runtime columns
+  only: `state`, `runtime_state`, the error, never `Ready`, `Schedulable` or
+  `Degraded`, which the agent's own reports write. What closes placement is
+  the stored `registering` state. Setting those flags in memory before `begin`
+  persists nothing, so do not order code, or justify it, as if it did (ADR
+  26-11-17-503's review believed it did, for a round).
+- A running pool container proves only that systemd is up: it is PID 1, and
+  the agent's unit restarts a failing agent for ever. A wait for a pool's agent
+  must ask the agent, through the container's healthcheck where it has one, or
+  its unit (`bundle.AgentUnit`, `Type=notify`) where it has none (VSOCK on
+  `libkrun` and `vz`), and be bounded. A wait on container state alone passes a
+  box whose agent never comes up, and nothing re-drives a registered pool that
+  then goes offline.
 - A pool's host that a driver cannot find (no VM yet, the pool container
   removed for a replacement) or a booting VM that has not bound the agent's
   socket is `sandbox.ErrPoolNotReachable` on the pool-agent acquire path,
@@ -131,7 +145,13 @@
   once the deadline has passed: one would fail only on the deadline, and the
   pool would then report `context deadline exceeded` in place of the daemon's
   own error. Anything a driver does under the acquire context, an SSH
-  handshake included, must end when that context does.
+  handshake included, must end when that context does. An attached `docker
+  exec` (`ContainerGuest`, `machine.Run`) is not bounded this way: the client
+  reads its upgrade over a hijacked connection that ignores the context once
+  dialed (#1361). Until that is fixed, a bounded check inside a pool container
+  runs detached and reads the exit code from exec inspect
+  (`dockerworker.ExecExitCode`); the start's agent wait broke this rule once
+  already (ADR 26-11-17-503).
 - Compare a pool container against the image the engine would launch *now*
   (`Engine.resolvePoolImage`), never against `cfg.SandboxBaseImage` directly.
   When the configured image cannot be pulled the engine may launch a
