@@ -296,13 +296,15 @@ func (d *Driver) waitForDropletStatus(ctx context.Context, poolID string, status
 }
 
 // Check reads the API's account with the token: the first call a pool's
-// droplet needs. A request nothing answered is unreachable; an answer that
-// refuses it (a token the API does not accept) is a refusal.
+// droplet needs. A request nothing answered is unreachable, marked
+// sandbox.ErrProviderNotReachable: only a provider check asks this, and it has
+// no pool, so no pool agent, to name. An answer that refuses it (a token the
+// API does not accept) is a refusal.
 func (d *Driver) Check(ctx context.Context) error {
 	err := d.do(ctx, http.MethodGet, "/v2/account", nil, nil)
 	var transport *transportError
 	if errors.As(err, &transport) {
-		return fmt.Errorf("digitalocean API at %s does not answer: %w: %w", d.baseURL, err, sandbox.ErrPoolNotReachable)
+		return fmt.Errorf("digitalocean API at %s does not answer: %w: %w", d.baseURL, err, sandbox.ErrProviderNotReachable)
 	}
 	return err
 }
