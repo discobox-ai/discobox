@@ -19,4 +19,4 @@ package guestimage
 // called a pool image: that means the image a pool's container runs, the
 // sandbox base image (dockerworker.DefaultSandboxBaseImage), which runs on the
 // guest this boots.
-const DefaultVMImage = "ghcr.io/discobox-ai/discobox-vm@sha256:afd298ffd739b16450224797107dcd50f32bf7c5a804eabc56518b31b7dae118"
+const DefaultVMImage = "ghcr.io/discobox-ai/discobox-vm@sha256:cd8f71990965a9897ea2be08ac36822c38282c68c046f38745557a84f9b06b12"
