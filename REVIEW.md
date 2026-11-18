@@ -146,6 +146,13 @@ Global review expectations:
   claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
   reader before claiming its stream, so a server closing at once left nothing
   to claim, and it returned a nil stream with no error.
+- The moby client in every module stays at v0.6.3 or later. Before it, a
+  hijacked call (`ExecAttach`, `ContainerAttach`, `DialHijack`) used its
+  context only to dial, and then waited for the upgrade with nothing tied to
+  it, so a daemon that accepted the call and never answered held it for
+  ever (#1361). Never work around such a call by racing it against its
+  context in a goroutine: whatever is left blocked keeps its goroutine and
+  socket for good. The call has to end by itself when its context does.
 - An ADR names, in its `Status` and its index row, every section of an
   accepted ADR whose decision it reverses or narrows, and its "what stays"
   claims are checked against those sections. Read the ADRs that the touched
