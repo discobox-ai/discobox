@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -13,15 +14,9 @@ import (
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/hostskill"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
-
-// userSkillDirectories are the home-relative directories --user-skills reads,
-// in the order they are read: the same two the sandbox installs into.
-var userSkillDirectories = []string{
-	filepath.Join(".claude", "skills"),
-	filepath.Join(".agents", "skills"),
-}
 
 // ReadSkills reads the skills a create carries, as content, since nothing
 // past this machine can read its disk (ADR 26-10-09-395 §4).
@@ -32,15 +27,32 @@ var userSkillDirectories = []string{
 // whole, so an explicit directory always beats the home directory. Every
 // immediate subdirectory holding a SKILL.md is one skill, named for the
 // subdirectory; anything else is not a skill and is skipped.
-func ReadSkills(dirs []string, user bool) (sandboxconfig.Skills, error) {
+func ReadSkills(dirs []string, user bool, warn func(string)) (sandboxconfig.Skills, error) {
 	skills := sandboxconfig.Skills{}
+	skipped := map[string]bool{}
+	skip := func(path string) {
+		if warn == nil {
+			return
+		}
+		key, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			key = path
+		}
+		if abs, err := filepath.Abs(key); err == nil {
+			key = abs
+		}
+		if !skipped[key] {
+			skipped[key] = true
+			warn(fmt.Sprintf("skipping host-only skill %s", path))
+		}
+	}
 	if user {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("--user-skills: %w", err)
 		}
-		for _, dir := range userSkillDirectories {
-			if err := readSkillsDir(skills, filepath.Join(home, dir), true); err != nil {
+		for _, dir := range hostskill.Directories(home) {
+			if err := readSkillsDir(skills, dir, true, skip); err != nil {
 				return nil, fmt.Errorf("--user-skills: %w", err)
 			}
 		}
@@ -49,7 +61,7 @@ func ReadSkills(dirs []string, user bool) (sandboxconfig.Skills, error) {
 		if strings.TrimSpace(dir) == "" {
 			return nil, errors.New("--skills needs a directory")
 		}
-		if err := readSkillsDir(skills, dir, false); err != nil {
+		if err := readSkillsDir(skills, dir, false, skip); err != nil {
 			return nil, fmt.Errorf("--skills %s: %w", dir, err)
 		}
 	}
@@ -86,7 +98,7 @@ func SetCreateSandboxSkills(config *apiclientgen.SandboxCreateConfig, skills san
 
 // readSkillsDir adds every skill in dir to skills, replacing one of the same
 // name. optional is a directory that may be absent.
-func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool) error {
+func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool, skip func(string)) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if optional && errors.Is(err, fs.ErrNotExist) {
@@ -129,16 +141,27 @@ func readSkillsDir(skills sandboxconfig.Skills, dir string, optional bool) error
 		if err != nil {
 			return fmt.Errorf("skill %s: %w", name, err)
 		}
-		if usedFiles >= sandboxconfig.MaxSkillFiles {
-			// Its SKILL.md alone would be one file too many.
-			return overLimit(skills, name, overLimitError{fmt.Sprintf("it takes the skills past the %d files a discobox takes", sandboxconfig.MaxSkillFiles)})
+		if !textInfo.Mode().IsRegular() {
+			return fmt.Errorf("skill %s: %s is not a regular file", name, sandboxconfig.SkillFileName)
 		}
-		if textInfo.Size() > int64(sandboxconfig.MaxSkillsBytes-usedBytes) {
-			return overLimit(skills, name, overLimitError{fmt.Sprintf("its %s takes the skills past the %d bytes a discobox takes", sandboxconfig.SkillFileName, sandboxconfig.MaxSkillsBytes)})
-		}
-		text, err := os.ReadFile(textPath)
+		file, err := os.Open(textPath)
 		if err != nil {
 			return fmt.Errorf("skill %s: %w", name, err)
+		}
+		text, err := io.ReadAll(io.LimitReader(file, sandboxconfig.MaxSkillsBytes+1))
+		_ = file.Close()
+		if err != nil {
+			return fmt.Errorf("skill %s: %w", name, err)
+		}
+		if hostskill.Marked(text) {
+			skip(textPath)
+			continue
+		}
+		if usedFiles >= sandboxconfig.MaxSkillFiles {
+			return overLimit(skills, name, overLimitError{fmt.Sprintf("it takes the skills past the %d files a discobox takes", sandboxconfig.MaxSkillFiles)})
+		}
+		if len(text) > sandboxconfig.MaxSkillsBytes-usedBytes {
+			return overLimit(skills, name, overLimitError{fmt.Sprintf("its %s takes the skills past the %d bytes a discobox takes", sandboxconfig.SkillFileName, sandboxconfig.MaxSkillsBytes)})
 		}
 		if err := sandboxconfig.ValidateSkillName(name); err != nil {
 			return err

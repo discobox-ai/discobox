@@ -37,7 +37,8 @@ sandbox create requests.
   directory inside a skill, so nothing loops; `.git` is left out. Reads stop
   at the first file that takes the whole request past its byte or file limit
   (a skill this one replaces left out of the count), before reading it, and
-  the refusal names the largest skills read before it.
+  the refusal names the largest skills read before it. The host audience marker
+  is checked first, and a marked local skill is skipped with a warning.
   A `--skills` repository is not read: `SplitSkills` (`ParseSkills`) takes a
   Git URL or GitHub shorthand, `[@REF][//PATH]`, as a skills source, resolved
   like a remote `-i` but placed below home, at

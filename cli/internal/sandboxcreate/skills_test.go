@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/hostskill"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
@@ -35,7 +36,7 @@ func TestReadSkillsReadsEverySkillInADirectory(t *testing.T) {
 	writeSkillsTestFile(t, filepath.Join(dir, ".hidden", "SKILL.md"), "no", 0o644)
 	writeSkillsTestFile(t, filepath.Join(dir, "loose.md"), "no", 0o644)
 
-	skills, err := ReadSkills([]string{dir}, false)
+	skills, err := ReadSkills([]string{dir}, false, nil)
 	if err != nil {
 		t.Fatalf("ReadSkills() = %v", err)
 	}
@@ -63,7 +64,7 @@ func TestReadSkillsOrdersHomeThenDirectoriesAndTheLastWins(t *testing.T) {
 	writeSkillsTestFile(t, filepath.Join(first, "c", "SKILL.md"), "first c", 0o644)
 	writeSkillsTestFile(t, filepath.Join(second, "c", "SKILL.md"), "second c", 0o644)
 
-	skills, err := ReadSkills([]string{first, second}, true)
+	skills, err := ReadSkills([]string{first, second}, true, nil)
 	if err != nil {
 		t.Fatalf("ReadSkills() = %v", err)
 	}
@@ -87,23 +88,23 @@ func TestReadSkillsReadsHomeOnlyWhenAskedAndToleratesItsAbsence(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	writeSkillsTestFile(t, filepath.Join(home, ".claude", "skills", "a", "SKILL.md"), "a", 0o644)
-	if skills, err := ReadSkills(nil, false); err != nil || skills != nil {
-		t.Fatalf("ReadSkills(nil, false) = %v, %v; want nothing", skills, err)
+	if skills, err := ReadSkills(nil, false, nil); err != nil || skills != nil {
+		t.Fatalf("ReadSkills(nil, false, nil) = %v, %v; want nothing", skills, err)
 	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", os.Getenv("HOME"))
-	if skills, err := ReadSkills(nil, true); err != nil || skills != nil {
-		t.Fatalf("ReadSkills(nil, true) on an empty home = %v, %v; want nothing", skills, err)
+	if skills, err := ReadSkills(nil, true, nil); err != nil || skills != nil {
+		t.Fatalf("ReadSkills(nil, true, nil) on an empty home = %v, %v; want nothing", skills, err)
 	}
 }
 
 // A --skills directory that is not there was named by mistake, and an empty
 // one names nothing.
 func TestReadSkillsRefusesAMissingDirectory(t *testing.T) {
-	if _, err := ReadSkills([]string{filepath.Join(t.TempDir(), "missing")}, false); err == nil {
+	if _, err := ReadSkills([]string{filepath.Join(t.TempDir(), "missing")}, false, nil); err == nil {
 		t.Fatal("ReadSkills() = nil, want an error for a missing --skills directory")
 	}
-	if _, err := ReadSkills([]string{""}, false); err == nil || err.Error() != "--skills needs a directory" {
+	if _, err := ReadSkills([]string{""}, false, nil); err == nil || err.Error() != "--skills needs a directory" {
 		t.Fatalf("ReadSkills(\"\") = %v, want --skills needs a directory", err)
 	}
 }
@@ -128,7 +129,7 @@ func TestReadSkillsFollowsLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	skills, err := ReadSkills([]string{dir}, false)
+	skills, err := ReadSkills([]string{dir}, false, nil)
 	if err != nil {
 		t.Fatalf("ReadSkills() = %v", err)
 	}
@@ -151,7 +152,7 @@ func TestReadSkillsNamesTheLargestWhenOverTheLimit(t *testing.T) {
 	writeSkillsTestFile(t, filepath.Join(dir, "bigger", "blob.bin"), strings.Repeat("x", sandboxconfig.MaxSkillsBytes*4/5), 0o644)
 	writeSkillsTestFile(t, filepath.Join(dir, "small", "SKILL.md"), "# small", 0o644)
 
-	_, err := ReadSkills([]string{dir}, false)
+	_, err := ReadSkills([]string{dir}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "skill bigger: it takes the skills past") || !strings.Contains(err.Error(), "the largest read before it are big (") {
 		t.Fatalf("ReadSkills() = %v, want bigger refused, naming big as the largest read before it", err)
 	}
@@ -162,7 +163,7 @@ func TestReadSkillsNamesTheLargestWhenOverTheLimit(t *testing.T) {
 func TestReadSkillsRefusesWhatItCannotOrShouldNotRead(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillsTestFile(t, filepath.Join(dir, "huge", "SKILL.md"), strings.Repeat("x", sandboxconfig.MaxSkillsBytes+1), 0o644)
-	if _, err := ReadSkills([]string{dir}, false); err == nil || !strings.Contains(err.Error(), "skill huge: its SKILL.md") {
+	if _, err := ReadSkills([]string{dir}, false, nil); err == nil || !strings.Contains(err.Error(), "skill huge: its SKILL.md") {
 		t.Fatalf("ReadSkills() = %v, want huge's SKILL.md refused", err)
 	}
 	if runtime.GOOS == "windows" {
@@ -174,7 +175,7 @@ func TestReadSkillsRefusesWhatItCannotOrShouldNotRead(t *testing.T) {
 	if err := os.Symlink("looped", filepath.Join(dir, "looped")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadSkills([]string{dir}, false); err == nil {
+	if _, err := ReadSkills([]string{dir}, false, nil); err == nil {
 		t.Fatal("ReadSkills() = nil, want an entry that cannot be stat'ed to be an error")
 	}
 	if err := os.Remove(filepath.Join(dir, "looped")); err != nil {
@@ -183,7 +184,7 @@ func TestReadSkillsRefusesWhatItCannotOrShouldNotRead(t *testing.T) {
 	if err := os.Symlink("missing", filepath.Join(dir, "dangling")); err != nil {
 		t.Fatal(err)
 	}
-	if skills, err := ReadSkills([]string{dir}, false); err != nil || skills != nil {
+	if skills, err := ReadSkills([]string{dir}, false, nil); err != nil || skills != nil {
 		t.Fatalf("ReadSkills() with a dangling link = %v, %v; want it skipped", skills, err)
 	}
 }
@@ -196,7 +197,7 @@ func TestReadSkillsStopsAtTheFileThatPassesTheLimit(t *testing.T) {
 	writeSkillsTestFile(t, filepath.Join(dir, "huge", "a.bin"), strings.Repeat("x", sandboxconfig.MaxSkillsBytes), 0o644)
 	writeSkillsTestFile(t, filepath.Join(dir, "huge", "b.bin"), "x", 0o644)
 
-	_, err := ReadSkills([]string{dir}, false)
+	_, err := ReadSkills([]string{dir}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "skill huge") || !strings.Contains(err.Error(), "a.bin") {
 		t.Fatalf("ReadSkills() = %v, want huge refused at a.bin", err)
 	}
@@ -230,16 +231,16 @@ func TestReadSkillsStopsAtTheFileLimitAcrossSkills(t *testing.T) {
 		writeSkillsTestFile(t, filepath.Join(dir, "a-full", fmt.Sprintf("f%d", i)), "", 0o644)
 	}
 	writeSkillsTestFile(t, filepath.Join(dir, "a-full", "SKILL.md"), "# full", 0o644)
-	if skills, err := ReadSkills([]string{dir}, false); err != nil || len(skills["a-full"].Files) != sandboxconfig.MaxSkillFiles-1 {
+	if skills, err := ReadSkills([]string{dir}, false, nil); err != nil || len(skills["a-full"].Files) != sandboxconfig.MaxSkillFiles-1 {
 		t.Fatalf("ReadSkills() at the limit = %v; want it taken", err)
 	}
 	// A directory that is not a skill is skipped at the limit as anywhere.
 	writeSkillsTestFile(t, filepath.Join(dir, "b-notes", "README.md"), "notes", 0o644)
-	if _, err := ReadSkills([]string{dir}, false); err != nil {
+	if _, err := ReadSkills([]string{dir}, false, nil); err != nil {
 		t.Fatalf("ReadSkills() with a directory that is not a skill = %v; want it skipped", err)
 	}
 	writeSkillsTestFile(t, filepath.Join(dir, "c-more", "SKILL.md"), "# more", 0o644)
-	_, err := ReadSkills([]string{dir}, false)
+	_, err := ReadSkills([]string{dir}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "skill c-more: it takes the skills past the 1000 files") || !strings.Contains(err.Error(), "a-full (") {
 		t.Fatalf("ReadSkills() = %v, want c-more refused naming a-full", err)
 	}
@@ -265,5 +266,20 @@ func TestExecutableKeepsAScriptRunnableFromWindows(t *testing.T) {
 		if got := executable(c.goos, c.mode, c.content); got != c.want {
 			t.Errorf("executable(%s, %v, %q) = %v, want %v", c.goos, c.mode, c.content, got, c.want)
 		}
+	}
+}
+
+func TestReadSkillsSkipsMarkedHostSkills(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillsTestFile(t, filepath.Join(dir, "renamed", "SKILL.md"), hostskill.Content(), 0o644)
+	writeSkillsTestFile(t, filepath.Join(dir, "renamed", "unused"), strings.Repeat("x", sandboxconfig.MaxSkillsBytes), 0o644)
+	writeSkillsTestFile(t, filepath.Join(dir, "ordinary", "SKILL.md"), "ordinary", 0o644)
+	var warnings []string
+	skills, err := ReadSkills([]string{dir, dir}, false, func(warning string) { warnings = append(warnings, warning) })
+	if err != nil || len(skills) != 1 || skills["ordinary"].Skill != "ordinary" {
+		t.Fatalf("ReadSkills = %v, %v", skills, err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "renamed") {
+		t.Fatalf("expected one warning naming the skipped skill, got %v", warnings)
 	}
 }

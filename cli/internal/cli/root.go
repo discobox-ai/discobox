@@ -301,6 +301,7 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(inGroup("resources", app.newSecretCommand()))
 	cmd.AddCommand(inGroup("resources", app.newTrustCommand()))
 	cmd.AddCommand(inGroup("setup", app.newConfigureCommand()))
+	cmd.AddCommand(inGroup("setup", newHostSkillCommand()))
 	cmd.AddCommand(inGroup("setup", app.newAdminCommand()))
 	cmd.AddCommand(inGroup("other", app.newCompletionCommand()))
 	cmd.AddCommand(inGroup("other", app.newVersionCommand()))

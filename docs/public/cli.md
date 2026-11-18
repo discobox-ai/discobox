@@ -4009,10 +4009,10 @@ Delete everything Discobox keeps on this machine except the discobox command.
 
 That is the CLI's state (this machine's identity and SSH keys), the servers and
 images it downloaded, the local server's database, pool disks, configuration,
-cache and logs, the Include lines it added to ~/.ssh/config, and what the
-install scripts leave beside the command (the binary an upgrade replaced, an
-interrupted install's copy). A local server that is running is asked to stop
-first.
+cache and logs, the local agent skill in your home directory, the Include lines
+it added to ~/.ssh/config, and what the install scripts leave beside the command
+(the binary an upgrade replaced, an interrupted install's copy). A local server
+that is running is asked to stop first.
 
 Everything that would be deleted is listed first, and nothing is deleted until
 you answer yes. To remove the discobox command as well, delete it the way it was
@@ -4024,7 +4024,7 @@ configuration, the files DISCOBOX_CONFIG_FILE and DISCOBOX_CLIENT_CONFIG_FILE
 name, and the containers, volumes and images a Docker provider created. A
 directory an environment variable names is deleted only when its name says it
 is Discobox's. The lock file beside ~/.ssh/config (.discobox-ssh-config.lock)
-is left too: another install of Discobox may still edit that file under it.
+and ~/.discobox-host.lock are left for other Discobox processes to use.
 
 Close editors and discobox windows first: anything that starts a server again
 while this runs recreates what it deletes.
@@ -5864,6 +5864,35 @@ Examples:
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --terminal, -t | string | primary | use &#96;TERMINAL&#96; |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skill
+
+~~~~text
+Print the Discobox skill for the agent on this machine.
+
+Use --install or --uninstall to manage copies. By default these commands use
+~/.claude/skills and ~/.agents/skills. Use --scope project to manage copies
+at the root of your Git worktree, or --dir to name another skills directory.
+
+To manage skills that go into boxes, use discobox admin skills.
+~~~~
+
+```text
+discobox skill [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --dir | stringArray | [] | Skills directory to use (repeatable) |
+| --help, -h | bool | false | help for skill Value when passed without an argument: true. |
+| --install | bool | false | Install the skill Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --scope | string | user | Skill scope (user or project) |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+| --uninstall | bool | false | Remove the installed skill Value when passed without an argument: true. |
 
 ## discobox start
 
