@@ -104,10 +104,14 @@ def save_change(box, path, credential_count, expected):
         try:
             return candidate, save(box, candidate)
         except stack.CommandFailure as exc:
-            if "409 Conflict: harness capture request was refused" not in exc.result.stderr:
+            retryable = (
+                "409 Conflict: harness capture request was refused",
+                "503 Service Unavailable: harness capture request was refused",
+            )
+            if not any(message in exc.result.stderr for message in retryable):
                 raise
-            # The agent re-observed a concurrent home write between preview
-            # and save. Review the latest version of our controlled change.
+            # The native store may still be settling after restart. Review
+            # the controlled change again before trying a fresh candidate.
             return None
     return stack.eventually("save " + path, attempt, seconds=60)
 
@@ -158,17 +162,39 @@ def stop_fixture_app(box, slug):
 const fs = require("node:fs");
 const path = require("node:path");
 const name = process.argv[1];
+const stopped = [];
 for (const pid of fs.readdirSync("/proc")) {
   if (!/^\d+$/.test(pid) || Number(pid) === process.pid) continue;
   try {
     const env = fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
     if (!env.includes("HOME=" + process.env.HOME)) continue;
     const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
-    if (args.some(arg => path.basename(arg) === name)) process.kill(Number(pid));
+    if (args.some(arg => path.basename(arg) === name)) {
+      process.kill(Number(pid));
+      stopped.push(pid);
+    }
   } catch (error) {
     if (!["EACCES", "ENOENT", "EPERM", "ESRCH"].includes(error.code)) throw error;
   }
 }
+const deadline = Date.now() + 10000;
+function running(pid) {
+  try {
+    return fs.readFileSync(`/proc/${pid}/cmdline`).length > 0;
+  } catch (error) {
+    if (["ENOENT", "ESRCH"].includes(error.code)) return false;
+    throw error;
+  }
+}
+function waitForExit() {
+  if (!stopped.some(running)) return;
+  if (Date.now() >= deadline) {
+    process.exitCode = 1;
+    return;
+  }
+  setTimeout(waitForExit, 50);
+}
+waitForExit();
 """, names.get(slug, slug))
 
 
