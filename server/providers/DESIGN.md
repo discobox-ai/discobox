@@ -1342,7 +1342,9 @@ provisioning rejects unexpected proxy/trust injection at the actual exec boundar
 Local Docker resolves a bootstrap's logical enclosing-forwarder endpoint through
 the published dynamic Docker bridge. libkrun and vz expose two per-pool private
 VSOCK byte relays, one to each configured upstream; they carry no configuration
-or command protocol. The engine imports the server's embedded static guest helper
+or command protocol. The relay dials the URL the driver renders: plain `vsock`
+on libkrun, `vsock+yamux` on vz, whose every connection is framed (see
+`vz/DESIGN.md`). The engine imports the server's embedded static guest helper
 as a temporary Docker image, starts a privileged command container, and copies
 the helper, private settings and install script through Docker. Host commands
 run through that container, as they do in the host console. No registry fetch,
