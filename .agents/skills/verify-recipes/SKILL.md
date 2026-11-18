@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), the pool VM guest itself booted under QEMU with vhost-vsock (its units, `discobox-vsock-guest`, its Docker over VSOCK), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
@@ -988,6 +988,46 @@ d admin pool create krunpool --provider <prov_id>
   egress: a box is privileged, so `sudo mount -o ro /dev/vda /mnt` in one
   reads the booted guest's root (`/etc/os-release`, `/usr/lib/modules`), and
   `uname -r` is the kernel libkrun booted.
+
+# Verifying the pool VM guest itself under QEMU (`vm-image`, `discobox-vsock-guest`)
+
+The guest's own units and VSOCK services, on real virtio-vsock, with no pool,
+server or libkrun: boot the checkout's amd64 guest under QEMU with
+vhost-vsock (the box has `/dev/kvm` and `/dev/vhost-vsock`, group `kvm`). The
+box's kernel has no loopback VSOCK transport, so a guest is the only peer.
+
+```bash
+S=<scratch dir>
+go tool task build:vm-guest GUEST_DIR=$S/guest GUEST_PLATFORM=linux/amd64   # minutes cold, seconds cached
+# The amd64 root has no kernel (the assembler empties /boot); Ubuntu's is in the rootfs stage:
+docker build -q --platform linux/amd64 --target rootfs -t discobox-verify-rootfs:x -f vm-image/Dockerfile .
+C=$(docker create --platform linux/amd64 discobox-verify-rootfs:x /bin/true)
+docker cp -L $C:/boot/vmlinuz $S/guest/vmlinuz; docker rm $C; docker rmi discobox-verify-rootfs:x
+nix build nixpkgs#qemu_kvm -o $S/qemu
+cd $S/guest && truncate -s 20G data.raw && truncate -s 5G cache.raw
+$S/qemu/bin/qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 4096 -display none -no-reboot \
+  -kernel vmlinuz -initrd initrd.img -append 'console=ttyS0 root=/dev/vda ro rootfstype=ext4 panic=5 <params>' \
+  -drive file=root.ext4,if=virtio,format=raw,readonly=on -drive file=data.raw,if=virtio,format=raw \
+  -drive file=cache.raw,if=virtio,format=raw -device vhost-vsock-pci,guest-cid=42 \
+  -nic user,model=virtio-net-pci -serial file:console.log -pidfile qemu.pid &
+```
+
+- dockerd is up in about 5 s (`console.log`). The guest's 3004 is its Docker
+  socket at CID 42: a small Go bridge (a Unix listener whose connections it
+  splices to `vsock.DialContextCID(42, 3004)`, plus `vsock.FrameDialed` when
+  the guest is framed) lets the real `docker -H unix://<bridge>` CLI drive the
+  guest. Keep the bridge's socket path short (`/dev/shm`): a scratchpad path
+  is over the Unix limit.
+- The guest has no registry access from a box: `docker save <img> | docker
+  load` through the bridge seeds it. `docker cp c:/f -` is the fast way to
+  stream a large output out (hundreds of MB/s); non-TTY attach output
+  (`docker run … | wc`) is slow everywhere, the box's own daemon included, so
+  it measures nothing about the transport.
+- The guest journal: `docker run --rm --privileged --pid=host busybox
+  nsenter -t 1 -m -u -i -n -p -- journalctl -u <unit>`. `POST /shutdown` on
+  3003 powers the guest off in order, and QEMU exits.
+- Linux's vhost-vsock honours VSOCK credit, so this cannot reproduce a
+  Virtualization.framework stall; that needs a Mac.
 
 # Verifying a machine's wiring (`discobox-wire.service` on a machine)
 
