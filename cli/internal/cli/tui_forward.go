@@ -16,9 +16,10 @@ import (
 //
 // The launcher gets a forward per open workspace rather than one for the
 // project. A forward is bound local ports, and holding them for sandboxes
-// nobody is looking at would take numbers from the machine for no one's
+// nobody is attached to would take numbers from the machine for no one's
 // benefit — the workspace is where the ports are shown, so it is where they
-// are held.
+// are held, for as long as it is attached: on screen, or parked while another
+// box is.
 func (d *apiDataSource) Forward(ctx context.Context, sandboxID string) (tui.Forward, error) {
 	dialer, err := d.app.sandboxPortDialer(d.projectID, sandboxID)
 	if err != nil {

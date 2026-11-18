@@ -547,20 +547,18 @@ func (m *Model) switchTo(box Sandbox) tea.Cmd {
 // workspace whose primary has not arrived yet has nothing worth keeping, and
 // is closed instead.
 //
-// What only the screen runs goes as it does on a detach (endLiveScreen), and
-// so do its local ports: they live exactly as long as the screen that shows
-// them, and come back with it. Its push loop is the exception, and goes on
-// under its pushGen while it is attached.
+// What only the screen runs goes as it does on a detach (endLiveScreen). Its
+// push loop and its port forward are not the screen's but the attach's, and go
+// on while it is parked: the push loop under its pushGen, the forward with the
+// workspace, so a page open on a forwarded port keeps answering while another
+// box is on screen. The forward's wait is not the generation's either, and
+// carries on across the park (forwardChanged).
 func (m *Model) parkWorkspace() {
 	if m.primary() == nil {
 		m.closeWorkspace()
 		return
 	}
 	m.endLiveScreen()
-	if m.forward != nil {
-		_ = m.forward.Close()
-		m.forward = nil
-	}
 	ws := m.workspace
 	m.workspace = workspace{paneBox: m.paneBox}
 	if m.parked == nil {
@@ -571,7 +569,9 @@ func (m *Model) parkWorkspace() {
 
 // unparkWorkspace puts a parked workspace back on screen and restarts what
 // only the screen runs. Its push loop is already running, and is not started
-// a second time.
+// a second time; nor is its forward, which is opened only when the workspace
+// has none — one that failed to open, or that was still opening when it was
+// parked.
 func (m *Model) unparkWorkspace(ws *workspace) tea.Cmd {
 	m.recordPaletteVisit(ws.paneBox)
 	delete(m.parked, m.boxRef(ws.paneBox))
@@ -590,7 +590,11 @@ func (m *Model) unparkWorkspace(ws *workspace) tea.Cmd {
 	if m.filesOpen {
 		files = m.reloadFiles()
 	}
-	return tea.Batch(m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), files)
+	var forward tea.Cmd
+	if m.forward == nil {
+		forward = m.startForward(gen)
+	}
+	return tea.Batch(m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), forward, files)
 }
 
 // parkedPane finds a pane by id among the parked workspaces.

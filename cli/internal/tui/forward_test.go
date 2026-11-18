@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/discobox-ai/discobox/pkg/sandboxservices"
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // forwardSandboxes is the listing with the first sandbox serving something, so
@@ -74,8 +75,8 @@ func TestWorkspaceHeaderShowsBoundPortsAsTheyArrive(t *testing.T) {
 	})
 }
 
-// Detaching releases the local ports. They were taken to serve a screen that
-// is gone, and nothing on screen would account for them.
+// Detaching releases the local ports. They were taken for an attach that has
+// ended, and nothing in the window would account for them.
 func TestDetachingClosesTheForward(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -250,5 +251,117 @@ func TestAHeaderLinkLightsUnderThePointer(t *testing.T) {
 		if raw := rawFrame(m); strings.Contains(raw, live) {
 			t.Errorf("the desktop link stayed lit with the pointer off it:\n%q", raw)
 		}
+	})
+}
+
+// Switching to another box parks the one left still attached, and its local
+// ports go on answering with it: a page open on a forwarded port keeps working
+// while another box is on screen. Switching back finds the same forward, so
+// nothing is bound a second time.
+func TestSwitchingAwayKeepsTheParkedBoxsForward(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(forwardSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the forward", func() bool { return m.forward != nil })
+		first := m.forward
+
+		d.leader("down")
+		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.forward != nil })
+		ds.mu.Lock()
+		closed := ds.forwardsClose
+		ds.mu.Unlock()
+		if closed != 0 {
+			t.Fatalf("forwards closed = %d after switching away, want the parked box's kept open", closed)
+		}
+
+		d.leader("up")
+		d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" && m.forward != nil })
+		d.settle()
+		if m.forward != first {
+			t.Error("switching back should bring the parked forward back, not open a new one")
+		}
+		ds.mu.Lock()
+		ids, closed := append([]string(nil), ds.forwardIDs...), ds.forwardsClose
+		ds.mu.Unlock()
+		if strings.Join(ids, ",") != "sbx_one,sbx_two" || closed != 0 {
+			t.Fatalf("forwards opened for %v, %d closed; want one each for sbx_one and sbx_two, none closed", ids, closed)
+		}
+	})
+}
+
+// A parked box's forward goes on binding, and its wait goes on with it: a port
+// bound while the box is parked is on its header when it comes back, and one
+// bound after that still redraws it with nothing pressed.
+func TestAParkedForwardKeepsWakingTheHeader(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(forwardSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the forward", func() bool { return m.forward != nil })
+		first := ds.forward
+
+		switchToSecond(d, m)
+		d.wait("the second box's forward", func() bool { return m.forward != nil && m.forward != Forward(first) })
+		first.bind(Binding{Port: 8080, Local: 8082})
+		d.settle()
+
+		d.leader("up")
+		d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" && m.forward == Forward(first) })
+		if frame := ansi.Strip(frameText(m)); !strings.Contains(frame, "http:8082->8080") {
+			t.Fatalf("a port bound while parked should be on the header on return:\n%s", frame)
+		}
+		first.bind(Binding{Port: 5432, Local: 5433})
+		d.wait("the port bound after the return", func() bool {
+			return strings.Contains(ansi.Strip(frameText(m)), "tcp:5433->5432")
+		})
+	})
+}
+
+// A parked box's forward still goes when its session does: when the window
+// quits, and when the box's primary ends — the box stopped, or was archived —
+// which takes the parked workspace with it.
+func TestAParkedForwardClosesWithItsSession(t *testing.T) {
+	t.Parallel()
+	park := func(t *testing.T) (*driver, *Model, *fakeForward) {
+		t.Helper()
+		ds := newFakeSource(forwardSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the forward", func() bool { return m.forward != nil })
+		first := ds.forward
+		switchToSecond(d, m)
+		d.wait("the second box's forward", func() bool { return m.forward != nil && m.forward != Forward(first) })
+		return d, m, first
+	}
+
+	t.Run("quit", func(t *testing.T) {
+		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			_, m, first := park(t)
+			m.closeWindow()
+			if !first.isClosed() {
+				t.Fatal("quitting should close the parked box's forward")
+			}
+		})
+	})
+
+	t.Run("primary ends", func(t *testing.T) {
+		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			d, m, first := park(t)
+			var primary *pane
+			for _, p := range m.parked[boxRef{"", "sbx_one"}].terminals.panes {
+				if p.primary {
+					primary = p
+				}
+			}
+			d.dispatch(paneMsg{id: primary.id, msg: termpane.ClosedMsg{}})
+			if m.parked[boxRef{"", "sbx_one"}] != nil || !first.isClosed() {
+				t.Fatal("a parked primary that ends should take its workspace's forward with it")
+			}
+			if m.forward == nil || m.forward == Forward(first) {
+				t.Fatal("the box on screen should keep its own forward")
+			}
+		})
 	})
 }

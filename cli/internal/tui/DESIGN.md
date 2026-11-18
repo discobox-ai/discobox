@@ -98,9 +98,12 @@ flowchart LR
   and what a pane started that answers it later — an issue read, a files
   changed session, an image paste — finds it there (`heldPane`). Only the
   live one is drawn and polls; the screen's generation ends, as on a detach
-  (`endLiveScreen`). Its local ports go with the screen and come back with it,
-  since they live exactly as long as the screen that shows them. Its push
-  loop does not end: it is still an attach, so it still pushes (ADR
+  (`endLiveScreen`). Its port forward does not end: its local ports live as
+  long as the attach, so a page open on one keeps answering while another box
+  is on screen, and unparking finds the same forward rather than binding
+  again. Its wait on the forward is keyed by the forward, not the generation
+  (`forwardChanged`), so it carries across the park. Its push
+  loop does not end either: it is still an attach, so it still pushes (ADR
   26-09-05-008 §1), under the generation it was opened in (`pushGen`,
   `pushLoop`), and the same loop carries on when it is shown again, so no
   second push races the first. A report from a parked one names the box. A
@@ -2212,7 +2215,9 @@ looks like.
 **The workspace forwards those ports, and the header says where to** —
 `http:8082->8080,3000->3000 · tcp:5433->5432`. Opening the workspace opens a port
 forward (`DataSource.Forward`, `startForward`) and detaching closes it, so the
-local ports live exactly as long as the screen that shows them; the mechanics
+local ports live exactly as long as the attach — switching to another box parks
+the workspace with its forward still bound, and quitting, or the box's session
+ending, closes it (`closeStreams`); the mechanics
 are `internal/portforward`, the same forwarder `discobox proxy` runs, over the same
 tunnel. A port that gets bound while the screen is up appears on it with no key
 pressed: the forward wakes the window (`Forward.Events`) and the header redraws

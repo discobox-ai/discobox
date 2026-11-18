@@ -1275,48 +1275,6 @@ func switchToSecond(d *driver, m *Model) {
 	})
 }
 
-// A parked workspace's local ports go with the screen that showed them, and
-// come back with it: parking closes the forward, unparking asks for a new one
-// for the same box.
-func TestParkingClosesTheForwardAndUnparkingReopensIt(t *testing.T) {
-	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		ds := newFakeSource(forwardSandboxes()...)
-		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
-		first := ds.forward
-
-		switchToSecond(d, m)
-		if !first.isClosed() {
-			t.Fatal("parking should close the first box's forward")
-		}
-		if ws := m.parked[boxRef{"", "sbx_one"}]; ws.forward != nil {
-			t.Fatal("a parked workspace should hold no forward")
-		}
-
-		d.leader("up")
-		d.wait("the first box with a forward", func() bool {
-			return m.paneBox.ID == "sbx_one" && m.parked[boxRef{"", "sbx_one"}] == nil && m.forward != nil
-		})
-		if m.forward == Forward(first) {
-			t.Fatal("unparking should open a new forward, not hold the closed one")
-		}
-		asked := ds.forwardsAskedFor()
-		if got := asked[len(asked)-1]; got != "sbx_one" {
-			t.Fatalf("forwards asked for %v, want the last for the box back on screen", asked)
-		}
-		ones := 0
-		for _, id := range asked {
-			if id == "sbx_one" {
-				ones++
-			}
-		}
-		if ones != 2 {
-			t.Fatalf("forwards asked for %v, want sbx_one's twice: opened, and again on its return", asked)
-		}
-	})
-}
-
 // A window with no tree has nothing to move along: in an attach window and on
 // a narrow console the leader's ↓ and j leave the box on screen alone and open
 // nothing.

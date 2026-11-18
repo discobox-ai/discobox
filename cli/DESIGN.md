@@ -1822,7 +1822,8 @@ instead (below).
   dial, what it speaks, the service it belongs to — is still used.
 - The console runs the same forwarder. Opening a workspace opens one
   (`apiDataSource.Forward`, `internal/cli/tui_forward.go`) and detaching closes
-  it, so the local ports live as long as the screen showing them; the window
+  it, so the local ports live as long as the attach — a workspace switched away
+  from keeps them (see `internal/tui/DESIGN.md`); the window
   sees only a `tui.Forward` — what is bound, and a wake-up when that changes —
   and draws the sandbox ports on its header as `8082->8080`, with the web ones
   linked to `http://localhost:8082`. A binding carries whether it is the UDP
