@@ -13,15 +13,6 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
-// AcknowledgeSandboxHarnessConfig implements acknowledge-sandbox-harness-config operation.
-//
-// Acknowledge sandbox harness config.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
-func (UnimplementedHandler) AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (r AcknowledgeSandboxHarnessConfigRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // ApproveAPIAccessRequest implements approve-api-access-request operation.
 //
 // POST /projects/{projectId}/api-access-requests/{requestId}/approve
@@ -101,15 +92,6 @@ func (UnimplementedHandler) AuthorizePoolSandboxStart(ctx context.Context, param
 	return r, ht.ErrNotImplemented
 }
 
-// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
-//
-// Capture sandbox harness config.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
-func (UnimplementedHandler) CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (r CaptureSandboxHarnessConfigRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
 //
 // Asks the provider instance whether the server reaches what its pools need (its service's account,
@@ -132,18 +114,6 @@ func (UnimplementedHandler) ClearPoolCache(ctx context.Context, params ClearPool
 	return r, ht.ErrNotImplemented
 }
 
-// ClearSandboxCache implements clear-sandbox-cache operation.
-//
-// Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A
-// machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than
-// emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only
-// cache-clear scope may call it.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
-func (UnimplementedHandler) ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (r ClearSandboxCacheRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // CompletePoolSandboxSuspend implements complete-pool-sandbox-suspend operation.
 //
 // Record a successful suspend once, before releasing the pool's power lock.
@@ -161,21 +131,6 @@ func (UnimplementedHandler) CompletePoolSandboxSuspend(ctx context.Context, para
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push
 func (UnimplementedHandler) CompleteSandboxSourcePush(ctx context.Context, req *CompleteSandboxSourcePushBody, params CompleteSandboxSourcePushParams) (r CompleteSandboxSourcePushRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ConfirmSandboxAutostop implements confirm-sandbox-autostop operation.
-//
-// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
-// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now
-// and no sleep request is pending; sleep only after rechecking the latest request mtime, minimum
-// grace, and live primary OSC 7501 status against the two-minute ceiling (ADR 26-11-04-746).
-// Successful sleep confirmation consumes every pending request. The answer carries the sandbox's
-// earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop
-// scope may call it.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
-func (UnimplementedHandler) ConfirmSandboxAutostop(ctx context.Context, req *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (r ConfirmSandboxAutostopRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -630,26 +585,6 @@ func (UnimplementedHandler) GetSandbox(ctx context.Context, params GetSandboxPar
 	return r, ht.ErrNotImplemented
 }
 
-// GetSandboxAgentInventory implements get-sandbox-agent-inventory operation.
-//
-// What the sandbox's exec, service and tool lists and its terminals' screens answer right now, in
-// one document, so the control plane can answer those reads while the sandbox is not running (ADR
-// 26-10-11-657). Only a token carrying the inventory scope may read it.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/inventory
-func (UnimplementedHandler) GetSandboxAgentInventory(ctx context.Context, params GetSandboxAgentInventoryParams) (r GetSandboxAgentInventoryRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetSandboxAgentStatus implements get-sandbox-agent-status operation.
-//
-// Get sandbox-agent-reported status (git status, harness session state, active connections).
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
-func (UnimplementedHandler) GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (r GetSandboxAgentStatusRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // GetSandboxCredentialRequest implements get-sandbox-credential-request operation.
 //
 // Poll an agent credential request.
@@ -707,48 +642,12 @@ func (UnimplementedHandler) GetSandboxProviderInstance(ctx context.Context, para
 	return r, ht.ErrNotImplemented
 }
 
-// GetSandboxRuntimeConfig implements get-sandbox-runtime-config operation.
-//
-// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
-// (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
-func (UnimplementedHandler) GetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (r GetSandboxRuntimeConfigRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // GetSandboxService implements get-sandbox-service operation.
 //
 // Get a declared service in a sandbox.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (r GetSandboxServiceRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetSandboxSourceProjectLayer implements get-sandbox-source-project-layer operation.
-//
-// Reads a materialized source's project layer (.discobox/settings.json in its working tree, or .
-// discobox/project.json in a repository without one), which the pool reads to settle the sandbox's
-// final spec before it marks the source delivered (ADR 0055, ADR 0126 §4, ADR 26-10-16-423 §11).
-// 404 when no applied runtime-config document names the source, 409 while the sandbox has not
-// materialized it, 422 when the file does not decode or the repository holds settings.json beside a
-// file it replaces. Only a token carrying the pool-only runtime-config scope may read it.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer
-func (UnimplementedHandler) GetSandboxSourceProjectLayer(ctx context.Context, params GetSandboxSourceProjectLayerParams) (r GetSandboxSourceProjectLayerRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetSandboxSourceStates implements get-sandbox-source-states operation.
-//
-// Reports how far each source the applied runtime-config document names has converged onto its
-// target (ADR 0126 §4) - the same states the status poll carries, for the pool to wait on while it
-// settles a create rather than on the poll's interval. Empty until a document has been applied. Only
-// a token carrying the pool-only runtime-config scope may read it.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources
-func (UnimplementedHandler) GetSandboxSourceStates(ctx context.Context, params GetSandboxSourceStatesParams) (r GetSandboxSourceStatesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1255,20 +1154,6 @@ func (UnimplementedHandler) PutProjectGateway(ctx context.Context, req *PutProje
 	return r, ht.ErrNotImplemented
 }
 
-// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
-//
-// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
-// applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored
-// and the document the sandbox holds is returned; the same revision is a retry when the document
-// matches and a 409 when it does not. A document that fails validation (422) or cannot be written
-// whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token
-// carrying the pool-only runtime-config scope may deliver one.
-//
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
-func (UnimplementedHandler) PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (r PutSandboxRuntimeConfigRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // ReadSandboxFile implements read-sandbox-file operation.
 //
 // Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
@@ -1294,15 +1179,6 @@ func (UnimplementedHandler) ReconcilePool(ctx context.Context, params ReconcileP
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (r ReconcileSandboxRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ReconsiderSandboxHarnessConfig implements reconsider-sandbox-harness-config operation.
-//
-// Reconsider sandbox harness config.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider
-func (UnimplementedHandler) ReconsiderSandboxHarnessConfig(ctx context.Context, req *HarnessConfigReconsideration, params ReconsiderSandboxHarnessConfigParams) (r ReconsiderSandboxHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1512,18 +1388,6 @@ func (UnimplementedHandler) RestartSandbox(ctx context.Context, req *RestartSand
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
 func (UnimplementedHandler) RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (r RestartSandboxServiceRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ResumeSandboxAutostop implements resume-sandbox-autostop operation.
-//
-// Tells the sandbox its pool has just thawed it from a suspend. Nothing booted, so the sandbox moves
-// the wakes now due, and the notes kept for the next start, into ~/.discobox/wake/.done/ as a boot
-// does, and the wake that brought it back is not returned again by its next power-down's
-// confirmation. Only a token carrying the pool-only autostop scope may call it.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
-func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (r ResumeSandboxAutostopRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1769,18 +1633,6 @@ func (UnimplementedHandler) UpdateSandbox(ctx context.Context, req *UpdateSandbo
 	return r, ht.ErrNotImplemented
 }
 
-// UpdateSandboxAgentMeta implements update-sandbox-agent-meta operation.
-//
-// Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
-// and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
-// the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
-// refused rather than overwritten.
-//
-// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
-func (UnimplementedHandler) UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (r UpdateSandboxAgentMetaRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // UpdateSandboxMeta implements update-sandbox-meta operation.
 //
 // Change a sandbox's name, description or tags. The change is carried into the sandbox and applied
@@ -1826,21 +1678,6 @@ func (UnimplementedHandler) UpdateSecretBinding(ctx context.Context, req *Update
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
 func (UnimplementedHandler) UpgradeSandbox(ctx context.Context, req *UpgradeSandboxBody, params UpgradeSandboxParams) (r UpgradeSandboxRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// WaitSandboxAgentStatus implements wait-sandbox-agent-status operation.
-//
-// Answers with the version of what wakes the pool, the sandbox's listening ports, its harness
-// configuration capture, and the state of its provisioning and of each feature in it. A call without
-// `after`, or with an `after` that is not the current version, is answered at once; a call naming
-// the current version is held until either changes or the agent's hold (25 seconds) passes, and then
-// answered with the version as it is. The pool waits here so a newly bound port, or a harness
-// sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR
-// 26-11-09-062).
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
-func (UnimplementedHandler) WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (r WaitSandboxAgentStatusRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

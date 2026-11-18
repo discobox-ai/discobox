@@ -1,0 +1,1355 @@
+# Operations served only by the sandbox agent. Shared components are in server.yaml.
+paths:
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture:
+        post:
+            operationId: capture-sandbox-harness-config
+            summary: Capture sandbox harness config.
+            tags: [Harness Config Save Back]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigCandidateRequest'
+            responses:
+                200:
+                    description: Result.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigCandidate'
+                default:
+                    description: Error response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack:
+        post:
+            operationId: acknowledge-sandbox-harness-config
+            summary: Acknowledge sandbox harness config.
+            tags: [Harness Config Save Back]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigAcknowledgment'
+            responses:
+                200:
+                    description: Result.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigChanges'
+                default:
+                    description: Error response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider:
+        post:
+            operationId: reconsider-sandbox-harness-config
+            summary: Reconsider sandbox harness config.
+            tags: [Harness Config Save Back]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigReconsideration'
+            responses:
+                200:
+                    description: Result.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigChanges'
+                default:
+                    description: Error response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+    /api/projects/{projectId}/sandboxes/{sandboxId}/status:
+        get:
+            operationId: get-sandbox-agent-status
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentStatusResponse'
+                    description: Sandbox-agent-reported git, harness session, and connection status.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
+            tags:
+                - Sandbox Status
+    /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait:
+        get:
+            description: Answers with the version of what wakes the pool, the sandbox's listening ports, its harness configuration capture, and the state of its provisioning and of each feature in it. A call without `after`, or with an `after` that is not the current version, is answered at once; a call naming the current version is held until either changes or the agent's hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a newly bound port, or a harness sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR 26-11-09-062).
+            operationId: wait-sandbox-agent-status
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The version the caller already has. Naming the current one asks to be held until it changes; omitted, the call is answered at once.
+                  in: query
+                  name: after
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentStatusWaitResponse'
+                    description: The current version.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Wait for the sandbox's ports, harness configuration or provisioning to change.
+            tags:
+                - Sandbox Status
+    /api/projects/{projectId}/sandboxes/{sandboxId}/inventory:
+        get:
+            description: What the sandbox's exec, service and tool lists and its terminals' screens answer right now, in one document, so the control plane can answer those reads while the sandbox is not running (ADR 26-10-11-657). Only a token carrying the inventory scope may read it.
+            operationId: get-sandbox-agent-inventory
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Digest of the inventory the caller already holds. When the inventory still has it, the answer is marked unchanged and carries no parts.
+                  in: query
+                  name: known
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentInventory'
+                    description: The sandbox's inventory.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get what the sandbox's list reads answer, for the control plane to keep.
+            tags:
+                - Sandbox Status
+    /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config:
+        get:
+            description: Returns the runtime-config document the sandbox last applied - what the pool has told it it is (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-runtime-config
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxRuntimeConfig'
+                    description: The document the sandbox applied.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response. 404 when the sandbox has applied none.
+            summary: Get the runtime-config document the sandbox has applied.
+            tags:
+                - Sandbox Runtime Config
+        put:
+            description: Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored and the document the sandbox holds is returned; the same revision is a retry when the document matches and a 409 when it does not. A document that fails validation (422) or cannot be written whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token carrying the pool-only runtime-config scope may deliver one.
+            operationId: put-sandbox-runtime-config
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxRuntimeConfig'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxRuntimeConfig'
+                    description: The document the sandbox now holds, which is the one delivered unless that one was older.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Deliver the sandbox's runtime-config document.
+            tags:
+                - Sandbox Runtime Config
+    /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm:
+        post:
+            description: Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now and no sleep request is pending; sleep only after rechecking the latest request mtime, minimum grace, and live primary OSC 7501 status against the two-minute ceiling (ADR 26-11-04-746). Successful sleep confirmation consumes every pending request. The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop scope may call it.
+            operationId: confirm-sandbox-autostop
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxAutostopConfirmRequest'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAutostopConfirmation'
+                    description: The power-down is confirmed.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response. 409 when the sandbox does not confirm the power-down.
+            summary: Confirm a power-down the pool is about to carry out.
+            tags:
+                - Sandbox Autostop
+    /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed:
+        post:
+            description: Tells the sandbox its pool has just thawed it from a suspend. Nothing booted, so the sandbox moves the wakes now due, and the notes kept for the next start, into ~/.discobox/wake/.done/ as a boot does, and the wake that brought it back is not returned again by its next power-down's confirmation. Only a token carrying the pool-only autostop scope may call it.
+            operationId: resume-sandbox-autostop
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAutostopResumption'
+                    description: The resume is taken.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Tell the sandbox its pool thawed it.
+            tags:
+                - Sandbox Autostop
+    /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear:
+        post:
+            description: Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only cache-clear scope may call it.
+            operationId: clear-sandbox-cache
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxCacheClearance'
+                    description: The caches are empty.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Empty the sandbox's caches.
+            tags:
+                - Sandbox Runtime Config
+    /api/projects/{projectId}/sandboxes/{sandboxId}/sources:
+        get:
+            description: Reports how far each source the applied runtime-config document names has converged onto its target (ADR 0126 §4) - the same states the status poll carries, for the pool to wait on while it settles a create rather than on the poll's interval. Empty until a document has been applied. Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-source-states
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceStates'
+                    description: Each source's convergence, in the document's order.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read how far each source has converged.
+            tags:
+                - Sandbox Runtime Config
+    /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer:
+        get:
+            description: Reads a materialized source's project layer (.discobox/settings.json in its working tree, or .discobox/project.json in a repository without one), which the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055, ADR 0126 §4, ADR 26-10-16-423 §11). 404 when no applied runtime-config document names the source, 409 while the sandbox has not materialized it, 422 when the file does not decode or the repository holds settings.json beside a file it replaces. Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-source-project-layer
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The source's slug in the runtime-config document.
+                  in: path
+                  name: slug
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceProjectLayer'
+                    description: The source's project layer, or none.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read a materialized source's project layer.
+            tags:
+                - Sandbox Runtime Config
+    /api/projects/{projectId}/sandboxes/{sandboxId}/meta:
+        patch:
+            description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten.
+            operationId: update-sandbox-agent-meta
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateSandboxMetaBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentMeta'
+                    description: The sandbox's meta after the change.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Change the name, description or tags in the sandbox's meta file.
+            tags:
+                - Sandbox Meta
+components:
+    schemas:
+        HarnessCaptureBaseline:
+            additionalProperties: false
+            properties:
+                configRevision:
+                    format: int64
+                    type: integer
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFile'
+                    nullable: true
+                    type: array
+                harnessConfigId:
+                    type: string
+                manifestDigest:
+                    type: string
+                projectFiles:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                secretRevisions:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - harnessConfigId
+                - configRevision
+                - manifestDigest
+            type: object
+        HarnessCaptureCredential:
+            additionalProperties: false
+            properties:
+                account:
+                    type: string
+                envName:
+                    type: string
+                generation:
+                    type: string
+                keep:
+                    type: boolean
+                localId:
+                    type: string
+                provider:
+                    type: string
+                type:
+                    type: string
+                value:
+                    additionalProperties: true
+                    type: object
+            required:
+                - provider
+                - envName
+                - type
+            type: object
+        HarnessConfigAcknowledgment:
+            additionalProperties: false
+            properties:
+                superseded:
+                    type: boolean
+                baseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                candidateId:
+                    type: string
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFile'
+                    nullable: true
+                    type: array
+                sentinels:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - candidateId
+                - baseline
+                - files
+                - sentinels
+            type: object
+        HarnessConfigCandidate:
+            additionalProperties: false
+            properties:
+                baseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                credentials:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureCredential'
+                    nullable: true
+                    type: array
+                diagnostics:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureDiagnostic'
+                    nullable: true
+                    type: array
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFileChange'
+                    nullable: true
+                    type: array
+                id:
+                    type: string
+                secretRevisions:
+                    additionalProperties:
+                        type: string
+                    type: object
+                writeRevision:
+                    format: int64
+                    type: integer
+            required:
+                - id
+                - baseline
+                - writeRevision
+                - files
+                - credentials
+            type: object
+        HarnessConfigReconsideration:
+            additionalProperties: false
+            properties:
+                current:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                selection:
+                    $ref: '#/components/schemas/HarnessConfigSelection'
+            required:
+                - selection
+                - current
+            type: object
+        SandboxAgentCPUUsage:
+            additionalProperties: false
+            description: |
+                Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
+                is the difference between two samples over the time between them, and the
+                component holding two samples is the pool agent, which polls every sandbox
+                in the pool on one tick and so measures them all over the same window.
+            properties:
+                usageUsec:
+                    description: Total CPU microseconds charged to the sandbox's cgroup since it was created.
+                    format: int64
+                    type: integer
+                userUsec:
+                    description: CPU microseconds spent in user mode.
+                    format: int64
+                    type: integer
+                systemUsec:
+                    description: CPU microseconds spent in kernel mode.
+                    format: int64
+                    type: integer
+                limitVcpus:
+                    description: The cgroup's own CPU quota in whole-CPU units, absent when unlimited. Sandbox containers are created with no CPU limit today, so this is normally absent.
+                    format: double
+                    type: number
+            required:
+                - usageUsec
+                - userUsec
+                - systemUsec
+            type: object
+        SandboxAgentMemoryUsage:
+            additionalProperties: false
+            description: |
+                Two different true answers about the same sandbox. currentBytes is
+                what the host charges it - anonymous memory, page cache and kernel memory
+                together. virtualBytes and residentBytes are what its own processes hold,
+                summed, and so double-count every shared page: summed resident routinely
+                exceeds currentBytes, which is expected rather than a defect.
+            properties:
+                currentBytes:
+                    description: Memory the sandbox's cgroup is charged for, including page cache and kernel memory. Falls back to summed resident size when the cgroup is unreadable.
+                    format: int64
+                    type: integer
+                peakBytes:
+                    description: High-water mark of currentBytes over the cgroup's life.
+                    format: int64
+                    type: integer
+                anonBytes:
+                    description: Anonymous memory charged to the cgroup.
+                    format: int64
+                    type: integer
+                fileBytes:
+                    description: Page cache charged to the cgroup. Reclaimable under pressure, unlike anonymous memory.
+                    format: int64
+                    type: integer
+                limitBytes:
+                    description: The cgroup's memory ceiling, absent when unlimited. Sandbox containers are created with no memory limit today, so this is normally absent.
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    description: Sum of every process's VmSize. Address space reserved, not memory held; a process that maps a large file inflates this without consuming anything.
+                    format: int64
+                    type: integer
+                residentBytes:
+                    description: Sum of every process's VmRSS. Double-counts pages shared between processes.
+                    format: int64
+                    type: integer
+            required:
+                - currentBytes
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxAgentProcessUsage:
+            additionalProperties: false
+            description: |
+                One candidate process, with cumulative counters for the same reason the
+                sandbox totals carry them. This is a candidate list, not an answer: it is the
+                union of the busiest by cumulative CPU and the largest by resident size, and
+                whoever differences two samples ranks them by rate and keeps far fewer.
+            properties:
+                pid:
+                    description: Sandbox-local process ID.
+                    format: int64
+                    type: integer
+                command:
+                    description: The process's own executable name, as the kernel reports it.
+                    type: string
+                cmdline:
+                    description: Full argv, space-joined. Empty for a kernel thread.
+                    type: string
+                startTicks:
+                    description: Process start time in kernel ticks since boot. Part of this process's identity rather than decoration - PIDs are reused, and differencing a recycled PID against its predecessor's counter would produce a nonsense spike.
+                    format: int64
+                    type: integer
+                cpuUsec:
+                    description: Cumulative CPU microseconds (user plus system) this process has used.
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    description: This process's VmSize.
+                    format: int64
+                    type: integer
+                residentBytes:
+                    description: This process's VmRSS.
+                    format: int64
+                    type: integer
+            required:
+                - pid
+                - command
+                - startTicks
+                - cpuUsec
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxAgentResourceUsage:
+            additionalProperties: false
+            description: The sandbox's own resource consumption at one moment, as cumulative counters.
+            properties:
+                observedAt:
+                    description: When this sample was taken. Rates are computed against this, never against the reporting tick's wall clock, so poll skew inside a tick cannot distort one.
+                    format: date-time
+                    type: string
+                source:
+                    description: Where the totals came from. cgroup is authoritative; machine means the sandbox is a whole machine and the totals are its kernel's own, page cache included, against the machine's size and CPUs; proc means neither could be read and a per-process rollup stood in, which sees no page cache and no kernel memory.
+                    enum:
+                        - cgroup
+                        - machine
+                        - proc
+                    type: string
+                cpu:
+                    $ref: '#/components/schemas/SandboxAgentCPUUsage'
+                memory:
+                    $ref: '#/components/schemas/SandboxAgentMemoryUsage'
+                processCount:
+                    description: How many processes were running in the sandbox, counted over all of them rather than over the candidates below.
+                    format: int64
+                    type: integer
+                processes:
+                    description: Candidate processes - the union of the busiest by cumulative CPU and the largest by resident size.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentProcessUsage'
+                    type: array
+            required:
+                - observedAt
+                - source
+                - cpu
+                - memory
+                - processCount
+            type: object
+        SandboxAgentListeningPort:
+            additionalProperties: false
+            properties:
+                serviceId:
+                    description: |-
+                        Id of the declaration this port came from, absent for a port only discovery
+                        found. Stable and matchable: `ai.discobox.desktop` is the sandbox's desktop
+                        viewer, which a client is expected to recognize and give its own affordance
+                        rather than list as an HTTP port. The `ai.discobox.` namespace is reserved
+                        for declarations the image ships.
+                    type: string
+                serviceName:
+                    description: Display name of the declaration this port came from, so a client can label it without a second request. Absent for a port only discovery found.
+                    type: string
+                port:
+                    description: Port the sandbox serves - one its own processes were seen listening on or bound, one a service declares, or both. A TCP port and a UDP port with the same number are two entries, told apart by protocol.
+                    format: int64
+                    type: integer
+                addresses:
+                    description: Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so this describes the bind rather than reachability. Absent for a declared port nothing observable is listening on.
+                    items:
+                        type: string
+                    type: array
+                declared:
+                    description: |
+                        True when a service under .discobox/services declares this port,
+                        which puts it on the record whether or not anything observable is listening
+                        on it. Discovery only sees sockets the sandbox user owns, so a port
+                        published by a nested container or bound by a socket-activated unit - root's
+                        socket either way - is reported only because it was declared.
+                    type: boolean
+                protocol:
+                    description: |
+                        What the port speaks, stated by a service declaration or established by a
+                        probe. Undeclared TCP ports in the kernel's ephemeral range are listed as
+                        tcp without probing; the range's low end is floored at the platform default
+                        (32768 on Linux, 49152 on macOS). Other TCP ports are probed when first seen,
+                        with one repeat at least three seconds after a silent tcp answer. tcp also
+                        means reached and not HTTP (a database, an SSH daemon, an HTTP/2-only server);
+                        unknown means not classified yet or unreachable when probed, and is retried. udp is a bound UDP socket, which is never probed;
+                        it is the only value that is not a TCP port, so it is also what says which
+                        transport a forward of this port has to carry.
+                    enum:
+                        - http
+                        - https
+                        - tcp
+                        - udp
+                        - unknown
+                    type: string
+                firstSeenAt:
+                    description: When this port was first listed - first observed listening, or first declared. Survives a restart of whatever is behind it, as long as the port itself never went away in between.
+                    format: date-time
+                    type: string
+            required:
+                - port
+                - protocol
+                - firstSeenAt
+            type: object
+        SandboxAgentAutostopStatus:
+            additionalProperties: false
+            description: The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. Until its pool hands its power to the control plane the sandbox powers itself off once nothing has happened in it for the idle timeout; after, it reports idle, sleep and its next wake and the control plane powers it (ADR 26-10-16-337). The next sandbox-directed request starts it again. Every string in it is text the sandbox chose.
+            properties:
+                idleTimeoutSeconds:
+                    description: How long the sandbox runs with nothing happening in it before it powers itself off.
+                    format: int64
+                    type: integer
+                lastActivityAt:
+                    description: Latest activity of any kind - what a terminal shows changing (its text or title), a client connected or leaving, a keepalive lease, or the sandbox agent starting. A connected client makes it the observation time, and a lease dated in the future makes it that date.
+                    format: date-time
+                    type: string
+                lastActivity:
+                    description: What lastActivityAt was, for example "screen change on exec <id>" or "lease /run/discobox/keepalive/build". Text for a person reading it, not a value to branch on.
+                    type: string
+                stopsAt:
+                    description: lastActivityAt plus the idle timeout - the earliest the sandbox powers itself off if nothing else happens.
+                    format: date-time
+                    type: string
+                leaseUntil:
+                    description: The latest keepalive lease's time, when one is in the future.
+                    format: date-time
+                    type: string
+                controlPlanePower:
+                    description: Always true from a sandbox agent that can hand its power to the control plane - report idle, sleep and wake rather than power itself off. The pool hands it over only to a sandbox that says so (ADR 26-10-16-337 §8).
+                    type: boolean
+                idle:
+                    description: Present once the pool has handed the sandbox's power to the control plane, and true when the idle timeout has passed with no sleep request pending. Pending sleep suppresses idle so shutdown cannot bypass sleep eligibility. The control plane stops it after fresh confirmation.
+                    type: boolean
+                primaryExitedAt:
+                    description: When the process of the primary terminal's latest run (its login shell) ended. Present only once the pool has handed the sandbox's power to the control plane, and only while that run, started in this boot, has ended - the person typed exit at the shell, or it was killed. Quitting the harness leaves the shell running and does not set it, nor does a primary whose launch failed. The control plane stops the sandbox after fresh confirmation, whatever else is attached or held.
+                    format: date-time
+                    type: string
+                sleep:
+                    $ref: '#/components/schemas/SandboxAgentAutostopSleep'
+                wakeAt:
+                    description: The earliest wake in the future, from ~/.discobox/wake. Present only once the pool has handed the sandbox's power to the control plane.
+                    format: date-time
+                    type: string
+                wake:
+                    description: The file name of the wake at wakeAt. Text the sandbox chose; escape it before printing it.
+                    type: string
+            required:
+                - idleTimeoutSeconds
+                - lastActivityAt
+                - lastActivity
+                - stopsAt
+            type: object
+        SandboxAgentAutostopSleep:
+            additionalProperties: false
+            description: An eligible sleep request from /run/discobox/sleep. Present only after control-plane handover and a minimum 15 seconds from the latest request mtime; primary OSC 7501 working or a status read failure defers eligibility until two minutes from that mtime. Absence can mean a request is still waiting. The runtime powers down after fresh eligibility confirmation (ADR 26-11-04-746).
+            properties:
+                requestedAt:
+                    description: The latest pending request's modification time.
+                    format: date-time
+                    type: string
+                request:
+                    description: The latest pending request's file name. Text the sandbox chose; escape it before printing it.
+                    type: string
+            required:
+                - requestedAt
+                - request
+            type: object
+        SandboxAutostopConfirmRequest:
+            additionalProperties: false
+            description: Which power-down the pool is about to carry out, for the sandbox to confirm against what it sees now.
+            properties:
+                reason:
+                    description: idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request; exit when it reported its primary terminal's shell has exited.
+                    enum:
+                        - idle
+                        - sleep
+                        - exit
+                    type: string
+            required:
+                - reason
+            type: object
+        SandboxAutostopConfirmation:
+            additionalProperties: false
+            description: The sandbox's confirmation of a power-down, carrying its earliest pending wake - one in the future, or one already due that no boot has yet handed to the harness.
+            properties:
+                wakeAt:
+                    description: When the sandbox asks to be started again. Absent when it has no pending wake.
+                    format: date-time
+                    type: string
+                wake:
+                    description: The file name of that wake. Text the sandbox chose.
+                    type: string
+            type: object
+        SandboxCacheClearance:
+            additionalProperties: false
+            description: What the sandbox emptied on its pool's word.
+            properties:
+                paths:
+                    description: The cache paths whose contents were removed, each kept as an empty directory.
+                    items:
+                        type: string
+                    type: array
+            type: object
+        SandboxAutostopResumption:
+            additionalProperties: false
+            description: What the sandbox did on being told it was thawed.
+            properties:
+                wakes:
+                    description: Paths of the wakes that were due, and of the notes kept for the next start, moved into ~/.discobox/wake/.done/, oldest first. Text the sandbox chose.
+                    items:
+                        type: string
+                    type: array
+            type: object
+        SandboxAgentGitSourceStatus:
+            additionalProperties: false
+            properties:
+                slug:
+                    type: string
+                target:
+                    type: string
+                clean:
+                    type: boolean
+                branch:
+                    type: string
+                headCommit:
+                    type: string
+                ahead:
+                    format: int64
+                    type: integer
+                behind:
+                    format: int64
+                    type: integer
+                diffBase:
+                    description: Commit the diff stat is measured against - the commit the source was spawned at, forwarded to the merge base with the source's upstream tracking ref once the sandbox has fetched, so pulled commits do not count as the sandbox's changes. Absent when no base commit was recorded or the repository does not have it, in which case no diff stat is reported.
+                    type: string
+                diffFiles:
+                    description: Files changed against diffBase, as git diff --shortstat counts them (tracked changes only, committed and uncommitted).
+                    format: int64
+                    type: integer
+                diffAdded:
+                    description: Lines added against diffBase.
+                    format: int64
+                    type: integer
+                diffDeleted:
+                    description: Lines deleted against diffBase.
+                    format: int64
+                    type: integer
+                porcelain:
+                    description: Bounded git status --porcelain=v2 output for this source.
+                    type: string
+                truncated:
+                    description: Whether porcelain output was truncated to the capture limit.
+                    type: boolean
+                error:
+                    description: Non-fatal error observing this source (e.g. missing directory, not a git repository).
+                    type: string
+                observedAt:
+                    format: date-time
+                    type: string
+            required:
+                - slug
+                - target
+                - clean
+                - observedAt
+            type: object
+        SandboxAgentSessionStatus:
+            additionalProperties: false
+            properties:
+                terminalId:
+                    type: string
+                currentHarnessId:
+                    description: The sandbox's selected harness used for this terminal's current or next revival. The historical harnessId and creation metadata remain unchanged.
+                    type: string
+                harnessId:
+                    type: string
+                primary:
+                    type: boolean
+                title:
+                    description: Window title the program in the session last set (OSC 0/2), read from its terminal emulator. Absent when the session never titled itself - the sandbox's name and prompt are already on the record, so nothing is backfilled here.
+                    type: string
+                lastAccessedAt:
+                    description: Last time a client acted on this session - attached, typed, or is attached right now. Absent when no client ever has.
+                    format: date-time
+                    type: string
+                startedAt:
+                    format: date-time
+                    type: string
+                attacherCount:
+                    description: Number of clients currently attached to this terminal.
+                    format: int64
+                    type: integer
+                execStatus:
+                    description: Underlying exec process status.
+                    type: string
+                programStatus:
+                    $ref: '#/components/schemas/SandboxAgentProgramStatus'
+                    description: What the program in the session last reported of itself over OSC 7501 (ADR 26-10-16-424). Where present it is the session's status, harness and all, and nothing is derived beside it. Absent when the program reported nothing it still stands by.
+            required:
+                - terminalId
+                - primary
+                - attacherCount
+                - execStatus
+            type: object
+        SandboxAgentInventory:
+            additionalProperties: false
+            description: What a sandbox's list reads answer, posted so that they can be answered while it is not running (ADR 26-10-11-657). A part the sandbox cannot answer is absent, not empty.
+            properties:
+                observedAt:
+                    description: When the sandbox agent took this inventory, on the sandbox's clock.
+                    format: date-time
+                    type: string
+                digest:
+                    description: Hash of execs, services, tools and screens, and of nothing else. Two inventories with one digest answer every read alike.
+                    type: string
+                unchanged:
+                    description: True when the digest is the one the caller named as known. The parts are then omitted.
+                    type: boolean
+                execs:
+                    description: What listing the sandbox's execs answers.
+                    items:
+                        $ref: '#/components/schemas/SandboxExec'
+                    type: array
+                services:
+                    description: What listing the sandbox's services answers.
+                    items:
+                        $ref: '#/components/schemas/SandboxService'
+                    type: array
+                tools:
+                    description: What listing the sandbox's tools answers.
+                    items:
+                        $ref: '#/components/schemas/SandboxTool'
+                    type: array
+                screens:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxExecScreen'
+                    description: The visible screen of every exec that has one, by exec ID, with no scrollback.
+                    type: object
+            required:
+                - observedAt
+                - digest
+            type: object
+        SandboxAgentStatusWaitResponse:
+            additionalProperties: false
+            properties:
+                portsVersion:
+                    description: Opaque; changes whenever the sandbox's listening ports do or its harness configuration capture publishes a new candidate or state, and is never the same across a restart of its agent. Named for the ports alone, which were all it versioned at first; the name stays so a pool and an agent upgraded apart still read each other (ADR 26-11-09-062 §1).
+                    type: string
+            required:
+                - portsVersion
+            type: object
+        SandboxAgentStatusResponse:
+            additionalProperties: false
+            properties:
+                harnessConfigCandidate:
+                    type: string
+                harnessConfigState:
+                    type: string
+                rawSecrets:
+                    description: "Always true from a sandbox agent that takes raw secrets (ADR 26-10-27-840). The pool sends a runtime-config document's rawSecrets only to a sandbox that says so."
+                    type: boolean
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentGitSourceStatus'
+                    type: array
+                sessions:
+                    description: Terminal sessions only, live and ended alike - every terminal a record still exists for, typically just the primary. One-shot execs are not sessions and never appear.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSessionStatus'
+                    type: array
+                ports:
+                    description: Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP ports they have bound, plus those its services declare. Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it; it can be up to one watcher interval stale.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentListeningPort'
+                    type: array
+                resources:
+                    $ref: '#/components/schemas/SandboxAgentResourceUsage'
+                    description: This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where neither the cgroup nor procfs could be read.
+                autostop:
+                    $ref: '#/components/schemas/SandboxAgentAutostopStatus'
+                    description: The sandbox's idle-stop policy. Absent while the policy is not running.
+                meta:
+                    $ref: '#/components/schemas/SandboxMeta'
+                    description: The sandbox's name, description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record. Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
+                metaError:
+                    description: Why the meta file could not be read. Present only when meta is absent.
+                    type: string
+                runtimeConfigRevision:
+                    description: The revision of the runtime-config document the sandbox has applied (ADR 0126 §3). Absent while it has applied none.
+                    format: int64
+                    type: integer
+                sourceStates:
+                    description: How far the sandbox has converged each source the applied runtime-config document names (ADR 0126 §4). Absent while no document names a source.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSourceState'
+                    type: array
+                provision:
+                    $ref: '#/components/schemas/SandboxAgentProvisionStatus'
+                    description: The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6). Absent from a sandbox agent that predates it.
+                observedAt:
+                    format: date-time
+                    type: string
+            required:
+                - sources
+                - sessions
+                - ports
+                - observedAt
+            type: object
+        SandboxAgentSourceState:
+            additionalProperties: false
+            description: One source's convergence onto its target. A materialized source is not by itself ready - the pool still settles the sandbox's spec on it and says so with the document's delivered (ADR 0055).
+            properties:
+                slug:
+                    type: string
+                state:
+                    description: waiting - not cloned yet, for the reason waitingOn gives; cloning - being materialized now; materialized - cloned, checked out and its workspace restored, once; failed - the last attempt failed, see error, and it is retried.
+                    enum:
+                        - waiting
+                        - cloning
+                        - materialized
+                        - failed
+                    type: string
+                commit:
+                    description: The commit the source was materialized at, as its materialized marker records it - not where the sandbox has moved it since. Absent for a source a pool materialized, whose marker records none.
+                    type: string
+                waitingOn:
+                    description: 'What a waiting source waits for. Present only when state is waiting; absent from an agent that predates it, which means origin. origin - nothing to clone yet (no origin, or an origin with no commits); sandbox - the sandbox cannot clone its origin yet (its git cannot take the origin''s bearer token while a newer one installs), see error.'
+                    enum:
+                        - origin
+                        - sandbox
+                    type: string
+                error:
+                    description: Why the last attempt failed, or, for a source waiting on the sandbox, why the sandbox cannot clone it yet. Present only when state is failed, or waiting on the sandbox.
+                    type: string
+                revision:
+                    description: The runtime-config revision this state was reached under.
+                    format: int64
+                    type: integer
+                progress:
+                    $ref: '#/components/schemas/SandboxAgentCloneProgress'
+                    description: How far the clone has got, as git reports it. Present only while state is cloning and git has said something; a source resuming from a clone already in place fetches with no progress to report.
+                updatedAt:
+                    format: date-time
+                    type: string
+            required:
+                - slug
+                - state
+                - revision
+                - updatedAt
+            type: object
+        SandboxAgentCloneProgress:
+            additionalProperties: false
+            description: |-
+                A source's clone as git's progress output reports it, parsed for a status line. Each
+                stage counts against its own total, which git knows before the stage starts, so
+                objects/objectsTotal is progress toward a fixed target within a stage; bytes carries
+                over from receiving into resolving.
+            properties:
+                stage:
+                    $ref: '#/components/schemas/CloneProgressStage'
+                objects:
+                    description: Objects (deltas, when resolving) done so far in this stage
+                    format: int64
+                    type: integer
+                objectsTotal:
+                    description: Objects (deltas, when resolving) this stage has to do, zero while the remote has not said
+                    format: int64
+                    type: integer
+                bytes:
+                    description: Bytes received so far, as git counts them
+                    format: int64
+                    type: integer
+            required:
+                - stage
+            type: object
+        SandboxSourceStates:
+            additionalProperties: false
+            description: Each source's convergence onto its target, as the sandbox reports it.
+            properties:
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSourceState'
+                    type: array
+            required:
+                - sources
+            type: object
+        SandboxSourceProjectLayer:
+            additionalProperties: false
+            description: A materialized source's project layer, its settings file in its working tree (.discobox/settings.json, or .discobox/project.json in a repository without one), as the sandbox read it.
+            properties:
+                slug:
+                    type: string
+                commit:
+                    description: The commit checked out in the source when it was read.
+                    type: string
+                projectLayer:
+                    additionalProperties: true
+                    description: The project layer the settings file sets. Absent when the source sets none.
+                    type: object
+            required:
+                - slug
+                - commit
+            type: object
+        SandboxRuntimeConfig:
+            additionalProperties: false
+            description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3) - everything about it that can change while it exists. What cannot is the static bootstrap, sandbox.json (ADR 26-10-08-127). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
+            properties:
+                rawSecrets:
+                    description: "The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent refuses the whole document over a field it does not know."
+                    additionalProperties:
+                        enum:
+                            - env
+                            - file
+                        type: string
+                    type: object
+                revision:
+                    description: Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates it, not the schema, so every invalid document is answered alike.
+                    format: int64
+                    type: integer
+                agent:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigAgent'
+                secretEnv:
+                    additionalProperties:
+                        type: string
+                    description: The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value never reaches a sandbox.
+                    type: object
+                proxy:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigProxy'
+                    description: Material for the sandbox's hop to its pool. Absent when it has none.
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxRuntimeConfigSource'
+                    type: array
+            required:
+                - revision
+                - agent
+            type: object
+        SandboxRuntimeConfigAgent:
+            additionalProperties: false
+            description: The sandbox-agent configuration the pool may change while the sandbox exists, applied to the running agent.
+            properties:
+                idleTimeout:
+                    description: The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect when applied.
+                    type: string
+                controlPlanePower:
+                    description: True when the control plane powers the sandbox - it reports idle, sleep and wake rather than powering itself off (ADR 26-10-16-337 §8). Sent only to a sandbox whose status advertised controlPlanePower, because an older agent refuses the whole document over a field it does not know.
+                    type: boolean
+                tls:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigAgentTLS'
+                    description: Renews the keypair the agent serves its API over TLS with (ADR 26-10-29-481 §3). Sent only to a sandbox whose bootstrap told its agent to serve TLS, which is new enough to know the field. Absent leaves the keypair the agent holds.
+            type: object
+        SandboxRuntimeConfigAgentTLS:
+            additionalProperties: false
+            description: The keypair a sandbox agent serves its API over TLS with, which its pool's mTLS CA signed for the sandbox's private name, so the pool knows which sandbox answered.
+            properties:
+                cert:
+                    description: The PEM server certificate.
+                    type: string
+                key:
+                    description: The PEM private key. Required on delivery; never returned, so a document read back omits it.
+                    type: string
+            required:
+                - cert
+            type: object
+        SandboxRuntimeConfigProxy:
+            additionalProperties: false
+            description: The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the sandbox's bootstrap and where it listens is its own; the sandbox renders its bridge configs from the three and starts the units that read them.
+            properties:
+                mtlsCa:
+                    description: PEM CA the pool's mTLS endpoints present certificates from.
+                    type: string
+                mitmCa:
+                    description: PEM CA the egress proxy signs intercepted connections with.
+                    type: string
+                clientCert:
+                    description: This sandbox's PEM client certificate.
+                    type: string
+                clientKey:
+                    description: This sandbox's PEM client private key. Required on delivery; never returned, so a document read back omits it.
+                    type: string
+            required:
+                - mtlsCa
+                - mitmCa
+                - clientCert
+            type: object
+        SandboxRuntimeConfigSource:
+            additionalProperties: false
+            description: One of the sandbox's sources as the pool sees it. The sandbox clones each source that has an origin onto its target and reports how far it got on its status (sourceStates); how it is checked out is the create-time placement in sandbox.json (ADR 0126 §4).
+            properties:
+                slug:
+                    type: string
+                target:
+                    description: The in-sandbox path the source's checkout lives at, absolute, or home-relative (~/ and a clean relative path) for a skills source, which the sandbox expands against its user's home. Required with originUrl.
+                    type: string
+                originUrl:
+                    description: Where the source's origin is served, when it has one. The sandbox clones from it and keeps it as the checkout's origin remote.
+                    type: string
+                originToken:
+                    description: The bearer token originUrl takes, when it takes one - the pool's sandbox token, scope origin:fetch. The sandbox's git reads it through the agent's credential helper, so it is never written into the checkout.
+                    type: string
+                commit:
+                    description: The commit the source is pinned to.
+                    type: string
+                delivered:
+                    description: The source is in place and the pool has settled the sandbox's spec on it. The sandbox's readiness gate clears once every source is delivered.
+                    type: boolean
+            required:
+                - slug
+            type: object
+        SandboxAgentMeta:
+            additionalProperties: false
+            description: A sandbox's meta as its meta file holds it after a write.
+            properties:
+                meta:
+                    $ref: '#/components/schemas/SandboxMeta'
+                    description: Everything the file now holds.
+                observedAt:
+                    description: When the sandbox wrote the file, on the sandbox's own clock - the same clock its status reports are stamped with, so the two can be ordered. Written to the nanosecond, since the control plane records a write only when it is newer than the last, and two writes inside one second would otherwise tie.
+                    format: date-time
+                    type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+            required:
+                - meta
+                - observedAt
+            type: object

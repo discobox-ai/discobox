@@ -79,10 +79,11 @@ surface:
   client/server transport code into `pool-agent/api/gen` and stable schema
   aliases into `pool-agent/api/model`; `pool-agent/server` adapts the
   generated server scaffold to local runtime operations.
-- Sandbox-agent routes (execs, files, harness hooks, services, status) are canonical
-  in `api/openapi/server.yaml` and marked `x-sandbox-agent` for subset
-  generation. `api/openapi/sandbox.yaml` is generated from that server contract
-  by `api/internal/gensandboxopenapi` and must not be edited directly.
+- `api/openapi/sandbox.yaml` is the complete sandbox agent REST API contract.
+  Generate it with `api/internal/gensandboxopenapi` from the shared operations
+  marked `x-sandbox-agent` in `server.yaml` and the pool-facing operations in
+  `api/openapi/sandbox-agent-only.yaml`. Shared schemas live in `server.yaml`.
+  Schemas used only by agent operations live with those operations.
 - `/etc/discobox/sandbox.json` (the sandbox's effective runtime config, and its
   static bootstrap: placed before the agent exists, never rewritten, no private
   key — ADR 26-10-08-127) is not a REST contract and is not OpenAPI-generated. It is the hand-written
@@ -192,11 +193,11 @@ modules — or Go gives the location meaning (`internal`).
 
 | Package/path | Ownership |
 | --- | --- |
-| [`api/openapi`](api/openapi) | Canonical OpenAPI source contracts owned by the root module: the server REST API, plus generated sandbox-agent subset output. Pool-agent-owned contracts live under `pool-agent/api/openapi`. |
+| [`api/openapi`](api/openapi) | Canonical OpenAPI source contracts owned by the root module: the server REST API, plus sandbox-agent-only source and the generated sandbox contract. Pool-agent-owned contracts live under `pool-agent/api/openapi`. |
 | [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`, plus small handwritten helpers over generated types (list iterators). |
-| [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
+| [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from the generated sandbox agent contract `api/openapi/sandbox.yaml`. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
-| [`api/internal`](api/internal) | The generators behind the `api/model` aliases and the `sandbox.yaml` subset, and `genogen`, which runs ogen into a temporary directory and syncs the result into `api/gen`, `api/sandboxgen` and `pool-agent/api/gen`. |
+| [`api/internal`](api/internal) | The generators behind the `api/model` aliases and the `sandbox.yaml` contract, and `genogen`, which runs ogen into a temporary directory and syncs the result into `api/gen`, `api/sandboxgen` and `pool-agent/api/gen`. |
 | [`pkg/requestprogress`](pkg/requestprogress) | Transient request phases carried in HTTP 102 responses, with a context reporter for servers and an HTTP trace observer for clients; final JSON responses remain unchanged. |
 | [`pkg/gitprogress`](pkg/gitprogress) | Git clone/fetch progress meters shared by the sandbox agent and pool pulls; numeric stages, object counts and bytes, with bounded error messages. |
 | [`pkg/configfile`](pkg/configfile) | The engine behind a schema-checked YAML configuration file whose Go struct is its source of truth: struct tags declare each setting, and one walk over them gives the strict decode (a key nothing defines is an error naming it), the environment overlay, the commented reference file and the JSON Schema. Shared because the server's `server.yaml` (ADR 0096) and the CLI's `client.yaml` (ADR 26-10-09-389) must be checked and documented by the same rules; a repository's `.discobox/settings.json` takes its schema from the same walk. |

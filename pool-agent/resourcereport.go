@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
@@ -259,7 +259,7 @@ type sandboxResourceSource interface {
 // sandboxResourceSample is one sandbox's counters as of its last status poll,
 // decoded out of the payload the poller relays untouched.
 type sandboxResourceSample struct {
-	Usage apimodel.SandboxAgentResourceUsage
+	Usage sandboxapi.SandboxAgentResourceUsage
 }
 
 type poolResourceReporter struct {
@@ -509,11 +509,11 @@ func (r *poolResourceReporter) applySample(entry *SandboxResourceUsage, sample, 
 // language server that has been up for a day outranks a test run that started
 // two minutes ago on cumulative CPU, and is not what anyone means by "what is
 // using all the CPU".
-func rankProcesses(candidates []apimodel.SandboxAgentProcessUsage, observedAt time.Time, previous apimodel.SandboxAgentResourceUsage) []ProcessResourceUsage {
+func rankProcesses(candidates []sandboxapi.SandboxAgentProcessUsage, observedAt time.Time, previous sandboxapi.SandboxAgentResourceUsage) []ProcessResourceUsage {
 	if len(candidates) == 0 {
 		return nil
 	}
-	before := make(map[processKey]apimodel.SandboxAgentProcessUsage, len(previous.Processes))
+	before := make(map[processKey]sandboxapi.SandboxAgentProcessUsage, len(previous.Processes))
 	for _, proc := range previous.Processes {
 		before[processKey{pid: proc.Pid, startTicks: proc.StartTicks}] = proc
 	}

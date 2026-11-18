@@ -8,7 +8,7 @@ import _ "embed"
 //go:embed server.yaml
 var ServerYAML []byte
 
-// SandboxYAML is the generated sandbox-agent subset of ServerYAML.
+// SandboxYAML is the generated sandbox agent REST API document.
 //
 //go:embed sandbox.yaml
 var SandboxYAML []byte

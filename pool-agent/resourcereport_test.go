@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	apigen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
@@ -53,19 +53,19 @@ func TestVCPURateReportsNoRateRatherThanZero(t *testing.T) {
 	}
 }
 
-func sample(observedAt time.Time, usageUsec int64, procs ...apimodel.SandboxAgentProcessUsage) sandboxResourceSample {
-	return sandboxResourceSample{Usage: apimodel.SandboxAgentResourceUsage{
+func sample(observedAt time.Time, usageUsec int64, procs ...sandboxapi.SandboxAgentProcessUsage) sandboxResourceSample {
+	return sandboxResourceSample{Usage: sandboxapi.SandboxAgentResourceUsage{
 		ObservedAt:   observedAt,
-		Source:       apigen.SandboxAgentResourceUsageSourceCgroup,
-		CPU:          apimodel.SandboxAgentCPUUsage{UsageUsec: usageUsec},
-		Memory:       apimodel.SandboxAgentMemoryUsage{CurrentBytes: 1 << 30, VirtualBytes: 1 << 31, ResidentBytes: 1 << 30},
+		Source:       sandboxapi.SandboxAgentResourceUsageSourceCgroup,
+		CPU:          sandboxapi.SandboxAgentCPUUsage{UsageUsec: usageUsec},
+		Memory:       sandboxapi.SandboxAgentMemoryUsage{CurrentBytes: 1 << 30, VirtualBytes: 1 << 31, ResidentBytes: 1 << 30},
 		ProcessCount: int64(len(procs)),
 		Processes:    procs,
 	}}
 }
 
-func proc(pid, startTicks, cpuUsec int64, command string, rss int64) apimodel.SandboxAgentProcessUsage {
-	return apimodel.SandboxAgentProcessUsage{
+func proc(pid, startTicks, cpuUsec int64, command string, rss int64) sandboxapi.SandboxAgentProcessUsage {
+	return sandboxapi.SandboxAgentProcessUsage{
 		Pid: pid, StartTicks: startTicks, CpuUsec: cpuUsec,
 		Command: command, ResidentBytes: rss,
 	}
@@ -174,7 +174,7 @@ func TestRankProcessesRanksByRateNotCumulative(t *testing.T) {
 		proc(10, 100, 3_600_000_000, "gopls", 1<<30),
 		proc(20, 900, 0, "vitest", 1<<28),
 	).Usage
-	current := []apimodel.SandboxAgentProcessUsage{
+	current := []sandboxapi.SandboxAgentProcessUsage{
 		proc(10, 100, 3_600_000_000, "gopls", 1<<30),
 		proc(20, 900, 20_000_000, "vitest", 1<<28),
 	}
@@ -198,7 +198,7 @@ func TestRankProcessesDoesNotDifferenceARecycledPID(t *testing.T) {
 	base := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	previous := sample(base, 0, proc(42, 100, 5_000_000_000, "old", 1<<20)).Usage
 	// Same PID, different start time: a different process entirely.
-	current := []apimodel.SandboxAgentProcessUsage{proc(42, 999_999, 1_000, "new", 1<<20)}
+	current := []sandboxapi.SandboxAgentProcessUsage{proc(42, 999_999, 1_000, "new", 1<<20)}
 
 	got := rankProcesses(current, base.Add(10*time.Second), previous)
 

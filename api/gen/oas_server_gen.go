@@ -8,12 +8,6 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
-	// AcknowledgeSandboxHarnessConfig implements acknowledge-sandbox-harness-config operation.
-	//
-	// Acknowledge sandbox harness config.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
-	AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (AcknowledgeSandboxHarnessConfigRes, error)
 	// ApproveAPIAccessRequest implements approve-api-access-request operation.
 	//
 	// POST /projects/{projectId}/api-access-requests/{requestId}/approve
@@ -69,12 +63,6 @@ type Handler interface {
 	//
 	// GET /api/pools/{poolId}/sandbox-start-authorization
 	AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error)
-	// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
-	//
-	// Capture sandbox harness config.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
-	CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (CaptureSandboxHarnessConfigRes, error)
 	// CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
 	//
 	// Asks the provider instance whether the server reaches what its pools need (its service's account,
@@ -91,15 +79,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/pools/{poolId}/clear-cache
 	ClearPoolCache(ctx context.Context, params ClearPoolCacheParams) (ClearPoolCacheRes, error)
-	// ClearSandboxCache implements clear-sandbox-cache operation.
-	//
-	// Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A
-	// machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than
-	// emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only
-	// cache-clear scope may call it.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
-	ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (ClearSandboxCacheRes, error)
 	// CompletePoolSandboxSuspend implements complete-pool-sandbox-suspend operation.
 	//
 	// Record a successful suspend once, before releasing the pool's power lock.
@@ -114,18 +93,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push
 	CompleteSandboxSourcePush(ctx context.Context, req *CompleteSandboxSourcePushBody, params CompleteSandboxSourcePushParams) (CompleteSandboxSourcePushRes, error)
-	// ConfirmSandboxAutostop implements confirm-sandbox-autostop operation.
-	//
-	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
-	// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now
-	// and no sleep request is pending; sleep only after rechecking the latest request mtime, minimum
-	// grace, and live primary OSC 7501 status against the two-minute ceiling (ADR 26-11-04-746).
-	// Successful sleep confirmation consumes every pending request. The answer carries the sandbox's
-	// earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop
-	// scope may call it.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
-	ConfirmSandboxAutostop(ctx context.Context, req *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error)
 	// CopySandboxFile implements copy-sandbox-file operation.
 	//
 	// Copies a file, a link, or a directory with everything it holds to another path within the discobox.
@@ -426,20 +393,6 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes/{sandboxId}
 	GetSandbox(ctx context.Context, params GetSandboxParams) (GetSandboxRes, error)
-	// GetSandboxAgentInventory implements get-sandbox-agent-inventory operation.
-	//
-	// What the sandbox's exec, service and tool lists and its terminals' screens answer right now, in
-	// one document, so the control plane can answer those reads while the sandbox is not running (ADR
-	// 26-10-11-657). Only a token carrying the inventory scope may read it.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/inventory
-	GetSandboxAgentInventory(ctx context.Context, params GetSandboxAgentInventoryParams) (GetSandboxAgentInventoryRes, error)
-	// GetSandboxAgentStatus implements get-sandbox-agent-status operation.
-	//
-	// Get sandbox-agent-reported status (git status, harness session state, active connections).
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
-	GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (GetSandboxAgentStatusRes, error)
 	// GetSandboxCredentialRequest implements get-sandbox-credential-request operation.
 	//
 	// Poll an agent credential request.
@@ -479,39 +432,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/providers/{providerId}
 	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (GetSandboxProviderInstanceRes, error)
-	// GetSandboxRuntimeConfig implements get-sandbox-runtime-config operation.
-	//
-	// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
-	// (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
-	GetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (GetSandboxRuntimeConfigRes, error)
 	// GetSandboxService implements get-sandbox-service operation.
 	//
 	// Get a declared service in a sandbox.
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
-	// GetSandboxSourceProjectLayer implements get-sandbox-source-project-layer operation.
-	//
-	// Reads a materialized source's project layer (.discobox/settings.json in its working tree, or .
-	// discobox/project.json in a repository without one), which the pool reads to settle the sandbox's
-	// final spec before it marks the source delivered (ADR 0055, ADR 0126 §4, ADR 26-10-16-423 §11).
-	// 404 when no applied runtime-config document names the source, 409 while the sandbox has not
-	// materialized it, 422 when the file does not decode or the repository holds settings.json beside a
-	// file it replaces. Only a token carrying the pool-only runtime-config scope may read it.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer
-	GetSandboxSourceProjectLayer(ctx context.Context, params GetSandboxSourceProjectLayerParams) (GetSandboxSourceProjectLayerRes, error)
-	// GetSandboxSourceStates implements get-sandbox-source-states operation.
-	//
-	// Reports how far each source the applied runtime-config document names has converged onto its
-	// target (ADR 0126 §4) - the same states the status poll carries, for the pool to wait on while it
-	// settles a create rather than on the poll's interval. Empty until a document has been applied. Only
-	// a token carrying the pool-only runtime-config scope may read it.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources
-	GetSandboxSourceStates(ctx context.Context, params GetSandboxSourceStatesParams) (GetSandboxSourceStatesRes, error)
 	// GetSandboxTrustRequest implements get-sandbox-trust-request operation.
 	//
 	// Poll an agent host trust request.
@@ -854,17 +780,6 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/gateways/{gatewayName}
 	PutProjectGateway(ctx context.Context, req *PutProjectGatewayBody, params PutProjectGatewayParams) (PutProjectGatewayRes, error)
-	// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
-	//
-	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
-	// applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored
-	// and the document the sandbox holds is returned; the same revision is a retry when the document
-	// matches and a 409 when it does not. A document that fails validation (422) or cannot be written
-	// whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token
-	// carrying the pool-only runtime-config scope may deliver one.
-	//
-	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
-	PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (PutSandboxRuntimeConfigRes, error)
 	// ReadSandboxFile implements read-sandbox-file operation.
 	//
 	// Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
@@ -884,12 +799,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
-	// ReconsiderSandboxHarnessConfig implements reconsider-sandbox-harness-config operation.
-	//
-	// Reconsider sandbox harness config.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider
-	ReconsiderSandboxHarnessConfig(ctx context.Context, req *HarnessConfigReconsideration, params ReconsiderSandboxHarnessConfigParams) (ReconsiderSandboxHarnessConfigRes, error)
 	// ReconsiderSandboxHarnessConfigChanges implements reconsider-sandbox-harness-config-changes operation.
 	//
 	// Reconsider sandbox harness config changes.
@@ -1042,15 +951,6 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
 	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error)
-	// ResumeSandboxAutostop implements resume-sandbox-autostop operation.
-	//
-	// Tells the sandbox its pool has just thawed it from a suspend. Nothing booted, so the sandbox moves
-	// the wakes now due, and the notes kept for the next start, into ~/.discobox/wake/.done/ as a boot
-	// does, and the wake that brought it back is not returned again by its next power-down's
-	// confirmation. Only a token carrying the pool-only autostop scope may call it.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
-	ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error)
 	// SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
 	//
 	// Save applies the chosen candidate patch over current saved settings and credentials, even if
@@ -1220,15 +1120,6 @@ type Handler interface {
 	//
 	// PATCH /projects/{projectId}/sandboxes/{sandboxId}
 	UpdateSandbox(ctx context.Context, req *UpdateSandboxBody, params UpdateSandboxParams) (UpdateSandboxRes, error)
-	// UpdateSandboxAgentMeta implements update-sandbox-agent-meta operation.
-	//
-	// Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
-	// and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
-	// the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
-	// refused rather than overwritten.
-	//
-	// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
-	UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (UpdateSandboxAgentMetaRes, error)
 	// UpdateSandboxMeta implements update-sandbox-meta operation.
 	//
 	// Change a sandbox's name, description or tags. The change is carried into the sandbox and applied
@@ -1262,18 +1153,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
 	UpgradeSandbox(ctx context.Context, req *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error)
-	// WaitSandboxAgentStatus implements wait-sandbox-agent-status operation.
-	//
-	// Answers with the version of what wakes the pool, the sandbox's listening ports, its harness
-	// configuration capture, and the state of its provisioning and of each feature in it. A call without
-	// `after`, or with an `after` that is not the current version, is answered at once; a call naming
-	// the current version is held until either changes or the agent's hold (25 seconds) passes, and then
-	// answered with the version as it is. The pool waits here so a newly bound port, or a harness
-	// sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR
-	// 26-11-09-062).
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
-	WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (WaitSandboxAgentStatusRes, error)
 	// WaitSandboxExec implements wait-sandbox-exec operation.
 	//
 	// Blocks until one of the given conditions holds — a named harness hook event from this terminal,

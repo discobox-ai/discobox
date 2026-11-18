@@ -52,15 +52,3 @@ func (h *Handler) DiscardSandboxHarnessConfigChanges(ctx context.Context, r *ser
 	body, err := services.Convert[serverapi.HarnessConfigChanges](out)
 	return &body, err
 }
-
-// CaptureSandboxHarnessConfig is private to the agent. The control plane
-// originates them only after a user asks to save, and never exposes a proxy.
-func (h *Handler) CaptureSandboxHarnessConfig(context.Context, *serverapi.HarnessConfigCandidateRequest, serverapi.CaptureSandboxHarnessConfigParams) (serverapi.CaptureSandboxHarnessConfigRes, error) {
-	return sandboxAgentRuntimeNotImplemented(), nil
-}
-func (h *Handler) AcknowledgeSandboxHarnessConfig(context.Context, *serverapi.HarnessConfigAcknowledgment, serverapi.AcknowledgeSandboxHarnessConfigParams) (serverapi.AcknowledgeSandboxHarnessConfigRes, error) {
-	return sandboxAgentRuntimeNotImplemented(), nil
-}
-func (h *Handler) ReconsiderSandboxHarnessConfig(context.Context, *serverapi.HarnessConfigReconsideration, serverapi.ReconsiderSandboxHarnessConfigParams) (serverapi.ReconsiderSandboxHarnessConfigRes, error) {
-	return sandboxAgentRuntimeNotImplemented(), nil
-}

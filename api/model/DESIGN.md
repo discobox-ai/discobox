@@ -11,7 +11,7 @@
   named type in `../gen/oas_schemas_gen.go`. A schema ogen does not emit as a
   named type gets no alias.
 - Keep transport clients, servers, handlers, and validators in `../gen`. The
-  sandbox-agent subset scaffold (`../sandboxgen`) has no alias package.
+  sandbox agent scaffold (`../sandboxgen`) has no alias package.
 
 The sandbox's effective runtime configuration (`/etc/discobox/sandbox.json`)
 is not a REST contract type and is not generated here. It is the hand-written

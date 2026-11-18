@@ -59,12 +59,45 @@ func run() error {
 		return fmt.Errorf("%s has no operations marked %s: true", sourcePath, sandboxAgentMarker)
 	}
 
+	const privatePath = "api/openapi/sandbox-agent-only.yaml"
+	private, err := genyaml.ReadYAML(privatePath)
+	if err != nil {
+		return err
+	}
+	privatePaths, ok := genyaml.AsMap(private["paths"])
+	if !ok || len(privatePaths) == 0 {
+		return fmt.Errorf("%s has no paths", privatePath)
+	}
+	for path, value := range privatePaths {
+		if _, exists := paths[path]; exists {
+			return fmt.Errorf("%s: %s is already defined in %s", privatePath, path, sourcePath)
+		}
+		outPaths[path] = value
+	}
+
+	components, _ := genyaml.AsMap(source["components"])
+	privateComponents, _ := genyaml.AsMap(private["components"])
+	for category, value := range privateComponents {
+		entries, _ := genyaml.AsMap(value)
+		combined, ok := genyaml.AsMap(components[category])
+		if !ok {
+			combined = map[string]any{}
+			components[category] = combined
+		}
+		for name, entry := range entries {
+			if _, exists := combined[name]; exists {
+				return fmt.Errorf("%s: component %s/%s is already defined in %s", privatePath, category, name, sourcePath)
+			}
+			combined[name] = entry
+		}
+	}
+
 	out := map[string]any{
 		"openapi": source["openapi"],
 		"info": map[string]any{
 			"title":       "Discobox Sandbox Harness REST API",
 			"version":     nestedString(source, "info", "version"),
-			"description": "Generated subset of the canonical Discobox Server REST API implemented inside a sandbox.",
+			"description": "REST API implemented by the sandbox agent.",
 		},
 		"servers": []any{
 			map[string]any{

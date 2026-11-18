@@ -12,10 +12,11 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/cli/internal/portforward"
 )
 
-func sandboxWithPorts(t *testing.T, ports []apimodel.SandboxAgentListeningPort) apimodel.Sandbox {
+func sandboxWithPorts(t *testing.T, ports []sandboxapi.SandboxAgentListeningPort) apimodel.Sandbox {
 	t.Helper()
 	encoded, err := json.Marshal(ports)
 	if err != nil {
@@ -27,13 +28,13 @@ func sandboxWithPorts(t *testing.T, ports []apimodel.SandboxAgentListeningPort) 
 }
 
 func TestSandboxPortTargetsKeepsTheAddressToDial(t *testing.T) {
-	sandbox := sandboxWithPorts(t, []apimodel.SandboxAgentListeningPort{
+	sandbox := sandboxWithPorts(t, []sandboxapi.SandboxAgentListeningPort{
 		{Port: 8080, Addresses: []string{"0.0.0.0"}, Protocol: "http"},
 		{Port: 5432, Addresses: []string{"127.0.0.1"}, Protocol: "tcp"},
 		{Port: 9000, Addresses: []string{"10.1.2.3"}, Protocol: "unknown"},
 		{Port: 0, Addresses: []string{"0.0.0.0"}, Protocol: "tcp"},
 		{Port: 5353, Addresses: []string{"0.0.0.0"}, Protocol: "udp"},
-		{Port: 6900, Protocol: "http", Declared: apiclientgen.NewOptBool(true), ServiceId: apiclientgen.NewOptString("ai.discobox.desktop"), ServiceName: apiclientgen.NewOptString("Desktop")},
+		{Port: 6900, Protocol: "http", Declared: sandboxapi.NewOptBool(true), ServiceId: sandboxapi.NewOptString("ai.discobox.desktop"), ServiceName: sandboxapi.NewOptString("Desktop")},
 	})
 	want := []portforward.Target{
 		{Network: portforward.TCP, Host: "localhost", Port: 8080, Protocol: "http"},
@@ -61,7 +62,7 @@ func TestSandboxPortTargetsIsEmptyWithoutAReport(t *testing.T) {
 // The listing rows are the same report with the address dropped, so the two
 // never disagree about which ports a sandbox is serving.
 func TestSandboxListeningPortsIsTheSameReport(t *testing.T) {
-	sandbox := sandboxWithPorts(t, []apimodel.SandboxAgentListeningPort{
+	sandbox := sandboxWithPorts(t, []sandboxapi.SandboxAgentListeningPort{
 		{Port: 8080, Addresses: []string{"0.0.0.0"}, Protocol: "http"},
 	})
 	ports := sandboxListeningPorts(sandbox)
@@ -74,10 +75,10 @@ func TestSandboxListeningPortsIsTheSameReport(t *testing.T) {
 // pane header draws the desktop's as a link label outside every pane's
 // emulator: it arrives terminal-safe.
 func TestSandboxListeningPortsEscapesTheServiceName(t *testing.T) {
-	sandbox := sandboxWithPorts(t, []apimodel.SandboxAgentListeningPort{{
+	sandbox := sandboxWithPorts(t, []sandboxapi.SandboxAgentListeningPort{{
 		Port: 6900, Addresses: []string{"0.0.0.0"}, Protocol: "http",
-		ServiceId:   apiclientgen.NewOptString("ai.discobox.desktop"),
-		ServiceName: apiclientgen.NewOptString("Desk\x1b]0;pwned\x07top"),
+		ServiceId:   sandboxapi.NewOptString("ai.discobox.desktop"),
+		ServiceName: sandboxapi.NewOptString("Desk\x1b]0;pwned\x07top"),
 	}})
 	ports := sandboxListeningPorts(sandbox)
 	if len(ports) != 1 || ports[0].ServiceName != `Desk\x1b]0;pwned\atop` || ports[0].ServiceID != "ai.discobox.desktop" {
@@ -90,10 +91,10 @@ func TestSandboxListeningPortsEscapesTheServiceName(t *testing.T) {
 // refused tunnel's message carried in a dial error. Every line reaches the
 // terminal escaped, whichever of them carries the sequence.
 func TestProxyEventsArePrintedTerminalSafe(t *testing.T) {
-	sandbox := sandboxWithPorts(t, []apimodel.SandboxAgentListeningPort{{
+	sandbox := sandboxWithPorts(t, []sandboxapi.SandboxAgentListeningPort{{
 		Port: 8080, Addresses: []string{hostile}, Protocol: "http",
-		ServiceId:   apiclientgen.NewOptString(hostile),
-		ServiceName: apiclientgen.NewOptString(hostile),
+		ServiceId:   sandboxapi.NewOptString(hostile),
+		ServiceName: sandboxapi.NewOptString(hostile),
 	}})
 	targets := sandboxPortTargets(sandbox)
 	if len(targets) != 1 {

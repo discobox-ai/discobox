@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/cli/internal/portforward"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
@@ -140,7 +141,7 @@ func sandboxListeningPorts(sb apimodel.Sandbox) []tui.Port {
 // reportedPorts is the agent's last port report, or nothing when it has not
 // made one. Both the forward and the header are drawn from it, so they can
 // never disagree about what the sandbox is serving.
-func reportedPorts(sb apimodel.Sandbox) []apimodel.SandboxAgentListeningPort {
+func reportedPorts(sb apimodel.Sandbox) []sandboxapi.SandboxAgentListeningPort {
 	agentStatus, ok := sb.Runtime.AgentStatus.Get()
 	if !ok {
 		return nil
@@ -149,7 +150,7 @@ func reportedPorts(sb apimodel.Sandbox) []apimodel.SandboxAgentListeningPort {
 	if !ok {
 		return nil
 	}
-	var reported []apimodel.SandboxAgentListeningPort
+	var reported []sandboxapi.SandboxAgentListeningPort
 	if err := json.Unmarshal(raw, &reported); err != nil {
 		return nil
 	}

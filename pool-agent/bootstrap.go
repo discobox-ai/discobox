@@ -15,7 +15,7 @@ import (
 
 	"github.com/discobox-ai/vm/pkg/machine"
 
-	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/pkg/controlplane"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
@@ -478,7 +478,7 @@ type SandboxAgentStatusEntry struct {
 	ObservedAt time.Time       `json:"observedAt"`
 
 	// Resources never leaves this process on this channel.
-	Resources *apimodel.SandboxAgentResourceUsage `json:"-"`
+	Resources *sandboxapi.SandboxAgentResourceUsage `json:"-"`
 }
 
 // SandboxAgentStatusReportRequest pushes this tick's successfully polled

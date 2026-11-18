@@ -3,8 +3,8 @@
 This module owns the sandbox runtime environment and in-sandbox agent REST API
 implementation.
 
-The Go implementation serves the generated sandbox-agent subset of
-`api/openapi/server.yaml` using the generated `api/sandboxgen` server scaffold.
+The Go implementation serves `api/openapi/sandbox.yaml` using the generated `api/sandboxgen`
+server scaffold.
 It validates the sandbox's hard-coded project/sandbox identity, accepts
 short-lived control-plane-signed tokens, and owns the sandbox-local exec,
 terminal, and service runtime.
@@ -319,8 +319,9 @@ absent.
 
 ## Boundary Rules
 
-- Implement the generated in-sandbox exec, service, harness-hook, and status API subset from `api/sandboxgen`;
-  canonical route and DTO definitions live in `api/openapi/server.yaml`.
+- Implement the in-sandbox REST API from `api/sandboxgen`;
+  canonical definitions live in `api/openapi/server.yaml` for shared operations
+  and `api/openapi/sandbox-agent-only.yaml` for agent-only operations and schemas.
 - Depend on root contracts and generated API types only for cross-module data.
 - Do not import server internals or provider implementation packages.
 - Keep pool registration and control-plane bootstrapping in the `pool-agent`
