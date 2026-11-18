@@ -36,7 +36,8 @@ type purgeOutcome struct {
 }
 
 // PurgeClient removes everything the audit holds of one client: its HTTP,
-// SOCKS and DNS rows, and its body and stream spools (ADR 26-11-14-896 §5).
+// SOCKS and DNS rows, its body and stream spools (ADR 26-11-14-896 §5), and
+// its DNS budget and drop counts (Drops), which the pool totals keep.
 // Closing a spool does not end its exchange, whose row is written when the
 // exchange ends, so the writer also drops the client's rows that arrive after
 // the purge, for purgedClientMemory (dropPurged).
@@ -63,6 +64,9 @@ func (r *Recorder) PurgeClient(ctx context.Context, clientID string) (PurgeResul
 		return PurgeResult{}, nil
 	}
 	r.closeClientSpools(clientID)
+	r.clientsMu.Lock()
+	delete(r.clients, clientID)
+	r.clientsMu.Unlock()
 
 	request := purgeRequest{ctx: ctx, clientID: clientID, done: make(chan purgeOutcome, 1)}
 	r.enqueueMu.RLock()

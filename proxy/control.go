@@ -147,8 +147,11 @@ func (s *Server) handleControlListDNS(w http.ResponseWriter, r *http.Request) {
 	writeControlJSON(w, rows, err)
 }
 
-func (s *Server) handleControlDropped(w http.ResponseWriter, _ *http.Request) {
-	writeControlJSON(w, map[string]uint64{"dropped": s.audit.Dropped(), "dnsDropped": s.audit.DNSDropped()}, nil)
+// handleControlDropped answers with client_id's own drop counts, or the
+// pool's totals when none is given. A sandbox-scoped token always has one
+// (scopeToToken), so it never reads the totals, which count its neighbours'.
+func (s *Server) handleControlDropped(w http.ResponseWriter, r *http.Request) {
+	writeControlJSON(w, s.audit.Drops(r.URL.Query().Get("client_id")), nil)
 }
 
 func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Request) {
