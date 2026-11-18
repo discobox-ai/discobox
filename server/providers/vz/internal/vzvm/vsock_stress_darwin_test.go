@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
 )
 
 // The stress test boots a real guest, so it is opt-in and needs a test binary
@@ -51,9 +53,50 @@ const (
 	// package cannot import.
 	stressLifecyclePort = 3003
 	// stressKernelCmdline mirrors the vz driver's kernelCmdline, which this
-	// package cannot import.
-	stressKernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4"
+	// package cannot import. Connect and Listen frame every connection, so
+	// the guest is asked to frame its own (ADR 26-11-17-182 §5).
+	stressKernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4 " + guestvsock.FramingKernelParameter
 )
+
+// TestVSOCKHairpinAndStalledReader is #1334 on a real guest: a stream out of
+// the guest copied by the host straight back into it on a second connection,
+// and a stream nobody reads beside connections that must keep answering. On
+// an unframed host either one blocks Virtualization.framework's VSOCK queue
+// and, with it, the guest's CPU 0. It passes when every byte arrives, every
+// ping answers, and the guest's console shows no stall, lockup or panic.
+func TestVSOCKHairpinAndStalledReader(t *testing.T) {
+	guestDir := os.Getenv(stressGuestEnv)
+	if guestDir == "" {
+		t.Skipf("set %s to a guest image directory", stressGuestEnv)
+	}
+	dir, err := os.MkdirTemp("/tmp", "vzh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	vm, err := Start(stressGuestOptions(t, "vz-hairpin", guestDir, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = vm.Close() })
+	waitStressDocker(t, vm, 5*time.Minute)
+
+	runHairpinCases(t, func() (net.Conn, error) { return vm.Connect(t.Context(), stressDockerPort) })
+
+	if !vm.Running() {
+		t.Fatal("the guest is no longer running")
+	}
+	console, err := os.ReadFile(filepath.Join(dir, "console.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sign := range []string{"detected stalls on CPUs", "Hard LOCKUP", "Kernel panic"} {
+		if strings.Contains(string(console), sign) {
+			t.Errorf("the guest's console reports %q", sign)
+		}
+	}
+	writeStressArtifacts(t, os.Getenv(stressArtifactsEnv), dir, "hairpin and stalled reader", t.Failed())
+}
 
 // TestVSOCKChurnKeepsUnixListenerServing holds a Unix HTTP listener open,
 // allocated before the VM exactly as the server's is, and probes it on fresh

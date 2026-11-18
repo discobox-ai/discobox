@@ -670,7 +670,7 @@ tasks:
       - scripts/image-reclaim-integration.sh {{.CLI_ARGS}}
 
   test:vz-stress:
-    desc: "Churn VSOCK on a real vz guest while probing a Unix listener, then dial a stalled guest and check every dial ends (macOS). GUEST=<dir with vmlinux, initrd.img, root.ext4>, or NO_VM=1 for the churn control"
+    desc: "Churn VSOCK on a real vz guest while probing a Unix listener, dial a stalled guest and check every dial ends, then stream a hairpin and stall a reader through it (macOS). GUEST=<dir with vmlinux, initrd.img, root.ext4>, or NO_VM=1 for the churn control"
     # Opt-in and bounded: CYCLES (VSOCK connections, default 10000), DURATION
     # (default 30m), WORKERS (default 8). PAUSE (e.g. 90s) pauses the guest
     # through Virtualization.framework mid-churn and reports how far its clock
@@ -699,7 +699,7 @@ tasks:
         DISCOBOX_VZ_STRESS_WORKERS="{{.WORKERS}}"
         DISCOBOX_VZ_STRESS_PAUSE="{{.PAUSE}}"
         DISCOBOX_VZ_STRESS_ARTIFACTS="$PWD/{{.ARTIFACTS}}"
-        ./{{.TEST_BINARY}} -test.run 'TestVSOCKChurnKeepsUnixListenerServing|TestConnectDuringGuestStall' -test.count=1 -test.v -test.timeout 45m
+        ./{{.TEST_BINARY}} -test.run 'TestVSOCKChurnKeepsUnixListenerServing|TestConnectDuringGuestStall|TestVSOCKHairpinAndStalledReader' -test.count=1 -test.v -test.timeout 60m
 
   test:vz-teardown:
     desc: "Drop a vz VM whose guest is still powering off, and one whose stop is in flight when it fails, and collect garbage until each is released (macOS). GUEST=<dir with vmlinux, initrd.img, root.ext4>"
