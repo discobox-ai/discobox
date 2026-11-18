@@ -106,14 +106,26 @@ func newCaptureManager(s *Service, cfg ServiceConfig) (*captureManager, error) {
 	if err := os.Chmod(dir, 0700); err != nil {
 		return nil, err
 	}
-	m.state = captureState{Baseline: *cfg.Harness.CaptureBaseline, History: map[string]hc.Candidate{}, State: "clean"}
+	baseline := *cfg.Harness.CaptureBaseline
+	m.state = captureState{Baseline: baseline, History: map[string]hc.Candidate{}, State: "clean"}
 	if err := m.loadCaptureState(); err != nil {
 		return nil, err
 	}
-	invalidated := false
-	if m.state.Baseline.HarnessConfigID != cfg.Harness.CaptureBaseline.HarnessConfigID || m.state.Baseline.ManifestDigest != cfg.Harness.CaptureBaseline.ManifestDigest {
-		m.state = captureState{Baseline: *cfg.Harness.CaptureBaseline, History: map[string]hc.Candidate{}, State: "clean"}
-		invalidated = true
+	sameConfig := m.state.Baseline.HarnessConfigID == baseline.HarnessConfigID
+	invalidated := !sameConfig || m.state.Baseline.ManifestDigest != baseline.ManifestDigest
+	if invalidated {
+		var aliases map[string][]string
+		if sameConfig && baseline.HarnessConfigID != "" {
+			// Prior deliveries can still be present in the home after a bundle
+			// refresh. Keep classifying them under the same harness config.
+			aliases = m.state.KnownSentinels
+		}
+		m.state = captureState{
+			Baseline:       baseline,
+			History:        map[string]hc.Candidate{},
+			KnownSentinels: aliases,
+			State:          "clean",
+		}
 	}
 	if !m.state.Installed && cfg.PrimaryState != nil {
 		launched, err := cfg.PrimaryState.PrimaryTerminalLaunched(context.Background())
