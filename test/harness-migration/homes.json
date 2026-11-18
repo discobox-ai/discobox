@@ -1,8 +1,15 @@
 {
   "claude-code": {
     "settings": ".claude/settings.json",
-    "login": ".claude.json",
-    "document": {"primaryApiKey": "fixture-claude-key"}
+    "login": ".claude/.credentials.json",
+    "document": {
+      "claudeAiOauth": {
+        "accessToken": "fixture-claude-access",
+        "refreshToken": "fixture-claude-refresh",
+        "expiresAt": 4102444800000,
+        "scopes": ["user:profile"]
+      }
+    }
   },
   "codex": {
     "settings": ".codex/config.toml",
@@ -27,7 +34,18 @@
     "export": ["omp", "auth", "export"],
     "document": {
       "version": 1,
-      "credentials": [{"provider": "anthropic", "credential": {"type": "api_key", "key": "fixture-omp-key"}}]
+      "credentials": [
+        {
+          "provider": "anthropic",
+          "credential": {
+            "type": "oauth",
+            "access": "fixture-omp-access",
+            "refresh": "fixture-omp-refresh",
+            "expires": 4102444800000,
+            "accountId": "fixture-omp-account"
+          }
+        }
+      ]
     }
   },
   "opencode": {
