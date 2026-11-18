@@ -120,6 +120,7 @@ func TestControlAuthSandboxTokenNarrowsEveryUnscopedRoute(t *testing.T) {
 		"/audit/http/7/request-body",
 		"/audit/http/7/response-body",
 		"/audit/http/7/stream",
+		"/audit/dropped",
 	} {
 		var got string
 		handler := auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -124,5 +126,75 @@ func TestControlDNSRefusesHTTPFiltersAndCursors(t *testing.T) {
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("GET /audit/dns?%s = %d, want 400", query, resp.StatusCode)
 		}
+	}
+}
+
+// A sandbox-scoped token reads its own sandbox's drop counts, never another
+// sandbox's: the narrowing the row routes get applies to /audit/dropped too.
+func TestControlDroppedIsNarrowedToTheTokensSandbox(t *testing.T) {
+	ctx := t.Context()
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{Dir: filepath.Join(dir, "certs"), ServerHosts: []string{"127.0.0.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
+		Control: ControlConfig{
+			TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
+			ProjectID:      "project-1",
+			WorkerID:       "pool-1",
+		},
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	// sandbox-1 makes one lookup; then sandbox-2 spends its whole DNS audit
+	// budget and then some. sandbox-1's goes first: after the flood the shared
+	// DNS queue can still be full, and its lookup would be dropped, and
+	// rightly counted as its own.
+	now := time.Now().UTC()
+	server.RecordDNS(DNSAuditEvent{Time: now, ClientID: "sandbox-1", Name: "api.github.com", Type: "A", RCode: "NOERROR"})
+	for i := range 1000 {
+		server.RecordDNS(DNSAuditEvent{Time: now, ClientID: "sandbox-2", Name: fmt.Sprintf("n%d.example.com", i), Type: "A", RCode: "NOERROR"})
+	}
+
+	served := httptest.NewServer(server.ControlHandler())
+	t.Cleanup(served.Close)
+	client := NewControlClient(served.URL, privateKey, "project-1", "pool-1", nil)
+	read := func(sandboxID string) map[string]uint64 {
+		t.Helper()
+		token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", WorkerID: "pool-1", SandboxID: sandboxID, Scopes: []string{ScopeAuditRead}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.get(ctx, served.URL+"/audit/dropped", token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /audit/dropped as %q = %d, want 200", sandboxID, resp.StatusCode)
+		}
+		var counts map[string]uint64
+		if err := json.NewDecoder(resp.Body).Decode(&counts); err != nil {
+			t.Fatal(err)
+		}
+		return counts
+	}
+	if pool := read(""); pool["dnsDropped"] == 0 {
+		t.Fatalf("pool-wide read = %v, want sandbox-2's drops counted", pool)
+	}
+	if own := read("sandbox-1"); own["dnsDropped"] != 0 || own["dropped"] != 0 {
+		t.Fatalf("sandbox-1's token read %v, want its own counts (none), not the pool's", own)
 	}
 }

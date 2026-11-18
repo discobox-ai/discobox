@@ -197,7 +197,10 @@ database's client identity, retention and write-ordered cursor (`dns_<row>`),
 but not the queue: lookups have one of their own, the single writer takes from
 it only when the HTTP and SOCKS queue is empty, and each sandbox has a budget in
 it. A lookup past either is dropped and counted apart (`dnsDropped` beside
-`dropped` on `/audit/dropped`).
+`dropped` on `/audit/dropped`). Every drop counts against its client as well as
+the pool, so `/audit/dropped` answers a `client_id` with that client's own
+counts and a pool-wide reader with the totals; a client's counts and DNS budget
+go with its purge.
 
 `Server.Close` closes every client connection, then waits (at most 30s in all)
 for each connection's serving goroutine to return and for every body stream
@@ -1132,7 +1135,8 @@ in UTC) and `limit` up to 1000)
 and DNS rows (`GET /audit/dns`, by `client_id`, `name`, `since`, `until`, `order`,
 `limit`, and a `dns_` `after_id` or exact `id`, refusing every exchange-only filter and an
 `http_` cursor),
-reports the dropped-event counter (`/audit/dropped`), and serves
+reports the dropped-event counters (`/audit/dropped`, a client's own or the
+pool's totals), and serves
 body and upgraded-stream spool files only through the owning HTTP audit row
 (`/audit/http/{id}/{request-body|response-body|stream}`), never by path; every
 read is narrowed to `client_id` when one is given. When `Control.TrustPublicKey` is configured, every control

@@ -19,8 +19,51 @@ func TestRecorderDropsInsteadOfBlocking(t *testing.T) {
 		ch:      make(chan any),
 	}
 	recorder.RecordHTTP(HTTPEvent{Method: http.MethodGet})
-	if recorder.Dropped() != 1 {
-		t.Fatalf("Dropped() = %d, want 1", recorder.Dropped())
+	if got := recorder.Drops(""); got != (Drops{Dropped: 1}) {
+		t.Fatalf("Drops(\"\") = %+v, want one HTTP event dropped", got)
+	}
+}
+
+// Each drop counts against the client whose event it was as well as the pool,
+// and a client's counts go with its purge while the pool's totals keep them.
+func TestRecorderCountsDropsPerClient(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recorder.Close()
+	// Mark the recorder closed, without closing its queues, so every event is
+	// dropped; reopened below for the purge.
+	recorder.enqueueMu.Lock()
+	recorder.closed.Store(true)
+	recorder.enqueueMu.Unlock()
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", Method: http.MethodGet})
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-2", Method: http.MethodGet})
+	recorder.RecordSOCKS(SOCKSEvent{ClientID: "sandbox-2"})
+	for range dnsAuditBurst + 10 {
+		recorder.RecordDNS(DNSEvent{ClientID: "sandbox-2", Name: "x.example"})
+	}
+	if got := recorder.Drops("sandbox-1"); got != (Drops{Dropped: 1}) {
+		t.Fatalf("Drops(sandbox-1) = %+v, want its one HTTP event", got)
+	}
+	if got := recorder.Drops("sandbox-2"); got != (Drops{Dropped: 2, DNSDropped: dnsAuditBurst + 10}) {
+		t.Fatalf("Drops(sandbox-2) = %+v, want its HTTP and SOCKS events and every lookup", got)
+	}
+	if got := recorder.Drops("sandbox-3"); got != (Drops{}) {
+		t.Fatalf("Drops(sandbox-3) = %+v, want none for a client never seen", got)
+	}
+	if got := recorder.Drops(""); got != (Drops{Dropped: 3, DNSDropped: dnsAuditBurst + 10}) {
+		t.Fatalf("Drops(\"\") = %+v, want the pool's totals", got)
+	}
+	recorder.closed.Store(false)
+	if _, err := recorder.PurgeClient(context.Background(), "sandbox-2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorder.Drops("sandbox-2"); got != (Drops{}) {
+		t.Fatalf("Drops(sandbox-2) after its purge = %+v, want none", got)
+	}
+	if got := recorder.Drops(""); got.Dropped != 3 {
+		t.Fatalf("Drops(\"\") after a purge = %+v, want the pool's totals kept", got)
 	}
 }
 
@@ -359,7 +402,7 @@ func TestRecorderBoundsEachSandboxsDNS(t *testing.T) {
 	for range dnsAuditBurst + 200 {
 		recorder.RecordDNS(DNSEvent{ClientID: "flooder", Name: "x.example"})
 	}
-	if dropped := recorder.DNSDropped(); dropped < 100 {
+	if dropped := recorder.Drops("").DNSDropped; dropped < 100 {
 		t.Fatalf("DNSDropped = %d, want the flood past the burst dropped", dropped)
 	}
 	recorder.RecordDNS(DNSEvent{ClientID: "neighbor", Name: "y.example"})
@@ -391,10 +434,10 @@ func TestRecorderKeepsDNSOffTheHTTPQueue(t *testing.T) {
 		recorder.RecordDNS(DNSEvent{ClientID: fmt.Sprintf("sandbox-%d", i), Name: "x.example"})
 	}
 	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", Host: "api.example.com", Method: http.MethodGet})
-	if dropped := recorder.Dropped(); dropped != 0 {
+	if dropped := recorder.Drops("").Dropped; dropped != 0 {
 		t.Fatalf("Dropped = %d HTTP/SOCKS events after a DNS flood, want 0", dropped)
 	}
-	if recorder.DNSDropped() == 0 {
+	if recorder.Drops("").DNSDropped == 0 {
 		t.Fatal("a one-slot DNS queue took 2000 lookups without dropping any")
 	}
 }

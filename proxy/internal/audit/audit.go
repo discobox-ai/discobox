@@ -287,11 +287,15 @@ type Recorder struct {
 	// dnsCh holds DNS events apart from ch, and the writer takes from it only
 	// when ch is empty: a sandbox's lookups can far outnumber its requests,
 	// and on one queue a flood of them would push the HTTP and SOCKS rows out
-	// (ADR 0148). dnsLimits bounds each sandbox's share of it.
-	dnsCh           chan any
-	dnsDropped      atomic.Uint64
-	dnsMu           sync.Mutex
-	dnsLimits       map[string]*rate.Limiter
+	// (ADR 0148). Each client's DNS budget in it is in clients.
+	dnsCh      chan any
+	dnsDropped atomic.Uint64
+	// clients holds what the recorder keeps per client: its DNS budget and
+	// its own drop counts, beside the pool totals in dropped and dnsDropped,
+	// so a sandbox-scoped reader is answered with its own (Drops). Entries
+	// go with the client's purge (PurgeClient).
+	clientsMu       sync.Mutex
+	clients         map[string]*clientState
 	done            chan struct{}
 	enqueueMu       sync.RWMutex
 	wg              sync.WaitGroup
@@ -489,7 +493,7 @@ func (r *Recorder) RecordHTTP(event HTTPEvent) {
 	if event.EnqueuedAt.IsZero() {
 		event.EnqueuedAt = time.Now().UTC()
 	}
-	r.enqueue(redactHTTP(event, r.redactorFor(event.ClientID)))
+	r.enqueue(event.ClientID, redactHTTP(event, r.redactorFor(event.ClientID)))
 }
 
 // DNS audit budget per sandbox: a sustained rate and a burst above it. Past
@@ -512,25 +516,32 @@ func (r *Recorder) RecordDNS(event DNSEvent) {
 	if event.EnqueuedAt.IsZero() {
 		event.EnqueuedAt = time.Now().UTC()
 	}
-	if !r.dnsLimit(event.ClientID).Allow() {
+	client := r.client(event.ClientID)
+	if !client.dnsLimit.Allow() || !r.enqueueOn(r.dnsCh, event) {
 		r.dnsDropped.Add(1)
-		return
+		client.dnsDropped.Add(1)
 	}
-	r.enqueueOn(r.dnsCh, &r.dnsDropped, event)
 }
 
-func (r *Recorder) dnsLimit(clientID string) *rate.Limiter {
-	r.dnsMu.Lock()
-	defer r.dnsMu.Unlock()
-	if r.dnsLimits == nil {
-		r.dnsLimits = map[string]*rate.Limiter{}
+// clientState is one client's DNS audit budget and its own drop counts.
+type clientState struct {
+	dnsLimit   *rate.Limiter
+	dropped    atomic.Uint64
+	dnsDropped atomic.Uint64
+}
+
+func (r *Recorder) client(clientID string) *clientState {
+	r.clientsMu.Lock()
+	defer r.clientsMu.Unlock()
+	if r.clients == nil {
+		r.clients = map[string]*clientState{}
 	}
-	limit, ok := r.dnsLimits[clientID]
+	client, ok := r.clients[clientID]
 	if !ok {
-		limit = rate.NewLimiter(dnsAuditRate, dnsAuditBurst)
-		r.dnsLimits[clientID] = limit
+		client = &clientState{dnsLimit: rate.NewLimiter(dnsAuditRate, dnsAuditBurst)}
+		r.clients[clientID] = client
 	}
-	return limit
+	return client
 }
 
 // RecordSOCKS queues a SOCKS audit event without blocking on SQLite.
@@ -538,25 +549,36 @@ func (r *Recorder) RecordSOCKS(event SOCKSEvent) {
 	if event.EnqueuedAt.IsZero() {
 		event.EnqueuedAt = time.Now().UTC()
 	}
-	r.enqueue(event)
+	r.enqueue(event.ClientID, event)
 }
 
-// Dropped returns the number of HTTP and SOCKS events dropped due to
-// backpressure.
-func (r *Recorder) Dropped() uint64 {
-	if r == nil {
-		return 0
-	}
-	return r.dropped.Load()
+// Drops counts the audit events dropped rather than written.
+type Drops struct {
+	// Dropped is HTTP and SOCKS events, dropped because their queue was full
+	// or the recorder closed.
+	Dropped uint64 `json:"dropped"`
+	// DNSDropped is lookups, dropped over a sandbox's budget or a full DNS
+	// queue.
+	DNSDropped uint64 `json:"dnsDropped"`
 }
 
-// DNSDropped returns the number of DNS events dropped, over a sandbox's
-// budget or a full DNS queue.
-func (r *Recorder) DNSDropped() uint64 {
+// Drops returns clientID's own drop counts, or the pool's totals across every
+// client when clientID is empty. A client the recorder has never dropped or
+// budgeted anything for, or has since purged, has none.
+func (r *Recorder) Drops(clientID string) Drops {
 	if r == nil {
-		return 0
+		return Drops{}
 	}
-	return r.dnsDropped.Load()
+	if clientID == "" {
+		return Drops{Dropped: r.dropped.Load(), DNSDropped: r.dnsDropped.Load()}
+	}
+	r.clientsMu.Lock()
+	client := r.clients[clientID]
+	r.clientsMu.Unlock()
+	if client == nil {
+		return Drops{}
+	}
+	return Drops{Dropped: client.dropped.Load(), DNSDropped: client.dnsDropped.Load()}
 }
 
 // ListHTTP returns recent HTTP audit exchanges newest first.
@@ -686,31 +708,40 @@ func (r *Recorder) Close() error {
 	return nil
 }
 
-func (r *Recorder) enqueue(event any) {
-	r.enqueueOn(r.ch, &r.dropped, event)
+// enqueue queues an HTTP or SOCKS event, counting it against the pool and
+// clientID when it is dropped. The client's counter is looked up only then,
+// so an event that is queued never takes clientsMu.
+func (r *Recorder) enqueue(clientID string, event any) {
+	if r.enqueueOn(r.ch, event) {
+		return
+	}
+	r.dropped.Add(1)
+	r.client(clientID).dropped.Add(1)
 }
 
-func (r *Recorder) enqueueOn(ch chan any, dropped *atomic.Uint64, event any) {
+// enqueueOn queues event on ch without waiting, and reports whether it was
+// queued. A disabled recorder takes nothing and drops nothing.
+func (r *Recorder) enqueueOn(ch chan any, event any) bool {
 	if r == nil || !r.enabled {
-		return
+		return true
 	}
 	_, span := tracer().Start(eventContext(event), "proxy.audit.enqueue")
 	defer span.End()
 	r.enqueueMu.RLock()
 	defer r.enqueueMu.RUnlock()
 	if r.closed.Load() {
-		dropped.Add(1)
 		span.SetAttributes(attribute.Bool("proxy.audit.enqueued", false))
 		span.SetStatus(codes.Error, "audit recorder closed")
-		return
+		return false
 	}
 	select {
 	case ch <- event:
 		span.SetAttributes(attribute.Bool("proxy.audit.enqueued", true))
+		return true
 	default:
-		dropped.Add(1)
 		span.SetAttributes(attribute.Bool("proxy.audit.enqueued", false))
 		span.SetStatus(codes.Error, "audit queue full")
+		return false
 	}
 }
 

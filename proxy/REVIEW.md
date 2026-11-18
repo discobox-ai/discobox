@@ -59,6 +59,12 @@
   `audit:read`, and sandbox-scoped tokens must not read another `client_id`. A
   purge needs `audit:purge` and a `sandbox_id` that is the client purged; a
   read scope never grants it.
+- Every control read answers only for `client_id` when one is given,
+  counters and totals included, and a new read route joins
+  `TestControlAuthSandboxTokenNarrowsEveryUnscopedRoute`. `scopeToToken` only
+  rewrites the query: a handler that never reads `client_id` still answers for
+  the whole pool, which is how `/audit/dropped` handed a sandbox token every
+  sandbox's drop counts.
 - Raw upgraded-stream payloads and normal HTTP bodies belong in disk spool
   files, not SQLite. SQLite rows should store only file metadata, byte counts,
   and drop counters.
