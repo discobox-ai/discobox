@@ -199,6 +199,11 @@ func TestUninstallRemovesWhatItListed(t *testing.T) {
 	otherSkill := filepath.Join(home, ".agents", "skills", hostskill.Name, "SKILL.md")
 	mustWriteFile(t, skill, hostskill.Content())
 	mustWriteFile(t, otherSkill, "User-maintained skill")
+	// The plan resolves aliases, including Windows short paths, before listing.
+	listedSkill, err := filepath.EvalSymlinks(filepath.Dir(skill))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	out, err := runUninstall(t, "y\n", "--server", "unix://"+filepath.Join(home, "none.sock"))
 	if err != nil {
@@ -217,7 +222,7 @@ func TestUninstallRemovesWhatItListed(t *testing.T) {
 	if !exists(filepath.Join(home, ".config", "other", "keep")) {
 		t.Fatal("the uninstall removed something that is not Discobox's")
 	}
-	if !strings.Contains(out, filepath.Dir(skill)) || exists(skill) || !exists(otherSkill) {
+	if !strings.Contains(out, terminalSafe(listedSkill)) || exists(skill) || !exists(otherSkill) {
 		t.Fatalf("expected uninstall to list and remove the managed skill and preserve the unmanaged copy:\n%s", out)
 	}
 	data, err := os.ReadFile(sshConfig)
