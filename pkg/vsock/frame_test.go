@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -67,6 +68,53 @@ func TestFramedConnCloseDeliversEverythingWrittenThenEOF(t *testing.T) {
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("read %d bytes, want %d", len(got), len(payload))
 	}
+}
+
+// A read can find the connection's write side already gone: the peer wrote
+// its last bytes and hung up, and the window update the read sends cannot be
+// written. The bytes read must still be returned without that error.
+func TestFramedConnReturnsWhatItReadWhenTheWindowUpdateCannotBeSent(t *testing.T) {
+	guest, host := net.Pipe()
+	hostSide := &failingWrites{Conn: host}
+	listener := newChanListener()
+	framed := FrameListener(listener, nil)
+	t.Cleanup(func() { _ = framed.Close() })
+	listener.push(hostSide)
+	dialed, err := FrameDialed(guest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dialed.Close() })
+	accepted, err := framed.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = accepted.Close() })
+
+	payload := bytes.Repeat([]byte("v"), FrameWindow)
+	if _, err := dialed.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	hostSide.fail.Store(true)
+	got := make([]byte, len(payload))
+	n, err := accepted.Read(got)
+	if n == 0 || err != nil {
+		t.Fatalf("Read = %d, %v; want the bytes it read and no error", n, err)
+	}
+}
+
+// failingWrites fails every Write once fail is set, as a socket whose peer
+// has gone does.
+type failingWrites struct {
+	net.Conn
+	fail atomic.Bool
+}
+
+func (c *failingWrites) Write(b []byte) (int, error) {
+	if c.fail.Load() {
+		return 0, syscall.EPIPE
+	}
+	return c.Conn.Write(b)
 }
 
 func TestFramedConnHasNoCloseWrite(t *testing.T) {

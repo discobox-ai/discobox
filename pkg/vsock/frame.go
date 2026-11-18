@@ -251,7 +251,19 @@ type framedConn struct {
 	session *yamux.Session
 }
 
-func (c *framedConn) Read(b []byte) (int, error)  { return c.stream.Read(b) }
+// Read returns what the stream holds. After taking bytes, yamux sends the
+// window update that lets the peer write more, and returns that send's error
+// with the bytes: a peer that wrote its last bytes and hung up would turn a
+// complete read into a failed one. The bytes are returned alone, and the next
+// Read reports the stream as it then is.
+func (c *framedConn) Read(b []byte) (int, error) {
+	n, err := c.stream.Read(b)
+	if n > 0 {
+		return n, nil
+	}
+	return n, err
+}
+
 func (c *framedConn) Write(b []byte) (int, error) { return c.stream.Write(b) }
 
 // Close sends the stream's end, which the peer reads as EOF after everything
