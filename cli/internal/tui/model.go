@@ -3230,7 +3230,7 @@ func (m *Model) cutFrom(card *createCard, source string) tea.Cmd {
 // by (WithRun). Both take the same path, which is the point of handing the
 // command's request to the window rather than having it create for itself.
 func (m *Model) runRequest(req RunRequest) tea.Cmd {
-	if cmd, stop := m.askForADefaultHarness(req); stop {
+	if cmd, stop := m.askForRunHarness(req); stop {
 		return cmd
 	}
 	return m.startRun(req)
@@ -3287,19 +3287,9 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 	}
 }
 
-// askForADefaultHarness stops a run that has named no harness in a project with
-// no default, and asks which harness should be the default. It reports whether
-// the run was stopped.
-//
-// The server refuses this create outright (ADR 0048), so the alternative to
-// asking is the same refusal a moment later with the answer left to the user to
-// find. Asking here is also the only point that knows what the project has to
-// offer.
-//
-// `shell` is not among the choices. It runs like any other harness and is
-// chosen like any other, but a project whose default is a login shell has no
-// coding harness by default, which is the state this is trying to leave.
-func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
+// askForRunHarness stops a run with no explicit harness or project default.
+// The picker can set a default or run this box with the built-in Shell.
+func (m *Model) askForRunHarness(req RunRequest) (tea.Cmd, bool) {
 	if req.Harness != "" || m.projectDefaultHarness() != nil {
 		return nil, false
 	}
@@ -3309,25 +3299,34 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 		// is the answer this would only be guessing at.
 		return nil, false
 	}
-	candidates := m.defaultCandidates()
+	candidates := m.harnesses.all
 	if len(candidates) == 0 {
 		return m.runFailed(errors.New("this project has no harness to run; register one with `discobox admin harness create`")), true
 	}
 
 	items := make([]action, 0, len(candidates))
 	for i, harness := range candidates {
-		detail := "make it the project default"
+		detail := "set project default"
+		label := harness.displayName()
+		if harness.Shell {
+			label = "Shell (no agent)"
+			detail = "this box only"
+		}
 		n := itoa(i + 1)
 		items = append(items, action{
-			key: n, press: n, label: harness.displayName(), detail: detail, enabled: true,
+			key: n, press: n, label: label, detail: detail, enabled: true,
 		})
 	}
-	chosen := candidates
-	menu := actionsDialog("Which harness should this project run?",
-		"Nothing is set as the project default, so a discobox has no harness to start.",
+	menu := actionsDialog("Choose a harness",
+		"This project has no default harness. Use discobox run -H <harness> for one box. "+
+			"Change the default in discobox configure.",
 		items, func(key string) tea.Cmd {
-			for i, harness := range chosen {
+			for i, harness := range candidates {
 				if itoa(i+1) == key {
+					if harness.Shell {
+						req.Harness = harness.Slug
+						return func() tea.Msg { return resumeRunMsg{req: req} }
+					}
 					return func() tea.Msg { return harnessDefaultMsg{harness: harness, resume: &req} }
 				}
 			}
@@ -3354,18 +3353,6 @@ func (m *Model) projectDefaultHarness() *Harness {
 		}
 	}
 	return nil
-}
-
-// defaultCandidates are the harnesses worth offering as a project default: all
-// of them except `shell`, in the order the listing reports.
-func (m *Model) defaultCandidates() []Harness {
-	var out []Harness
-	for _, harness := range m.harnesses.all {
-		if !harness.Shell {
-			out = append(out, harness)
-		}
-	}
-	return out
 }
 
 // leavesTheRun makes turning down a question a run stopped to ask end the
