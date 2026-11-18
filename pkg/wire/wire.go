@@ -8,6 +8,8 @@
 //
 //	local docker   http://host.docker.internal:8080   plain IP transport
 //	libkrun        vsock://2:3001                     AF_VSOCK to host CID 2
+//	vz             vsock+yamux://2:3001               the same, carried as one
+//	                                                  flow-controlled stream
 //	wslc           unix:///run/discobox/cp.sock       a socket the guest helper serves
 //
 // The same vocabulary describes where the agent listens (Listen), so a backend
@@ -27,6 +29,12 @@
 // where its stream ends can open one, and that is bridge.Dialer, through
 // pkg/wstunnel.
 //
+// vsock+yamux is vsock with every connection framed as one yamux stream
+// (pkg/vsock's FrameDialed and FrameListener; ADR 26-11-17-182). It is what a
+// vz guest speaks: Virtualization.framework serves every VSOCK connection of
+// a VM from one queue that a host reader can stall, and the stream's window
+// keeps the guest from writing more than the host has granted.
+//
 // The endpoint package resolves the other hop — client to control plane — by
 // the same method. The two stay separate because each hop's listen and dial
 // contracts answer to their own callers: endpoint carries iroh and DNS
@@ -36,6 +44,7 @@ package wire
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -56,7 +65,8 @@ const LogicalHTTPBaseURL = "http://pool-agent.local"
 type Endpoint struct {
 	// Raw is the URL as configured.
 	Raw string
-	// Scheme selects the transport: http, https, vsock, unix, or wss.
+	// Scheme selects the transport: http, https, vsock, vsock+yamux, unix, or
+	// wss.
 	Scheme string
 	// Host is the IP host for http/https/wss and the context ID for vsock. It
 	// is empty for unix and for a vsock listen address.
@@ -84,7 +94,7 @@ func Parse(raw string) (Endpoint, error) {
 			return Endpoint{}, fmt.Errorf("%s endpoint %q must include a host", scheme, raw)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Host: parsed.Host}, nil
-	case "vsock":
+	case "vsock", "vsock+yamux":
 		host, port, err := splitVSOCK(parsed.Host, raw)
 		if err != nil {
 			return Endpoint{}, err
@@ -160,6 +170,19 @@ func (e Endpoint) DialContext() (func(context.Context, string, string) (net.Conn
 			return nil, err
 		}
 		return vsock.DialContextCID(cid, e.Port), nil
+	case "vsock+yamux":
+		cid, err := e.contextID()
+		if err != nil {
+			return nil, err
+		}
+		dial := vsock.DialContextCID(cid, e.Port)
+		return func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dial(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return vsock.FrameDialed(conn)
+		}, nil
 	case "unix":
 		dialer := &net.Dialer{}
 		path := e.Path
@@ -227,6 +250,14 @@ func Listen(raw string) (net.Listener, error) {
 		return config.Listen(context.Background(), "tcp", parsed.Host)
 	case "vsock":
 		return vsock.Listen(parsed.Port)
+	case "vsock+yamux":
+		listener, err := vsock.Listen(parsed.Port)
+		if err != nil {
+			return nil, err
+		}
+		return vsock.FrameListener(listener, func(err error) {
+			slog.Warn("refused a VSOCK connection that is not framed", "endpoint", raw, "error", err)
+		}), nil
 	case "unix":
 		var config net.ListenConfig
 		return config.Listen(context.Background(), "unix", parsed.Path)
@@ -245,6 +276,18 @@ func VSOCKURL(cid, port uint32) string {
 // VSOCKListenURL renders a listen URL for a VSOCK port.
 func VSOCKListenURL(port uint32) string {
 	return fmt.Sprintf("vsock://:%d", port)
+}
+
+// FramedVSOCKURL renders a dial URL for a VSOCK context ID and port whose
+// connections are framed.
+func FramedVSOCKURL(cid, port uint32) string {
+	return fmt.Sprintf("vsock+yamux://%d:%d", cid, port)
+}
+
+// FramedVSOCKListenURL renders a listen URL for a VSOCK port whose
+// connections are framed.
+func FramedVSOCKListenURL(port uint32) string {
+	return fmt.Sprintf("vsock+yamux://:%d", port)
 }
 
 // UnixURL renders a dial or listen URL for a Unix socket path, escaped so that
