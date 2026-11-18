@@ -970,8 +970,10 @@ sentinels remain the restoration baseline even while the runtime secrets feed
 catches up. The acknowledgment bridge remembers the runtime sentinel it
 replaced, yields as soon as delivery catches up or changes again, and records
 bounded nonsecret aliases so a stale delivered sentinel is never offered as a
-new real credential. Alias exhaustion preserves local inputs and fails capture
-closed. Native launch guards read only the nonsecret, atomically written HOME
+new real credential. Refreshing the manifest of the same harness config
+preserves these aliases and invalidates candidates reviewed against the prior
+manifest. Switching harness configs starts a new alias history. Alias
+exhaustion preserves local inputs and fails capture closed. Native launch guards read only the nonsecret, atomically written HOME
 `.config/discobox/harness-sentinels.json` context under the shared lock; export
 and server validation never trust that user-readable file as capture authority.
 No process restart is forced. The accepted OAuth refresh race with

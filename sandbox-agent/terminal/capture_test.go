@@ -759,6 +759,51 @@ func TestInvalidatingUnsupportedCaptureRemovesOnlyPrivateState(t *testing.T) {
 	}
 }
 
+func TestCaptureManifestRefreshPreservesAliasesForSameConfig(t *testing.T) {
+	for _, configID := range []string{"config", "other-config"} {
+		t.Run(configID, func(t *testing.T) {
+			s, _, _ := captureFixture(t)
+			original := s.capture
+			s.execs = &execs.Manager{}
+			recovery := t.TempDir()
+			original.recoveryPath = filepath.Join(recovery, "checkpoint.json")
+			original.state.Baseline.ManifestDigest = "old-manifest"
+			original.state.KnownSentinels = map[string][]string{"TOKEN": {"earlier-delivery"}}
+			original.state.Candidate = &hc.Candidate{ID: "stale-candidate"}
+			if err := original.persist(); err != nil {
+				t.Fatal(err)
+			}
+			cfg := ServiceConfig{
+				CaptureStateDir:    filepath.Dir(original.path),
+				CaptureRecoveryDir: recovery,
+				ExecDefaults:       config.ExecDefaults{HomeDirectory: original.home},
+				Harness: config.Harness{
+					SaveBack:        &original.definition,
+					CaptureBaseline: &hc.Baseline{HarnessConfigID: configID, ManifestDigest: "new-manifest"},
+				},
+			}
+			// The first manager invalidates the outdated capture. The second
+			// restores the resulting checkpoint after the temporary spool disappears.
+			refreshed, err := newCaptureManager(s, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if refreshed.state.Candidate != nil || refreshed.state.Baseline.ManifestDigest != "new-manifest" {
+				t.Fatal("refresh retained the stale candidate or baseline")
+			}
+			cfg.CaptureStateDir = t.TempDir()
+			restarted, err := newCaptureManager(s, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kept := slices.Contains(restarted.input(false).KnownSentinels["TOKEN"], "earlier-delivery")
+			if kept != (configID == "config") {
+				t.Fatalf("prior delivery retained = %v for config %q", kept, configID)
+			}
+		})
+	}
+}
+
 func TestAcknowledgedSentinelYieldsToNewRuntimeDelivery(t *testing.T) {
 	s, observed, _ := captureFixture(t)
 	ctx := t.Context()
