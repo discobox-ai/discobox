@@ -147,8 +147,8 @@ type frameListener struct {
 
 // Backoff after an error from inner's Accept, as net/http's Serve does.
 const (
-	acceptBackoffMin = 5 * time.Millisecond
-	acceptBackoffMax = time.Second
+	minAcceptBackoff = 5 * time.Millisecond
+	maxAcceptBackoff = time.Second
 )
 
 func (l *frameListener) acceptLoop() {
@@ -165,7 +165,7 @@ func (l *frameListener) acceptLoop() {
 			case l.errs <- err:
 			default:
 			}
-			backoff = min(max(2*backoff, acceptBackoffMin), acceptBackoffMax)
+			backoff = min(max(2*backoff, minAcceptBackoff), maxAcceptBackoff)
 			select {
 			case <-time.After(backoff):
 			case <-l.closed:
