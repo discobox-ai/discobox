@@ -64,6 +64,14 @@
   text, and a raw JSON view through `writeTerminalSafeJSON`, not an encoder
   that passes C1 controls and bidirectional overrides. Twice one form was
   escaped while the other reached the screen.
+- **A field a box writes reopens every writer of its resource.** Adding
+  box-written text to an existing resource (a snapshot build's error on
+  `Pool.resources`) makes each place that prints that resource print it, the
+  JSON writers included, though none is in the diff: `writePool`,
+  `writePools` and the pool resources view wrote `-o json` with plain
+  `writeJSON` while the new table escaped every cell. Grep for every writer
+  of the resource and send each through `terminalSafe` or
+  `writeTerminalSafeJSON`.
 - **Bound the work done on text from a box.** A diff, parse or layout run over
   content a sandbox supplied has a cost bound, not only escaped output: a
   line-by-line diff's memory grows with lines times edits, and a settings

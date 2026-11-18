@@ -142,7 +142,17 @@ func (a *App) newSandboxGetCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.writeSandbox(cmd, sandbox)
+			if err := a.writeSandbox(cmd, sandbox); err != nil || a.output == "json" {
+				return err
+			}
+			// What the snapshot it started from provisions, as its pool
+			// reports it (ADR 26-11-17-316 §7). A pool this caller cannot
+			// read, or that does not list it, leaves the key alone above.
+			if plan, ok := a.startedFromPlan(cmd.Context(), client, projectID, *sandbox); ok {
+				fmt.Fprintln(cmd.OutOrStdout())
+				fmt.Fprintln(cmd.OutOrStdout(), terminalSafe(plan))
+			}
+			return nil
 		},
 	}
 }

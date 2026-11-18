@@ -51,14 +51,15 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 		return writeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tERROR\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tSTARTED FROM\tERROR\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		sandbox.ID,
 		truncateTableValue(sandbox.DisplayName, sandboxNameColumnWidth),
 		sandboxDisplayState(*sandbox),
 		sandboxHarness(*sandbox),
 		sandboxGitColumn(*sandbox),
 		sandboxGitStatus(*sandbox).changes(sandboxSpawnCommit(*sandbox)),
+		formatSandboxStartedFrom(*sandbox),
 		truncateTableValue(sandboxMessage(*sandbox), 80),
 		formatTime(sandbox.UpdatedAt),
 	)
@@ -394,7 +395,7 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 		return nil
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), pool)
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), pool)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
@@ -419,7 +420,16 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	if message := poolMessage(*pool); message != "" {
 		fmt.Fprintf(tw, "MESSAGE\t%s\n", truncateTableValue(message, 120))
 	}
-	return tw.Flush()
+	summary, snapshots := poolSnapshotsSummary(*pool)
+	fmt.Fprintf(tw, "SNAPSHOTS\t%s\n", summary)
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if snapshots == nil || summary == "none" {
+		return nil
+	}
+	fmt.Fprintln(cmd.OutOrStdout())
+	return writePoolSnapshots(cmd.OutOrStdout(), *snapshots, time.Now())
 }
 
 func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolID ...string) error {
@@ -428,7 +438,7 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 		return writeResourceIDs(cmd.OutOrStdout(), pools, func(pool apimodel.Pool) string { return pool.ID })
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"pools": pools})
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"pools": pools})
 	}
 	defaultID := ""
 	if len(defaultPoolID) > 0 {
