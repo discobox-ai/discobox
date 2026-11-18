@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -52,12 +53,17 @@ func FramedByKernel(cmdline string) bool {
 
 // frameConfig is the session configuration both ends use. A session carries
 // one stream: each end sends a go-away once its stream exists (oneStream), so
-// a further stream from the peer is reset rather than buffered. No keepalive:
-// a connection is as alive as the stream it carries, as an unframed one is.
+// a further stream from the peer is reset rather than buffered. No keepalive,
+// and no close timeout: a connection is as alive as the stream it carries, as
+// an unframed one is. yamux's close timeout would reset a stream half-closed
+// by CloseWrite whose peer is still sending after it (a container's output
+// after its client closed stdin); the session ends when its connection is
+// closed instead.
 func frameConfig() *yamux.Config {
 	config := yamux.DefaultConfig()
 	config.AcceptBacklog = 1
 	config.EnableKeepAlive = false
+	config.StreamCloseTimeout = 0
 	config.MaxStreamWindowSize = FrameWindow
 	config.LogOutput = io.Discard
 	return config
@@ -66,7 +72,15 @@ func frameConfig() *yamux.Config {
 // FrameDialed frames a connection this side opened: it starts the session,
 // whose receive loop reads conn from now on, and opens the one stream. Closing
 // the returned connection closes conn.
-func FrameDialed(conn net.Conn) (net.Conn, error) {
+//
+// A peer that does not speak the framing answers in plain bytes, which the
+// session ends on without a word, so the caller would read only EOF. report,
+// when not nil, is told once if the peer's first byte is not a frame's: that
+// is how such a peer shows up, as it does through FrameListener.
+func FrameDialed(conn net.Conn, report func(error)) (net.Conn, error) {
+	if report != nil {
+		conn = &firstFrameCheck{Conn: conn, report: report}
+	}
 	session, err := yamux.Client(conn, frameConfig())
 	if err != nil {
 		_ = conn.Close()
@@ -78,6 +92,31 @@ func FrameDialed(conn net.Conn) (net.Conn, error) {
 		return nil, err
 	}
 	return oneStream(session, stream)
+}
+
+// yamuxVersion is the first byte of every yamux frame: the protocol version a
+// framed peer speaks.
+const yamuxVersion = 0
+
+// errUnframedPeer is what FrameDialed reports of a peer whose first byte is
+// not a frame's.
+var errUnframedPeer = errors.New("vsock: peer answered without framing")
+
+// firstFrameCheck is the raw connection under a framed one FrameDialed opened.
+// It calls report once if the peer's first byte is not a yamux frame's. It
+// carries net.Conn's methods and nothing more.
+type firstFrameCheck struct {
+	net.Conn
+	checked atomic.Bool
+	report  func(error)
+}
+
+func (c *firstFrameCheck) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 && c.checked.CompareAndSwap(false, true) && b[0] != yamuxVersion {
+		c.report(errUnframedPeer)
+	}
+	return n, err
 }
 
 // oneStream closes the session to any stream but stream, and returns the two
@@ -242,10 +281,11 @@ func (l *frameListener) Close() error {
 
 func (l *frameListener) Addr() net.Addr { return l.inner.Addr() }
 
-// framedConn is one stream and the session that carries only it. It is a
-// net.Conn and nothing more: it has no CloseWrite, because closing either side
-// ends the session, and a caller that found one would believe the peer saw a
-// half-close.
+// framedConn is one stream and the session that carries only it. CloseWrite
+// half-closes it as TCP's does (ADR 26-11-18-067): the stream's end goes to the
+// peer, which reads EOF after everything written before it, and this side
+// keeps reading until the peer ends its own. Close ends both directions and
+// the session.
 type framedConn struct {
 	stream  *yamux.Stream
 	session *yamux.Session
@@ -265,6 +305,17 @@ func (c *framedConn) Read(b []byte) (int, error) {
 }
 
 func (c *framedConn) Write(b []byte) (int, error) { return c.stream.Write(b) }
+
+// CloseWrite sends the stream's end, which the peer reads as EOF after
+// everything written before it. Reads go on until the peer ends its side; a
+// write after it fails.
+func (c *framedConn) CloseWrite() error {
+	err := c.stream.Close()
+	if errors.Is(err, yamux.ErrSessionShutdown) {
+		err = nil
+	}
+	return err
+}
 
 // Close sends the stream's end, which the peer reads as EOF after everything
 // written before it, then ends the session and the connection under it.

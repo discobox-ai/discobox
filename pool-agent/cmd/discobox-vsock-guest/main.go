@@ -126,9 +126,9 @@ func proxyToUnix(ctx context.Context, source net.Conn, socket string) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	// A side that is done writing tells the other with a half-close. A framed
-	// connection has none, so when the daemon is done the host is told by
-	// closing the connection outright; that also ends the other copy.
+	// A side that is done writing tells the other with a half-close; a
+	// connection without one is closed outright, which also ends the other
+	// copy.
 	copyStream := func(dst, src net.Conn) {
 		defer wg.Done()
 		_, _ = io.Copy(dst, src)

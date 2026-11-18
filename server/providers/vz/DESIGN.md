@@ -143,14 +143,12 @@ own stream, and the session under it keeps reading the socket.
   `Connect` one whose first reply is not a frame. There is no unframed
   fallback, which would be the stall.
 
-Connections deliberately do not implement `CloseWrite`. A framed connection
-(`pkg/vsock`) has none, since its stream's half-close is not exposed (ADR
-26-11-17-182, Consequences), and a no-op `CloseWrite` would be worse than none:
-a caller that finds the method believes the guest saw EOF. Callers that probe
-for it take their full-close fallback, which is correct. Nothing the engine does
-over these connections
-— container lifecycle, BuildKit's grpc session, TTY console attach — needs a
-half-close.
+A connection's `CloseWrite` is its framed stream's half-close (`pkg/vsock`;
+ADR 26-11-18-067): the peer reads EOF after everything
+written before it, and this side keeps reading until the peer ends its own, as
+over TCP. The outbound relay ports need it, since they carry a sandbox's own
+TCP and its clients half-close; a splice probing for the method finds it on
+every vz connection, as it does on libkrun's plain VSOCK.
 
 A host → guest dial ends with its context, with the VM, or after 30 s,
 whichever comes first (`vzvm.(*VM).Connect`). The framework cannot cancel a

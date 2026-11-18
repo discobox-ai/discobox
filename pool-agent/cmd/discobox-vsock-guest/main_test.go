@@ -110,7 +110,7 @@ func TestDockerProxyServesFramedConnectionsWhenTheKernelAsks(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.framed {
-				if conn, err = guestvsock.FrameDialed(conn); err != nil {
+				if conn, err = guestvsock.FrameDialed(conn, nil); err != nil {
 					t.Fatal(err)
 				}
 			}

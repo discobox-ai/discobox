@@ -42,7 +42,7 @@ func framedPair(t *testing.T) (dialed, accepted net.Conn) {
 	framed := FrameListener(listener, nil)
 	t.Cleanup(func() { _ = framed.Close() })
 	listener.push(host)
-	dialed, err := FrameDialed(guest)
+	dialed, err := FrameDialed(guest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestFramedConnReturnsWhatItReadWhenTheWindowUpdateCannotBeSent(t *testing.T
 	framed := FrameListener(listener, nil)
 	t.Cleanup(func() { _ = framed.Close() })
 	listener.push(hostSide)
-	dialed, err := FrameDialed(guest)
+	dialed, err := FrameDialed(guest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,12 +117,118 @@ func (c *failingWrites) Write(b []byte) (int, error) {
 	return c.Conn.Write(b)
 }
 
-func TestFramedConnHasNoCloseWrite(t *testing.T) {
-	dialed, accepted := framedPair(t)
-	for _, conn := range []net.Conn{dialed, accepted} {
-		if _, ok := conn.(interface{ CloseWrite() error }); ok {
-			t.Fatalf("%T has CloseWrite; a framed connection cannot half-close", conn)
+// CloseWrite is a half-close in both directions: the peer reads everything
+// written before it, then EOF, and can still answer, which this side reads in
+// full until the peer ends its own side.
+func TestFramedConnCloseWriteIsAHalfClose(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		pick func(dialed, accepted net.Conn) (closing, peer net.Conn)
+	}{
+		{"dialed side", func(d, a net.Conn) (net.Conn, net.Conn) { return d, a }},
+		{"accepted side", func(d, a net.Conn) (net.Conn, net.Conn) { return a, d }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			closing, peer := tc.pick(framedPair(t))
+			half, ok := closing.(interface{ CloseWrite() error })
+			if !ok {
+				t.Fatalf("%T has no CloseWrite", closing)
+			}
+			request := []byte("request")
+			if _, err := closing.Write(request); err != nil {
+				t.Fatal(err)
+			}
+			if err := half.CloseWrite(); err != nil {
+				t.Fatalf("CloseWrite: %v", err)
+			}
+			if _, err := closing.Write([]byte("late")); err == nil {
+				t.Fatal("a write after CloseWrite succeeded")
+			}
+			got, err := io.ReadAll(peer)
+			if err != nil || !bytes.Equal(got, request) {
+				t.Fatalf("peer read %q, %v; want the request, then EOF", got, err)
+			}
+			reply := bytes.Repeat([]byte("reply"), 2*FrameWindow/5)
+			go func() {
+				_, _ = peer.Write(reply)
+				_ = peer.(interface{ CloseWrite() error }).CloseWrite()
+			}()
+			got, err = io.ReadAll(closing)
+			if err != nil || !bytes.Equal(got, reply) {
+				t.Fatalf("read %d bytes, %v after CloseWrite; want the %d-byte reply, then EOF", len(got), err, len(reply))
+			}
+		})
+	}
+}
+
+// A stream half-closed by CloseWrite is never reset on a timer: its peer may
+// go on sending for as long as it likes, as a container's output does after
+// its client closed stdin.
+func TestFramedConnHalfCloseHasNoTimeout(t *testing.T) {
+	if got := frameConfig().StreamCloseTimeout; got != 0 {
+		t.Fatalf("StreamCloseTimeout = %v; a half-closed stream would be reset after it", got)
+	}
+}
+
+// A peer that does not frame answers a framed dial in plain bytes. Its
+// consumer reads only EOF, so the report is what names the peer.
+func TestFrameDialedReportsAPeerThatAnswersInPlainBytes(t *testing.T) {
+	local, peer := net.Pipe()
+	defer peer.Close()
+	var reports atomic.Int32
+	go func() {
+		// The framed dial's first frame arrives; the unframed peer answers
+		// as an HTTP server would, and hangs up.
+		_, _ = io.ReadAtLeast(peer, make([]byte, 12), 12)
+		_, _ = io.WriteString(peer, "HTTP/1.1 400 Bad Request\r\n\r\n")
+		_ = peer.Close()
+	}()
+	conn, err := FrameDialed(local, func(err error) {
+		if !errors.Is(err, errUnframedPeer) {
+			t.Errorf("reported %v, want errUnframedPeer", err)
 		}
+		reports.Add(1)
+	})
+	if err == nil {
+		_, _ = io.ReadAll(conn)
+		_ = conn.Close()
+	}
+	if got := reports.Load(); got != 1 {
+		t.Fatalf("reports = %d, want 1", got)
+	}
+}
+
+// A framed peer is never reported, however much it sends.
+func TestFrameDialedIsQuietForAFramedPeer(t *testing.T) {
+	local, peer := net.Pipe()
+	listener := newChanListener()
+	framed := FrameListener(listener, nil)
+	defer framed.Close()
+	listener.push(peer)
+	var reports atomic.Int32
+	dialed := make(chan net.Conn, 1)
+	go func() {
+		conn, err := FrameDialed(local, func(error) { reports.Add(1) })
+		if err != nil {
+			t.Error(err)
+			close(dialed)
+			return
+		}
+		dialed <- conn
+	}()
+	accepted, err := framed.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = accepted.Write([]byte("framed reply")); _ = accepted.Close() }()
+	conn := <-dialed
+	if conn == nil {
+		return
+	}
+	got, _ := io.ReadAll(conn)
+	_ = conn.Close()
+	if string(got) != "framed reply" || reports.Load() != 0 {
+		t.Fatalf("read %q with %d reports; want the reply and none", got, reports.Load())
 	}
 }
 
@@ -213,7 +319,7 @@ func TestFrameListenerPassesATemporaryErrorThroughAndKeepsAccepting(t *testing.T
 
 	guest, host := net.Pipe()
 	listener.push(host)
-	dialed, err := FrameDialed(guest)
+	dialed, err := FrameDialed(guest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +345,7 @@ func TestFrameListenerKeepsDrainingWhileAnErrorIsUnread(t *testing.T) {
 	listener.push(host)
 	dialed := make(chan error, 1)
 	go func() {
-		conn, err := FrameDialed(guest)
+		conn, err := FrameDialed(guest, nil)
 		if err == nil {
 			t.Cleanup(func() { _ = conn.Close() })
 		}
@@ -506,7 +612,7 @@ func (vm *modelVM) framed(t *testing.T, listens int) (guest, host net.Conn) {
 	framedListener := FrameListener(listener, nil)
 	t.Cleanup(func() { _ = framedListener.Close() })
 	listener.push(accepting)
-	dialed, err := FrameDialed(dialing)
+	dialed, err := FrameDialed(dialing, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

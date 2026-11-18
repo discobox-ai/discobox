@@ -35,10 +35,11 @@
   until the process exits, as the unframed listeners' consumers did before.
   That is cheap while a pool's VM starts rarely. Do not start listeners per
   request; if VM starts become frequent, close the channel in the binding.
-- **Do not add a `CloseWrite` that does nothing.** A caller that finds the
-  method believes the peer saw EOF. If a code path genuinely needs half-close,
-  expose the framed stream's own half-close from `pkg/vsock` (ADR 26-11-17-182
-  defers it), not a method that lies.
+- **A framed connection's `CloseWrite` is a real half-close; never wrap it in
+  one that does nothing.** A caller that finds the method believes the peer
+  saw EOF. The outbound relay ports (3005, 3006) carry a sandbox's TCP, and a
+  client that half-closes after its request lost the upstream's reply while
+  the framed connection had no `CloseWrite` (ADR 26-11-18-067).
 - **The root disk is shared and read-only.** Never attach it writable and never
   add `rw` to the kernel command line: every pool on the host has it open.
 - **Know which hard-lockup detector the guest's kernel has before relying on
