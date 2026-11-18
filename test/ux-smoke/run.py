@@ -114,13 +114,25 @@ def bundle(name, dockerfile, context=".", target=None, metadata=None):
     if metadata:
         args += ["--build-arg", metadata]
     command(args + [context], limit=900)
+    return layout_entry(f"discobox-ux-{name}:{RUN}", layout)
+
+
+def layout_entry(reference, layout):
     with tarfile.open(layout) as archive:
         index = json.load(archive.extractfile("index.json"))
-    return {"reference": f"discobox-ux-{name}:{RUN}",
-            "digest": index["manifests"][0]["digest"], "layout": str(layout)}
+    return {"reference": reference, "digest": index["manifests"][0]["digest"], "layout": str(layout)}
 
 
-def build_stack():
+def builtin_bundle(slug):
+    layout = ARTIFACTS / (slug + ".tar")
+    reference = f"discobox-ux-{slug}:{RUN}"
+    command(["go", "tool", "task", "build:harness-bundle", "HARNESS=" + slug,
+             "HARNESS_BUNDLE=" + reference, "OCI_LAYOUT=" + str(layout),
+             "BUILDER=" + BUILDER], limit=900)
+    return layout_entry(reference, layout)
+
+
+def build_stack(harnesses=None):
     started = time.monotonic()
     # A single Go invocation shares compilation across both binaries. Overlap it
     # with image builds; three workers bound CPU/memory on the four-core CI host.
@@ -137,9 +149,14 @@ def build_stack():
             builds.submit(bundle, "agent", "sandbox-agent/Dockerfile", target="agent"),
             builds.submit(bundle, "platform", "sandbox-agent/Dockerfile", target="platform",
                           metadata="IMAGE_LAYER_METADATA=" + json.dumps(json.loads((ROOT / "sandbox-agent/image.json").read_text()))),
-            builds.submit(bundle, "harness", "test/ux-smoke/image/Dockerfile", context="test/ux-smoke/image",
-                          metadata="HARNESS_METADATA=" + json.dumps(json.loads((ROOT / "test/ux-smoke/image/image.json").read_text()))),
         ]
+        if harnesses is None:
+            directory = "test/ux-smoke/image"
+            metadata = json.dumps(json.loads((ROOT / directory / "image.json").read_text()))
+            bundles.append(builds.submit(bundle, "harness", directory + "/Dockerfile",
+                                         context=directory, metadata="HARNESS_METADATA=" + metadata))
+        else:
+            bundles.extend(builds.submit(builtin_bundle, slug) for slug in harnesses)
         try:
             for build in as_completed(prerequisites + bundles):
                 build.result()
@@ -174,10 +191,10 @@ def wait_box(box_id):
                for t in (obj("admin", "terminal", "ls", box_id).get("terminals") or [])), seconds=120)
 
 
-def start_server():
+def start_server(binary=None, seconds=30):
     global SERVER
     with (ARTIFACTS / "server.log").open("a") as log:
-        SERVER = subprocess.Popen([str(ARTIFACTS / "discobox-server")], cwd=ROOT, env=ENV,
+        SERVER = subprocess.Popen([str(binary or ARTIFACTS / "discobox-server")], cwd=ROOT, env=ENV,
                                   stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
 
     def ready():
@@ -188,7 +205,7 @@ def start_server():
                 return True
         except OSError:
             return False
-    eventually("server ready", ready, seconds=30)
+    eventually("server ready", ready, seconds=seconds)
 
 
 def wait_settled(label, seconds=330):
@@ -368,8 +385,8 @@ def smoke():
     print("PASS sandbox adoption denial/approval inbox transitions and release", flush=True)
 
 
-def main():
-    global SERVER, BUILDER_CREATED, BUILDER, CLI, URL
+def prepare_builder():
+    global BUILDER_CREATED, BUILDER
     for tool in ("docker", "go", "jq"):
         if not shutil.which(tool):
             raise RuntimeError(tool + " is required; missing prerequisites are missing coverage")
@@ -384,21 +401,34 @@ def main():
     # Bootstrap once before concurrent clients connect. A running container is
     # not necessarily ready to serve its BuildKit socket yet.
     command(["docker", "buildx", "inspect", "--bootstrap", BUILDER], limit=180)
-    bundles = build_stack()
+
+def configure_current_bundles(bundles):
     image_id = command(["docker", "image", "inspect", BASE, "--format", "{{.Id}}"]).strip()
     manifest = ARTIFACTS / "manifest.json"
     manifest.write_text(json.dumps({"version": 1, "images": [{"reference": BASE, "id": image_id}], "bundles": bundles}))
+    ENV.update({"DISCOBOX_DEV_DOCKER_IMAGE_SYNC": "true", "DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST": str(manifest),
+                "DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE": BASE,
+                "DISCOBOX_POOL_AGENT_BUNDLE": bundles[0]["reference"],
+                "DISCOBOX_AGENT_BUNDLE": bundles[1]["reference"],
+                "DISCOBOX_PLATFORM_BUNDLE": bundles[2]["reference"]})
+
+
+def configure_server():
+    global URL
     with socket.socket() as sock:
         sock.bind(("0.0.0.0", 0))
         port = sock.getsockname()[1]
     URL = f"http://127.0.0.1:{port}"
     ENV.update({"PORT": str(port), "DISCOBOX_SERVER_LISTEN": f"unix://{ARTIFACTS}/server.sock,http://127.0.0.1:{port}",
-                "DATABASE_DSN": str(ARTIFACTS / "db.sqlite"),
-                "DISCOBOX_DEV_DOCKER_IMAGE_SYNC": "true", "DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST": str(manifest),
-                "DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE": BASE,
-                "DISCOBOX_POOL_AGENT_BUNDLE": bundles[0]["reference"],
-                "DISCOBOX_AGENT_BUNDLE": bundles[1]["reference"],
-                "DISCOBOX_PLATFORM_BUNDLE": bundles[2]["reference"]})
+                "DATABASE_DSN": str(ARTIFACTS / "db.sqlite")})
+
+
+def main():
+    global CLI
+    prepare_builder()
+    bundles = build_stack()
+    configure_current_bundles(bundles)
+    configure_server()
     # Boot with synthetic built-ins too: a fresh server requires a runnable
     # harness before opening its listeners, and must not pull released agents.
     for slug in ("CLAUDE_CODE", "CODEX", "OPENCODE", "COPILOT", "OMP", "PI", "SHELL"):
@@ -544,7 +574,9 @@ def cleanup(failed):
     except Exception as exc:
         errors.append(str(exc))
     # OCI archives and compiled binaries are build inputs, not diagnostics.
-    for name in ("pool.tar", "agent.tar", "platform.tar", "harness.tar", "discobox", "discobox-server"):
+    for path in ARTIFACTS.glob("*.tar"):
+        path.unlink()
+    for name in ("discobox", "discobox-server"):
         (ARTIFACTS / name).unlink(missing_ok=True)
     if diagnostic_errors:
         (ARTIFACTS / "diagnostic-errors.log").write_text("\n".join(diagnostic_errors))
