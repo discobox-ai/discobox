@@ -215,7 +215,7 @@ func sandboxesInPool(sandboxes []apimodel.Sandbox, poolID string) []apimodel.San
 
 func (a *App) writePoolResources(cmd *cobra.Command, pool *apimodel.Pool, sandboxes []apimodel.Sandbox, showProcesses bool) error {
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), poolResourcesJSON(pool, sandboxes))
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), poolResourcesJSON(pool, sandboxes))
 	}
 	out := cmd.OutOrStdout()
 	report, reported := poolResourceReport(pool)
