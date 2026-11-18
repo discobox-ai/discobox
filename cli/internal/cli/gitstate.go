@@ -7,6 +7,7 @@ import (
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 )
 
 // sandboxGitState is the sandbox's current git position, as its own agent last
@@ -114,29 +115,29 @@ func sandboxGitStatus(sb apimodel.Sandbox) sandboxGitState {
 // payload is stored as the sandbox-agent sent it — an opaque map to the API —
 // so the sources are decoded here into the schema type they were sent as. An
 // entry that reports an observation error carries no state worth a row.
-func agentGitSourceStatus(sb apimodel.Sandbox, slug string) (apimodel.SandboxAgentGitSourceStatus, bool) {
+func agentGitSourceStatus(sb apimodel.Sandbox, slug string) (sandboxapi.SandboxAgentGitSourceStatus, bool) {
 	agentStatus, ok := sb.Runtime.AgentStatus.Get()
 	if !ok {
-		return apimodel.SandboxAgentGitSourceStatus{}, false
+		return sandboxapi.SandboxAgentGitSourceStatus{}, false
 	}
 	raw, ok := agentStatus["sources"]
 	if !ok {
-		return apimodel.SandboxAgentGitSourceStatus{}, false
+		return sandboxapi.SandboxAgentGitSourceStatus{}, false
 	}
-	var sources []apimodel.SandboxAgentGitSourceStatus
+	var sources []sandboxapi.SandboxAgentGitSourceStatus
 	if err := json.Unmarshal(raw, &sources); err != nil {
-		return apimodel.SandboxAgentGitSourceStatus{}, false
+		return sandboxapi.SandboxAgentGitSourceStatus{}, false
 	}
 	for _, source := range sources {
 		if source.Slug != slug {
 			continue
 		}
 		if strings.TrimSpace(source.Error.Or("")) != "" {
-			return apimodel.SandboxAgentGitSourceStatus{}, false
+			return sandboxapi.SandboxAgentGitSourceStatus{}, false
 		}
 		return source, true
 	}
-	return apimodel.SandboxAgentGitSourceStatus{}, false
+	return sandboxapi.SandboxAgentGitSourceStatus{}, false
 }
 
 // sandboxSpawnCommit is the commit the primary source was cut from.

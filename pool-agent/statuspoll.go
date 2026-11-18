@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -237,9 +237,9 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 	// advertises one is handed it through the document converged below
 	// (ADR 26-10-16-337 §8, ADR 26-10-27-840).
 	var decoded struct {
-		ObservedAt            time.Time                           `json:"observedAt"`
-		Resources             *apimodel.SandboxAgentResourceUsage `json:"resources"`
-		RuntimeConfigRevision int64                               `json:"runtimeConfigRevision"`
+		ObservedAt            time.Time                             `json:"observedAt"`
+		Resources             *sandboxapi.SandboxAgentResourceUsage `json:"resources"`
+		RuntimeConfigRevision int64                                 `json:"runtimeConfigRevision"`
 		Autostop              struct {
 			ControlPlanePower bool `json:"controlPlanePower"`
 		} `json:"autostop"`

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
@@ -382,8 +382,8 @@ func TestPollDecodedStatusCarriesResourceCountersAndRelaysVerbatim(t *testing.T)
 	}`)
 
 	var decoded struct {
-		ObservedAt time.Time                           `json:"observedAt"`
-		Resources  *apimodel.SandboxAgentResourceUsage `json:"resources"`
+		ObservedAt time.Time                             `json:"observedAt"`
+		Resources  *sandboxapi.SandboxAgentResourceUsage `json:"resources"`
 	}
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		t.Fatalf("decode sandbox-agent status: %v", err)

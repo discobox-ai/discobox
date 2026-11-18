@@ -10,20 +10,6 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
-func encodeAcknowledgeSandboxHarnessConfigRequest(
-	req *HarnessConfigAcknowledgment,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeApproveSecretRequestRequest(
 	req *ApproveSecretRequestBody,
 	r *http.Request,
@@ -76,36 +62,8 @@ func encodeAttachSandboxExecOnceRequest(
 	return nil
 }
 
-func encodeCaptureSandboxHarnessConfigRequest(
-	req *HarnessConfigCandidateRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeCompleteSandboxSourcePushRequest(
 	req *CompleteSandboxSourcePushBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeConfirmSandboxAutostopRequest(
-	req *SandboxAutostopConfirmRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -450,34 +408,6 @@ func encodePutProjectGatewayRequest(
 	return nil
 }
 
-func encodePutSandboxRuntimeConfigRequest(
-	req *SandboxRuntimeConfig,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeReconsiderSandboxHarnessConfigRequest(
-	req *HarnessConfigReconsideration,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeReconsiderSandboxHarnessConfigChangesRequest(
 	req *HarnessConfigSelection,
 	r *http.Request,
@@ -788,20 +718,6 @@ func encodeUpdateProjectRequest(
 
 func encodeUpdateSandboxRequest(
 	req *UpdateSandboxBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeUpdateSandboxAgentMetaRequest(
-	req *UpdateSandboxMetaBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
