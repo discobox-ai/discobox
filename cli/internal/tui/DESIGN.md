@@ -3377,29 +3377,17 @@ the choices: running without a coding harness is the `shell` harness (ADR 0043),
 one of the project's like any other, so a second way to say it would be a second
 thing to keep true.
 
-Submitting a prompt in a project with no default and nothing chosen stops the
-run and asks which harness the project should run (`askForADefaultHarness`).
-The server refuses that create outright (ADR 0048), so the alternative is the
-same refusal a moment later with the answer left to the user to find — and this
-is the only point that knows what the project has to offer. A harness that
-already works becomes the default outright; one that does not is set up first
-and made the default when that succeeds, because a setup that left the project
-still without one would ask the same question on the next prompt.
+Submitting a run with no explicit harness in a project with no default opens
+the harness picker (`askForRunHarness`). Each coding harness action sets the
+project default before resuming the run. The built-in Shell action passes its
+slug on the pending run and leaves the project default unset. The picker labels
+each action's scope, mentions `discobox run -H <harness>` for a one-off choice,
+and points to `discobox configure` for changing the default. A project with only
+Shell still gets the picker.
 
-`shell` is not among those choices. It runs like any other harness and is chosen
-like any other, but a project whose default is a login shell has no coding
-harness by default, which is the state the question exists to leave. It is told
-apart by `harness.ShellSlug`, the reserved name, rather than by a literal of the
-console's own. A project holding nothing else says so instead of opening a menu
-with no choices on it.
-
-Both questions interrupt a run, so answering one runs it. The request travels
-with the choice and comes back as `resumeRunMsg` once everything it was waiting
-for has happened — the setup, then the default. It resumes at `startRun`, past
-the questions rather than at the top of `run`: they have been answered, and the
-listing has not necessarily caught up, so re-asking would ask the same one
-twice. A setup that fails resumes nothing; the harness still cannot carry the
-run, and the reason has just been reported.
+The request travels with the choice and comes back as `resumeRunMsg`. It resumes
+at `startRun`, past the picker, so a default change can resume even before the
+harness listing has caught up. A failed default change does not resume the run.
 
 None of this fires before the listing has landed: an empty listing and one still
 in flight look the same and mean opposite things, so a prompt is never refused

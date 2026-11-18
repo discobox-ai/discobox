@@ -513,12 +513,9 @@ func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 	if len(ds.runs) != 0 {
 		t.Fatalf("runs = %v, want the run held until the project has a harness", ds.runs)
 	}
-	// `shell` runs like any other harness but is not a coding harness, so it is
-	// not offered as the thing a project runs by default.
-	for _, item := range m.dialog.items {
-		if strings.EqualFold(item.label, "Shell") {
-			t.Fatalf("shell should not be offered as a project default: %v", m.dialog.items)
-		}
+	if !strings.Contains(m.dialog.body, "discobox run -H <harness>") ||
+		!strings.Contains(m.dialog.body, "discobox configure") {
+		t.Fatalf("picker should explain how to choose for one box and how to change the default: %q", m.dialog.body)
 	}
 }
 
@@ -530,6 +527,9 @@ func TestChoosingAHarnessMakesItTheDefault(t *testing.T) {
 	send(t, m, keyPress("enter"), keyPress("enter"))
 
 	// Claude is the first candidate.
+	if m.dialog == nil || len(m.dialog.items) == 0 || m.dialog.items[0].detail != "set project default" {
+		t.Fatal("the picker should show that choosing Claude sets the project default")
+	}
 	send(t, m, keyPress("1"))
 
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_claude" {
@@ -537,11 +537,9 @@ func TestChoosingAHarnessMakesItTheDefault(t *testing.T) {
 	}
 }
 
-// A project with nothing but `shell` has nothing to offer, and says so rather
-// than opening a menu with no choices on it.
-func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
+func TestAProjectWithOnlyShellOffersItForThisBox(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource()
+	ds := noDefaultSource(t)
 	ds.harnesses = []Harness{{
 		ID: "hc_shell", Name: "Shell", Slug: "shell",
 		BuiltIn: true, Shell: true,
@@ -549,11 +547,11 @@ func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 
-	if m.dialog != nil && m.dialog.kind == dlgActions {
-		t.Fatal("there is nothing to choose between, so no menu should open")
+	if m.dialog == nil || m.dialog.kind != dlgActions || len(m.dialog.items) != 1 {
+		t.Fatal("the picker should offer Shell when it is the only harness")
 	}
-	if !strings.Contains(plainFrame(m), "no harness to run") {
-		t.Fatalf("the window should say the project has nothing to run:\n%s", plainFrame(m))
+	if item := m.dialog.items[0]; item.label != "Shell (no agent)" || item.detail != "this box only" {
+		t.Fatalf("unexpected Shell choice: %+v", item)
 	}
 }
 
