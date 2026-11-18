@@ -180,7 +180,9 @@ discobox's own egress level.
 					return err
 				}
 			}
-			body, err := createSandboxBody(cmd.Context(), opts)
+			body, err := createSandboxBody(cmd.Context(), opts, func(warning string) {
+				fmt.Fprintln(cmd.ErrOrStderr(), warningLine(warning))
+			})
 			if err != nil {
 				return err
 			}
@@ -654,7 +656,7 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	addEgressUpdateFlags(cmd, &opts.egress, "the discobox")
 }
 
-func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
+func createSandboxBody(ctx context.Context, opts sandboxCreateOptions, warn func(string)) (*apimodel.CreateSandboxBody, error) {
 	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: opts.name}}
 	config := &body.Config
 	config.SetDescription(optString(opts.description))
@@ -708,7 +710,7 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 	if err != nil {
 		return nil, err
 	}
-	skills, err := sandboxcreate.ReadSkills(skillsArgs.Directories, opts.userSkills)
+	skills, err := sandboxcreate.ReadSkills(skillsArgs.Directories, opts.userSkills, warn)
 	if err != nil {
 		return nil, err
 	}

@@ -198,7 +198,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if err != nil {
 		return nil, nil, err
 	}
-	skills, err := ReadSkills(skillsArgs.Directories, opts.UserSkills)
+	skills, err := ReadSkills(skillsArgs.Directories, opts.UserSkills, opts.Warn)
 	if err != nil {
 		return nil, nil, err
 	}

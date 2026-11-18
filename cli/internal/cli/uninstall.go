@@ -18,6 +18,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 
+	"github.com/discobox-ai/discobox/cli/internal/hostskill"
 	"github.com/discobox-ai/discobox/internal/filelock"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
@@ -57,14 +58,17 @@ type uninstallLocation struct {
 	// env is the variable that named path, when one did. Such a path is
 	// wherever somebody pointed it, not a directory this program made.
 	env string
+	// hostSkill requires the ownership marker to be checked again at removal.
+	hostSkill bool
 }
 
 // uninstallEntry is one path the uninstall removes: the outermost of the
 // locations that were found, with everything nested inside it folded in.
 type uninstallEntry struct {
-	path string
-	what []string
-	size int64
+	path      string
+	what      []string
+	size      int64
+	hostSkill bool
 }
 
 // uninstallKept is a location that was found and will not be removed, and why.
@@ -108,10 +112,10 @@ func (a *App) newUninstallCommand() *cobra.Command {
 
 That is the CLI's state (this machine's identity and SSH keys), the servers and
 images it downloaded, the local server's database, pool disks, configuration,
-cache and logs, the Include lines it added to ~/.ssh/config, and what the
-install scripts leave beside the command (the binary an upgrade replaced, an
-interrupted install's copy). A local server that is running is asked to stop
-first.
+cache and logs, the local agent skill in your home directory, the Include lines
+it added to ~/.ssh/config, and what the install scripts leave beside the command
+(the binary an upgrade replaced, an interrupted install's copy). A local server
+that is running is asked to stop first.
 
 Everything that would be deleted is listed first, and nothing is deleted until
 you answer yes. To remove the discobox command as well, delete it the way it was
@@ -123,7 +127,7 @@ configuration, the files DISCOBOX_CONFIG_FILE and DISCOBOX_CLIENT_CONFIG_FILE
 name, and the containers, volumes and images a Docker provider created. A
 directory an environment variable names is deleted only when its name says it
 is Discobox's. The lock file beside ~/.ssh/config (.discobox-ssh-config.lock)
-is left too: another install of Discobox may still edit that file under it.
+and ~/.discobox-host.lock are left for other Discobox processes to use.
 
 Close editors and discobox windows first: anything that starts a server again
 while this runs recreates what it deletes.`,
@@ -193,6 +197,25 @@ func (a *App) uninstall(cmd *cobra.Command) error {
 		}
 	}
 	for _, entry := range plan.entries {
+		if entry.hostSkill {
+			target := hostSkillTarget{dir: filepath.Dir(entry.path)}
+			dir, err := target.openDirectory(false)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("remove %s: %s", terminalSafe(entry.path), terminalSafe(err.Error())))
+				continue
+			}
+			if dir == nil {
+				continue
+			}
+			removed, err := changeHostSkill(dir, false)
+			_ = dir.Close()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("remove %s: %s", terminalSafe(entry.path), terminalSafe(err.Error())))
+			} else if removed {
+				fmt.Fprintf(out, "Removed %s\n", terminalSafe(entry.path))
+			}
+			continue
+		}
 		if err := os.RemoveAll(entry.path); err != nil {
 			errs = append(errs, fmt.Errorf("remove %s: %w", entry.path, err))
 			continue
@@ -214,7 +237,32 @@ func (a *App) uninstall(cmd *cobra.Command) error {
 func (a *App) planUninstall(ctx context.Context) uninstallPlan {
 	var plan uninstallPlan
 	plan.servers = a.answeringLocalServers(ctx)
-	plan.entries, plan.kept = uninstallEntries(uninstallLocations(), runningExecutables(), protectedDirs())
+	locations := uninstallLocations()
+	var skillKept []uninstallKept
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, parent := range hostskill.Directories(home) {
+			resolved, err := filepath.EvalSymlinks(parent)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			var marked bool
+			if err == nil {
+				var dir *os.Root
+				dir, err = os.OpenRoot(resolved)
+				if err == nil {
+					_, marked, err = inspectHostSkill(dir, hostskill.Name)
+					_ = dir.Close()
+				}
+			}
+			if err != nil {
+				skillKept = append(skillKept, uninstallKept{path: filepath.Join(parent, hostskill.Name), what: "Discobox host skill", reason: err.Error()})
+			} else if marked {
+				locations = append(locations, uninstallLocation{path: filepath.Join(resolved, hostskill.Name), what: "Discobox host skill", hostSkill: true})
+			}
+		}
+	}
+	plan.entries, plan.kept = uninstallEntries(locations, runningExecutables(), protectedDirs())
+	plan.kept = append(plan.kept, skillKept...)
 	targets, err := machineSSHTargets(ctx)
 	if err != nil {
 		return plan
@@ -423,7 +471,7 @@ func uninstallEntries(locations []uninstallLocation, executables, protected []st
 		if _, err := os.Lstat(abs); errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		present = append(present, uninstallLocation{path: abs, what: location.what, env: location.env})
+		present = append(present, uninstallLocation{path: abs, what: location.what, env: location.env, hostSkill: location.hostSkill})
 	}
 	// Outermost first, so a location is folded into one that holds it: a
 	// directory's path is always shorter than anything inside it.
@@ -440,8 +488,11 @@ func uninstallEntries(locations []uninstallLocation, executables, protected []st
 		}
 		holder := slices.IndexFunc(entries, func(e uninstallEntry) bool { return pathWithin(e.path, location.path) })
 		if holder < 0 {
-			entries = append(entries, uninstallEntry{path: location.path})
+			entries = append(entries, uninstallEntry{path: location.path, hostSkill: location.hostSkill})
 			holder = len(entries) - 1
+		}
+		if samePathOnDisk(entries[holder].path, location.path) && location.hostSkill {
+			entries[holder].hostSkill = true
 		}
 		if location.what != "" && !slices.Contains(entries[holder].what, location.what) {
 			entries[holder].what = append(entries[holder].what, location.what)
@@ -526,6 +577,9 @@ func protectedDirs() []string {
 	add(os.TempDir())
 	if dir, err := os.Getwd(); err == nil {
 		add(dir)
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil && !samePathOnDisk(dir, resolved) {
+			add(resolved)
+		}
 	}
 	return dirs
 }
@@ -730,7 +784,7 @@ func writeUninstallPlan(out io.Writer, plan uninstallPlan) {
 		fmt.Fprintf(out, "\n  Stop the running server at %s\n", server.endpoint)
 	}
 	for _, entry := range plan.entries {
-		fmt.Fprintf(out, "\n  %s (%s)\n", entry.path, humanBytes(entry.size))
+		fmt.Fprintf(out, "\n  %s (%s)\n", terminalSafe(entry.path), humanBytes(entry.size))
 		if len(entry.what) > 0 {
 			fmt.Fprintf(out, "      %s\n", strings.Join(entry.what, "; "))
 		}
@@ -753,11 +807,11 @@ func writeUninstallKept(out io.Writer, kept []uninstallKept) {
 	}
 	fmt.Fprintln(out, "\nNot deleted:")
 	for _, k := range kept {
-		fmt.Fprintf(out, "\n  %s\n", k.path)
+		fmt.Fprintf(out, "\n  %s\n", terminalSafe(k.path))
 		if k.what != "" {
 			fmt.Fprintf(out, "      %s\n", k.what)
 		}
-		fmt.Fprintf(out, "      not deleted: %s\n", k.reason)
+		fmt.Fprintf(out, "      not deleted: %s\n", terminalSafe(k.reason))
 	}
 }
 

@@ -41,7 +41,7 @@ func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 		// was actually given; the command sets these from Flags().Changed.
 		userUIDSet:    true,
 		homeDirectory: "/home/darren",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
 	}
