@@ -1,6 +1,11 @@
-// Command discobox-vsock-guest provides the two small guest-side services the
-// local libkrun provider needs before the pool-agent container exists:
-// Docker's Unix socket over VSOCK and orderly poweroff over VSOCK.
+// Command discobox-vsock-guest provides the two small guest-side services a
+// local VM provider needs before the pool-agent container exists: Docker's
+// Unix socket over VSOCK and orderly poweroff over VSOCK.
+//
+// Both listen framed when the host asked for it on the kernel command line
+// (vsock.FramingKernelParameter; ADR 26-11-17-182 §5). The image boots on
+// hosts that frame and hosts that do not, and the command line is the one
+// thing the host that booted it renders.
 package main
 
 import (
@@ -42,7 +47,7 @@ func run(ctx context.Context, args []string) error {
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		listener, err := guestvsock.Listen(uint32(*port))
+		listener, err := listen(uint32(*port))
 		if err != nil {
 			return err
 		}
@@ -54,7 +59,7 @@ func run(ctx context.Context, args []string) error {
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		listener, err := guestvsock.Listen(uint32(*port))
+		listener, err := listen(uint32(*port))
 		if err != nil {
 			return err
 		}
@@ -63,6 +68,34 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown operation %q", args[0])
 	}
+}
+
+// kernelCmdline is where the host's framing request is read from.
+const kernelCmdline = "/proc/cmdline"
+
+// listen binds a VSOCK port, framed when the kernel command line asks.
+func listen(port uint32) (net.Listener, error) {
+	cmdline, err := os.ReadFile(kernelCmdline)
+	if err != nil {
+		return nil, fmt.Errorf("read kernel command line: %w", err)
+	}
+	listener, err := guestvsock.Listen(port)
+	if err != nil {
+		return nil, err
+	}
+	return frameIfAsked(listener, string(cmdline)), nil
+}
+
+// frameIfAsked frames listener's connections when cmdline carries the
+// framing parameter. A connection that turns out not to be framed is closed
+// and said so on stderr, which reaches the guest's journal.
+func frameIfAsked(listener net.Listener, cmdline string) net.Listener {
+	if !guestvsock.FramedByKernel(cmdline) {
+		return listener
+	}
+	return guestvsock.FrameListener(listener, func(err error) {
+		fmt.Fprintln(os.Stderr, "unframed connection refused:", err)
+	})
 }
 
 func serveUnixProxy(ctx context.Context, listener net.Listener, socket string) error {
@@ -93,12 +126,17 @@ func proxyToUnix(ctx context.Context, source net.Conn, socket string) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
+	// A side that is done writing tells the other with a half-close. A framed
+	// connection has none, so when the daemon is done the host is told by
+	// closing the connection outright; that also ends the other copy.
 	copyStream := func(dst, src net.Conn) {
 		defer wg.Done()
 		_, _ = io.Copy(dst, src)
 		if closer, ok := dst.(interface{ CloseWrite() error }); ok {
 			_ = closer.CloseWrite()
+			return
 		}
+		_ = dst.Close()
 	}
 	go copyStream(target, source)
 	go copyStream(source, target)

@@ -238,6 +238,11 @@ a contract:
 
 - the VSOCK port map — 3001 control plane (guest → host), 3002 pool agent, 3003
   lifecycle, 3004 Docker;
+- the VSOCK framing — with `discobox.vsock=yamux` on the kernel command line,
+  `discobox-vsock-guest` carries each connection on 3003 and 3004 as one yamux
+  stream, whose window is the guest's only flow control on vz (ADR
+  26-11-17-182); without it, plain. The image never chooses: the host that
+  boots it does;
 - the storage layout — `/dev/vda` root read-only, `/dev/vdb` data at
   `/var/lib/discobox` (Docker's and containerd's state bind-mounted from it),
   `/dev/vdc` cache at `/var/lib/discobox/cache`. The host creates both writable
