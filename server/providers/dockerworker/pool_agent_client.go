@@ -34,14 +34,27 @@ const (
 // panics reboots inside the same VM, and the framework does not stop it. A
 // dial the guest refuses or resets says its agent's listener is gone, so every
 // connection made before it is dropped then, and a request still waiting on
-// the old boot fails rather than waiting for its caller to give up.
+// the old boot fails rather than waiting for its caller to give up. That
+// includes a dial still in progress when the refusal came: it may have reached
+// the old boot before it went, and is not yet tracked for Close to drop, so it
+// is dropped as it completes (#1355).
 type PoolAgentClient struct {
 	*http.Client
 	transport *http.Transport
 
 	mu    sync.Mutex
 	conns map[*poolAgentConn]struct{}
+	// closes counts Close calls. A dial that saw a different count when it
+	// started overlapped a Close, and its connection is dropped.
+	closes uint64
 }
+
+// errPoolAgentDialClosed fails a dial that was in progress when the client
+// closed: its connection may belong to a guest boot that is gone. track
+// returns it as a dial *net.OpError, the failed dial it stands for, so callers
+// that wait out an unanswered pool agent (poolruntime's poolAgentUnanswered)
+// retry it like any other.
+var errPoolAgentDialClosed = errors.New("pool agent client closed while dialing the guest")
 
 // NewPoolAgentClient returns a keep-alive client whose connections come from
 // dial.
@@ -49,6 +62,9 @@ func NewPoolAgentClient(dial func(context.Context) (net.Conn, error)) *PoolAgent
 	c := &PoolAgentClient{conns: map[*poolAgentConn]struct{}{}}
 	c.transport = &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			c.mu.Lock()
+			closes := c.closes
+			c.mu.Unlock()
 			conn, err := dial(ctx)
 			if err != nil {
 				if guestRefused(err) {
@@ -56,7 +72,7 @@ func NewPoolAgentClient(dial func(context.Context) (net.Conn, error)) *PoolAgent
 				}
 				return nil, err
 			}
-			return c.track(conn), nil
+			return c.track(conn, closes)
 		},
 		MaxIdleConns:        poolAgentIdleConns,
 		MaxIdleConnsPerHost: poolAgentIdleConns,
@@ -74,18 +90,27 @@ func (c *PoolAgentClient) Close() {
 	c.mu.Lock()
 	conns := c.conns
 	c.conns = map[*poolAgentConn]struct{}{}
+	c.closes++
 	c.mu.Unlock()
 	for conn := range conns {
 		_ = conn.Conn.Close()
 	}
 }
 
-func (c *PoolAgentClient) track(conn net.Conn) net.Conn {
-	tracked := &poolAgentConn{Conn: conn, owner: c}
+// track records conn, dialed when the client had closed closes times, so a
+// later Close drops it. A Close since then may have come too late to see it,
+// so conn is closed and the dial fails instead.
+func (c *PoolAgentClient) track(conn net.Conn, closes uint64) (net.Conn, error) {
 	c.mu.Lock()
+	if c.closes != closes {
+		c.mu.Unlock()
+		_ = conn.Close()
+		return nil, &net.OpError{Op: "dial", Err: errPoolAgentDialClosed}
+	}
+	tracked := &poolAgentConn{Conn: conn, owner: c}
 	c.conns[tracked] = struct{}{}
 	c.mu.Unlock()
-	return tracked
+	return tracked, nil
 }
 
 // guestRefused reports a dial the guest answered with no listener: the agent
