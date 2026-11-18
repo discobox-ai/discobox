@@ -177,6 +177,74 @@ func TestFrameListenerPassesATemporaryErrorThroughAndKeepsAccepting(t *testing.T
 	_ = accepted.Close()
 }
 
+func TestFrameListenerKeepsDrainingWhileAnErrorIsUnread(t *testing.T) {
+	listener := newChanListener()
+	framed := FrameListener(listener, nil)
+	defer framed.Close()
+
+	// Errors nobody reads, then a connection: the loop must not wait on the
+	// caller to take the errors before it takes the connection from inner.
+	for range 3 {
+		listener.fail(temporaryError{})
+	}
+	guest, host := net.Pipe()
+	listener.push(host)
+	dialed := make(chan error, 1)
+	go func() {
+		conn, err := FrameDialed(guest)
+		if err == nil {
+			t.Cleanup(func() { _ = conn.Close() })
+		}
+		dialed <- err
+	}()
+	deadline := time.After(5 * time.Second)
+	for len(listener.conns) > 0 || len(listener.errs) > 0 {
+		select {
+		case <-deadline:
+			t.Fatal("the accept loop stopped taking from inner while an error was unread")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	if err := <-dialed; err != nil {
+		t.Fatalf("FrameDialed: %v", err)
+	}
+	// One error is left for the caller, and the connection: Accept returns
+	// both, in whichever order they are ready.
+	var gotErr, gotConn bool
+	for range 2 {
+		conn, err := framed.Accept()
+		switch {
+		case err == nil:
+			gotConn = true
+			_ = conn.Close()
+		case errors.Is(err, temporaryError{}):
+			gotErr = true
+		default:
+			t.Fatalf("Accept: %v", err)
+		}
+	}
+	if !gotErr || !gotConn {
+		t.Fatalf("Accept returned error %v, connection %v; want one of each", gotErr, gotConn)
+	}
+}
+
+func TestFrameListenerClosedDuringBackoffReturnsErrClosed(t *testing.T) {
+	listener := newChanListener()
+	framed := FrameListener(listener, nil)
+	listener.fail(temporaryError{})
+	// Let the loop take the error and enter its backoff, then close it there.
+	for len(listener.errs) > 0 {
+		time.Sleep(time.Millisecond)
+	}
+	_ = framed.Close()
+	for i := range 100 {
+		conn, err := framed.Accept()
+		if conn != nil || !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Accept %d after Close = %v, %v; want net.ErrClosed", i, conn, err)
+		}
+	}
+}
+
 // The model below stands in for Virtualization.framework (ADR 26-11-17-182
 // §6): every connection's bytes, in both directions, pass through one
 // goroutine that writes each chunk to its destination with a blocking write,
