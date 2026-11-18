@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-18-919](26-11-18-919-edge-and-main-have-homebrew-formulae-kept-current-by-the-workflows-that-publish-them.md) | Edge and main have Homebrew formulae, kept current by the workflows that publish them | Proposed (would supersede [26-11-16-249](26-11-16-249-main-is-a-channel-built-into-its-own-repository-and-latest-is-no-channels-name.md) §1's Homebrew column, §6's pruned-build advice for `discobox-main`, §7's "no Homebrew formula for main" and its rejected `discobox-main` formula: `discobox-edge` and `discobox-main` formulae, dispatched by the release and main-build workflows) |
 | [26-11-18-571](26-11-18-571-a-server-routes-path-says-who-answers-it-and-nothing-is-under-api.md) | A server route's path says who answers it, and nothing is under `/api` | Proposed |
 | [26-11-18-067](26-11-18-067-a-framed-vz-vsock-connection-half-closes.md) | A framed vz VSOCK connection half-closes | Accepted (supersedes [26-11-17-182](26-11-17-182-a-vz-vsock-connection-is-always-drained-and-the-guest-sends-only-what-the-host-has-granted.md)'s deferral of `CloseWrite`: a framed connection's `CloseWrite` is its stream's half-close, and yamux's stream close timeout is off) |
 | [26-11-18-245](26-11-18-245-credential-requests-bound-bytes-and-routes.md) | Credential requests bound bytes and routes | Proposed (would supersede 26-11-02-022 §2’s policy-count limit) |
