@@ -237,8 +237,10 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// Both directions are VSOCK, as for libkrun: the agent dials host CID 2
 		// for the control plane and listens on its own port for inbound
 		// requests. macOS opens no TCP listener and raises no firewall prompt.
-		ControlPlaneURL:  wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
-		AgentListenURL:   wire.VSOCKListenURL(agentVSOCKPort),
+		// Unlike libkrun's, every connection is framed (ADR 26-11-17-182):
+		// vzvm frames the host's end of each.
+		ControlPlaneURL:  wire.FramedVSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
+		AgentListenURL:   wire.FramedVSOCKListenURL(agentVSOCKPort),
 		SandboxBaseImage: dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		// Each pool's own VM runs its daemon, its data root bound from the
 		// pool's state disk (vm-image's discobox-mount-storage).

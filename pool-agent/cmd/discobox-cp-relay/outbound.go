@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
-	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
+	"github.com/discobox-ai/discobox/pkg/wire"
 )
 
 func outboundRelay(config string) error {
@@ -24,11 +24,20 @@ func outboundRelay(config string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	errors := make(chan error, 4)
-	for i, enabled := range []bool{settings.HTTP, settings.HTTPS} {
-		if !enabled {
+	for i, upstream := range []string{settings.HTTP, settings.HTTPS} {
+		if upstream == "" {
 			continue
 		}
-		port := []uint32{pooloutbound.HTTPPort, pooloutbound.HTTPSPort}[i]
+		// The server renders the upstream, and with it the transport: the
+		// relay never assumes one (ADR 26-11-17-182 §5).
+		endpoint, err := wire.Parse(upstream)
+		if err != nil {
+			return err
+		}
+		dial, err := endpoint.DialContext()
+		if err != nil {
+			return err
+		}
 		for _, host := range []string{"127.0.0.1", settings.Bridge} {
 			listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(host, []string{"17008", "17009"}[i]))
 			if err != nil {
@@ -36,7 +45,7 @@ func outboundRelay(config string) error {
 			}
 			go func() {
 				errors <- pooloutbound.ServeRelay(ctx, listener, func(ctx context.Context) (net.Conn, error) {
-					return guestvsock.DialContextCID(guestvsock.HostCID, port)(ctx, "vsock", "")
+					return dial(ctx, "", "")
 				})
 			}()
 		}

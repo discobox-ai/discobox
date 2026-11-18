@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
@@ -21,7 +22,8 @@ import (
 // The whole backend is expressed in the two transport URLs. VSOCK in both
 // directions is what lets a Mac run pools with no TCP listener and therefore no
 // firewall prompt, so a change that turns either into an IP endpoint is a
-// behavior change, not a refactor.
+// behavior change, not a refactor. Both are framed (ADR 26-11-17-182): a plain
+// vsock endpoint here is a guest that can stall the framework's VSOCK queue.
 func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
 	cfg := engineConfig(Config{}, nil, nil, dockerworker.ServerDefaults{})
 
@@ -29,8 +31,8 @@ func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse control plane URL %q: %v", cfg.ControlPlaneURL, err)
 	}
-	if controlPlane.Scheme != "vsock" {
-		t.Errorf("control plane scheme = %q, want vsock", controlPlane.Scheme)
+	if controlPlane.Scheme != "vsock+yamux" {
+		t.Errorf("control plane scheme = %q, want vsock+yamux", controlPlane.Scheme)
 	}
 	if controlPlane.Port != controlPlaneVSOCKPort {
 		t.Errorf("control plane port = %d, want %d", controlPlane.Port, controlPlaneVSOCKPort)
@@ -40,8 +42,8 @@ func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse agent listen URL %q: %v", cfg.AgentListenURL, err)
 	}
-	if agent.Scheme != "vsock" {
-		t.Errorf("agent listen scheme = %q, want vsock", agent.Scheme)
+	if agent.Scheme != "vsock+yamux" {
+		t.Errorf("agent listen scheme = %q, want vsock+yamux", agent.Scheme)
 	}
 	if agent.Port != agentVSOCKPort {
 		t.Errorf("agent listen port = %d, want %d", agent.Port, agentVSOCKPort)
@@ -75,6 +77,15 @@ func TestStorageDefaultsHonorConfiguredValues(t *testing.T) {
 	}
 	if got := effectiveGuestCacheDir(configured); got != configured {
 		t.Fatalf("effectiveGuestCacheDir = %q, want the configured value", got)
+	}
+}
+
+// vzvm frames every connection it makes and accepts, so the guest's own VSOCK
+// services must be asked to frame theirs; without it, every Docker and
+// lifecycle connection is refused as unframed (ADR 26-11-17-182 §5).
+func TestKernelCmdlineAsksTheGuestToFrameVSOCK(t *testing.T) {
+	if !guestvsock.FramedByKernel(kernelCmdline) {
+		t.Fatalf("kernel command line %q does not carry %q", kernelCmdline, guestvsock.FramingKernelParameter)
 	}
 }
 
