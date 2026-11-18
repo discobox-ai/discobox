@@ -98,6 +98,7 @@ opens no TCP listener:
 | 3002 | host → guest | pool-agent API |
 | 3003 | host → guest | orderly shutdown, before a hard stop |
 | 3004 | host → guest | the guest's Docker socket |
+| 3005, 3006 | guest → host | the pool's outbound HTTP and HTTPS proxy relays |
 
 The numbering matches the libkrun guest, so one `discobox-vsock-guest` serves
 both backends.
@@ -120,11 +121,34 @@ connection it holds then, in flight included, and a request still waiting on
 the old boot fails instead of waiting for its caller to give up. A dial the
 rebooting guest neither completes nor refuses ends by its own bound, below.
 
-Connections deliberately do not implement `CloseWrite`. The framework's
-connection cannot have its write side shut down independently through this
-binding, and a no-op `CloseWrite` would be worse than none: a caller that finds
-the method believes the guest saw EOF. Callers that probe for it take their
-full-close fallback, which is correct. Nothing the engine does over this client
+**Every connection is framed** (ADR 26-11-17-182). Virtualization.framework
+serves every VSOCK connection of a VM from one serial queue, delivering guest
+data into the host with a blocking write: a host that stops reading any one
+connection stops the queue, and the guest's CPU 0 with it, until the guest
+panics. So each connection carries one yamux stream (`pkg/vsock`'s framing)
+with a fixed 256 KiB window. A stalled reader blocks the guest's write on its
+own stream, and the session under it keeps reading the socket.
+
+- `vzvm.Connect` returns a framed connection whose session reads from the
+  moment it exists; `vzvm.Listen` runs its own accept loop, so a connection is
+  read before any consumer accepts it, and the loop never waits on a consumer,
+  even to report an error: a connection the framework has handed over is a
+  socket nobody reads until its session starts, and a guest write that
+  overflows its 8 KiB blocks the queue.
+- The guest frames its side because the host says so: the pool agent and the
+  outbound relay by the `vsock+yamux` URLs the driver renders, and
+  `discobox-vsock-guest` by `discobox.vsock=yamux` on the kernel command line.
+- A guest that does not frame is refused, connection by connection, with a log
+  line naming it: `Listen` logs a connection that opens no framed stream, and
+  `Connect` one whose first reply is not a frame. There is no unframed
+  fallback, which would be the stall.
+
+Connections deliberately do not implement `CloseWrite`. A framed connection
+(`pkg/vsock`) has none, since its stream's half-close is not exposed (ADR
+26-11-17-182, Consequences), and a no-op `CloseWrite` would be worse than none:
+a caller that finds the method believes the guest saw EOF. Callers that probe
+for it take their full-close fallback, which is correct. Nothing the engine does
+over these connections
 — container lifecycle, BuildKit's grpc session, TTY console attach — needs a
 half-close.
 
@@ -344,9 +368,11 @@ sandbox base image (`dockerworker.DefaultSandboxBaseImage`), which runs on the
 guest this boots.
 
 The compatibility surface between the two lines is narrow by construction — the
-VSOCK port map, the storage layout, the `discobox-users` share tag and where the
-guest mounts it, and `discobox-vsock-guest`, which is built from `pool-agent`
-sources into the guest image. Keeping it narrow is what makes independent
+VSOCK port map, the VSOCK framing (`vsock+yamux`, and `discobox.vsock=yamux` on
+the kernel command line for the image's own services), the storage layout, the
+`discobox-users` share tag and where the guest mounts it, and
+`discobox-vsock-guest`, which is built from `pool-agent` sources into the guest
+image. Keeping it narrow is what makes independent
 versioning safe; a change to it is a coordinated release.
 
 In development neither line is what runs: `task build:vm-guest` (or

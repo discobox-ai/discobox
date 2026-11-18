@@ -29,12 +29,15 @@ func TestHostOutboundRelayLivesUnderTheStateRoot(t *testing.T) {
 
 func TestDirectVMOutboundInstallsNothingOnTheHost(t *testing.T) {
 	boot := pooloutbound.Resolved{NoProxy: "example.com"}
-	delivery, err := VMOutbound(t.Context(), nil, boot, boot)
+	delivery, err := VMOutbound(t.Context(), nil, boot, boot, func(uint32) string {
+		t.Fatal("a direct configuration rendered a relay upstream")
+		return ""
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if delivery.Host != nil {
-		t.Fatalf("direct boot configuration delivered host material: %+v", delivery.Host)
+	if delivery.Host != nil || delivery.Relay != nil {
+		t.Fatalf("direct boot configuration delivered host material: %+v, relay %+v", delivery.Host, delivery.Relay)
 	}
 	if delivery.AppliedRevision != boot.Revision() || delivery.RestartRequired {
 		t.Fatalf("delivery = %+v, want boot revision applied without restart", delivery)

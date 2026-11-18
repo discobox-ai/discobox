@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
+	"github.com/discobox-ai/discobox/pkg/wire"
 
 	dockerclient "github.com/moby/moby/client"
 
@@ -59,7 +61,12 @@ const (
 	// At the default of 10 that is 12 to 24 s, a load spike; at 30 it is 36 to
 	// 72 s, while a real lockup never ends and still resets. Soft lockups (now
 	// 60 s) and RCU stalls (21 s) stay warnings, for the same reason.
-	kernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4 panic=5 nmi_watchdog=panic watchdog_thresh=30"
+	//
+	// vsock.FramingKernelParameter makes the guest's own VSOCK services frame
+	// every connection (ADR 26-11-17-182 §5). Virtualization.framework's one
+	// VSOCK queue stalls on any host reader that stops, and the framing is
+	// what keeps the guest from writing more than the host has granted.
+	kernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4 panic=5 nmi_watchdog=panic watchdog_thresh=30 " + guestvsock.FramingKernelParameter
 
 	gracefulStopTimeout = 30 * time.Second
 	forcedStopTimeout   = 15 * time.Second
@@ -708,5 +715,7 @@ func (d *Driver) PoolOutbound(ctx context.Context, poolID string, want pooloutbo
 		return pooloutbound.Delivery{}, err
 	}
 	defer lease.Release()
-	return dockerworker.VMOutbound(ctx, lease.Client, guest.outbound, want)
+	return dockerworker.VMOutbound(ctx, lease.Client, guest.outbound, want, func(port uint32) string {
+		return wire.FramedVSOCKURL(guestvsock.HostCID, port)
+	})
 }

@@ -18,9 +18,27 @@
   `NewVirtualMachine` — must go through it too, or a late state change panics
   the server ("misuse of an invalid Handle"). `task test:vz-teardown` is the
   reproduction on a real guest.
+- **Every VSOCK connection is framed; never hand out a raw one.** A new port,
+  a new consumer, or a change to `vzvm.Connect`/`Listen` keeps the framing
+  (ADR 26-11-17-182): an unframed connection whose host reader stops blocks
+  Virtualization.framework's one VSOCK queue, and the guest's CPU 0 with it,
+  until the guest panics. The guest side frames because the host says so — a
+  `vsock+yamux` URL the driver renders, or `discobox.vsock=yamux` on the
+  kernel command line for the image's own services — so a new guest service
+  needs one of the two, not a probe. `test:vz-stress` (its hairpin and
+  stalled-reader case) is the reproduction.
+- **A closed `vzvm.Listen` listener parks a goroutine for the server's
+  life.** The binding's `Close` never closes its accept channel, so its
+  `Accept` never returns, and the framed listener's accept loop stays in it;
+  the listener's own `Accept` returns `net.ErrClosed`, which is what consumers
+  see. Each VM start therefore leaves up to three (3001, 3005, 3006) parked
+  until the process exits, as the unframed listeners' consumers did before.
+  That is cheap while a pool's VM starts rarely. Do not start listeners per
+  request; if VM starts become frequent, close the channel in the binding.
 - **Do not add a `CloseWrite` that does nothing.** A caller that finds the
   method believes the peer saw EOF. If a code path genuinely needs half-close,
-  fix it at the binding, not with a method that lies.
+  expose the framed stream's own half-close from `pkg/vsock` (ADR 26-11-17-182
+  defers it), not a method that lies.
 - **The root disk is shared and read-only.** Never attach it writable and never
   add `rw` to the kernel command line: every pool on the host has it open.
 - **Know which hard-lockup detector the guest's kernel has before relying on
