@@ -45,6 +45,14 @@
   wait until its caller gives up. Anything that keeps VSOCK connections across
   requests must drop them, in flight included, when the guest refuses a dial,
   as `dockerworker.PoolAgentClient` does (#1335).
+- **A host-to-guest dial is bounded in `vzvm.(*VM).Connect`, and takes its
+  caller's context.** The framework may never complete a connect to a stalled
+  guest. Three dialers once discarded their context and left dials parked past
+  the VM's replacement (#1336); a new dialer passes the context it is given,
+  never `context.Background()`. That context is not enough alone: an
+  `http.Transport` dials with one detached from the request, so a request that
+  gives up does not end its dial. Do not remove `connectTimeout` on the
+  grounds that callers pass a context.
 - **Writable disks attach cached, with fsync sync.** The framework's default
   attachment corrupts ext4 on Apple silicon; do not go back to
   `NewDiskImageStorageDeviceAttachment` for a new disk.
