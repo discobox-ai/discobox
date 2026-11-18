@@ -35,7 +35,7 @@
     "import": ["opencode", "auth", "import", "--standalone"],
     "export": ["opencode", "auth", "export", "--standalone"],
     "document": [
-      {"id": "fixture-opencode", "integrationID": "openai", "active": true, "value": {"type": "key", "key": "fixture-opencode-key"}}
+      {"id": "fixture-opencode", "label": "Migration fixture", "integrationID": "openai", "active": true, "value": {"type": "key", "key": "fixture-opencode-key"}}
     ]
   },
   "pi": {
