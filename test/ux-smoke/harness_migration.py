@@ -19,6 +19,8 @@ DIGESTS = {
 FIXTURES = json.loads((stack.ROOT / "test/harness-migration/homes.json").read_text())
 LITERAL = "${fixture.unknown}"
 CHILD = "fixture-child"
+SENTINEL_CONTEXT = '"$HOME/.config/discobox/harness-sentinels.json"'
+READ_SENTINEL = "jq -er --arg name \"$1\" '.sentinels[$name] | strings | select(length > 0)' " + SENTINEL_CONTEXT + " 2>/dev/null"
 
 
 def release_binaries():
@@ -90,7 +92,8 @@ def pending(box, path, credential_count):
 
 def save(box, candidate):
     result = stack.obj("admin", "harness", "save", box, candidate["candidateId"])
-    assert result["state"].startswith("saved"), result
+    assert result["state"] in ("saved", "saved-handoff-pending"), result
+    return result["state"]
 
 
 def wait_home(box):
@@ -117,8 +120,33 @@ def make_home(slug, fixture, box):
     else:
         run_in_box(box, *fixture["import"], input=document)
     candidate = pending(box, path, credential_count=1)
-    save(box, candidate)
+    state = save(box, candidate)
     assert_saved(slug, path, LITERAL)
+    if state == "saved-handoff-pending" and "export" in fixture:
+        # Open native stores defer handoff until the coding process exits.
+        stop_native_harness(box, slug)
+        stack.eventually("replayed native handoff " + slug,
+                         lambda: save(box, candidate) == "saved", seconds=120)
+
+
+def stop_native_harness(box, slug):
+    # End only the fixture app for this home, leaving its login shell running.
+    run_in_box(box, "node", "-e", r"""
+const fs = require("node:fs");
+const path = require("node:path");
+const name = process.argv[1];
+for (const pid of fs.readdirSync("/proc")) {
+  if (!/^\d+$/.test(pid) || Number(pid) === process.pid) continue;
+  try {
+    const env = fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
+    if (!env.includes("HOME=" + process.env.HOME)) continue;
+    const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
+    if (args.some(arg => path.basename(arg) === name)) process.kill(Number(pid));
+  } catch (error) {
+    if (!["EACCES", "ENOENT", "EPERM", "ESRCH"].includes(error.code)) throw error;
+  }
+}
+""", slug)
 
 
 def assert_saved(slug, path, expected):
@@ -136,11 +164,11 @@ def effective_home(slug, box, fixture, old):
         env = old["bindings"][0][3]
         # Keep raw home data and sentinel values off the host and out of logs.
         if slug == "copilot":
-            run_in_box(box, "sh", "-ec", 'test -n "$(printenv "$1")"', "fixture", env)
+            run_in_box(box, "sh", "-ec", READ_SENTINEL + " >/dev/null || exit 1", "fixture", env)
         else:
             source = shlex.join(fixture["export"]) if "export" in fixture else 'cat "$HOME/$2"'
             run_in_box(box, "sh", "-ec",
-                       'sentinel=$(printenv "$1"); test -n "$sentinel"; '
+                       'sentinel=$(' + READ_SENTINEL + ') || exit 1; '
                        + source + ' | grep -Fq -- "$sentinel"',
                        "fixture", env, fixture.get("login", ""))
 
@@ -209,7 +237,7 @@ def stage_prior_alias(box, env):
                        "--route", "api.openai.com")
     stack.cli("secret", "bind", secret["id"], box, "--as", env)
     stack.eventually("reminted Codex assignment", lambda: run_in_box(
-        box, "sh", "-ec", 'case "$(printenv "$1")" in sk-fixture-*) printf ready;; esac',
+        box, "sh", "-ec", 'case "$(' + READ_SENTINEL + ')" in sk-fixture-*) printf ready;; esac',
         "fixture", env) == "ready", seconds=90)
     stack.eventually("prior alias recorded", lambda: has_prior_alias(box, env), seconds=90)
 
