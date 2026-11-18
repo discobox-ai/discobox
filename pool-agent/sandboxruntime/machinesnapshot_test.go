@@ -138,6 +138,29 @@ func TestAMachinePoolMakesTheNextSandboxFromItsPlansSnapshot(t *testing.T) {
 	if agent := f.agents.get(t, "sbx_2"); len(agent.revisions()) == 0 {
 		t.Error("the sandbox made from the snapshot was delivered no runtime config")
 	}
+
+	// The pool reports the snapshot by its plan, with the box made from it,
+	// and each box what it was made from (ADR 26-11-17-316).
+	report, err := r.Snapshots(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Held) != 1 || len(report.Building) != 0 || len(report.Failed) != 0 {
+		t.Fatalf("snapshots = %+v, want the one held", report)
+	}
+	held := report.Held[0]
+	if held.Key != key || held.Boxes != 1 || held.Plan == nil || held.LastUsedAt == nil || held.SizeBytes != nil {
+		t.Errorf("held = %+v, want %s by its plan, its use, no size, and one box", held, key)
+	}
+	if held.Plan != nil && (held.Plan.Base != r.snapshotBase() || len(held.Plan.Bundles) != 1 || held.Plan.Agent == "") {
+		t.Errorf("held plan = %+v", *held.Plan)
+	}
+	for sandboxID, want := range map[string]string{"sbx_1": "", "sbx_2": key} {
+		sb, err := r.GetSandbox(ctx, sandboxID)
+		if err != nil || sb.StartedFrom == nil || sb.StartedFrom.Snapshot != want {
+			t.Errorf("%s started from %+v, %v; want snapshot %q", sandboxID, sb.StartedFrom, err, want)
+		}
+	}
 }
 
 // A driver that does not report Commit gets no snapshot: every sandbox is
@@ -321,6 +344,17 @@ func TestASandboxWhoseSnapshotNeverComesUpIsMadeFresh(t *testing.T) {
 	if _, err := f.owner.Instance(ctx, snapshotMachineName(key)); !errors.Is(err, machine.ErrNotFound) {
 		t.Errorf("the snapshot whose sandbox never came up kept its machine: %v", err)
 	}
+	// It is reported as a failed plan, by its plan and why (ADR 26-11-17-316 §2).
+	report, err := r.Snapshots(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Held) != 0 || len(report.Failed) != 1 {
+		t.Fatalf("snapshots = %+v, want the plan failed and none held", report)
+	}
+	if failed := report.Failed[0]; failed.Key != key || failed.Plan == nil || !strings.Contains(failed.Error, "did not come up") {
+		t.Errorf("failed = %+v, want %s by its plan, saying its sandbox did not come up", failed, key)
+	}
 }
 
 // A cache clear drops every snapshot, record first, and forgets the plans
@@ -335,7 +369,7 @@ func TestAMachinePoolsCacheClearDropsItsSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForSnapshotBuilds(t, r)
-	if err := r.recordSnapshotFailure("other", time.Now()); err != nil {
+	if err := r.recordSnapshotFailure("other", time.Now(), "it failed", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.ClearCache(ctx); err != nil {

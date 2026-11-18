@@ -96,6 +96,8 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxRuntime.displayState":        "derived presentation state computed by Sandbox.DisplayState, not stored on the model",
 	"SandboxEventData.displayState":      "the same derived presentation state (Sandbox.DisplayState), projected into each sandbox event rather than stored on the model",
 	"PoolSandboxState.state":             "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
+	"PoolSandboxStartedFrom.from":        "what a pool made a box from, reported on the state channel; the model stores it as opaque JSON in SandboxStartedFrom's shape, and TestStartedFromVocabulariesMatch pins the two schemas together",
+	"SandboxStartedFrom.from":            "what a pool made a box from, stored as opaque JSON as the pool reported it (model.Sandbox.StartedFrom)",
 	"SandboxTool.runs":                   "a declaration's vocabulary, owned by the root tools package and listed by the sandbox agent; no model stores it (ADR 0125)",
 	"SandboxTool.layer":                  "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",

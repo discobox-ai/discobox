@@ -417,6 +417,11 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 					BuildBytes:      9 << 30,
 				}),
 			},
+			Snapshots: serverapi.NewOptPoolSnapshots(serverapi.PoolSnapshots{
+				Held:     []serverapi.PoolSnapshot{{Key: "k1", BuiltAt: reportedAt, Boxes: 1, Plan: serverapi.NewOptPoolSnapshotPlan(serverapi.PoolSnapshotPlan{Base: "sha256:base"})}},
+				Building: []serverapi.PoolSnapshotBuild{},
+				Failed:   []serverapi.PoolSnapshotFailure{{Key: "k2", FailedAt: reportedAt, RetryAfter: reportedAt.Add(time.Hour), Error: serverapi.NewOptString("feature go failed")}},
+			}),
 		},
 		Sandboxes: []serverapi.SandboxResourceConsumption{{
 			SandboxId: "sandbox-a",
@@ -463,6 +468,12 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 	// one, which is the whole basis for caching the sweep at all.
 	if walk.DurationMillis != 11400 || walk.IntervalSeconds != 570 || walk.NextScanAt.IsZero() {
 		t.Errorf("walk schedule = %+v", walk)
+	}
+	// The pool's snapshots are part of the report it stores whole
+	// (ADR 26-11-17-316 §4).
+	snapshots, ok := report.Snapshots.Get()
+	if !ok || len(snapshots.Held) != 1 || snapshots.Held[0].Key != "k1" || len(snapshots.Failed) != 1 || snapshots.Failed[0].Error.Or("") != "feature go failed" {
+		t.Errorf("snapshots = %+v (present=%v)", snapshots, ok)
 	}
 
 	sandboxModel, err := svc.store.GetSandbox(ctx, "project-1", "sandbox-a")

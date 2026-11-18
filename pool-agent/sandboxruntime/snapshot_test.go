@@ -125,13 +125,13 @@ func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 	}
 
 	r.client = snapshotDaemon(t, plan.reference(), "sha256:base")
-	if got := r.deliveredImage(context.Background(), "sha256:base", req); got != "img_snap" {
-		t.Fatalf("started from %q, want the plan's snapshot", got)
+	if got, key := r.deliveredImage(context.Background(), "sha256:base", req); got != "img_snap" || key != plan.Key() {
+		t.Fatalf("started from %q (snapshot %q), want the plan's snapshot", got, key)
 	}
 	// A create with no build policy, from a server before it, gets none.
 	unpoliced := snapshotCreate("sbx_1", "a")
 	unpoliced.ProvisionEgress = workerclient.OptEgressPolicy{}
-	if got := r.deliveredImage(context.Background(), "sha256:base", unpoliced); got != "sha256:base" {
+	if got, key := r.deliveredImage(context.Background(), "sha256:base", unpoliced); got != "sha256:base" || key != "" {
 		t.Fatalf("a create with no provisionEgress started from %q, want the base image", got)
 	}
 	if len(r.snapshots.active) != 0 {
@@ -140,7 +140,7 @@ func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 
 	// A snapshot of an older base is no snapshot of this plan's.
 	r.client = snapshotDaemon(t, plan.reference(), "sha256:old")
-	if got := r.deliveredImage(context.Background(), "sha256:base", req); got != "sha256:base" {
+	if got, key := r.deliveredImage(context.Background(), "sha256:base", req); got != "sha256:base" || key != "" {
 		t.Fatalf("started from %q, want the base image", got)
 	}
 	waitForSnapshotBuilds(t, r)
@@ -149,7 +149,7 @@ func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 	}
 	// Failed within snapshotRetryAfter: the next create starts from the base
 	// and asks for no build.
-	if got := r.deliveredImage(context.Background(), "sha256:base", req); got != "sha256:base" {
+	if got, key := r.deliveredImage(context.Background(), "sha256:base", req); got != "sha256:base" || key != "" {
 		t.Fatalf("started from %q, want the base image", got)
 	}
 	r.snapshots.mu.Lock()
@@ -338,6 +338,11 @@ func TestASnapshotBuildCommitsTheBoxItProvisioned(t *testing.T) {
 	if labels[snapshotBaseLabel] != "sha256:base" || labels[snapshotAgentLabel] != "sha256:"+strings.Repeat("c", 64) || labels[harness.ReclaimLabel] != harness.ReclaimLabelValue {
 		t.Errorf("snapshot labels = %v", labels)
 	}
+	// It names its plan, which the pool reports it by (ADR 26-11-17-316 §3).
+	var named SnapshotPlanName
+	if err := json.Unmarshal([]byte(labels[snapshotPlanLabel]), &named); err != nil || named.Base != "sha256:base" || len(named.Bundles) != 2 || named.Agent != labels[snapshotAgentLabel] {
+		t.Errorf("snapshot plan label = %q (%v)", labels[snapshotPlanLabel], err)
+	}
 	if _, err := os.Stat(filepath.Join(r.snapshotsDir(), plan.buildID())); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the build's tree is left: %v", err)
 	}
@@ -411,7 +416,7 @@ func TestTheSweepRemovesWhatABuildLeft(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r.snapshots.active = map[string]context.CancelFunc{key: func() {}}
+	r.snapshots.active = map[string]*snapshotBuild{key: {cancel: func() {}}}
 
 	if err := r.sweepSnapshotBuilds(context.Background()); err == nil {
 		t.Fatal("a removal that failed was not reported")
@@ -467,7 +472,7 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"})
-	if err := r.recordSnapshotFailure("k", time.Now()); err != nil {
+	if err := r.recordSnapshotFailure("k", time.Now(), "it failed", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.clearSnapshots(context.Background()); err != nil {
@@ -481,5 +486,26 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 	}
 	if r.snapshotFailedRecently("k", time.Now()) {
 		t.Error("a clear kept the plans that failed to build")
+	}
+}
+
+// A failed build is recorded with why it failed, not only when, so the pool
+// can report the reason alongside the retry (#339).
+func TestAFailedSnapshotBuildRecordsItsReason(t *testing.T) {
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
+	plan, err := r.newSnapshotPlan("sha256:base", snapshotCreate("sbx_1", "a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.requestSnapshot(plan, func(context.Context, snapshotPlan) error {
+		return errors.New("feature go failed: exit status 2")
+	})
+	waitForSnapshotBuilds(t, r)
+	record, err := os.ReadFile(r.snapshotFailurePath(plan.Key()))
+	if err != nil {
+		t.Fatalf("no failure recorded: %v", err)
+	}
+	if !strings.Contains(string(record), "feature go failed: exit status 2") {
+		t.Fatalf("failure record = %q, want it to hold the build's error", record)
 	}
 }

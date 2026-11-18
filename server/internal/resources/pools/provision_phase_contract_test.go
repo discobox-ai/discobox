@@ -65,3 +65,19 @@ func missing(have, want []string) []string {
 	}
 	return out
 }
+
+// TestStartedFromVocabulariesMatch pins the agent-facing startedFrom enum to
+// the client-facing one, for the reason TestProvisionPhaseVocabulariesMatch
+// pins the phases: ReportPoolSandboxStates crosses it as a string conversion,
+// which compiles however far the two drift, and a value the client schema
+// omits would be stored and fail every client's read of the sandbox.
+func TestStartedFromVocabulariesMatch(t *testing.T) {
+	agent := phaseValues(serverapi.PoolSandboxStartedFromFrom("").AllValues())
+	client := phaseValues(serverapi.SandboxStartedFromFrom("").AllValues())
+	if len(agent) == 0 {
+		t.Fatal("the agent-facing startedFrom enum is empty; the schema lost its values")
+	}
+	if agentOnly, clientOnly := missing(agent, client), missing(client, agent); len(agentOnly) > 0 || len(clientOnly) > 0 {
+		t.Errorf("PoolSandboxStartedFrom.from and SandboxStartedFrom.from in api/openapi/server.yaml differ: agent only %v, client only %v", agentOnly, clientOnly)
+	}
+}

@@ -16,13 +16,15 @@ import (
 // client will later read off the sandbox.
 type capturingReporter struct {
 	progress []store.SandboxProgressReport
+	states   []store.SandboxStateReport
 }
 
 func (c *capturingReporter) SandboxAgentStatusReported(context.Context, string, string, json.RawMessage) error {
 	return nil
 }
 
-func (c *capturingReporter) ReportSandboxStates(context.Context, store.SandboxStateReportBatch) error {
+func (c *capturingReporter) ReportSandboxStates(_ context.Context, batch store.SandboxStateReportBatch) error {
+	c.states = append(c.states, batch.Reports...)
 	return nil
 }
 
@@ -157,4 +159,36 @@ func TestProgressIngestCarriesTheCloneAndItsPhase(t *testing.T) {
 
 func (c *capturingReporter) CompleteSandboxSuspend(context.Context, string, string, string, int64) error {
 	return nil
+}
+
+// What a pool made a box from is stored in the client-facing shape, and an
+// observation that says nothing of it hands on nothing, so the recorded
+// value stands (#339).
+func TestStateIngestCarriesWhatABoxStartedFrom(t *testing.T) {
+	reporter := &capturingReporter{}
+	service := &Service{sandboxReporter: reporter}
+	err := service.ReportPoolSandboxStates(poolPrincipalContext(t, "pool-1"), "pool-1", services.ReportPoolSandboxStatesBody{
+		ReportedAt: time.Now().UTC(),
+		States: []serverapi.PoolSandboxState{
+			{SandboxId: "sbx_1", State: serverapi.PoolSandboxStateStateRunning, StartedFrom: serverapi.NewOptPoolSandboxStartedFrom(serverapi.PoolSandboxStartedFrom{From: serverapi.PoolSandboxStartedFromFromSnapshot, Snapshot: serverapi.NewOptString("k1")})},
+			{SandboxId: "sbx_2", State: serverapi.PoolSandboxStateStateRunning, StartedFrom: serverapi.NewOptPoolSandboxStartedFrom(serverapi.PoolSandboxStartedFrom{From: serverapi.PoolSandboxStartedFromFromBase})},
+			{SandboxId: "sbx_3", State: serverapi.PoolSandboxStateStateStopped},
+		},
+	})
+	if err != nil {
+		t.Fatalf("report states: %v", err)
+	}
+	if len(reporter.states) != 3 {
+		t.Fatalf("handed on %d states, want 3", len(reporter.states))
+	}
+	var fromSnapshot, fromBase serverapi.SandboxStartedFrom
+	if err := fromSnapshot.UnmarshalJSON(reporter.states[0].StartedFrom); err != nil || fromSnapshot.From != serverapi.SandboxStartedFromFromSnapshot || fromSnapshot.Snapshot.Or("") != "k1" {
+		t.Errorf("sbx_1 stored %s (%v), want the snapshot k1", reporter.states[0].StartedFrom, err)
+	}
+	if err := fromBase.UnmarshalJSON(reporter.states[1].StartedFrom); err != nil || fromBase.From != serverapi.SandboxStartedFromFromBase || fromBase.Snapshot.Set {
+		t.Errorf("sbx_2 stored %s (%v), want the base", reporter.states[1].StartedFrom, err)
+	}
+	if reporter.states[2].StartedFrom != nil {
+		t.Errorf("sbx_3, which said nothing, stored %s", reporter.states[2].StartedFrom)
+	}
 }

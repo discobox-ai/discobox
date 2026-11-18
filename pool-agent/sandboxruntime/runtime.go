@@ -178,6 +178,9 @@ type Sandbox struct {
 	Metadata  map[string]string
 	Ports     []AssignedPort
 	Env       map[string]string
+	// StartedFrom is what its container or machine was made from, nil when
+	// the pool cannot say (ADR 26-11-17-316 §5).
+	StartedFrom *StartedFrom
 }
 
 // GitRepositoryLocation is the on-host location of a source's origin
@@ -264,6 +267,10 @@ type Runtime interface {
 	// the sweep's schedule, never on the reporting tick, since it costs
 	// about what a walk does.
 	DiskUsage(ctx context.Context) (DiskUsage, error)
+	// Snapshots is the snapshots the pool holds, the builds under way and
+	// the plans that failed to build, as its resource report carries them
+	// on every report (ADR 26-11-17-316 §§1-2).
+	Snapshots(ctx context.Context) (*SnapshotReport, error)
 	// ExportTree streams the sandbox's durable tree as a tar archive, and
 	// ImportTree restores one for a sandbox this pool does not hold yet. They
 	// are the two halves of moving a discobox between servers (ADR 0123), and
@@ -718,7 +725,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 		return nil, false, err
 	}
 	// The snapshot of its plan when there is one (ADR 26-10-16-423 §8).
-	imageName = r.deliveredImage(ctx, imageName, req)
+	imageName, snapshot := r.deliveredImage(ctx, imageName, req)
 	if replaced != nil {
 		// Only now, with the new image on the host: obtaining it is the step a
 		// re-pin fails at, and a sandbox that cannot get its new image keeps the
@@ -784,7 +791,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	cfg := &container.Config{
 		Image:    imageName,
 		Hostname: sandboxHostname(sandboxID),
-		Labels:   r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint)), projectLayerDigest(project.Project)),
+		Labels:   r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint)), projectLayerDigest(project.Project), snapshot),
 		Env:      envList(envWithSandboxUser(baseEnv, user)),
 		// No WorkingDir. Its PID 1 is systemd, which runs from /, and every
 		// exec is the sandbox agent's own; where the harness starts reaches it
@@ -2950,12 +2957,15 @@ func (r *DockerSandboxRuntime) filters(sandboxID string) client.Filters {
 	return args
 }
 
-func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint, projectLayer string) map[string]string {
+// labels are a sandbox container's: snapshot is the key of the snapshot it is
+// made from, empty for the sandbox base image.
+func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint, projectLayer, snapshot string) map[string]string {
 	labels := map[string]string{
-		sandboxLabelManaged: "true",
-		sandboxLabelProject: r.projectID,
-		sandboxLabelPool:    r.poolID,
-		sandboxLabelSandbox: sandboxID,
+		sandboxLabelManaged:     "true",
+		sandboxLabelProject:     r.projectID,
+		sandboxLabelPool:        r.poolID,
+		sandboxLabelSandbox:     sandboxID,
+		sandboxLabelStartedFrom: startedFromLabel(snapshot),
 	}
 	if specFingerprint != "" {
 		labels[sandboxLabelSpec] = specFingerprint
@@ -2981,7 +2991,8 @@ func (r *DockerSandboxRuntime) sandboxFromInspect(ctx context.Context, inspect c
 		Metadata: map[string]string{
 			"pool_id": r.poolID,
 		},
-		Env: envMap(inspect.Config.Env),
+		Env:         envMap(inspect.Config.Env),
+		StartedFrom: startedFromLabels(inspect.Config.Labels),
 	}
 	if inspect.State != nil {
 		if started, err := time.Parse(time.RFC3339Nano, inspect.State.StartedAt); err == nil && !started.IsZero() {

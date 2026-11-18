@@ -520,10 +520,25 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 		if sandboxID == "" {
 			continue
 		}
-		reports = append(reports, store.SandboxStateReport{
+		report := store.SandboxStateReport{
 			SandboxID: sandboxID,
 			State:     string(state.State),
-		})
+		}
+		if from, ok := state.StartedFrom.Get(); ok {
+			// Stored in the client-facing shape, as progress is below: the
+			// two are separate contracts. The enum crosses as a string, which
+			// TestStartedFromVocabulariesMatch pins.
+			observed := serverapi.SandboxStartedFrom{
+				From:     serverapi.SandboxStartedFromFrom(from.From),
+				Snapshot: from.Snapshot,
+			}
+			payload, err := observed.MarshalJSON()
+			if err != nil {
+				return err
+			}
+			report.StartedFrom = payload
+		}
+		reports = append(reports, report)
 	}
 	batch := store.SandboxStateReportBatch{
 		PoolID:     poolID,

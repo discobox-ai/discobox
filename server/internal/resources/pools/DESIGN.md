@@ -121,7 +121,12 @@ flowchart LR
   records the reported `meta` through `store.UpdateSandboxMeta` (ADR 0136); a
   report without it leaves the recorded copy alone.
   `ReportPoolResources` stores the pool-wide half on the pool row and each
-  sandbox's half on that sandbox's row. `ReconcilePool` (a manual reconcile
+  sandbox's half on that sandbox's row; the pool's snapshots ride the
+  pool-wide half, stored as reported and read by nothing on the server
+  ([ADR 26-11-17-316](../../../../docs/adr/26-11-17-316-a-pool-reports-its-snapshots-and-each-box-what-it-started-from.md) §4).
+  A state observation's `startedFrom` (§5) is stored in the client-facing
+  `SandboxStartedFrom` shape, and one that omits it hands on nothing, so
+  the recorded value stands. `ReconcilePool` (a manual reconcile
   request from the API) also lives here.
 - `controlplane.go` — trusted operations implementing `sandbox.PoolManager`:
   reads for drivers, enrollment (`EnrollPool`: the key a pool's maker read

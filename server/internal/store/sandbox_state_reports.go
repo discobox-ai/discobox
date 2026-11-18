@@ -23,6 +23,10 @@ import (
 type SandboxStateReport struct {
 	SandboxID string
 	State     string
+	// StartedFrom is what the sandbox's current container or machine was made
+	// from, in the API's SandboxStartedFrom shape, or nil when the report did
+	// not say: the recorded value then stands (ADR 26-11-17-316 §5).
+	StartedFrom model.RawJSON
 }
 
 // SandboxObservation is one sandbox the caller should look at after a batch.
@@ -136,6 +140,9 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 			}
 			previous := sandbox.RuntimeState
 			sandbox.SetRuntimeState(report.State)
+			if report.StartedFrom != nil {
+				sandbox.StartedFrom = report.StartedFrom
+			}
 			reportedAt := batch.ReportedAt
 			sandbox.StateReportedAt = &reportedAt
 			sandbox.StateReportBoot = batch.BootID

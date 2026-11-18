@@ -366,6 +366,16 @@ type SandboxState struct {
 	SandboxID string `json:"sandboxId"`
 	State     string `json:"state"`
 	Error     string `json:"error,omitempty"`
+	// StartedFrom is what the sandbox's container or machine was made from,
+	// absent when the observation did not read it (ADR 26-11-17-316 §5).
+	StartedFrom *SandboxStartedFrom `json:"startedFrom,omitempty"`
+}
+
+// SandboxStartedFrom is a sandbox's startedFrom on the state channel.
+type SandboxStartedFrom struct {
+	// From is "snapshot" or "base".
+	From     string `json:"from"`
+	Snapshot string `json:"snapshot,omitempty"`
 }
 
 // SandboxProgress is provisioning progress on one sandbox: work underway that

@@ -78,6 +78,11 @@ type PoolReport struct {
 	// reader joining them can catch one refreshed and another not; computed
 	// here they are always the same instant.
 	Total PoolTotalUsage `json:"total"`
+	// Snapshots is what the pool holds, builds and failed to build of its
+	// snapshots, listed on every report (ADR 26-11-17-316 §1). Nil when the
+	// listing failed this report, which a reader shows as not reported,
+	// never as none.
+	Snapshots *sandboxruntime.SnapshotReport `json:"snapshots,omitempty"`
 }
 
 // PoolTotalUsage is what Discobox as a whole costs on this host, and what it
@@ -307,6 +312,11 @@ func (r *poolResourceReporter) report(ctx context.Context) {
 	request.Report.CPU, request.Report.Memory = r.poolUsage(now)
 	request.Sandboxes = r.sandboxUsage(sandboxIDs, walkedSandboxStorage(storage.Walk))
 	request.Report.Total = totalUsage(request.Report, request.Sandboxes)
+	if snapshots, err := r.runtime.Snapshots(ctx); err != nil {
+		r.logger.Warn("list the pool's snapshots for the resource report", "error", err)
+	} else {
+		request.Report.Snapshots = snapshots
+	}
 
 	if err := r.client.ReportPoolResources(ctx, request); err != nil {
 		r.logger.Warn("push pool resource report", "poolId", r.bootstrap.PoolID, "error", err)

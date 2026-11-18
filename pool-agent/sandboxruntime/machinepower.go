@@ -383,12 +383,19 @@ func (r *MachineSandboxRuntime) recordForcedPlacement(ctx context.Context, sandb
 func (r *MachineSandboxRuntime) remakeFresh(ctx context.Context, sandboxID, key string, cause error) error {
 	slog.WarnContext(ctx, "a sandbox machine made from a snapshot did not come up; dropping the snapshot and making the machine fresh",
 		"sandboxId", sandboxID, "snapshot", snapshotMachineName(key), "error", cause)
+	// Its plan is read before the record goes, so the failure reports it.
+	var plan *SnapshotPlanName
+	if record, ok, err := r.readSnapshotRecord(key); err == nil && ok {
+		plan = record.Plan
+	}
 	if err := r.dropSnapshot(ctx, key); err != nil {
 		slog.WarnContext(ctx, "drop a snapshot whose sandbox did not come up", "snapshot", snapshotMachineName(key), "error", err)
 	}
 	// The plan waits before it is built again, as a failed build's does: a
 	// snapshot rebuilt at once would likely fail its next sandbox the same.
-	if err := r.recordSnapshotFailure(key, time.Now()); err != nil {
+	// It is reported as a failed plan, with why (ADR 26-11-17-316 §2).
+	reason := fmt.Sprintf("a sandbox machine made from it did not come up: %v", cause)
+	if err := r.recordSnapshotFailure(key, time.Now(), reason, plan); err != nil {
 		slog.WarnContext(ctx, "record a snapshot whose sandbox did not come up", "snapshot", snapshotMachineName(key), "error", err)
 	}
 	if err := r.remakeMachine(ctx, sandboxID); err != nil {

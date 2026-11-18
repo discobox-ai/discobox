@@ -137,7 +137,8 @@ caller just did, and a concurrent writer's update lands in that window — so th
 save silently replays a stale value.
 
 - `Store.UpdateSandbox` omits `observedSandboxColumns` (runtime state and its
-  report watermark, provisioning progress, resources); only
+  report watermark, provisioning progress, resources, and what the box was
+  made from); only
   `ApplySandboxStateReports`, `ApplySandboxProgressReports`, and
   `UpdateSandboxResources` write them. See
   [`resources/sandboxes/DESIGN.md`](../resources/sandboxes/DESIGN.md) for who
@@ -281,7 +282,7 @@ Keep files split by resource area:
 | `projects.go`, `users.go` | Projects, members, per-user defaults, users, project user keys. |
 | `harness_configs.go` | Harness configs. |
 | `sandboxes.go` | Sandbox desired-state persistence, reconcile scans, archive expiry, agent-status/resource telemetry. |
-| `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
+| `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer), what each box was made from (`started_from`) among them. |
 | `sandbox_events.go` | Sandbox events: the per-transaction batch and its recording, the stream's reads, retention, and the backfill `database.Migrate` runs. |
 | `providers.go` | Provider instance persistence. |
 | `vmproviders.go` | The upgrade of each retired `vm` provider row to its driver's type, and the drop of `deliverProviderKey` from every linked driver's row (`MigrateVMProviders`). |

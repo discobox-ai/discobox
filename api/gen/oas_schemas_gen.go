@@ -13248,6 +13248,144 @@ func (o OptPoolSandboxPullProgress) Or(d PoolSandboxPullProgress) PoolSandboxPul
 	return d
 }
 
+// NewOptPoolSandboxStartedFrom returns new OptPoolSandboxStartedFrom with value set to v.
+func NewOptPoolSandboxStartedFrom(v PoolSandboxStartedFrom) OptPoolSandboxStartedFrom {
+	return OptPoolSandboxStartedFrom{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxStartedFrom is optional PoolSandboxStartedFrom.
+type OptPoolSandboxStartedFrom struct {
+	Value PoolSandboxStartedFrom
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxStartedFrom was set.
+func (o OptPoolSandboxStartedFrom) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxStartedFrom) Reset() {
+	var v PoolSandboxStartedFrom
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxStartedFrom) SetTo(v PoolSandboxStartedFrom) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxStartedFrom) Get() (v PoolSandboxStartedFrom, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxStartedFrom) Or(d PoolSandboxStartedFrom) PoolSandboxStartedFrom {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolSnapshotPlan returns new OptPoolSnapshotPlan with value set to v.
+func NewOptPoolSnapshotPlan(v PoolSnapshotPlan) OptPoolSnapshotPlan {
+	return OptPoolSnapshotPlan{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSnapshotPlan is optional PoolSnapshotPlan.
+type OptPoolSnapshotPlan struct {
+	Value PoolSnapshotPlan
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSnapshotPlan was set.
+func (o OptPoolSnapshotPlan) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSnapshotPlan) Reset() {
+	var v PoolSnapshotPlan
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSnapshotPlan) SetTo(v PoolSnapshotPlan) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSnapshotPlan) Get() (v PoolSnapshotPlan, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSnapshotPlan) Or(d PoolSnapshotPlan) PoolSnapshotPlan {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolSnapshots returns new OptPoolSnapshots with value set to v.
+func NewOptPoolSnapshots(v PoolSnapshots) OptPoolSnapshots {
+	return OptPoolSnapshots{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSnapshots is optional PoolSnapshots.
+type OptPoolSnapshots struct {
+	Value PoolSnapshots
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSnapshots was set.
+func (o OptPoolSnapshots) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSnapshots) Reset() {
+	var v PoolSnapshots
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSnapshots) SetTo(v PoolSnapshots) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSnapshots) Get() (v PoolSnapshots, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSnapshots) Or(d PoolSnapshots) PoolSnapshots {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolStorageWalk returns new OptPoolStorageWalk with value set to v.
 func NewOptPoolStorageWalk(v PoolStorageWalk) OptPoolStorageWalk {
 	return OptPoolStorageWalk{
@@ -15174,6 +15312,52 @@ func (o OptSandboxRuntimeSourceDeliveries) Get() (v SandboxRuntimeSourceDeliveri
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxRuntimeSourceDeliveries) Or(d SandboxRuntimeSourceDeliveries) SandboxRuntimeSourceDeliveries {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxStartedFrom returns new OptSandboxStartedFrom with value set to v.
+func NewOptSandboxStartedFrom(v SandboxStartedFrom) OptSandboxStartedFrom {
+	return OptSandboxStartedFrom{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxStartedFrom is optional SandboxStartedFrom.
+type OptSandboxStartedFrom struct {
+	Value SandboxStartedFrom
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxStartedFrom was set.
+func (o OptSandboxStartedFrom) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxStartedFrom) Reset() {
+	var v SandboxStartedFrom
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxStartedFrom) SetTo(v SandboxStartedFrom) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxStartedFrom) Get() (v SandboxStartedFrom, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxStartedFrom) Or(d SandboxStartedFrom) SandboxStartedFrom {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18523,7 +18707,11 @@ type PoolResourceReport struct {
 	Storage    PoolStorageUsage `json:"storage"`
 	// What Discobox as a whole is using here, services and sandboxes together, against what is dedicated
 	// to it.
-	Total           OptPoolTotalUsage `json:"total"`
+	Total OptPoolTotalUsage `json:"total"`
+	// The snapshots the pool holds, builds and failed to build, listed on every report. Absent from an
+	// agent that predates it, or when the pool could not list them for this report, which a reader shows
+	// as not reported; a pool that holds and builds nothing reports three empty lists.
+	Snapshots       OptPoolSnapshots `json:"snapshots"`
 	AdditionalProps PoolResourceReportAdditional
 }
 
@@ -18550,6 +18738,11 @@ func (s *PoolResourceReport) GetStorage() PoolStorageUsage {
 // GetTotal returns the value of Total.
 func (s *PoolResourceReport) GetTotal() OptPoolTotalUsage {
 	return s.Total
+}
+
+// GetSnapshots returns the value of Snapshots.
+func (s *PoolResourceReport) GetSnapshots() OptPoolSnapshots {
+	return s.Snapshots
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -18580,6 +18773,11 @@ func (s *PoolResourceReport) SetStorage(val PoolStorageUsage) {
 // SetTotal sets the value of Total.
 func (s *PoolResourceReport) SetTotal(val OptPoolTotalUsage) {
 	s.Total = val
+}
+
+// SetSnapshots sets the value of Snapshots.
+func (s *PoolResourceReport) SetSnapshots(val OptPoolSnapshots) {
+	s.Snapshots = val
 }
 
 // SetAdditionalProps sets the value of AdditionalProps.
@@ -18940,6 +19138,79 @@ func (s *PoolSandboxPullProgress) SetTotal(val OptInt64) {
 	s.Total = val
 }
 
+// What the sandbox's current container or machine was made from, as the pool
+// recorded when it made it. It is the agent-facing twin of SandboxStartedFrom.
+// Absent when the pool cannot say: a container made before pools recorded it,
+// or an observation that did not read the record. Absence changes nothing the
+// control plane holds.
+// Ref: #/components/schemas/PoolSandboxStartedFrom
+type PoolSandboxStartedFrom struct {
+	From PoolSandboxStartedFromFrom `json:"from"`
+	// The key of the snapshot it was made from, when from is snapshot.
+	Snapshot OptString `json:"snapshot"`
+}
+
+// GetFrom returns the value of From.
+func (s *PoolSandboxStartedFrom) GetFrom() PoolSandboxStartedFromFrom {
+	return s.From
+}
+
+// GetSnapshot returns the value of Snapshot.
+func (s *PoolSandboxStartedFrom) GetSnapshot() OptString {
+	return s.Snapshot
+}
+
+// SetFrom sets the value of From.
+func (s *PoolSandboxStartedFrom) SetFrom(val PoolSandboxStartedFromFrom) {
+	s.From = val
+}
+
+// SetSnapshot sets the value of Snapshot.
+func (s *PoolSandboxStartedFrom) SetSnapshot(val OptString) {
+	s.Snapshot = val
+}
+
+type PoolSandboxStartedFromFrom string
+
+const (
+	PoolSandboxStartedFromFromSnapshot PoolSandboxStartedFromFrom = "snapshot"
+	PoolSandboxStartedFromFromBase     PoolSandboxStartedFromFrom = "base"
+)
+
+// AllValues returns all PoolSandboxStartedFromFrom values.
+func (PoolSandboxStartedFromFrom) AllValues() []PoolSandboxStartedFromFrom {
+	return []PoolSandboxStartedFromFrom{
+		PoolSandboxStartedFromFromSnapshot,
+		PoolSandboxStartedFromFromBase,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolSandboxStartedFromFrom) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolSandboxStartedFromFromSnapshot:
+		return []byte(s), nil
+	case PoolSandboxStartedFromFromBase:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolSandboxStartedFromFrom) UnmarshalText(data []byte) error {
+	switch PoolSandboxStartedFromFrom(data) {
+	case PoolSandboxStartedFromFromSnapshot:
+		*s = PoolSandboxStartedFromFromSnapshot
+		return nil
+	case PoolSandboxStartedFromFromBase:
+		*s = PoolSandboxStartedFromFromBase
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/PoolSandboxState
 type PoolSandboxState struct {
 	// Sandbox the observation is about.
@@ -18949,7 +19220,8 @@ type PoolSandboxState struct {
 	// an operation rather than something the runtime can observe. For the
 	// same reason a report carries no error message — why an operation failed is the
 	// reconciler's verdict, and it owns the field that records one.
-	State PoolSandboxStateState `json:"state"`
+	State       PoolSandboxStateState     `json:"state"`
+	StartedFrom OptPoolSandboxStartedFrom `json:"startedFrom"`
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -18962,6 +19234,11 @@ func (s *PoolSandboxState) GetState() PoolSandboxStateState {
 	return s.State
 }
 
+// GetStartedFrom returns the value of StartedFrom.
+func (s *PoolSandboxState) GetStartedFrom() OptPoolSandboxStartedFrom {
+	return s.StartedFrom
+}
+
 // SetSandboxId sets the value of SandboxId.
 func (s *PoolSandboxState) SetSandboxId(val string) {
 	s.SandboxId = val
@@ -18970,6 +19247,11 @@ func (s *PoolSandboxState) SetSandboxId(val string) {
 // SetState sets the value of State.
 func (s *PoolSandboxState) SetState(val PoolSandboxStateState) {
 	s.State = val
+}
+
+// SetStartedFrom sets the value of StartedFrom.
+func (s *PoolSandboxState) SetStartedFrom(val OptPoolSandboxStartedFrom) {
+	s.StartedFrom = val
 }
 
 // Observed runtime state. There is no `failed` here: a container that has exited looks
@@ -19037,6 +19319,458 @@ func (s *PoolSandboxStateState) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/PoolSnapshot
+type PoolSnapshot struct {
+	// The snapshot's identity, a digest of everything it depends on. A sandbox's runtime.startedFrom
+	// names a snapshot by this key.
+	Key string `json:"key"`
+	// What it provisions. Absent for a snapshot built before pools recorded it.
+	Plan    OptPoolSnapshotPlan `json:"plan"`
+	BuiltAt time.Time           `json:"builtAt"`
+	// How large it is, where the pool can measure it. A Docker snapshot shares its base image's layers,
+	// so the snapshots' sizes do not add up to the pool's image figure.
+	SizeBytes OptInt64 `json:"sizeBytes"`
+	// When a new box was last made from it, where the pool keeps that.
+	LastUsedAt OptDateTime `json:"lastUsedAt"`
+	// How many of the pool's boxes run a container or machine made from it now.
+	Boxes           int64 `json:"boxes"`
+	AdditionalProps PoolSnapshotAdditional
+}
+
+// GetKey returns the value of Key.
+func (s *PoolSnapshot) GetKey() string {
+	return s.Key
+}
+
+// GetPlan returns the value of Plan.
+func (s *PoolSnapshot) GetPlan() OptPoolSnapshotPlan {
+	return s.Plan
+}
+
+// GetBuiltAt returns the value of BuiltAt.
+func (s *PoolSnapshot) GetBuiltAt() time.Time {
+	return s.BuiltAt
+}
+
+// GetSizeBytes returns the value of SizeBytes.
+func (s *PoolSnapshot) GetSizeBytes() OptInt64 {
+	return s.SizeBytes
+}
+
+// GetLastUsedAt returns the value of LastUsedAt.
+func (s *PoolSnapshot) GetLastUsedAt() OptDateTime {
+	return s.LastUsedAt
+}
+
+// GetBoxes returns the value of Boxes.
+func (s *PoolSnapshot) GetBoxes() int64 {
+	return s.Boxes
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshot) GetAdditionalProps() PoolSnapshotAdditional {
+	return s.AdditionalProps
+}
+
+// SetKey sets the value of Key.
+func (s *PoolSnapshot) SetKey(val string) {
+	s.Key = val
+}
+
+// SetPlan sets the value of Plan.
+func (s *PoolSnapshot) SetPlan(val OptPoolSnapshotPlan) {
+	s.Plan = val
+}
+
+// SetBuiltAt sets the value of BuiltAt.
+func (s *PoolSnapshot) SetBuiltAt(val time.Time) {
+	s.BuiltAt = val
+}
+
+// SetSizeBytes sets the value of SizeBytes.
+func (s *PoolSnapshot) SetSizeBytes(val OptInt64) {
+	s.SizeBytes = val
+}
+
+// SetLastUsedAt sets the value of LastUsedAt.
+func (s *PoolSnapshot) SetLastUsedAt(val OptDateTime) {
+	s.LastUsedAt = val
+}
+
+// SetBoxes sets the value of Boxes.
+func (s *PoolSnapshot) SetBoxes(val int64) {
+	s.Boxes = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshot) SetAdditionalProps(val PoolSnapshotAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotAdditional) init() PoolSnapshotAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/PoolSnapshotBuild
+type PoolSnapshotBuild struct {
+	Key  string           `json:"key"`
+	Plan PoolSnapshotPlan `json:"plan"`
+	// When a new box of the plan, finding no snapshot, asked for it.
+	RequestedAt time.Time `json:"requestedAt"`
+	// When the build began. Absent while it waits for another build to end.
+	StartedAt       OptDateTime `json:"startedAt"`
+	AdditionalProps PoolSnapshotBuildAdditional
+}
+
+// GetKey returns the value of Key.
+func (s *PoolSnapshotBuild) GetKey() string {
+	return s.Key
+}
+
+// GetPlan returns the value of Plan.
+func (s *PoolSnapshotBuild) GetPlan() PoolSnapshotPlan {
+	return s.Plan
+}
+
+// GetRequestedAt returns the value of RequestedAt.
+func (s *PoolSnapshotBuild) GetRequestedAt() time.Time {
+	return s.RequestedAt
+}
+
+// GetStartedAt returns the value of StartedAt.
+func (s *PoolSnapshotBuild) GetStartedAt() OptDateTime {
+	return s.StartedAt
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotBuild) GetAdditionalProps() PoolSnapshotBuildAdditional {
+	return s.AdditionalProps
+}
+
+// SetKey sets the value of Key.
+func (s *PoolSnapshotBuild) SetKey(val string) {
+	s.Key = val
+}
+
+// SetPlan sets the value of Plan.
+func (s *PoolSnapshotBuild) SetPlan(val PoolSnapshotPlan) {
+	s.Plan = val
+}
+
+// SetRequestedAt sets the value of RequestedAt.
+func (s *PoolSnapshotBuild) SetRequestedAt(val time.Time) {
+	s.RequestedAt = val
+}
+
+// SetStartedAt sets the value of StartedAt.
+func (s *PoolSnapshotBuild) SetStartedAt(val OptDateTime) {
+	s.StartedAt = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotBuild) SetAdditionalProps(val PoolSnapshotBuildAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotBuildAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotBuildAdditional) init() PoolSnapshotBuildAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/PoolSnapshotBundle
+type PoolSnapshotBundle struct {
+	Name            string `json:"name"`
+	Digest          string `json:"digest"`
+	AdditionalProps PoolSnapshotBundleAdditional
+}
+
+// GetName returns the value of Name.
+func (s *PoolSnapshotBundle) GetName() string {
+	return s.Name
+}
+
+// GetDigest returns the value of Digest.
+func (s *PoolSnapshotBundle) GetDigest() string {
+	return s.Digest
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotBundle) GetAdditionalProps() PoolSnapshotBundleAdditional {
+	return s.AdditionalProps
+}
+
+// SetName sets the value of Name.
+func (s *PoolSnapshotBundle) SetName(val string) {
+	s.Name = val
+}
+
+// SetDigest sets the value of Digest.
+func (s *PoolSnapshotBundle) SetDigest(val string) {
+	s.Digest = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotBundle) SetAdditionalProps(val PoolSnapshotBundleAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotBundleAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotBundleAdditional) init() PoolSnapshotBundleAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/PoolSnapshotFailure
+type PoolSnapshotFailure struct {
+	Key string `json:"key"`
+	// What the build was of. Absent for a failure recorded before pools recorded it.
+	Plan     OptPoolSnapshotPlan `json:"plan"`
+	FailedAt time.Time           `json:"failedAt"`
+	// When a new box of the plan may ask for the snapshot again.
+	RetryAfter time.Time `json:"retryAfter"`
+	// Why it failed, as the pool composed it, bounded in length. It can end with the build's own output.
+	// Absent for a failure recorded before pools kept the reason.
+	Error           OptString `json:"error"`
+	AdditionalProps PoolSnapshotFailureAdditional
+}
+
+// GetKey returns the value of Key.
+func (s *PoolSnapshotFailure) GetKey() string {
+	return s.Key
+}
+
+// GetPlan returns the value of Plan.
+func (s *PoolSnapshotFailure) GetPlan() OptPoolSnapshotPlan {
+	return s.Plan
+}
+
+// GetFailedAt returns the value of FailedAt.
+func (s *PoolSnapshotFailure) GetFailedAt() time.Time {
+	return s.FailedAt
+}
+
+// GetRetryAfter returns the value of RetryAfter.
+func (s *PoolSnapshotFailure) GetRetryAfter() time.Time {
+	return s.RetryAfter
+}
+
+// GetError returns the value of Error.
+func (s *PoolSnapshotFailure) GetError() OptString {
+	return s.Error
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotFailure) GetAdditionalProps() PoolSnapshotFailureAdditional {
+	return s.AdditionalProps
+}
+
+// SetKey sets the value of Key.
+func (s *PoolSnapshotFailure) SetKey(val string) {
+	s.Key = val
+}
+
+// SetPlan sets the value of Plan.
+func (s *PoolSnapshotFailure) SetPlan(val OptPoolSnapshotPlan) {
+	s.Plan = val
+}
+
+// SetFailedAt sets the value of FailedAt.
+func (s *PoolSnapshotFailure) SetFailedAt(val time.Time) {
+	s.FailedAt = val
+}
+
+// SetRetryAfter sets the value of RetryAfter.
+func (s *PoolSnapshotFailure) SetRetryAfter(val time.Time) {
+	s.RetryAfter = val
+}
+
+// SetError sets the value of Error.
+func (s *PoolSnapshotFailure) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotFailure) SetAdditionalProps(val PoolSnapshotFailureAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotFailureAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotFailureAdditional) init() PoolSnapshotFailureAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// What a snapshot provisions, for a person to tell one snapshot's key from
+// another's. The key also covers the project, the pool and the egress policy
+// the build ran under, which this leaves out, so two plans that differ only in
+// egress read the same here under different keys.
+// Ref: #/components/schemas/PoolSnapshotPlan
+type PoolSnapshotPlan struct {
+	// What a build starts from - the sandbox base image's ID on a Docker pool, the driver and its
+	// configured base on a machine pool.
+	Base string `json:"base"`
+	// The digest of the sandbox agent bundle the snapshot holds.
+	Agent OptString `json:"agent"`
+	// The bundles provisioned into it, in order - the platform's, then the harness's.
+	Bundles []PoolSnapshotBundle `json:"bundles"`
+	// The features left off.
+	Off             []string `json:"off"`
+	AdditionalProps PoolSnapshotPlanAdditional
+}
+
+// GetBase returns the value of Base.
+func (s *PoolSnapshotPlan) GetBase() string {
+	return s.Base
+}
+
+// GetAgent returns the value of Agent.
+func (s *PoolSnapshotPlan) GetAgent() OptString {
+	return s.Agent
+}
+
+// GetBundles returns the value of Bundles.
+func (s *PoolSnapshotPlan) GetBundles() []PoolSnapshotBundle {
+	return s.Bundles
+}
+
+// GetOff returns the value of Off.
+func (s *PoolSnapshotPlan) GetOff() []string {
+	return s.Off
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotPlan) GetAdditionalProps() PoolSnapshotPlanAdditional {
+	return s.AdditionalProps
+}
+
+// SetBase sets the value of Base.
+func (s *PoolSnapshotPlan) SetBase(val string) {
+	s.Base = val
+}
+
+// SetAgent sets the value of Agent.
+func (s *PoolSnapshotPlan) SetAgent(val OptString) {
+	s.Agent = val
+}
+
+// SetBundles sets the value of Bundles.
+func (s *PoolSnapshotPlan) SetBundles(val []PoolSnapshotBundle) {
+	s.Bundles = val
+}
+
+// SetOff sets the value of Off.
+func (s *PoolSnapshotPlan) SetOff(val []string) {
+	s.Off = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotPlan) SetAdditionalProps(val PoolSnapshotPlanAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotPlanAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotPlanAdditional) init() PoolSnapshotPlanAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// A pool's snapshots: boxes provisioned for no sandbox, kept so that a new
+// sandbox wanting the same plan starts from one instead of provisioning from
+// scratch. The pool alone decides whether to build, use, keep or drop one; the
+// control plane only shows what the pool reports here, and nothing schedules
+// on it.
+// Ref: #/components/schemas/PoolSnapshots
+type PoolSnapshots struct {
+	// The snapshots the pool would start a box from.
+	Held []PoolSnapshot `json:"held"`
+	// The builds asked for and not ended. One with no startedAt is queued behind another build, since
+	// the pool builds one at a time.
+	Building []PoolSnapshotBuild `json:"building"`
+	// The plans whose last build failed recently. A new box of such a plan provisions from scratch, and
+	// no build of it is asked for until retryAfter.
+	Failed          []PoolSnapshotFailure `json:"failed"`
+	AdditionalProps PoolSnapshotsAdditional
+}
+
+// GetHeld returns the value of Held.
+func (s *PoolSnapshots) GetHeld() []PoolSnapshot {
+	return s.Held
+}
+
+// GetBuilding returns the value of Building.
+func (s *PoolSnapshots) GetBuilding() []PoolSnapshotBuild {
+	return s.Building
+}
+
+// GetFailed returns the value of Failed.
+func (s *PoolSnapshots) GetFailed() []PoolSnapshotFailure {
+	return s.Failed
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshots) GetAdditionalProps() PoolSnapshotsAdditional {
+	return s.AdditionalProps
+}
+
+// SetHeld sets the value of Held.
+func (s *PoolSnapshots) SetHeld(val []PoolSnapshot) {
+	s.Held = val
+}
+
+// SetBuilding sets the value of Building.
+func (s *PoolSnapshots) SetBuilding(val []PoolSnapshotBuild) {
+	s.Building = val
+}
+
+// SetFailed sets the value of Failed.
+func (s *PoolSnapshots) SetFailed(val []PoolSnapshotFailure) {
+	s.Failed = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshots) SetAdditionalProps(val PoolSnapshotsAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotsAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotsAdditional) init() PoolSnapshotsAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
 }
 
 // Observed pool state.
@@ -27354,7 +28088,8 @@ type SandboxRuntime struct {
 	ResourcesObservedAt OptDateTime                 `json:"resourcesObservedAt"`
 	ProvisionProgress   OptSandboxProvisionProgress `json:"provisionProgress"`
 	// When provisionProgress was observed.
-	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
+	ProvisionProgressAt OptDateTime           `json:"provisionProgressAt"`
+	StartedFrom         OptSandboxStartedFrom `json:"startedFrom"`
 	// Requested existence. Power state is not requested: whether a sandbox is
 	// running is observed and reported by its runtime, never asked for by the
 	// control plane. Archived is a third form of existence — as data, with no
@@ -27439,6 +28174,11 @@ func (s *SandboxRuntime) GetProvisionProgress() OptSandboxProvisionProgress {
 // GetProvisionProgressAt returns the value of ProvisionProgressAt.
 func (s *SandboxRuntime) GetProvisionProgressAt() OptDateTime {
 	return s.ProvisionProgressAt
+}
+
+// GetStartedFrom returns the value of StartedFrom.
+func (s *SandboxRuntime) GetStartedFrom() OptSandboxStartedFrom {
+	return s.StartedFrom
 }
 
 // GetDesiredState returns the value of DesiredState.
@@ -27549,6 +28289,11 @@ func (s *SandboxRuntime) SetProvisionProgress(val OptSandboxProvisionProgress) {
 // SetProvisionProgressAt sets the value of ProvisionProgressAt.
 func (s *SandboxRuntime) SetProvisionProgressAt(val OptDateTime) {
 	s.ProvisionProgressAt = val
+}
+
+// SetStartedFrom sets the value of StartedFrom.
+func (s *SandboxRuntime) SetStartedFrom(val OptSandboxStartedFrom) {
+	s.StartedFrom = val
 }
 
 // SetDesiredState sets the value of DesiredState.
@@ -28447,6 +29192,80 @@ func (s *SandboxSkillsSource) SetDirectory(val string) {
 // SetSource sets the value of Source.
 func (s *SandboxSkillsSource) SetSource(val string) {
 	s.Source = val
+}
+
+// What the sandbox's current container or machine was made from, as its pool
+// recorded when it made it: one of the pool's snapshots, named by the key its
+// pool's resources.snapshots.held lists it under, or the sandbox base image,
+// provisioned from scratch. A restart keeps it; a box made again reports what
+// the new one was made from. Absent while the pool has not said, as for a box
+// made before pools recorded it. It is never what the box says about itself.
+// Ref: #/components/schemas/SandboxStartedFrom
+type SandboxStartedFrom struct {
+	From SandboxStartedFromFrom `json:"from"`
+	// The key of the snapshot, when from is snapshot.
+	Snapshot OptString `json:"snapshot"`
+}
+
+// GetFrom returns the value of From.
+func (s *SandboxStartedFrom) GetFrom() SandboxStartedFromFrom {
+	return s.From
+}
+
+// GetSnapshot returns the value of Snapshot.
+func (s *SandboxStartedFrom) GetSnapshot() OptString {
+	return s.Snapshot
+}
+
+// SetFrom sets the value of From.
+func (s *SandboxStartedFrom) SetFrom(val SandboxStartedFromFrom) {
+	s.From = val
+}
+
+// SetSnapshot sets the value of Snapshot.
+func (s *SandboxStartedFrom) SetSnapshot(val OptString) {
+	s.Snapshot = val
+}
+
+type SandboxStartedFromFrom string
+
+const (
+	SandboxStartedFromFromSnapshot SandboxStartedFromFrom = "snapshot"
+	SandboxStartedFromFromBase     SandboxStartedFromFrom = "base"
+)
+
+// AllValues returns all SandboxStartedFromFrom values.
+func (SandboxStartedFromFrom) AllValues() []SandboxStartedFromFrom {
+	return []SandboxStartedFromFrom{
+		SandboxStartedFromFromSnapshot,
+		SandboxStartedFromFromBase,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxStartedFromFrom) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxStartedFromFromSnapshot:
+		return []byte(s), nil
+	case SandboxStartedFromFromBase:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxStartedFromFrom) UnmarshalText(data []byte) error {
+	switch SandboxStartedFromFrom(data) {
+	case SandboxStartedFromFromSnapshot:
+		*s = SandboxStartedFromFromSnapshot
+		return nil
+	case SandboxStartedFromFromBase:
+		*s = SandboxStartedFromFromBase
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // One sandbox's footprint on the pool's disk: everything that is its own, which

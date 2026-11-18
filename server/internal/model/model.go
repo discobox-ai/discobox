@@ -1261,6 +1261,13 @@ type Sandbox struct {
 	// ticks on its own schedule.
 	Resources           RawJSON    `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent"`
 	ResourcesObservedAt *time.Time `gorm:"column:resources_observed_at" json:"resourcesObservedAt,omitempty" doc:"When Resources was observed" format:"date-time"`
+	// StartedFrom is what the sandbox's current container or machine was made
+	// from — one of its pool's snapshots, by key, or the sandbox base image —
+	// as the pool reported it on the state channel, stored in the API's
+	// SandboxStartedFrom shape (ADR 26-11-17-316 §5). It is the pool's record,
+	// never the box's word, and nothing decides anything from it. Empty until
+	// the pool says; an observation that does not say leaves it as it was.
+	StartedFrom RawJSON `gorm:"column:started_from;type:text" json:"startedFrom,omitempty" doc:"What the sandbox's current container or machine was made from, as its pool reported it"`
 	// Tags are a copy of the sandbox's tags, which live with its description
 	// in the meta file inside the sandbox (ADR 0136). The copy is what a
 	// listing filters on and what a stopped sandbox is read as; the file is

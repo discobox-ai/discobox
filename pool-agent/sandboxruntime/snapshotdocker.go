@@ -2,6 +2,7 @@ package sandboxruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -41,6 +42,16 @@ const (
 	// snapshotAgentLabel is, on a snapshot, the agent layer it holds, which
 	// a start need not place again.
 	snapshotAgentLabel = "io.discobox.snapshot.agent-layer.v1"
+	// snapshotPlanLabel is, on a snapshot, its plan as the pool reports it
+	// (SnapshotPlanName, as JSON). A snapshot committed before it has none.
+	snapshotPlanLabel = "io.discobox.snapshot.plan.v1"
+	// sandboxLabelStartedFrom is, on a sandbox container, what it was made
+	// from (startedFromLabel), set at its create. A container made before
+	// it has none, and reports nothing (ADR 26-11-17-316 §5).
+	sandboxLabelStartedFrom = "discobox.started_from"
+	// startedFromBase and startedFromSnapshot spell that label's values.
+	startedFromBase     = "base"
+	startedFromSnapshot = "snapshot:"
 	// snapshotContainerPrefix names every build container, which is how a
 	// build is found: a build's labels reach every container started from
 	// its snapshot, so it carries only its project's and pool's, which every
@@ -55,31 +66,54 @@ func (r *DockerSandboxRuntime) snapshotContainerName(id string) string {
 	return snapshotContainerPrefix + r.poolID + "-" + strings.TrimPrefix(id, layout.SnapshotIDPrefix)
 }
 
+// startedFromLabel is the sandboxLabelStartedFrom value of a container made
+// from the snapshot keyed snapshot, or from the base when it is empty.
+func startedFromLabel(snapshot string) string {
+	if snapshot == "" {
+		return startedFromBase
+	}
+	return startedFromSnapshot + snapshot
+}
+
+// startedFromLabels reads what a container was made from off its labels: nil
+// for one with no such label, or a value this agent does not know.
+func startedFromLabels(labels map[string]string) *StartedFrom {
+	value := labels[sandboxLabelStartedFrom]
+	if value == startedFromBase {
+		return &StartedFrom{}
+	}
+	if key, ok := strings.CutPrefix(value, startedFromSnapshot); ok && key != "" {
+		return &StartedFrom{Snapshot: key}
+	}
+	return nil
+}
+
 // deliveredImage is the image a delivered create's container runs: the
-// snapshot of its plan when there is one, and otherwise the sandbox base
-// image, with the snapshot asked for behind it. baseID is the base's ID.
-func (r *DockerSandboxRuntime) deliveredImage(ctx context.Context, baseID string, req *workerapimodel.PoolSandboxCreateRequest) string {
+// snapshot of its plan when there is one, with its key, and otherwise the
+// sandbox base image and no key, with the snapshot asked for behind it.
+// baseID is the base's ID.
+func (r *DockerSandboxRuntime) deliveredImage(ctx context.Context, baseID string, req *workerapimodel.PoolSandboxCreateRequest) (image, snapshot string) {
 	if !req.ProvisionEgress.Set {
 		// A server that sends no build policy gets no snapshot: built
 		// without one, it would run unrestricted.
-		return baseID
+		return baseID, ""
 	}
 	plan, err := r.newSnapshotPlan(baseID, req)
 	if err != nil {
 		slog.WarnContext(ctx, "plan a snapshot; starting from the sandbox base image", "error", err)
-		return baseID
+		return baseID, ""
 	}
 	inspected, err := r.client.ImageInspect(ctx, plan.reference())
 	switch {
 	case err == nil && inspected.Config != nil && inspected.Config.Labels[snapshotBaseLabel] == baseID:
 		slog.InfoContext(ctx, "starting from a snapshot", "snapshot", plan.reference(), "sandboxId", req.SandboxId)
-		return inspected.ID
+		return inspected.ID, plan.Key()
 	case err != nil && !cerrdefs.IsNotFound(err):
 		slog.WarnContext(ctx, "look up a snapshot; starting from the sandbox base image", "snapshot", plan.reference(), "error", err)
-		return baseID
+		return baseID, ""
 	}
 	r.requestSnapshot(plan, r.buildSnapshot)
-	return baseID
+	return baseID, ""
 }
 
 // buildSnapshot starts the base image with plan, runs its provisioning as an
@@ -143,10 +177,15 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	if _, err := r.client.ContainerStop(ctx, created.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
 		return fmt.Errorf("stop the build container: %w", err)
 	}
+	planLabel, err := json.Marshal(plan.name())
+	if err != nil {
+		return err
+	}
 	labels := map[string]string{
 		harness.ReclaimLabel: harness.ReclaimLabelValue,
 		snapshotBaseLabel:    plan.Base,
 		snapshotAgentLabel:   agent.Digest,
+		snapshotPlanLabel:    string(planLabel),
 	}
 	if _, err := r.client.ContainerCommit(ctx, created.ID, client.ContainerCommitOptions{
 		Reference: plan.reference(),
@@ -267,6 +306,48 @@ func (r *DockerSandboxRuntime) clearSnapshots(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// Snapshots lists this pool's snapshot images, each with how many of the
+// pool's sandbox containers were made from it — read off each container's
+// started-from label, the record its startedFrom comes from, never inferred
+// from the image it runs (ADR 26-11-17-316 §§2, 5) — around the builds and
+// failures every runtime reports alike.
+func (r *DockerSandboxRuntime) Snapshots(ctx context.Context) (*SnapshotReport, error) {
+	images, err := r.client.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.
+		Add("reference", snapshotRepository).
+		Add("label", sandboxLabelPool+"="+r.poolID)})
+	if err != nil {
+		return nil, fmt.Errorf("list the pool's snapshots: %w", err)
+	}
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters("")})
+	if err != nil {
+		return nil, fmt.Errorf("list the pool's sandbox containers: %w", err)
+	}
+	boxes := map[string]int64{}
+	for _, ctr := range containers.Items {
+		if from := startedFromLabels(ctr.Labels); from != nil && from.Snapshot != "" {
+			boxes[from.Snapshot]++
+		}
+	}
+	held := []HeldSnapshot{}
+	for _, image := range images.Items {
+		for _, tag := range image.RepoTags {
+			key, ok := strings.CutPrefix(tag, snapshotRepository+":")
+			if !ok || key == "" {
+				continue
+			}
+			size := image.Size
+			entry := HeldSnapshot{Key: key, BuiltAt: time.Unix(image.Created, 0).UTC(), SizeBytes: &size, Boxes: boxes[key]}
+			var plan SnapshotPlanName
+			if raw := image.Labels[snapshotPlanLabel]; raw != "" && json.Unmarshal([]byte(raw), &plan) == nil {
+				entry.Plan = &plan
+			}
+			held = append(held, entry)
+		}
+	}
+	slices.SortFunc(held, func(a, b HeldSnapshot) int { return b.BuiltAt.Compare(a.BuiltAt) })
+	return r.snapshotReport(held)
 }
 
 // snapshotBuildFilters finds this project's build containers, on a daemon
