@@ -296,10 +296,9 @@ const connectTimeout = 30 * time.Second
 // from the request that asked for the connection: it ends when the Transport
 // closes its idle connections, not when that request gives up.
 //
-// The returned connection deliberately does not implement CloseWrite. A
-// caller that found one would believe the guest saw EOF while the connection
-// stays open; callers that check for it take their full-close fallback
-// instead, which is correct.
+// The returned connection's CloseWrite is the framed stream's half-close
+// (pkg/vsock): the guest reads EOF, and the host keeps reading until the
+// guest ends its side.
 func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 	v.mu.Lock()
 	socket, closed, closing := v.socket, v.closed, v.closing
@@ -327,10 +326,10 @@ func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, connectError(err, ctx.Err(), vmClosed))
 	}
 	name := v.name
-	framed, err := guestvsock.FrameDialed(&unframedCheck{Conn: conn, report: func() {
+	framed, err := guestvsock.FrameDialed(conn, func(err error) {
 		slog.Warn("vz guest answered without framing: the guest does not frame its VSOCK services; boot a guest image that does",
-			"vm", name, "port", port)
-	}})
+			"vm", name, "port", port, "error", err)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("vzvm: frame connection to %s guest port %d: %w", v.name, port, err)
 	}
