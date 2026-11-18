@@ -100,16 +100,29 @@ func oneStream(session *yamux.Session, stream *yamux.Stream) (net.Conn, error) {
 // returned by Accept; report, when not nil, is told why. That is how a peer
 // that does not speak the framing shows up.
 //
-// An error inner's Accept returns is passed to the next Accept as it is, one
-// for one, so a caller that retries a temporary error retries it here too.
-// The loop stops once inner is closed.
+// The accept loop never waits on its caller, not even to report an error. A
+// connection the framework has handed over is a socket nobody reads until
+// this loop starts its session, and on vz a guest write that overflows an
+// unread socket's buffer (8 KiB) blocks the framework's queue. An error inner's Accept returns
+// is offered to the next Accept as it is, so a caller that retries a
+// temporary error retries it here too; while one is still unread, later ones
+// are dropped, and the loop backs off before accepting again.
+//
+// The loop stops when inner's Accept returns net.ErrClosed. An inner whose
+// Accept never returns once closed (vz's binding) leaves the loop parked in
+// it; either way, Accept on this listener returns net.ErrClosed once Close has
+// been called.
 func FrameListener(inner net.Listener, report func(error)) net.Listener {
 	l := &frameListener{
 		inner:  inner,
 		report: report,
 		conns:  make(chan net.Conn),
-		errs:   make(chan error),
+		errs:   make(chan error, 1),
 		closed: make(chan struct{}),
+		done:   make(chan struct{}),
+		// The loop also ends on Close, during a backoff; it overwrites this
+		// only with inner's own closed error.
+		doneErr: net.ErrClosed,
 	}
 	go l.acceptLoop()
 	return l
@@ -119,26 +132,48 @@ type frameListener struct {
 	inner  net.Listener
 	report func(error)
 	conns  chan net.Conn
-	errs   chan error
+	// errs holds at most one error inner's Accept returned, until an Accept
+	// takes it.
+	errs chan error
 
 	closeOnce sync.Once
 	closed    chan struct{}
+
+	// done is closed when inner is closed, with doneErr the error it said so
+	// with.
+	done    chan struct{}
+	doneErr error
 }
 
+// Backoff after an error from inner's Accept, as net/http's Serve does.
+const (
+	acceptBackoffMin = 5 * time.Millisecond
+	acceptBackoffMax = time.Second
+)
+
 func (l *frameListener) acceptLoop() {
+	defer close(l.done)
+	var backoff time.Duration
 	for {
 		conn, err := l.inner.Accept()
 		if err != nil {
-			select {
-			case l.errs <- err:
-			case <-l.closed:
+			if errors.Is(err, net.ErrClosed) {
+				l.doneErr = err
 				return
 			}
-			if errors.Is(err, net.ErrClosed) {
+			select {
+			case l.errs <- err:
+			default:
+			}
+			backoff = min(max(2*backoff, acceptBackoffMin), acceptBackoffMax)
+			select {
+			case <-time.After(backoff):
+			case <-l.closed:
 				return
 			}
 			continue
 		}
+		backoff = 0
 		session, err := yamux.Server(conn, frameConfig())
 		if err != nil {
 			_ = conn.Close()
@@ -180,12 +215,19 @@ func (l *frameListener) fail(err error) {
 
 func (l *frameListener) Accept() (net.Conn, error) {
 	select {
+	case <-l.closed:
+		return nil, net.ErrClosed
+	default:
+	}
+	select {
 	case conn := <-l.conns:
 		return conn, nil
 	case err := <-l.errs:
 		return nil, err
 	case <-l.closed:
 		return nil, net.ErrClosed
+	case <-l.done:
+		return nil, l.doneErr
 	}
 }
 
