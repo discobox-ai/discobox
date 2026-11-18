@@ -471,12 +471,21 @@ func TestRequestRefusesABadPolicy(t *testing.T) {
 			t.Errorf("%s: request sent, want nothing", name)
 		}
 	}
-	var many []string
-	for range agentcreds.MaxRequestPolicies + 1 {
-		many = append(many, "--policy", issues)
+}
+
+func TestRequestSendsMoreThan32Policies(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	file := writePolicy(t, t.TempDir(), "issues.json", issuesPolicy)
+	args := []string{"request", "--name", "github", "--env-var", "GH_TOKEN"}
+	for range 20 {
+		args = append(args, "--policy", file, "--delegate-policy", file)
 	}
-	if _, stderr, code := capture(t, "", func() int { return Run(append(slices.Clone(base), many...)) }); code != exitUsage || !strings.Contains(stderr, "at most") {
-		t.Errorf("too many policies: exit = %d, stderr %q", code, stderr)
+	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != 0 {
+		t.Fatalf("request: exit = %d, stderr %q", code, stderr)
+	}
+	if len(svc.gotRequest.Policies) != 20 || svc.gotRequest.Delegate == nil || len(svc.gotRequest.Delegate.Policies) != 20 {
+		t.Fatalf("request = %+v, want 20 policies per part", svc.gotRequest)
 	}
 }
 

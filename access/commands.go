@@ -274,15 +274,10 @@ func runRequest(ctx context.Context, args []string) int {
 
 // check refuses, before anything is sent, a request that is not one: no
 // name, no part, a part with nowhere to send it, a use with no variable or a
-// delegation with one, policies beside inline routes on one part, or more
-// policies than a request may carry. Each refusal names the flag and the
-// JSON key that fixes it.
+// delegation with one, or policies beside inline routes on one part. Each
+// refusal names the flag and the JSON key that fixes it.
 func (input requestInput) check() string {
 	uses := input.EnvVar != "" || len(input.Hosts) > 0 || len(input.Routes) > 0 || len(input.Policies) > 0
-	policies := len(input.Policies)
-	if input.Delegate != nil {
-		policies += len(input.Delegate.Policies)
-	}
 	switch {
 	case strings.TrimSpace(input.Name) == "":
 		return "name the credential you need with --name (\"name\" in --json), such as github"
@@ -300,8 +295,6 @@ func (input requestInput) check() string {
 		return "name where the discoboxes you create may send it with --delegate-route or --delegate-policy (\"routes\" or \"policies\" in \"delegate\")"
 	case input.Delegate != nil && len(input.Delegate.Routes) > 0 && len(input.Delegate.Policies) > 0:
 		return "--delegate-policy names the routes itself: leave out --delegate-route beside it (\"routes\" or \"policies\" in \"delegate\", not both)"
-	case policies > agentcreds.MaxRequestPolicies:
-		return fmt.Sprintf("a request names at most %d policies across its parts, not %d", agentcreds.MaxRequestPolicies, policies)
 	}
 	return ""
 }

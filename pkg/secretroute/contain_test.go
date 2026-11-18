@@ -46,7 +46,7 @@ func TestProveContained(t *testing.T) {
 	}
 }
 
-// A delegation can combine up to 32 policy documents. Repeated shared routes
+// A delegation can combine several policy documents. Repeated shared routes
 // and each role's paths must not make an otherwise identical member unprovable.
 func TestProveContainedPolicyUnion(t *testing.T) {
 	var delegation []Route

@@ -181,9 +181,9 @@ does, so the proxy never asks. Refresh requests are their own record
   base name, its description, its arguments, a digest of the document, the
   arguments no route path uses, and the routes it resolved to. The documents
   are not kept. A box sent them, so `agentcreds.MaxPolicyBytes`,
-  `MaxRequestPolicies`, `MaxPartRoutes` and `MaxRequestRouteBytes` — what the
-  whole request resolves to, spent as each document resolves — are
-  boundaries, each a 400 naming what broke it.
+  `MaxPartRoutes` and `MaxRequestRouteBytes` are boundaries, each a 400
+  naming what broke it. The route byte budget is spent as each document
+  resolves. The request body bounds the policy input (ADR 26-11-18-245).
 - **A use part may ask to add** (`SecretRequestPart.Add`, ADR 26-11-03-329
   §4): its routes in addition to what the discobox holds, for their own
   lifetime, rather than as its whole use. A delegate part never does, and an

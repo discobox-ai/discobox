@@ -380,10 +380,22 @@ func TestAPartAskedByPoliciesResolvesThemOnTheServer(t *testing.T) {
 		t.Fatalf("policies = %+v", got)
 	}
 
-	tooMany := make([]serverapi.SandboxCredentialPolicy, agentcreds.MaxRequestPolicies+1)
-	for i := range tooMany {
-		tooMany[i] = policy(fmt.Sprintf("p%d.json", i), doc, map[string]string{"owner": "acme", "repo": "web"})
+	var many []serverapi.SandboxCredentialPolicy
+	for i := range 40 {
+		many = append(many, policy("roles/github-submit.json", doc, map[string]string{"owner": "acme", "repo": fmt.Sprintf("repo%d", i)}))
 	}
+	req, err = svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"),
+		Policies: many[:20],
+		Delegate: serverapi.NewOptSandboxCredentialRequestDelegate(serverapi.SandboxCredentialRequestDelegate{Policies: many[20:]}),
+	})
+	if err != nil {
+		t.Fatalf("request with 40 policies: %v", err)
+	}
+	if len(req.Use.Routes) != 20 || len(req.Delegate.Routes) != 20 || len(req.Use.Policies) != 20 || len(req.Delegate.Policies) != 20 {
+		t.Fatal("want 20 recorded policies and 20 resolved routes per part")
+	}
+
 	var manyRoutes []string
 	for i := range agentcreds.MaxPartRoutes + 1 {
 		manyRoutes = append(manyRoutes, fmt.Sprintf(`{"hosts":["h%d.example.com"]}`, i))
@@ -397,11 +409,10 @@ func TestAPartAskedByPoliciesResolvesThemOnTheServer(t *testing.T) {
 			Policies: []serverapi.SandboxCredentialPolicy{policy("a.json", doc, map[string]string{"owner": "acme", "repo": "web"})}}, "not both"},
 		"a document that does not resolve": {services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"),
 			Policies: []serverapi.SandboxCredentialPolicy{policy("roles/broken.json", doc, map[string]string{"owner": "acme"})}}, "roles/broken.json"},
-		"too many policies": {services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"), Policies: tooMany}, "at most"},
 		"too large a document": {services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"),
 			Policies: []serverapi.SandboxCredentialPolicy{policy("big.json", `{"version":1,"description":"`+strings.Repeat("x", agentcreds.MaxPolicyBytes)+`","routes":[{"hosts":["a.example"]}]}`, nil)}}, "big.json"},
 		"too many routes": {services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"),
-			Policies: []serverapi.SandboxCredentialPolicy{policy("wide.json", wide, nil)}}, "at most"},
+			Policies: []serverapi.SandboxCredentialPolicy{policy("wide.json", wide, nil)}}, fmt.Sprintf("a part may have at most %d", agentcreds.MaxPartRoutes)},
 	} {
 		tc.body.SandboxId = testSandboxID
 		if _, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, tc.body); !isStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), tc.want) {
@@ -426,7 +437,7 @@ func TestARequestIsBoundedByWhatItResolvesTo(t *testing.T) {
 		t.Fatalf("the document is %d bytes; it should be small, its routes large", len(doc))
 	}
 	var policies []serverapi.SandboxCredentialPolicy
-	for i := range agentcreds.MaxRequestPolicies {
+	for i := range 3 {
 		policies = append(policies, serverapi.SandboxCredentialPolicy{File: fmt.Sprintf("p%d.json", i), Document: jx.Raw(doc),
 			Args: serverapi.NewOptSandboxCredentialPolicyArgs(map[string]string{"a": strings.Repeat("a", 250)})})
 	}

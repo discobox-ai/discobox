@@ -217,8 +217,9 @@ func usage(w io.Writer) {
       The top-level routes, hosts or policies and envVar are the use;
       "delegate" holds the delegation's routes or policies. A policy is
       {"file", "args"}; the file is read here and its document sent, at most
-      64 KiB, one JSON object with no repeated key, and at most 32 policies
-      in all. grantTTLSeconds runs from 1 to 2592000 (thirty days);
+      64 KiB, one JSON object with no repeated key. The request body is at
+      most 1 MiB and each part may resolve to at most 512 routes.
+      grantTTLSeconds runs from 1 to 2592000 (thirty days);
       timeoutSeconds is only how long wait waits. A key given twice is
       refused.
 

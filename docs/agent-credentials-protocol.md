@@ -249,9 +249,8 @@ read; a client reads the file and sends the document. The implementation
 validates and resolves it with `args` (§3 of ADR 584), and refuses the whole
 request as `invalid`, naming the file, if it does not resolve. A person is
 shown each file's name and description beside what its routes allow; the name
-and description grant nothing. A document is at most **64 KiB**, a request
-names at most **32** policies across its parts, a part resolves to at most
-**512** routes, everything a request resolves to is at most **256 KiB** of
+and description grant nothing. A document is at most **64 KiB**, a part
+resolves to at most **512** routes, everything a request resolves to is at most **256 KiB** of
 routes (an argument is one path segment of at most 256 bytes, but a template
 may repeat it), and the body is at most **1 MiB**.
 
