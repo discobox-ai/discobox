@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/discobox-ai/vm/pkg/machine"
 
@@ -45,8 +46,10 @@ import (
 // disco-vm VM (machinesnapshot.go). It is only ever a cache: a delivered
 // create finding no snapshot for its plan starts from the base and provisions
 // from scratch, as before, and asks for the snapshot to be built behind it,
-// so the next create of the plan finds it. The control plane never knows
-// which a box started from.
+// so the next create of the plan finds it. The pool reports what it holds,
+// builds and failed to build on its resource report, and each box what it
+// was made from on the state channel (ADR 26-11-17-316); the control plane
+// only shows them, and decides nothing from them.
 //
 // A build is anonymous. Its proxy identity is its own (layout.SnapshotIDPrefix), its
 // egress is the create's provisionEgress — every level but the sandbox's own
@@ -69,14 +72,16 @@ const (
 	// an agent that keeps restarting does not keep building (ADR 26-11-03-986
 	// §5).
 	snapshotFailuresName = "snapshot-failures"
+	// snapshotErrorLimit bounds the error a failure record keeps, which can
+	// end with the build guest's own output (ADR 26-11-17-316 §3).
+	snapshotErrorLimit = 2048
 )
 
 // snapshotBuilds is the builds under way, and the creates holding a snapshot.
 type snapshotBuilds struct {
 	mu sync.Mutex
-	// active is the builds asked for and not yet ended, by key, each with
-	// what ends it early: a cache clear does.
-	active map[string]context.CancelFunc
+	// active is the builds asked for and not yet ended, by key.
+	active map[string]*snapshotBuild
 	// using counts, by key, the creates making a box from that plan's
 	// snapshot: nothing removes one while a create reads it.
 	using map[string]int
@@ -88,6 +93,16 @@ type snapshotBuilds struct {
 	one sync.Mutex
 	// records serializes writes of the records a snapshot is kept by.
 	records sync.Mutex
+}
+
+// snapshotBuild is one build asked for and not yet ended.
+type snapshotBuild struct {
+	// cancel ends it early: a cache clear does.
+	cancel context.CancelFunc
+	plan   SnapshotPlanName
+	// requested is when a create asked for it; started, once it holds the
+	// build lock, when it began. A build with no start is queued.
+	requested, started time.Time
 }
 
 // errSnapshotHeld ends a build that would replace a snapshot a create is
@@ -111,6 +126,22 @@ type snapshotPlan struct {
 	Egress    egress.Policy `json:"egress"`
 	features  map[string]sandboxconfig.Feature
 	delivered assetcache.Delivery
+}
+
+// SnapshotPlanName is a plan as a person reads it: what it provisions, which
+// is what tells one key from another (ADR 26-11-17-316 §3). The project, the
+// pool and the egress policy are in the key and not here. Every record a
+// snapshot is kept by carries it.
+type SnapshotPlanName struct {
+	Base    string          `json:"base"`
+	Agent   string          `json:"agent,omitempty"`
+	Bundles agentlayer.Pins `json:"bundles,omitempty"`
+	Off     []string        `json:"off,omitempty"`
+}
+
+// name is how the plan is reported.
+func (p snapshotPlan) name() SnapshotPlanName {
+	return SnapshotPlanName{Base: p.Base, Agent: p.Agent, Bundles: slices.Clone(p.Pins), Off: slices.Clone(p.Off)}
 }
 
 // Key is the plan's digest's hex: what its snapshot is found by.
@@ -164,21 +195,26 @@ func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Cont
 	b := &r.snapshots
 	b.mu.Lock()
 	if b.active == nil {
-		b.active = map[string]context.CancelFunc{}
+		b.active = map[string]*snapshotBuild{}
 	}
 	if _, building := b.active[key]; building || b.clearing > 0 || r.snapshotFailedRecently(key, time.Now()) {
 		b.mu.Unlock()
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), snapshotBuildTimeout)
-	b.active[key] = cancel
+	active := &snapshotBuild{cancel: cancel, plan: plan.name(), requested: time.Now().UTC()}
+	b.active[key] = active
 	b.mu.Unlock()
 	go func() {
 		defer cancel()
-		started := time.Now()
+		var started time.Time
 		err := func() error {
 			b.one.Lock()
 			defer b.one.Unlock()
+			started = time.Now()
+			b.mu.Lock()
+			active.started = started.UTC()
+			b.mu.Unlock()
 			slog.Info("building a snapshot", "snapshot", key)
 			return build(ctx, plan)
 		}()
@@ -189,7 +225,7 @@ func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Cont
 			// Ended by a clear, or by a create holding what it would
 			// replace: the next create asks again.
 		case err != nil:
-			if recordErr := r.recordSnapshotFailure(key, time.Now()); recordErr != nil {
+			if recordErr := r.recordSnapshotFailure(key, time.Now(), err.Error(), &active.plan); recordErr != nil {
 				slog.Warn("record a failed snapshot build", "snapshot", key, "error", recordErr)
 			}
 		default:
@@ -215,8 +251,8 @@ func (r *sandboxCore) holdSnapshotClear() func() {
 	b := &r.snapshots
 	b.mu.Lock()
 	b.clearing++
-	for _, cancel := range b.active {
-		cancel()
+	for _, build := range b.active {
+		build.cancel()
 	}
 	b.mu.Unlock()
 	b.one.Lock()
@@ -232,8 +268,8 @@ func (r *sandboxCore) holdSnapshotClear() func() {
 func (r *sandboxCore) cancelSnapshotBuilds() {
 	r.snapshots.mu.Lock()
 	defer r.snapshots.mu.Unlock()
-	for _, cancel := range r.snapshots.active {
-		cancel()
+	for _, build := range r.snapshots.active {
+		build.cancel()
 	}
 }
 
@@ -252,6 +288,24 @@ func (r *sandboxCore) buildingSnapshots() map[string]bool {
 		keys[key] = true
 	}
 	return keys
+}
+
+// snapshotBuildsReport is the builds asked for and not yet ended, as the
+// pool reports them, by key.
+func (r *sandboxCore) snapshotBuildsReport() []BuildingSnapshot {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	out := make([]BuildingSnapshot, 0, len(r.snapshots.active))
+	for key, build := range r.snapshots.active {
+		entry := BuildingSnapshot{Key: key, Plan: build.plan, RequestedAt: build.requested}
+		if !build.started.IsZero() {
+			started := build.started
+			entry.StartedAt = &started
+		}
+		out = append(out, entry)
+	}
+	slices.SortFunc(out, func(a, b BuildingSnapshot) int { return a.RequestedAt.Compare(b.RequestedAt) })
+	return out
 }
 
 // holdSnapshot marks a create making a box from the snapshot keyed key, and
@@ -299,21 +353,107 @@ func (r *sandboxCore) snapshotFailurePath(key string) string {
 	return filepath.Join(r.root.PoolData(r.projectID, r.poolID), snapshotFailuresName, key)
 }
 
+// snapshotFailure is a failure record: when the plan's build last failed,
+// why, and what the plan is (ADR 26-11-17-316 §3).
+type snapshotFailure struct {
+	FailedAt time.Time         `json:"failedAt"`
+	Error    string            `json:"error,omitempty"`
+	Plan     *SnapshotPlanName `json:"plan,omitempty"`
+}
+
+// readSnapshotFailure reads the failure record at path: the JSON document,
+// or the bare time a pool wrote before it, which reads as a failure with no
+// reason and no plan.
+func readSnapshotFailure(path string) (snapshotFailure, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return snapshotFailure{}, false
+	}
+	var record snapshotFailure
+	if json.Unmarshal(data, &record) == nil && !record.FailedAt.IsZero() {
+		return record, true
+	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	if err != nil {
+		return snapshotFailure{}, false
+	}
+	return snapshotFailure{FailedAt: at}, true
+}
+
 // snapshotFailedRecently reports whether the plan keyed key failed to build
 // within snapshotRetryAfter of now.
 func (r *sandboxCore) snapshotFailedRecently(key string, now time.Time) bool {
-	at, ok := readSandboxTombstone(r.snapshotFailurePath(key))
-	return ok && now.Sub(at) < snapshotRetryAfter
+	record, ok := readSnapshotFailure(r.snapshotFailurePath(key))
+	return ok && now.Sub(record.FailedAt) < snapshotRetryAfter
 }
 
-func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time) error {
+// recordSnapshotFailure records that the build of plan, keyed key, failed at
+// at for reason, which is kept bounded. A nil plan is one the pool no longer
+// knows.
+func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time, reason string, plan *SnapshotPlanName) error {
 	path := r.snapshotFailurePath(key)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	data, err := json.Marshal(snapshotFailure{FailedAt: at.UTC(), Error: boundSnapshotError(reason), Plan: plan})
+	if err != nil {
+		return err
+	}
 	r.snapshots.records.Lock()
 	defer r.snapshots.records.Unlock()
-	return fsdurable.WriteFile(path, []byte(at.UTC().Format(time.RFC3339)+"\n"), 0o600)
+	return fsdurable.WriteFile(path, data, 0o600)
+}
+
+// boundSnapshotError keeps reason within snapshotErrorLimit bytes, cut on a
+// rune boundary: its head says which step failed, and its end what the
+// build's output said, so the middle is what goes.
+func boundSnapshotError(reason string) string {
+	reason = strings.ToValidUTF8(reason, "\uFFFD")
+	if len(reason) <= snapshotErrorLimit {
+		return reason
+	}
+	const elided = " … "
+	half := (snapshotErrorLimit - len(elided)) / 2
+	head, tail := half, len(reason)-half
+	for head > 0 && !utf8.RuneStart(reason[head]) {
+		head--
+	}
+	for tail < len(reason) && !utf8.RuneStart(reason[tail]) {
+		tail++
+	}
+	return reason[:head] + elided + reason[tail:]
+}
+
+// snapshotFailuresReport is the plans whose last build failed within
+// snapshotRetryAfter of now, as the pool reports them.
+func (r *sandboxCore) snapshotFailuresReport(now time.Time) ([]FailedSnapshot, error) {
+	dir := filepath.Join(r.root.PoolData(r.projectID, r.poolID), snapshotFailuresName)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []FailedSnapshot{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := []FailedSnapshot{}
+	for _, entry := range entries {
+		if fsdurable.IsStaged(entry.Name()) {
+			continue
+		}
+		record, ok := readSnapshotFailure(filepath.Join(dir, entry.Name()))
+		if !ok || now.Sub(record.FailedAt) >= snapshotRetryAfter {
+			continue
+		}
+		out = append(out, FailedSnapshot{
+			Key:        entry.Name(),
+			Plan:       record.Plan,
+			FailedAt:   record.FailedAt.UTC(),
+			RetryAfter: record.FailedAt.Add(snapshotRetryAfter).UTC(),
+			Error:      record.Error,
+		})
+	}
+	slices.SortFunc(out, func(a, b FailedSnapshot) int { return b.FailedAt.Compare(a.FailedAt) })
+	return out, nil
 }
 
 func (r *sandboxCore) forgetSnapshotFailure(key string) error {

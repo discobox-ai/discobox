@@ -264,3 +264,25 @@ func TestAGitSourceKeepsItsRemotesDefaultBranch(t *testing.T) {
 		t.Fatalf("sandbox's source default branch = %q, want trunk", got)
 	}
 }
+
+// What a sandbox's pool made it from is served as the pool reported it, and
+// a sandbox the pool has not said of serves none (ADR 26-11-17-316 §5).
+func TestSandboxToAPIServesWhatTheBoxStartedFrom(t *testing.T) {
+	sandbox := &model.Sandbox{
+		ID: "sb_1", ProjectID: "p1",
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStateReady},
+		StartedFrom:       model.RawJSON(`{"from":"snapshot","snapshot":"k1"}`),
+	}
+	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	if err != nil {
+		t.Fatalf("SandboxToAPI: %v", err)
+	}
+	from, ok := out.Runtime.StartedFrom.Get()
+	if !ok || from.From != "snapshot" || from.Snapshot.Or("") != "k1" {
+		t.Fatalf("startedFrom = %+v, want the snapshot k1", out.Runtime.StartedFrom)
+	}
+	sandbox.StartedFrom = nil
+	if out, err = SandboxToAPI(sandbox, SandboxUpgradeBasis{}); err != nil || out.Runtime.StartedFrom.Set {
+		t.Fatalf("a sandbox never reported on serves startedFrom %+v (%v)", out.Runtime.StartedFrom, err)
+	}
+}

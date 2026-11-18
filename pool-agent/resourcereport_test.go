@@ -8,11 +8,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
@@ -602,5 +604,111 @@ func TestWalkPoolTreesSumsEverySandboxIntoTheDataTotal(t *testing.T) {
 	// in would count one tree against every discobox that can see it.
 	if walk.DataBytes != 0 && walk.DataBytes == walk.CacheBytes {
 		t.Errorf("the shared cache leaked into the sandboxes' data total")
+	}
+}
+
+// The pool's snapshots ride the report as the runtime lists them, and the
+// control plane decodes them into the generated type: a renamed field would
+// otherwise be dropped in silence and read as a pool holding none (#339).
+func TestPoolSnapshotsMatchTheGeneratedContract(t *testing.T) {
+	builtAt := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	size := int64(3 << 30)
+	started := builtAt.Add(time.Minute)
+	plan := sandboxruntime.SnapshotPlanName{
+		Base:    "sha256:base",
+		Agent:   "sha256:" + strings.Repeat("c", 64),
+		Bundles: agentlayer.Pins{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}, {Name: "discobox-harness-shell", Digest: "sha256:" + strings.Repeat("b", 64)}},
+		Off:     []string{"docker"},
+	}
+	sent := PoolResourceReportRequest{Report: PoolReport{
+		ReportedAt: builtAt,
+		Storage:    PoolStorage{Root: layout.ContainerRoot},
+		Snapshots: &sandboxruntime.SnapshotReport{
+			Held:     []sandboxruntime.HeldSnapshot{{Key: "k1", Plan: &plan, BuiltAt: builtAt, SizeBytes: &size, LastUsedAt: &builtAt, Boxes: 2}, {Key: "k0", BuiltAt: builtAt}},
+			Building: []sandboxruntime.BuildingSnapshot{{Key: "k2", Plan: plan, RequestedAt: builtAt, StartedAt: &started}, {Key: "k3", Plan: plan, RequestedAt: started}},
+			Failed:   []sandboxruntime.FailedSnapshot{{Key: "k4", Plan: &plan, FailedAt: builtAt, RetryAfter: builtAt.Add(time.Hour), Error: "feature go failed: exit status 2"}, {Key: "k5", FailedAt: builtAt, RetryAfter: builtAt.Add(time.Hour)}},
+		},
+	}, Sandboxes: []SandboxResourceUsage{}}
+	body, err := json.Marshal(sent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got apimodel.ReportPoolResourcesBody
+	if err := got.UnmarshalJSON(body); err != nil {
+		t.Fatalf("the control plane could not decode this agent's report: %v\n%s", err, body)
+	}
+	snapshots, ok := got.Report.Snapshots.Get()
+	if !ok {
+		t.Fatalf("the snapshots did not survive the encoding:\n%s", body)
+	}
+	if len(snapshots.Held) != 2 || len(snapshots.Building) != 2 || len(snapshots.Failed) != 2 {
+		t.Fatalf("snapshots = %+v", snapshots)
+	}
+	held := snapshots.Held[0]
+	heldPlan, ok := held.Plan.Get()
+	if held.Key != "k1" || held.Boxes != 2 || held.SizeBytes.Or(0) != size || !held.BuiltAt.Equal(builtAt) || !held.LastUsedAt.Set || !ok {
+		t.Errorf("held = %+v", held)
+	}
+	if heldPlan.Base != plan.Base || heldPlan.Agent.Or("") != plan.Agent || len(heldPlan.Bundles) != 2 || heldPlan.Bundles[1].Name != "discobox-harness-shell" || len(heldPlan.Off) != 1 {
+		t.Errorf("held plan = %+v", heldPlan)
+	}
+	if snapshots.Held[1].Plan.Set || snapshots.Held[1].SizeBytes.Set {
+		t.Errorf("a snapshot with no plan or size reported one: %+v", snapshots.Held[1])
+	}
+	if b := snapshots.Building[0]; b.Key != "k2" || !b.StartedAt.Set || b.Plan.Base != plan.Base {
+		t.Errorf("building = %+v", b)
+	}
+	if snapshots.Building[1].StartedAt.Set {
+		t.Error("a queued build reported a start")
+	}
+	if f := snapshots.Failed[0]; f.Key != "k4" || f.Error.Or("") != "feature go failed: exit status 2" || !f.RetryAfter.Equal(builtAt.Add(time.Hour)) {
+		t.Errorf("failed = %+v", f)
+	}
+
+	// A report whose listing failed carries none, which a reader tells from
+	// a pool that has none.
+	sent.Report.Snapshots = nil
+	if body, err = json.Marshal(sent); err != nil {
+		t.Fatal(err)
+	}
+	got = apimodel.ReportPoolResourcesBody{}
+	if err := got.UnmarshalJSON(body); err != nil {
+		t.Fatal(err)
+	}
+	if got.Report.Snapshots.Set {
+		t.Error("a report with no listing carried snapshots")
+	}
+}
+
+// What a sandbox started from rides each state observation in the shape the
+// control plane decodes (#339).
+func TestSandboxStateStartedFromMatchesTheGeneratedContract(t *testing.T) {
+	sent := SandboxStateRequest{
+		BootID:     "boot_1",
+		Sequence:   1,
+		ReportedAt: time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC),
+		Complete:   true,
+		States: []SandboxState{
+			{SandboxID: "sbx_a", State: "running", StartedFrom: sandboxStartedFrom(&sandboxruntime.StartedFrom{Snapshot: "k1"})},
+			{SandboxID: "sbx_b", State: "stopped", StartedFrom: sandboxStartedFrom(&sandboxruntime.StartedFrom{})},
+			{SandboxID: "sbx_c", State: "stopped", StartedFrom: sandboxStartedFrom(nil)},
+		},
+	}
+	body, err := json.Marshal(sent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got apimodel.ReportPoolSandboxStatesBody
+	if err := got.UnmarshalJSON(body); err != nil {
+		t.Fatalf("the control plane could not decode this agent's states: %v\n%s", err, body)
+	}
+	if from, ok := got.States[0].StartedFrom.Get(); !ok || from.From != "snapshot" || from.Snapshot.Or("") != "k1" {
+		t.Errorf("sbx_a started from %+v", got.States[0].StartedFrom)
+	}
+	if from, ok := got.States[1].StartedFrom.Get(); !ok || from.From != "base" || from.Snapshot.Set {
+		t.Errorf("sbx_b started from %+v", got.States[1].StartedFrom)
+	}
+	if got.States[2].StartedFrom.Set {
+		t.Errorf("sbx_c, which said nothing, started from %+v", got.States[2].StartedFrom)
 	}
 }

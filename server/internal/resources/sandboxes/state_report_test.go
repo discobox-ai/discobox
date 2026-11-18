@@ -351,3 +351,47 @@ func TestStateReportOfASandboxComingUpDeliversItsProxyRecord(t *testing.T) {
 		}
 	}
 }
+
+// What a pool made a box from is recorded from the observation that says
+// it, kept by one that does not — an older agent, or a power operation's
+// own report — and replaced when the box is made again from something else
+// (ADR 26-11-17-316 §5). A reconcile's save never carries it back.
+func TestStateReportRecordsWhatABoxStartedFrom(t *testing.T) {
+	ctx, service, st := stateReportFixture(t)
+	report := func(seq int64, from string) {
+		t.Helper()
+		var startedFrom model.RawJSON
+		if from != "" {
+			startedFrom = model.RawJSON(from)
+		}
+		if err := service.ReportSandboxStates(ctx, store.SandboxStateReportBatch{
+			PoolID: "pool-1", BootID: "boot-1", Sequence: seq, ReportedAt: time.Now().UTC(),
+			Reports: []store.SandboxStateReport{{SandboxID: "sandbox-1", State: model.SandboxRuntimeStateRunning, StartedFrom: startedFrom}},
+		}); err != nil {
+			t.Fatalf("report states: %v", err)
+		}
+	}
+	report(1, `{"from":"snapshot","snapshot":"k1"}`)
+	if got := string(loadSandbox(ctx, t, st, "sandbox-1").StartedFrom); got != `{"from":"snapshot","snapshot":"k1"}` {
+		t.Fatalf("started from %s, want the snapshot reported", got)
+	}
+	report(2, "")
+	if got := string(loadSandbox(ctx, t, st, "sandbox-1").StartedFrom); got != `{"from":"snapshot","snapshot":"k1"}` {
+		t.Fatalf("an observation that said nothing left %s, want the snapshot kept", got)
+	}
+	sandbox := loadSandbox(ctx, t, st, "sandbox-1")
+	sandbox.StartedFrom = nil
+	if err := st.UpdateSandbox(ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(loadSandbox(ctx, t, st, "sandbox-1").StartedFrom); got == "" {
+		t.Fatal("a save of the row cleared what the pool reported")
+	}
+	report(3, `{"from":"base"}`)
+	if got := string(loadSandbox(ctx, t, st, "sandbox-1").StartedFrom); got != `{"from":"base"}` {
+		t.Fatalf("a box made again from the base reads %s", got)
+	}
+	if got := loadSandbox(ctx, t, st, "sandbox-2").StartedFrom; got != nil {
+		t.Errorf("sandbox-2, never reported on, started from %s", got)
+	}
+}

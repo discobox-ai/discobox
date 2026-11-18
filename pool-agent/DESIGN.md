@@ -29,7 +29,7 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It pulls remote sources over HTTPS (ADR 26-10-23-948). See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MachineSandboxRuntime`, a machine pool's, see [Machine Sandboxes](#machine-sandboxes); `MemorySandboxRuntime` for tests). What does not depend on what a sandbox runs as is `sandboxCore`, which both real runtimes embed: the per-sandbox records in its tree, the runtime-config document and its delivery, the power lock and boot mark, the state and progress sinks, sources' settling, proxy policy staging and the credentials broker's environment (`publishCredentialEnvironment`, from the pool's file-secrets record), the Git cache and the agent layer's extraction. It asks the runtime it is embedded in, through the unexported `boxes` interface, only what that runtime alone knows: how to find, reach, wait for and rebuild a sandbox's box. `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power (a delete also taking the sandbox's audit trail from the proxy, through the `AuditPurger` `sandboxCore` holds), the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, what its own store holds of the pool's disk (`DiskUsage`), and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MachineSandboxRuntime`, a machine pool's, see [Machine Sandboxes](#machine-sandboxes); `MemorySandboxRuntime` for tests). What does not depend on what a sandbox runs as is `sandboxCore`, which both real runtimes embed: the per-sandbox records in its tree, the runtime-config document and its delivery, the power lock and boot mark, the state and progress sinks, sources' settling, proxy policy staging and the credentials broker's environment (`publishCredentialEnvironment`, from the pool's file-secrets record), the Git cache and the agent layer's extraction. It asks the runtime it is embedded in, through the unexported `boxes` interface, only what that runtime alone knows: how to find, reach, wait for and rebuild a sandbox's box. `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power (a delete also taking the sandbox's audit trail from the proxy, through the `AuditPurger` `sandboxCore` holds), the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, what its own store holds of the pool's disk (`DiskUsage`), the pool's snapshots as its resource report carries them (`Snapshots`, [Reporting](#reporting)), and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint (ADR 0031) with a sandbox's credential environment and its read of its own egress audit (ADR 26-10-02-678), route checking for every sentinel the proxy swaps (ADR 26-10-02-924), the discobox API gate (ADR 0140), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -234,6 +234,10 @@ payload — `observedAt` and `resources` — and the payload itself is still
 forwarded as received, never re-serialized from a parsed structure, so a field
 this agent does not model still reaches the control plane. The computed figures
 travel in this agent's own report, never merged into the sandbox-agent's.
+
+**The pool's snapshots ride every report** (`snapshots`, from
+`Runtime.Snapshots`): an image list and a few small records, cheap enough
+for the tick rather than the sweep ([Reporting](#reporting)).
 
 **Both loops share one poll.** The resource reporter reads the counters the
 status poller already collected (`sandboxAgentStatusPoller.ResourceSamples`)
@@ -621,6 +625,11 @@ The channel is part of `sandboxruntime.Runtime`: `Serve` subscribes with
 and stamps every batch with its boot ID and sequence. Where an observation comes
 from is the runtime's — Docker events and container listings below, a
 hypervisor for a host-VM runtime — and nothing above the interface knows.
+
+A state observation may carry what the sandbox's current container or
+machine was made from (`startedFrom`: a snapshot by key, or the base), read
+where the observation is ([Reporting](#reporting)). One that did not read it
+leaves it out, and the control plane keeps what it last heard.
 
 Provisioning **progress** rides the same channel in its own `progress` array
 (ADR 0039): work underway that has no state transition to announce it. It is
@@ -1734,8 +1743,9 @@ the snapshot is built behind it
 ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
 §8, [ADR 26-11-03-986](../docs/adr/26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md);
 `snapshot.go`, shared by both runtimes). A snapshot is only a cache: the
-control plane never knows which a box started from, and nothing fails for
-want of one. A Docker pool's snapshot is a committed image
+control plane is told what the pool holds and which a box started from
+([Reporting](#reporting)) and decides nothing from it, and nothing fails
+for want of one. A Docker pool's snapshot is a committed image
 (`snapshotdocker.go`); a machine pool's is a committed disco-vm VM, and only
 where its driver reports `Capabilities.Commit`
 ([On a machine pool](#on-a-machine-pool)).
@@ -1804,13 +1814,17 @@ flowchart LR
   ([Clearing the Pool's Caches](#clearing-the-pools-caches)). On either, a
   clear forgets the plans that failed.
 - **A plan whose build failed waits an hour** before a create asks again. Its
-  failure is kept in the pool's tree (`snapshot-failures`), not in memory, so
-  an agent that keeps restarting does not keep building.
+  failure is kept in the pool's tree (`snapshot-failures/<key>`), not in
+  memory, so an agent that keeps restarting does not keep building: a JSON
+  record of when, why (the build's error, bounded, its middle elided) and the
+  plan. A bare time, as a pool before it wrote, reads as a failure with no
+  reason and no plan.
 - **A create with no `provisionEgress`** — from a server before it — starts
   from the base and builds nothing, rather than building unrestricted.
 - **The snapshot** is tagged `discobox-snapshot:<key>` and labelled with the
   base it was built from (`snapshotBaseLabel`), the agent layer it holds
-  (`snapshotAgentLabel`) and the reclaim label (ADR 0040), so an unused one
+  (`snapshotAgentLabel`), its plan as the pool reports it
+  (`snapshotPlanLabel`) and the reclaim label (ADR 0040), so an unused one
   ages out like any Discobox image. One built on an older base is no snapshot
   of the plan. `deliveredMoved` reads a snapshot's base as its container's,
   so a moved pin still restarts a box started from one, and `placeAgent`
@@ -1829,6 +1843,35 @@ flowchart LR
   on its stdin, and the seal. What a runtime adds is its box — a
   Docker pool's container, with the bind that keeps `SnapshotDir` out of what
   is committed; a machine pool's VM — its stop, and its commit.
+
+### Reporting
+
+The pool reports its snapshots read-only ([ADR 26-11-17-316](../docs/adr/26-11-17-316-a-pool-reports-its-snapshots-and-each-box-what-it-started-from.md);
+`snapshotreport.go`), from its own records alone, never a box's word:
+
+- **What it holds, builds and failed to build** rides every resource report
+  as `snapshots` (`Runtime.Snapshots`): each held snapshot by key with its
+  plan, when it was built, its size where the pool can measure it (a Docker
+  image's; none for a committed VM), when a create last used it where the
+  pool keeps that (a machine pool's done record), and how many boxes were
+  made from it; each build asked for (`snapshotBuilds.active`: its plan,
+  when it was asked for, and when it took the build lock — none while
+  queued); each plan failed within the retry, with its error. A machine
+  snapshot dropped because a box made from it never came up is a failed
+  plan. A listing that fails leaves `snapshots` out, which reads as not
+  reported, never as none.
+- **A plan is named** (`SnapshotPlanName`) by its base, agent and bundles in
+  order and the features off — not the project, pool or egress the key also
+  holds. Every record keeps it: the Docker image's `snapshotPlanLabel`, the
+  machine done record's `plan`, the failure record's. One written before it
+  is reported by its key alone.
+- **What each box started from** rides its state observation as
+  `startedFrom`: a machine's from its record's `Snapshot`; a Docker
+  container's from the `discobox.started_from` label set at its create
+  (`base`, or `snapshot:<key>`), which every event and every sync reads off
+  the container. A container made before the label says nothing, never
+  guessed as `base`; nor does a destroy event or a power operation's own
+  report, and the control plane keeps what it last heard.
 
 ### On a machine pool
 

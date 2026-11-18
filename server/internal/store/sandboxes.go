@@ -403,6 +403,9 @@ var observedSandboxColumns = []string{
 	// over a newer one.
 	"resources",
 	"resources_observed_at",
+	// What the box was made from rides the state reports (ADR 26-11-17-316
+	// §5), and is written only by their path.
+	"started_from",
 }
 
 // sandboxMetaColumns are the control plane's copy of the sandbox's meta

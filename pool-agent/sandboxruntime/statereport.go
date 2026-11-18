@@ -56,6 +56,10 @@ type SandboxStateObservation struct {
 	SandboxID string
 	State     string
 	Error     string
+	// StartedFrom is what the sandbox's container or machine was made from,
+	// nil when this observation did not read it: the control plane keeps
+	// what it last heard (ADR 26-11-17-316 §5).
+	StartedFrom *StartedFrom
 }
 
 // SandboxStateBatch is one delivery on the channel.
@@ -292,8 +296,9 @@ func (r *DockerSandboxRuntime) publishCompleteSync(ctx context.Context, logger *
 			continue
 		}
 		states = append(states, SandboxStateObservation{
-			SandboxID: sb.SandboxID,
-			State:     stateFromStatus(sb.Status),
+			SandboxID:   sb.SandboxID,
+			State:       stateFromStatus(sb.Status),
+			StartedFrom: sb.StartedFrom,
 		})
 	}
 	batch := SandboxStateBatch{Complete: true, ReportedAt: time.Now().UTC(), States: states}
@@ -307,15 +312,21 @@ func observationFromEvent(message events.Message) (SandboxStateObservation, bool
 	if sandboxID == "" {
 		return SandboxStateObservation{}, false
 	}
+	// An event carries its container's labels, so what the container was
+	// made from rides each delta as it rides the complete sync.
+	from := startedFromLabels(message.Actor.Attributes)
 	switch message.Action {
 	case events.ActionStart, events.ActionUnPause:
-		return SandboxStateObservation{SandboxID: sandboxID, State: StateRunning}, true
+		return SandboxStateObservation{SandboxID: sandboxID, State: StateRunning, StartedFrom: from}, true
 	case events.ActionPause:
-		return SandboxStateObservation{SandboxID: sandboxID, State: StateSuspended}, true
-	case events.ActionDie, events.ActionStop, events.ActionDestroy:
+		return SandboxStateObservation{SandboxID: sandboxID, State: StateSuspended, StartedFrom: from}, true
+	case events.ActionDie, events.ActionStop:
+		return SandboxStateObservation{SandboxID: sandboxID, State: StateStopped, StartedFrom: from}, true
+	case events.ActionDestroy:
 		// A destroyed container is not running, which is all this channel
 		// claims. Whether the sandbox should still exist is the control plane's
-		// question, and its complete sync answers it by omission.
+		// question, and its complete sync answers it by omission. It made
+		// nothing, so it says nothing of what the sandbox was made from.
 		return SandboxStateObservation{SandboxID: sandboxID, State: StateStopped}, true
 	default:
 		return SandboxStateObservation{}, false

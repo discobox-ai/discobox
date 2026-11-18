@@ -344,6 +344,9 @@ func (r *MachineSandboxRuntime) sandbox(ctx context.Context, sandboxID string, i
 		CreatedAt: inst.Created,
 		Metadata:  metadata,
 		Env:       copyMap(record.Env),
+		// A machine record always says: a machine made before snapshots
+		// were is one made fresh.
+		StartedFrom: &StartedFrom{Snapshot: record.Snapshot},
 	}, nil
 }
 
@@ -1725,7 +1728,7 @@ func (r *MachineSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *
 				state := stateFromStatus(sb.Status)
 				seen[sb.SandboxID] = state
 				if complete || last[sb.SandboxID] != state {
-					batch.States = append(batch.States, SandboxStateObservation{SandboxID: sb.SandboxID, State: state})
+					batch.States = append(batch.States, SandboxStateObservation{SandboxID: sb.SandboxID, State: state, StartedFrom: sb.StartedFrom})
 				}
 			}
 			for sandboxID := range last {

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,6 +77,9 @@ type snapshotRecord struct {
 	// LastUsed is when a create last made a box from it, which the reclaim
 	// reads.
 	LastUsed time.Time `json:"lastUsed"`
+	// Plan is what it provisions, as the pool reports it; absent from a
+	// record written before it (ADR 26-11-17-316 §3).
+	Plan *SnapshotPlanName `json:"plan,omitempty"`
 }
 
 func (r *MachineSandboxRuntime) snapshotRecordsDir() string {
@@ -283,7 +287,8 @@ func (r *MachineSandboxRuntime) buildMachineSnapshot(ctx context.Context, plan s
 		return err
 	}
 	now := time.Now().UTC()
-	if err := r.writeSnapshotRecord(key, snapshotRecord{Instance: committed.ID, Built: now, LastUsed: now}); err != nil {
+	planName := plan.name()
+	if err := r.writeSnapshotRecord(key, snapshotRecord{Instance: committed.ID, Built: now, LastUsed: now, Plan: &planName}); err != nil {
 		return fmt.Errorf("record the snapshot: %w", err)
 	}
 	published = true
@@ -383,6 +388,41 @@ func (r *MachineSandboxRuntime) sweepSnapshots(ctx context.Context, logger *slog
 			logger.Warn("remove what a snapshot build left", "build", entry.Name(), "error", err)
 		}
 	}
+}
+
+// Snapshots lists the pool's done records, each with how many of its
+// sandboxes' machines were made from it, around the builds and failures
+// every runtime reports alike. A committed VM's size is not one the driver
+// says, so none is reported.
+func (r *MachineSandboxRuntime) Snapshots(ctx context.Context) (*SnapshotReport, error) {
+	records, err := r.snapshotRecords()
+	if err != nil {
+		return nil, fmt.Errorf("read the pool's snapshot records: %w", err)
+	}
+	ids, err := r.StoredSandboxIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	boxes := map[string]int64{}
+	for _, sandboxID := range ids {
+		if r.isArchived(sandboxID) {
+			continue
+		}
+		record, ok, err := r.readMachineRecord(sandboxID)
+		if err != nil {
+			return nil, err
+		}
+		if ok && record.Snapshot != "" {
+			boxes[record.Snapshot]++
+		}
+	}
+	held := make([]HeldSnapshot, 0, len(records))
+	for key, record := range records {
+		lastUsed := record.LastUsed.UTC()
+		held = append(held, HeldSnapshot{Key: key, Plan: record.Plan, BuiltAt: record.Built.UTC(), LastUsedAt: &lastUsed, Boxes: boxes[key]})
+	}
+	slices.SortFunc(held, func(a, b HeldSnapshot) int { return b.BuiltAt.Compare(a.BuiltAt) })
+	return r.snapshotReport(held)
 }
 
 // clearSnapshots drops every snapshot of the pool and forgets which plans

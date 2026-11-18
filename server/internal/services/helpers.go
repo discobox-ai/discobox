@@ -372,6 +372,9 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	if sandbox.ProvisionProgressAt != nil {
 		runtime["provisionProgressAt"] = *sandbox.ProvisionProgressAt
 	}
+	if len(sandbox.StartedFrom) > 0 {
+		runtime["startedFrom"] = sandbox.StartedFrom
+	}
 	fields := map[string]any{
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,

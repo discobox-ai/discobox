@@ -544,9 +544,10 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 					poller.sandboxStateChanged(ctx, observed.SandboxID, observed.State)
 				}
 				states = append(states, SandboxState{
-					SandboxID: observed.SandboxID,
-					State:     observed.State,
-					Error:     observed.Error,
+					SandboxID:   observed.SandboxID,
+					State:       observed.State,
+					Error:       observed.Error,
+					StartedFrom: sandboxStartedFrom(observed.StartedFrom),
 				})
 			}
 			return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
@@ -881,4 +882,16 @@ func listenProxySocket(socket string) (net.Listener, error) {
 		return nil, err
 	}
 	return listener, nil
+}
+
+// sandboxStartedFrom is the wire form of what the runtime observed.
+func sandboxStartedFrom(from *sandboxruntime.StartedFrom) *SandboxStartedFrom {
+	switch {
+	case from == nil:
+		return nil
+	case from.Snapshot == "":
+		return &SandboxStartedFrom{From: "base"}
+	default:
+		return &SandboxStartedFrom{From: "snapshot", Snapshot: from.Snapshot}
+	}
 }

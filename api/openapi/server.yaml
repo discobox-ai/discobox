@@ -1371,6 +1371,9 @@ components:
                 total:
                     $ref: '#/components/schemas/PoolTotalUsage'
                     description: What Discobox as a whole is using here, services and sandboxes together, against what is dedicated to it.
+                snapshots:
+                    $ref: '#/components/schemas/PoolSnapshots'
+                    description: The snapshots the pool holds, builds and failed to build, listed on every report. Absent from an agent that predates it, or when the pool could not list them for this report, which a reader shows as not reported; a pool that holds and builds nothing reports three empty lists.
             required:
                 - reportedAt
                 - cpu
@@ -1666,6 +1669,145 @@ components:
             required:
                 - root
                 - filesystem
+            type: object
+        PoolSnapshots:
+            additionalProperties: true
+            description: |
+                A pool's snapshots: boxes provisioned for no sandbox, kept so that a new
+                sandbox wanting the same plan starts from one instead of provisioning from
+                scratch. The pool alone decides whether to build, use, keep or drop one; the
+                control plane only shows what the pool reports here, and nothing schedules
+                on it.
+            properties:
+                held:
+                    description: The snapshots the pool would start a box from.
+                    items:
+                        $ref: '#/components/schemas/PoolSnapshot'
+                    type: array
+                building:
+                    description: The builds asked for and not ended. One with no startedAt is queued behind another build, since the pool builds one at a time.
+                    items:
+                        $ref: '#/components/schemas/PoolSnapshotBuild'
+                    type: array
+                failed:
+                    description: The plans whose last build failed recently. A new box of such a plan provisions from scratch, and no build of it is asked for until retryAfter.
+                    items:
+                        $ref: '#/components/schemas/PoolSnapshotFailure'
+                    type: array
+            required:
+                - held
+                - building
+                - failed
+            type: object
+        PoolSnapshotPlan:
+            additionalProperties: true
+            description: |
+                What a snapshot provisions, for a person to tell one snapshot's key from
+                another's. The key also covers the project, the pool and the egress policy
+                the build ran under, which this leaves out, so two plans that differ only in
+                egress read the same here under different keys.
+            properties:
+                base:
+                    description: What a build starts from - the sandbox base image's ID on a Docker pool, the driver and its configured base on a machine pool.
+                    type: string
+                agent:
+                    description: The digest of the sandbox agent bundle the snapshot holds.
+                    type: string
+                bundles:
+                    description: The bundles provisioned into it, in order - the platform's, then the harness's.
+                    items:
+                        $ref: '#/components/schemas/PoolSnapshotBundle'
+                    type: array
+                off:
+                    description: The features left off.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - base
+            type: object
+        PoolSnapshotBundle:
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                digest:
+                    type: string
+            required:
+                - name
+                - digest
+            type: object
+        PoolSnapshot:
+            additionalProperties: true
+            properties:
+                key:
+                    description: The snapshot's identity, a digest of everything it depends on. A sandbox's runtime.startedFrom names a snapshot by this key.
+                    type: string
+                plan:
+                    $ref: '#/components/schemas/PoolSnapshotPlan'
+                    description: What it provisions. Absent for a snapshot built before pools recorded it.
+                builtAt:
+                    format: date-time
+                    type: string
+                sizeBytes:
+                    description: How large it is, where the pool can measure it. A Docker snapshot shares its base image's layers, so the snapshots' sizes do not add up to the pool's image figure.
+                    format: int64
+                    type: integer
+                lastUsedAt:
+                    description: When a new box was last made from it, where the pool keeps that.
+                    format: date-time
+                    type: string
+                boxes:
+                    description: How many of the pool's boxes run a container or machine made from it now.
+                    format: int64
+                    type: integer
+            required:
+                - key
+                - builtAt
+                - boxes
+            type: object
+        PoolSnapshotBuild:
+            additionalProperties: true
+            properties:
+                key:
+                    type: string
+                plan:
+                    $ref: '#/components/schemas/PoolSnapshotPlan'
+                requestedAt:
+                    description: When a new box of the plan, finding no snapshot, asked for it.
+                    format: date-time
+                    type: string
+                startedAt:
+                    description: When the build began. Absent while it waits for another build to end.
+                    format: date-time
+                    type: string
+            required:
+                - key
+                - plan
+                - requestedAt
+            type: object
+        PoolSnapshotFailure:
+            additionalProperties: true
+            properties:
+                key:
+                    type: string
+                plan:
+                    $ref: '#/components/schemas/PoolSnapshotPlan'
+                    description: What the build was of. Absent for a failure recorded before pools recorded it.
+                failedAt:
+                    format: date-time
+                    type: string
+                retryAfter:
+                    description: When a new box of the plan may ask for the snapshot again.
+                    format: date-time
+                    type: string
+                error:
+                    description: Why it failed, as the pool composed it, bounded in length. It can end with the build's own output. Absent for a failure recorded before pools kept the reason.
+                    type: string
+            required:
+                - key
+                - failedAt
+                - retryAfter
             type: object
         SandboxCPUConsumption:
             additionalProperties: true
@@ -4922,6 +5064,8 @@ components:
                     description: When provisionProgress was observed
                     format: date-time
                     type: string
+                startedFrom:
+                    $ref: '#/components/schemas/SandboxStartedFrom'
                 desiredState:
                     description: |-
                         Requested existence. Power state is not requested: whether a sandbox is
@@ -5036,6 +5180,27 @@ components:
                 - state
                 - generation
                 - observedGeneration
+            type: object
+        SandboxStartedFrom:
+            additionalProperties: false
+            description: |-
+                What the sandbox's current container or machine was made from, as its pool
+                recorded when it made it: one of the pool's snapshots, named by the key its
+                pool's resources.snapshots.held lists it under, or the sandbox base image,
+                provisioned from scratch. A restart keeps it; a box made again reports what
+                the new one was made from. Absent while the pool has not said, as for a box
+                made before pools recorded it. It is never what the box says about itself.
+            properties:
+                from:
+                    enum:
+                        - snapshot
+                        - base
+                    type: string
+                snapshot:
+                    description: The key of the snapshot, when from is snapshot.
+                    type: string
+            required:
+                - from
             type: object
         Sandbox:
             additionalProperties: false
@@ -6848,9 +7013,31 @@ components:
                         - stopped
                         - suspended
                     type: string
+                startedFrom:
+                    $ref: '#/components/schemas/PoolSandboxStartedFrom'
             required:
                 - sandboxId
                 - state
+            type: object
+        PoolSandboxStartedFrom:
+            additionalProperties: false
+            description: |-
+                What the sandbox's current container or machine was made from, as the pool
+                recorded when it made it. It is the agent-facing twin of SandboxStartedFrom.
+                Absent when the pool cannot say: a container made before pools recorded it,
+                or an observation that did not read the record. Absence changes nothing the
+                control plane holds.
+            properties:
+                from:
+                    enum:
+                        - snapshot
+                        - base
+                    type: string
+                snapshot:
+                    description: The key of the snapshot it was made from, when from is snapshot.
+                    type: string
+            required:
+                - from
             type: object
         SandboxInventoryEntry:
             additionalProperties: false

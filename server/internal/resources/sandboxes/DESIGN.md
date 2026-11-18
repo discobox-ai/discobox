@@ -631,8 +631,9 @@ reads as not yet reported until its pool reports it (ADR 26-10-29-316).
 
 The rule is enforced in the store, not by convention: `Store.UpdateSandbox`
 omits `observedSandboxColumns` from every write. Those are the runtime state,
-its anchor, the report watermark, provisioning progress, and resource
-accounting. Without that rule, any caller that loads a sandbox, performs a slow
+its anchor, the report watermark, provisioning progress, resource
+accounting, and what the box was made from (`started_from`, ADR 26-11-17-316
+§5). Without that rule, any caller that loads a sandbox, performs a slow
 operation, and saves it back replays a stale observation. A reconcile saving
 across a slow `provider.Create`, for example, would push a sandbox observed
 `running` back to its pre-create value until the next 60s complete sync.
