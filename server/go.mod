@@ -455,7 +455,9 @@ replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v
 // It also deletes a machine's state handle in its -dealloc rather than its Go
 // finalizer, so a state change the framework delivers after the wrapper was
 // collected does not panic (#1114, discobox-ai/vz#1; `task test:vz-teardown`).
-replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20261114085742-69bde4a48a94
+// And it carries ConnectContext, a dial that ends with its context where
+// Connect waits on the framework alone (#1336, discobox-ai/vz#2).
+replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20261118003130-15c923a99801
 
 // goproxy drops the bytes a client sends in the same write as an upgrade
 // request, hanging both ends, and finalizes a response whose upstream body
