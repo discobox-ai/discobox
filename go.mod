@@ -14,6 +14,7 @@ require (
 	github.com/elazarl/goproxy v1.9.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
+	github.com/hashicorp/yamux v0.1.2
 	github.com/mdlayher/vsock v1.3.0
 	github.com/ogen-go/ogen v1.20.3
 	github.com/tc-hib/winres v0.3.1
