@@ -54,6 +54,11 @@
   for every proxied request and every poll of an attached console (#1335).
   wslc is the exception: its dials are streams on one multiplexed relay
   session, so a per-lease transport opens no new guest connection.
+- An error a pool-agent dial returns, including one the keep-alive client
+  makes up (`dockerworker.PoolAgentClient` failing a dial a `Close` overlapped),
+  must be one `poolruntime`'s `poolAgentUnanswered` reads as unanswered (a dial
+  `*net.OpError`, or a reset or refusal). Anything else settles a create as
+  failed instead of waiting out a rebooting guest (#1355).
 - A pool container whose healthcheck is still `starting` is not a failed
   reconcile. Report it as `sandbox.ErrPoolNotReachable` and let the pool
   reconciler come back: a failure on a pool with sandboxes assigned repairs it,
