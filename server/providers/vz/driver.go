@@ -258,36 +258,18 @@ func (d *Driver) syncGuestClock(ctx context.Context, poolID string) error {
 	// pool-agent HTTP request, Docker exec needs no PASETO token. Read the
 	// host-backed RTC inside the exec so Docker startup delays cannot make the
 	// timestamp stale before the guest steps its clock.
-	exec, err := lease.Client.ExecCreate(ctx, dockerworker.ContainerName(poolID), dockerclient.ExecCreateOptions{
+	code, err := dockerworker.ExecExitCode(ctx, lease.Client, dockerworker.ContainerName(poolID), dockerclient.ExecCreateOptions{
 		User: "0", Privileged: true,
 		Cmd: []string{"/bin/sh", "-ec", `exec /bin/date -u -s "@$(cat /sys/class/rtc/rtc0/since_epoch)"`},
 	})
 	if err != nil {
-		return fmt.Errorf("create guest clock step: %w", err)
+		return fmt.Errorf("guest clock step: %w", err)
 	}
-	if _, err := lease.Client.ExecStart(ctx, exec.ID, dockerclient.ExecStartOptions{Detach: true}); err != nil {
-		return fmt.Errorf("start guest clock step: %w", err)
+	if code != 0 {
+		return fmt.Errorf("guest clock step exited with code %d", code)
 	}
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		result, err := lease.Client.ExecInspect(ctx, exec.ID, dockerclient.ExecInspectOptions{})
-		if err != nil {
-			return fmt.Errorf("inspect guest clock step: %w", err)
-		}
-		if !result.Running {
-			if result.ExitCode != 0 {
-				return fmt.Errorf("guest clock step exited with code %d", result.ExitCode)
-			}
-			slog.Info("synced vz guest clock after macOS wake", "pool_id", poolID)
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
+	slog.Info("synced vz guest clock after macOS wake", "pool_id", poolID)
+	return nil
 }
 
 func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {

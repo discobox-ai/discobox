@@ -653,9 +653,11 @@ func TestShouldRemoveExistingContainerDetectsDrift(t *testing.T) {
 	if shouldRemoveExistingContainer(existing, "worker-image", desired) {
 		t.Fatalf("shouldRemoveExistingContainer = true, want false for matching config")
 	}
+	// Stopped is not drift: whether a stopped container is started or rebuilt
+	// is ensurePoolContainer's to decide (ADR 26-11-17-503 §1).
 	existing.State.Running = false
-	if !shouldRemoveExistingContainer(existing, "worker-image", desired) {
-		t.Fatalf("shouldRemoveExistingContainer = false, want true for stopped container")
+	if shouldRemoveExistingContainer(existing, "worker-image", desired) {
+		t.Fatalf("shouldRemoveExistingContainer = true, want false for a stopped container that has not drifted")
 	}
 }
 

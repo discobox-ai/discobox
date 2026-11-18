@@ -233,8 +233,9 @@ starting and its pool settling went. A pool provider times one reconcile pass
 with `poolruntime.HostSteps`, and each step it ends is logged with the pool,
 its own `duration` and the pass's `elapsed` time. The Docker engine's steps are
 VM stopped to replace it (a repair), VM running, Docker ready, image ready,
-container kept / removed / started, box provisioned (or provisioned in place),
-agent restarted, and container healthy or still starting. discovm's are
+container kept / removed / started, a stopped container started in place and
+its agent up, box provisioned (or provisioned in place), agent restarted, and
+container healthy or still starting. discovm's are
 machine stopped to restart it (a repair), machine made or started, machine
 reached, box current or provisioned, and agent restarted.
 
@@ -242,7 +243,7 @@ The drift scan walks the same steps every minute, so they log at info only
 once the pass says it brings the host up (`BringingUp`): the engine says so
 when `EnsureVM` started the VM (`VMInfo.Started`), when the daemon did not
 answer its first ping (a driver that cannot tell it started the VM), or when
-it makes or replaces the container or applies moved bundles; discovm when it
+it makes, starts or replaces the container or applies moved bundles; discovm when it
 makes or starts the machine or provisions it. A repair always does. Steps before that are held
 and logged with it, and a pass that never says so logs its steps at debug.
 After the host's steps, `poolruntime.Provider` syncs the agent's known pools,
@@ -526,6 +527,24 @@ reclaims a managed pool container that no longer has a pool row. A daemon that
 answers and still refuses the removal is reporting something a retry can fix,
 and that error keeps driving the reconcile.
 
+A pool container that is stopped but has not drifted (same image and
+labels) is started in place, not rebuilt
+([ADR 26-11-17-503](../../docs/adr/26-11-17-503-a-stopped-pool-container-that-has-not-drifted-is-started-in-place.md)):
+a VM that stops with the server (`libkrun`, `vz`, `wslc`) comes back with its
+pool container stopped, as does a Docker pool whose daemon restarted. The
+start closes placement, marks the pool started, records a box start, starts
+the container and waits for its agent, then carries on as for a running box:
+only moved bundles or a moved placement are applied, and nothing is
+re-enrolled. The wait is the container's healthcheck when it has one (an agent
+listening on IP); without one (VSOCK on `libkrun` and `vz`) it is the agent's
+unit reading `active` (`Type=notify`: the agent has said it is ready), for up
+to a minute. It is rebuilt instead when it is not the container the runtime
+state names, has no box recorded as provisioned in it, is `dead` or
+`removing`, or the pass is a repair; and in the same pass when Docker refuses
+the start, or the container ends the wait stopped, `unhealthy`, or with its
+agent's unit not active. A healthcheck still `starting` at the bound is
+`sandbox.ErrPoolNotReachable`, as for a running container.
+
 `RepairPool` is the recovery hook for pools whose runtime is known to be
 unhealthy, including a runtime whose agent never registered within the
 registration timeout. The engine replaces the container and replaces the VM
@@ -730,8 +749,8 @@ effort to reconcile it back to health instead of abandoning it.
 - Every place a provider makes or starts a pool's box, or may restart the
   agent in a running one, reports when with `sandbox.ReportAgentStarted`, as
   soon as it does, so the upgrade watch counts the new agent's first report:
-  a box start (`AgentStartBox`) just before a Docker pool's new container
-  starts, or a VM pool's machine is created or started (ADR 26-11-15-294
+  a box start (`AgentStartBox`) just before a Docker pool's new or stopped
+  container starts, or a VM pool's machine is created or started (ADR 26-11-15-294
   §1); an in-place start (`AgentStartInPlace`) once placement is closed and
   before the apply that may restart the running agent, on a Docker pool's
   running container and on any machine the pass did not create

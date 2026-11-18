@@ -29,6 +29,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
@@ -344,13 +345,13 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, box, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, false, begin, steps)
+	inst, box, started, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, false, begin, steps)
 	if err != nil {
 		return err
 	}
 	e.reclaimImagesForPool(ctx, lease.Client, pool.ID)
 	observePoolOutbound(ctx, lease.Client, inst.ID, pool, previousOutboundRevision)
-	return e.recordPoolRuntime(pool, vmInfo, inst, box, recreated)
+	return e.recordPoolRuntime(pool, vmInfo, inst, box, started)
 }
 
 func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, _ string, begin func(context.Context) error) (resultErr error) {
@@ -516,7 +517,7 @@ func (e *Engine) AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (
 	return lease, err
 }
 
-func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, box poolruntime.BoxRecord, recreated bool) error {
+func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, box poolruntime.BoxRecord, started bool) error {
 	instanceID := ""
 	if vmInfo != nil {
 		instanceID = vmInfo.ID
@@ -526,11 +527,8 @@ func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *conta
 		return err
 	}
 	pool.RuntimeState = state
-	if recreated {
-		pool.Ready = false
-		pool.Schedulable = false
-		pool.Degraded = false
-		pool.SetState(model.PoolStateRegistering)
+	if started {
+		markPoolStarted(pool)
 	}
 	return nil
 }
@@ -616,11 +614,13 @@ func (e *Engine) pingDocker(ctx context.Context, poolID string, deadline time.Ti
 	return lease, nil
 }
 
-// ensurePoolContainer creates or drift-corrects the pool's container on the
-// given Docker daemon, provisions it as a pool's box when it is new or its
-// bundles have moved since (ADR 26-10-24-953 §§2, 5), and waits for it to be
-// ready. It reports what it placed, and whether the container was
-// (re)created, and logs each step to steps.
+// ensurePoolContainer creates, starts or drift-corrects the pool's container
+// on the given Docker daemon, provisions it as a pool's box when it is new or
+// its bundles have moved since (ADR 26-10-24-953 §§2, 5), and waits for it to
+// be ready. A stopped container that has not drifted is started in place
+// rather than made again (ADR 26-11-17-503). It reports what it placed, and
+// whether the box was made or started, so that its agent has not reported
+// since, and logs each step to steps.
 //
 // A box is enrolled each time it is provisioned: its key is made in it on
 // first ask, and the same one answered after, so enrolling again changes
@@ -653,7 +653,26 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		// be pulled, and left alone until then. Comparing against the
 		// configured image would remove and recreate it on every reconcile for
 		// as long as the registry stayed unreachable.
-		if forceRecreate || shouldRemoveExistingContainer(existing.Container, image, labels) {
+		rebuild := forceRecreate || shouldRemoveExistingContainer(existing.Container, image, labels)
+		started := false
+		if !rebuild && !containerRunning(existing.Container) {
+			// A stopped container that has not drifted boots from its own disk
+			// rather than being made and provisioned again (ADR 26-11-17-503).
+			if why := stoppedContainerRebuildReason(existing.Container, pool); why != "" {
+				slog.InfoContext(ctx, "rebuilding the pool's stopped container", "pool", pool.ID, "container", shortContainerID(existing.Container.ID), "reason", why)
+				rebuild = true
+			} else if err := e.startPoolContainer(ctx, cli, existing.Container, pool, begin, steps); err != nil {
+				var failed *poolStartError
+				if !errors.As(err, &failed) {
+					return nil, recorded, false, err
+				}
+				slog.WarnContext(ctx, "the pool's stopped container did not start; rebuilding it", "pool", pool.ID, "container", shortContainerID(existing.Container.ID), "error", failed.err)
+				rebuild = true
+			} else {
+				started = true
+			}
+		}
+		if rebuild {
 			// What the new box is made of is resolved before the old one is
 			// removed: a release that cannot be resolved right now leaves a
 			// working pool running, rather than taking it down and then
@@ -676,7 +695,11 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 			}
 			return inst, record, true, nil
 		}
-		steps.Step(ctx, "kept the pool's container", "container", shortContainerID(existing.Container.ID))
+		if !started {
+			steps.Step(ctx, "kept the pool's container", "container", shortContainerID(existing.Container.ID))
+		}
+		// A started box is a running one from here: only what moved since it
+		// was provisioned is applied (ADR 26-11-17-503 §2.6).
 		recorded, err = e.applyMovedPoolBundles(ctx, cli, existing.Container.ID, pool, maker, recorded, begin, steps)
 		if err != nil {
 			return nil, recorded, false, err
@@ -696,9 +719,9 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 			// container restarts for ordinary reasons — a Docker restart,
 			// a development image rebuild — and something is usually
 			// waiting on it when it does.
-			return inst, recorded, false, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
+			return inst, recorded, started, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
 		}
-		return inst, recorded, false, err
+		return inst, recorded, started, err
 	}
 
 	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
@@ -710,6 +733,221 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		return nil, recorded, false, err
 	}
 	return inst, record, true, nil
+}
+
+// poolStartError is a stopped pool container's start that failed in a way a
+// rebuild mends: Docker refused the start, or the container did not come up
+// with its agent (ADR 26-11-17-503 §4).
+type poolStartError struct{ err error }
+
+func (e *poolStartError) Error() string { return e.err.Error() }
+func (e *poolStartError) Unwrap() error { return e.err }
+
+// stoppedContainerRebuildReason says why a stopped pool container that has
+// not drifted is rebuilt rather than started, or nothing when it is started
+// (ADR 26-11-17-503 §1): it must be the container the pool's runtime state
+// names, with a box recorded as provisioned in it, and stopped, not dead.
+func stoppedContainerRebuildReason(existing container.InspectResponse, pool *model.Pool) string {
+	state, err := DecodeRuntimeState(pool.RuntimeState)
+	switch {
+	case err != nil || state.ContainerID != existing.ID:
+		return "it is not the container the pool's runtime state names"
+	case state.Box.Agent == "":
+		return "no box is recorded as provisioned in it"
+	case existing.State == nil:
+		return "it has no runtime state"
+	}
+	switch existing.State.Status {
+	case container.StateExited, container.StateCreated:
+		return ""
+	default:
+		return fmt.Sprintf("it is %s", existing.State.Status)
+	}
+}
+
+// startPoolContainer starts a pool's stopped container in place, and waits for
+// its agent: its box boots what it last provisioned from its own disk, and
+// systemd starts the agent (ADR 26-11-17-503 §2). Placement is closed and the
+// pool marked started first, and the box's start is recorded just before
+// Docker starts it.
+//
+// A start that fails in a way a rebuild mends is a *poolStartError; the
+// caller rebuilds the container in the same pass. A healthcheck still starting
+// when the wait runs out is sandbox.ErrPoolNotReachable. Any other error is
+// begin's or the pass's own context's.
+func (e *Engine) startPoolContainer(ctx context.Context, cli *client.Client, existing container.InspectResponse, pool *model.Pool, begin func(context.Context) error, steps *poolruntime.HostSteps) error {
+	steps.BringingUp(ctx)
+	// begin closes placement: its write of the pool row stores the
+	// registering state, which is what refuses work from here.
+	if err := begin(ctx); err != nil {
+		return err
+	}
+	markPoolStarted(pool)
+	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	// No agent runs in a stopped container, so the pool's agent counts as
+	// started from just before it starts (ADR 26-11-15-294 §1).
+	sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartBox)
+	_, err := cli.ContainerStart(ctx, existing.ID, client.ContainerStartOptions{})
+	releaseStart()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return &poolStartError{err: err}
+	}
+	steps.Step(ctx, "started the pool's stopped container in place", "container", shortContainerID(existing.ID))
+	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
+	defer releaseAgent()
+	// Every attempt of the wait is bounded, not only the pauses between
+	// them: the pass's context never ends, and a guest whose Docker accepts
+	// a connection and never answers would hold it for ever.
+	waitCtx, cancel := context.WithTimeout(ctx, agentStartTimeout)
+	defer cancel()
+	if declaresHealthcheck(existing) {
+		// The healthcheck the container was created with probes the agent
+		// itself, and its start period and retries turn a box whose agent
+		// never answers unhealthy well within the bound; the wait returns
+		// once it is no longer starting.
+		_, err = e.waitContainerReady(waitCtx, cli, existing.ID, true)
+	} else {
+		// With no healthcheck (an agent listening on no IP: VSOCK on libkrun
+		// and vz), a running container says only that systemd is up.
+		err = e.waitPoolAgentActive(waitCtx, cli, existing.ID)
+	}
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if waitCtx.Err() != nil {
+			// A healthcheck still starting at the bound is a host on its way
+			// up, as for a running container, and the pass is asked again
+			// rather than rebuilding it (ADR 26-11-17-503 §4).
+			lookCtx, cancelLook := context.WithTimeout(ctx, startedContainerLookTimeout)
+			inspect, inspectErr := cli.ContainerInspect(lookCtx, existing.ID, client.ContainerInspectOptions{})
+			cancelLook()
+			if inspectErr == nil && containerHealthStarting(inspect.Container) {
+				return fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, containerReadyError(inspect.Container))
+			}
+			err = fmt.Errorf("its agent did not come up within %s: %w", agentStartTimeout, err)
+		}
+		return &poolStartError{err: err}
+	}
+	steps.Step(ctx, "the started pool container's agent is up")
+	return nil
+}
+
+// startedContainerLookTimeout bounds the one look at a started container once
+// its agent's wait has run out, to tell a healthcheck still starting from one
+// that failed.
+const startedContainerLookTimeout = 5 * time.Second
+
+// agentStartTimeout bounds the wait for a started box's agent (ADR
+// 26-11-17-503 §4): a start that has not brought its agent up by then is
+// rebuilt in the same pass. It outlasts the healthcheck's own start period and
+// retries, so that a box with a healthcheck is judged by it.
+const agentStartTimeout = time.Minute
+
+// waitPoolAgentActive waits, until ctx ends, for the box's agent unit to be
+// active. The unit is Type=notify, so active is the agent having written what
+// its proxy and builder read and said it is ready. An agent that fails is
+// restarted by its unit for ever and reads activating, so only ctx, or the
+// container stopping, ends a wait for one that never comes up.
+func (e *Engine) waitPoolAgentActive(ctx context.Context, cli *client.Client, id string) error {
+	// What the last attempt the deadline did not cut off found: an attempt
+	// that ends on the deadline says nothing about the agent.
+	last := "not asked yet"
+	notActive := func() error {
+		return fmt.Errorf("%s is not active (%s): %w", bundle.AgentUnit, last, ctx.Err())
+	}
+	for {
+		code, err := ExecExitCode(ctx, cli, id, client.ExecCreateOptions{Cmd: []string{"systemctl", "is-active", "--quiet", bundle.AgentUnit}})
+		if ctx.Err() != nil {
+			return notActive()
+		}
+		if err == nil && code == 0 {
+			return nil
+		}
+		if err != nil {
+			last = err.Error()
+		} else {
+			last = fmt.Sprintf("systemctl is-active exited %d", code)
+		}
+		inspect, inspectErr := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+		if ctx.Err() != nil {
+			return notActive()
+		}
+		if inspectErr != nil {
+			return mapDockerNotFound(inspectErr)
+		}
+		if !containerRunning(inspect.Container) {
+			return fmt.Errorf("%w%s", containerReadyError(inspect.Container), containerLogSuffix(ctx, cli, id))
+		}
+		timer := time.NewTimer(healthPollDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return notActive()
+		case <-timer.C:
+		}
+	}
+}
+
+// ExecExitCode runs an exec in the container detached and reads its exit code
+// from the daemon, for a command whose output nobody reads. Every step is a
+// plain request bounded by ctx: an attached exec reads its upgrade over a
+// hijacked connection that ignores ctx once dialed (#1361), and a guest that
+// accepts the connection and never answers would hold the caller for ever.
+func ExecExitCode(ctx context.Context, cli *client.Client, id string, options client.ExecCreateOptions) (int, error) {
+	created, err := cli.ExecCreate(ctx, id, options)
+	if err != nil {
+		return -1, err
+	}
+	if _, err := cli.ExecStart(ctx, created.ID, client.ExecStartOptions{Detach: true}); err != nil {
+		return -1, err
+	}
+	for {
+		result, err := cli.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
+		if err != nil {
+			return -1, err
+		}
+		if !result.Running {
+			return result.ExitCode, nil
+		}
+		timer := time.NewTimer(execExitPollDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return -1, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+// execExitPollDelay is how often ExecExitCode asks whether a short command
+// has exited.
+const execExitPollDelay = 20 * time.Millisecond
+
+// markPoolStarted is a pool whose box was just made or started: its agent has
+// not reported since.
+func markPoolStarted(pool *model.Pool) {
+	pool.Ready = false
+	pool.Schedulable = false
+	pool.Degraded = false
+	pool.SetState(model.PoolStateRegistering)
+}
+
+// declaresHealthcheck reports whether a container was created with a
+// healthcheck of its own, rather than none or "NONE".
+func declaresHealthcheck(inspect container.InspectResponse) bool {
+	if inspect.Config == nil || inspect.Config.Healthcheck == nil {
+		return false
+	}
+	test := inspect.Config.Healthcheck.Test
+	return len(test) > 0 && test[0] != "NONE"
+}
+
+func containerRunning(inspect container.InspectResponse) bool {
+	return inspect.State != nil && inspect.State.Running
 }
 
 // applyMovedPoolBundles applies a pool's moved bundles, or its moved
@@ -1125,9 +1363,6 @@ func shouldRemoveExistingContainer(existing container.InspectResponse, desiredIm
 		if existing.Config.Labels[key] != value {
 			return true
 		}
-	}
-	if existing.State != nil && !existing.State.Running {
-		return true
 	}
 	return false
 }
