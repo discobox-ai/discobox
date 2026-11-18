@@ -1,7 +1,8 @@
 # 26-11-17-675 — The CLI ships a skill for the agent on the user's machine, and installs it when asked
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-17
+- Accepted by the owner by merging #1338, 2026-11-18
 - **Relates to**: [0125](0125-tools-are-declared-in-files-the-way-services-are.md),
   [26-11-03-982](26-11-03-982-a-host-tool-is-handed-the-cli-server-and-project-to-set-the-discobox-up.md),
   [26-10-09-395](26-10-09-395-a-sandbox-may-be-created-with-skills.md),
