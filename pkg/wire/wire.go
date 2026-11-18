@@ -181,7 +181,7 @@ func (e Endpoint) DialContext() (func(context.Context, string, string) (net.Conn
 			if err != nil {
 				return nil, err
 			}
-			return vsock.FrameDialed(conn)
+			return vsock.FrameDialed(conn, nil)
 		}, nil
 	case "unix":
 		dialer := &net.Dialer{}
