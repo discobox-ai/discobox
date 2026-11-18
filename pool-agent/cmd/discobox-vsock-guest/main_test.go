@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -60,7 +61,14 @@ func TestDockerProxyServesFramedConnectionsWhenTheKernelAsks(t *testing.T) {
 	defer cancel()
 
 	// The Docker socket stand-in echoes a line back.
-	socket := filepath.Join(t.TempDir(), "docker.sock")
+	// A short directory: t.TempDir() carries the test's name, which takes a
+	// Unix socket's path past its limit on CI's runners.
+	dir, err := os.MkdirTemp("", "vg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "d.sock")
 	docker, err := (&net.ListenConfig{}).Listen(ctx, "unix", socket)
 	if err != nil {
 		t.Fatal(err)
