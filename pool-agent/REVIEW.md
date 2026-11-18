@@ -757,3 +757,10 @@ copies.
 - **The proxy control client has one construction.** `RunAgent` builds it
   for the runtime's purge and the relay alike; a second construction with its
   own policy for an unreadable key once made the documented one unreachable.
+- **A splice that ends a direction with `CloseWrite` needs a full close for a
+  connection without one.** A framed vz VSOCK connection (`pkg/vsock`'s
+  `FrameListener`/`FrameDialed`) has no `CloseWrite` by design, so a copy that
+  only half-closes when it finds the method tells the other side nothing: the
+  peer never reads EOF, and the splice holds its goroutines and the far
+  connection until the peer writes or closes. `discobox-vsock-guest`'s Docker
+  proxy did exactly that when its listener was first framed.

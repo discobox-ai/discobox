@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
 )
 
 func TestLifecycleAcceptsShutdown(t *testing.T) {
@@ -47,5 +52,72 @@ func TestLifecycleAcceptsShutdown(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("serve lifecycle: %v", err)
+	}
+}
+
+func TestDockerProxyServesFramedConnectionsWhenTheKernelAsks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The Docker socket stand-in echoes a line back.
+	socket := filepath.Join(t.TempDir(), "docker.sock")
+	docker, err := (&net.ListenConfig{}).Listen(ctx, "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer docker.Close()
+	go func() {
+		for {
+			conn, err := docker.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				line, _ := bufio.NewReader(conn).ReadString('\n')
+				_, _ = io.WriteString(conn, line)
+			}()
+		}
+	}()
+
+	for _, tc := range []struct {
+		name    string
+		cmdline string
+		framed  bool
+	}{
+		{"framed", "console=hvc0 root=/dev/vda ro " + guestvsock.FramingKernelParameter + " panic=5", true},
+		{"plain", "console=hvc0 root=/dev/vda ro panic=5", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inner, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			listener := frameIfAsked(inner, tc.cmdline)
+			defer listener.Close()
+			go func() { _ = serveUnixProxy(ctx, listener, socket) }()
+
+			conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", inner.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.framed {
+				if conn, err = guestvsock.FrameDialed(conn); err != nil {
+					t.Fatal(err)
+				}
+			}
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			if _, err := io.WriteString(conn, "ping\n"); err != nil {
+				t.Fatal(err)
+			}
+			// The stand-in closes its side once it has answered, as dockerd
+			// does when an attached container exits: the host reads the
+			// answer and then EOF, never a connection left hanging.
+			got, err := io.ReadAll(conn)
+			if err != nil || string(got) != "ping\n" {
+				t.Fatalf("read to EOF = %q, %v; want %q then EOF", got, err, "ping\n")
+			}
+		})
 	}
 }
