@@ -710,14 +710,16 @@ has the server open connections into the guest instead;
 listener. Every connection on it is a pool's (`carrierhub.Conn`), and the
 auth chain holds each request on it to that pool's routes.
 
-`task dev` opts into nothing. It binds the local socket every other server
-binds, plus `iroh://` (unless `DISCOBOX_DEV_IROH=0`), which every build
+`task dev` opts into no other API transport. It binds the local socket every
+other server binds, plus `iroh://` (unless `DISCOBOX_DEV_IROH=0`), which every build
 carries (ADR 0067), so `discobox`
 reaches a development server with no `--server` and the dev loop runs exactly
 the transports users get. A tool that needs a URL asks for one in
 `DISCOBOX_SERVER_LISTEN` — from the
 environment, not from the env file, which godotenv loads and which does not
-replace a variable already set.
+replace a variable already set. Its one TCP listener is the token-guarded
+loopback pprof listener ([Runtime Observability](#runtime-observability)),
+which serves no API.
 
 `config.LoadEnvFile` reads `.discobox-server.env`, or the file
 `DISCOBOX_ENV_FILE` names, before `config.Load` reads the environment. The name
@@ -856,6 +858,23 @@ All HTTP traffic is wrapped with OpenTelemetry HTTP instrumentation, which
 records into whatever meter provider is installed. Local Discobot development
 services may provide an OTLP receiver/dashboard, but telemetry must remain
 optional so normal server startup does not require an observability backend.
+
+Go's pprof endpoints are opt-in through `pprofListen`
+(`DISCOBOX_PPROF_LISTEN`): a loopback `host:port`, validated at load, with
+wildcard and other addresses refused, and `off` or empty opening nothing. `Run`
+binds it after the singleton lock, on its own `http.Server` and mux, never on
+the API router or `listenAll`, so no API transport reaches it. Loopback is not
+enough on its own: Docker Desktop forwards `host.docker.internal` to the host's
+`127.0.0.1`, where a sandbox's request through its pool proxy lands. So every
+request also needs the token `Run` writes on each start to `pprofTokenFile`
+(default `<stateDir>/pprof.token`; 0600, removed on stop) as its basic-auth
+password. A bind failure fails startup. `task dev` serves it at
+`127.0.0.1:18060` with the token in `.tmp/pprof.token`, and `task dev:pprof`
+fetches a profile with curl, the token on stdin rather than in an argument any
+local user can read, and opens it in `go tool pprof`. Outside the dev loop,
+set `pprofListen` in `server.yaml`: the environment variable does not reach a
+server the CLI launches as a systemd user unit, which takes only the variables
+the CLI forwards.
 
 ## Intent and Reconcile Flow
 

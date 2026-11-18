@@ -55,3 +55,12 @@
   own, which are answers to hand on at once; the first cut of the attach
   retry held those for 30 seconds, and retried a token that could not be
   minted, which is no connection's failure.
+- A listener bound to loopback is still reachable from a sandbox, so one that
+  serves anything secret needs its own credential as well. Why: Docker
+  Desktop forwards `host.docker.internal` to the host's `127.0.0.1`, and the
+  pool proxy refuses only destinations that resolve to loopback, so a Docker
+  Desktop pool's sandbox reaches the host's loopback ports through it
+  (`hostGatewayURL` relies on the same forwarding). The pprof listener's first
+  draft trusted loopback alone, which handed a sandbox the server's command
+  line, every goroutine's stack, and profiles and traces long enough to stall
+  it.

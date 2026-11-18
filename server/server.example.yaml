@@ -81,6 +81,27 @@
 # Environment: DISCOBOX_SERVER_LISTEN
 #listen:
 
+# Loopback host:port to serve Go's pprof profiling endpoints on, under
+# /debug/pprof/: CPU, heap, goroutine and execution trace. They get a
+# listener of their own, which no API transport (local IPC, HTTP, iroh, a
+# pool's connection) reaches. The host must be a loopback address or
+# localhost; a wildcard or any other address is refused. Every request
+# must send the token in pprofTokenFile as its basic-auth password,
+# because loopback alone is reachable from a Docker Desktop pool's
+# sandbox, and a profile shows the server's command line and every
+# goroutine's stack, and a long one stalls it. Empty or off opens none,
+# which is the default.
+# Example: pprofListen: 127.0.0.1:18060
+# Environment: DISCOBOX_PPROF_LISTEN
+#pprofListen:
+
+# Where the server writes the token its pprofListen endpoints require,
+# new on each start, readable only by the server's user, and removed when
+# it stops. Defaults to <stateDir>/pprof.token.
+# Example: pprofTokenFile: /var/lib/discobox/state/pprof.token
+# Environment: DISCOBOX_PPROF_TOKEN_FILE
+#pprofTokenFile:
+
 # What this server calls itself: the name a client registering it is
 # offered. Defaults to this machine's hostname.
 # Example: name: build-server

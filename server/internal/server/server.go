@@ -80,6 +80,13 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	defer releaseSingleton()
+	// After the lock, so an incumbent on this data directory has let go of the
+	// same address; before the slow work, so startup itself can be profiled.
+	_, stopPprof, err := startPprof(ctx, cfg.PprofListen, cfg.PprofTokenFile)
+	if err != nil {
+		return err
+	}
+	defer stopPprof()
 	shutdownTelemetry, err := initTelemetry(ctx, TelemetryOptions{
 		MetricsEnabled:       cfg.OTelMetricsEnabled,
 		MetricExportInterval: cfg.OTelMetricExportInterval,
