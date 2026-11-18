@@ -1,7 +1,8 @@
 # 26-11-18-245 — Credential requests bound bytes and routes
 
-- **Status**: Proposed (would supersede the policy-count limit in [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §2)
+- **Status**: Accepted (supersedes the policy-count limit in [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §2)
 - **Date**: 2026-11-18
+- Accepted by the owner by merging #1371, 2026-11-18.
 - **Issue**: [#1370](https://github.com/discobox-ai/discobox/issues/1370)
 
 ## Context
