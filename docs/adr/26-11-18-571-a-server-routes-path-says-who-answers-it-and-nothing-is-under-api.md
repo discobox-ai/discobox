@@ -1,7 +1,8 @@
 # 26-11-18-571 — A server route's path says who answers it, and nothing is under `/api`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-18
+- Accepted by the owner by merging #1354, 2026-11-18
 - **Relates to**: issue #1353; #1351 (`discobox admin api serve`, where a
   forwarded route reads `/v1/servers/NAME/api/api/projects/...`);
   [ADR 0118](0118-whoever-serves-an-api-is-strict-and-whoever-reads-it-is-tolerant.md)
