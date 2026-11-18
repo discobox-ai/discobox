@@ -1,0 +1,47 @@
+{
+  "claude-code": {
+    "settings": ".claude/settings.json",
+    "login": ".claude.json",
+    "document": {"primaryApiKey": "fixture-claude-key"}
+  },
+  "codex": {
+    "settings": ".codex/config.toml",
+    "login": ".codex/auth.json",
+    "document": {"OPENAI_API_KEY": "fixture-codex-parent-key"}
+  },
+  "fixture-child": {
+    "settings": ".codex/config.toml",
+    "login": ".codex/auth.json",
+    "document": {"OPENAI_API_KEY": "fixture-codex-child-key"}
+  },
+  "copilot": {
+    "settings": ".copilot/settings.json",
+    "login": ".copilot/config.json",
+    "document": {
+      "lastLoggedInUser": {"host": "https://github.com", "login": "fixture"},
+      "authTokens": {"https://github.com:fixture": {"token": "fixture-copilot-key"}}
+    }
+  },
+  "omp": {
+    "settings": ".omp/agent/config.yml",
+    "export": ["omp", "auth", "export"],
+    "document": {
+      "version": 1,
+      "credentials": [{"provider": "anthropic", "credential": {"type": "api_key", "key": "fixture-omp-key"}}]
+    }
+  },
+  "opencode": {
+    "settings": ".config/opencode/opencode.json",
+    "import": ["opencode", "auth", "import", "--standalone"],
+    "export": ["opencode", "auth", "export", "--standalone"],
+    "document": [
+      {"id": "fixture-opencode", "integrationID": "openai", "active": true, "value": {"type": "key", "key": "fixture-opencode-key"}}
+    ]
+  },
+  "pi": {
+    "settings": ".pi/agent/settings.json",
+    "login": ".pi/agent/auth.json",
+    "document": {"anthropic": {"type": "api_key", "key": "fixture-pi-key"}}
+  },
+  "shell": {}
+}

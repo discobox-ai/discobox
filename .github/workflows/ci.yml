@@ -142,6 +142,23 @@ jobs:
             build/ux-smoke/*/*.json
           retention-days: 7
 
+  harness-migration:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:harness-migration
+      - uses: actions/upload-artifact@v7.0.1
+        if: failure()
+        with:
+          name: harness-migration
+          path: build/ux-smoke/*/*.log
+          retention-days: 7
+
   # The image reaper on both Docker image stores. Every shipped VM pool runs the
   # classic one, which records no arrival for a load or a pull, and no other job
   # has a daemon of that store (ADR 26-11-13-655).
