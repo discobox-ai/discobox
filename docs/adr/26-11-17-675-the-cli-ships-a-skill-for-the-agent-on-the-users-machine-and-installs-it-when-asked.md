@@ -82,43 +82,59 @@ The first version covers user tools. The rest the issue lists (`run`, `ls`,
 `exec`, `cp`, `apply`, harness configuration) are sections added later, each
 under the same rule.
 
-### 3. `discobox admin agent-skills install` puts it on this machine, when asked
+### 3. `discobox skill` prints it, and installs or removes it at a scope
 
-A new command group, beside `admin skills` (which manages the skills *boxes*
-get) and named apart from it:
+One top-level command, in the help's Setup group:
 
-- **`discobox admin agent-skills install`** writes the skill into
-  `~/.claude/skills/discobox-host` and `~/.agents/skills/discobox-host`, the
-  two directories `--user-skills` reads and a box installs into, under the
-  home of the user running the CLI. `--dir DIR` (repeatable) names other
-  skill directories instead, for a harness that reads elsewhere.
-- **`discobox admin agent-skills rm`** removes what `install` wrote.
-- **`discobox admin agent-skills ls`** shows where it is installed, and from
-  which CLI version.
+- **`discobox skill`** prints the skill's `SKILL.md` to stdout, with its
+  front matter. Any agent, in any harness, reads the running CLI's skill with
+  one command and nothing installed, and a user can pipe it wherever their
+  harness keeps skills.
+- **`discobox skill --install`** writes it as a skill directory,
+  `discobox-host/`, into each skill directory of a scope.
+- **`discobox skill --uninstall`** removes it from each skill directory of a
+  scope.
+
+`--scope` names where, for both:
+
+| Scope | Skill directories |
+| --- | --- |
+| `user` (the default) | `~/.claude/skills` and `~/.agents/skills`, under the home of the user running the CLI: the two `--user-skills` reads and a box installs into |
+| `project` | `.claude/skills` and `.agents/skills` at the root of the Git working tree the current directory is in; refused outside one |
+
+`--dir DIR` (repeatable) names skill directories instead of a scope, for a
+harness that reads elsewhere. `--install` and `--uninstall` exclude each
+other, and `--scope` and `--dir` are refused without one of them. Each
+prints the paths it wrote or removed.
+
+The name is apart from `discobox admin skills`, which manages the skills
+*boxes* get; `skill`'s help says so and points there.
 
 Nothing installs it unasked: not the install scripts, not the first run of
 the CLI. A user's agent directories are theirs. Writing a skill there changes
 what their agent does in every repository, so the user asks for it, as they
 ask for `--user-skills` and for `ssh-config`.
 
-`install` writes the whole skill directory again, so a file a newer version
+`--install` writes the whole skill directory again, so a file a newer version
 dropped is gone. It refuses to write over a `discobox-host` directory it did
-not write (§4's marker absent), and says so. `rm` removes only a directory
-carrying the marker. `discobox admin uninstall` lists the installed copies in
-its plan and removes them with everything else.
+not write (§4's marker absent), and says so. `--uninstall` removes only a
+directory carrying the marker. `discobox admin uninstall` lists the
+user-scope copies in its plan and removes them with everything else. A
+project-scope copy is a file in a repository, the user's to commit or delete,
+and `admin uninstall` does not look for one.
 
-### 4. The installed skill is marked, and kept out of boxes
+### 4. The skill is marked, and kept out of boxes
 
-The installed `SKILL.md` carries, in its front matter:
+The skill's `SKILL.md`, printed or installed, carries in its front matter:
 
 ```yaml
 metadata:
   discobox:
-    scope: host
-    version: <the CLI version that wrote it>
+    audience: host
+    version: <the CLI version that printed or wrote it>
 ```
 
-`scope: host` means *not in a box*. The CLI skips a skill so marked wherever it
+`audience: host` means *not in a box*. The CLI skips a skill so marked wherever it
 reads skills into a create: `--user-skills`, a `--skills DIR`, and
 `client.yaml`'s `run.skills` directories. It says which it skipped, once,
 rather than failing the create. The marker is in the file, not the path, so it
@@ -126,14 +142,22 @@ holds when the user copies or links the skill into some other directory. A
 user who wants this skill in a box has no reason to: the box's agent is not on
 this machine.
 
+The marker cannot cover a project-scope copy. A repository's `.claude/skills`
+and `.agents/skills` are in the working tree a box checks out, and a harness
+in the box reads them from there, with no CLI in between. So the skill itself
+is the last guard: its first instruction is that if
+`/etc/discobox/sandbox.json` exists the agent is in a box, this skill does not
+apply, and the box's own `discobox` skill does. That holds however a copy got
+into a box.
+
 ### 5. A stale copy is noticed by the agent, not refreshed behind the user
 
 The installed copy is a snapshot of one CLI's skill, and a CLI upgrade does
-not rewrite it. The skill's first instruction is to compare its `version`
-with `discobox version`'s, and on a mismatch to run
-`discobox admin agent-skills install` before going on. The cost of a stale
-copy is small anyway: it points to the help, which is always the running
-CLI's.
+not rewrite it. The skill's next instruction is to compare its `version`
+with `discobox version`'s, and on a mismatch to read `discobox skill`
+instead, which is the running CLI's, and to run `discobox skill --install` at
+the scope the copy is in. The cost of a stale copy is small anyway: it points
+to the help, which is always the running CLI's.
 
 ## Alternatives rejected
 
@@ -160,6 +184,15 @@ CLI's.
 - **Keep it out of boxes by its name alone.** A list of reserved names in
   `readSkillsDir` misses a user's renamed copy. The name stays distinct (§1)
   as a second guard, not the only one.
+- **A command group under `admin` (`admin agent-skills install|rm|ls`).**
+  It was this ADR's first draft. A top-level `discobox skill` whose default
+  prints the skill is shorter, sits beside the commands a user runs every
+  day, and makes reading the current skill the same command as installing
+  it: an agent with no copy, or a stale one, reads the running CLI's.
+- **Only the user scope.** A team that wants every member's agent to have
+  the skill in one repository commits it there; `--scope project` writes the
+  same marked copy into the repository's own skill directories, and §4's
+  in-box instruction covers the box that checks it out.
 - **An MCP server the CLI runs for the user's agent.** A running process and
   per-harness registration for what is text and a CLI the agent can already
   call.
@@ -169,8 +202,8 @@ CLI's.
 
 ## Open
 
-- **WSL.** When the CLI runs in WSL and the agent on Windows, `install`
-  writes the WSL home's directories, which the Windows agent does not read.
+- **WSL.** When the CLI runs in WSL and the agent on Windows,
+  `--install` writes the WSL home's directories, which the Windows agent does not read.
   Revisit when someone asks; ADR 0074's Windows-side `ssh-config` is the
   precedent for reaching across.
 - **Whether the install scripts and `discobox --help` mention the command.**
@@ -181,9 +214,11 @@ CLI's.
 
 ## Consequences
 
-- The CLI embeds a skill and gains `admin agent-skills install|rm|ls`;
-  `admin uninstall`'s plan gains the installed copies.
+- The CLI embeds a skill and gains `discobox skill [--install|--uninstall]
+  [--scope user|project | --dir DIR…]`; `admin uninstall`'s plan gains the
+  user-scope copies.
 - `sandboxcreate.ReadSkills` reads each skill's front matter and skips one
-  marked `scope: host`.
+  marked `audience: host`.
 - A CLI test ties every command the skill names to the command tree.
+- The skill opens with the in-box check (§4) and the version check (§5).
 - `cli/DESIGN.md` describes the embedded skill and the marker when this lands.
