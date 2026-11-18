@@ -26,8 +26,9 @@ type VM struct {
 	socket    *vz.VirtioSocketDevice
 	listeners []*vz.VirtioSocketListener
 	closed    bool
-	// closing is closed by Close, which starts the clock on how long the
-	// keeper waits for the machine to stop before it says it has not.
+	// closing is closed by Close. It ends every dial still waiting on the
+	// guest, and starts the clock on how long the keeper waits for the machine
+	// to stop before it says it has not.
 	closing chan struct{}
 }
 
@@ -273,10 +274,19 @@ func consoleDevice(path string) (*vz.VirtioConsoleDeviceSerialPortConfiguration,
 	return device, nil
 }
 
+// connectTimeout bounds one connect to a guest. A guest that answers does so
+// in milliseconds, so this only ever ends a dial the framework will not.
+const connectTimeout = 30 * time.Second
+
 // Connect opens a connection to a guest VSOCK port. It returns when ctx is
-// done or the VM is closed, whichever comes first: the framework may never
-// answer a connect to a guest that has stopped responding, and a dial left
-// waiting on it would outlive the VM.
+// done, the VM is closed, or connectTimeout has passed, whichever comes first:
+// the framework may never answer a connect to a guest that has stopped
+// responding, and a dial left waiting on it would outlive the VM.
+//
+// The timeout is here, not left to ctx, because most callers are an
+// http.Transport's dialer, and the context a Transport dials with is detached
+// from the request that asked for the connection: it ends when the Transport
+// closes its idle connections, not when that request gives up.
 //
 // The returned connection deliberately does not implement CloseWrite. The
 // framework hands back a socket whose write side cannot be shut down
@@ -290,7 +300,7 @@ func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 	if closed || socket == nil {
 		return nil, fmt.Errorf("vzvm: VM %s is not running", v.name)
 	}
-	dialCtx, cancel := context.WithCancel(ctx)
+	dialCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 	go func() {
 		select {
@@ -301,14 +311,43 @@ func (v *VM) Connect(ctx context.Context, port uint32) (net.Conn, error) {
 	}()
 	conn, err := socket.ConnectContext(dialCtx, port)
 	if err != nil {
+		vmClosed := false
 		select {
 		case <-closing:
-			return nil, fmt.Errorf("vzvm: connect to %s guest port %d: the VM was closed", v.name, port)
+			vmClosed = true
 		default:
 		}
-		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, socketError("dial", "connect", err))
+		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, connectError(err, ctx.Err(), vmClosed))
 	}
 	return conn, nil
+}
+
+// errVMClosed ends a dial whose VM was closed under it.
+var errVMClosed = errors.New("the VM was closed")
+
+// errGuestSilent ends a dial the guest neither completed nor refused within
+// connectTimeout. It deliberately has no Timeout method: the caller's own
+// deadline has not passed, and a client-side timeout means something else to
+// callers ("the agent may still be working on it").
+var errGuestSilent = fmt.Errorf("the guest did not answer within %s", connectTimeout)
+
+// connectError says why a dial failed. callerErr is the caller's context
+// error, nil while that context is live.
+//
+// A dial ended by Connect's own bound is a failed dial, not the caller's
+// deadline, and is reported as one: a net.OpError with Op "dial", which is
+// what callers that wait out an unreachable guest look for. Left as the
+// context.DeadlineExceeded the binding returns, it would read as the caller
+// having given up while its context is still live.
+func connectError(err, callerErr error, vmClosed bool) error {
+	switch {
+	case vmClosed:
+		return errVMClosed
+	case callerErr == nil && errors.Is(err, context.DeadlineExceeded):
+		return &net.OpError{Op: "dial", Net: "vsock", Err: errGuestSilent}
+	default:
+		return socketError("dial", "connect", err)
+	}
 }
 
 // Listen accepts connections the guest opens to the host on a VSOCK port. This

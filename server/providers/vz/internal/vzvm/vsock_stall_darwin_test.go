@@ -14,8 +14,9 @@ import (
 
 // TestConnectDuringGuestStallEndsWithContextAndClose dials a guest whose
 // machine has stopped answering. A dial must return when its context ends,
-// and closing the VM must release every dial still waiting on it, leaving no
-// goroutine parked in the binding's connect.
+// or by Connect's own bound when its context never does. Closing the VM must
+// release every dial still waiting on it, leaving no goroutine of a dial
+// behind: neither a caller nor the watcher each dial runs.
 //
 // The stall is the VM's Virtualization XPC service under SIGSTOP: the
 // framework then never completes a connect. Nothing gentler stands in for it.
@@ -58,6 +59,20 @@ func TestConnectDuringGuestStallEndsWithContextAndClose(t *testing.T) {
 	}
 	t.Logf("a dial to the stalled guest ended with its context after %s: %v", took.Round(time.Millisecond), err)
 
+	// A dial whose context never ends is how an http.Transport dials: its
+	// context is detached from the request. Connect's own bound ends it.
+	start = time.Now()
+	conn, err = vm.Connect(context.Background(), stressDockerPort)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("a dial to a stalled guest succeeded")
+	}
+	took = time.Since(start)
+	if took < connectTimeout || took > connectTimeout+3*time.Second {
+		t.Fatalf("a dial with no deadline ended after %s, want about %s: %v", took.Round(time.Millisecond), connectTimeout, err)
+	}
+	t.Logf("a dial with no deadline ended by Connect's bound after %s: %v", took.Round(time.Millisecond), err)
+
 	const waiting = 20
 	done := make(chan error, waiting)
 	for range waiting {
@@ -70,8 +85,9 @@ func TestConnectDuringGuestStallEndsWithContextAndClose(t *testing.T) {
 		}()
 	}
 	time.Sleep(time.Second)
-	if parked := parkedInConnect(); parked < waiting {
-		t.Fatalf("%d dials are waiting on the stalled guest, want %d", parked, waiting)
+	// Each waiting dial is its caller and the watcher that ends it.
+	if inFlight := dialGoroutines(); inFlight < 2*waiting {
+		t.Fatalf("%d goroutines are in dials to the stalled guest, want %d", inFlight, 2*waiting)
 	}
 	// Close releases the dials before it tries to stop the machine, which it
 	// cannot do while the service is stopped: let it run on.
@@ -89,19 +105,26 @@ func TestConnectDuringGuestStallEndsWithContextAndClose(t *testing.T) {
 	}
 	t.Logf("%d waiting dials ended %s after the VM was closed", waiting, time.Since(closed).Round(time.Millisecond))
 
-	// The dials have returned; their goroutines get a moment to unwind.
+	// The dials have returned; their watchers get a moment to follow.
 	deadline := time.Now().Add(5 * time.Second)
-	for parkedInConnect() > 0 {
+	for dialGoroutines() > 0 {
 		if time.Now().After(deadline) {
-			t.Fatalf("%d goroutines are still parked in the binding's connect after Close", parkedInConnect())
+			t.Fatalf("%d goroutines of dials are still running after Close", dialGoroutines())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
-// parkedInConnect counts the goroutines inside the binding's connect.
-func parkedInConnect() int {
+// dialGoroutines counts the goroutines inside (*VM).Connect: callers waiting
+// on a dial, and the watcher each dial starts.
+func dialGoroutines() int {
 	var dump strings.Builder
 	_ = pprof.Lookup("goroutine").WriteTo(&dump, 2)
-	return strings.Count(dump.String(), "(*VirtioSocketDevice).Connect")
+	count := 0
+	for _, goroutine := range strings.Split(dump.String(), "\n\n") {
+		if strings.Contains(goroutine, "vzvm.(*VM).Connect") {
+			count++
+		}
+	}
+	return count
 }

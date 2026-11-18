@@ -117,8 +117,8 @@ after a panic waited past a 60s timeout (#1335; that run could not tell a kept
 connection from a stalled dial). The first sign the host gets is the rebooting
 guest refusing a new dial to the agent port, so the client drops every
 connection it holds then, in flight included, and a request still waiting on
-the old boot fails instead of waiting for its caller to give up. A dial into a
-guest that has panicked but not yet rebooted stalls until it is back (#1336).
+the old boot fails instead of waiting for its caller to give up. A dial the
+rebooting guest neither completes nor refuses ends by its own bound, below.
 
 Connections deliberately do not implement `CloseWrite`. The framework's
 connection cannot have its write side shut down independently through this
@@ -128,18 +128,31 @@ full-close fallback, which is correct. Nothing the engine does over this client
 — container lifecycle, BuildKit's grpc session, TTY console attach — needs a
 half-close.
 
-A host → guest dial ends with its caller's context or with the VM, whichever
-comes first (`vzvm.(*VM).Connect`). The framework cannot cancel a connect and
-may never complete one to a guest that has stopped answering, so a dial that
-waited on the framework alone would outlive a replaced VM and hold its HTTP
-handler with it. A connection that completes after its caller has gone is
-closed in the binding.
+A host → guest dial ends with its context, with the VM, or after 30 s,
+whichever comes first (`vzvm.(*VM).Connect`). The framework cannot cancel a
+connect and may never complete one to a guest that has stopped answering, so a
+dial that waited on the framework alone would outlive a replaced VM and hold
+its HTTP handler with it (#1336). The bound is in `Connect` because the
+dialers are `http.Transport` dialers, and a Transport dials with a context
+detached from the request that wanted the connection: on the pool-agent
+client, which lives as long as the VM, a request giving up would otherwise
+leave its dial waiting until the VM closed. A connection that completes after
+its dial has ended is closed in the binding.
 
 VSOCK connect and listen failures in `NSPOSIXErrorDomain` expose the native
 errno through a Go `net.OpError`, preserving the framework error and the VM
 name and port. Callers can recognize a refused or reset connection with
 `errors.Is` and use the same recovery path as other transports. Other NSError
 domains retain their own meaning and are not translated to POSIX errors.
+
+A dial ended by `Connect`'s bound while its caller's context is still live is
+reported the same way, as a `net.OpError` with `Op` `dial` that does not
+report a timeout: it is a dial that failed, not the caller's deadline passing.
+Callers that wait out an unreachable guest and resend, such as the pool
+runtime's create (`poolruntime.poolAgentUnanswered`), take it for what it is,
+a request the agent never saw. A caller's own
+cancel or deadline comes back unchanged, and a dial ended by its VM closing
+says so.
 
 The IP network exists only for the guest's own outbound traffic. It is the
 framework's NAT attachment, which also serves DHCP and DNS; the guest takes its

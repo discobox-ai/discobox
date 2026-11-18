@@ -3,6 +3,7 @@
 package vzvm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -45,5 +46,33 @@ func TestSocketErrorPreservesOtherFailures(t *testing.T) {
 		if got := socketError("dial", "connect", original); !errors.Is(got, original) {
 			t.Fatalf("error = %v, want original %v", got, original)
 		}
+	}
+}
+
+func TestConnectErrorReportsTheBoundAsAFailedDial(t *testing.T) {
+	err := connectError(context.DeadlineExceeded, nil, false)
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Op != "dial" {
+		t.Fatalf("connectError = %v, want a dial net.OpError", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("connectError = %v reads as the caller's deadline, which has not passed", err)
+	}
+	if opErr.Timeout() {
+		t.Fatalf("connectError = %v reports a timeout, which callers read as a request the guest may still be working on", err)
+	}
+}
+
+func TestConnectErrorKeepsTheCallersOwnEnding(t *testing.T) {
+	for _, callerErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		if err := connectError(callerErr, callerErr, false); !errors.Is(err, callerErr) {
+			t.Fatalf("connectError = %v, want the caller's %v", err, callerErr)
+		}
+	}
+}
+
+func TestConnectErrorSaysTheVMWasClosed(t *testing.T) {
+	if err := connectError(context.Canceled, nil, true); !errors.Is(err, errVMClosed) {
+		t.Fatalf("connectError = %v, want errVMClosed", err)
 	}
 }

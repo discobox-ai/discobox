@@ -266,7 +266,7 @@ func stressGuestOptions(t *testing.T, name, guestDir, dir string) Options {
 
 // waitStressDocker waits for the guest's Docker daemon to answer through the
 // VSOCK relay. Each attempt is bounded by its dial's context, because a
-// connect to a port nothing in the guest listens on yet may never complete.
+// connect to a guest that is not answering yet may never complete.
 func waitStressDocker(t *testing.T, vm *VM, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
