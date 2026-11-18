@@ -25,6 +25,9 @@ func TestParseSchemes(t *testing.T) {
 		{raw: "https://cp.example.com", scheme: "https", host: "cp.example.com"},
 		{raw: "vsock://2:3001", scheme: "vsock", host: "2", port: 3001},
 		{raw: "vsock://:3002", scheme: "vsock", port: 3002},
+		{raw: "vsock+yamux://2:3001", scheme: "vsock+yamux", host: "2", port: 3001},
+		{raw: "vsock+yamux://:3002", scheme: "vsock+yamux", port: 3002},
+		{raw: "vsock+yamux://2:80", wantErr: true}, // reserved port
 		{raw: "unix:///run/discobox/cp.sock", scheme: "unix", path: "/run/discobox/cp.sock"},
 		{raw: "wss://edge.example.com/tunnel/proxy", scheme: "wss", host: "edge.example.com"},
 
@@ -82,6 +85,7 @@ func TestBaseURL(t *testing.T) {
 		"http://host.docker.internal:8080/": "http://host.docker.internal:8080",
 		"https://cp.example.com":            "https://cp.example.com",
 		"vsock://2:3001":                    LogicalHTTPBaseURL,
+		"vsock+yamux://2:3001":              LogicalHTTPBaseURL,
 		"unix:///run/discobox/cp.sock":      LogicalHTTPBaseURL,
 	} {
 		parsed, err := Parse(raw)
@@ -189,6 +193,12 @@ func TestURLBuildersRoundTrip(t *testing.T) {
 	if got, err := Parse(VSOCKListenURL(3002)); err != nil || got.Scheme != "vsock" || got.Host != "" || got.Port != 3002 {
 		t.Fatalf("VSOCKListenURL round trip = %+v, err=%v", got, err)
 	}
+	if got, err := Parse(FramedVSOCKURL(2, 3001)); err != nil || got.Scheme != "vsock+yamux" || got.Host != "2" || got.Port != 3001 {
+		t.Fatalf("FramedVSOCKURL round trip = %+v, %v", got, err)
+	}
+	if got, err := Parse(FramedVSOCKListenURL(3002)); err != nil || got.Scheme != "vsock+yamux" || got.Host != "" || got.Port != 3002 {
+		t.Fatalf("FramedVSOCKListenURL round trip = %+v, %v", got, err)
+	}
 	got, err := Parse(TCPListenURL(3002))
 	if err != nil || got.Scheme != "http" || !strings.HasSuffix(got.Host, ":3002") {
 		t.Fatalf("TCPListenURL round trip = %+v, err=%v", got, err)
@@ -214,15 +224,17 @@ func TestURLBuildersRoundTrip(t *testing.T) {
 // only succeeds on Linux guests, so the server can render and validate these
 // URLs while running on Windows or macOS.
 func TestVSOCKDialerResolvesOnAllPlatforms(t *testing.T) {
-	parsed, err := Parse("vsock://2:3001")
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	dial, err := parsed.DialContext()
-	if err != nil {
-		t.Fatalf("DialContext: %v", err)
-	}
-	if dial == nil {
-		t.Fatal("DialContext returned no dialer")
+	for _, raw := range []string{"vsock://2:3001", "vsock+yamux://2:3001"} {
+		parsed, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", raw, err)
+		}
+		dial, err := parsed.DialContext()
+		if err != nil {
+			t.Fatalf("DialContext(%q): %v", raw, err)
+		}
+		if dial == nil {
+			t.Fatalf("DialContext(%q) returned no dialer", raw)
+		}
 	}
 }
