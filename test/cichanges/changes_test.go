@@ -118,16 +118,15 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 	if !ok {
 		t.Fatal("ci.yml has no changes job")
 	}
-	// Only a pull request is filtered, so a push skips the job rather than
-	// wait on a runner for an answer it already knows. Every gate below reads
-	// a skipped job's empty output as code, as it does a failed one's.
-	if want := "github.event_name == 'pull_request'"; changes.If != want {
+	// Main pushes skip change detection and run the code checks.
+	// Unrelated label events skip change detection and all dependent jobs.
+	if want := "github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'macos')"; changes.If != want {
 		t.Errorf("job changes runs if %q, want %q", changes.If, want)
 	}
 	for name, job := range workflow.Jobs {
-		// Fails closed: a failed or skipped changes job leaves its output
-		// empty, which is not 'false', so the job runs.
-		want := "${{ !cancelled() && needs.changes.outputs.code != 'false' }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
+		// A failed changes job leaves its output empty, so the job runs.
+		// A skipped changes job also allows pushes through.
+		want := "${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || needs.changes.result != 'skipped') }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
 		switch name {
 		case "changes":
 			continue
@@ -136,7 +135,7 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 		case "darwin", "darwin-test":
 			// macOS bills at 20x: a pull request runs these only with the
 			// `macos` label, and a push to main always does.
-			want = "${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
+			want = "${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || (needs.changes.result != 'skipped' && contains(github.event.pull_request.labels.*.name, 'macos'))) }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
 		}
 		if job.Needs != "changes" {
 			t.Errorf("job %s needs %v, want changes", name, job.Needs)
@@ -229,7 +228,8 @@ func TestCICancelsSupersededRuns(t *testing.T) {
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		t.Fatal(err)
 	}
-	if want := "ci-${{ github.event.pull_request.number || github.ref }}"; workflow.Concurrency.Group != want {
+	// An ignored label run must leave both active and pending CI alone.
+	if want := "ci-${{ (github.event.action == 'labeled' && github.event.label.name != 'macos') && format('ignored-{0}', github.run_id) || github.event.pull_request.number || github.ref }}"; workflow.Concurrency.Group != want {
 		t.Errorf("concurrency group %q, want %q", workflow.Concurrency.Group, want)
 	}
 	if got := fmt.Sprint(workflow.Concurrency.CancelInProgress); got != "true" {
