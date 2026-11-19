@@ -218,10 +218,11 @@ func (a *App) copyRequest(ctx context.Context, project string, operand cpOperand
 	if resp.StatusCode/100 != 2 {
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusNotImplemented {
+		// The HTTP transport and sandboxFileCallError handle plain route 404s.
+		if resp.StatusCode == http.StatusNotImplemented {
 			return nil, fmt.Errorf("copy endpoint unavailable; upgrade the discobox, pool and server: %s", terminalSafe(string(data)))
 		}
-		return nil, fmt.Errorf("files API: %s: %s", resp.Status, terminalSafe(string(data)))
+		return nil, fmt.Errorf("files API: %s: %s", terminalSafe(resp.Status), terminalSafe(string(data)))
 	}
 	return resp, nil
 }
