@@ -59,7 +59,7 @@ func describeSocketAccess(path string, gid int, member bool, mode fs.FileMode) s
 		groupAccess += fmt.Sprintf(" and socket mode %#04o does not grant the group read and write access", mode.Perm())
 	}
 	if gid == 0 {
-		return groupAccess + ". Docker may have started without a docker group. Create it if missing with `sudo groupadd docker`. Ensure the docker group has a nonzero GID and configure Docker to give that group read and write access to its socket, then restart Docker. Add your user with `sudo usermod -aG docker $USER` and start a new login session — on WSL, `wsl.exe --shutdown`"
+		return groupAccess + ". Docker may have started without a docker group. Create it if missing with `sudo groupadd docker`. Ensure the docker group has a nonzero GID and configure Docker to give that group read and write access to its socket, then restart Docker. Add your user with `sudo usermod -aG docker $USER` and start a new login session. For a local Discobox server, run `discobox admin server shutdown --wait` from that session before retrying. On WSL, `wsl.exe --shutdown` also stops the server"
 	}
 	if !groupCanReadWrite {
 		return groupAccess

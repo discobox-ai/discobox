@@ -152,7 +152,7 @@ func TestSocketAccessHintDoesNotSuggestJoiningGIDZero(t *testing.T) {
 	if strings.Contains(hint, "usermod -aG root ") || strings.Contains(hint, "usermod -aG 0 ") {
 		t.Fatalf("hint %q recommends joining the socket's GID 0 group", hint)
 	}
-	for _, want := range []string{"sudo groupadd docker", "nonzero GID", "restart Docker", "sudo usermod -aG docker $USER"} {
+	for _, want := range []string{"sudo groupadd docker", "nonzero GID", "restart Docker", "sudo usermod -aG docker $USER", "discobox admin server shutdown --wait"} {
 		if !strings.Contains(hint, want) {
 			t.Fatalf("hint %q is missing %q", hint, want)
 		}
