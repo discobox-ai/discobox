@@ -45,7 +45,9 @@ flag the `default` alias resolves.
 - `DeleteProject` refuses the default project and any project still holding
   sandboxes or pools; those own runtime that has to drain through its own
   reconcilers. Once empty, `store.DeleteProject` removes the project's own
-  configuration rows.
+  configuration rows, including enrolled SSH keys, in one transaction. The
+  store checks the default flag and remaining project references in that
+  transaction. The service reports a blocker as a 409 conflict.
 - `Project.HarnessChangesExplained` records that the console has explained saving
   harness changes, once per project across client machines. `UpdateProject` can
   set or clear it so the explanation can be shown again.

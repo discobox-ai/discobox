@@ -535,7 +535,11 @@ func TestDeleteProjectRefusesDefaultAndNonEmptyProjects(t *testing.T) {
 	source := seedSourceProject(ctx, t, st)
 
 	// Default first: it is refused before anything else is even counted.
-	statusOf(t, svc.DeleteProject(ctx, source.ID), http.StatusConflict)
+	err := svc.DeleteProject(ctx, source.ID)
+	statusOf(t, err, http.StatusConflict)
+	if !strings.Contains(err.Error(), "project is the default project") {
+		t.Fatalf("delete default project error = %v, want default project named", err)
+	}
 
 	project, err := svc.CreateProject(ctx, services.CreateProjectBody{
 		Name:              "Busy",
@@ -551,6 +555,30 @@ func TestDeleteProjectRefusesDefaultAndNonEmptyProjects(t *testing.T) {
 		t.Fatalf("create sandbox: %v", err)
 	}
 	statusOf(t, svc.DeleteProject(ctx, project.ID), http.StatusConflict)
+}
+
+func TestDeleteProjectNamesRemainingReference(t *testing.T) {
+	svc, st, ctx := newService(t)
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Referenced"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	request := &model.HostTrustRequest{
+		ProjectID: project.ID,
+		SandboxID: "purged-sandbox",
+		Host:      "example.com:443",
+	}
+	if err := st.CreateHostTrustRequest(ctx, request); err != nil {
+		t.Fatalf("record host trust request: %v", err)
+	}
+	err = svc.DeleteProject(ctx, project.ID)
+	statusOf(t, err, http.StatusConflict)
+	if !strings.Contains(err.Error(), "project has host trust requests") {
+		t.Fatalf("delete project error = %v, want host trust requests named", err)
+	}
+	if _, err := st.GetProject(ctx, project.ID); err != nil {
+		t.Fatalf("get project after refused delete: %v", err)
+	}
 }
 
 func TestDeleteProjectRemovesItsConfiguration(t *testing.T) {

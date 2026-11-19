@@ -77,3 +77,26 @@ func TestCreateProjectWithoutItsKeyLeavesNoProject(t *testing.T) {
 		t.Fatalf("GetProject after the failed create-if-not-exists = %v, want ErrNotFound", err)
 	}
 }
+
+func TestDeleteProjectRemovesEnrolledSSHKeys(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	key := &model.SSHKey{
+		ProjectID:   "project-1",
+		PublicKey:   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtoYLrZLeE/pzDZSBs/HDAqaT9JXCLKJTIJorQOa45Q",
+		Fingerprint: "test-fingerprint",
+	}
+	if err := st.CreateSSHKey(ctx, key); err != nil {
+		t.Fatalf("enroll SSH key: %v", err)
+	}
+	if err := st.DeleteProject(ctx, key.ProjectID); err != nil {
+		t.Fatalf("delete project with enrolled SSH key: %v", err)
+	}
+	keys, err := st.ListSSHKeys(ctx, key.ProjectID)
+	if err != nil {
+		t.Fatalf("list SSH keys after project deletion: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("found %d SSH keys after project deletion, want 0", len(keys))
+	}
+}
