@@ -41,28 +41,36 @@ func probeSocketAccess(ctx context.Context, path string) (denied bool, hint stri
 		return true, ""
 	}
 	gid := int(stat.Gid)
-	return true, describeSocketAccess(path, gid, holdsGroup(gid))
+	return true, describeSocketAccess(path, gid, holdsGroup(gid), info.Mode())
 }
 
-// describeSocketAccess is what the reader is told about a socket they were
-// refused: the group that owns it, and the command that would add them to it.
-//
-// A member who is refused anyway is told that instead. Whatever is denying
-// them is not the membership, and sending them to add a group they already
-// have would send them in a circle.
-func describeSocketAccess(path string, gid int, member bool) string {
+// describeSocketAccess explains the owning group and whether membership would
+// help after a socket has refused the connection.
+func describeSocketAccess(path string, gid int, member bool, mode fs.FileMode) string {
 	name := groupName(gid)
 	owner := strconv.Itoa(gid)
 	if name != "" {
 		owner = name + " (" + owner + ")"
 	}
+	groupAccess := fmt.Sprintf("%s is owned by group %s", path, owner)
+	const groupReadWrite = 0o060
+	groupCanReadWrite := mode&groupReadWrite == groupReadWrite
+	if !groupCanReadWrite {
+		groupAccess += fmt.Sprintf(" and socket mode %#04o does not grant the group read and write access", mode.Perm())
+	}
+	if gid == 0 {
+		return groupAccess + ". Docker may have started without a docker group. Create it if missing with `sudo groupadd docker`. Ensure the docker group has a nonzero GID and configure Docker to give that group read and write access to its socket, then restart Docker. Add your user with `sudo usermod -aG docker $USER` and start a new login session — on WSL, `wsl.exe --shutdown`"
+	}
+	if !groupCanReadWrite {
+		return groupAccess
+	}
 	if member {
-		return fmt.Sprintf("%s is owned by group %s, which this process is already in", path, owner)
+		return groupAccess + ", which this process is already in"
 	}
 	if name == "" {
 		name = strconv.Itoa(gid)
 	}
-	return fmt.Sprintf("%s is owned by group %s and this process is not in it: add the user to that group with `sudo usermod -aG %s $USER`, then start a new login session — on WSL, `wsl.exe --shutdown`", path, owner, name)
+	return fmt.Sprintf("%s and this process is not in it: add the user to that group with `sudo usermod -aG %s $USER`, then start a new login session — on WSL, `wsl.exe --shutdown`", groupAccess, name)
 }
 
 // groupName is the name to type into usermod, or "" for a gid that has none.

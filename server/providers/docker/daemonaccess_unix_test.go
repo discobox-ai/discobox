@@ -21,7 +21,7 @@ import (
 // server they start does not. The client's own message names neither the group
 // that would grant it nor the command that adds it.
 func TestSocketAccessHintNamesTheGroupAndTheCommand(t *testing.T) {
-	hint := describeSocketAccess("/var/run/docker.sock", 986, false)
+	hint := describeSocketAccess("/var/run/docker.sock", 986, false, 0o660)
 
 	for _, want := range []string{"/var/run/docker.sock", "986", "usermod -aG", "wsl.exe --shutdown"} {
 		if !strings.Contains(hint, want) {
@@ -33,7 +33,7 @@ func TestSocketAccessHintNamesTheGroupAndTheCommand(t *testing.T) {
 // Being in the group and refused anyway is a different problem, and sending
 // the reader to add a group they have would send them in a circle.
 func TestSocketAccessHintDoesNotTellAMemberToJoin(t *testing.T) {
-	hint := describeSocketAccess("/var/run/docker.sock", 986, true)
+	hint := describeSocketAccess("/var/run/docker.sock", 986, true, 0o660)
 
 	if strings.Contains(hint, "usermod") {
 		t.Fatalf("hint %q tells a member of the group to join it", hint)
@@ -70,8 +70,8 @@ func TestProbeSocketAccessReportsPermissionDenial(t *testing.T) {
 	if err := os.Chmod(path, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	if denied, hint := probeSocketAccess(ctx, path); !denied || !strings.Contains(hint, path) {
-		t.Fatalf("denied = %t, hint = %q, want denial naming %s", denied, hint, path)
+	if denied, hint := probeSocketAccess(ctx, path); !denied || !strings.Contains(hint, path) || !strings.Contains(hint, "socket mode 0000 does not grant the group read and write access") {
+		t.Fatalf("denied = %t, hint = %q, want denial explaining the mode of %s", denied, hint, path)
 	}
 	// And a socket that is not there at all is not this explanation either.
 	if denied, hint := probeSocketAccess(ctx, filepath.Join(filepath.Dir(path), "missing.sock")); denied || hint != "" {
@@ -144,5 +144,28 @@ func TestLocalDriverCheckRefusesInaccessibleSocket(t *testing.T) {
 				t.Fatalf("daemon check error = %v, want refusal without ErrProviderNotReachable", err)
 			}
 		})
+	}
+}
+
+func TestSocketAccessHintDoesNotSuggestJoiningGIDZero(t *testing.T) {
+	hint := describeSocketAccess("/var/run/docker.sock", 0, false, 0o660)
+	if strings.Contains(hint, "usermod -aG root ") || strings.Contains(hint, "usermod -aG 0 ") {
+		t.Fatalf("hint %q recommends joining the socket's GID 0 group", hint)
+	}
+	for _, want := range []string{"sudo groupadd docker", "nonzero GID", "restart Docker", "sudo usermod -aG docker $USER"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q is missing %q", hint, want)
+		}
+	}
+}
+
+func TestDescribeSocketAccessRequiresGroupReadAndWrite(t *testing.T) {
+	for _, member := range []bool{false, true} {
+		for _, mode := range []os.FileMode{0o600, 0o620, 0o640} {
+			hint := describeSocketAccess("/var/run/docker.sock", 986, member, mode)
+			if !strings.Contains(hint, "does not grant the group read and write access") || strings.Contains(hint, "usermod") {
+				t.Errorf("mode %#o, member %t: unexpected hint %q", mode, member, hint)
+			}
+		}
 	}
 }
