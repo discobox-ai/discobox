@@ -70,7 +70,7 @@ func bundleReferences(refs map[string]string) harnessdefs.References {
 // stubPlatformBundle is a platform bundle whose layer provides the platform
 // API version and nothing else.
 func stubPlatformBundle(env map[string]string) bundleInspection {
-	layer, err := json.Marshal(map[string]any{"apiVersion": "discobox.dev/image/v1", "platformAPIVersion": harness.PlatformAPIVersion, "env": env})
+	layer, err := json.Marshal(map[string]any{"apiVersion": "discobox.ai/image/v1", "platformAPIVersion": harness.PlatformAPIVersion, "env": env})
 	if err != nil {
 		panic(err)
 	}

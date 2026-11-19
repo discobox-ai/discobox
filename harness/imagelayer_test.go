@@ -9,7 +9,7 @@ func baseLayerLabel(t *testing.T) map[string]string {
 	t.Helper()
 	return map[string]string{
 		ImageLayerLabelPrefix + SandboxBaseLayer: `{
-			"apiVersion": "discobox.dev/image/v1",
+			"apiVersion": "discobox.ai/image/v1",
 			"env": {"DISPLAY": ":0", "PATH": "/usr/local/bin:/usr/bin"},
 			"volumes": [
 				{"path": "%HOME%", "volume": "data"},
@@ -53,7 +53,7 @@ func TestResolveImageLabelsWithNoOwnLayer(t *testing.T) {
 func TestResolveImageLabelsMergesLeafOverBase(t *testing.T) {
 	labels := baseLayerLabel(t)
 	labels[ImageLabel] = `{
-		"apiVersion": "discobox.dev/image/v1",
+		"apiVersion": "discobox.ai/image/v1",
 		"env": {"PATH": "/opt/agent/bin:/usr/bin"},
 		"volumes": [
 			{"path": "/nix", "volume": "data"},
@@ -161,7 +161,7 @@ func TestResolveImageLabelsRefusesARetiredConfigureDeclaration(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			labels := baseLayerLabel(t)
 			labels[ImageLabel] = `{
-				"apiVersion": "discobox.dev/image/v1",
+				"apiVersion": "discobox.ai/image/v1",
 				"harness": {"id": "agent", "name": "Agent", "config": ` + config + `}
 			}`
 			_, _, err := ResolveImageLabels(labels)
@@ -190,7 +190,7 @@ func platformLabels(layer string) map[string]string {
 	return map[string]string{ImageLayerLabelPrefix + PlatformLayer: layer}
 }
 
-const platformLayerJSON = `{"apiVersion":"discobox.dev/image/v1","platformAPIVersion":"discobox.ai/platform/v1","env":{"DISPLAY":":0","PATH":"/usr/bin"},"volumes":[{"path":"%HOME%","volume":"data"}]}`
+const platformLayerJSON = `{"apiVersion":"discobox.ai/image/v1","platformAPIVersion":"discobox.ai/platform/v1","env":{"DISPLAY":":0","PATH":"/usr/bin"},"volumes":[{"path":"%HOME%","volume":"data"}]}`
 
 // The platform's layer is composed under the harness bundle's, which a harness
 // no longer inherits: the harness's own layer is last, and later wins.
@@ -274,5 +274,42 @@ func TestComposeBundleLabelsReadsTheVersionFromAnyHarnessLayer(t *testing.T) {
 	}
 	if metadata.Env["BASE"] != "1" || metadata.Env["ACME"] != "1" {
 		t.Fatalf("env = %v, want both harness layers", metadata.Env)
+	}
+}
+
+// The image manifest's apiVersion is in Discobox's own namespace: a bundle
+// built now declares discobox.ai/image/v1, and one already published under
+// the old discobox.dev namespace still resolves.
+func TestImageAPIVersionIsDiscoboxAIAndTheOldNamespaceStillReads(t *testing.T) {
+	if ImageAPIVersion != "discobox.ai/image/v1" {
+		t.Errorf("ImageAPIVersion = %q, want discobox.ai/image/v1", ImageAPIVersion)
+	}
+	for _, version := range []string{"discobox.ai/image/v1", "discobox.dev/image/v1"} {
+		labels := baseLayerLabel(t)
+		labels[ImageLabel] = `{"apiVersion":"` + version + `","env":{"AGENT":"1"}}`
+		metadata, _, err := ResolveImageLabels(labels)
+		if err != nil {
+			t.Errorf("apiVersion %s: %v", version, err)
+			continue
+		}
+		if metadata.Env["AGENT"] != "1" {
+			t.Errorf("apiVersion %s: env = %v, want the leaf's AGENT", version, metadata.Env)
+		}
+	}
+}
+
+// A contributed layer under the legacy namespace still resolves: a third
+// party's bundle built FROM a harness bundle published before the move
+// carries that harness's layers as they were labeled.
+func TestLegacyImageAPIVersionOnAContributedLayerStillReads(t *testing.T) {
+	labels := baseLayerLabel(t)
+	labels[ImageLayerLabelPrefix+"60-acme"] = `{"apiVersion":"` + LegacyImageAPIVersion + `","env":{"ACME":"1"}}`
+	labels[ImageLabel] = `{"apiVersion":"` + ImageAPIVersion + `"}`
+	metadata, _, err := ResolveImageLabels(labels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Env["ACME"] != "1" {
+		t.Errorf("env = %v, want the legacy layer's ACME", metadata.Env)
 	}
 }

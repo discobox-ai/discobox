@@ -185,6 +185,12 @@ coding harnesses; shell carries no capture implementation.
   `secrets` by name, groups and egress hosts by union; a harness's scalar fields, commands, and
   `config` go to the last layer that sets them — and none of them may unset.
   A layer is a fragment: only the merged result is validated, at registration.
+  A layer that names an `apiVersion` names `discobox.ai/image/v1`
+  (`ImageAPIVersion`), which every manifest Discobox ships declares, or
+  `discobox.dev/image/v1` (`LegacyImageAPIVersion`), the namespace it was
+  first published in, which bundles already in registries carry; any other is
+  refused. A legacy layer is read as it stands, never rewritten, so a config
+  snapshotted from such a bundle keeps its manifest digest.
   `00`–`49` is reserved for layers Discobox ships (`LayerNumberReserved`).
   The same inheritance carries `ReclaimLabel` onto every image built `FROM`
   the sandbox base image, as one Discobox may reclaim (ADR 0040); no bundle
