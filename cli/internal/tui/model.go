@@ -3618,8 +3618,8 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 				title: "Enable SSH aliases?",
 				body:  "Add Discobox Include lines to your SSH config (~/.ssh/config and Windows SSH config under WSL)?",
 				choices: []action{
-					{key: "no", label: "No", enabled: true},
 					{key: "yes", label: "Yes", enabled: true},
+					{key: "no", label: "No", enabled: true},
 				},
 				yes: "yes",
 			})

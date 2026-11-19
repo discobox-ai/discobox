@@ -49,7 +49,8 @@ access. A remote server runs its pools on the server side.
 
 Discobox stores generated SSH aliases in its local state directory. Adding
 Includes to your SSH config is optional. The first interactive SSH config sync
-asks for permission and defaults to No. With the Includes enabled, OpenSSH can
+asks for permission with Yes selected. Without a terminal, Discobox makes no
+SSH config edits unless you already opted in. With the Includes enabled, OpenSSH can
 connect through the Discobox server with `ssh BOX_ID`, and SSH-based editors can
 use the same configuration. Under WSL, the setting covers both Linux and Windows
 OpenSSH. Change your choice with `discobox admin ssh-config enable` or

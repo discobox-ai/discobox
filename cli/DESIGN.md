@@ -2204,7 +2204,7 @@ level or layering on the attach transports above.
 - `--write` writes the stanzas and the server's host key to two files under the
   CLI state directory, beside the generated key. An install's
   `ssh/include-preference` records permission to edit the user's SSH config.
-  On the first interactive sync, the CLI asks with No selected. A sync without
+  On the first interactive sync, the CLI asks with Yes selected. A sync without
   a terminal leaves the preference unset and prints the opt-in command. Generated
   files are refreshed regardless. With permission, the sync adds one `Include`
   line to `~/.ssh/config` and normalizes the `Include` lines it owns

@@ -3643,7 +3643,7 @@ Credential consent during source delivery uses the operation's narration feed:
 a question waits for the dialog's answer, and Git's credential process runs via
 `tea.ExecProcess` with stdout captured by the delivery layer. A stale feed
 cancels the pending question. On create, the same narration feed presents the
-SSH Include consent question with No selected. The CLI data source persists
+SSH Include consent question with Yes selected. The CLI data source persists
 the answer separately from Git credential policy.
 
 A selected sandbox with a pending harness capture offers `H` to review it; the

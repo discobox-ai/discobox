@@ -28,8 +28,8 @@ func inlineSSHIncludePrompt(cmd *cobra.Command, status *statusLine) sshIncludePr
 	return func(context.Context) (sshIncludePreference, error) {
 		defer status.suspend()()
 		choice, err := pickOne(cmd, "Add Discobox Include lines to your SSH config (~/.ssh/config and Windows SSH config when running under WSL)?", []pickerItem{
-			{id: "no", title: "No"},
 			{id: "yes", title: "Yes, enable SSH aliases"},
+			{id: "no", title: "No"},
 		}, pickerOptions{})
 		if errors.Is(err, errPickCanceled) && cmd.Context().Err() == nil {
 			return sshIncludeDisabled, nil
