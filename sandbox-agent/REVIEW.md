@@ -235,7 +235,7 @@
   ADR 26-10-24-953 §2); a second `COPY` there stops every box booting. The
   platform carries no agent: core links the placed one
   (`/opt/discobox/current`), never a copy in a tree.
-- **Every `COPY` into the `platform` stage is `--link`.** Without it each
+- **Every `COPY` into the platform stages (`platform-features`, `platform-linux`) is `--link`.** Without it each
   layer carries `/features/` as the stage last left it, so an edit to one
   feature moved every layer after it, and every box fetched them all again: a
   comment in `go`'s provision.yaml moved eleven layers. A layer added there
@@ -712,9 +712,13 @@ user waits on every single start.
   (`features/<name>/provision.yaml`), never a Dockerfile `COPY` or `RUN`: the
   Dockerfile copies feature directories in and provisions them. A new
   directory under `features` is copied and provisioned in its own layer, after
-  what it requires, and copied into the `platform` bundle stage under
-  `/features/` from the same source; `provision/platform_tree_test.go` replays
-  the copies, holds the two lists equal, and fails otherwise. A script a step runs is committed executable, and is
+  what it requires, and copied into the platform bundle under `/features/`
+  from the same source: into `platform-features`, which every OS's entry is
+  built FROM, or into an OS's own `platform-<os>` stage for a feature only
+  that OS has (the desktop and nested Docker are `platform-linux`'s).
+  `provision/platform_tree_test.go` replays each OS's copies, holds its list
+  to the features less what that OS declares absent, and fails otherwise; a
+  feature a shared one requires must therefore be shared too. A script a step runs is committed executable, and is
   idempotent: a step is applied again whenever its digest changes, which on a
   booted box is with its volumes wired over what it installed — a script
   that rebuilds a tree a volume now holds (`/nix`, Homebrew's prefix) must

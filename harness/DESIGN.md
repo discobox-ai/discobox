@@ -308,8 +308,9 @@ coding harnesses; shell carries no capture implementation.
   `FROM`. `harness/shell`'s bundle carries no feature, only its label. A
   published harness bundle is one `linux/amd64` manifest with no attestations
   — its content is the same on every architecture, and its steps select
-  theirs when they run — where the platform bundle is a multi-architecture
-  index.
+  theirs when they run — where the platform bundle is a multi-platform
+  index: Linux on amd64 and arm64, and darwin on arm64 (ADR 26-11-11-963 §9),
+  each entry with its own platform layer.
 - **A manifest argument is required, not optional.** `LABEL key=${ARG}` with no
   argument passed labels the image with the empty string, which is a build
   mistake that produces a working image nothing can register — so the platform
@@ -318,8 +319,10 @@ coding harnesses; shell carries no capture implementation.
   it for a server to report at seed time. Any build path publishing these
   (`build:*`, `release:images`, the development watcher) passes it.
 - **The platform layer** (`10-platform`) is `sandbox-agent/image.json`, beside the Dockerfile that
-  labels it. It carries what is true of every box the platform provisions rather than of
-  any harness:
+  labels it, on the platform bundle's Linux entries; its darwin entry's is
+  `sandbox-agent/image.darwin.json` (the env and PATH of a macOS sandbox, and
+  no volumes, groups, desktop or Docker). `image.json` carries what is true of every Linux box the platform provisions
+  rather than of any harness:
   - `DISPLAY=:0`, because the base ships the socket-activated desktop (Xorg
     dummy on `:0`, Xfce, x11vnc, websockify — see
     [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md)) unconditionally.
