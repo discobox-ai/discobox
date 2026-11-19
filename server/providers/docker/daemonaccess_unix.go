@@ -16,36 +16,37 @@ import (
 	"syscall"
 )
 
-// socketAccessHint says why this process cannot open path, when the reason is
-// one the machine can state.
+// socketAccess reports whether the socket at path refuses this process, and
+// why, when the reason is one the machine can state.
 //
 // Nothing is claimed unless the socket refuses this process right now. A socket
 // that dials — or is missing, or fails for any other reason — is not what this
 // explains, and a guess about permissions on a daemon that is simply not
-// running would send the reader after the wrong thing.
-func socketAccessHint(ctx context.Context, path string) string {
+// running would send the reader after the wrong thing. A refused socket whose
+// owner cannot be read is still refused; it only has no hint.
+func socketAccess(ctx context.Context, path string) (refused bool, hint string) {
 	if path == "" {
-		return ""
+		return false, ""
 	}
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(ctx, "unix", path)
 	if err == nil {
 		_ = conn.Close()
-		return ""
+		return false, ""
 	}
 	if !errors.Is(err, fs.ErrPermission) {
-		return ""
+		return false, ""
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return ""
+		return true, ""
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return ""
+		return true, ""
 	}
 	gid := int(stat.Gid)
-	return describeSocketAccess(path, gid, holdsGroup(gid))
+	return true, describeSocketAccess(path, gid, holdsGroup(gid))
 }
 
 // describeSocketAccess is what the reader is told about a socket they were

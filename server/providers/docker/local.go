@@ -2,9 +2,7 @@ package docker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
@@ -68,8 +66,10 @@ func (d *LocalDriver) Check(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	explained := explainDaemonUnreachable(ctx, d.DaemonHost(), err)
-	if client.IsErrConnectionFailed(err) && !errors.Is(err, fs.ErrPermission) {
+	// A socket this process may not open is a connection failure to the
+	// client too, so whether it was refused is asked of the socket itself.
+	refused, explained := explainDaemonUnreachable(ctx, d.DaemonHost(), err)
+	if client.IsErrConnectionFailed(err) && !refused {
 		return fmt.Errorf("the Docker daemon at %s does not answer: %w: %w", d.DaemonHost(), explained, sandbox.ErrProviderNotReachable)
 	}
 	return fmt.Errorf("the Docker daemon at %s refuses: %w", d.DaemonHost(), explained)

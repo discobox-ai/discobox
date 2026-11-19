@@ -15,27 +15,29 @@ import (
 // docker API at unix:///var/run/docker.sock", which names neither the group
 // that would grant it nor the command that adds it.
 
-// explainDaemonUnreachable adds what this machine can say about a daemon the
-// client could not reach.
+// explainDaemonUnreachable reports whether the daemon's socket refused this
+// process, and adds what this machine can say about why.
 //
 // The client's message is all that is left of the refusal — moby's client
-// builds it with fmt.Errorf and no %w (client/request.go), so the syscall does
-// not survive to be matched on — so this asks the socket itself instead of
-// reading that sentence: dialing it reproduces the refusal with the error
-// intact, and the socket's own owner and mode say who was entitled to it.
+// builds it with fmt.Errorf and no %w (client/request.go), and wraps it as a
+// connection failure, the same as a daemon that is not there — so this asks the
+// socket itself instead of reading that sentence: dialing it reproduces the
+// refusal with the error intact, and the socket's own owner and mode say who
+// was entitled to it. refused is that dial's answer, and the only one a
+// caller can tell a refusal from a daemon that does not answer by.
 //
 // The original error is always the start of what comes back. It is what the
 // daemon and the client actually said, and a hint that turns out not to apply
 // must not replace it.
-func explainDaemonUnreachable(ctx context.Context, host string, err error) error {
+func explainDaemonUnreachable(ctx context.Context, host string, err error) (refused bool, explained error) {
 	if err == nil {
-		return nil
+		return false, nil
 	}
-	hint := socketAccessHint(ctx, unixSocketPath(host))
+	refused, hint := socketAccess(ctx, unixSocketPath(host))
 	if hint == "" {
-		return err
+		return refused, err
 	}
-	return fmt.Errorf("%w (%s)", err, hint)
+	return refused, fmt.Errorf("%w (%s)", err, hint)
 }
 
 // unixSocketPath is the filesystem path a Docker host names, or "" for a host

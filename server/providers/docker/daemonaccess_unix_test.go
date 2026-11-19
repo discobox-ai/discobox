@@ -12,6 +12,9 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/x/shorttmp"
+	"github.com/moby/moby/client"
+
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // The failure this exists for: a fresh Docker install leaves the user out of
@@ -44,7 +47,7 @@ func TestSocketAccessHintDoesNotTellAMemberToJoin(t *testing.T) {
 // The detection itself, against a real socket. The refusal is reproduced by
 // dialing rather than read out of the client's message, because moby's client
 // builds that message with no %w and the syscall does not survive it.
-func TestSocketAccessHintSpeaksOnlyForARefusedSocket(t *testing.T) {
+func TestSocketAccessSpeaksOnlyForARefusedSocket(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root is refused by no socket mode")
 	}
@@ -62,18 +65,18 @@ func TestSocketAccessHintSpeaksOnlyForARefusedSocket(t *testing.T) {
 	defer listener.Close()
 
 	// Reachable: this is not a permission problem, so there is nothing to say.
-	if hint := socketAccessHint(ctx, path); hint != "" {
-		t.Fatalf("hint %q for a socket that dials", hint)
+	if refused, hint := socketAccess(ctx, path); refused || hint != "" {
+		t.Fatalf("socketAccess = %t, %q for a socket that dials", refused, hint)
 	}
 	if err := os.Chmod(path, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	if hint := socketAccessHint(ctx, path); !strings.Contains(hint, path) {
-		t.Fatalf("hint %q does not name the socket it is about", hint)
+	if refused, hint := socketAccess(ctx, path); !refused || !strings.Contains(hint, path) {
+		t.Fatalf("socketAccess = %t, %q, want refused with a hint naming the socket", refused, hint)
 	}
 	// And a socket that is not there at all is not this explanation either.
-	if hint := socketAccessHint(ctx, filepath.Join(t.TempDir(), "missing.sock")); hint != "" {
-		t.Fatalf("hint %q for a socket that does not exist", hint)
+	if refused, hint := socketAccess(ctx, filepath.Join(t.TempDir(), "missing.sock")); refused || hint != "" {
+		t.Fatalf("socketAccess = %t, %q for a socket that does not exist", refused, hint)
 	}
 }
 
@@ -83,8 +86,11 @@ func TestSocketAccessHintSpeaksOnlyForARefusedSocket(t *testing.T) {
 func TestExplainDaemonUnreachableKeepsTheOriginalError(t *testing.T) {
 	original := errors.New("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock")
 
-	err := explainDaemonUnreachable(context.Background(), "tcp://10.0.0.5:2375", original)
+	refused, err := explainDaemonUnreachable(context.Background(), "tcp://10.0.0.5:2375", original)
 
+	if refused {
+		t.Fatal("a daemon that is not a Unix socket was read as refusing this process")
+	}
 	if !errors.Is(err, original) {
 		t.Fatalf("error %v no longer carries the client's own", err)
 	}
@@ -102,4 +108,45 @@ func TestUnixSocketPath(t *testing.T) {
 			t.Fatalf("unixSocketPath(%q) = %q, want no path", host, got)
 		}
 	}
+}
+
+// A socket this process may not open answers: the daemon is there and its
+// socket refused this process. moby's client reports that as a connection
+// failure, the same as a daemon that is not there, so a check that read the
+// client's error alone called it unreachable and sent the reader to their
+// network (#1470). A socket that is not there at all is still unreachable.
+func TestLocalDriverCheckReadsARefusedSocketAsARefusal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root is refused by no socket mode")
+	}
+	path := filepath.Join(shorttmp.Dir(t), "docker.sock")
+	var config net.ListenConfig
+	listener, err := config.Listen(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	err = unixDriver(t, path).Check(t.Context())
+	if err == nil || errors.Is(err, sandbox.ErrProviderNotReachable) || !strings.Contains(err.Error(), "refuses") {
+		t.Fatalf("check err = %v, want a refusal, not the provider unreachable", err)
+	}
+
+	err = unixDriver(t, filepath.Join(shorttmp.Dir(t), "missing.sock")).Check(t.Context())
+	if !errors.Is(err, sandbox.ErrProviderNotReachable) {
+		t.Fatalf("check err = %v for a missing socket, want the provider unreachable", err)
+	}
+}
+
+func unixDriver(t *testing.T, path string) *LocalDriver {
+	t.Helper()
+	cli, err := client.New(client.WithHost("unix://" + path))
+	if err != nil {
+		t.Fatalf("new docker client: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	return &LocalDriver{client: cli}
 }
