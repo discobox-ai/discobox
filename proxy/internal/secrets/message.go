@@ -204,10 +204,12 @@ func (s *Swapper) Revision() uint64 {
 // to be read and decided again. While decide runs no configuration is
 // installed, so a revocation lands either before that decision or after it
 // (ADR 26-11-06-442 §4). decide does no network I/O: a configuration never
-// waits on an origin. The caller commits the message to the wire by holding
-// its connection's write lock from before Decide until it has written it, so
-// nothing it decided waits behind another write.
-func (s *Swapper) Decide(revision uint64, clientID string, sentinels []string, decide func() error) (stale bool, err error) {
+// waits on an origin. Nor does it wait long on anything: it is handed a
+// context that ends after decideBound, which Authorize, the call it makes,
+// answers within (Resolver.Authorize). The caller commits the message to the
+// wire by holding its connection's write lock from before Decide until it
+// has written it, so nothing it decided waits behind another write.
+func (s *Swapper) Decide(ctx context.Context, revision uint64, clientID string, sentinels []string, decide func(context.Context) error) (stale bool, err error) {
 	s.publish.RLock()
 	defer s.publish.RUnlock()
 	if s.revision.Load() != revision {
@@ -219,5 +221,11 @@ func (s *Swapper) Decide(revision uint64, clientID string, sentinels []string, d
 			return true, nil
 		}
 	}
-	return false, decide()
+	bounded, cancel := context.WithTimeout(ctx, decideBound)
+	defer cancel()
+	return false, decide(bounded)
 }
+
+// decideBound is the longest a message's last decision may hold off the
+// installing of a configuration for the whole pool.
+const decideBound = time.Second
