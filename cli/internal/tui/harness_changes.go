@@ -202,7 +202,7 @@ func (m *Model) viewHarnessChangesBanner(width int) string {
 	st := m.st
 	subject := st.attentionText.Render(harnessChangesName(box) + " settings or login changed in this box")
 	call := bannerChip(st, "click to review and save", colOfferChip)
-	return bannerRow(st, offerPalette, width, subject, call, m.leader()+" "+harnessChangesKey)
+	return bannerRow(st, offerPalette, width, subject, call, m.leader()+" "+harnessChangesKey, 0)
 }
 
 // The explainer: the first time a project's console sees a discobox with a

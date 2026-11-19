@@ -624,8 +624,13 @@ flowchart LR
   request routes (`newCredentialHosts`, ADR 26-11-11-857). A later review can
   add eligible placement routes with consent. The grant keeps its own scope
   and the saved credential stays reusable on those hosts.
-- **Summary.** Each part in a line — the hosts its open routes reach, how
-  many operations (a row of its route table each), the methods they take,
+- **Summary.** Each part in a line. For a request with one exact HTTP
+  operation, its part shows the method, host and path together. The
+  credential selection card and the banner for a single waiting request
+  show the same preview. When space runs short, the banner gives the route
+  priority over the credential name and the click prompt. For other route sets, the summary
+  shows the hosts its open routes reach, how many operations (a row of its
+  route table each), the methods they take,
   whether their paths are any path or hold wildcards, and how many rows it
   blocks; any method, path or operation left open is a warning
   (`partSummary`) — and under it whether approving it adds to the rules the
@@ -633,10 +638,9 @@ flowchart LR
   its whole use of the credential, in every variable; a delegate part always
   replaces the box's delegation of it, `delegateMode`), with Accept and Deny answering
   every part at once at the selected lifetime, and Review… walking them.
-  It lists no routes and no bindings: every route, with its methods, paths
-  and constraints, and what a part replaces — which bindings, in which
-  variables, their route diffs and shortened lifetimes — is behind Review…,
-  on its part's card; a part that replaces something says only "Review…
+  Each part's Review… card shows its full route table with methods, paths and
+  constraints. It also shows which bindings and variables the part replaces,
+  their route diffs and shortened lifetimes. A part that replaces something says only "Review…
   lists them" after its add/replace line. That line is the replacement
   notice ADR 26-11-02-022 §5 and 26-11-04-616 §4 ask of the screen Accept
   sends from: whether the part adds to or replaces what the box holds, not
