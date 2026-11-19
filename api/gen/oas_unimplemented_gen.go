@@ -92,6 +92,16 @@ func (UnimplementedHandler) AuthorizePoolSandboxStart(ctx context.Context, param
 	return r, ht.ErrNotImplemented
 }
 
+// CheckSandboxProviderHost implements check-sandbox-provider-host operation.
+//
+// Checks Docker daemon access or libkrun host prerequisites without initializing the provider
+// runtime or scheduling pool work.
+//
+// POST /projects/{projectId}/providers/{providerId}/host-check
+func (UnimplementedHandler) CheckSandboxProviderHost(ctx context.Context, params CheckSandboxProviderHostParams) (r CheckSandboxProviderHostRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
 //
 // Asks the provider instance whether the server reaches what its pools need (its service's account,

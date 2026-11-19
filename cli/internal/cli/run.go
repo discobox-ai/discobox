@@ -473,6 +473,10 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
+		var failed *sandboxcreate.SandboxFailedError
+		if errors.As(err, &failed) {
+			return fmt.Errorf("discobox %s failed%s: %w", sandbox.ID, local.RetainedSources(), err)
+		}
 		return fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), a.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
 	// Still under the status line, and named on it: the sync generates a key,

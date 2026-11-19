@@ -4,6 +4,10 @@
 reconciliation, sandbox provider catalog access, and sandbox runtime trust
 integration.
 
+Sandbox creation checks Docker and libkrun provider instances before recording
+sandbox intent. It uses the same driver preflight as the provider diagnostic
+endpoint without initializing the runtime or scheduling pool work.
+
 ## Boundaries
 
 ```mermaid

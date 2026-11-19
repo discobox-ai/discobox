@@ -97,6 +97,14 @@ func sourceAwaitsDelivery(source apimodel.GitSource, awaiting bool) bool {
 	}
 }
 
+// SandboxFailedError carries a terminal runtime failure encountered while
+// waiting for a sandbox to receive its source.
+type SandboxFailedError struct {
+	Message string
+}
+
+func (e *SandboxFailedError) Error() string { return e.Message }
+
 // DeliverSource delivers a sandbox's sources and reports them delivered,
 // returning once the sandbox is free to start on them. Each source out of a
 // repository on this machine is delivered from the local source the create
@@ -336,7 +344,7 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 			if Repairing(sandbox) {
 				break
 			}
-			return false, fmt.Errorf("discobox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
+			return false, &SandboxFailedError{Message: sandbox.Runtime.ErrorMessage.Or("unknown error")}
 		}
 		// A sandbox with nothing left to provision reports no phase, which
 		// leaves the previous line standing rather than blanking it: the wait is

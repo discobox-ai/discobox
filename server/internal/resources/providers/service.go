@@ -24,6 +24,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	runtimeproviders "github.com/discobox-ai/discobox/server/providers"
 )
 
 type Service struct {
@@ -447,13 +448,26 @@ var providerCheckTimeout = 60 * time.Second
 // check is the answer, not an error: an error is the check not being run (no
 // such instance). Nothing is stored (§2).
 func (s *Service) CheckSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*services.ProviderCheck, error) {
+	return s.checkProvider(ctx, projectID, providerID, s.sandboxes.SandboxProviderManager().CheckInstance)
+}
+
+// CheckSandboxProviderHost checks the local driver without initializing
+// the provider runtime or scheduling pool work.
+func (s *Service) CheckSandboxProviderHost(ctx context.Context, projectID, providerID string) (*services.ProviderCheck, error) {
+	return s.checkProvider(ctx, projectID, providerID, runtimeproviders.CheckHostInstance)
+}
+
+func (s *Service) checkProvider(ctx context.Context, projectID, providerID string, checkInstance func(context.Context, *model.SandboxProviderInstance) error) (*services.ProviderCheck, error) {
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, providerCheckTimeout)
 	defer cancel()
-	err = s.sandboxes.SandboxProviderManager().CheckInstance(checkCtx, provider)
+	err = checkInstance(checkCtx, provider)
+	if errors.Is(err, runtimeproviders.ErrNoHostCheck) {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
 	// The caller hanging up is not the provider's answer.
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr

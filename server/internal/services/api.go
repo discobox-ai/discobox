@@ -408,6 +408,7 @@ type SandboxProviderInstanceService interface {
 	// CheckSandboxProviderInstance asks the instance's provider whether it
 	// reaches what its pools need, and makes nothing (ADR 26-11-15-089).
 	CheckSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*ProviderCheck, error)
+	CheckSandboxProviderHost(ctx context.Context, projectID, providerID string) (*ProviderCheck, error)
 }
 
 // PoolService manages project-scoped pools: the user-visible sharing boundary

@@ -63,6 +63,13 @@ type Handler interface {
 	//
 	// GET /pool-agent/{poolId}/sandbox-start-authorization
 	AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error)
+	// CheckSandboxProviderHost implements check-sandbox-provider-host operation.
+	//
+	// Checks Docker daemon access or libkrun host prerequisites without initializing the provider
+	// runtime or scheduling pool work.
+	//
+	// POST /projects/{projectId}/providers/{providerId}/host-check
+	CheckSandboxProviderHost(ctx context.Context, params CheckSandboxProviderHostParams) (CheckSandboxProviderHostRes, error)
 	// CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
 	//
 	// Asks the provider instance whether the server reaches what its pools need (its service's account,

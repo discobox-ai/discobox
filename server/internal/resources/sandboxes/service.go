@@ -31,6 +31,7 @@ import (
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/providers"
 	"gorm.io/gorm"
 )
 
@@ -431,6 +432,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		if entry.source.CacheKey != nil && strings.HasPrefix(*entry.source.CacheKey, "remote/") && entry.source.Slug != nil {
 			sandbox.SourceDeliveries[*entry.source.Slug] = sourcecache.Delivery{Status: "pending"}
 		}
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err = providers.CheckHostInstance(checkCtx, provider)
+	cancel()
+	if err != nil && !errors.Is(err, providers.ErrNoHostCheck) {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable,
+			fmt.Sprintf("pool %q cannot use its %s provider: %v", pool.Name, provider.Type, err))
 	}
 	return s.createSandboxIntent(ctx, sandbox, inlineSecrets, inline, prepared)
 }

@@ -176,6 +176,11 @@ A server whose wait for its pools ran out warns how many are still upgrading
 
 ## Pool outbound status
 
+For accessible default pools backed by Docker or libkrun, `admin server status`
+asks the server to check the configured provider and reports its current result.
+When a local Linux Unix socket is unreachable, status asks the server binary to
+check the first-run drivers without starting a server.
+
 `admin server status` also reads each accessible pool's redacted outbound
 configuration, desired/applied revisions and observations by server/guest/pool
 context. A missing context is untested. Endpoint/CA details describe pool

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -27,6 +29,7 @@ import (
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"
 	"github.com/discobox-ai/x/id"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // reconcileSandbox mirrors the reconcile engine's entry: load the LATEST
@@ -326,6 +329,7 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 }
 
 func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
+	useDefaultDockerPing(t)
 	// Make the host runtime unavailable regardless of the test host's KVM.
 	t.Setenv("PATH", t.TempDir())
 	ctx := context.Background()
@@ -433,6 +437,7 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 // The server must never rewrite its config on a later boot, not even to restore
 // a key the user removed.
 func TestInitializeDefaultsLeavesEditedDefaultProviderConfigAlone(t *testing.T) {
+	useDefaultDockerPing(t)
 	t.Setenv("PATH", t.TempDir())
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
@@ -483,6 +488,7 @@ func defaultProviderID(ctx context.Context, t *testing.T, appStore *store.Store,
 }
 
 func TestInitializeDefaultsDoesNotPersistDefaultDockerProviderImageFromEnv(t *testing.T) {
+	useDefaultDockerPing(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
@@ -534,8 +540,8 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	if cfg.AgentPort != providerdocker.DefaultAgentPort() {
 		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, providerdocker.DefaultAgentPort())
 	}
-	if cfg.BindDockerSocket != "/var/run/docker.sock" {
-		t.Fatalf("bindDockerSocket = %q, want /var/run/docker.sock", cfg.BindDockerSocket)
+	if cfg.BindDockerSocket != "" {
+		t.Fatalf("bindDockerSocket = %q, want automatic socket selection", cfg.BindDockerSocket)
 	}
 	expectedHostMounts := existingDefaultHostMounts(t)
 	if len(cfg.HostMounts) != len(expectedHostMounts) {
@@ -769,6 +775,7 @@ func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
 		warnings   int
 	}{{"ready", "libkrun", 0}, {"unavailable", "docker", 1}} {
 		t.Run(tc.host, func(t *testing.T) {
+			useDefaultDockerPing(t)
 			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", tc.host)
 			appStore, projectID := newProviderCatalogTestStore(t)
 			var warnings []string
@@ -808,4 +815,49 @@ func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInitializeDefaultsRejectsUnusableLinuxDrivers(t *testing.T) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("libkrun defaults are linux/amd64")
+	}
+
+	t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", "unavailable")
+	t.Setenv("DOCKER_HOST", "unix://"+t.TempDir()+"/missing.sock")
+	appStore, projectID := newProviderCatalogTestStore(t)
+	svc := service.New(appStore, nil, service.Options{AssetDir: t.TempDir()})
+
+	_, err := svc.InitializeDefaults(t.Context(), service.DefaultUserID)
+	pools, listErr := appStore.ListPools(t.Context(), projectID)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if err == nil || len(pools) != 0 {
+		t.Fatalf("initialization error = %v, pools = %d; want both driver failures and no Default pool", err, len(pools))
+	}
+	if !strings.Contains(err.Error(), "KVM unavailable") || !strings.Contains(err.Error(), "Docker") {
+		t.Fatalf("initialization error = %v; want KVM and Docker failures", err)
+	}
+}
+
+func useDefaultDockerPing(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return
+	}
+	socket := filepath.Join(shorttmp.Dir(t), "docker.sock")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_ping", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("API-Version", "1.52")
+		_, _ = io.WriteString(w, "OK")
+	})
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	t.Setenv("DOCKER_HOST", "unix://"+socket)
+	t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", "unavailable")
 }

@@ -10,10 +10,21 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/version"
 	"github.com/discobox-ai/discobox/server"
+	"github.com/discobox-ai/discobox/server/internal/config"
 )
 
 func main() {
-	// The one thing this binary answers without starting anything. The server
+	// Keep --version first so servers predating this probe exit safely.
+	if slices.Equal(os.Args[1:], []string{"--version", "--check-host"}) {
+		config.LoadEnvFile()
+		if err := server.PrintHostChecks(context.Background(), os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// The version query this binary answers without starting anything. The server
 	// is configured by a file and the environment and takes no flags (ADR
 	// 0096), but it is now downloaded rather than built alongside whatever
 	// starts it (ADR 0099), so "what is this binary" has to be a question a

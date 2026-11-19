@@ -165,3 +165,22 @@ func TestCheckSandboxProviderInstanceOfNoInstanceIsNotFound(t *testing.T) {
 		t.Fatalf("err = %v, want 404", err)
 	}
 }
+
+func TestHostCheckDoesNotBuildTheProvider(t *testing.T) {
+	svc, appStore, manager := newTestService(t)
+	manager.RegisterFactory("docker", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		t.Fatal("host-only check built the provider")
+		return nil, nil
+	})
+	instance := &model.SandboxProviderInstance{
+		ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker",
+		Config: model.RawJSON(`{"host":"invalid-host"}`),
+	}
+	if err := appStore.CreateSandboxProviderInstance(t.Context(), instance); err != nil {
+		t.Fatal(err)
+	}
+	check, err := svc.CheckSandboxProviderHost(t.Context(), instance.ProjectID, instance.ID)
+	if err != nil || check.Outcome != serverapi.ProviderCheckOutcomeRefused {
+		t.Fatalf("check = %+v, err = %v; want driver configuration to be refused", check, err)
+	}
+}

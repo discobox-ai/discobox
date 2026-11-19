@@ -54,6 +54,15 @@ func NewLocalDriver(ctx context.Context, host string, agentPort int) (*LocalDriv
 	return driver, nil
 }
 
+// CheckHost tests the configured Docker daemon without initializing a pool runtime.
+func CheckHost(ctx context.Context, cfg Config) error {
+	driver, err := NewLocalDriver(ctx, cfg.Host, effectiveAgentPort(cfg.AgentPort))
+	if err != nil {
+		return err
+	}
+	return driver.Close()
+}
+
 // Check pings the Docker daemon the provider is pointed at: every pool's
 // container runs there. A daemon that does not answer is unreachable; one
 // that answers and refuses, or a socket this process may not open, is a
@@ -71,11 +80,11 @@ func (d *LocalDriver) Check(ctx context.Context) error {
 	host := d.DaemonHost()
 	if client.IsErrConnectionFailed(err) {
 		denied, hint := probeSocketAccess(ctx, unixSocketPath(host))
-		if !denied && !errors.Is(err, fs.ErrPermission) {
-			return fmt.Errorf("the Docker daemon at %s does not answer: %w: %w", host, err, sandbox.ErrProviderNotReachable)
-		}
 		if hint != "" {
 			err = fmt.Errorf("%w (%s)", err, hint)
+		}
+		if !denied && !errors.Is(err, fs.ErrPermission) {
+			return fmt.Errorf("the Docker daemon at %s does not answer: %w: %w", host, err, sandbox.ErrProviderNotReachable)
 		}
 	}
 	return fmt.Errorf("the Docker daemon at %s refuses: %w", host, err)

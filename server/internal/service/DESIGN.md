@@ -152,10 +152,11 @@ application policy, not engine behavior.
   the records. After that they are ordinary user-owned records; deleting them is
   permanent. The provider type follows the host OS: `libkrun` on linux/amd64
   when KVM, passt and the native library are usable,
-  otherwise `docker` with an isolation warning; `vz` on macOS, `wslc` on
+  otherwise reachable `docker` with an isolation warning; `vz` on macOS, `wslc` on
   Windows, and a disabled `unsupported` instance elsewhere. The host probe runs
   before the transaction, and a fallback warning is published only after seeding
-  commits. The libkrun instance records this server's Unix listener for its VM's
+  commits. If neither Linux driver passes its host check, initialization fails
+  before writing the provider or pool and reports both failures. The libkrun instance records this server's Unix listener for its VM's
   control-plane forward. Later boots neither probe nor change existing providers.
   `WithoutDefaultProviderInstallation` skips this step.
 
