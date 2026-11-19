@@ -645,6 +645,7 @@ func (m *Model) viewCredentialBanner(width int) string {
 	st := m.st
 	subject := credentialName(pending[0])
 	what := "credential request"
+	minSubjectWidth := 0
 	if pending[0].APIAccess {
 		what = "API access request"
 	} else if pending[0].Adoption != nil {
@@ -655,6 +656,10 @@ func (m *Model) viewCredentialBanner(width int) string {
 	} else if pending[0].Refresh != nil {
 		// A token this discobox already has, wanting a new value.
 		what = "refresh request"
+	} else if route := singleHTTPRoute(pending[0].routes()); len(pending) == 1 && route != "" {
+		// The banner clips from the right, so lead with the route.
+		what = route
+		minSubjectWidth = lipgloss.Width(route) + 1
 	} else if host := pending[0].where(); host != "" {
 		subject += " for " + host
 	}
@@ -687,7 +692,7 @@ func (m *Model) viewCredentialBanner(width int) string {
 	body := st.attentionText.Render(what) +
 		st.attentionHint.Render("  ·  ") + st.attentionText.Render(subject)
 	call := bannerChip(st, "click to answer", bannerPulseHues[m.pulse%len(bannerPulseHues)])
-	return bannerRow(st, alertPalette, width, body, call, m.leader()+" "+credentialsLeaderKey)
+	return bannerRow(st, alertPalette, width, body, call, m.leader()+" "+credentialsLeaderKey, minSubjectWidth)
 }
 
 // credentialErrorSection says which request is still waiting, under the
