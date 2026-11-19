@@ -23,6 +23,7 @@ func TestPathsMatchTheEstablishedLayout(t *testing.T) {
 		"sandbox config":    {c.SandboxConfig("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/config"},
 		"sandbox secrets":   {c.SandboxSecrets("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/secrets"},
 		"sandbox sources":   {c.SandboxSources("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/sources"},
+		"cache pool":        {c.CachePool("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool"},
 		"pool cache":        {c.PoolCache("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool/cache"},
 		"pool build":        {c.PoolBuild("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool/build"},
 		"proxy certs":       {c.ProxyCerts("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/certs"},
@@ -45,6 +46,7 @@ func TestPoolStateIsAlwaysScopedToItsPool(t *testing.T) {
 		"PoolData":                c.PoolData,
 		"PoolSandboxes":           c.PoolSandboxes,
 		"PoolSourceData":          c.PoolSourceData,
+		"CachePool":               c.CachePool,
 		"PoolCache":               c.PoolCache,
 		"PoolBuild":               c.PoolBuild,
 		"ProxyPool":               c.ProxyPool,
@@ -200,5 +202,31 @@ func TestPoolBuildIsNotInsideTheSandboxVisibleCache(t *testing.T) {
 	}
 	if path.Dir(build) != path.Dir(cache) {
 		t.Errorf("PoolBuild %q and PoolCache %q are not siblings", build, cache)
+	}
+}
+
+// A pool's own directories are one per tree a backend mounts, so a tree added
+// to MountRoots cannot be left out of what a pool's deletion removes.
+func TestPoolTreesHasOneDirectoryInEveryMountRoot(t *testing.T) {
+	trees := c.PoolTrees("prj", "pool")
+	roots := c.MountRoots()
+	if len(trees) != len(roots) {
+		t.Fatalf("PoolTrees = %q, want one directory for each of %q", trees, roots)
+	}
+	for _, root := range roots {
+		n := 0
+		for _, tree := range trees {
+			if strings.HasPrefix(tree, root+"/") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("PoolTrees has %d directories under %s, want 1: %q", n, root, trees)
+		}
+	}
+	for _, tree := range trees {
+		if !strings.HasSuffix(tree, "/pool") {
+			t.Errorf("PoolTrees entry %q is not the pool's own directory", tree)
+		}
 	}
 }

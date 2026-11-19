@@ -155,6 +155,20 @@ func (r Root) PoolIdentityKey(projectID, poolID string) string {
 	return r.join(r.PoolIdentity(projectID, poolID), "agent.key")
 }
 
+// PoolTrees is every directory one pool owns, one in each of the trees
+// MountRoots names: its durable data, its cache and build state, its proxy
+// material, and its identity. Removing them all removes the pool's state on its
+// host and nothing of another pool's. Only an explicit pool deletion may: a
+// reaper must not enumerate the identity tree (ADR 0063).
+func (r Root) PoolTrees(projectID, poolID string) []string {
+	return []string{
+		r.PoolData(projectID, poolID),
+		r.CachePool(projectID, poolID),
+		r.ProxyPool(projectID, poolID),
+		r.PoolIdentity(projectID, poolID),
+	}
+}
+
 // --- durable pool and sandbox state ----------------------------------------
 
 // ProjectData is the root of one project's durable state. It is the shallowest
@@ -260,6 +274,12 @@ func (r Root) ProjectCachePools(projectID string) string {
 	return r.join(r.cacheTree(), "projects", projectID, "pools")
 }
 
+// CachePool is one pool's whole disposable subtree: the parent of PoolCache
+// and PoolBuild.
+func (r Root) CachePool(projectID, poolID string) string {
+	return r.join(r.ProjectCachePools(projectID), poolID)
+}
+
 // PoolCache is the cache shared by every sandbox one pool runs. It is separate
 // from the durable tree so a backend can back it with disposable storage.
 //
@@ -267,7 +287,7 @@ func (r Root) ProjectCachePools(projectID string) string {
 // harness-declared target path mirrored onto the host, and nothing under it is
 // privileged. Pool-agent state belongs in PoolBuild instead (ADR 0050).
 func (r Root) PoolCache(projectID, poolID string) string {
-	return r.join(r.ProjectCachePools(projectID), poolID, "cache")
+	return r.join(r.CachePool(projectID, poolID), "cache")
 }
 
 // PoolBuild holds the pool's own machinery: BuildKit's state, the pool
@@ -280,7 +300,7 @@ func (r Root) PoolCache(projectID, poolID string) string {
 // Disposable like its sibling: everything here rebuilds, from the sandboxes'
 // sources or, for the bundles, from the server.
 func (r Root) PoolBuild(projectID, poolID string) string {
-	return r.join(r.ProjectCachePools(projectID), poolID, "build")
+	return r.join(r.CachePool(projectID, poolID), "build")
 }
 
 // SnapshotIDPrefix begins the identity of every snapshot build (ADR
