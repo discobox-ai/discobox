@@ -448,14 +448,15 @@ var (
 // The key's "or" goes with it, because it is the chip the key is the other way
 // of doing. The two cells of band in front of the key are part of the right, so
 // the gap survives a subject long enough to be cut back against it.
-func bannerRow(st *styles, palette bannerPalette, width int, subject, call, key string) string {
+func bannerRow(st *styles, palette bannerPalette, width int, subject, call, key string, minSubjectWidth int) string {
 	head := palette.markStyle(st).Render(" " + palette.mark + "  ")
 	keyed := st.attentionText.Render(key) + st.attentionHint.Render(" ") + st.attentionText.Render(bannerClose)
 	right := st.attentionHint.Render("  or  ") + keyed
 	// The mark whole, two cells of air, the chip, and a cell before the key's
 	// own gap — spreadCenterPin keeps each of them — then the key. Less room
-	// than that and the call goes, rather than the mark or the key.
-	if call == "" || lipgloss.Width(head)+3+lipgloss.Width(call)+lipgloss.Width(right) > width {
+	// than that and the call goes. A subject can also reserve space for its
+	// leading text. Leave room for an ellipsis if the rest is clipped.
+	if call == "" || lipgloss.Width(head)+3+lipgloss.Width(call)+lipgloss.Width(right)+minSubjectWidth > width {
 		call, right = "", st.attentionHint.Render("  ")+keyed
 	}
 	return highlight(st, padANSI(spreadCenterPin(head+subject, call, right, width), width), palette.bg)

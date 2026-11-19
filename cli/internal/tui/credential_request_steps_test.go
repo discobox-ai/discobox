@@ -1237,3 +1237,38 @@ func TestNewCredentialCanSaveAFullPartOfPlacementRoutes(t *testing.T) {
 		t.Fatalf("got %s, want save and approve", describe(m.dialog))
 	}
 }
+
+func TestApprovalSummaryShowsSingleHTTPRoute(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	route := secretroute.Route{
+		Hosts: []string{"tour.discobox.invalid"}, Methods: []string{"GET"}, Paths: []string{"/demo"},
+	}
+	req := waitingRequest()
+	req.Use.Routes = []secretroute.Route{route}
+	ds.projectSecrets[0].Routes = []secretroute.Route{route}
+	ds.requests = []CredentialRequest{req}
+	send(t, m, tickMsg{})
+
+	const preview = "GET tour.discobox.invalid/demo"
+	m.paneBox = Sandbox{ID: req.SandboxID}
+	for _, width := range []int{72, 55} {
+		banner := m.viewCredentialBanner(width)
+		if !strings.Contains(banner, preview) || !strings.Contains(banner, m.leader()+" "+credentialsLeaderKey) {
+			t.Fatalf("banner at %d columns = %q, want %q and the answer shortcut", width, banner, preview)
+		}
+	}
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) || !strings.Contains(plainFrame(m), preview) {
+		t.Fatalf("credential selection does not show %q", preview)
+	}
+	pickItem(t, m, "sec_gh")
+	if !onStep(m, "summary") || !strings.Contains(plainFrame(m), preview) {
+		t.Fatalf("approval summary does not show %q", preview)
+	}
+	answerApproval(t, m, "review")
+	if !onStep(m, "its own use") || !strings.Contains(plainFrame(m), "/demo") {
+		t.Fatal("Review does not show the demo path")
+	}
+}
