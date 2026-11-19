@@ -7,8 +7,16 @@ import (
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 )
 
-// APIVersion is the sandbox.json contract version.
-const APIVersion = "discobox.dev/sandbox/v1"
+// APIVersion is the sandbox.json contract version, in Discobox's own
+// namespace. A sandbox agent reads it and LegacyAPIVersion alike.
+const APIVersion = "discobox.ai/sandbox/v1"
+
+// LegacyAPIVersion is the same contract under the namespace it was first
+// written in, which Discobox does not own. It is what Effective writes: a
+// sandbox keeps the agent it is pinned to until it is upgraded, so a pool agent
+// writes for sandbox agents older than itself, and an agent from before
+// APIVersion reads nothing else. When the writer can move is #1409.
+const LegacyAPIVersion = "discobox.dev/sandbox/v1"
 
 // Config is the flat, fully-merged shape sandbox-agent decodes. It is
 // Effective(Document)'s result, written verbatim (plus a sibling
@@ -89,7 +97,7 @@ type Provenance struct {
 // fills only the keys runtime did not set).
 func Effective(doc Document) (Config, Provenance) {
 	cfg := Config{
-		APIVersion:   APIVersion,
+		APIVersion:   LegacyAPIVersion,
 		SandboxID:    doc.Runtime.SandboxID,
 		Provider:     doc.Runtime.Provider,
 		AgentRuntime: doc.Runtime.AgentRuntime,

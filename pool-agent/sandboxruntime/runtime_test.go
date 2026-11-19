@@ -485,7 +485,9 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 		t.Fatal(buildErr)
 	}
 	cfg, _ := sandboxconfig.Effective(doc)
-	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
+	// A pool agent writes the legacy identifier, which every sandbox agent it
+	// may write for reads (sandboxconfig.LegacyAPIVersion).
+	if cfg.APIVersion != sandboxconfig.LegacyAPIVersion || cfg.SandboxID != "sandbox-1" {
 		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
 	}
 	if cfg.Provider.Kind != "discobox-pool" || cfg.Provider.ProjectID != "project-1" || cfg.Provider.PoolID != "pool-1" {

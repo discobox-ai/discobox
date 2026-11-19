@@ -12,7 +12,7 @@ import (
 func TestLoadReadsIdentityFromFileOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
-		"apiVersion": "discobox.dev/sandbox/v1",
+		"apiVersion": "discobox.ai/sandbox/v1",
 		"sandboxId": "sandbox-file",
 		"provider": {
 			"kind": "discobox-pool",
@@ -44,7 +44,7 @@ func TestLoadReadsIdentityFromFileOnly(t *testing.T) {
 func TestLoadDecodesTheOneResolvedHarness(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
-		"apiVersion": "discobox.dev/sandbox/v1",
+		"apiVersion": "discobox.ai/sandbox/v1",
 		"sandboxId": "sandbox-1",
 		"provider": {
 			"kind": "discobox-pool",
@@ -112,7 +112,7 @@ func TestConfigFromEffectiveReadsThePoolKeyAndEndpoints(t *testing.T) {
 func TestLoadDerivesExecDefaultsFromEffectiveConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
-		"apiVersion": "discobox.dev/sandbox/v1",
+		"apiVersion": "discobox.ai/sandbox/v1",
 		"sandboxId": "sandbox-1",
 		"provider": {
 			"kind": "discobox-pool",
@@ -190,7 +190,7 @@ func TestValidateRejectsABlankHarnessCommand(t *testing.T) {
 func TestLoadReadsTheSandboxsSkills(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
-		"apiVersion": "discobox.dev/sandbox/v1",
+		"apiVersion": "discobox.ai/sandbox/v1",
 		"sandboxId": "sandbox-file",
 		"provider": {
 			"kind": "discobox-pool",
@@ -226,7 +226,7 @@ func TestLoadReadsWhetherTheAgentServesTLS(t *testing.T) {
 	} {
 		path := filepath.Join(t.TempDir(), "sandbox.json")
 		if err := os.WriteFile(path, []byte(`{
-			"apiVersion": "discobox.dev/sandbox/v1",
+			"apiVersion": "discobox.ai/sandbox/v1",
 			"sandboxId": "sandbox-file",
 			"agentRuntime": `+tc.runtime+`,
 			"provider": {
@@ -244,6 +244,35 @@ func TestLoadReadsWhetherTheAgentServesTLS(t *testing.T) {
 		}
 		if cfg.TLS != tc.want {
 			t.Errorf("runtime %s: TLS = %t, want %t", tc.runtime, cfg.TLS, tc.want)
+		}
+	}
+}
+
+// sandbox.json's apiVersion is in Discobox's own namespace: a sandbox agent
+// reads discobox.ai/sandbox/v1, and still reads discobox.dev/sandbox/v1, which
+// every pool agent still writes (sandboxconfig.LegacyAPIVersion).
+func TestLoadAcceptsTheDiscoboxAIAndTheOldSandboxAPIVersion(t *testing.T) {
+	if sandboxconfig.APIVersion != "discobox.ai/sandbox/v1" {
+		t.Errorf("sandboxconfig.APIVersion = %q, want discobox.ai/sandbox/v1", sandboxconfig.APIVersion)
+	}
+	for _, version := range []string{"discobox.ai/sandbox/v1", "discobox.dev/sandbox/v1"} {
+		path := filepath.Join(t.TempDir(), "sandbox.json")
+		if err := os.WriteFile(path, []byte(`{
+			"apiVersion": "`+version+`",
+			"sandboxId": "sandbox-file",
+			"provider": {
+				"kind": "discobox-pool",
+				"projectId": "project-file",
+				"poolId": "pool-file",
+				"publicKeys": {
+					"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
+				}
+			}
+		}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err != nil {
+			t.Errorf("apiVersion %s: %v", version, err)
 		}
 	}
 }

@@ -159,9 +159,14 @@ field category:
 - **Additive-default** (`Env`): image fills only the keys runtime did not
   set.
 
-`Config` (`apiVersion: discobox.dev/sandbox/v1`) is the flat shape
-sandbox-agent decodes from `sandbox.json` in the read-only config volume at
-`SandboxConfigDir` (`/etc/discobox`) — no further merging happens at boot.
+`Config` is the flat shape sandbox-agent decodes from `sandbox.json` in the
+read-only config volume at `SandboxConfigDir` (`/etc/discobox`) — no further
+merging happens at boot. sandbox-agent reads
+`apiVersion` `discobox.ai/sandbox/v1` (`APIVersion`) and
+`discobox.dev/sandbox/v1` (`LegacyAPIVersion`), the namespace it was first
+written in. `Effective` writes `LegacyAPIVersion`: a sandbox keeps its pinned
+agent until it is upgraded (ADR 0114), so a pool agent writes for sandbox
+agents older than itself, and those read nothing else.
 `Provenance` carries the raw per-layer inputs for the diagnostic `_provenance`
 sibling key; no runtime component in the sandbox decodes it (pool-agent reads
 back its project layer to detect a change) and its shape may change freely.

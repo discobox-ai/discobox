@@ -695,6 +695,13 @@ means something the older agent could not do anyway, and leaves it out
 otherwise: `sandboxOs` is written only for a pool whose sandboxes are not
 linux, since an agent that is given none declares linux (#1010).
 
+The same holds one level down, for what a pool agent writes into a sandbox:
+`sandbox.json` is read by the sandbox's own pinned agent (ADR 0114), which can
+be older than the pool agent writing it. A value a sandbox agent checks
+strictly, such as `apiVersion`, changes on the writer only after every agent
+a pool may still write for reads the new value; until then the writer keeps
+the old one (`sandboxconfig.LegacyAPIVersion`, #250).
+
 ## Image reclamation (`imagereap`)
 
 - A stamp's order only ranks the images stamped together. An image that

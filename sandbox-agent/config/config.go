@@ -161,7 +161,9 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 	if err := json.Unmarshal(data, &effective); err != nil {
 		return err
 	}
-	if strings.TrimSpace(effective.APIVersion) != sandboxconfig.APIVersion {
+	switch strings.TrimSpace(effective.APIVersion) {
+	case sandboxconfig.APIVersion, sandboxconfig.LegacyAPIVersion:
+	default:
 		return fmt.Errorf("apiVersion = %q, want %q", effective.APIVersion, sandboxconfig.APIVersion)
 	}
 	*cfg = configFromEffective(effective)
