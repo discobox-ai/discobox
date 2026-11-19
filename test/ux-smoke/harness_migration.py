@@ -81,7 +81,12 @@ def state(slug):
 
 def pending(box, path, credential_count):
     def candidate():
-        result = stack.obj("admin", "harness", "changes", box)
+        try:
+            result = stack.obj("admin", "harness", "changes", box)
+        except stack.CommandFailure as exc:
+            if "503 harness capture request was refused" not in exc.result.stderr:
+                raise
+            return None
         if (result.get("candidateId")
                 and len(result.get("credentials") or []) == credential_count
                 and any(f["path"] == path for f in result.get("files") or [])):
@@ -169,7 +174,9 @@ for (const pid of fs.readdirSync("/proc")) {
     const env = fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
     if (!env.includes("HOME=" + process.env.HOME)) continue;
     const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
-    if (args.some(arg => path.basename(arg) === name)) {
+    // The executable or script names the app. Capture workers pass the
+    // harness name as a later argument, and auth subcommands are short-lived.
+    if (args.slice(0, 2).some(arg => path.basename(arg) === name) && !args.includes("auth")) {
       process.kill(Number(pid));
       stopped.push(pid);
     }
@@ -328,7 +335,8 @@ def upgrade_fixture(boxes, baseline):
         # binding. A sentinel re-captured as a new credential would replace it.
         fixture = FIXTURES[slug]
         if fixture:
-            stop_fixture_app(box, slug)
+            if "export" not in fixture:
+                stop_fixture_app(box, slug)
             path = fixture["settings"]
             expected = LITERAL + (" pending across upgrade" if slug == CHILD else " after restart")
             if slug == "codex":
