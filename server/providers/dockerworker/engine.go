@@ -50,12 +50,15 @@ const (
 	// still answers. It is not a boot wait — a VM that booted has had
 	// defaultDockerReadyWait by the time anything repairs it — only long enough
 	// that a daemon restarting in place is not taken for a dead guest.
-	dockerAnswerWait          = 15 * time.Second
-	noHealthWaitTimeout       = 30 * time.Second
-	healthPollDelay           = 500 * time.Millisecond
-	dockerSocketPath          = "/var/run/docker.sock"
-	hostMountTargetRoot       = "/host"
-	workerConfigLayoutVersion = 6
+	dockerAnswerWait    = 15 * time.Second
+	noHealthWaitTimeout = 30 * time.Second
+	healthPollDelay     = 500 * time.Millisecond
+	dockerSocketPath    = "/var/run/docker.sock"
+	hostMountTargetRoot = "/host"
+	// workerConfigLayoutVersion is part of every pool's config revision, so a
+	// change to the pool container's mounts bumps it and drift recreates each
+	// pool on the new layout. 7: no /var/lib/docker volume.
+	workerConfigLayoutVersion = 7
 	// dockerSocketUnitPath is where the pool's container masks the sandbox
 	// base image's docker.socket: that unit would listen at the path the
 	// host's socket is bound to, fail, and leave the container degraded.
@@ -345,8 +348,8 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	defer func() { resultErr = pool.Outbound.RedactError(resultErr) }()
 	previousOutboundRevision := pool.OutboundAppliedRevision
 	// Replace the VM only when it is missing or unhealthy, which includes a VM
-	// hosted here whose Docker daemon does not answer; pool-local state such as
-	// named volumes survives container replacement on a healthy VM.
+	// hosted here whose Docker daemon does not answer; pool-local state in the
+	// bind-mounted state trees survives container replacement on a healthy VM.
 	vmInfo, err := e.driver.InspectVM(ctx, pool.ID)
 	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return err
@@ -452,8 +455,8 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 		// On a VM backend the skip leaks nothing: DeleteVM below destroys the
 		// guest with every container, volume and state tree in it. On a daemon
 		// shared with other pools, where DeleteVM is a no-op, it leaves the
-		// volume and the pool's state trees behind, which the warning names
-		// for an operator to remove.
+		// pool's state trees, and an older pool's legacy volume, behind, which
+		// the warning names for an operator to remove.
 		//
 		// Only connection failures are tolerated: a daemon that answers and
 		// still refuses the removal is reporting something a retry can fix, and
@@ -464,7 +467,7 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 			}
 			args := []any{"pool_id", pool.ID, "error", removeErr}
 			if !e.cfg.DedicatedDaemon {
-				args = append(args, "volume", poolScopedVolumeName(pool.ID, "docker"),
+				args = append(args, "volume", legacyPoolVolumeName(pool.ID),
 					"trees", e.daemonPaths(layout.Container().PoolTrees(pool.ProjectID, pool.ID)))
 			}
 			slog.WarnContext(ctx, "removing pool runtime without reaching its Docker daemon", args...)
@@ -896,7 +899,7 @@ func (e *Engine) poolContainerSpec(pool *model.Pool, image string, labels map[st
 		// cgroup root and systemd exits 255 before it can even log.
 		hostConfig.CgroupnsMode = container.CgroupnsMode("private")
 	}
-	hostConfig.Mounts = e.containerMounts(pool.ID)
+	hostConfig.Mounts = e.containerMounts()
 	hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
 	return config, hostConfig, waitForHealth, nil
 }
@@ -909,6 +912,9 @@ func (e *Engine) poolContainerSpec(pool *model.Pool, image string, labels map[st
 func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolruntime.BoxRecord, error) {
 	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	defer releaseStart()
+	// No container of this pool's exists now, whether a reconcile removed it
+	// or it was lost, so nothing mounts the volume an older one did.
+	e.removeLegacyPoolVolume(ctx, cli, pool.ID)
 	config, hostConfig, waitForHealth, err := e.poolContainerSpec(pool, image, labels)
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
@@ -1013,8 +1019,9 @@ func (e *Engine) removePoolHost(ctx context.Context, cli *client.Client, pool *m
 }
 
 // RemovePoolRuntime removes a pool's container, console, sandbox network, and
-// the named volume that holds its inner Docker store, which ContainerRemove's
-// RemoveVolumes does not touch (it drops anonymous volumes only). It leaves
+// the legacy named volume a pool made before it stopped mounting one
+// (removeLegacyPoolVolume), which ContainerRemove's RemoveVolumes does not
+// touch (it drops anonymous volumes only). It leaves
 // the pool's state trees: the drift watcher calls it for a pool container
 // whose row is gone, and a row that comes back from a restored database needs
 // its identity and data (the agent's pool-sync reaper takes the rest, after
@@ -1031,11 +1038,33 @@ func (e *Engine) RemovePoolRuntime(ctx context.Context, cli *client.Client, pool
 	if err := e.removeSandboxNetwork(ctx, cli, poolID); err != nil {
 		return err
 	}
-	volume := poolScopedVolumeName(poolID, "docker")
+	volume := legacyPoolVolumeName(poolID)
 	if _, err := cli.VolumeRemove(ctx, volume, client.VolumeRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove pool volume %s: %w", volume, err)
 	}
 	return nil
+}
+
+// legacyPoolVolumeName is the named volume pool containers once mounted at
+// /var/lib/docker for a nested daemon that no pool container runs. Nothing
+// mounts it now; it is named only so the volume an older pool carries is
+// removed.
+func legacyPoolVolumeName(poolID string) string {
+	return scopedVolumeName("pool", poolID, "docker")
+}
+
+// removeLegacyPoolVolume removes a pool's legacy volume before its container
+// is created, when none exists, so the next container of an older pool frees
+// it: the one drift makes when workerConfigLayoutVersion moved past the
+// volume, or one made after repair or a container lost out of band. It is
+// best effort: the volume holds nothing, and a failure must not stop the pool
+// from coming back, so it is logged and left for the pool's deletion to
+// remove.
+func (e *Engine) removeLegacyPoolVolume(ctx context.Context, cli *client.Client, poolID string) {
+	volume := legacyPoolVolumeName(poolID)
+	if _, err := cli.VolumeRemove(ctx, volume, client.VolumeRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
+		slog.WarnContext(ctx, "leaving a pool's legacy Docker volume", "pool_id", poolID, "volume", volume, "error", err)
+	}
 }
 
 // removePoolStateTrees removes a deleted pool's own directories of the state
@@ -1268,7 +1297,7 @@ func (e *Engine) stateMounts() []mount.Mount {
 	return mounts
 }
 
-func (e *Engine) containerMounts(poolID string) []mount.Mount {
+func (e *Engine) containerMounts() []mount.Mount {
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath},
 		// The sandbox base image enables docker.socket for a sandbox's own
@@ -1299,12 +1328,12 @@ func (e *Engine) containerMounts(poolID string) []mount.Mount {
 	// namespace Docker mounts a writable cgroup2 hierarchy for the container,
 	// which systemd requires. The host bind mount would shadow it with the
 	// read-only host cgroup root.
-	// Only the nested daemon's own storage is a named volume. Discobox state
-	// is bind-mounted above, at the same path the container reads, so no
-	// path translation is needed anywhere inside the pool.
-	mounts = append(mounts,
-		mount.Mount{Type: mount.TypeVolume, Source: poolScopedVolumeName(poolID, "docker"), Target: "/var/lib/docker"},
-	)
+	//
+	// There is no /var/lib/docker volume: no daemon runs in the pool
+	// container. Its agent drives the hosting daemon through the socket bound
+	// above, and BuildKit keeps its state in the cache tree (PoolBuild). Pools
+	// made before this carry an empty legacy volume, removed with their next
+	// container (removeLegacyPoolVolume).
 	return mounts
 }
 
@@ -1459,10 +1488,6 @@ func ContainerName(poolID string) string {
 		name = "vm"
 	}
 	return "discobox-vm-" + name
-}
-
-func poolScopedVolumeName(poolID, suffix string) string {
-	return scopedVolumeName("pool", poolID, suffix)
 }
 
 func projectScopedVolumeName(projectID, suffix string) string {

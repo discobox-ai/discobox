@@ -2624,9 +2624,9 @@ handed.
 
 The agent reclaims unused Discobox images from its own Docker daemon on a
 standing loop (`WatchImages`). It owns that daemon, images land on it by sync and
-by pull, and they outlive the pool container in the pool's `/var/lib/docker`
-volume — so nothing else is positioned to clean them up, least of all a control
-plane that may be unreachable.
+by pull, and they outlive the pool container on that daemon (the pool
+container runs no daemon of its own) — so nothing else is positioned to clean
+them up, least of all a control plane that may be unreachable.
 
 The loop is the Docker runtime's, not part of `sandboxruntime.Runtime`, and
 `RunAgent` starts it beside the runtime it builds: a runtime that boots no OCI
