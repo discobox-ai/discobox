@@ -318,7 +318,10 @@ func probeSettled(ctx context.Context, opts LaunchOptions) (health.Status, bool,
 // server bounds it (health.PoolUpgradeWait) and reports ready once that runs
 // out, so the client's deadline is that and a margin, never the start's.
 func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) (health.Status, error) {
-	var last health.Status
+	// last is the step the server last reported, for an error to name;
+	// drawn is what the progress line shows, which a silent server changes
+	// without reporting a step.
+	var last, drawn health.Status
 	unanswered, upgrading, silent := 0, false, false
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
@@ -335,15 +338,18 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) (hea
 			// On the step changing, not on every poll: uptime moves with each
 			// answer, so comparing whole statuses reports the same step over
 			// and over.
-			if status.Status != last.Status || status.Phase != last.Phase || status.PoolsUpgrading != last.PoolsUpgrading || !slices.Equal(status.Warnings, last.Warnings) {
+			if status.Status != drawn.Status || status.Phase != drawn.Phase || status.PoolsUpgrading != drawn.PoolsUpgrading || !slices.Equal(status.Warnings, drawn.Warnings) {
 				opts.progress(status)
-				last = status
+				drawn = status
 			}
+			last = status
 		case errors.Is(err, errProbeUnanswered):
 			// Listening, and too busy to answer in time: still there. Said
-			// once, since a server that has not answered has drawn no line.
+			// once per silence, and recorded as drawn, so the server's next
+			// answer redraws its step even when it is the step shown before.
 			if !silent {
-				opts.progress(health.Status{Status: health.StatusStarting, Phase: "waiting for the server to answer"})
+				drawn = health.Status{Status: health.StatusStarting, Phase: "waiting for the server to answer"}
+				opts.progress(drawn)
 			}
 			unanswered, silent = 0, true
 		case !isProbeConnectionError(err):

@@ -415,3 +415,42 @@ func TestWaitReadyOnASilentServerSaysItIsNotAnswering(t *testing.T) {
 		t.Fatalf("progress = %+v, want one line saying it waits for the server to answer", reported)
 	}
 }
+
+// A slow probe draws "waiting for the server to answer" over the step the
+// server last reported. When it answers again with that same step, the line
+// goes back to it rather than staying on the wait: on a loaded host a pool
+// upgrade answers late now and then for minutes.
+func TestWaitReadyRedrawsTheStepAfterASlowProbe(t *testing.T) {
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch probes.Add(1) {
+		case 1, 3:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
+		case 2:
+			time.Sleep(100 * time.Millisecond)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+		}
+	}))
+	defer server.Close()
+	var lines []string
+	opts := LaunchOptions{
+		Endpoint: server.URL, ProbeTimeout: 20 * time.Millisecond, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond,
+		OnProgress: func(status health.Status) { lines = append(lines, status.Status+"/"+status.Phase) },
+	}
+	if _, err := waitReady(context.Background(), opts, time.Now().Add(time.Minute)); err != nil {
+		t.Fatalf("waitReady() = %v", err)
+	}
+	want := []string{
+		health.StatusUpgradingPools + "/",
+		health.StatusStarting + "/waiting for the server to answer",
+		health.StatusUpgradingPools + "/",
+		health.StatusReady + "/",
+	}
+	if !slices.Equal(lines, want) {
+		t.Fatalf("progress = %q, want %q", lines, want)
+	}
+}
