@@ -10,6 +10,9 @@ ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 
+# Global, so the platform stage picks its OS's entry by it (FROM platform-${TARGETOS}).
+ARG TARGETOS
+
 FROM --platform=$BUILDPLATFORM ${UBUNTU_IMAGE} AS go
 ARG UBUNTU_MIRROR_AMD64
 ARG UBUNTU_MIRROR_ARM64
@@ -216,9 +219,15 @@ COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agen
 # and no sandbox is an image (§10). COPY into scratch lays no whiteout, which a
 # bundle must not carry (§2).
 #
+# One index, an entry per platform (§7): Linux's on amd64 and arm64, and
+# darwin's on arm64 (ADR 26-11-11-963 §9), each the features its OS has and a
+# manifest of its own. platform-features is what every OS's entry carries;
+# platform-linux and platform-darwin add their OS's own, and `platform`
+# picks the target's.
+#
 # Stablest first: an edit to one feature moves its layer and no other, and a
 # box fetches only what moved.
-FROM scratch AS platform
+FROM scratch AS platform-features
 
 COPY --link sandbox-agent/features/build /features/build
 COPY --link sandbox-agent/features/cli /features/cli
@@ -226,12 +235,6 @@ COPY --link sandbox-agent/features/python /features/python
 COPY --link sandbox-agent/features/shells-editors /features/shells-editors
 COPY --link sandbox-agent/features/direnv /features/direnv
 COPY --link sandbox-agent/features/browser /features/browser
-COPY --link sandbox-agent/features/desktop /features/desktop
-# The mark and wordmark the viewer's page is drawn with, from the
-# repository's own brand directory rather than a copy in this module: it is
-# nested, so go:embed cannot reach up to them, and a second copy is a second
-# thing to keep in step with Illustrator.
-COPY --link assets/brand /features/desktop/brand
 COPY --link sandbox-agent/features/nix /features/nix
 COPY --link sandbox-agent/features/rust /features/rust
 COPY --link sandbox-agent/features/node /features/node
@@ -239,7 +242,6 @@ COPY --link sandbox-agent/features/bun /features/bun
 COPY --link sandbox-agent/features/mise /features/mise
 COPY --link sandbox-agent/features/brew /features/brew
 COPY --link sandbox-agent/features/go /features/go
-COPY --link sandbox-agent/features/docker /features/docker
 COPY --link sandbox-agent/features/review /features/review
 COPY --link sandbox-agent/features/discobox-cli /features/discobox-cli
 COPY --link sandbox-agent/features/core /features/core
@@ -249,6 +251,17 @@ COPY --link access/skills/discobox-access /features/core/skills/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review
 COPY --link --from=discobox-cli-builder --chmod=0755 /out/discobox /features/discobox-cli/discobox
+
+# Linux's entry: every feature, the desktop and nested Docker included, which
+# are Linux container mechanisms (ADR 0145 §7).
+FROM platform-features AS platform-linux
+COPY --link sandbox-agent/features/desktop /features/desktop
+# The mark and wordmark the viewer's page is drawn with, from the
+# repository's own brand directory rather than a copy in this module: it is
+# nested, so go:embed cannot reach up to them, and a second copy is a second
+# thing to keep in step with Illustrator.
+COPY --link assets/brand /features/desktop/brand
+COPY --link sandbox-agent/features/docker /features/docker
 
 # The platform's manifest layer: the env, volumes, groups, and seed files true
 # of every box the platform provisions, rather than of any harness. A harness
@@ -263,3 +276,13 @@ ARG IMAGE_LAYER_METADATA
 # build refuses it — which is how v0.4.0's harness images shipped. A FROM
 # scratch stage has no shell to check it in, so the expansion does.
 LABEL io.discobox.image.v1.10-platform="${IMAGE_LAYER_METADATA:?IMAGE_LAYER_METADATA build argument is required: pass --build-arg IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.json)\"}"
+
+# darwin's entry: the shared features alone. The desktop and nested Docker
+# are absent, and its manifest, sandbox-agent/image.darwin.json, declares
+# neither (ADR 0145 §7). Required as Linux's is, and only by a build that
+# includes darwin.
+FROM platform-features AS platform-darwin
+ARG DARWIN_IMAGE_LAYER_METADATA
+LABEL io.discobox.image.v1.10-platform="${DARWIN_IMAGE_LAYER_METADATA:?DARWIN_IMAGE_LAYER_METADATA build argument is required: pass --build-arg DARWIN_IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.darwin.json)\"}"
+
+FROM platform-${TARGETOS} AS platform

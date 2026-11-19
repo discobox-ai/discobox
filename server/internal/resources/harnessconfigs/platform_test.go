@@ -119,3 +119,26 @@ func TestPublishedImageReadsAnotherPlatformsLabels(t *testing.T) {
 		t.Fatalf("labels read from %q, want riscv64", got)
 	}
 }
+
+// The platform bundle's index also lists darwin's entry, whose manifest is a
+// macOS sandbox's, and darwin sorts before linux: a bundle not published for
+// this machine's platform has its labels read from another Linux platform,
+// never from another OS's, and one with no Linux platform is refused.
+func TestPublishedImageReadsOnlyALinuxPlatformsLabels(t *testing.T) {
+	descriptor, _ := pushIndex(t,
+		v1.Platform{OS: "darwin", Architecture: "arm64"},
+		v1.Platform{OS: "linux", Architecture: "riscv64"},
+	)
+	image, err := publishedImage(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := labelArch(t, image); got != "riscv64" {
+		t.Fatalf("labels read from %q, want linux/riscv64's", got)
+	}
+
+	descriptor, _ = pushIndex(t, v1.Platform{OS: "darwin", Architecture: "arm64"})
+	if _, err := publishedImage(descriptor); err == nil {
+		t.Fatal("read the labels of an index that lists no Linux platform")
+	}
+}

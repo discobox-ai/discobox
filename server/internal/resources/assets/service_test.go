@@ -105,7 +105,13 @@ type image struct {
 
 func (r *registry) image(t *testing.T, label string) image {
 	t.Helper()
-	config := []byte(`{"architecture":"amd64","os":"linux","config":{"Labels":{"name":"` + label + `"}}}`)
+	return r.imageFor(t, label, imagecache.Platform{OS: "linux", Architecture: "amd64"})
+}
+
+// imageFor is an image whose config is platform's.
+func (r *registry) imageFor(t *testing.T, label string, platform imagecache.Platform) image {
+	t.Helper()
+	config := []byte(`{"architecture":"` + platform.Architecture + `","os":"` + platform.OS + `","config":{"Labels":{"name":"` + label + `"}}}`)
 	layer := []byte("layer of " + label)
 	img := image{config: r.add(config), layer: r.add(layer)}
 	data, err := json.Marshal(map[string]any{
