@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """Upgrade a v0.19.5 database and its Docker homes through the public CLI."""
+import argparse
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
+import platform
+import re
 import shlex
 import signal
-import urllib.request
+import shutil
 
 import run as stack
 
 RELEASE = "v0.19.5"
-RELEASE_BASE = f"ghcr.io/discobox-ai/discobox-sandbox-base:{RELEASE}"
-DIGESTS = {
-    "discobox-linux-amd64": "5662fb2a18aeb5611579431353ed0d7a0b51327c03f076ec4353d4983dfbed1b",
-    "discobox-server-linux-amd64": "1ed7d18083196f95ec5c91d3f665101481845c44f826fe538424595ee50457ef",
+RELEASE_ASSETS = "https://assets.discobox.ai/discobox"
+BASELINE_DIGESTS = {
+    "discobox": "5662fb2a18aeb5611579431353ed0d7a0b51327c03f076ec4353d4983dfbed1b",
+    "discobox-server": "1ed7d18083196f95ec5c91d3f665101481845c44f826fe538424595ee50457ef",
 }
 FIXTURES = json.loads((stack.ROOT / "test/harness-migration/homes.json").read_text())
 LITERAL = "${fixture.unknown}"
@@ -23,20 +26,41 @@ SENTINEL_CONTEXT = '"$HOME/.config/discobox/harness-sentinels.json"'
 READ_SENTINEL = "jq -er --arg name \"$1\" '.sentinels[$name] | strings | select(length > 0)' " + SENTINEL_CONTEXT + " 2>/dev/null"
 
 
-def release_binaries():
-    paths = []
-    for name, expected in DIGESTS.items():
-        path = stack.ARTIFACTS / name
-        url = f"https://github.com/discobox-ai/discobox/releases/download/{RELEASE}/{name}"
-        with urllib.request.urlopen(url, timeout=120) as response, path.open("wb") as output:
-            digest = hashlib.sha256()
-            while chunk := response.read(1024 * 1024):
-                digest.update(chunk)
-                output.write(chunk)
-        assert digest.hexdigest() == expected, f"unexpected digest for {name}"
+def download_release(version):
+    directory = stack.ARTIFACTS / version
+    directory.mkdir()
+    root = f"{RELEASE_ASSETS}/{version}"
+    manifest_path = directory / "manifest.json"
+    stack.command(["curl", "-fsSL", "-o", manifest_path, f"{root}/discobox-manifest-linux-amd64.json"])
+    manifest = json.loads(manifest_path.read_text())
+    if manifest["version"] != version:
+        raise ValueError(f"expected manifest for {version}, got {manifest['version']}")
+    for role, name in (("clients", "discobox"), ("servers", "discobox-server")):
+        [binary] = [binary for binary in manifest[role]
+                    if (binary["os"], binary["arch"], binary["command"]) == ("linux", "amd64", name)]
+        [asset] = [asset for asset in binary["assets"] if asset["name"] == name]
+        expected = asset["sha256"]
+        if version == RELEASE and expected != BASELINE_DIGESTS[name]:
+            raise ValueError(f"baseline manifest digest changed for {name}")
+        path = directory / name
+        url = next((url for url in asset["urls"] if url.startswith(root + "/")), None)
+        if url is None:
+            raise ValueError(f"missing release asset URL for {version} {name}")
+        stack.command(["curl", "-fsSL", "-o", path, url], limit=600)
+        with path.open("rb") as binary_file:
+            digest = hashlib.file_digest(binary_file, "sha256").hexdigest()
+        if digest != expected:
+            raise ValueError(f"unexpected digest for {version} {name}")
         path.chmod(0o700)
-        paths.append(path)
-    return paths
+    return directory, manifest["images"]["sandboxBase"]
+
+
+def start_release(directory, base):
+    select_cli(directory / "discobox")
+    stack.ENV["DISCOBOX_RELEASE_MANIFEST"] = str(directory / "manifest.json")
+    # Keep a cold image download outside pool bootstrap's deadline.
+    stack.command(["docker", "pull", base], limit=600)
+    stack.start_server(directory / "discobox-server", seconds=180)
 
 
 def select_cli(binary):
@@ -244,16 +268,20 @@ def stop_server():
     assert stack.SERVER.wait(timeout=30) == 0
 
 
-def create_fixture(release_cli, release_server):
-    select_cli(release_cli)
-    # Keep a cold image download outside the released pool bootstrap deadline.
-    stack.command(["docker", "pull", RELEASE_BASE], limit=600)
-    stack.start_server(release_server, seconds=180)
+def create_fixture():
     pools = stack.obj("admin", "pool", "ls")["pools"]
     stack.POOLS.extend(p["id"] for p in pools)
-    stack.eventually("release pool ready", lambda: any(
-        p.get("ready") and p.get("schedulable")
-        for p in stack.obj("admin", "pool", "ls")["pools"]), seconds=360)
+    pool_id = stack.obj("admin", "project", "get", "default")["defaultPoolId"]
+    [pool] = [pool for pool in pools if pool["id"] == pool_id]
+    provider = stack.obj("admin", "provider", "get", pool["providerInstanceId"])
+    if provider["type"] != "docker":
+        raise RuntimeError("harness migration requires a host where the baseline defaults to Docker")
+
+    def pool_ready():
+        pool = stack.obj("admin", "pool", "get", pool_id)
+        return pool.get("ready") and pool.get("schedulable")
+
+    stack.eventually("release Docker pool ready", pool_ready, seconds=360)
     stack.cli("admin", "project", "update", "default", "--sandbox-upgrade-policy", "manual")
     stack.cli("admin", "harness", "create", "--name", "Migration child", "--slug", CHILD, "--extends", "codex")
     stack.cli("admin", "harness", "set-default", CHILD)
@@ -360,31 +388,35 @@ def upgrade_fixture(boxes, baseline):
         assert reset["fileOverrides"] == baseline[slug]["fileOverrides"], slug
 
 
-def main():
+def main(candidate):
+    if platform.system() != "Linux" or platform.machine() != "x86_64":
+        raise RuntimeError("harness migration requires a Linux amd64 Docker host")
     stack.configure_server()
-    release_cli, release_server = release_binaries()
-    harnesses = [slug for slug in FIXTURES if slug != CHILD]
-    stack.prepare_builder()
-    bundles = stack.build_stack(harnesses)
-    boxes, baseline = create_fixture(release_cli, release_server)
+    baseline_release, baseline_base = download_release(RELEASE)
+    candidate_release, candidate_base = download_release(candidate)
+    start_release(baseline_release, baseline_base)
+    boxes, baseline = create_fixture()
     stop_server()
-    stack.configure_current_bundles(bundles)
-    for slug, bundle in zip(harnesses, bundles[3:], strict=True):
-        stack.ENV["DISCOBOX_HARNESS_" + slug.upper().replace("-", "_") + "_BUNDLE"] = bundle["reference"]
-    select_cli(stack.ARTIFACTS / "discobox")
-    stack.start_server(seconds=180)
+    start_release(candidate_release, candidate_base)
     stack.wait_settled("upgraded server and pool")
     upgrade_fixture(boxes, baseline)
-    print("PASS v0.19.5 built-in harness migration", flush=True)
+    print(f"PASS {RELEASE} to {candidate} built-in harness migration", flush=True)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("candidate", help="Published Discobox candidate tag, such as v0.20.0-rc.2")
+    candidate = parser.parse_args().candidate
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", candidate) or candidate == RELEASE:
+        parser.error("candidate must be a published release tag different from the fixture release")
     signal.signal(signal.SIGTERM, stack.interrupted)
     failed = True
     try:
-        main()
+        main(candidate)
         failed = False
     finally:
-        stack.cleanup(failed)
-        for name in DIGESTS:
-            (stack.ARTIFACTS / name).unlink(missing_ok=True)
+        try:
+            stack.cleanup(failed)
+        finally:
+            for version in (RELEASE, candidate):
+                shutil.rmtree(stack.ARTIFACTS / version, ignore_errors=True)

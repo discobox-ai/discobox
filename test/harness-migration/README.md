@@ -1,14 +1,24 @@
 # Harness migration fixture
 
-Run `go tool task ci:harness-migration` on Linux amd64 with Docker. The CI job
-uses the same target.
+During upgrade validation, run this target from the repository on a Linux
+amd64 host where v0.19.5 defaults to Docker. Pass the published release
+candidate's tag.
 
-The runner verifies the published v0.19.5 CLI and server digests, then uses
-those binaries to generate a SQLite database and Docker homes. The checked-in
-home inputs contain synthetic credentials. The release CLI saves them through
-the normal capture flow. The runner keeps the database and home volumes in
-place when it starts the checkout's server and provisions the checkout's
-bundles. Each run creates its own disposable server identity, pool and boxes.
+```sh
+go tool task release:validate-harness-migration CANDIDATE=v0.20.0-rc.2
+```
+
+The runner downloads both release manifests and CLI and server binaries
+from the release asset site. It verifies the binaries against their
+manifest digests and pins the v0.19.5 checksums. The server uses each
+release's manifest for its base image, pool agent, sandbox agent, platform,
+and harness bundles. The run uses a disposable server and keeps its
+SQLite database and Docker home volumes in place across the upgrade.
+Diagnostic logs are written under `build/ux-smoke/`, with the run directory
+printed at cleanup.
+
+The release validation result should record the candidate tag and the
+migration verdict. Regular PR CI runs the focused sentinel-alias regression.
 
 The account and settings inputs are in [homes.json](homes.json). The child
 inherits Codex's bundle, saves a separate account, and becomes the project
