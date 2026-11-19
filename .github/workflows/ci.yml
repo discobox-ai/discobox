@@ -17,8 +17,10 @@ name: CI
 on:
   pull_request:
     # `labeled`: adding the `macos` label starts the darwin jobs, which a pull
-    # request otherwise skips (they run on every push to main).
+    # request otherwise skips (they run on main pushes and merge groups).
     types: [opened, synchronize, reopened, labeled]
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - main
@@ -34,8 +36,8 @@ permissions:
 # A pull request's runs share a group keyed on its number, never on
 # github.ref: for an event on a merged or closed PR (a label added after the
 # merge) github.ref is the base branch, so a ref-keyed group would put that run
-# in main's group and cancel main's push run (#1271). A push to main has no
-# pull_request, so it falls back to its ref. No tag runs this workflow; a
+# in main's group and cancel main's push run (#1271). Main pushes and merge
+# groups fall back to their own refs. No tag runs this workflow; a
 # workflow that a tag runs never cancels the tag's run (REVIEW.md).
 # Ignored label events get their own group so they cannot cancel active or
 # pending CI for the pull request.
@@ -49,13 +51,13 @@ jobs:
   # Whether this run has code to check (scripts/ci-changes.sh). A pull request
   # that changes only docs/ has none: every job below waits on this one, and
   # all but `docs`, which runs the checks that read docs/, are skipped by their
-  # `if`. A push to main always has code, so on a push `changes` is skipped and
-  # never takes a runner.
+  # `if`. Main pushes and merge groups always run the code checks, so
+  # `changes` skips those events without taking a runner.
   #
   # On a pull request, a skipped `changes` job means the label event was
   # ignored. A failed `changes` job or the intentional skip on a main push
-  # runs everything but `docs`. Its output is then empty, never
-  # 'false', so each `code != 'false'` holds. Without `!cancelled()` a failed or
+  # or merge group leaves the code checks eligible. Its output is then empty,
+  # never 'false', so each `code != 'false'` holds. Without `!cancelled()` a failed or
   # skipped `needs` would skip every job, and a skipped job satisfies a
   # required check.
   #

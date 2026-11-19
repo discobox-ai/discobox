@@ -116,8 +116,8 @@ Global review expectations:
 - A CI job gated on `changes` uses
   `!cancelled() && needs.changes.outputs.code != 'false'` so a failed
   `changes` job still runs the code checks. A skipped `changes` job allows
-  main pushes through and skips all jobs on an ignored pull request label
-  event.
+  main pushes and merge groups through and skips all jobs on an ignored pull
+  request label event.
 - A workflow's concurrency group keys eligible pull request runs on the
   pull request number. An event on a merged or closed PR can have the base
   branch as `github.ref`, so grouping by ref alone let a label event cancel
