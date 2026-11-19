@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/x/shorttmp"
+	"github.com/moby/moby/client"
 )
 
 // The failure this exists for: a fresh Docker install leaves the user out of
@@ -44,7 +46,7 @@ func TestSocketAccessHintDoesNotTellAMemberToJoin(t *testing.T) {
 // The detection itself, against a real socket. The refusal is reproduced by
 // dialing rather than read out of the client's message, because moby's client
 // builds that message with no %w and the syscall does not survive it.
-func TestSocketAccessHintSpeaksOnlyForARefusedSocket(t *testing.T) {
+func TestProbeSocketAccessReportsPermissionDenial(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root is refused by no socket mode")
 	}
@@ -62,34 +64,32 @@ func TestSocketAccessHintSpeaksOnlyForARefusedSocket(t *testing.T) {
 	defer listener.Close()
 
 	// Reachable: this is not a permission problem, so there is nothing to say.
-	if hint := socketAccessHint(ctx, path); hint != "" {
-		t.Fatalf("hint %q for a socket that dials", hint)
+	if denied, hint := probeSocketAccess(ctx, path); denied || hint != "" {
+		t.Fatalf("denied = %t, hint = %q for a socket that dials", denied, hint)
 	}
 	if err := os.Chmod(path, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	if hint := socketAccessHint(ctx, path); !strings.Contains(hint, path) {
-		t.Fatalf("hint %q does not name the socket it is about", hint)
+	if denied, hint := probeSocketAccess(ctx, path); !denied || !strings.Contains(hint, path) {
+		t.Fatalf("denied = %t, hint = %q, want denial naming %s", denied, hint, path)
 	}
 	// And a socket that is not there at all is not this explanation either.
-	if hint := socketAccessHint(ctx, filepath.Join(t.TempDir(), "missing.sock")); hint != "" {
-		t.Fatalf("hint %q for a socket that does not exist", hint)
+	if denied, hint := probeSocketAccess(ctx, filepath.Join(filepath.Dir(path), "missing.sock")); denied || hint != "" {
+		t.Fatalf("denied = %t, hint = %q for a missing socket", denied, hint)
 	}
-}
 
-// The client's error is what the daemon and the client actually said, so it
-// stays at the front of what comes back and a hint that does not apply cannot
-// replace it.
-func TestExplainDaemonUnreachableKeepsTheOriginalError(t *testing.T) {
-	original := errors.New("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock")
-
-	err := explainDaemonUnreachable(context.Background(), "tcp://10.0.0.5:2375", original)
-
-	if !errors.Is(err, original) {
-		t.Fatalf("error %v no longer carries the client's own", err)
+	// A parent directory can deny access to the socket and its metadata.
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
 	}
-	if err.Error() != original.Error() {
-		t.Fatalf("error %q was decorated for a daemon that is not a Unix socket", err)
+	defer func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	}()
+	if denied, hint := probeSocketAccess(ctx, path); !denied || hint != "" {
+		t.Fatalf("denied = %t, hint = %q, want denial without a group hint", denied, hint)
 	}
 }
 
@@ -101,5 +101,48 @@ func TestUnixSocketPath(t *testing.T) {
 		if got := unixSocketPath(host); got != "" {
 			t.Fatalf("unixSocketPath(%q) = %q, want no path", host, got)
 		}
+	}
+}
+
+func TestLocalDriverCheckRefusesInaccessibleSocket(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can open a socket with mode 000")
+	}
+	path := filepath.Join(shorttmp.Dir(t), "docker.sock ")
+	var config net.ListenConfig
+	listener, err := config.Listen(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	host := "unix://" + path
+	cli, err := client.New(client.WithHost(host))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+
+	for _, check := range []struct {
+		name string
+		run  func() error
+	}{
+		{name: "check", run: func() error {
+			return (&LocalDriver{client: cli}).Check(t.Context())
+		}},
+		{name: "build", run: func() error {
+			_, err := NewLocalDriver(t.Context(), host, 0)
+			return err
+		}},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			err := check.run()
+			if err == nil || errors.Is(err, sandbox.ErrProviderNotReachable) || !strings.Contains(err.Error(), "refuses") {
+				t.Fatalf("daemon check error = %v, want refusal without ErrProviderNotReachable", err)
+			}
+		})
 	}
 }

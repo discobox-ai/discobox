@@ -68,11 +68,17 @@ func (d *LocalDriver) Check(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	explained := explainDaemonUnreachable(ctx, d.DaemonHost(), err)
-	if client.IsErrConnectionFailed(err) && !errors.Is(err, fs.ErrPermission) {
-		return fmt.Errorf("the Docker daemon at %s does not answer: %w: %w", d.DaemonHost(), explained, sandbox.ErrProviderNotReachable)
+	host := d.DaemonHost()
+	if client.IsErrConnectionFailed(err) {
+		denied, hint := probeSocketAccess(ctx, unixSocketPath(host))
+		if !denied && !errors.Is(err, fs.ErrPermission) {
+			return fmt.Errorf("the Docker daemon at %s does not answer: %w: %w", host, err, sandbox.ErrProviderNotReachable)
+		}
+		if hint != "" {
+			err = fmt.Errorf("%w (%s)", err, hint)
+		}
 	}
-	return fmt.Errorf("the Docker daemon at %s refuses: %w", d.DaemonHost(), explained)
+	return fmt.Errorf("the Docker daemon at %s refuses: %w", host, err)
 }
 
 // DaemonHost returns the resolved Docker daemon endpoint. It is the configured
