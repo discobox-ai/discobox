@@ -25,6 +25,18 @@
 
 ## Provisioning
 
+- **A step taken out of a feature takes nothing it laid with it; retire it
+  with a step of its own.** Records are kept per step, and apart from `env`
+  scripts, which it prunes itself (`pruneEnvProfiles`), the runner undoes
+  nothing for a step that no longer exists: a removed `file`, `systemd`,
+  `packages` or `run` step's files, enabled units and packages stay on a box
+  provisioned before, for good. A change that
+  drops a step whose effect must not outlive it adds a step that undoes it on
+  boxes that have it, with a `check` that fails while any of it is there, and
+  does nothing on a box that never had it — the desktop feature's
+  `retire-vnc.sh` is the pattern. A diff that only deletes lines from a
+  `provision.yaml` is the thing to catch.
+
 - **`kvm`'s GID is pinned in the sandbox base image; keep it there.** A
   sandbox is privileged and sees the host's `/dev/kvm` with the host's numeric
   owner, so `image.json`'s `kvm` in `additionalGroups` grants access only where
@@ -391,9 +403,9 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   on Linux (#1252). Check any change to `xvfb.service`'s flags or cleanup
   against it, on a box: stop X and see that the file's inode survives.
 - **A running X is reached over a unix socket, not the TCP proxy.** Over TCP
-  Xorg refuses MIT-SHM attaches and x11vnc exits on the refusal, so a change
-  that sends every client through `x11-display.service` breaks the VNC
-  desktop. Keep Xorg's abstract socket (`-listen local`).
+  Xorg refuses MIT-SHM attaches and voxl exits on the refusal, so a change
+  that sends every client through `x11-display.service` breaks the desktop
+  stream. Keep Xorg's abstract socket (`-listen local`).
 - **Code that asks whether X is running must not ask through `:0`.** Any
   client connection there may start it. Dial Xorg's own `127.0.0.1:6000`
   (`desktop.Display.serverRunning`), and ask each time rather than remember.

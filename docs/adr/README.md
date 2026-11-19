@@ -109,7 +109,7 @@ duplicated number.
 | [26-11-06-567](26-11-06-567-the-local-socket-follows-tmpdir-and-a-dev-shell-pins-its-address.md) | The local socket follows TMPDIR, and a development shell pins its address | Accepted (supersedes 26-11-04-074 §1 and 26-11-05-240; 26-11-04-074 §§2–4 remain) |
 | [26-11-06-970](26-11-06-970-docker-activation-waits-for-configuration-not-feature-completion.md) | Docker activation waits for configuration, not feature completion | Accepted |
 | [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md) | Common apt packages are built into the Docker base before development binaries | Accepted |
-| [26-11-06-851](26-11-06-851-voxl-streams-the-desktop-at-two-times-density.md) | Voxl streams the desktop at two times density | Proposed |
+| [26-11-06-851](26-11-06-851-voxl-streams-the-desktop-at-two-times-density.md) | Voxl streams the desktop at two times density | Accepted |
 | [26-11-06-442](26-11-06-442-websocket-credentials-require-explicit-message-places.md) | WebSocket credentials require explicit message places | Proposed (would narrow 26-10-27-880 §4 for WebSocket message grants; extend 26-11-04-389 §2 containment; apply 26-10-14-482 §§1–3 to messages) |
 | [26-11-06-596](26-11-06-596-built-in-harnesses-have-one-declaration-and-one-vendor-adapter.md) | Built-in harnesses have one declaration and one vendor adapter | Proposed (would narrow 26-10-16-423 §3 for built-in authoring; provision protocol unchanged) |
 | [26-11-06-578](26-11-06-578-antigravity-uses-a-native-bundle-and-server-renewed-credentials.md) | Antigravity uses a native bundle and server-renewed credentials | Proposed (would extend 0114 §§1, 7 beyond npm) |

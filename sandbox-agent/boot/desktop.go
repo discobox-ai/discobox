@@ -9,16 +9,16 @@ import (
 )
 
 // desktopUserUnits are the desktop units whose work belongs to the person using
-// the sandbox rather than to root: the VNC server, and the viewer, whose
-// annotation record lives under that user's home and is read back by an agent
-// running as the same user.
+// the sandbox rather than to root: the viewer, whose annotation record lives
+// under that user's home and is read back by an agent running as the same
+// user, and which starts the desktop's stream (voxl) as its child, so the stream
+// captures and types as that user too.
 //
 // The Xfce session is not here. It takes the user as its instance name instead,
 // because xvfb.service has to name the instance it wants started. Nor is the
 // session bus the desktop shares: it is every terminal's too, so
 // writeSessionBusDropins binds it.
 var desktopUserUnits = []string{
-	"x11vnc@.service",
 	"discobox-desktop.service",
 }
 
@@ -49,13 +49,9 @@ func writeDesktopDropins(id identity) error {
 	// from a shell. seedDesktopScale writes it before the session can start, but a
 	// failure there is logged rather than fatal, and `-` is what lets the
 	// session start without the file.
-	if err := installFile("/etc/systemd/system/xfce4-session@.service.d/discobox-desktop-user.conf", 0o644,
+	return installFile("/etc/systemd/system/xfce4-session@.service.d/discobox-desktop-user.conf", 0o644,
 		fmt.Sprintf("[Service]\nEnvironmentFile=-%s\n",
-			filepath.Join(id.home, desktop.ScaleEnvDir, desktop.ScaleEnvName))); err != nil {
-		return err
-	}
-	return installFile("/etc/systemd/system/websockify-proxy.service.d/discobox-desktop-user.conf", 0o644,
-		fmt.Sprintf("[Unit]\nWants=websockify@%s.service\nAfter=websockify@%s.service\n", id.name, id.name))
+			filepath.Join(id.home, desktop.ScaleEnvDir, desktop.ScaleEnvName)))
 }
 
 // seedDesktopScale writes the desktop's starting scale into the sandbox user's

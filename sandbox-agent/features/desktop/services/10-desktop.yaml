@@ -8,9 +8,9 @@
 #   - The port watcher only sees sockets the sandbox user owns, and a .socket
 #     unit's listener is bound by pid 1. It is invisible to discovery.
 #   - Classifying a port means connecting to it, and connecting to this one is
-#     the activation. A probe would start an X server, a window manager, a VNC
-#     server and the viewer, in every sandbox, on a timer — the whole point of
-#     socket-activating it, undone by the mechanism meant to describe it.
+#     the activation. A probe would start the viewer in every sandbox, on a
+#     timer — the whole point of socket-activating it, undone by the mechanism
+#     meant to describe it.
 #     Stating the protocol is what lets the port be reported without ever being
 #     touched.
 #

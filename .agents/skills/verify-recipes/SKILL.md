@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), the pool VM guest itself booted under QEMU with vhost-vsock (its units, `discobox-vsock-guest`, its Docker over VSOCK), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — the sandbox desktop viewer and its voxl stream (a real browser over a forward), a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), the pool VM guest itself booted under QEMU with vhost-vsock (its units, `discobox-vsock-guest`, its Docker over VSOCK), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
@@ -1374,6 +1374,44 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
   REGISTRY=ghcr.io/example RELEASE_REPO=example/discobox --dry` and run its
   `go run -ldflags=... ./server/cmd/discobox-server manifest`. Never run
   `discobox-server` with any other argument to "try" a flag: it starts a server.
+
+# Verifying the desktop viewer and its stream (`sandbox-agent/desktop`)
+
+Drive the page in a real browser over a forward, never only with curl: the
+stream, input and clipboard are in the page.
+
+```bash
+d run -d -H shell --no-source -p x            # then: d exec $B -- discobox-provision wait desktop
+d proxy $B --port 6900 &                      # prints the local port (6901 when 6900 is taken)
+```
+
+- Drive host `chromium --headless=new --remote-debugging-port=N
+  --force-device-scale-factor=<1|2>` over CDP from a small Node client (Node
+  24 has `WebSocket`): `Page.navigate`, poll `#status-text` for `Connected`,
+  `Input.dispatchKeyEvent`/`dispatchMouseEvent` for input, `Page.captureScreenshot`.
+  Clipboard: `Browser.grantPermissions` (`clipboardSanitizedWrite`,
+  `clipboardReadWrite`) and `Emulation.setFocusEmulationEnabled`, or
+  `writeText` refuses with "Document is not focused". A Ctrl+V needs
+  `commands: ['paste']` on the `v` keydown, and a chord needs the modifier's
+  own keydown held across it (`modifiers` alone is not a held key in X).
+- Read the desktop side from the box: `DISPLAY=:0 xclip -o -selection
+  clipboard` (install `xclip`; `x11-utils` for `xev`). When setting a
+  selection with xclip, redirect its stdout/stderr (`>/dev/null 2>&1`): it
+  forks to serve the selection and holds the exec open otherwise.
+- `pgrep -f` matches the checking shell's own command line; use `[c]at`.
+- A rebuilt agent bundle does not reach an existing box on `stop`/`start` or
+  `admin box upgrade` (it keeps its agent layer). To run a viewer change now,
+  build the agent (`CGO_ENABLED=0 go build ./cmd/discobox-sandbox-agent`),
+  pipe it into `$(readlink -f /opt/discobox/current)/features/core/` through
+  `d exec`, and `sudo systemctl restart discobox-desktop.service`.
+- Worth driving: cold open (X and voxl stay down for connect, `GET /`, `GET
+  /api/session`), first frame, `DISPLAY=:0 xrandr` geometry against the
+  page's chip and canvas, density 1x/2x across a reload and a viewer restart,
+  `pkill -x voxl` and `systemctl restart xvfb.service` with the page open,
+  annotations at both densities (`~/.discobox/desktop-feedback/shots`), and a
+  WebSocket to `/api/stream` from a page on another origin (refused).
+- `systemctl stop xvfb.service` (not restart) currently leaves `:0` unable to
+  start again until `x11-display.socket` is restarted (#1252).
 
 # Verifying a pool build (the shared builder and its registry)
 

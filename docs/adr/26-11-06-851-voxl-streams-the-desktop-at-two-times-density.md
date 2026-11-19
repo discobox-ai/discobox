@@ -1,7 +1,8 @@
 # 26-11-06-851 — Voxl streams the desktop at two times density
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-06
+- Accepted by the owner by merging #887, 2026-11-09
 - **Issue**: [#698](https://github.com/discobox-ai/discobox/issues/698)
 - **Relates to**: [26-09-05-409](26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)
   (declared desktop port), [26-09-25-146](26-09-25-146-sandbox-terminals-share-the-desktops-socket-activated-session-bus.md)

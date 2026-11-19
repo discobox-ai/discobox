@@ -449,8 +449,8 @@ func runRenderProxyEnv(args []string) int {
 	return 0
 }
 
-// runDesktop runs the desktop viewer: the branded page on 6900 that embeds
-// noVNC, sizes the X screen to the browser window, and writes what a person
+// runDesktop runs the desktop viewer: the branded page on 6900 that streams the
+// desktop through voxl, sizes the X screen to the browser window, and writes what a person
 // draws on the desktop somewhere the agent working in this sandbox can read it.
 // See the desktop package.
 func runDesktop(args []string) int {
@@ -462,9 +462,13 @@ func runDesktop(args []string) int {
 	flags.StringVar(&cfg.Addr, "addr", desktop.DefaultAddr, "address to serve on when systemd passes no socket")
 	flags.StringVar(&cfg.Display, "display", ":0", "X display to serve and size")
 	flags.StringVar(&cfg.FeedbackDir, "feedback-dir", desktop.DefaultFeedbackDir, "directory holding the annotation record")
-	flags.StringVar(&cfg.WebsockifyURL, "websockify", desktop.DefaultWebsockify, "VNC websocket proxy to front")
-	flags.StringVar(&cfg.NoVNCDir, "novnc-dir", desktop.DefaultNoVNCDir, "directory holding the noVNC client")
+	flags.StringVar(&cfg.StreamAddr, "stream-addr", desktop.DefaultStreamAddr, "loopback address the desktop stream (voxl) is started on")
+	flags.StringVar(&cfg.VoxlDir, "voxl-dir", desktop.DefaultVoxlDir, "directory holding voxl and its browser client")
 	flags.StringVar(&cfg.BrandDir, "brand-dir", desktop.DefaultBrandDir, "directory holding the brand assets")
+	flags.Func("allowed-host", "a host name to answer for besides localhost (repeatable)", func(host string) error {
+		cfg.AllowedHosts = append(cfg.AllowedHosts, host)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}

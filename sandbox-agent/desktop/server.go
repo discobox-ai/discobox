@@ -32,9 +32,19 @@ var webFS embed.FS
 // image's own Dockerfile installs, so the service needs no configuration to
 // work and the flags exist for tests and for running it outside the image.
 const (
-	DefaultAddr        = "127.0.0.1:6900"
-	DefaultWebsockify  = "http://127.0.0.1:6080"
-	DefaultNoVNCDir    = "/usr/share/novnc"
+	DefaultAddr = "127.0.0.1:6900"
+	// DefaultStreamAddr is where voxl listens, on loopback and behind this
+	// service. The agent's port watcher excludes it by number, so it is never
+	// listed as one of the sandbox's ports or probed: it is the desktop's own
+	// plumbing, reached only through /api/stream. A fixed port rather than a
+	// free one picked at start, because a port that moves cannot be excluded
+	// ahead of time and would be listed and probed while voxl runs; in the
+	// 170xx range beside the agent's other listeners, where a sandbox's own
+	// service is unlikely to be, since the exclusion hides whatever holds it.
+	DefaultStreamAddr = "127.0.0.1:17063"
+	// DefaultVoxlDir is the desktop feature's voxl: the binary, and the
+	// browser client and decode worker built from the same source under web/.
+	DefaultVoxlDir     = "/usr/local/lib/discobox/voxl"
 	DefaultBrandDir    = "/usr/local/share/discobox/brand"
 	DefaultFeedbackDir = "~/.discobox/desktop-feedback"
 	DefaultScaleEnvDir = "~/" + ScaleEnvDir
@@ -72,12 +82,19 @@ type Config struct {
 	// VSCodeArgv is VS Code's argv.json, which carries the scale to VS Code.
 	// See vscode.go.
 	VSCodeArgv string
-	// WebsockifyURL is the VNC websocket proxy this service fronts, so the
-	// page has one origin for its markup and its pixels.
-	WebsockifyURL string
-	// NoVNCDir and BrandDir are served read-only as /novnc/ and /brand/.
-	NoVNCDir string
+	// StreamAddr is the loopback address voxl is started on. The page reaches
+	// it only through /api/stream, so it has one origin for its markup and
+	// its pixels.
+	StreamAddr string
+	// VoxlDir holds voxl's binary and, under web/, the client and worker
+	// served as /voxl/.
+	VoxlDir string
+	// BrandDir is served read-only as /brand/.
 	BrandDir string
+	// AllowedHosts are host names the desktop answers for besides localhost
+	// and loopback addresses: the name a forwarding layer reaches it under.
+	// See access.go.
+	AllowedHosts []string
 }
 
 func (c *Config) applyDefaults() {
@@ -96,30 +113,31 @@ func (c *Config) applyDefaults() {
 	if c.VSCodeArgv == "" {
 		c.VSCodeArgv = DefaultVSCodeArgv
 	}
-	if c.WebsockifyURL == "" {
-		c.WebsockifyURL = DefaultWebsockify
+	if c.StreamAddr == "" {
+		c.StreamAddr = DefaultStreamAddr
 	}
-	if c.NoVNCDir == "" {
-		c.NoVNCDir = DefaultNoVNCDir
+	if c.VoxlDir == "" {
+		c.VoxlDir = DefaultVoxlDir
 	}
 	if c.BrandDir == "" {
 		c.BrandDir = DefaultBrandDir
 	}
 }
 
-// Server is the desktop viewer: a branded page, the noVNC client it loads, a
-// same-origin path through to the VNC websocket, and the annotation record the
-// page writes into.
+// Server is the desktop viewer: a branded page, the voxl client it loads, a
+// same-origin path through to voxl's stream, and the annotation record the page
+// writes into.
 type Server struct {
-	log     *slog.Logger
-	store   *Store
-	display *Display
-	proxy   *httputil.ReverseProxy
-	static  fs.FS
-	novnc   http.Handler
-	brand   http.Handler
-	prompt  string
-	handler http.Handler
+	log      *slog.Logger
+	store    *Store
+	display  *Display
+	streamer *Streamer
+	static   fs.FS
+	voxl     http.Handler
+	brand    http.Handler
+	prompt   string
+	access   accessPolicy
+	handler  http.Handler
 
 	// releaseOnce guards the readiness notification, which lets the desktop
 	// session start. It fires exactly once, whatever gets there first.
@@ -164,21 +182,12 @@ func New(log *slog.Logger, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	target, err := url.Parse(cfg.WebsockifyURL)
-	if err != nil {
-		return nil, fmt.Errorf("desktop: parse websockify url %q: %w", cfg.WebsockifyURL, err)
+	if _, _, err := splitHostPort(cfg.StreamAddr); err != nil {
+		return nil, err
 	}
 	static, err := fs.Sub(webFS, "web")
 	if err != nil {
 		return nil, fmt.Errorf("desktop: open embedded assets: %w", err)
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	// The VNC stream is a websocket carrying framebuffer updates: nothing may
-	// sit in a buffer waiting for more, or the desktop moves in bursts.
-	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		log.Warn("desktop websocket proxy failed", "error", err)
-		http.Error(w, "the VNC proxy is not reachable", http.StatusBadGateway)
 	}
 	vscodeArgv, err := expandHome(cfg.VSCodeArgv)
 	if err != nil {
@@ -192,11 +201,17 @@ func New(log *slog.Logger, cfg Config) (*Server, error) {
 		log:     log,
 		store:   store,
 		display: display,
-		proxy:   proxy,
-		static:  static,
-		novnc:   http.StripPrefix("/novnc/", http.FileServer(http.Dir(cfg.NoVNCDir))),
-		brand:   http.StripPrefix("/brand/", http.FileServer(http.Dir(cfg.BrandDir))),
-		prompt:  prompt(store.MarkdownPath()),
+		streamer: &Streamer{
+			Binary:  filepath.Join(cfg.VoxlDir, "voxl"),
+			Addr:    cfg.StreamAddr,
+			Display: cfg.Display,
+			Log:     log,
+		},
+		static: static,
+		voxl:   revalidated(http.StripPrefix("/voxl/", http.FileServer(http.Dir(filepath.Join(cfg.VoxlDir, "web"))))),
+		brand:  http.StripPrefix("/brand/", http.FileServer(http.Dir(cfg.BrandDir))),
+		prompt: prompt(store.MarkdownPath()),
+		access: newAccessPolicy(cfg.AllowedHosts),
 	}
 	s.handler = s.routes()
 	return s, nil
@@ -220,10 +235,11 @@ func (s *Server) routes() http.Handler {
 	// TestEveryModuleThePageImportsIsServed keeps this list honest as app.js
 	// grows modules.
 	mux.Handle("GET /capture.js", http.FileServerFS(s.static))
-	mux.Handle("GET /novnc/", s.novnc)
+	mux.Handle("GET /stream.js", http.FileServerFS(s.static))
+	mux.Handle("GET /voxl/", s.voxl)
 	mux.Handle("GET /brand/", s.brand)
 	mux.HandleFunc("GET /shots/{name}", s.serveShot)
-	mux.HandleFunc("/websockify", s.serveWebsockify)
+	mux.HandleFunc("GET /api/stream", s.serveStream)
 	mux.HandleFunc("GET /api/session", s.serveSession)
 	mux.HandleFunc("POST /api/display", s.serveResize)
 	mux.HandleFunc("POST /api/scale", s.serveScale)
@@ -231,7 +247,18 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/feedback", s.serveFeedbackCreate)
 	mux.HandleFunc("PATCH /api/feedback/{id}", s.serveFeedbackUpdate)
 	mux.HandleFunc("DELETE /api/feedback/{id}", s.serveFeedbackDelete)
-	return mux
+	return s.access.guard(mux)
+}
+
+// revalidated has the browser check before reusing what it cached. voxl's
+// client and worker speak the stream's protocol, and a new desktop feature
+// brings a new voxl: a client cached from the old one would be talking to the
+// new stream.
+func revalidated(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ServeHTTP lets the server be mounted directly, which the tests do.
@@ -255,12 +282,13 @@ func Serve(ctx context.Context, log *slog.Logger, cfg Config, listener net.Liste
 	// Settling the scale is the last of startup, and it reads a file rather
 	// than a screen. Nothing on this path may touch X — see settleScale.
 	go server.settleScale()
+	defer server.streamer.Close()
 
 	httpServer := &http.Server{
 		Handler: server,
-		// A VNC websocket is idle whenever the desktop is, so neither the read
-		// nor the write side may time out; the header deadline still bounds a
-		// connection that never says what it wants.
+		// The stream's websocket is idle whenever the desktop is, so neither the
+		// read nor the write side may time out; the header deadline still bounds
+		// a connection that never says what it wants.
 		ReadHeaderTimeout: 15 * time.Second,
 	}
 	done := make(chan error, 1)
@@ -287,7 +315,7 @@ func Serve(ctx context.Context, log *slog.Logger, cfg Config, listener net.Liste
 // `xrandr` readiness check, say — socket-activates the X server, and
 // xvfb.service pulls up the Xfce session behind it. Merely *starting the
 // viewer* would then start the entire desktop: an X server, a window manager,
-// a panel and a VNC server, from a process whose only job at that moment is to
+// a panel and the stream, from a process whose only job at that moment is to
 // be ready to serve a web page. Anything that opened a TCP connection to 6900
 // and went away — a health check, a port scan, a stray probe — would bring the
 // whole thing up.
@@ -297,14 +325,13 @@ func Serve(ctx context.Context, log *slog.Logger, cfg Config, listener net.Liste
 // session actually reads is that same file, so writing it is the whole job.
 //
 // X starts only when something genuinely needs pixels — a browser loading the
-// page and asking for a size, or opening the VNC socket, or any program in the
+// page and asking for a size, or opening the stream, or any program in the
 // sandbox talking to DISPLAY=:0. Not before.
 func (s *Server) settleScale() {
 	// Nothing remembered is rare in the image, where the boot flow has already
 	// written the starting scale; it is the case of a viewer run anywhere else.
-	// Either way the session starts at the default, and a viewer on an ordinary
-	// screen says so and restarts it -- one restart on a sandbox's first ever
-	// desktop, against no X server at all on every sandbox that never opens one.
+	// Either way the session starts at the default, 2x, and stays there until a
+	// person picks another: no viewer's screen moves it.
 	scale, remembered := StartingScale(s.display.EnvDir)
 	if err := s.display.AdoptScale(scale); err != nil {
 		s.log.Warn("write the desktop scale", "scale", scale, "error", err)
@@ -339,21 +366,74 @@ func (s *Server) serveIndex(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// serveWebsockify hands the browser's VNC connection to the websockify proxy on
-// 6080, whose socket unit starts it. Serving it from this origin rather than
-// pointing the page at 6080 directly means one port is the whole desktop: one
-// thing to forward, and one thing to reach.
-func (s *Server) serveWebsockify(w http.ResponseWriter, r *http.Request) {
-	s.proxy.ServeHTTP(w, r)
+// serveStream hands the browser's stream to voxl, starting it if it is not
+// running. Serving it from this origin rather than pointing the page at voxl's
+// port means one port is the whole desktop: one thing to forward, and one thing
+// to reach; and it is what keeps voxl's own listener and its token out of
+// every browser's reach (see access.go).
+//
+// It is the request that needs pixels, so it is allowed to start X: the
+// geometry is read first, which brings the display up if it was cold and
+// answers only once it is, and voxl is started only after that, because a
+// capture started against a display that is not there exits.
+func (s *Server) serveStream(w http.ResponseWriter, r *http.Request) {
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		s.fail(w, http.StatusBadRequest, errors.New("desktop: the stream is a websocket"))
+		return
+	}
+	if _, err := s.display.Geometry(r.Context()); err != nil {
+		s.fail(w, http.StatusServiceUnavailable, fmt.Errorf("desktop: the display is not up: %w", err))
+		return
+	}
+	token, err := s.streamer.Ensure(r.Context())
+	if err != nil {
+		s.fail(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(out *httputil.ProxyRequest) {
+			out.Out.URL = &url.URL{Scheme: "http", Host: s.streamer.Addr, Path: "/ws"}
+			out.Out.Host = s.streamer.Addr
+			// The browser's origin was checked here; voxl is told nothing
+			// about it, and needs the token instead.
+			out.Out.Header.Del("Origin")
+			out.Out.Header.Del("Cookie")
+			out.Out.Header.Set("Authorization", "Bearer "+token)
+		},
+		// Video, input and the clipboard: nothing may sit in a buffer waiting
+		// for more, or the desktop moves in bursts.
+		FlushInterval: -1,
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			s.log.Warn("desktop stream proxy failed", "error", err)
+			http.Error(w, "the desktop stream is not reachable", http.StatusBadGateway)
+		},
+	}
+	proxy.ServeHTTP(w, r)
 }
 
+// serveShot serves a note's picture, and only ever as a picture.
+//
+// The shots directory is the sandbox user's, so anything in the box can put a
+// file there, and this origin is one the person may have let read their
+// clipboard (the clipboard panel's paste). A page served from here would be
+// same-origin with the viewer: it could read that clipboard and post it back.
+// So only a .png is served, as image/png whatever is in it, never sniffed into
+// something else, and sandboxed so a browser opening it directly runs nothing.
 func (s *Server) serveShot(w http.ResponseWriter, r *http.Request) {
-	full, err := s.store.ShotPath(path.Join(shotsDir, r.PathValue("name")))
+	name := r.PathValue("name")
+	if !strings.EqualFold(path.Ext(name), ".png") {
+		s.fail(w, http.StatusNotFound, fmt.Errorf("desktop: %q is not a note's picture", name))
+		return
+	}
+	full, err := s.store.ShotPath(path.Join(shotsDir, name))
 	if err != nil {
 		s.fail(w, http.StatusBadRequest, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	http.ServeFile(w, r, full)
 }
 
@@ -432,17 +512,17 @@ func (s *Server) serveResize(w http.ResponseWriter, r *http.Request) {
 }
 
 type scaleRequest struct {
-	// Scale may be the browser's raw device pixel ratio; it is rounded to a
-	// supported integer here rather than in the page, so one place decides.
+	// Scale is a person's choice; it is rounded to a supported integer here
+	// rather than in the page, so one place decides.
 	Scale float64 `json:"scale"`
-	// Auto marks the viewer's detection rather than a person's choice, and is
-	// ignored once anybody has chosen.
+	// Auto marks the viewer's own report rather than a person's choice. Its
+	// scale is ignored: the standing one is applied instead (Display.SetScale).
 	Auto bool `json:"auto"`
 }
 
-// serveScale is called twice at most in a normal session: once by the viewer
-// reporting the screen it is being watched on, and again only if a person
-// overrides it. Never on a resize.
+// serveScale is called twice at most in a normal session: once by the viewer as
+// it opens, to have the standing scale applied before it asks for a size, and
+// again only if a person picks another. Never on a resize.
 func (s *Server) serveScale(w http.ResponseWriter, r *http.Request) {
 	var request scaleRequest
 	if !s.readJSON(w, r, &request) {

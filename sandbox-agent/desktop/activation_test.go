@@ -83,7 +83,7 @@ func TestTheXServerDoesNotDeleteItsActivationSocket(t *testing.T) {
 // stop, :0 has no socket file and nothing can start X again. Turning it off
 // alone is not enough, though: every client would then reach Xorg over TCP
 // through the proxy, where Xorg cannot read a client's credentials and refuses
-// its MIT-SHM attaches -- and x11vnc exits on that refusal. The "local"
+// its MIT-SHM attaches -- and voxl exits on that refusal. The "local"
 // transport is Linux's abstract socket, which libxcb tries before the file, so
 // a running X serves its clients there and a stopped one is started through
 // the file.

@@ -147,6 +147,7 @@ body {
 .status[data-state="connecting"] .dot { background: var(--gold); animation: pulse 1.1s ease-in-out infinite; }
 .status[data-state="connected"] .dot  { background: var(--teal); box-shadow: 0 0 0 3px rgba(6, 234, 167, 0.16); }
 .status[data-state="error"] .dot      { background: #ff5f6d; }
+.status[data-state="unsupported"] .dot { background: #ff5f6d; }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
@@ -275,8 +276,28 @@ body {
   overflow: hidden;
 }
 
-.screen { width: 100%; height: 100%; }
-.screen canvas { display: block; }
+/* voxl's pointer and touch handling listen here: the browser's own panning
+   and pinching would claim a drag before it reached the desktop. */
+.screen { width: 100%; height: 100%; outline: none; touch-action: none; }
+.screen canvas { display: block; width: 100%; height: 100%; }
+
+/* The keyboard's textarea: out of sight but on the page, since a phone opens
+   its keyboard only for an input it can see. */
+.kbd {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  border: 0;
+  padding: 0;
+  resize: none;
+  pointer-events: none;
+  font-size: 16px;
+}
+
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ------------------------------------------------------------- curtain */
 
@@ -399,6 +420,46 @@ kbd {
 
 .composer-region { font: 11px/1 var(--mono); color: var(--text-faint); }
 .composer-buttons { display: flex; gap: 6px; }
+
+/* ----------------------------------------------------------- clipboard */
+
+.clip {
+  position: fixed;
+  top: var(--bar-h);
+  right: 0;
+  width: 340px;
+  max-height: calc(100% - var(--bar-h));
+  overflow: auto;
+  z-index: 26;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: -24px 0 60px -30px rgba(0, 0, 0, 0.95);
+}
+.clip[hidden] { display: none; }
+
+.clip-lead { margin: 12px 14px 4px; font-size: 12px; color: var(--text-dim); }
+
+.clip-section { padding: 10px 14px 4px; }
+.clip-title { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+
+.clip textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 62px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font: 11.5px/1.55 var(--mono);
+}
+.clip textarea:focus { outline: none; border-color: var(--mark); }
+
+.clip-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 7px; }
+
+.clip-status { margin: 6px 14px 14px; min-height: 1em; font-size: 12px; color: var(--text-dim); }
+.clip-status[data-kind="error"] { color: #ff8f97; }
 
 /* --------------------------------------------------------------- notes */
 

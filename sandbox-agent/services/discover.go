@@ -39,8 +39,7 @@ const DirName = ".discobox/services"
 // The desktop viewer is what it exists for. Its port is bound by a `.socket`
 // unit, so the port watcher's uid filter cannot see it, and classifying it
 // would mean connecting to it — which is what socket activation *is*, so a
-// classification probe would start an X server, a window manager and a VNC
-// server in every sandbox on a timer. A declaration states the port and the
+// classification probe would start the viewer in every sandbox on a timer. A declaration states the port and the
 // protocol, and the port is then reported without ever being touched.
 const BuiltinDir = "/usr/local/share/discobox/services"
 

@@ -460,7 +460,7 @@ func TestWatcherSurvivesADeclaredSetItCannotRead(t *testing.T) {
 
 // The reason ADR 26-09-05-409 (image-declared services) exists. Classifying a port means connecting to it, and
 // connecting to a socket-activated port is what starts the service behind it —
-// for the desktop, an X server, a window manager and a VNC server, brought up
+// for the desktop, the viewer, brought up
 // by a classification probe in every sandbox whether or not anybody wanted one.
 //
 // So a stated protocol must not be a shortcut that still probes: the port has

@@ -1,5 +1,5 @@
 [Unit]
-Description=Discobox desktop viewer (branded noVNC page, display sizing, annotations)
+Description=Discobox desktop viewer (branded page, voxl stream, display sizing, annotations)
 Documentation=https://github.com/discobox-ai/discobox
 # Not Requires=xvfb.service, and deliberately nothing that would pull it in:
 # reaching this port must never start a desktop. A port probe, a preview link

@@ -1,12 +1,14 @@
-# The sandbox's graphical desktop: Xfce on a dummy X server, served to a
-# browser tab by noVNC through the branded viewer on 6900, all socket-activated
+# The sandbox's graphical desktop: Xfce on a dummy X server, streamed to a
+# browser tab by voxl through the branded viewer on 6900, all started on demand
 # so a box nobody looks at runs none of it (sandbox-agent/desktop/DESIGN.md).
 # The session bus is the sandbox user's one session bus, which the desktop's
 # xfconf needs and the terminals share.
 #
 # The build puts the repository's brand directory beside this file
 # (sandbox-agent/Dockerfile): the viewer's page is drawn with it, and the
-# backdrop and the panel's mark are rendered from it.
+# backdrop and the panel's mark are rendered from it. It puts voxl beside it
+# too, built from pinned source: the binary, the browser client and decode
+# worker made with it, their licenses, and the sources they were built from.
 apiVersion: discobox.ai/provision/v1
 async: true
 requires: [browser]
@@ -18,13 +20,10 @@ steps:
         - elementary-xfce-icon-theme
         - greybird-gtk-theme
         - librsvg2-bin
-        - novnc
-        - python3-websockify
         - python3-xdg
         - scrot
         - thunar
         - x11-xserver-utils
-        - x11vnc
         - xdotool
         - xfce4-appfinder
         - xfce4-panel
@@ -42,16 +41,6 @@ steps:
     file: {path: /etc/systemd/system/x11-display.socket, source: systemd/x11-display.socket}
   - name: unit-x11-display
     file: {path: /etc/systemd/system/x11-display.service, source: systemd/x11-display.service}
-  - name: unit-x11vnc-socket
-    file: {path: /etc/systemd/system/x11vnc.socket, source: systemd/x11vnc.socket}
-  - name: unit-x11vnc
-    file: {path: /etc/systemd/system/x11vnc@.service, source: systemd/x11vnc@.service}
-  - name: unit-websockify-proxy-socket
-    file: {path: /etc/systemd/system/websockify-proxy.socket, source: systemd/websockify-proxy.socket}
-  - name: unit-websockify-proxy
-    file: {path: /etc/systemd/system/websockify-proxy.service, source: systemd/websockify-proxy.service}
-  - name: unit-websockify
-    file: {path: /etc/systemd/system/websockify@.service, source: systemd/websockify@.service}
   - name: unit-xvfb
     file: {path: /etc/systemd/system/xvfb.service, source: systemd/xvfb.service}
   - name: unit-desktop-socket
@@ -68,15 +57,22 @@ steps:
     systemd:
       enable:
         - x11-display.socket
-        - x11vnc.socket
-        - websockify-proxy.socket
         - discobox-desktop.socket
         - discobox-session-bus.socket
 
   - name: xorg
     file: {path: /etc/X11/xorg-dummy.conf, source: xorg-dummy.conf}
-  - name: vnc-websockify
-    file: {path: /usr/local/bin/discobox-vnc-websockify, source: discobox-vnc-websockify, mode: "0755"}
+  # The stream: what the viewer starts, as its child, when a page opens one.
+  - name: voxl
+    check: check-voxl.sh
+    run: link-voxl.sh
+  # A box provisioned when the desktop was served over VNC still has its
+  # units, enabled, and its packages, and nothing it laid goes with the steps
+  # that laid it. It removes packages, so it takes apt's lock.
+  - name: retire-vnc
+    apt: true
+    check: check-retire-vnc.sh
+    run: retire-vnc.sh
   - name: profile-scale
     file: {path: /etc/profile.d/sandbox-desktop-scale.sh, source: profile.d/sandbox-desktop-scale.sh}
   # The desktop's own service declaration, in the format a repository's

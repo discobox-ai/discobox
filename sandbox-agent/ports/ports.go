@@ -25,8 +25,8 @@
 // rather than measured (ADR 26-09-05-409, image-declared services). That is not an
 // optimization. Classifying a
 // port means connecting to it, and connecting to a socket-activated port is
-// what starts the service behind it — for the desktop, an X server, a window
-// manager and a VNC server, brought up by a classification probe in every
+// what starts the service behind it — for the desktop, the viewer, brought
+// up by a classification probe in every
 // sandbox whether or not anybody wanted a desktop. An image that knew the
 // answer at build time can say so, and the port is then reported without ever
 // being touched.
