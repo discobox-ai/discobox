@@ -83,7 +83,9 @@ Serve every registered server's API on a local socket, for a program on this
 machine that speaks HTTP: an admin UI, a script.
 
 The socket is a unix socket only you can open, in the CLI's state directory
-unless --listen names another. Behind it:
+unless --listen names another. A custom socket must be in a private directory.
+The unregistered primary is listed under its address label (usually "local"),
+or "_primary" if a registered server already has that name. Behind it:
 
   GET /v1/servers                        the servers, the primary first, read
                                          again on every request, so a server

@@ -118,9 +118,13 @@ behind one local socket for a program that speaks HTTP. `apiHandler` reads the
 registry on every request (`serverSet`: the primary as a command run now would
 choose it, then the registered servers), and keeps one `App` per address
 (`appFor`), so each server's client, and over iroh its connection, outlives the
-request. A request is proxied through that client's transport, streaming, with
-the caller's `Authorization` dropped. The unix socket's mode 0600 is the access
-control; `--listen` takes a loopback TCP address too, and refuses any other.
+request. The unregistered primary uses its address label, or `_primary` when
+that label collides with a registered name. `admin remote ls` can ask a server
+for its offered name. The proxy streams the upstream response with the caller's
+`Authorization` dropped. The socket lives in a private directory and uses mode
+0600 on Unix or a private ACL on Windows. A per-path file lock serializes
+socket recovery and ownership. The TCP option binds to loopback and checks the
+request's host and browser origin.
 
 ## Public command reference
 
