@@ -15,6 +15,36 @@ import (
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 )
 
+func TestImageDisablesClaudeAIConnectorsByDefault(t *testing.T) {
+	raw, err := os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var image harness.ImageMetadata
+	if err := json.Unmarshal(raw, &image); err != nil {
+		t.Fatal(err)
+	}
+	if image.Harness == nil {
+		t.Fatal("image has no harness metadata")
+	}
+	for _, file := range image.Harness.Files {
+		if file.Path != ".claude/settings.json" {
+			continue
+		}
+		var settings struct {
+			DisableClaudeAIConnectors bool `json:"disableClaudeAiConnectors"`
+		}
+		if err := json.Unmarshal([]byte(file.Content), &settings); err != nil {
+			t.Fatal(err)
+		}
+		if !settings.DisableClaudeAIConnectors {
+			t.Fatal("default Claude Code settings must disable claude.ai connectors")
+		}
+		return
+	}
+	t.Fatal("image has no default .claude/settings.json")
+}
+
 func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 	raw, err := os.ReadFile("image.json")
 	if err != nil {

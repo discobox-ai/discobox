@@ -729,9 +729,12 @@ so Claude Code never tries to rotate a sentinel.
   `.claude.json`, preserving other projects, preferences and newer local
   credentials. Malformed state is left intact and startup fails.
 - `.claude/settings.json` is exported as the user left it, and remains
-  literal, with the bypass-permission defaults. `~/.claude.json` is never
-  exported as a file: besides the credential, it carries the box's own
-  per-workspace trust map.
+  literal. The bundle defaults to bypass-permission mode and disables
+  claude.ai connectors with `disableClaudeAiConnectors: true`. A saved or
+  explicitly configured settings file takes precedence over the bundle default.
+  The OAuth route to `mcp-proxy.anthropic.com` remains available when connectors
+  are enabled. `~/.claude.json` carries the credential and per-workspace trust
+  map and stays local to the box.
 - Both credentials declare `rejectionScope`: `api.anthropic.com`, `/v1/messages`. A
   secret's `rejectionScope` (`harness.RejectionRule`: a host, and path prefixes
   on a segment boundary) names the requests that answer for the credential;
