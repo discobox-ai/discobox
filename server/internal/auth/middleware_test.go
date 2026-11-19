@@ -30,7 +30,7 @@ func TestAuthorizationAllowsFirstAuthorizerThatMatches(t *testing.T) {
 	}))
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/project-1", nil))
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
@@ -51,7 +51,7 @@ func TestAuthorizationTriesNextAuthorizerWhenOneDoesNotApply(t *testing.T) {
 	}))
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/project-1", nil))
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
@@ -72,7 +72,7 @@ func TestAuthorizationStopsOnAuthorizerError(t *testing.T) {
 	}))
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/project-1", nil))
 
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
@@ -110,7 +110,7 @@ func TestAuthenticatedAuthorizerDoesNotAuthorizeUnlistedPaths(t *testing.T) {
 	for _, path := range []string{
 		"/projects/project-1",
 		"/projects/project-1/sandboxes",
-		"/api/pools/pool-1/status",
+		"/pool-agent/pool-1/status",
 		"/api/workers/worker-1/status",
 		"/providers",
 		"/providers/catalog/provider-1",
@@ -170,5 +170,32 @@ func TestSSHConnectAuthorizerAdmitsOnlyTheCLIsUser(t *testing.T) {
 	other := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects", nil)
 	if ok, err := (SSHConnectAuthorizer{}).Authorize(other); ok || err != nil {
 		t.Fatalf("Authorize(/projects) = %v, %v; want it not to apply", ok, err)
+	}
+}
+
+func TestAuthorizationResolvesOnlyAnEntireDefaultProjectSegment(t *testing.T) {
+	for _, tc := range []struct {
+		path, rewritten string
+		status          int
+	}{
+		{"/projects/default/sandboxes/s/agent/execs/a%2Fb?cursor=%2f", "/projects/p/sandboxes/s/agent/execs/a%2Fb?cursor=%2f", http.StatusNoContent},
+		{"/projects/%64efault/events", "/projects/p/events", http.StatusNoContent},
+		{"/projects/default%2Fextra/events", "", http.StatusForbidden},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			calls := 0
+			handler := Authorization(testAuthorizer{ok: true, calls: &calls})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.RequestURI != tc.rewritten {
+					t.Errorf("dispatch URI = %q, want %q", r.RequestURI, tc.rewritten)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			ctx := context.WithValue(t.Context(), defaultProjectIDContextKey{}, "p")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequestWithContext(ctx, http.MethodGet, tc.path, nil))
+			if response.Code != tc.status {
+				t.Fatalf("status = %d, want %d", response.Code, tc.status)
+			}
+		})
 	}
 }

@@ -32,7 +32,7 @@ const (
 // It is a POST because it writes — to the pool's Docker daemon and to the guest
 // image directory on this machine.
 func registerPoolGuestImageRoutes(router chi.Router, service services.PoolService) {
-	router.Method(http.MethodPost, "/api/projects/{projectId}/pools/{poolId}/guest-image", poolGuestImageHandler(service))
+	router.Method(http.MethodPost, "/projects/{projectId}/pools/{poolId}/guest-image", poolGuestImageHandler(service))
 }
 
 func poolGuestImageHandler(service services.PoolService) http.Handler {

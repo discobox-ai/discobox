@@ -254,7 +254,7 @@ func bearerToken(authorization string) string {
 }
 
 // poolRuntimeActions allowlists the actions a pool agent may reach under
-// /api/pools/{poolId}/. It is an allowlist rather than a pattern on purpose:
+// /pool-agent/{poolId}/. It is an allowlist rather than a pattern on purpose:
 // a route that is not named here is not authenticated as a pool route at all,
 // so a new or misspelled one fails closed instead of inheriting pool access.
 //
@@ -313,24 +313,24 @@ func isPoolRuntimePath(path string) bool {
 
 // poolRuntimeAction returns the allowlisted action a pool runtime path names.
 func poolRuntimeAction(path string) (string, bool) {
-	if !strings.HasPrefix(path, "/api/pools/") {
+	if !strings.HasPrefix(path, "/pool-agent/") {
 		return "", false
 	}
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) < 4 {
+	if len(segments) < 3 {
 		return "", false
 	}
-	trailing, ok := poolRuntimeActions[segments[3]]
+	trailing, ok := poolRuntimeActions[segments[2]]
 	if !ok {
 		return "", false
 	}
 	// Trailing segments belong only to the actions that take them, and no more
 	// of them than the action's routes have. Accepting them everywhere would
 	// let an unlisted subroute of a listed action inherit pool access.
-	if len(segments)-4 > trailing {
+	if len(segments)-3 > trailing {
 		return "", false
 	}
-	return segments[3], true
+	return segments[2], true
 }
 
 func poolIDFromRuntimePath(path string) (string, error) {
@@ -338,7 +338,7 @@ func poolIDFromRuntimePath(path string) (string, error) {
 		return "", errors.New("pool runtime path is invalid")
 	}
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	poolID, err := url.PathUnescape(segments[2])
+	poolID, err := url.PathUnescape(segments[1])
 	if err != nil {
 		return "", err
 	}

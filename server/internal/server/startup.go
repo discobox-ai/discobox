@@ -119,7 +119,7 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	message := "server is starting: " + status.Phase
 	w.Header().Set("Cache-Control", "no-store")
 	var body interface{ Encode(*jx.Encoder) }
-	_, pattern := startupLegacyErrors().Handler(r)
+	_, pattern := startupLegacyErrors().Handler(canonicalServerRequest(r))
 	if pattern != "" {
 		w.Header().Set("Content-Type", "application/json")
 		body = &serverapi.ErrorResponse{Error: message}
@@ -198,7 +198,7 @@ func writeHealthStatus(w http.ResponseWriter, code int, status health.Status) {
 	}
 }
 
-// The contract mixes legacy JSON errors and problem JSON, even within /api.
+// The contract mixes legacy JSON errors and problem JSON, across the API.
 // Derive the legacy route set from the embedded contract so new operations and
 // changes to their error format cannot silently drift from the startup responder.
 // Defer parsing until an API request arrives; listener binding and health probes

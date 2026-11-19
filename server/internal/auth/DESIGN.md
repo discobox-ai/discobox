@@ -65,7 +65,7 @@ Current authenticators:
   forwarded sandbox: the authenticator after the next answers every request as
   the default user.
 - `PoolAuthenticator` applies only to pool agent runtime routes:
-  `/api/pools/{poolId}/{action}` where `action` is in the `poolRuntimeActions`
+  `/pool-agent/{poolId}/{action}` where `action` is in the `poolRuntimeActions`
   allow-list, plus trailing segments only for an action that takes them, and
   no more than it takes: a resource ID for one addressing a resource, and the
   OCI-distribution-shaped paths of the asset API under `assets`
@@ -209,9 +209,8 @@ Current authorizers:
   ([ADR 26-09-30-782](../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
   §2 and §3 respectively). `ActingUserID` is the user such a call acts as: the sandbox's
   creator.
-- `ProjectAuthorizer` authorizes `/projects/{projectId}/...` and
-  `/api/projects/{projectId}/...` routes by user principal and project
-  membership. It resolves `/projects/default` and `/api/projects/default` to the
+- `ProjectAuthorizer` authorizes `/projects/{projectId}/...` routes by user principal and project
+  membership. It resolves `/projects/default` to the
   user's default project and rewrites the path before the handler sees the
   request. A person discobot asserted is authorized by the signed project
   instead: that project and no other, `default` meaning it, and no member row
@@ -236,7 +235,7 @@ path equality:
 - `/harness-definitions/`
 - `/peers`
 - `/peers/`
-- `/peer`
+- `/server/peer`
 - `/projects`
 - `/providers/catalog`
 - `/shutdown`
@@ -255,7 +254,7 @@ enrollment. `authorized_ids` is deliberately unreachable from the API and is
 what bounds that. Narrow this entry when a connection carries provenance to
 authorize on.
 
-`/peer` serves this server's own peer ID
+`/server/peer` serves this server's own peer ID
 ([ADR 0098](../../../docs/adr/0098-a-server-serves-its-own-peer-id.md)). It is
 server-scoped like `/peers`, and the value is one any authenticated caller is
 entitled to know.

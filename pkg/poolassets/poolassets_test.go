@@ -38,7 +38,7 @@ func TestFetchReadsThePoolsAssetRoute(t *testing.T) {
 	}
 	data, _ := io.ReadAll(body)
 	_ = body.Close()
-	if string(data) != "blob" || path != "/api/pools/pool_1/assets/blobs/sha256:00" {
+	if string(data) != "blob" || path != "/pool-agent/pool_1/assets/blobs/sha256:00" {
 		t.Fatalf("read %q from %s", data, path)
 	}
 	encoded, err := poolauth.EncodePublicKey(public)

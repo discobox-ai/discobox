@@ -296,7 +296,7 @@ func TestHTTPClientUpdatesPoolStatusByPath(t *testing.T) {
 		t.Fatalf("encode public key: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/pools/pool-1/status" {
+		if r.URL.Path != "/pool-agent/pool-1/status" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
 		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -347,7 +347,7 @@ func TestHTTPClientReportsSandboxStates(t *testing.T) {
 		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
 			return // Ignore port discovery before asserting the state report.
 		}
-		if r.URL.Path != "/api/pools/pool-1/sandbox-states" {
+		if r.URL.Path != "/pool-agent/pool-1/sandbox-states" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
 		_, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -426,7 +426,7 @@ func TestHTTPClientListsHeldSandboxes(t *testing.T) {
 		if r.Method == http.MethodHead && r.URL.Path == "/" {
 			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
 		}
-		if r.Method != http.MethodGet || r.URL.Path != "/api/pools/pool-1/sandboxes" {
+		if r.Method != http.MethodGet || r.URL.Path != "/pool-agent/pool-1/sandboxes" {
 			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 			http.NotFound(w, r)
 			return

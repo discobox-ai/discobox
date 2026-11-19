@@ -242,7 +242,7 @@ func TestAnOversizedInventoryReportIsRefusedBeforeItIsBuffered(t *testing.T) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 	}))
 	resp := httptest.NewRecorder()
-	handler.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/pools/pool-1/sandbox-inventories", body))
+	handler.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/pool-agent/pool-1/sandbox-inventories", body))
 	if !reached || read > maxInventoryReportBodyBytes+(1<<20) {
 		t.Fatalf("reached = %v, read %d bytes; want the body cut off near %d", reached, read, maxInventoryReportBodyBytes)
 	}
@@ -253,7 +253,7 @@ func TestAnOversizedInventoryReportIsRefusedBeforeItIsBuffered(t *testing.T) {
 			t.Errorf("another route's body: %q, %v", data, err)
 		}
 	}))
-	other.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/pools/pool-1/sandbox-agent-status", strings.NewReader("hello")))
+	other.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/pool-agent/pool-1/sandbox-agent-status", strings.NewReader("hello")))
 }
 
 type readerFunc func([]byte) (int, error)

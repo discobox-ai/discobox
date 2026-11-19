@@ -812,7 +812,7 @@ func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 // Both audit trails a sandbox agent keeps — harness hooks and the events of
 // every exec — are exec reads.
 func TestSandboxAuditTrailRoutesUseExecReadScope(t *testing.T) {
-	for _, trail := range []string{"harness-hooks", "exec-events"} {
+	for _, trail := range []string{"harness-hooks", "exec-events", "execs/label%2Fpart/logs"} {
 		t.Run(trail, func(t *testing.T) {
 			ctx := context.Background()
 			stubs := newRouterTestServices()
@@ -826,8 +826,8 @@ func TestSandboxAuditTrailRoutesUseExecReadScope(t *testing.T) {
 			projectID := testDefaultProjectID
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/" + trail
-				if r.URL.Path != wantPath {
-					t.Errorf("upstream path = %q, want %q", r.URL.Path, wantPath)
+				if r.URL.EscapedPath() != wantPath {
+					t.Errorf("upstream path = %q, want %q", r.URL.EscapedPath(), wantPath)
 				}
 				_, _ = w.Write([]byte(`{}`))
 			}))

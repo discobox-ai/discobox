@@ -159,7 +159,7 @@ func (c *controlPlaneCredentials) do(ctx context.Context, method, path string, q
 		// it cannot prove who it is for (ADR 26-11-17-078).
 		return errors.New("pool has no control-plane credential yet")
 	}
-	endpoint := fmt.Sprintf("%s/api/pools/%s/%s", rc.ControlPlaneURL, url.PathEscape(rc.PoolID), path)
+	endpoint := fmt.Sprintf("%s/pool-agent/%s/%s", rc.ControlPlaneURL, url.PathEscape(rc.PoolID), path)
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
 	}

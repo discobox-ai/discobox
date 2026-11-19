@@ -26,7 +26,7 @@ func TestSandboxLeadCanRunAndAttachExecsInCreatedAndAdoptedChildren(t *testing.T
 			{http.MethodGet, "/execs/exec-1/attach"},
 		} {
 			t.Run(child+route.suffix, func(t *testing.T) {
-				path := "/projects/default/sandboxes/" + child + route.suffix
+				path := "/projects/default/sandboxes/" + child + "/agent" + route.suffix
 				r := httptest.NewRequestWithContext(WithPrincipal(ctx, roleLead), route.method, path, nil)
 				ok, err := authorizer.Authorize(r)
 				if !ok || err != nil {

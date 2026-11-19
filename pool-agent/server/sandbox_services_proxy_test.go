@@ -21,6 +21,7 @@ func TestSandboxServiceProxyForwardsEveryRoute(t *testing.T) {
 	}{
 		{"list", http.MethodGet, "/services", "/api/projects/project-1/sandboxes/sandbox-1/services", ScopeExecRead},
 		{"get", http.MethodGet, "/services/api", "/api/projects/project-1/sandboxes/sandbox-1/services/api", ScopeExecRead},
+		{"escaped service ID", http.MethodGet, "/services/api%2Fworker", "/api/projects/project-1/sandboxes/sandbox-1/services/api%2Fworker", ScopeExecRead},
 		{"logs", http.MethodGet, "/services/api/logs", "/api/projects/project-1/sandboxes/sandbox-1/services/api/logs", ScopeExecRead},
 		{"start", http.MethodPost, "/services/api/start", "/api/projects/project-1/sandboxes/sandbox-1/services/api/start", ScopeExecWrite},
 		{"stop", http.MethodPost, "/services/api/stop", "/api/projects/project-1/sandboxes/sandbox-1/services/api/stop", ScopeExecWrite},
@@ -84,8 +85,8 @@ func newServiceProxyRouter(t *testing.T, wantPath string) (http.Handler, func(st
 			t.Errorf("upstream reached at %q; the request should have been refused", r.URL.Path)
 			return
 		}
-		if r.URL.Path != wantPath {
-			t.Errorf("upstream path = %q, want %q", r.URL.Path, wantPath)
+		if r.URL.EscapedPath() != wantPath {
+			t.Errorf("upstream path = %q, want %q", r.URL.EscapedPath(), wantPath)
 		}
 		_, _ = w.Write([]byte(`{"services":[]}`))
 	}))

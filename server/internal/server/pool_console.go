@@ -33,7 +33,7 @@ const consoleExitWait = 2 * time.Second
 // therefore terminates the websocket itself and pumps execstream frames between
 // the client and the console's TTY.
 func registerPoolConsoleRoutes(router chi.Router, service services.PoolService) {
-	router.Method(http.MethodGet, "/api/projects/{projectId}/pools/{poolId}/console", poolConsoleHandler(service))
+	router.Method(http.MethodGet, "/projects/{projectId}/pools/{poolId}/console", poolConsoleHandler(service))
 }
 
 func poolConsoleHandler(service services.PoolService) http.Handler {

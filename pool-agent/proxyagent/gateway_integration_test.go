@@ -137,7 +137,7 @@ func TestResolverAsksForGatewayHeaders(t *testing.T) {
 	if len(values) != 1 || values["DISCOBOX_GATEWAY_KEY"] != "gw-key" {
 		t.Fatalf("values = %v", values)
 	}
-	if gotAuth != "Bearer tok-123" || gotPath != "/api/pools/"+testPoolID+"/resolve-gateway-headers" {
+	if gotAuth != "Bearer tok-123" || gotPath != "/pool-agent/"+testPoolID+"/resolve-gateway-headers" {
 		t.Fatalf("asked %s with %q", gotPath, gotAuth)
 	}
 	if gotBody.SandboxID != "sb-1" || gotBody.Gateway != "anthropic" || strings.Join(gotBody.Env, ",") != "DISCOBOX_GATEWAY_KEY,DISCOBOX_GATEWAY_UNSET" {

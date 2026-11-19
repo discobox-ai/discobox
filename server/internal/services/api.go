@@ -673,7 +673,7 @@ type SSHIngress struct {
 	HostKey string
 }
 
-// ServerPeer is this server's own peer identity, served by GET /peer so a
+// ServerPeer is this server's own peer identity, served by GET /server/peer so a
 // client that already reaches this server some other way can learn the address
 // to dial it at (ADR 0098). Like SSHIngress it is a resolved value rather than
 // a service: the identity is loaded once, at the point the iroh endpoint is
@@ -727,7 +727,7 @@ type Services struct {
 	// holds any other credential.
 	SSH SSHIngress
 
-	// ServerPeer is served by GET /peer: who this server is, for a client
+	// ServerPeer is served by GET /server/peer: who this server is, for a client
 	// deciding what to dial. Peers, below, is the other direction — who this
 	// server admits.
 	ServerPeer ServerPeer

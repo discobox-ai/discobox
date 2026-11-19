@@ -112,13 +112,13 @@ func TestSandboxEventsStreamsServerSentEvents(t *testing.T) {
 		}, cursors: []int64{12, 12, 12, 15}}
 		service := &eventStreamService{stream: stream}
 		router := chi.NewRouter()
-		router.Method(http.MethodGet, "/api/projects/{projectId}/events", sandboxEventsHandler(service, 5*time.Millisecond, 20*time.Millisecond))
+		router.Method(http.MethodGet, "/projects/{projectId}/events", sandboxEventsHandler(service, 5*time.Millisecond, 20*time.Millisecond))
 
 		// The deadline is on the bubble's clock: a stream that never pings
 		// ends at once, and the test reports what it read.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/projects/project-1/events?lastEventId=3", nil)
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/projects/project-1/events?lastEventId=3", nil)
 		req.Header.Set("Last-Event-ID", "5")
 		body, bodyWriter := io.Pipe()
 		resp := &streamRecorder{header: http.Header{}, body: bodyWriter}
@@ -190,7 +190,7 @@ func TestSandboxEventCursor(t *testing.T) {
 		{header: "x", wantErr: true},
 		{query: "-1", wantErr: true},
 	} {
-		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/p/events?lastEventId="+tc.query, nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/p/events?lastEventId="+tc.query, nil)
 		if tc.header != "" {
 			req.Header.Set("Last-Event-ID", tc.header)
 		}

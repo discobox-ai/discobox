@@ -1,6 +1,6 @@
 // Package poolassets reads the server's asset routes as a pool (ADR
 // 26-10-16-423 §13): a manifest or blob the pool's scope pins, under
-// /api/pools/{poolId}/assets, with an assertion the pool signs with its
+// /pool-agent/{poolId}/assets, with an assertion the pool signs with its
 // identity key. The pool agent reads through it to fill its cache (ADR
 // 26-10-24-953 §3). A pool's own bundles are not read through it: its maker
 // places them in its box (ADR 26-10-30-875 §5).
@@ -19,7 +19,7 @@ import (
 )
 
 // Prefix is where a pool's asset routes are, {poolId} its own.
-const Prefix = "/api/pools/{poolId}/assets"
+const Prefix = "/pool-agent/{poolId}/assets"
 
 // Client reads one pool's asset routes.
 type Client struct {

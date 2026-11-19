@@ -452,7 +452,7 @@ func (a *App) apiClient() (*apiclientgen.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return apiclientgen.NewClient(baseURL, apiclientgen.WithClient(client))
+	return newServerAPIClient(baseURL, client)
 }
 
 func (a *App) httpClient() (string, *http.Client, error) {

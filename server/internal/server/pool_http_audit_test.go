@@ -49,7 +49,7 @@ func TestPoolHTTPAuditArtifactRouteStreamsTheRecordedBody(t *testing.T) {
 	registerPoolHTTPAuditRoutes(router, artifactPools{asked: &asked, closed: &closed})
 
 	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/pools/pool-a/audit/http/http_3/response-body?sandboxId=sbx_1", nil))
+	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/project-1/pools/pool-a/audit/http/http_3/response-body?sandboxId=sbx_1", nil))
 	if resp.Code != http.StatusOK || resp.Body.String() != "<html>recorded</html>" {
 		t.Fatalf("status = %d, body = %q", resp.Code, resp.Body.String())
 	}
@@ -65,10 +65,10 @@ func TestPoolHTTPAuditArtifactRouteStreamsTheRecordedBody(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		"/api/projects/project-1/pools/pool-a/audit/http/http_0/response-body",
-		"/api/projects/project-1/pools/pool-a/audit/http/3/response-body",
-		"/api/projects/project-1/pools/pool-a/audit/http/abc/response-body",
-		"/api/projects/project-1/pools/pool-a/audit/http/http_3/headers",
+		"/projects/project-1/pools/pool-a/audit/http/http_0/response-body",
+		"/projects/project-1/pools/pool-a/audit/http/3/response-body",
+		"/projects/project-1/pools/pool-a/audit/http/abc/response-body",
+		"/projects/project-1/pools/pool-a/audit/http/http_3/headers",
 	} {
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil))

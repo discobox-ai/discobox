@@ -6,11 +6,9 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/spf13/cobra"
-
-	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/spf13/cobra"
 )
 
 // identityPair is what `discobox admin id` answers: the two IDs an enrollment is
@@ -190,7 +188,7 @@ func (a *App) serverIdentity(ctx context.Context) identityValue {
 	if err != nil {
 		return identityFailure(err)
 	}
-	client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient))
+	client, err := newServerAPIClient(baseURL, httpClient)
 	if err != nil {
 		return identityFailure(err)
 	}

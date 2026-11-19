@@ -674,7 +674,7 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 		// and never sent with its sentinel (ADR 26-11-17-078 §1).
 		return proxy.SecretResolveResult{}, errors.New("resolve secret: no control plane credential yet")
 	}
-	url := fmt.Sprintf("%s/api/pools/%s/resolve-sandbox-secret", rc.ControlPlaneURL, rc.PoolID)
+	url := fmt.Sprintf("%s/pool-agent/%s/resolve-sandbox-secret", rc.ControlPlaneURL, rc.PoolID)
 	payload, err := json.Marshal(resolveRequestBody{SandboxID: req.ClientID, Sentinel: req.Sentinel, Host: req.Host})
 	if err != nil {
 		return proxy.SecretResolveResult{}, err
@@ -745,7 +745,7 @@ func (r *secretResolver) ResolveRaw(ctx context.Context, req proxy.SecretRawRequ
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
 		return proxy.SecretRawResult{}, errors.New("resolve raw secret: no control plane credential yet")
 	}
-	url := fmt.Sprintf("%s/api/pools/%s/resolve-sandbox-raw-secret", rc.ControlPlaneURL, rc.PoolID)
+	url := fmt.Sprintf("%s/pool-agent/%s/resolve-sandbox-raw-secret", rc.ControlPlaneURL, rc.PoolID)
 	payload, err := json.Marshal(resolveRawRequestBody{SandboxID: req.ClientID, Sentinel: req.Sentinel})
 	if err != nil {
 		return proxy.SecretRawResult{}, err
@@ -802,7 +802,7 @@ func (r *secretResolver) ResolveGatewayHeaders(ctx context.Context, req proxy.Ga
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
 		return nil, errors.New("resolve gateway headers: no control plane credential yet")
 	}
-	url := fmt.Sprintf("%s/api/pools/%s/resolve-gateway-headers", rc.ControlPlaneURL, rc.PoolID)
+	url := fmt.Sprintf("%s/pool-agent/%s/resolve-gateway-headers", rc.ControlPlaneURL, rc.PoolID)
 	payload, err := json.Marshal(gatewayHeadersBody{SandboxID: req.ClientID, Gateway: req.Gateway, Env: req.Env})
 	if err != nil {
 		return nil, err
@@ -864,7 +864,7 @@ func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportReque
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/api/pools/%s/sandbox-secret-rejections", rc.ControlPlaneURL, rc.PoolID)
+	url := fmt.Sprintf("%s/pool-agent/%s/sandbox-secret-rejections", rc.ControlPlaneURL, rc.PoolID)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return err

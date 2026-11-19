@@ -15,9 +15,9 @@ allow-list's `assets` action takes up to three trailing segments
 
 | Route | Answers |
 |---|---|
-| `GET /api/pools/{poolId}/assets/{name}` | The manifest a name in scope is pinned to now (`ResolveAssetName`). 404 for no such pin, 409 when two pins in scope share the name |
-| `GET /api/pools/{poolId}/assets/{name}/manifests/{digest}` | A pinned manifest, or one a pinned index lists, under its pin's name |
-| `GET /api/pools/{poolId}/assets/blobs/{digest}` | A config or layer some manifest in scope references |
+| `GET /pool-agent/{poolId}/assets/{name}` | The manifest a name in scope is pinned to now (`ResolveAssetName`). 404 for no such pin, 409 when two pins in scope share the name |
+| `GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}` | A pinned manifest, or one a pinned index lists, under its pin's name |
+| `GET /pool-agent/{poolId}/assets/blobs/{digest}` | A config or layer some manifest in scope references |
 
 - **A name** is the last component of a reference's repository:
   `ghcr.io/discobox-ai/discobox-platform:v1` and a development build's

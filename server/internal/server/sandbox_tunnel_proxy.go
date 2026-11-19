@@ -36,7 +36,7 @@ var (
 // else, `discobox proxy` first among them.
 func registerSandboxTunnelRoutes(router chi.Router, service services.SandboxService) {
 	for _, tunnel := range []sandboxTunnel{sandboxTCPTunnel, sandboxUDPTunnel} {
-		router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}"+tunnel.suffix, sandboxTunnelProxyHandler(service, tunnel))
+		router.Method(http.MethodGet, sandboxAgentRoutePrefix+tunnel.suffix, sandboxTunnelProxyHandler(service, tunnel))
 	}
 }
 

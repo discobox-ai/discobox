@@ -147,18 +147,18 @@ func TestSandboxRoleDeliversSourceToTheDiscoboxesItCreated(t *testing.T) {
 // attaching and starting or ending an exec stay out (ADR 26-10-01-397).
 func TestSandboxRoleDrivesTheTerminalsOfTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
-		{"list its worker's terminals", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/execs", http.StatusOK},
-		{"read its worker's screen", roleLead, http.MethodGet, "/api/projects/default/sandboxes/sbx-worker/execs/primary/screen", http.StatusOK},
-		{"wait on its worker's terminal", roleLead, http.MethodPost, "/projects/proj-1/sandboxes/sbx-worker/execs/primary/wait", http.StatusOK},
-		{"type into its worker's terminal", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/execs/exec-1/input", http.StatusOK},
-		{"read an exec's events", roleLead, http.MethodGet, "/api/projects/default/sandboxes/sbx-worker/execs/exec-1/events", http.StatusOK},
-		{"read a person's discobox's screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-persons/execs/primary/screen", http.StatusForbidden},
-		{"type into a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/execs/primary/input", http.StatusForbidden},
-		{"read its own screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-lead/execs/primary/screen", http.StatusForbidden},
-		{"read nothing's screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-none/execs/primary/screen", http.StatusNotFound},
-		{"attach to its worker", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/execs/primary/attach", http.StatusOK},
-		{"start an exec in its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/execs", http.StatusOK},
-		{"end its worker's exec", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker/execs/exec-1", http.StatusOK},
+		{"list its worker's terminals", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/agent/execs", http.StatusOK},
+		{"read its worker's screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/agent/execs/primary/screen", http.StatusOK},
+		{"wait on its worker's terminal", roleLead, http.MethodPost, "/projects/proj-1/sandboxes/sbx-worker/agent/execs/primary/wait", http.StatusOK},
+		{"type into its worker's terminal", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/agent/execs/exec-1/input", http.StatusOK},
+		{"read an exec's events", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/agent/execs/exec-1/events", http.StatusOK},
+		{"read a person's discobox's screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-persons/agent/execs/primary/screen", http.StatusForbidden},
+		{"type into a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/agent/execs/primary/input", http.StatusForbidden},
+		{"read its own screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-lead/agent/execs/primary/screen", http.StatusForbidden},
+		{"read nothing's screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-none/agent/execs/primary/screen", http.StatusNotFound},
+		{"attach to its worker", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/agent/execs/primary/attach", http.StatusOK},
+		{"start an exec in its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/agent/execs", http.StatusOK},
+		{"end its worker's exec", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker/agent/execs/exec-1", http.StatusOK},
 	})
 }
 
@@ -167,13 +167,13 @@ func TestSandboxRoleDrivesTheTerminalsOfTheDiscoboxesItCreated(t *testing.T) {
 func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
 		{"start its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/start", http.StatusOK},
-		{"stop its worker", roleLead, http.MethodPost, "/api/projects/default/sandboxes/sbx-worker/stop", http.StatusOK},
+		{"stop its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/stop", http.StatusOK},
 		{"restart its worker", roleLead, http.MethodPost, "/projects/proj-1/sandboxes/sbx-worker/restart", http.StatusOK},
 		{"repair its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/repair", http.StatusOK},
 		{"upgrade its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/upgrade", http.StatusOK},
-		{"reprovision its worker", roleLead, http.MethodPost, "/api/projects/default/sandboxes/sbx-worker/reprovision", http.StatusOK},
-		{"reprovision a person's discobox", roleLead, http.MethodPost, "/api/projects/default/sandboxes/sbx-persons/reprovision", http.StatusForbidden},
-		{"reprovision its creator", roleWorker, http.MethodPost, "/api/projects/default/sandboxes/sbx-lead/reprovision", http.StatusForbidden},
+		{"reprovision its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/agent/reprovision", http.StatusOK},
+		{"reprovision a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/agent/reprovision", http.StatusForbidden},
+		{"reprovision its creator", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-lead/agent/reprovision", http.StatusForbidden},
 		{"start a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/start", http.StatusForbidden},
 		{"stop its creator", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-lead/stop", http.StatusForbidden},
 		{"stop itself", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-worker/stop", http.StatusForbidden},
@@ -191,7 +191,7 @@ func TestSandboxRoleArchivesTheDiscoboxesItCreated(t *testing.T) {
 	noAPI := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-noapi", ProjectID: "proj-1", UserID: "user-1"}
 	checkRole(t, []roleCase{
 		{"archive its worker", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker", http.StatusOK},
-		{"archive its worker by its project", roleLead, http.MethodDelete, "/api/projects/proj-1/sandboxes/sbx-worker", http.StatusOK},
+		{"archive its worker by its project", roleLead, http.MethodDelete, "/projects/proj-1/sandboxes/sbx-worker", http.StatusOK},
 		{"archive a narrower one it created", github, http.MethodDelete, "/projects/default/sandboxes/sbx-github-api", http.StatusOK},
 		{"archive a person's discobox", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-persons", http.StatusForbidden},
 		{"archive one its worker created", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-github-api", http.StatusForbidden},
@@ -202,7 +202,7 @@ func TestSandboxRoleArchivesTheDiscoboxesItCreated(t *testing.T) {
 		{"archive nothing", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-none", http.StatusNotFound},
 		{"archive its worker in another project", roleLead, http.MethodDelete, "/projects/proj-2/sandboxes/sbx-worker", http.StatusForbidden},
 		{"purge its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/purge", http.StatusForbidden},
-		{"purge by its project", roleLead, http.MethodPost, "/api/projects/proj-1/sandboxes/sbx-worker/purge", http.StatusForbidden},
+		{"purge by its project", roleLead, http.MethodPost, "/projects/proj-1/sandboxes/sbx-worker/purge", http.StatusForbidden},
 		{"purge a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/purge", http.StatusForbidden},
 		{"purge itself", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-worker/purge", http.StatusForbidden},
 		{"unarchive its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/unarchive", http.StatusForbidden},
@@ -215,7 +215,7 @@ func TestSandboxRoleArchivesTheDiscoboxesItCreated(t *testing.T) {
 func TestSandboxRoleTagsTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
 		{"tag its worker", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", http.StatusOK},
-		{"tag its worker by its project", roleLead, http.MethodPatch, "/api/projects/proj-1/sandboxes/sbx-worker/meta", http.StatusOK},
+		{"tag its worker by its project", roleLead, http.MethodPatch, "/projects/proj-1/sandboxes/sbx-worker/meta", http.StatusOK},
 		{"tag a person's discobox", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", http.StatusForbidden},
 		{"tag nothing", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-none/meta", http.StatusNotFound},
 		{"update its worker", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker", http.StatusOK},
@@ -230,11 +230,11 @@ func TestSandboxRoleTagsTheDiscoboxesItCreated(t *testing.T) {
 // named.
 func TestSandboxRoleReachesTheServicesAndPortsOfTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
-		{"list services", roleLead, http.MethodGet, "/api/projects/default/sandboxes/sbx-worker/services", http.StatusOK},
-		{"read a service's logs", roleLead, http.MethodGet, "/api/projects/default/sandboxes/sbx-worker/services/web/logs", http.StatusOK},
-		{"restart a service", roleLead, http.MethodPost, "/api/projects/proj-1/sandboxes/sbx-worker/services/web/restart", http.StatusOK},
-		{"stop a person's discobox's service", roleLead, http.MethodPost, "/api/projects/default/sandboxes/sbx-persons/services/web/stop", http.StatusForbidden},
-		{"delete a service", roleLead, http.MethodDelete, "/api/projects/default/sandboxes/sbx-worker/services/web", http.StatusForbidden},
+		{"list services", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/agent/services", http.StatusOK},
+		{"read a service's logs", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/agent/services/web/logs", http.StatusOK},
+		{"restart a service", roleLead, http.MethodPost, "/projects/proj-1/sandboxes/sbx-worker/agent/services/web/restart", http.StatusOK},
+		{"stop a person's discobox's service", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/agent/services/web/stop", http.StatusForbidden},
+		{"delete a service", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker/agent/services/web", http.StatusForbidden},
 		{"post to a port", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/http/3000/api/items", http.StatusOK},
 		{"get a person's discobox's port", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-persons/http/8080", http.StatusForbidden},
 		{"a dot segment on a port", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/http/3000/a/../b", http.StatusForbidden},
@@ -317,21 +317,21 @@ func TestSandboxRoleActsOnlyOnDiscoboxesWithinItsEgress(t *testing.T) {
 	github := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-github", ProjectID: "proj-1", UserID: "user-1"}
 	sealed := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-sealed", ProjectID: "proj-1", UserID: "user-1"}
 	checkRole(t, []roleCase{
-		{"type into an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-wide/execs/primary/input", http.StatusForbidden},
+		{"type into an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-wide/agent/execs/primary/input", http.StatusForbidden},
 		{"post to an unrestricted discobox's port", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-wide/http/8080/x", http.StatusForbidden},
 		{"start an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-wide/start", http.StatusForbidden},
 		{"write an unrestricted discobox's meta", github, http.MethodPatch, "/projects/default/sandboxes/sbx-github-wide/meta", http.StatusForbidden},
 		{"push into an unrestricted discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-wide/git-origins/primary.git/git-receive-pack", http.StatusForbidden},
-		{"read an unrestricted discobox's screen", github, http.MethodGet, "/projects/default/sandboxes/sbx-github-wide/execs/primary/screen", http.StatusOK},
-		{"type into a narrower discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-api/execs/primary/input", http.StatusOK},
-		{"type into a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-sealed-wider/execs/primary/input", http.StatusForbidden},
-		{"wait on a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-sealed-wider/execs/primary/wait", http.StatusOK},
-		{"an unrestricted caller types into a restricted one", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-sealed/execs/primary/input", http.StatusOK},
+		{"read an unrestricted discobox's screen", github, http.MethodGet, "/projects/default/sandboxes/sbx-github-wide/agent/execs/primary/screen", http.StatusOK},
+		{"type into a narrower discobox", github, http.MethodPost, "/projects/default/sandboxes/sbx-github-api/agent/execs/primary/input", http.StatusOK},
+		{"type into a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-sealed-wider/agent/execs/primary/input", http.StatusForbidden},
+		{"wait on a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-sealed-wider/agent/execs/primary/wait", http.StatusOK},
+		{"an unrestricted caller types into a restricted one", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-sealed/agent/execs/primary/input", http.StatusOK},
 		// Passthrough is held to the caller's whether or not either is
 		// restricted: an unrestricted caller's traffic is all read.
-		{"type into one with passthrough the caller lacks", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-unread/execs/primary/input", http.StatusForbidden},
+		{"type into one with passthrough the caller lacks", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-unread/agent/execs/primary/input", http.StatusForbidden},
 		{"update one with passthrough the caller lacks", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-unread", http.StatusForbidden},
-		{"read the screen of one with passthrough", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-unread/execs/primary/screen", http.StatusOK},
+		{"read the screen of one with passthrough", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-unread/agent/execs/primary/screen", http.StatusOK},
 	})
 }
 
@@ -340,10 +340,10 @@ func TestSandboxRoleActsOnlyOnDiscoboxesWithinItsEgress(t *testing.T) {
 // 26-11-01-560 §1).
 func TestSandboxRoleReadsItsProjectsEventStream(t *testing.T) {
 	checkRole(t, []roleCase{
-		{"read the project's events", roleLead, http.MethodGet, "/api/projects/default/events", http.StatusOK},
-		{"read them by the project's ID", roleWorker, http.MethodGet, "/api/projects/proj-1/events", http.StatusOK},
-		{"read another project's events", roleLead, http.MethodGet, "/api/projects/proj-2/events", http.StatusForbidden},
-		{"write to the stream", roleLead, http.MethodPost, "/api/projects/default/events", http.StatusForbidden},
+		{"read the project's events", roleLead, http.MethodGet, "/projects/default/events", http.StatusOK},
+		{"read them by the project's ID", roleWorker, http.MethodGet, "/projects/proj-1/events", http.StatusOK},
+		{"read another project's events", roleLead, http.MethodGet, "/projects/proj-2/events", http.StatusForbidden},
+		{"write to the stream", roleLead, http.MethodPost, "/projects/default/events", http.StatusForbidden},
 	})
 }
 

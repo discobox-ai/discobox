@@ -64,7 +64,7 @@ func serveAssets(t *testing.T, svc *fakeAssetService) *httptest.Server {
 func TestAnAssetManifestIsServedByteForByte(t *testing.T) {
 	manifest := []byte(`{"schemaVersion":2,  "config":{"digest":"sha256:x"}}`)
 	server := serveAssets(t, &fakeAssetService{manifest: manifest})
-	resp, err := get(t, server.URL+"/api/pools/pool-1/assets/discobox-platform/manifests/sha256:"+sixtyFourHex)
+	resp, err := get(t, server.URL+"/pool-agent/pool-1/assets/discobox-platform/manifests/sha256:"+sixtyFourHex)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestAnAssetManifestIsServedByteForByte(t *testing.T) {
 // the client never reads a complete response that is not the blob.
 func TestAnAssetBlobThatFailsOnTheWayOutIsCutOff(t *testing.T) {
 	server := serveAssets(t, &fakeAssetService{blob: bytes.Repeat([]byte("b"), 64<<10)})
-	resp, err := get(t, server.URL+"/api/pools/pool-1/assets/blobs/sha256:"+sixtyFourHex)
+	resp, err := get(t, server.URL+"/pool-agent/pool-1/assets/blobs/sha256:"+sixtyFourHex)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,8 +25,8 @@ import (
 // scaffold would buffer. Everything about a transfer -- a workspace, its git
 // history, a home directory -- is too big to hold in memory at either end.
 func registerSandboxTransferRoutes(router chi.Router, service services.SandboxService) {
-	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/export", sandboxExportHandler(service))
-	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/import", sandboxImportHandler(service))
+	router.Method(http.MethodGet, "/projects/{projectId}/sandboxes/{sandboxId}/export", sandboxExportHandler(service))
+	router.Method(http.MethodPost, "/projects/{projectId}/sandboxes/import", sandboxImportHandler(service))
 }
 
 func sandboxExportHandler(service services.SandboxService) http.Handler {

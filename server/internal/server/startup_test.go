@@ -137,18 +137,32 @@ func TestStartupProblemErrorsDecodeWithGeneratedClient(t *testing.T) {
 func TestStartupSaveChangesUsesProblemJSON(t *testing.T) {
 	h := newStartupHandler("starting services")
 	// Save is a problem-JSON operation beside the legacy capture operations.
-	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/projects/default/sandboxes/box/harness-config-changes/save", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Content-Type") != "application/problem+json" || w.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("startup response: %d %v %s", w.Code, w.Header(), w.Body)
+	for _, prefix := range []string{"", "/api"} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, prefix+"/projects/default/sandboxes/box/harness-config-changes/save", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusServiceUnavailable || w.Header().Get("Content-Type") != "application/problem+json" || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("startup response: %d %v %s", w.Code, w.Header(), w.Body)
+		}
+		var body serverapi.ErrorModel
+		if err := body.UnmarshalJSON(w.Body.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+		if body.Detail.Value != "server is starting: starting services" {
+			t.Fatalf("detail = %q", body.Detail.Value)
+		}
 	}
-	var body serverapi.ErrorModel
-	if err := body.UnmarshalJSON(w.Body.Bytes()); err != nil {
-		t.Fatal(err)
-	}
-	if body.Detail.Value != "server is starting: starting services" {
-		t.Fatalf("detail = %q", body.Detail.Value)
+}
+
+func TestStartupEventAliasesUseLegacyJSON(t *testing.T) {
+	h := newStartupHandler("starting services")
+	for _, prefix := range []string{"", "/api"} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, prefix+"/projects/default/events", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusServiceUnavailable || w.Header().Get("Content-Type") != "application/json" {
+			t.Fatalf("%s: startup response: %d %v %s", r.URL.Path, w.Code, w.Header(), w.Body)
+		}
 	}
 }
 

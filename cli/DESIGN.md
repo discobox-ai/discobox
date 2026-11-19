@@ -285,6 +285,11 @@ connection until they timed out. Configuring the transport again on a second
 build sets iroh's own tracing only the first time, because iroh refuses a
 second call (`SetIrohLogging`).
 
+During the server route migration, the CLI and console send the legacy paths
+so the same requests work with older registered servers. `newServerAPIClient`
+maps moved generated operations before sending them. Hand-built streaming
+and upgrade requests continue to use their legacy paths directly.
+
 ## A Client Remembers Where a Server Answered
 
 `peer_addrs.go` keeps one entry per peer under `<state>/iroh/peer-addrs.json`:

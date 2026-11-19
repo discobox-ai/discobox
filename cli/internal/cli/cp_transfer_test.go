@@ -133,7 +133,7 @@ func copyRemote(t *testing.T) (*App, *api.Client, map[string]string, map[string]
 		}
 	}))
 	t.Cleanup(server.Close)
-	client, err := api.NewClient(server.URL, api.WithClient(server.Client()))
+	client, err := newServerAPIClient(server.URL, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestCopyIncompleteBodyNeverPublishes(t *testing.T) {
 				io.WriteString(w, "short")
 			}))
 			defer server.Close()
-			client, err := api.NewClient(server.URL, api.WithClient(server.Client()))
+			client, err := newServerAPIClient(server.URL, server.Client())
 			if err != nil {
 				t.Fatal(err)
 			}

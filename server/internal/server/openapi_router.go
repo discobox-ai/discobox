@@ -11,6 +11,7 @@ import (
 // behavior-compatibly.
 func NewOpenAPIRouter(services services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
+	router.Use(legacyServerRoutes)
 	RegisterDocsRoutes(router)
 	registerSandboxGitRoutes(router, services.Sandboxes)
 	registerSandboxTransferRoutes(router, services.Sandboxes)

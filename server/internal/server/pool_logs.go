@@ -31,7 +31,7 @@ const maxPoolLogTail = 1_000_000
 // bytes only travel one way — and the response is flushed as it arrives so a
 // followed log reaches the operator live.
 func registerPoolLogsRoutes(router chi.Router, service services.PoolService) {
-	router.Method(http.MethodGet, "/api/projects/{projectId}/pools/{poolId}/logs", poolLogsHandler(service))
+	router.Method(http.MethodGet, "/projects/{projectId}/pools/{poolId}/logs", poolLogsHandler(service))
 }
 
 func poolLogsHandler(service services.PoolService) http.Handler {

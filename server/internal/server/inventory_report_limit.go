@@ -17,7 +17,7 @@ const maxInventoryReportBodyBytes = 16 << 20
 // maxInventoryReportBodyBytes before the generated server buffers it.
 func boundInventoryReports(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/pools/") && strings.HasSuffix(r.URL.Path, "/sandbox-inventories") {
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/pool-agent/") && strings.HasSuffix(r.URL.Path, "/sandbox-inventories") {
 			r.Body = http.MaxBytesReader(w, r.Body, maxInventoryReportBodyBytes)
 		}
 		next.ServeHTTP(w, r)

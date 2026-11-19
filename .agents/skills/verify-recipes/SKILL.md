@@ -132,7 +132,7 @@ lags it by the 15s poll). `d cp` scripts into `/tmp`.
 
 # Verifying the sandbox event stream (`discobox events`, ADR 26-10-29-316)
 
-Follow it two ways at once: `curl -sN http://127.0.0.1:8080/api/projects/default/events > $S/raw.sse &`
+Follow it two ways at once: `curl -sN http://127.0.0.1:8080/projects/default/events > $S/raw.sse &`
 for the frames, and `d events` in a `tmux -L verify` pane for the CLI. Then
 drive a `d run -d -H shell --no-source` box through `stop`, `start`, `rm`
 and `admin box purge` (it takes `</dev/null`, no `--yes`).
@@ -291,8 +291,8 @@ and that the process started after the build (no `ps` in the image: walk
   each refresh, bind it to any box, read the sentinel from the loop's
   `.tmp/discobox/discobox.db` (`sandbox_secrets.sentinel`), and POST
   `{"sandboxId","sentinel","host","outcome":"rejected"[,"valueGeneration"]}`
-  to `/api/pools/<pool>/sandbox-secret-rejections` as the dev pool (minted
-  with the `secret:resolve` scope, [below](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid)).
+  to `/pool-agent/<pool>/sandbox-secret-rejections` as the dev pool (minted
+  with the `secret:resolve` scope, [below](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-pool-agentpoolid)).
   The token endpoint's log says what was renewed; `secret_rejections` in the
   same database what was recorded. A generation is base36 of
   `secrets.value_updated_at` in Unix microseconds.
@@ -590,7 +590,7 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   from `git archive <base> | tar -x -C $S/main-src` (no worktree) and start
   it on its own copy of the same database.
 - A pool route on that server, with no real pool: see the no-Docker case
-  under [Verifying a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid).
+  under [Verifying a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-pool-agentpoolid).
 - To race new intent against a pool's first reconcile (supersede paths):
   `admin pool create`, then `admin pool rm` ~3s later — `EnsurePool` of a
   Docker pool takes ~10s, so the delete lands mid-run. Watch `admin job ls -o
@@ -752,7 +752,7 @@ opened. Notes:
 - `pgrep -f <cli path>` also matches your own tool shell, and a `kill` of
   that kills the shell (exit 144): use `pgrep -x`.
 
-# Verifying a pool route as the dev pool (the asset API, any `/api/pools/{poolId}/…`)
+# Verifying a pool route as the dev pool (the asset API, any `/pool-agent/{poolId}/…`)
 
 A pool route answers only the pool's own signed assertion, so `curl` it with
 one minted from the dev pool's key. The key is in the pool container; copy it
@@ -1317,7 +1317,7 @@ and harness bundles (`.env`'s `DISCOBOX_PLATFORM_BUNDLE` and
 box is pinned to an agent carrying the change.
 
 ```bash
-B=http://127.0.0.1:8080/api/projects/default/sandboxes/<sbx_id>/files
+B=http://127.0.0.1:8080/projects/default/sandboxes/<sbx_id>/agent/files
 curl -s "$B/stat?path=~"
 printf hi | curl -s -X PUT -H 'Content-Type: application/octet-stream' \
   --data-binary @- "$B/content?path=notes/a.md&parents=true"

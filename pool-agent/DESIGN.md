@@ -144,7 +144,7 @@ filesystem finds the files where the test wrote them; with one, only paths
 under the root are translated.
 
 From then on, the pool host reports scheduling status every 30s
-(`/api/pools/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
+(`/pool-agent/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
 booleans for control-plane scheduling, with available CPU, memory, and storage
 measured per report. Every report also declares the one
 platform the pool hosts (`Bootstrap.HostedPlatform`, ADR 0145 §1): the OS
@@ -210,7 +210,7 @@ the reaper collects only the agent's own children.
 ## Resource Accounting
 
 The agent answers "what is using this pool" on its own channel
-(`/api/pools/{poolId}/resources`, every 30s), because the question needs three
+(`/pool-agent/{poolId}/resources`, every 30s), because the question needs three
 things only this component holds together: the pool's own totals, every
 sandbox's counters, and the disk under all of them
 ([ADR 0071](../docs/adr/0071-resource-accounting-is-a-pool-agent-differenced-report.md)).
@@ -939,7 +939,7 @@ against the control plane's answer, never against containers
 which sandboxes exist: a missing container is what a failed rebuild, a settled
 failure awaiting repair, and an archive all look like. Every ten minutes it
 lists its trees, then asks the control plane which sandboxes it holds on this
-pool (`GET /api/pools/{pool_id}/sandboxes`) — every row in any state, archived,
+pool (`GET /pool-agent/{pool_id}/sandboxes`) — every row in any state, archived,
 failed and mid-delete included. A tree outside that set gets a
 `.discobox-unheld-at` marker, is reaped once that is 24h old, and has the
 marker cleared if it comes back into the set; a held tree is kept indefinitely.
@@ -971,14 +971,14 @@ A standing poller (`startSandboxAgentStatusPoller`, `statuspoll.go`) checks
 every currently-running hosted sandbox's sandbox-agent status endpoint (git
 status, terminal sessions, active connections) on a 15s interval and
 pushes a batch of what it collected to the control plane
-(`/api/pools/{pool_id}/sandbox-agent-status`). One loop reports every sandbox,
+(`/pool-agent/{pool_id}/sandbox-agent-status`). One loop reports every sandbox,
 so each sandbox's reports arrive in the order they were observed. A
 `discobox.harness_mode` label or machine-record `harnessMode` left by a pool
 from before configure was removed is ignored (ADR 26-11-02-152). One unreachable or erroring
 sandbox is skipped, never blocking or failing the rest of the tick, and a poll
 or push failure never affects sandbox lifecycle. The bearer token for each
 sandbox-agent call is a short-lived, `status:read`-only token the control
-plane mints on request (`/api/pools/{pool_id}/sandbox-agent-status-tokens`)
+plane mints on request (`/pool-agent/{pool_id}/sandbox-agent-status-tokens`)
 and the poller caches per sandbox, refreshing before expiry. Cache fills are
 serialized across ticks and port waiters, so concurrent misses reuse the
 first mint; the shared state mutex is released during the mint request. Pool-agent holds
@@ -1014,7 +1014,7 @@ The standing tick also reads each sandbox's **inventory** (`inventorypoll.go`,
 [ADR 26-10-11-657](../docs/adr/26-10-11-657-a-stopped-discobox-is-read-from-what-it-last-posted.md) §2) — what its exec, service and tool lists and its terminals' screens
 answer — with the same token, which carries `inventory:read` beside
 `status:read`, and posts what it read to
-`/api/pools/{pool_id}/sandbox-inventories`. An inventory is sent in full only
+`/pool-agent/{pool_id}/sandbox-inventories`. An inventory is sent in full only
 when it changed: the sandbox agent is asked with the digest the control plane
 last took (`?known=`) and answers "unchanged" to it, and the entry then
 carries the digest alone, which moves the stored inventory's observation time
@@ -1602,7 +1602,7 @@ flowchart LR
   cache --> rec{"in this sandbox's<br/>delivery.json bundles?"}
   rec -->|no| nf["404, the server never asked"]
   rec -->|yes| store[("blob store<br/>PoolBuild/assets")]
-  store -.->|missing, one fetch per digest| server["server<br/>/api/pools/{pool}/assets/…"]
+  store -.->|missing, one fetch per digest| server["server<br/>/pool-agent/{pool}/assets/…"]
 ```
 
 - **The record** (`assetcache.WriteRecord`) is `sandboxes/{sandbox}/delivery.json`,
@@ -2234,7 +2234,7 @@ flowchart LR
   one starts working again
   ([ADR 0132](../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md)).
   A rejection names the sentinel and goes to
-  `POST /api/pools/{pool}/sandbox-secret-rejections` under the same
+  `POST /pool-agent/{pool}/sandbox-secret-rejections` under the same
   `secret:resolve` scope. A resolve answer's `reportScope` is handed to the
   proxy unread: which requests answer for a credential is the control plane's
   to say and the proxy's to apply
@@ -2386,7 +2386,7 @@ like any other
 The one exception is a raw binding's, on a route outside the protocol (below).
 
 - `list`, `request`, and a request's status are relayed to the control plane
-  for the certificate's sandbox (`/api/pools/{poolId}/sandbox-credentials`,
+  for the certificate's sandbox (`/pool-agent/{poolId}/sandbox-credentials`,
   `/sandbox-credential-requests`). A request has a use part, a delegate part,
   or both, and the broker passes on what was sent: each policy document as
   the bytes the sandbox sent, since the server parses it once and a copy
@@ -2418,7 +2418,7 @@ The one exception is a raw binding's, on a route outside the protocol (below).
   sandbox — variable and delivery — with the value the proxy holds to watch
   its requests for (`proxy.Server.RawSecrets`), resolved from the control
   plane by the sentinel (`secretResolver.ResolveRaw`,
-  `/api/pools/{poolId}/resolve-sandbox-raw-secret`) and never written. One the
+  `/pool-agent/{poolId}/resolve-sandbox-raw-secret`) and never written. One the
   control plane denies is left out. `Environment` names a file-delivered one
   by its path (`sandboxconfig.RawSecretPath`) and leaves an env-delivered one
   out: it never hands a process a value. `list` says which credentials the
@@ -2452,7 +2452,7 @@ The one exception is a raw binding's, on a route outside the protocol (below).
   same rule for a sandbox with no container. A header taken from the server's
   environment is recorded by its variable's name; the proxy asks the control
   plane for the value through `secretResolver.ResolveGatewayHeaders`
-  (`/api/pools/{poolId}/resolve-gateway-headers`), with the resolve token, so
+  (`/pool-agent/{poolId}/resolve-gateway-headers`), with the resolve token, so
   no value is ever on the pool's disk.
 - **Host trust** (`trusts.go`, [ADR 0149](../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md))
   is the protocol's trust verb. `RequestTrust` probes the host through the
@@ -2463,7 +2463,7 @@ The one exception is a raw binding's, on a route outside the protocol (below).
   only be trusted at the outermost proxy; checks a supplied CA against the observed chain; and only then
   records the ask with that chain on the control plane. `hostTrusts` keeps the
   proxy's pins in step with the pool's live trusts
-  (`GET /api/pools/{poolId}/sandbox-host-trusts`): at start, every 30 seconds,
+  (`GET /pool-agent/{poolId}/sandbox-host-trusts`): at start, every 30 seconds,
   on every `trusts` list, and — before it answers — on a poll that reads
   `granted`, so the agent's next request finds the pin in force. A trust the
   proxy would refuse is reported and skipped, never allowed to fail the rest.

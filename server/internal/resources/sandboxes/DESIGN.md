@@ -698,7 +698,7 @@ See [ADR 0017](../../../../docs/adr/0017-resource-state-is-desired-and-observed-
 
 A project's sandbox state changes are served as server-sent events
 ([ADR 26-10-29-316](../../../../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)),
-by the hand-wired `GET /api/projects/{projectId}/events` (`internal/server`).
+by the hand-wired `GET /projects/{projectId}/events` (`internal/server`).
 The store writes the events with each change ([`store/DESIGN.md`](../../store/DESIGN.md#sandbox-events));
 this package owns where a client stands in them (`events.go`):
 
@@ -1267,7 +1267,7 @@ landed after its delivery cannot leave the old ones in place.
 
 The create options carry `DISCOBOX_ADDRESS` (`endpoint.EnvSandboxAddress`):
 `discobox://<server-peer-id>/<sandbox-id>`, the address a process inside hands
-somebody to reach this discobox. The peer ID is the one `GET /peer` serves
+somebody to reach this discobox. The peer ID is the one `GET /server/peer` serves
 (`WithServerPeerID`), passed only when the server listens on iroh: a peer ID is
 dialed over nothing else (ADR 0116 §1), and ADR 0117 keeps an always-present ID
 from being handed out as an address. It overrides a caller-set value of the

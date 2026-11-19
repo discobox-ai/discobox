@@ -167,16 +167,21 @@ func (s *sandboxService) forwardToSandboxAgent(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), statusCodeForGitError(mapRuntimeError(err)))
 		return
 	}
-	target := sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, sandboxAgentPath(
-		chi.URLParam(r, "projectId"),
-		chi.URLParam(r, "sandboxId"),
-		strings.TrimPrefix(r.URL.Path, fmt.Sprintf(
-			"/api/project/%s/pool/%s/sandboxes/%s",
-			chi.URLParam(r, "projectId"),
-			chi.URLParam(r, "poolId"),
-			chi.URLParam(r, "sandboxId"),
-		)),
-	))
+	projectID, poolID, sandboxID := chi.URLParam(r, "projectId"), chi.URLParam(r, "poolId"), chi.URLParam(r, "sandboxId")
+	prefix := fmt.Sprintf("/api/project/%s/pool/%s/sandboxes/%s", projectID, poolID, sandboxID)
+	escapedSuffix, ok := strings.CutPrefix(r.URL.EscapedPath(), prefix)
+	if !ok || !strings.HasPrefix(escapedSuffix, "/") {
+		http.Error(w, "sandbox agent proxy path identity does not match route", http.StatusBadRequest)
+		return
+	}
+	suffix, err := url.PathUnescape(escapedSuffix)
+	if err != nil {
+		http.Error(w, "invalid sandbox agent proxy path", http.StatusBadRequest)
+		return
+	}
+	target := sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, fmt.Sprintf("/api/projects/%s/sandboxes/%s", projectID, sandboxID))
+	target.RawPath = target.EscapedPath() + escapedSuffix
+	target.Path += suffix
 	sandboxProxy(dial, target, downstreamAuth, sandboxAgentUnreachable).ServeHTTP(w, r)
 }
 
@@ -309,18 +314,6 @@ func parsePort(value string) (int, bool) {
 	return port, true
 }
 
-func sandboxAgentPath(projectID, sandboxID, suffix string) string {
-	if suffix == "" {
-		suffix = "/"
-	}
-	return fmt.Sprintf(
-		"/api/projects/%s/sandboxes/%s%s",
-		url.PathEscape(projectID),
-		url.PathEscape(sandboxID),
-		suffix,
-	)
-}
-
 // sandboxProxy forwards to target over dial, the connection the runtime
 // supplies (ADR 0126 §5); target names no address, only the path and the Host
 // the sandbox sees. An upgrade — an exec attach, a tunnel — is forwarded on
@@ -333,8 +326,9 @@ func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth st
 			rawQuery := req.In.URL.RawQuery
 			req.SetURL(target)
 			req.Out.URL.Path = target.Path
-			req.Out.URL.RawPath = ""
+			req.Out.URL.RawPath = target.RawPath
 			req.Out.URL.RawQuery = rawQuery
+			req.Out.URL.ForceQuery = req.In.URL.ForceQuery
 			req.Out.Host = target.Host
 			// The token that authorized the hop to the pool is the control
 			// plane's, never the sandbox's: what the sandbox serves is told

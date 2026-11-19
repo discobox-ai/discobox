@@ -17,7 +17,7 @@ import (
 //
 // The identity is loaded on every start, whatever the server listens on
 // (ADR 0117): an ed25519 key in the data directory, written by Go like the SSH
-// host key, whose public half is the peer ID `GET /peer` serves (ADR 0098).
+// host key, whose public half is the peer ID `GET /server/peer` serves (ADR 0098).
 // Loading it binds nothing. What is skipped without an iroh endpoint is the
 // endpoint — the native library, the UDP socket, the relay — none of which a
 // server that was not asked to serve iroh should open.
@@ -104,7 +104,7 @@ func irohFallbackURL(display string) (string, error) {
 	return endpoint.LocalIrohFallbackURL()
 }
 
-// irohListenerService is how GET /peer answers what this server's listener is
+// irohListenerService is how GET /server/peer answers what this server's listener is
 // doing right now, as opposed to who it is.
 //
 // It is a func rather than a value because that is the difference that matters:
@@ -139,7 +139,7 @@ func joinAddrPorts(addrs []netip.AddrPort) []string {
 	return out
 }
 
-// serverPeer is what GET /peer answers with. A server that never configured an
+// serverPeer is what GET /server/peer answers with. A server that never configured an
 // iroh endpoint reports no ID rather than a zero one: the peer ID form of the
 // zero key is a real-looking address that reaches nothing.
 func serverPeer(id endpoint.IrohID) services.ServerPeer {
