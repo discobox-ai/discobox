@@ -893,10 +893,9 @@ func (e *Engine) waitPoolAgentActive(ctx context.Context, cli *client.Client, id
 }
 
 // ExecExitCode runs an exec in the container detached and reads its exit code
-// from the daemon, for a command whose output nobody reads. Every step is a
-// plain request bounded by ctx: an attached exec reads its upgrade over a
-// hijacked connection that ignores ctx once dialed (#1361), and a guest that
-// accepts the connection and never answers would hold the caller for ever.
+// from the daemon, for a command whose output nobody reads: every step is a
+// plain request bounded by ctx, and no stream is held open for output that
+// would be thrown away.
 func ExecExitCode(ctx context.Context, cli *client.Client, id string, options client.ExecCreateOptions) (int, error) {
 	created, err := cli.ExecCreate(ctx, id, options)
 	if err != nil {
