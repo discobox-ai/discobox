@@ -664,3 +664,32 @@ func TestSubIssuesThatCouldNotBeReadAreStillCounted(t *testing.T) {
 		}
 	})
 }
+
+// A comment post that fails at once keeps its failure on the status line,
+// whatever order Bubble Tea runs the post's batch in.
+func TestACommentRefusalSurvivesLateProgress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := issueSource()
+		ds.commentErr = errNotLoggedIn
+		_, m := openIssuePane(t, ds)
+		p := issueTabOf(m)
+		p.issue.composer.SetValue("Looks good")
+		batch := m.postComment(p)().(tea.BatchMsg)
+
+		// Deliver the refused post and its report before the batch's other
+		// command, a legal ordering for Bubble Tea's batch.
+		_, report := m.Update(batch[0]())
+		m.Update(report())
+		if !strings.Contains(m.status, "the comment was not posted") {
+			t.Fatalf("the post did not report the refusal: %q", m.status)
+		}
+		late := batch[1]()
+		if timer, ok := late.(timerMsg); ok {
+			late = timer.fire(time.Now())
+		}
+		m.Update(late)
+		if !m.statusE || !strings.Contains(m.status, "the comment was not posted") {
+			t.Fatalf("late progress overwrote the refusal: status = %q, error = %v", m.status, m.statusE)
+		}
+	})
+}

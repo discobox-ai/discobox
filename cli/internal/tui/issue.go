@@ -411,7 +411,8 @@ func (m *Model) postComment(p *pane) tea.Cmd {
 		defer cancel()
 		return issuePostedMsg{id: id, err: ds.CommentOnIssue(ctx, repository, number, body)}
 	}
-	return tea.Batch(post, status("posting the comment on #%d…", number))
+	expires := m.update(status("posting the comment on #%d…", number)())
+	return tea.Batch(post, expires)
 }
 
 // issuePosted clears the field once the comment is GitHub's, and reads the
