@@ -3,6 +3,9 @@
 - **Status**: Accepted (narrows [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §3's authored feature layout for built-ins: those files become generated bundle content; its provision protocol and script-file rule remain)
 - **Date**: 2026-11-06
   Accepted by the owner by merging #747, 2026-11-17.
+  Amended before anything shipped against it, 2026-11-18, at the owner's
+  direction: the adapter and the shared runtime are TypeScript, compiled to
+  ES modules at staging (§1, §3).
 - **Issue**: [#745](https://github.com/discobox-ai/discobox/issues/745)
 
 ## Context
@@ -37,7 +40,7 @@ Every built-in directory, including shell, has this shape:
 ```text
 harness/<directory>/
   harness.json         # sole declaration, schema-versioned and strictly checked
-  adapter.cjs          # vendor operations; explicit empty implementation for shell
+  adapter.ts           # vendor operations; explicit empty implementation for shell
   DESIGN.md            # vendor semantics, evidence, and supported limitations
   assets/             # literal vendor policy/config and SDK entry points, if any
   testdata/           # fixtures, if any
@@ -75,6 +78,15 @@ dependency/readiness rules, and the platform API compatibility check. The shared
 integration runtime is bundled by each coding harness and requires Node; it does
 not become a generic platform or server dependency. Shell installs no adapter
 runtime, agent, hooks or capture and keeps its reserved login-shell behavior.
+
+*Amendment (2026-11-18, before anything shipped).* The adapter and the shared
+runtime are TypeScript, typed against one contract the runtime owns, and run
+as ES modules. They are compiled at staging, by the same Go tool, file by file
+with esbuild's Go API: no Node at build time, nothing compiled in a
+Dockerfile or on the box. Types, lint and format are checked in the
+repository with repostd's node toolchain (tsc, oxlint, oxfmt). CommonJS was
+the starting point only because the code it moved was CommonJS; nothing the
+bundle publishes or a box persists names the adapter's file.
 
 ### 2. A declaration names parts, ownership and lifecycle
 
@@ -114,7 +126,7 @@ such as pi's `fd-find` are data, not a copied install script. A genuinely differ
 installer requires a named, tested implementation in the framework rather than
 inline shell strings in JSON.
 
-`adapter.cjs` exports named vendor operations selected by the declaration, with
+`adapter.ts` exports named vendor operations selected by the declaration, with
 required methods validated for each selected strategy. It replaces the existing
 normalizer and vendor branches in capture, and supplies the irreducible trust,
 auth-store and hook conversions. It does not own a second lifecycle scheduler.
