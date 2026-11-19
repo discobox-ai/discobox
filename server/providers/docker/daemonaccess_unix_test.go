@@ -30,6 +30,20 @@ func TestSocketAccessHintNamesTheGroupAndTheCommand(t *testing.T) {
 	}
 }
 
+// The server that was refused keeps the groups it started with, and the CLI
+// reuses a running server, so a new login session alone leaves the user
+// refused with the same hint (#1471): it must also say to stop that server,
+// and from the new session, which has the group.
+func TestSocketAccessHintTellsANewMemberToStopTheRunningServer(t *testing.T) {
+	hint := describeSocketAccess("/var/run/docker.sock", 986, false, 0o660)
+
+	login := strings.Index(hint, "new login session")
+	shutdown := strings.Index(hint, "discobox admin server shutdown --wait")
+	if login < 0 || shutdown < login {
+		t.Fatalf("hint %q must say to stop the running server after starting a new login session", hint)
+	}
+}
+
 // Being in the group and refused anyway is a different problem, and sending
 // the reader to add a group they have would send them in a circle.
 func TestSocketAccessHintDoesNotTellAMemberToJoin(t *testing.T) {
