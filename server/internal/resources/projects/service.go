@@ -215,28 +215,11 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 // either is refused rather than cascaded; the default project is refused too,
 // since `--project default` and every unqualified request resolve through it.
 func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
-	project, err := s.store.GetProject(ctx, projectID)
-	if err != nil {
-		return apperrors.NotFound(err, "project not found")
+	err := s.store.DeleteProject(ctx, projectID)
+	if errors.Is(err, store.ErrInUse) {
+		return apperrors.NewStatusError(http.StatusConflict, err.Error())
 	}
-	if project.Default {
-		return apperrors.NewStatusError(http.StatusConflict, "project is the default project; make another project the default before deleting it")
-	}
-	sandboxes, err := s.store.CountSandboxesForProject(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	if sandboxes > 0 {
-		return apperrors.NewStatusError(http.StatusConflict, "project has sandboxes")
-	}
-	pools, err := s.store.CountPoolsForProject(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	if pools > 0 {
-		return apperrors.NewStatusError(http.StatusConflict, "project has pools")
-	}
-	return apperrors.NotFound(s.store.DeleteProject(ctx, projectID), "project not found")
+	return apperrors.NotFound(err, "project not found")
 }
 
 // SetDefaultProject moves the calling user's default-project flag. There is no

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -184,34 +185,37 @@ func (s *Store) SetDefaultProjectForUser(ctx context.Context, userID, projectID 
 	return project, nil
 }
 
-func (s *Store) CountSandboxesForProject(ctx context.Context, projectID string) (int64, error) {
-	return s.countForProject(ctx, projectID, &model.Sandbox{})
-}
-
-func (s *Store) CountPoolsForProject(ctx context.Context, projectID string) (int64, error) {
-	return s.countForProject(ctx, projectID, &model.Pool{})
-}
-
-func (s *Store) countForProject(ctx context.Context, projectID string, resource any) (int64, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return 0, err
-	}
-	var count int64
-	err = read.Model(resource).Where("project_id = ?", projectID).Count(&count).Error
-	return count, err
-}
-
-// DeleteProject removes a project and the configuration rows that only exist
-// inside it. Runtime-bearing resources are not deleted here: the caller
-// refuses the delete while the project still has sandboxes or pools, because
-// those own hosts and containers that must be torn down through their own
-// reconcilers first.
+// DeleteProject removes a project and its configuration in one transaction.
+// Resources outside this cleanup must be removed through their owning services.
 func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
-		project, err := firstByID[model.Project](tx, "id", projectID)
+		// Hold the project row on PostgreSQL so a concurrent foreign-key
+		// reference cannot arrive between the checks and the delete.
+		project, err := firstByID[model.Project](tx.Clauses(clause.Locking{Strength: "UPDATE"}), "id", projectID)
 		if err != nil {
 			return err
+		}
+		if project.Default {
+			return fmt.Errorf("project is the default project; make another project the default before deleting it: %w", ErrInUse)
+		}
+		projectID = project.ID
+		for _, blocker := range []struct {
+			resource any
+			name     string
+		}{
+			{&model.Sandbox{}, "sandboxes"},
+			{&model.Pool{}, "pools"},
+			{&model.HostTrustRequest{}, "host trust requests"},
+			{&model.HostTrust{}, "host trusts"},
+			{&model.SecretRejection{}, "secret rejections"},
+		} {
+			var count int64
+			if err := tx.Model(blocker.resource).Where("project_id = ?", projectID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return fmt.Errorf("project has %s: %w", blocker.name, ErrInUse)
+			}
 		}
 		// Secret ciphertext is nulled before the rows are deleted, matching
 		// DeleteSecret.
@@ -233,6 +237,7 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&model.ProjectSkillsSource{},
 			&model.ProjectGateway{},
 			&model.ProjectMember{},
+			&model.SSHKey{},
 		} {
 			if err := tx.Where("project_id = ?", projectID).Delete(scoped).Error; err != nil {
 				return err
