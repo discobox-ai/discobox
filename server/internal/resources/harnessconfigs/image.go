@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path"
 	"slices"
@@ -234,8 +233,11 @@ const whiteoutPrefix = ".wh."
 // publishedImage resolves the image a bundle's labels and layers are read
 // from. For a multi-platform one — the platform bundle — they are read from the
 // platform a pool on this machine hosts when the index lists it, and from the
-// first platform it lists otherwise, by os/arch: a bundle published only for
-// another architecture still declares the same manifest.
+// first Linux platform it lists otherwise, by os/arch: a bundle published only
+// for another architecture still declares the same manifest. Never from
+// another OS's entry, such as the platform bundle's darwin one (ADR
+// 26-11-11-963 §9): its manifest is that OS's, and what is read here is a
+// Linux sandbox's (composeBundleMetadata).
 func publishedImage(descriptor *remote.Descriptor) (v1.Image, error) {
 	if !descriptor.MediaType.IsIndex() {
 		return descriptor.Image()
@@ -251,8 +253,17 @@ func publishedImage(descriptor *remote.Descriptor) (v1.Image, error) {
 	if _, ok := digests[platform.Pool()]; ok {
 		return descriptor.Image()
 	}
-	listed := slices.SortedFunc(maps.Keys(digests), func(a, b platform.Platform) int { return strings.Compare(a.String(), b.String()) })
-	return index.Image(digests[listed[0]])
+	var linux []platform.Platform
+	for p := range digests {
+		if p.OS == "linux" {
+			linux = append(linux, p)
+		}
+	}
+	if len(linux) == 0 {
+		return nil, fmt.Errorf("its index lists no Linux platform")
+	}
+	slices.SortFunc(linux, func(a, b platform.Platform) int { return strings.Compare(a.String(), b.String()) })
+	return index.Image(digests[linux[0]])
 }
 
 // localImageDigest is the digest to pin a locally-inspected bundle to.
