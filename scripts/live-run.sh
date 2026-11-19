@@ -866,6 +866,10 @@ EOF
 	ext 0 "busy
 listening 8080 8000 3000 5000 5173" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$box_id" -- sh -c "$listen" listen "$marker" 60 </dev/null >"$work/listen.out" 2>"$work/listen.err" &
 	listener=$!
+	# In dry runs pause returns immediately. Wait for the canned writer to finish.
+	if [ "$dry" = 1 ]; then
+		wait "$listener"
+	fi
 	for _ in $(seq 30); do
 		grep -q '^listening\|^no-python3' "$work/listen.out" 2>/dev/null && break
 		kill -0 "$listener" 2>/dev/null || break

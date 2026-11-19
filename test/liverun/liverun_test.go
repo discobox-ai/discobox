@@ -751,7 +751,7 @@ func TestDryRun(t *testing.T) {
 		t.Skip("jq is not on PATH")
 	}
 	bin := filepath.Join(empty, "bin")
-	for _, tool := range []string{"jq", "awk", "od", "tr", "date", "mktemp", "sed", "rm", "cat", "head", "wc", "grep", "tee", "dirname", "git", "mkdir", "tail"} {
+	for _, tool := range []string{"jq", "awk", "od", "tr", "date", "mktemp", "sed", "rm", "cat", "head", "wc", "grep", "tee", "dirname", "git", "mkdir", "tail", "sleep", "seq", "cp"} {
 		path := jq
 		if tool != "jq" {
 			if path, err = exec.LookPath(tool); err != nil {
@@ -771,6 +771,17 @@ func TestDryRun(t *testing.T) {
 		t.Fatalf("dry run: %v\n%s", err, out)
 	}
 	s := string(out)
+	for line := range strings.SplitSeq(s, "\n") {
+		if strings.Contains(line, "command not found") || strings.Contains(line, "listen.out: No such file or directory") {
+			t.Errorf("dry run shell error: %s", line)
+		}
+	}
+	listener, err := os.ReadFile(filepath.Join(empty, "evidence", "closed-proxy.listener"))
+	if err != nil {
+		t.Errorf("dry run did not save listener evidence: %v", err)
+	} else if !strings.Contains(string(listener), "listening 8080 8000 3000 5000 5173\n") {
+		t.Errorf("dry run listener evidence has no synthetic listener result: %q", listener)
+	}
 	if strings.Contains(s, key) {
 		t.Fatalf("the dry run printed the key:\n%s", s)
 	}
