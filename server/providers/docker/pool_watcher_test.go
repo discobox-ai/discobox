@@ -3,6 +3,11 @@ package docker
 import (
 	"context"
 	"crypto/ed25519"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -220,6 +225,69 @@ func TestDockerWorkerWatcherSchedulesRunningPoolWithStaleConfig(t *testing.T) {
 	}
 	if engine.ShouldReconcileWorkerContainer("worker:new", map[string]string{dockerworker.LabelPoolConfig: engine.ConfigRevision()}) {
 		t.Fatalf("ShouldReconcileWorkerContainer = true, want false for current image/config")
+	}
+}
+
+// A pool container whose row is gone is removed with everything the engine
+// made beside it — console, network, and the legacy named volume removing the
+// container leaves (#32) — and never its state trees, which a row restored from
+// a backup still needs: no container is created to remove them.
+func TestDockerWorkerWatcherRemovesAnOrphanPoolsRuntimeButNotItsTrees(t *testing.T) {
+	versionPrefix := regexp.MustCompile(`^/v[0-9.]+`)
+	var mu sync.Mutex
+	var requests []string
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := versionPrefix.ReplaceAllString(r.URL.Path, "")
+		mu.Lock()
+		requests = append(requests, r.Method+" "+path)
+		mu.Unlock()
+		orphan := `{"Id":"orphan","Config":{"Labels":{"` + dockerworker.LabelPoolID + `":"pool-gone"}}}`
+		switch {
+		case r.Method == http.MethodGet && path == "/containers/json":
+			_, _ = w.Write([]byte(`[` + orphan + `]`))
+		case r.Method == http.MethodGet && path == "/containers/orphan/json":
+			_, _ = w.Write([]byte(orphan))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"not found"}`))
+		}
+	}))
+	t.Cleanup(daemon.Close)
+	cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(daemon.URL, "http://")), client.WithAPIVersion("1.51"))
+	if err != nil {
+		t.Fatalf("new docker client: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	engine, err := dockerworker.New(dockerworker.Config{SandboxBaseImage: "worker:test"}, &LocalDriver{client: cli, agentPort: defaultAgentPort})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	watcher := dockerPoolWatcher{client: cli, engine: engine, manager: &recordingPoolManager{}, projectID: "project-1", providerID: "provider-1"}
+
+	if _, err := watcher.scan(t.Context()); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, want := range []string{
+		"DELETE /containers/" + dockerworker.ContainerName("pool-gone"),
+		"DELETE /containers/" + dockerworker.ConsoleContainerName("pool-gone"),
+		"DELETE /volumes/discobox-pool-pool-gone-docker",
+	} {
+		found := false
+		for _, got := range requests {
+			found = found || got == want
+		}
+		if !found {
+			t.Errorf("orphan cleanup never sent %q; requests: %v", want, requests)
+		}
+	}
+	for _, got := range requests {
+		if got == "POST /containers/create" {
+			t.Errorf("orphan cleanup created a container (its trees must stay); requests: %v", requests)
+		}
 	}
 }
 
