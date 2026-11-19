@@ -41,8 +41,10 @@ func TestEffective_SingleWriterFields(t *testing.T) {
 	if cfg.Harness.ID != "h1" || cfg.Harness.Name != "Harness One" {
 		t.Errorf("Harness = %+v", cfg.Harness)
 	}
-	if cfg.APIVersion != APIVersion {
-		t.Errorf("APIVersion = %q, want %q", cfg.APIVersion, APIVersion)
+	// Written under the legacy namespace until every sandbox agent a pool
+	// agent may write for reads APIVersion (LegacyAPIVersion).
+	if cfg.APIVersion != LegacyAPIVersion {
+		t.Errorf("APIVersion = %q, want %q", cfg.APIVersion, LegacyAPIVersion)
 	}
 	if prov.Runtime.SandboxID != "sbx_1" {
 		t.Errorf("provenance runtime not preserved: %+v", prov.Runtime)
