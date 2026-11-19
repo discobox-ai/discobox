@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
@@ -42,6 +44,8 @@ type exportDaemon struct {
 	// created is the export container's create request, as the daemon got it.
 	created *exportCreateRequest
 	removed bool
+	// unansweredAttach replaces the normal response after the connection is hijacked.
+	unansweredAttach func(net.Conn, io.Reader)
 }
 
 type exportCreateRequest struct {
@@ -124,6 +128,13 @@ func (d *exportDaemon) attach(w http.ResponseWriter) {
 		return
 	}
 	defer conn.Close()
+	d.mu.Lock()
+	unanswered := d.unansweredAttach
+	d.mu.Unlock()
+	if unanswered != nil {
+		unanswered(conn, buf)
+		return
+	}
 	_, _ = buf.WriteString("HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.multiplexed-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n")
 	_ = buf.Flush()
 	if d.fail != "" {
@@ -566,6 +577,46 @@ func TestExportTreeReportsAModeThatFailedAtOnce(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no such user") {
 		t.Errorf("err = %q, want the mode's own reason", err)
+	}
+}
+
+// A daemon that takes the attach and never answers it does not hold the export
+// past its context.
+func TestExportTreeEndsWithItsContextWhenTheAttachIsNeverAnswered(t *testing.T) {
+	runtime, daemon, root := exportFixture(t)
+	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	released := make(chan error, 1)
+	daemon.mu.Lock()
+	daemon.unansweredAttach = func(conn net.Conn, input io.Reader) {
+		stop := context.AfterFunc(t.Context(), func() { _ = conn.Close() })
+		defer stop()
+		cancel()
+		_, err := io.Copy(io.Discard, input)
+		released <- err
+	}
+	daemon.mu.Unlock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := runtime.ExportTree(ctx, "sbx-1", testTreePins)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("ExportTree = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ExportTree did not return within 5s")
+	}
+	select {
+	case err := <-released:
+		if err != nil {
+			t.Errorf("reading attach connection: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("client did not close the attach connection")
 	}
 }
 

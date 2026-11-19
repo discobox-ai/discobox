@@ -1,13 +1,23 @@
 package dockerworker
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 func testConsolePool() *model.Pool {
@@ -131,5 +141,95 @@ func TestConsoleContainerNameIsDistinct(t *testing.T) {
 	}
 	if got := ConsoleContainerName("pool/1"); got != "discobox-console-pool-1" {
 		t.Fatalf("console container name = %q", got)
+	}
+}
+
+// unansweredAttachDaemon is a Docker daemon whose console container is current
+// and running, and which takes every attach's connection and never answers it.
+func unansweredAttachDaemon(t *testing.T, cancel context.CancelFunc) (*client.Client, <-chan error) {
+	t.Helper()
+	released := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Api-Version", "1.45")
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/_ping"):
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(path, "/attach"):
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			stop := context.AfterFunc(t.Context(), func() { _ = conn.Close() })
+			defer stop()
+			cancel()
+			_, err = io.Copy(io.Discard, buf)
+			released <- err
+		case strings.HasSuffix(path, "/containers/create"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "command-1"})
+		case strings.Contains(path, "/containers/") && strings.HasSuffix(path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Id":    "console-1",
+				"State": map[string]any{"Running": true},
+				"Config": map[string]any{
+					"Image":  "worker-image",
+					"Labels": map[string]string{LabelConsoleConfig: strconv.Itoa(consoleConfigLayoutVersion)},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(server.Close)
+	cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cli, released
+}
+
+// A daemon that takes a console's attach and never answers it does not hold
+// the console past its context, for the persistent console or a command.
+func TestConsoleAttachEndsWithItsContextWhenNeverAnswered(t *testing.T) {
+	for name, opts := range map[string]sandbox.ConsoleOptions{
+		"console": {TTY: true, Rows: 24, Cols: 80},
+		"command": {Command: []string{"true"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			engine := newTestEngine(t, Config{})
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			cli, released := unansweredAttachDaemon(t, cancel)
+			lease := NewDockerClientLease(cli, DaemonElsewhere, func() {})
+			done := make(chan error, 1)
+			go func() {
+				var err error
+				if len(opts.Command) > 0 {
+					_, err = engine.runConsoleCommand(ctx, lease, &model.SandboxProviderInstance{ID: "provider-1"}, testConsolePool(), opts)
+				} else {
+					_, err = engine.attachConsole(ctx, lease, &model.SandboxProviderInstance{ID: "provider-1"}, testConsolePool(), opts)
+				}
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("console attach = %v, want context.Canceled", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("console attach did not return within 5s")
+			}
+			select {
+			case err := <-released:
+				if err != nil {
+					t.Errorf("reading attach connection: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("client did not close the attach connection")
+			}
+		})
 	}
 }
