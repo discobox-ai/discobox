@@ -291,3 +291,13 @@ func TestAPIServeLeavesExistingRegularFile(t *testing.T) {
 		t.Fatalf("existing file changed: %q, %v", got, err)
 	}
 }
+
+func TestAPIServeRejectsEscapedDotSegments(t *testing.T) {
+	useTempServersFile(t)
+	h := apiHandlerFor(t, "http://127.0.0.1:1/base")
+	for _, path := range []string{"%2e", "%2E%2E", "id%2f..%2fitem"} {
+		if status := getJSON(t, h, "/v1/servers/127.0.0.1/api/"+path, nil); status != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", path, status)
+		}
+	}
+}

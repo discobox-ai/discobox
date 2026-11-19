@@ -250,3 +250,17 @@ func TestAnUnchangedRegistryIsNotRewritten(t *testing.T) {
 		t.Fatalf("registry = %+v, want the server left alone", reg.Servers)
 	}
 }
+
+func TestServerRegistryKeepsCLIMatchingRules(t *testing.T) {
+	reg := serverRegistry{Servers: []registeredServer{
+		{Name: "first", Address: "https://example.test/BASE/"},
+		{Name: "last", Address: "https://EXAMPLE.test/base"},
+	}}
+	if i, ok := reg.byServer("https://example.test/base/", ""); !ok || i != 0 {
+		t.Fatalf("byServer = %d, %v, want first matching registration", i, ok)
+	}
+	set := reg.serverSet("https://example.test/base/", serverKey)
+	if len(set) != 1 || set[0].name != "last" || !set[0].registered {
+		t.Fatalf("serverSet = %+v, want primary under last matching registration", set)
+	}
+}

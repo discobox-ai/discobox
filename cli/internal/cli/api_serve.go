@@ -287,6 +287,24 @@ func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mux.ServeHTTP(w, r)
 }
 
+// apiServerKey keeps case-sensitive HTTP paths distinct when choosing which
+// upstream an API name represents. Ordinary remote commands use serverKey.
+func apiServerKey(address string) string {
+	parsed, err := endpoint.Parse(address)
+	if err != nil {
+		return serverKey(address)
+	}
+	switch parsed.Scheme {
+	case "http", "https", endpoint.SchemeDiscoboxHTTP, endpoint.SchemeDiscoboxHTTPS:
+		if u, err := url.Parse(parsed.Value); err == nil {
+			u.Scheme = strings.ToLower(u.Scheme)
+			u.Host = strings.ToLower(u.Host)
+			return parsed.Scheme + " " + u.String()
+		}
+	}
+	return serverKey(address)
+}
+
 // serverSet is the servers as they are now: the primary first, as the CLI
 // would choose it for a command run at this moment, then the registered ones
 // in the order they were registered.
@@ -302,7 +320,7 @@ func (h *apiHandler) serverSet() ([]apiServerEntry, error) {
 			primary = reg.Primary
 		}
 	}
-	servers := reg.serverSet(primary)
+	servers := reg.serverSet(primary, apiServerKey)
 	set := make([]apiServerEntry, 0, len(servers))
 	for _, entry := range servers {
 		set = append(set, apiServerEntry{
@@ -369,6 +387,13 @@ func (h *apiHandler) proxy(w http.ResponseWriter, r *http.Request) {
 		writeAPIProblem(w, http.StatusNotFound, "No such server", fmt.Sprintf("no server is listed as %q; GET /v1/servers lists them", name))
 		return
 	}
+	path := "/" + r.PathValue("path")
+	for segment := range strings.SplitSeq(path, "/") {
+		if segment == "." || segment == ".." {
+			writeAPIProblem(w, http.StatusBadRequest, "The API path contains a dot segment", "")
+			return
+		}
+	}
 	baseURL, client, err := h.appFor(target.Address).httpClient()
 	if err != nil {
 		writeAPIProblem(w, http.StatusBadGateway, "The server cannot be reached", err.Error())
@@ -382,7 +407,6 @@ func (h *apiHandler) proxy(w http.ResponseWriter, r *http.Request) {
 	// Keep escaped slashes inside path parameters, even though ServeMux
 	// exposes a decoded wildcard. Split the escaped route by its separators.
 	parts := strings.SplitN(r.URL.EscapedPath(), "/", 6)
-	path := "/" + r.PathValue("path")
 	rawPath := "/" + parts[5]
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(out *httputil.ProxyRequest) {

@@ -285,15 +285,7 @@ func serverKey(address string) string {
 		return strings.TrimSpace(address)
 	}
 	value := parsed.Value
-	switch parsed.Scheme {
-	case "http", "https", endpoint.SchemeDiscoboxHTTP, endpoint.SchemeDiscoboxHTTPS:
-		if u, err := url.Parse(value); err == nil {
-			u.Scheme = strings.ToLower(u.Scheme)
-			u.Host = strings.ToLower(u.Host)
-			value = u.String()
-		}
-	case "unix", "npipe":
-	default:
+	if parsed.Scheme != "unix" && parsed.Scheme != "npipe" {
 		value = strings.ToLower(strings.TrimRight(value, "/"))
 	}
 	return parsed.Scheme + " " + value
@@ -373,7 +365,7 @@ func (a *App) loadServers() ([]*server, error) {
 	if err != nil {
 		return nil, err
 	}
-	set := reg.serverSet(a.serverURL)
+	set := reg.serverSet(a.serverURL, serverKey)
 	set[0].app = a
 	for _, entry := range set[1:] {
 		entry.app = a.forServer(entry.address)
@@ -383,12 +375,12 @@ func (a *App) loadServers() ([]*server, error) {
 
 // serverSet lists the primary first and collapses its registration into that
 // entry. The address's peer ID can match a registration without a network call.
-func (r serverRegistry) serverSet(address string) []*server {
+func (r serverRegistry) serverSet(address string, addressKey func(string) string) []*server {
 	primary := &server{name: addressLabel(address), address: address, primary: true}
 	set := []*server{primary}
-	index, registered := r.byServer(address, addressPeerID(address))
-	for i, entry := range r.Servers {
-		if registered && i == index {
+	key, peer := addressKey(address), addressPeerID(address)
+	for _, entry := range r.Servers {
+		if addressKey(entry.Address) == key || samePeer(entry.ID, peer) {
 			primary.name, primary.registered, primary.id = entry.Name, true, entry.ID
 			continue
 		}
