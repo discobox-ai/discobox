@@ -446,7 +446,7 @@ type requestAnswer struct {
 	// empty, the server reads it from the value.
 	format string
 	// credentialRoutes are where the credential itself may be sent: a saved
-	// one's routes, a new one's hosts. "Anywhere" on a part is these.
+	// one's routes, or a new one's hosts and any consented placements.
 	credentialRoutes []secretroute.Route
 	// maxTTL is the longest a saved credential lets a grant last, zero for
 	// no limit; ttl is how long this one lasts, zero for forever.
@@ -968,7 +968,128 @@ func (m *Model) partsAnswered(req CredentialRequest, ans requestAnswer) tea.Cmd 
 	if ans.use != PartApprove && ans.delegate != PartApprove {
 		return m.denyCredential(req)
 	}
+	if ans.fresh {
+		return m.reviewNewCredential(req, ans)
+	}
 	return m.sendAnswer(req, ans)
+}
+
+// projectPlacementRoutes keeps only the literal hosts from the original
+// request. The returned gaps identify placements this part cannot save.
+func projectPlacementRoutes(routes []secretroute.Route, hosts []string) (saved, missing []secretroute.Route) {
+	var placements []secretroute.Route
+	for _, route := range routes {
+		if route.Blocked || (route.Body == nil && route.WebSocket == nil) {
+			continue
+		}
+		placements = append(placements, route)
+		candidate, err := secretroute.Normalize(route)
+		if err != nil {
+			missing = append(missing, route)
+			continue
+		}
+		var excluded []string
+		candidate.Hosts = slices.DeleteFunc(candidate.Hosts, func(host string) bool {
+			if slices.Contains(hosts, host) {
+				return false
+			}
+			excluded = append(excluded, host)
+			return true
+		})
+		if len(excluded) != 0 {
+			gap := candidate
+			gap.Hosts = excluded
+			missing = append(missing, gap)
+		}
+		if len(candidate.Hosts) != 0 {
+			saved = append(saved, candidate)
+		}
+	}
+	// Blocks affect which route wins. When containment cannot prove the
+	// projection safe, omit the whole part's candidates.
+	if len(saved) > 0 && secretroute.ProveContained(nil, saved, routes) != nil {
+		return nil, placements
+	}
+	return saved, missing
+}
+
+func (m *Model) reviewNewCredential(req CredentialRequest, ans requestAnswer) tea.Cmd {
+	var saved, missing []secretroute.Route
+	collect := func(part *RequestPart, decision string, choice partChoice) {
+		if part == nil || decision != PartApprove {
+			return
+		}
+		eligible, gaps := projectPlacementRoutes(partRoutes(part, choice), ans.credentialRoutes[0].Hosts)
+		saved = append(saved, eligible...)
+		missing = append(missing, gaps...)
+	}
+	collect(req.Use, ans.use, ans.useChoice)
+	collect(req.Delegate, ans.delegate, ans.delegateChoice)
+	if len(saved) == 0 && len(missing) == 0 {
+		return m.sendAnswer(req, ans)
+	}
+
+	previous := m.dialog
+	back := func() tea.Cmd { m.dialog = previous; return nil }
+	ans.credentialRoutes = append(slices.Clone(ans.credentialRoutes), uniqueRoutes(saved)...)
+
+	var d *dialog
+	d = approvalDialog("Review new credential", newForm(), func(*form) tea.Cmd {
+		switch d.formActions[d.formActionAt].key {
+		case "save":
+			return m.sendAnswer(req, ans)
+		case "secrets":
+			m.dialog = nil
+			server := m.session.serverName(req.Server)
+			if server == m.configServer() {
+				return m.openSecrets()
+			}
+			reload := m.applyFilter(server, m.list.folder, m.list.tags)
+			if m.secretsOpen {
+				return reload
+			}
+			return tea.Batch(reload, m.openSecrets())
+		default:
+			return back()
+		}
+	})
+	d.formActions = nil
+	d.titleRight = "save and approve"
+	storedLabel := "routes saved on the credential"
+	d.body = m.credentialSentence(req) + " Save these routes on “" + ans.credential + "” and approve the request for " + lifetime.Label(ans.ttl) + "?"
+	if len(missing) != 0 {
+		d.titleRight = "placement gaps"
+		storedLabel = "eligible routes for the new credential"
+		d.body = m.credentialSentence(req) + " The new credential cannot cover all the approved places. Change the part decisions or store a credential with explicit routes in Secrets (F4), then reopen this request and select it."
+	} else {
+		d.formActions = []action{{key: "save", label: "Save routes and approve", enabled: true}}
+	}
+	d.formActions = append(d.formActions,
+		action{key: "back", label: "Back to decisions", enabled: true},
+		action{key: "secrets", label: "Open Secrets (F4)", enabled: true})
+	d.formActionAt = len(d.formActions) - 2
+	if req.Server != "" {
+		d.sections = append(d.sections, section{fields: []field{{label: "Server", value: req.Server, tone: toneAccent}}})
+	}
+	d.sections = append(d.sections, routesSection(storedLabel, ans.credentialRoutes))
+	if req.Use != nil && ans.use == PartApprove {
+		d.sections = append(d.sections, choiceSection("used by this box · "+ans.useMode(req), req.Use, ans.useChoice, ans))
+	}
+	if req.Delegate != nil && ans.delegate == PartApprove {
+		d.sections = append(d.sections, choiceSection("delegated to its workers · "+ans.delegateMode(), req.Delegate, ans.delegateChoice, ans))
+	}
+	if len(missing) != 0 {
+		gap := approvalRouteSection("approved places the new credential cannot cover", &RequestPart{Routes: missing})
+		gap.labelTone = toneAlert
+		d.sections = append(d.sections, gap)
+	}
+	if lines := replaces(req, ans, ans.ttl, true); len(lines) > 0 {
+		d.sections = append(d.sections, section{label: "this replaces", labelTone: toneAlert, lines: lines})
+	}
+	m.withRawRequest(d, req)
+	d.onCancel = back
+	m.dialog = d
+	return nil
 }
 
 func defaultRequestTTL(req CredentialRequest) time.Duration {
@@ -1063,6 +1184,12 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) 
 	if ans.fresh {
 		if missing := gaps(Secret{Routes: ans.credentialRoutes}, approvedRoutes(req, ans)); len(missing) > 0 {
 			label := "requested, but this credential will not be sent on"
+			for i := range missing {
+				if missing[i].Body != nil || missing[i].WebSocket != nil {
+					label = "requested routes beyond the new credential’s host routes"
+					break
+				}
+			}
 			gap := approvalRouteSection(label, &RequestPart{Routes: missing})
 			if brief {
 				text, _ := partSummary(&RequestPart{Routes: missing})

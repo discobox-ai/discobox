@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -1125,5 +1127,113 @@ func TestReplacingNeverShortensTheDelegationThatLosesItsUse(t *testing.T) {
 	}
 	if strings.Contains(text, "lasts only") {
 		t.Fatalf("use card = %q, says the delegation is cut short", text)
+	}
+}
+
+func TestNewCredentialRequiresConsentToSavePlacements(t *testing.T) {
+	t.Parallel()
+	for _, spec := range []string{
+		"POST api.github.com/chat body=/token",
+		`GET api.github.com/socket ws=[{"at":"/d/token","when":{"op":2}}]`,
+	} {
+		t.Run(spec, func(t *testing.T) {
+			m, ds := sourceWithRequest(t)
+			routes, err := parseRoutes(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := waitingRequest()
+			req.Use.Routes = routes
+			ds.requests = []CredentialRequest{req}
+			send(t, m, tickMsg{})
+			toSummary(t, m, "new")
+			m.dialog.form.set("value", fakeGitHubToken)
+			m.dialog.form.moveTo(2)
+			send(t, m, keyPress("enter"))
+			answerApproval(t, m, "accept")
+			if !onStep(m, "save and approve") || len(ds.createdSecrets)+len(ds.approvals) != 0 {
+				t.Fatalf("accept should open review without writing, got %s", describe(m.dialog))
+			}
+			answerApproval(t, m, "back")
+			if !onStep(m, "summary") || len(ds.createdSecrets)+len(ds.approvals) != 0 {
+				t.Fatal("returning to the summary wrote an answer")
+			}
+			answerApproval(t, m, "accept")
+			answerApproval(t, m, "save")
+			if len(ds.createdSecrets) != 1 || len(ds.approvals) != 1 {
+				t.Fatal("explicit consent should store and approve once")
+			}
+			stored := ds.createdSecrets[0].Routes
+			if len(stored) != 2 || !stored[0].HostWide() || secretroute.Format(stored[1]) != secretroute.Format(routes[0]) {
+				t.Fatalf("saved routes = %v", formatRoutes(stored))
+			}
+			if approved := ds.approvals[0]; approved.UseScope != "routes" || len(approved.UseRoutes) != 0 {
+				t.Fatalf("approval changed the requested grant: %+v", approved)
+			}
+		})
+	}
+}
+
+func TestNewCredentialBlocksApprovalWithPlacementGaps(t *testing.T) {
+	t.Parallel()
+	for _, spec := range []string{
+		"POST api.github.com,*.github.com/chat body=/token",
+		"POST api.github.com/chat/** body=/token\nPOST api.github.com/chat/private body=/token=blocked",
+		"POST outside.example/chat body=/token",
+	} {
+		t.Run(spec, func(t *testing.T) {
+			m, ds := sourceWithRequest(t)
+			req := waitingRequest()
+			routes, err := parseRoutes(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ans := requestAnswer{
+				fresh: true, credential: "github",
+				credentialRoutes: []secretroute.Route{{Hosts: newCredentialHosts(req)}},
+				use:              PartApprove, useChoice: partChoice{scope: "edited", routes: routes},
+			}
+			m.partsAnswered(req, ans)
+			if !onStep(m, "placement gaps") {
+				t.Fatalf("got %s, want placement gaps", describe(m.dialog))
+			}
+			for _, a := range m.dialog.formActions {
+				if a.key == "save" && a.enabled {
+					t.Fatal("approval can be submitted despite placement gaps")
+				}
+			}
+			m.session.Servers = []string{"primary", "request-server"}
+			req.Server = "request-server"
+			m.partsAnswered(req, ans)
+			answerApproval(t, m, "secrets")
+			if m.configServer() != req.Server {
+				t.Fatalf("Secrets opened on %q, want %q", m.configServer(), req.Server)
+			}
+			if !m.secretsOpen || len(ds.createdSecrets)+len(ds.approvals) != 0 {
+				t.Fatal("opening Secrets should leave the request pending")
+			}
+		})
+	}
+}
+
+func TestNewCredentialCanSaveAFullPartOfPlacementRoutes(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+	req := waitingRequest()
+	req.Use.Routes = nil
+	for i := range agentcreds.MaxPartRoutes {
+		req.Use.Routes = append(req.Use.Routes, secretroute.Route{
+			Hosts: []string{"api.github.com"}, Methods: []string{"POST"},
+			Paths: []string{fmt.Sprintf("/chat/%d", i)},
+			Body:  &secretroute.Body{Places: []string{"/token"}},
+		})
+	}
+	ans := requestAnswer{
+		fresh: true, credential: "github", use: PartApprove,
+		credentialRoutes: []secretroute.Route{{Hosts: newCredentialHosts(req)}},
+	}
+	m.partsAnswered(req, ans)
+	if !onStep(m, "save and approve") {
+		t.Fatalf("got %s, want save and approve", describe(m.dialog))
 	}
 }

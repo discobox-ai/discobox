@@ -583,9 +583,14 @@ flowchart LR
   C[which credential] -->|saved| S[summary]
   C -->|Enter new credential…| N[new credential] --> S
   C -->|For…| T[lifetime] -->|chosen| C
-  S -->|Accept| A((stored, approved))
-  S -->|Review…| U[its own use] --> W[its workers] --> A
+  S -->|Accept| D{placement consent needed?}
+  S -->|Review…| U[its own use] --> W[its workers] -->|Approve a part| D
   S -->|Deny| X((denied))
+  W -->|Deny all parts| X
+  D -->|No| A((approved))
+  D -->|Yes| P[review new credential]
+  P -->|Save routes and approve| A
+  P -->|Placement gaps| F[return to decisions or open Secrets]
 ```
 
 - **Which credential.** Every saved secret is listed: the one the variable
@@ -615,12 +620,10 @@ flowchart LR
   from the value is not a choice and is not sent. A command runs here only if
   its format is asked to be seen, and its output is then the first value;
   otherwise the data source runs it once when the credential is stored. A new
-  credential's routes are the exact hosts an open route of the request names
-  — never a blocked one, never a pattern (`newCredentialHosts`, ADR
-  26-11-11-857), and the approval cards say them, with any requested route they
-  leave uncovered (`uncovered`, as a saved secret's ✗): the grant holds the box to the
-  routes it asked for, so the credential stays usable for the next request on
-  those hosts.
+  credential starts with bare routes for the exact hosts named by open
+  request routes (`newCredentialHosts`, ADR 26-11-11-857). A later review can
+  add eligible placement routes with consent. The grant keeps its own scope
+  and the saved credential stays reusable on those hosts.
 - **Summary.** Each part in a line — the hosts its open routes reach, how
   many operations (a row of its route table each), the methods they take,
   whether their paths are any path or hold wildcards, and how many rows it
@@ -639,8 +642,9 @@ flowchart LR
   sends from: whether the part adds to or replaces what the box holds, not
   the details (owner, 2026-11-15). What Accept sends is still said
   before it can, each consequence summary-level (`approvalConsequences`,
-  brief): a new credential's hosts and the requested hosts and operations it
-  will not be sent on.
+  brief): a new credential's bare host routes and the requested routes they
+  leave uncovered. Approving placement routes with a new credential opens
+  the final placement review.
 - **Review.** One card per part the request has, use then delegation, each
   with its routes (`approvalRouteSection`) and the roles it asked for as the
   discobox's words (ADR 26-11-02-022 §3). Approve, Deny or Modify…: as
@@ -654,7 +658,8 @@ flowchart LR
   chosen secret's limit is shorter than the selected lifetime, the picker
   explains the limit and requires a permitted value before showing approval.
   A cancelled edit returns to credential selection. Accept on the summary,
-  or the last part decision, sends directly; every part denied denies the request.
+  or the last part decision, sends directly unless a new credential needs
+  explicit placement consent. Every part denied denies the request.
 
 A use part asked as an addition stacks only on the secret delivering its
 variable (ADR 26-11-03-329 §4); answered with another, it is granted as a
@@ -668,7 +673,14 @@ variable (`bindingplan.Use`), so the part cards' "this replaces" says what that
 plan does to each of its bindings of it, in any variable: kept (moved into
 the asked variable when it was elsewhere), gone, or losing its use. Placeholder delivery is the guided dialog's only one; raw delivery
 is `discobox secret request approve --raw` (ADR 26-11-11-857). A new credential is held to
-the request's hosts (same ADR).
+the request's open exact hosts. When approved routes name HTTP body or
+WebSocket message places, the final review offers to save eligible placement
+routes alongside the bare host routes (ADR 26-11-18-479). The review derives
+them from approved parts, retains their restrictions, and uses containment
+proofs to omit any projection it cannot prove safe. It shows the saved routes
+and effective grants, including places inherited by a whole-credential grant.
+Saving and approving requires an explicit action on that review. Placement
+gaps send the approver back to the decisions or to Secrets (F4).
 
 A new credential is stored, then the request approved with it
 (`sendAnswer`); a refusal after the store says the credential stays. The
