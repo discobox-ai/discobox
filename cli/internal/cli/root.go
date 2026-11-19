@@ -66,6 +66,9 @@ type App struct {
 	resolved    endpoint.Endpoint
 	resolveDone bool
 
+	// preserveHTTPErrorResponses lets the API proxy stream upstream responses.
+	preserveHTTPErrorResponses bool
+
 	// clientMu guards the client every request of this App goes through,
 	// built on the first request and kept (see httpClientWithAutoStart).
 	clientMu      sync.Mutex
@@ -518,8 +521,8 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 			base: transport,
 		}
 	}
-	transport = textPlainErrorTransport{
-		base: transport,
+	if !a.preserveHTTPErrorResponses {
+		transport = textPlainErrorTransport{base: transport}
 	}
 	if strings.TrimSpace(a.token) != "" {
 		transport = requestHeaderTransport{

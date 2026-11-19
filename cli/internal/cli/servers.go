@@ -285,7 +285,15 @@ func serverKey(address string) string {
 		return strings.TrimSpace(address)
 	}
 	value := parsed.Value
-	if parsed.Scheme != "unix" && parsed.Scheme != "npipe" {
+	switch parsed.Scheme {
+	case "http", "https", endpoint.SchemeDiscoboxHTTP, endpoint.SchemeDiscoboxHTTPS:
+		if u, err := url.Parse(value); err == nil {
+			u.Scheme = strings.ToLower(u.Scheme)
+			u.Host = strings.ToLower(u.Host)
+			value = u.String()
+		}
+	case "unix", "npipe":
+	default:
 		value = strings.ToLower(strings.TrimRight(value, "/"))
 	}
 	return parsed.Scheme + " " + value
@@ -365,22 +373,28 @@ func (a *App) loadServers() ([]*server, error) {
 	if err != nil {
 		return nil, err
 	}
-	primary := &server{name: addressLabel(a.serverURL), address: a.serverURL, primary: true, app: a}
+	set := reg.serverSet(a.serverURL)
+	set[0].app = a
+	for _, entry := range set[1:] {
+		entry.app = a.forServer(entry.address)
+	}
+	return set, nil
+}
+
+// serverSet lists the primary first and collapses its registration into that
+// entry. The address's peer ID can match a registration without a network call.
+func (r serverRegistry) serverSet(address string) []*server {
+	primary := &server{name: addressLabel(address), address: address, primary: true}
 	set := []*server{primary}
-	primaryKey := serverKey(a.serverURL)
-	// The peer the primary's address names, when it names one: an address and a
-	// peer ID are two spellings of one server (ADR 0116 §3), and reading it off
-	// the address costs no round trip. A primary reached some other way has
-	// none to compare until something asks it.
-	primaryPeer := addressPeerID(a.serverURL)
-	for _, entry := range reg.Servers {
-		if serverKey(entry.Address) == primaryKey || samePeer(entry.ID, primaryPeer) {
+	index, registered := r.byServer(address, addressPeerID(address))
+	for i, entry := range r.Servers {
+		if registered && i == index {
 			primary.name, primary.registered, primary.id = entry.Name, true, entry.ID
 			continue
 		}
-		set = append(set, &server{name: entry.Name, address: entry.Address, registered: true, id: entry.ID, app: a.forServer(entry.Address)})
+		set = append(set, &server{name: entry.Name, address: entry.Address, registered: true, id: entry.ID})
 	}
-	return set, nil
+	return set
 }
 
 // serverNamed is the server in set listed as name. Callers pass the registered

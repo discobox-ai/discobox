@@ -9,9 +9,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // apiHandlerFor is the handler `admin api serve` would serve, for an
@@ -27,7 +30,7 @@ func apiHandlerFor(t *testing.T, primary string) *apiHandler {
 func getJSON(t *testing.T, h http.Handler, path string, into any) int {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 	if into != nil {
 		if err := json.Unmarshal(rec.Body.Bytes(), into); err != nil {
 			t.Fatalf("GET %s: %v in %q", path, err, rec.Body.String())
@@ -105,7 +108,7 @@ func TestAPIServeAnswersAnUnknownServerAsAProblem(t *testing.T) {
 	useTempServersFile(t)
 	primary := fakeServer(t, "alpha")
 	rec := httptest.NewRecorder()
-	apiHandlerFor(t, primary.URL).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/servers/nobody/api/server", nil))
+	apiHandlerFor(t, primary.URL).ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/servers/nobody/api/server", nil))
 	if rec.Code != http.StatusNotFound || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/problem+json") {
 		t.Fatalf("unknown server = %d %s, want a 404 problem", rec.Code, rec.Header().Get("Content-Type"))
 	}
@@ -119,7 +122,7 @@ func TestAPIServeDropsTheCallersAuthorization(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(upstream.Close)
-	req := httptest.NewRequest(http.MethodGet, "/v1/servers/"+addressLabel(upstream.URL)+"/api/server", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/servers/"+addressLabel(upstream.URL)+"/api/server", nil)
 	req.Header.Set("Authorization", "Bearer from-the-caller")
 	apiHandlerFor(t, upstream.URL).ServeHTTP(httptest.NewRecorder(), req)
 	if got := <-seen; got == "Bearer from-the-caller" {
@@ -156,9 +159,14 @@ func TestAPIServeListensOnASocketOnlyItsUserCanOpen(t *testing.T) {
 			return d.DialContext(ctx, "unix", socket)
 		},
 	}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://discobox/v1/health", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.CloseIdleConnections()
 	var resp *http.Response
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		if resp, err = client.Get("http://discobox/v1/health"); err == nil {
+		if resp, err = client.Do(req); err == nil {
 			break
 		}
 	}
@@ -173,8 +181,12 @@ func TestAPIServeListensOnASocketOnlyItsUserCanOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Fatalf("socket mode = %v, want 0600", mode)
+	}
+
+	if err := privatefs.Check(socket); err != nil {
+		t.Fatal(err)
 	}
 
 	// A second command on the same path is refused while the first serves.
@@ -188,14 +200,94 @@ func TestAPIServeListensOnASocketOnlyItsUserCanOpen(t *testing.T) {
 
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("serve did not stop when its context ended")
 	}
 }
 
 func TestAPIServeRefusesANonLoopbackAddress(t *testing.T) {
-	if _, _, err := listenForAPI(context.Background(), "http://0.0.0.0:0"); err == nil || !strings.Contains(err.Error(), "loopback") {
+	if _, _, _, err := listenForAPI(context.Background(), "http://0.0.0.0:0"); err == nil || !strings.Contains(err.Error(), "loopback") {
 		t.Fatalf("listen on 0.0.0.0 = %v, want it refused", err)
+	}
+}
+
+func TestAPIServeKeepsRegisteredNameWhenPrimaryLabelCollides(t *testing.T) {
+	useTempServersFile(t)
+	upstream := fakeServer(t, "registered")
+	registerForTest(t, registeredServer{Name: "local", Address: upstream.URL})
+	h := apiHandlerFor(t, "unix:///unused.sock")
+
+	var got listedServers
+	getJSON(t, h, "/v1/servers", &got)
+	if len(got.Servers) != 2 || got.Servers[0].Name != "_primary" || got.Servers[1].Name != "local" {
+		t.Fatalf("servers = %+v, want _primary and local", got.Servers)
+	}
+	var info struct{ Name string }
+	if code := getJSON(t, h, "/v1/servers/local/api/server", &info); code != http.StatusOK || info.Name != "registered" {
+		t.Fatalf("GET local's /server = %d %+v, want registered's answer", code, info)
+	}
+}
+
+func TestAPIServePreservesUpstreamPathStatusAndCredentialScope(t *testing.T) {
+	useTempServersFile(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, r.URL.RequestURI()+" "+r.Header.Get("Authorization"), http.StatusTeapot)
+	}))
+	defer upstream.Close()
+	registerForTest(t, registeredServer{Name: "other", Address: upstream.URL + "/api"})
+	h := apiHandlerFor(t, upstream.URL+"/API")
+	h.app.token = "invocation"
+	for _, tc := range []struct{ name, want string }{
+		{addressLabel(upstream.URL), "/API/a%2Fb?raw=%2F Bearer invocation"},
+		{"other", "/api/a%2Fb?raw=%2F"},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/servers/"+tc.name+"/api/a%2Fb?raw=%2F", nil)
+		req.Header.Set("Authorization", "Bearer caller")
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusTeapot || strings.TrimSpace(rec.Body.String()) != tc.want {
+			t.Errorf("%s = %d %q, want 418 %q", tc.name, rec.Code, rec.Body.String(), tc.want)
+		}
+	}
+}
+
+func TestAPIServeTCPRejectsForeignHostsAndBrowserOrigins(t *testing.T) {
+	h := apiHandlerFor(t, "http://127.0.0.1:1")
+	h.loopbackTCP = true
+	for _, tc := range []struct {
+		host, origin, fetchSite string
+		want                    int
+	}{
+		{"127.0.0.1:7777", "", "", http.StatusOK},
+		{"[::1]:7777", "http://[::1]:7777", "same-origin", http.StatusOK},
+		{"foreign.invalid:7777", "http://foreign.invalid:7777", "same-origin", http.StatusForbidden},
+		{"127.0.0.1:7777", "https://foreign.invalid", "", http.StatusForbidden},
+		{"127.0.0.1:7777", "", "cross-site", http.StatusForbidden},
+	} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+tc.host+"/v1/health", nil)
+		req.Header.Set("Origin", tc.origin)
+		req.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("host %s origin %q fetch-site %q = %d, want %d", tc.host, tc.origin, tc.fetchSite, rec.Code, tc.want)
+		}
+	}
+}
+
+func TestAPIServeLeavesExistingRegularFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "api.sock")
+	if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearStaleSocket(t.Context(), path); err == nil {
+		t.Fatal("existing regular file was accepted")
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "keep" {
+		t.Fatalf("existing file changed: %q, %v", got, err)
 	}
 }

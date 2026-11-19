@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,6 +20,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/discobox-ai/discobox/internal/filelock"
+	"github.com/discobox-ai/discobox/internal/privatefs"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
@@ -47,7 +50,9 @@ func (a *App) newAPIServeCommand() *cobra.Command {
 machine that speaks HTTP: an admin UI, a script.
 
 The socket is a unix socket only you can open, in the CLI's state directory
-unless --listen names another. Behind it:
+unless --listen names another. A custom socket must be in a private directory.
+The unregistered primary is listed under its address label (usually "local"),
+or "_primary" if a registered server already has that name. Behind it:
 
   GET /v1/servers                        the servers, the primary first, read
                                          again on every request, so a server
@@ -78,12 +83,18 @@ func (a *App) serveAPI(cmd *cobra.Command, listen string, chosen bool) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listener, where, err := listenForAPI(ctx, listen)
+	listener, where, lock, err := listenForAPI(ctx, listen)
 	if err != nil {
 		return err
 	}
+	if lock != nil {
+		defer func() { _ = lock.Release() }()
+	}
+	defer func() { _ = listener.Close() }()
+	handler := newAPIHandler(a, chosen)
+	handler.loopbackTCP = listener.Addr().Network() == "tcp"
 	server := &http.Server{
-		Handler:           newAPIHandler(a, chosen),
+		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 	done := make(chan error, 1)
@@ -108,49 +119,82 @@ func (a *App) serveAPI(cmd *cobra.Command, listen string, chosen bool) error {
 // address. Nothing on the socket authenticates a caller, so who can open it is
 // the whole of its access control; a TCP port is reachable by every user on
 // the machine, which is why it is loopback-only and not the default.
-func listenForAPI(ctx context.Context, listen string) (net.Listener, string, error) {
+func listenForAPI(ctx context.Context, listen string) (net.Listener, string, *filelock.Lock, error) {
 	value := strings.TrimSpace(listen)
-	if value == "" {
+	useDefault := value == ""
+	if useDefault {
 		value = "unix://" + defaultAPISocket()
 	}
-	u, err := url.Parse(value)
-	if err != nil {
-		return nil, "", fmt.Errorf("--listen %q: %w", listen, err)
-	}
 	var config net.ListenConfig
-	switch u.Scheme {
-	case "unix":
-		path := u.Path
+	if path, unix := strings.CutPrefix(value, "unix://"); unix {
 		if path == "" {
-			return nil, "", fmt.Errorf("--listen %q names no socket path", listen)
+			return nil, "", nil, fmt.Errorf("--listen %q names no socket path", listen)
 		}
-		if err := ensureStateDir(filepath.Dir(path)); err != nil {
-			return nil, "", err
+		dir := filepath.Dir(path)
+		if useDefault {
+			if err := ensureStateDir(dir); err != nil {
+				return nil, "", nil, err
+			}
+		} else if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, "", nil, err
 		}
+		// The directory must exclude other users before Listen makes the
+		// socket reachable. Leave existing custom directory permissions alone.
+		if err := privatefs.Check(dir); err != nil {
+			return nil, "", nil, fmt.Errorf("the API socket needs a private directory: %w", err)
+		}
+		lock, err := filelock.TryAcquire(path + ".lock")
+		if errors.Is(err, filelock.ErrBusy) {
+			return nil, "", nil, fmt.Errorf("%s is already being served or starting", path)
+		}
+		if err != nil {
+			return nil, "", nil, err
+		}
+
 		if err := clearStaleSocket(ctx, path); err != nil {
-			return nil, "", err
+			_ = lock.Release()
+			return nil, "", nil, err
 		}
 		listener, err := config.Listen(ctx, "unix", path)
 		if err != nil {
-			return nil, "", fmt.Errorf("listen on %s: %w", path, err)
+			_ = lock.Release()
+			return nil, "", nil, fmt.Errorf("listen on %s: %w", path, err)
 		}
-		if err := os.Chmod(path, 0o600); err != nil {
+		if runtime.GOOS == "windows" {
+			err = privatefs.Restrict(path)
+		} else {
+			err = os.Chmod(path, 0o600)
+		}
+		if err != nil {
 			_ = listener.Close()
-			return nil, "", fmt.Errorf("make %s this user's alone: %w", path, err)
+			_ = lock.Release()
+			return nil, "", nil, fmt.Errorf("make %s this user's alone: %w", path, err)
 		}
-		return listener, "unix://" + path, nil
+		return listener, "unix://" + path, lock, nil
+	}
+	u, err := url.Parse(value)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("--listen %q: %w", listen, err)
+	}
+	switch u.Scheme {
 	case "http":
 		host := u.Hostname()
-		if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			return nil, "", fmt.Errorf("--listen %q is not a loopback address: the API is served unauthenticated, so only this machine may reach it", listen)
+		if host == "localhost" {
+			host = "127.0.0.1"
 		}
-		listener, err := config.Listen(ctx, "tcp", u.Host)
+		if !isLoopbackHost(host) {
+			return nil, "", nil, fmt.Errorf("--listen %q is not a loopback address: the API is served unauthenticated, so only this machine may reach it", listen)
+		}
+		if u.Port() == "" || u.User != nil || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
+			return nil, "", nil, fmt.Errorf("--listen %q: use http://127.0.0.1:PORT", listen)
+		}
+		listener, err := config.Listen(ctx, "tcp", net.JoinHostPort(host, u.Port()))
 		if err != nil {
-			return nil, "", fmt.Errorf("listen on %s: %w", u.Host, err)
+			return nil, "", nil, fmt.Errorf("listen on %s: %w", u.Host, err)
 		}
-		return listener, "http://" + listener.Addr().String(), nil
+		return listener, "http://" + listener.Addr().String(), nil, nil
 	default:
-		return nil, "", fmt.Errorf("--listen %q: use unix:///PATH or http://127.0.0.1:PORT", listen)
+		return nil, "", nil, fmt.Errorf("--listen %q: use unix:///PATH or http://127.0.0.1:PORT", listen)
 	}
 }
 
@@ -158,15 +202,29 @@ func listenForAPI(ctx context.Context, listen string) (net.Listener, string, err
 // left behind, and refuses one that is still answering: two commands serving
 // one path would take turns being reached.
 func clearStaleSocket(ctx context.Context, path string) error {
-	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("%s exists and is not a socket", path)
 	}
 	var dialer net.Dialer
 	dial, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	if conn, err := dialer.DialContext(dial, "unix", path); err == nil {
+	conn, err := dialer.DialContext(dial, "unix", path)
+	if err == nil {
 		_ = conn.Close()
 		return fmt.Errorf("%s is already being served; stop that command first", path)
+	}
+	// Winsock uses WSAECONNREFUSED, distinct from Go's syscall.ECONNREFUSED.
+	const wsaConnRefused = syscall.Errno(10061)
+	refused := errors.Is(err, syscall.ECONNREFUSED) || runtime.GOOS == "windows" && errors.Is(err, wsaConnRefused)
+	if !refused {
+		return fmt.Errorf("check whether %s is already served: %w", path, err)
 	}
 	return os.Remove(path)
 }
@@ -189,23 +247,43 @@ type apiHandler struct {
 	app *App
 	// chosen is whether --server or DISCOBOX_SERVER named the primary; when
 	// it did, the primary is fixed, and otherwise it follows the registry.
-	chosen bool
-	mu     sync.Mutex
-	apps   map[string]*App
-	mux    *http.ServeMux
+	chosen      bool
+	loopbackTCP bool
+	mu          sync.Mutex
+	apps        map[string]*App
+	mux         *http.ServeMux
 }
 
 func newAPIHandler(app *App, chosen bool) *apiHandler {
+	app.preserveHTTPErrorResponses = true
 	h := &apiHandler{app: app, chosen: chosen, apps: map[string]*App{}, mux: http.NewServeMux()}
 	h.mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeAPIJSON(w, http.StatusOK, map[string]any{"ok": true})
+		writeAPIJSON(w, http.StatusOK, "application/json", map[string]bool{"ok": true})
 	})
 	h.mux.HandleFunc("GET /v1/servers", h.listServers)
 	h.mux.HandleFunc("/v1/servers/{name}/api/{path...}", h.proxy)
 	return h
 }
 
+func isLoopbackHost(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (h *apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.loopbackTCP {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = strings.Trim(r.Host, "[]")
+		}
+		origin := r.Header.Get("Origin")
+		if (!strings.EqualFold(host, "localhost") && !isLoopbackHost(host)) ||
+			r.Header.Get("Sec-Fetch-Site") == "cross-site" ||
+			(origin != "" && origin != "http://"+r.Host) {
+			writeAPIProblem(w, http.StatusForbidden, "Request must come from this listener's origin", "")
+			return
+		}
+	}
 	h.mux.ServeHTTP(w, r)
 }
 
@@ -224,15 +302,20 @@ func (h *apiHandler) serverSet() ([]apiServerEntry, error) {
 			primary = reg.Primary
 		}
 	}
-	first := apiServerEntry{Name: addressLabel(primary), Address: primary, Primary: true, ID: addressPeerID(primary)}
-	set := []apiServerEntry{first}
-	key, peer := serverKey(primary), addressPeerID(primary)
-	for _, entry := range reg.Servers {
-		if serverKey(entry.Address) == key || samePeer(entry.ID, peer) {
-			set[0].Name, set[0].Registered, set[0].ID = entry.Name, true, entry.ID
-			continue
+	servers := reg.serverSet(primary)
+	set := make([]apiServerEntry, 0, len(servers))
+	for _, entry := range servers {
+		set = append(set, apiServerEntry{
+			Name: entry.name, Address: entry.address, ID: entry.id,
+			Primary: entry.primary, Registered: entry.registered,
+		})
+	}
+	if !set[0].Registered {
+		set[0].ID = addressPeerID(primary)
+		if _, collision := reg.byName(set[0].Name); collision {
+			// Registered names cannot start with an underscore.
+			set[0].Name = "_primary"
 		}
-		set = append(set, apiServerEntry{Name: entry.Name, Address: entry.Address, ID: entry.ID, Registered: true})
 	}
 	return set, nil
 }
@@ -243,7 +326,7 @@ func (h *apiHandler) listServers(w http.ResponseWriter, _ *http.Request) {
 		writeAPIProblem(w, http.StatusInternalServerError, "The registered servers could not be read", err.Error())
 		return
 	}
-	writeAPIJSON(w, http.StatusOK, map[string]any{"servers": set})
+	writeAPIJSON(w, http.StatusOK, "application/json", map[string][]apiServerEntry{"servers": set})
 }
 
 // appFor is the App that reaches address, kept per address. The invocation's
@@ -252,13 +335,14 @@ func (h *apiHandler) listServers(w http.ResponseWriter, _ *http.Request) {
 func (h *apiHandler) appFor(address string) *App {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	key := serverKey(address)
+	key := address
 	if app, ok := h.apps[key]; ok {
 		return app
 	}
 	app := h.app
-	if key != serverKey(h.app.serverURL) {
+	if key != h.app.serverURL {
 		app = h.app.forServer(address)
+		app.preserveHTTPErrorResponses = true
 	}
 	h.apps[key] = app
 	return app
@@ -295,13 +379,17 @@ func (h *apiHandler) proxy(w http.ResponseWriter, r *http.Request) {
 		writeAPIProblem(w, http.StatusBadGateway, "The server cannot be reached", err.Error())
 		return
 	}
+	// Keep escaped slashes inside path parameters, even though ServeMux
+	// exposes a decoded wildcard. Split the escaped route by its separators.
+	parts := strings.SplitN(r.URL.EscapedPath(), "/", 6)
 	path := "/" + r.PathValue("path")
+	rawPath := "/" + parts[5]
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(out *httputil.ProxyRequest) {
 			out.Out.URL.Scheme = base.Scheme
 			out.Out.URL.Host = base.Host
 			out.Out.URL.Path = strings.TrimSuffix(base.Path, "/") + path
-			out.Out.URL.RawPath = ""
+			out.Out.URL.RawPath = strings.TrimSuffix(base.EscapedPath(), "/") + rawPath
 			out.Out.Host = base.Host
 			// The CLI authenticates; whatever the caller sent is not its to send.
 			out.Out.Header.Del("Authorization")
@@ -315,16 +403,23 @@ func (h *apiHandler) proxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-func writeAPIJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+func writeAPIJSON(w http.ResponseWriter, status int, contentType string, body any) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		http.Error(w, "The response could not be encoded", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(append(data, '\n'))
 }
 
 // writeAPIProblem answers as the API itself does when it refuses something
 // (RFC 9457), so a caller reads one error shape whoever answered.
 func writeAPIProblem(w http.ResponseWriter, status int, title, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "title": title, "detail": detail})
+	writeAPIJSON(w, status, "application/problem+json", struct {
+		Status int    `json:"status"`
+		Title  string `json:"title"`
+		Detail string `json:"detail"`
+	}{status, title, detail})
 }
