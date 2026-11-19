@@ -2,6 +2,8 @@ package access
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -148,6 +150,37 @@ func TestPendingCreationIncludesResumeNotice(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, stderr %s", code, stdout, stderr)
 			}
 			assertProgress(t, stderr, kind, id, false)
+		})
+	}
+}
+
+func TestWaitDeadlineDuringInitialStatusPoll(t *testing.T) {
+	for _, kind := range []string{"request", "trust"} {
+		t.Run(kind, func(t *testing.T) {
+			pollStarted := make(chan struct{}, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				pollStarted <- struct{}{}
+				<-r.Context().Done()
+			}))
+			t.Cleanup(server.Close)
+			t.Setenv(agentcreds.URLEnv, server.URL)
+
+			stdout, stderr, code := capture(t, "", func() int {
+				return Run([]string{"wait", "--json", "--timeout", "500ms", kind, "existing"})
+			})
+			select {
+			case <-pollStarted:
+			default:
+				t.Fatal("the status poll never reached the server")
+			}
+			var result struct {
+				RequestID string `json:"requestId"`
+				Status    string `json:"status"`
+			}
+			if code != exitPending || json.Unmarshal([]byte(stdout), &result) != nil ||
+				result.RequestID != "existing" || result.Status != agentcreds.StatusPending {
+				t.Fatalf("exit %d, stdout %q, stderr %s; want exit %d and the request pending", code, stdout, stderr, exitPending)
+			}
 		})
 	}
 }
