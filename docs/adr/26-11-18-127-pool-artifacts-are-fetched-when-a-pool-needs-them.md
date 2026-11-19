@@ -50,7 +50,19 @@ from downloading pool images.
    platform-based image inventory and stages it into the existing cache for
    users who want to pay that cost ahead of time.
 
-3. **Measure five minutes on a defined cold path.** On a dedicated Linux amd64
+3. **A launch waiting for an artifact shows its download.** The provider or
+   sandbox operation doing the fetch publishes progress through the existing
+   pool or sandbox provisioning status. Interactive CLI and console launch
+   waits display the artifact being fetched, bytes downloaded, and the
+   total when known. When byte counts are unavailable, show the artifact
+   and current phase. Keep that phase visible during a slow transfer and
+   show retries and terminal failures where the user is waiting. A launch
+   that joins a fetch already in flight shows its latest progress on the
+   first status read. Once the fetch finishes, show the next provisioning
+   phase, including loading from cache or booting as applicable. General
+   pool readiness text is for waits with no more specific active phase.
+
+4. **Measure five minutes on a defined cold path.** On a dedicated Linux amd64
    validation VM with at least four vCPUs, begin with one-minute load no
    higher than 1.0 and keep it at or below 2.0 for the run. Use a fresh account
    with no local server, server distribution, or image cache and without
@@ -74,9 +86,13 @@ from downloading pool images.
 The first pool operation can now incur the download that autolaunch previously
 paid. Explicit staging still amortizes those reads ahead of use, and a later
 pool can reuse artifacts the cache already holds. The validation should
-also observe a real first pool start on a host with a working provider,
-including a cold fetch and reuse on a subsequent start. That exercise has
-its own timing and does not gate the clean-account health check.
+also observe a real first pool start on a host with a working provider.
+Throttle a cold artifact download long enough to observe the artifact name
+and advancing byte counts in the launch wait. Join the wait while the fetch
+is in flight, confirm both waits see the same progress, and check that the
+status advances after download and reflects cache reuse on a subsequent
+start. That exercise has its own timing and does not gate the clean-account
+health check.
 
 ## Alternatives rejected
 
