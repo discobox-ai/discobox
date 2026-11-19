@@ -88,6 +88,10 @@ build_dockerfile() {
       # before them build what they carry.
       run_task "$dockerfile" build:agent-bundle
       run_task "$dockerfile" build:platform-bundle
+      # The release builds both for darwin too, from stages no build of this
+      # host's own platform reaches: build them as it does, and check what
+      # each entry holds as the asset service serves it.
+      run_task "$dockerfile" test:darwin-bundles
       ;;
     harness/*/Dockerfile)
       # The harness that changed: a bundle is FROM scratch and builds alone.
