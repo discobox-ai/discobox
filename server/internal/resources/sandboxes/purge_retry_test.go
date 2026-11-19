@@ -35,6 +35,24 @@ func TestScanRedrivesAPurgeASettledFailureStranded(t *testing.T) {
 	if !slices.Contains(ids, id) {
 		t.Fatalf("scan = %v, want the stranded purge %s", ids, id)
 	}
+
+	// Re-driven while the pool still refuses, it starts over as fresh intent:
+	// the old server's failure is gone, it reads deleting, and the engine gets
+	// the error for its backoff rather than a settle.
+	refused := errors.New("remove sandbox data: device busy")
+	busy := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{removeErr: refused}))
+	if _, err := busy.Reconcile(ctx, id); !errors.Is(err, refused) {
+		t.Fatalf("re-driven purge the pool refuses = %v, want %v for the engine's backoff", err, refused)
+	}
+	restarted, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted.Converged() || restarted.ErrorMessage != nil || restarted.DisplayState() != "deleting" {
+		t.Fatalf("re-driven purge: observed %d of %d, error %v, display %q; want unsettled, no error, deleting",
+			restarted.ObservedGeneration, restarted.Generation, restarted.ErrorMessage, restarted.DisplayState())
+	}
+
 	if _, err := r.Reconcile(ctx, id); err != nil {
 		t.Fatalf("reconcile the stranded purge: %v", err)
 	}

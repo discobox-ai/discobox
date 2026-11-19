@@ -502,11 +502,15 @@ its dirty mark are durable before the inline attempt starts, so a purge that
 fails or loses its client still converges in the background. The row is deleted
 only after the provider confirms the data is gone. A removal that fails is never
 settled, whatever failed it, the pool's own refusal included: the purge stays
-unobserved and records nothing, so it reads `deleting`, the engine retries it
-with its backoff, and the request answers 409, saying it will be retried, with
-the cause (ADR 0022 §3). The scan re-drives every row asking
-for deletion whatever its generations say (`ListSandboxRefsNeedingReconcile`),
-so a purge an earlier server settled as failed is retried too.
+unobserved and records nothing, so it reads `deleting` (even from `failed`:
+`DisplayState` answers an unfinished archive or purge before the state it
+tears down, so an archive waiting on its pool reads `archiving` too), the
+engine retries it with its backoff, and the request answers 409, saying it
+will be retried, with the cause (ADR 0022 §3). The scan also re-drives every
+row asking for deletion whatever its generations say
+(`ListSandboxRefsBeingDeleted`), so a purge an earlier server settled as
+failed is retried too: `delete` starts it over as fresh delete intent, which
+clears the old failure and puts it back on the engine's backoff.
 
 Repair (ADR 0035) is archive, unarchive, and start as one operation, for a
 sandbox that is wedged — typically a settled failure whose container or

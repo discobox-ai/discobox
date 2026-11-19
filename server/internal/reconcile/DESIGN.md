@@ -213,7 +213,7 @@ resource forever.
 
 | Type | Owner | Scanner |
 | --- | --- | --- |
-| `sandbox` | [sandboxes](../resources/sandboxes/DESIGN.md) | generation mismatch, plus archived sandboxes past retention |
+| `sandbox` | [sandboxes](../resources/sandboxes/DESIGN.md) | generation mismatch, plus archived sandboxes past retention and every sandbox meant to be deleted |
 | `pool` | [pools](../resources/pools/DESIGN.md) | every pool |
 | `sandboxProxyPolicy` | [sandboxes](../resources/sandboxes/DESIGN.md#proxy-policy) | none: marked with every egress level or gateway change and every write after a create |
 | `sandboxPower` | [sandboxes](../resources/sandboxes/DESIGN.md#sleep-idle-and-the-scheduled-start) | none: marked as drift by a status that asks for a power-down, and with intent by every outside power instruction and archive and by its pool's turn to active and ready while its wake is due; the wake is a `RequeueAt` timer on its own dirty row, with `wake_at` as the durable copy, kept under failure backoff until the pool takes the start |

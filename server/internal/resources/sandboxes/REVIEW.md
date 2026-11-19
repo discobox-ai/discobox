@@ -87,8 +87,11 @@
   host was away kept its data while its 409 promised a retry, and a
   retention's purge has no one to purge again (#928). Do not record the cause
   as `ErrorMessage` on an unsettled teardown either: `DisplayState` reads any
-  `ErrorMessage` as `error`. The scan re-drives every row asking for
-  deletion, so a purge settled before that fix is not stranded.
+  `ErrorMessage` as `error`, and a `failed` state too, except under an
+  unfinished archive or purge with nothing recorded, which it answers
+  first. The scan re-drives every row asking for deletion
+  (`ListSandboxRefsBeingDeleted`), and `delete` restarts one settled before
+  that fix as fresh intent, so it is not stranded.
 
 ## Marks a pool observation earns
 
