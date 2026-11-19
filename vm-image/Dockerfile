@@ -21,16 +21,16 @@
 # of the distribution package.
 #
 # Every stage is Ubuntu 26.04 LTS (resolute): the image pinned by digest, apt
-# reading the release's live pockets from a fast mirror with Ubuntu's own
-# archive behind it. They are the repository's one Ubuntu pin, the same values
+# reading the release's live pockets from the ordered mirror list for its
+# architecture. They are the repository's one Ubuntu pin, the same values
 # in every Dockerfile that builds on Ubuntu; see "Ubuntu" in the root
 # DESIGN.md, and `go tool task ubuntu:bump` to move the image. Docker CE (from
 # Docker's resolute suite) and Go (upstream's release) have pins of their own
 # (DOCKER_CE_VERSION and GO_VERSION below, moved by `go tool task docker:bump`
 # and `go tool task go:bump`).
 ARG UBUNTU_IMAGE=public.ecr.aws/docker/library/ubuntu:resolute-20261105.1@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
-ARG UBUNTU_MIRROR_AMD64=http://azure.archive.ubuntu.com/ubuntu
-ARG UBUNTU_MIRROR_ARM64=http://azure.ports.ubuntu.com/ubuntu-ports
+ARG UBUNTU_MIRROR_AMD64=http://mirrors.edge.kernel.org/ubuntu
+ARG UBUNTU_MIRROR_ARM64=http://mirrors.mit.edu/ubuntu-ports
 ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
@@ -49,12 +49,12 @@ ARG UBUNTU_MIRROR_AMD64
 ARG UBUNTU_MIRROR_ARM64
 RUN set -eu \
     && case "$(dpkg --print-architecture)" in \
-        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
-        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        amd64) first=$UBUNTU_MIRROR_AMD64 second=http://ftp.osuosl.org/pub/ubuntu third=http://azure.archive.ubuntu.com/ubuntu ;; \
+        arm64) first=$UBUNTU_MIRROR_ARM64 second=http://azure.ports.ubuntu.com/ubuntu-ports third=http://ports.ubuntu.com/ubuntu-ports ;; \
         *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac \
     && mkdir -p /etc/apt/mirrors \
-    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' "$first" "$second" "$third" > /etc/apt/mirrors/ubuntu.list \
     && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
         'Suites: resolute' 'Components: main universe' \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
@@ -63,7 +63,7 @@ RUN set -eu \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
         > /etc/apt/sources.list.d/ubuntu.sources \
     && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
-    && echo "apt reads $mirror, then $fallback"
+    && echo "apt reads $first, then $second, then $third"
 
 # Go is upstream's, on the repository's one Go pin: the LTS's Go is older than
 # go.mod asks for, and the golang images are Debian. Built natively on the host
@@ -79,12 +79,12 @@ ARG TARGETARCH
 
 RUN set -eu \
     && case "$(dpkg --print-architecture)" in \
-        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
-        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        amd64) first=$UBUNTU_MIRROR_AMD64 second=http://ftp.osuosl.org/pub/ubuntu third=http://azure.archive.ubuntu.com/ubuntu ;; \
+        arm64) first=$UBUNTU_MIRROR_ARM64 second=http://azure.ports.ubuntu.com/ubuntu-ports third=http://ports.ubuntu.com/ubuntu-ports ;; \
         *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac \
     && mkdir -p /etc/apt/mirrors \
-    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' "$first" "$second" "$third" > /etc/apt/mirrors/ubuntu.list \
     && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
         'Suites: resolute' 'Components: main universe' \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
@@ -93,8 +93,9 @@ RUN set -eu \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
         > /etc/apt/sources.list.d/ubuntu.sources \
     && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
-    && echo "apt reads $mirror, then $fallback"
-RUN apt-get update \
+    && echo "apt reads $first, then $second, then $third"
+RUN cat /etc/apt/mirrors/ubuntu.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -133,7 +134,8 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # the daemon every pool runs as root.
 FROM ubuntu AS docker-apt-key
 ARG DOCKER_APT_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
-RUN apt-get update \
+RUN cat /etc/apt/mirrors/ubuntu.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl gpg \
     && curl -fsSL --retry 5 --retry-all-errors https://download.docker.com/linux/ubuntu/gpg -o /docker.asc \
     && fingerprints=$(gpg --show-keys --with-colons /docker.asc | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }') \
@@ -169,7 +171,8 @@ RUN printf '%s\n' \
 # below is built from initramfs-tools' module list. zstd is listed because
 # initramfs-tools does not pull it in, and without it COMPRESS=zstd below
 # quietly falls back to gzip.
-RUN apt-get update \
+RUN cat /etc/apt/mirrors/ubuntu.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         dbus \
@@ -205,6 +208,7 @@ RUN . /etc/os-release \
     && printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
         "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
         > /etc/apt/sources.list.d/docker.sources \
+    && cat /etc/apt/mirrors/ubuntu.list \
     && apt-get update \
     && ce=$(apt-cache madison docker-ce | awk -v v="5:${DOCKER_CE_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
     && containerd=$(apt-cache madison containerd.io | awk -v v="${CONTAINERD_IO_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
@@ -354,7 +358,8 @@ FROM ubuntu AS assemble
 ARG TARGETARCH
 ARG ROOT_SLACK_MIB=32
 
-RUN apt-get update \
+RUN cat /etc/apt/mirrors/ubuntu.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends e2fsprogs gzip lz4 xz-utils zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

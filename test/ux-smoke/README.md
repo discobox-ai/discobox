@@ -34,6 +34,9 @@ fresh bootstrap on every run. The terminal box also serves as the adoption
 requester; three boxes retain every flow and the distinct creator assertion.
 Build, flow and cleanup timings are printed in CI, and command durations remain
 in the logs. Concurrent builds have separate logs and are joined before cleanup.
+Image builds use plain BuildKit output. On a command timeout the runner kills
+its process group and prints the log tails along with any apt mirror list
+captured earlier in the build.
 
 Every command and readiness wait is bounded; Taskfile bounds the whole run to
 25 minutes. Before teardown it records screens, container logs and system journals. The runner

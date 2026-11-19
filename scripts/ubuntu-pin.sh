@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The repository's one Ubuntu pin: every Linux stage it builds is Ubuntu 26.04
 # LTS (resolute), from one image digest, with apt reading the release's live
-# pockets from one fast mirror per architecture and Ubuntu's own archive behind
-# it (see "Ubuntu" in the root DESIGN.md, ADR 26-11-16-365). The values are
+# pockets from an ordered mirror list per architecture (see "Ubuntu" in the
+# root DESIGN.md). The values are
 # written into each Dockerfile, because a Dockerfile cannot import another, so
 # this script is what keeps them one:
 #
@@ -175,6 +175,7 @@ check() {
         if (current != "") stages[current] = 1
         next
       }
+      /^(RUN|[[:space:]]+&&) cat \/etc\/apt\/mirrors\/ubuntu\.list \\$/ { next }
       !block && /\/etc\/apt\/mirrors\/|\/etc\/apt\/sources\.list\.d\/ubuntu\.sources/ {
         printf "%s:%d: the mirror list or Ubuntu'"'"'s sources written outside the mirror list setup: %s\n", FILENAME, FNR, $0
       }

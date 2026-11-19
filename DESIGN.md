@@ -322,8 +322,8 @@ flowchart TD
   modules come from the module proxy each run, on demand as the target loads
   packages, which measured no slower than restoring an `actions/cache` tarball
   of them. Go does not retry a download the proxy drops, so the task action
-  runs a target that failed with output that looks like a network failure once
-  more, and fails any other failure at once.
+  retries a target once when the log shows a transport error on a Go module
+  fetch.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
@@ -557,8 +557,7 @@ change of its own, made after that release's first point release.
   `UBUNTU_MIRROR_AMD64` / `UBUNTU_MIRROR_ARM64`, the mirror apt reads first.
   Every stage built on it writes the same mirror list
   (`/etc/apt/mirrors/ubuntu.list`, read through apt's `mirror+file:`
-  method): that mirror, then Ubuntu's own archive (`archive.ubuntu.com`, or
-  `ports.ubuntu.com` on arm64) as the fallback, for `resolute`,
+  method) for its architecture, covering `resolute`,
   `resolute-updates` and `resolute-security`, components `main` and
   `universe`. Every entry is plain http, since the image has no CA
   certificates until apt installs them; apt verifies every index against
@@ -588,13 +587,12 @@ change of its own, made after that release's first point release.
   pocket keeps the LTS's original), with a comment naming the bug, and taken
   out once a fix lands; `check:ubuntu` refuses apt preferences so that a hold
   is never anywhere else.
-- **The mirror.** Canonical's Azure mirror (`azure.archive.ubuntu.com`,
-  `azure.ports.ubuntu.com`) serves both architectures over http and was the
-  fastest of those that do. apt falls back per file, so a mirror that fails
-  costs time, not a build; one that hangs costs `Acquire::http::Timeout`
-  (5 s) per attempt, and `Acquire::Retries "5"` multiplies it (#1227
-  measured 11 min for `apt-get update` behind a dead first entry), so a
-  mirror that stays down is taken out of the pin, not left to the fallback.
+- **Mirror order.** On amd64, apt tries kernel.org, OSU OSL, then Azure.
+  On arm64, it tries MIT, Azure ports, then Ubuntu ports
+  ([ADR 26-11-19-735](docs/adr/26-11-19-735-ubuntu-apt-tries-ordered-mirrors-for-each-architecture.md)).
+  apt falls back per file. HTTP requests have a five-second inactivity
+  timeout, and apt can retry a failed fetch up to five times. Build steps log
+  the configured mirrors before updating indexes.
 - **Bumping the image** is `go tool task ubuntu:bump` (`TAG=` names one;
   by default the newest dated resolute image). It moves only what apt would
   otherwise upgrade on top of. Then rebuild and verify what it moves: the
@@ -603,7 +601,7 @@ change of its own, made after that release's first point release.
   too.
 - **Boxes keep the same sources.** The sandbox base and the guest are built
   with the mirror list and keep it, so a box's own `apt`, and every feature
-  provisioned onto it, read the fast mirror with Ubuntu's archive behind it.
+  provisioned onto it, use the same ordered mirrors.
   A box on another provider's image keeps that image's sources.
 - **Docker** is Docker CE from Docker's resolute suite, not Ubuntu's
   `docker.io`, in the sandbox base and in the pool VM guest, so a pool's

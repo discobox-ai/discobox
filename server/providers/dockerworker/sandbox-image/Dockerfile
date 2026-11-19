@@ -16,8 +16,8 @@
 # apt reads first on each architecture. `go tool task ubuntu:bump` moves the
 # image, here and in every other Dockerfile.
 ARG UBUNTU_IMAGE=public.ecr.aws/docker/library/ubuntu:resolute-20261105.1@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
-ARG UBUNTU_MIRROR_AMD64=http://azure.archive.ubuntu.com/ubuntu
-ARG UBUNTU_MIRROR_ARM64=http://azure.ports.ubuntu.com/ubuntu-ports
+ARG UBUNTU_MIRROR_AMD64=http://mirrors.edge.kernel.org/ubuntu
+ARG UBUNTU_MIRROR_ARM64=http://mirrors.mit.edu/ubuntu-ports
 
 FROM ${UBUNTU_IMAGE}
 ARG UBUNTU_MIRROR_AMD64
@@ -38,9 +38,8 @@ LABEL io.discobox.reclaimable.v1=true
 RUN groupadd --system --gid 992 kvm
 
 # apt reads resolute's live pockets (resolute, -updates, -security) from the
-# mirror list: a fast mirror first, Ubuntu's own archive behind it, for the
-# build and for the box after it, so a box's own apt, and the features
-# provisioned onto it, read the fast mirror too. Every entry is plain http: the
+# ordered mirror list during the build and from inside the box, including
+# during feature provisioning. Every entry is plain http: the
 # image has no CA certificates to check TLS with until apt installs them, and
 # apt verifies every index against Ubuntu's archive key, whichever host served
 # it. Ubuntu's Release files carry no Valid-Until, so the moving pockets
@@ -49,12 +48,12 @@ RUN groupadd --system --gid 992 kvm
 # the build or in a box.
 RUN set -eu \
     && case "$(dpkg --print-architecture)" in \
-        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
-        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        amd64) first=$UBUNTU_MIRROR_AMD64 second=http://ftp.osuosl.org/pub/ubuntu third=http://azure.archive.ubuntu.com/ubuntu ;; \
+        arm64) first=$UBUNTU_MIRROR_ARM64 second=http://azure.ports.ubuntu.com/ubuntu-ports third=http://ports.ubuntu.com/ubuntu-ports ;; \
         *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac \
     && mkdir -p /etc/apt/mirrors \
-    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' "$first" "$second" "$third" > /etc/apt/mirrors/ubuntu.list \
     && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
         'Suites: resolute' 'Components: main universe' \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
@@ -63,7 +62,7 @@ RUN set -eu \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
         > /etc/apt/sources.list.d/ubuntu.sources \
     && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
-    && echo "apt reads $mirror, then $fallback"
+    && echo "apt reads $first, then $second, then $third"
 
 # Common apt requirements of core, build, cli, python and shells-editors
 # (ADR 26-11-06-664). Keep in sync with their provision.yaml declarations.
@@ -72,6 +71,7 @@ RUN set -eu \
 # cache-cleaning drop-in is removed: it fights the build caches children
 # mount, and no image wants a container mutating its package state.
 RUN set -eux \
+    && cat /etc/apt/mirrors/ubuntu.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -147,6 +147,7 @@ RUN set -eux \
     && printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
         "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
         > /etc/apt/sources.list.d/docker.sources \
+    && cat /etc/apt/mirrors/ubuntu.list \
     && apt-get update \
     && ce=$(apt-cache madison docker-ce | awk -v v="5:${DOCKER_CE_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
     && containerd=$(apt-cache madison containerd.io | awk -v v="${CONTAINERD_IO_VERSION}~" 'index($3, v) == 1 { print $3; exit }') \
@@ -184,6 +185,7 @@ RUN set -eux \
     fi \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+    && cat /etc/apt/mirrors/ubuntu.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && apt-get clean \
