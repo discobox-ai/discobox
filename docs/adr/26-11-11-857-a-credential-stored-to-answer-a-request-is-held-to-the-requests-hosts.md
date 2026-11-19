@@ -1,7 +1,9 @@
 # 26-11-11-857 — A credential stored to answer a request is held to the request's hosts
 
 - **Status**: Accepted (written Accepted in its implementation PR, by the
-  owner's instruction for issue #1017; the owner accepts it by merging that PR)
+  owner's instruction for issue #1017; the owner accepts it by merging that PR).
+  Amended for body and WebSocket permissions by
+  [26-11-18-479](26-11-18-479-a-new-credential-can-keep-reviewed-places-on-exact-hosts.md).
 - **Date**: 2026-11-11
 - **Issue**: [#1017](https://github.com/discobox-ai/discobox/issues/1017)
 - **Leaves standing**: [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)

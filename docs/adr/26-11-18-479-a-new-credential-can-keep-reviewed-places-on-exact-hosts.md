@@ -1,7 +1,8 @@
 # 26-11-18-479 — A new credential can keep reviewed places on exact hosts
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-18
+- Accepted by the owner by merging #1396, 2026-11-19.
 - **Issue**: [#1394](https://github.com/discobox-ai/discobox/issues/1394)
 - **Amends**: [26-11-11-857](26-11-11-857-a-credential-stored-to-answer-a-request-is-held-to-the-requests-hosts.md)
   for the stored credential's body and WebSocket permissions.
