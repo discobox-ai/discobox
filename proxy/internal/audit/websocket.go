@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"compress/flate"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/discobox-ai/discobox/pkg/wsrecord"
-	"github.com/discobox-ai/discobox/proxy/internal/wsframe"
 )
 
 // websocketDecoder observes one direction. It never writes to the connection.
@@ -105,33 +105,61 @@ func (d *websocketDecoder) parse(at time.Time) (int, error) {
 	if len(b) < 2 {
 		return 0, nil
 	}
-	// The header is read as enforcement reads it (wsframe); what to do when
-	// it does not read is capture's own: stop recording, never the traffic.
-	h, ok, err := wsframe.ParseHeader(b)
-	if err != nil {
-		return 0, err
-	}
-	if !ok {
-		return 0, nil
-	}
-	fin, opcode, control := h.Fin, h.Opcode, h.Control()
-	compressed := h.RSV&4 != 0
-	if h.RSV&3 != 0 || compressed && (control || !d.deflate || opcode != 1 && opcode != 2) {
+	fin, compressed := b[0]&0x80 != 0, b[0]&0x40 != 0
+	opcode := b[0] & 15
+	if b[0]&0x30 != 0 || compressed && (!d.deflate || opcode != 1 && opcode != 2) {
 		return 0, fmt.Errorf("unsupported WebSocket reserved bits")
 	}
-	if h.Masked != (d.direction == wsrecord.ClientToServer) {
+	masked := b[1]&0x80 != 0
+	if masked != (d.direction == wsrecord.ClientToServer) {
 		return 0, fmt.Errorf("invalid WebSocket masking")
 	}
-	if h.Length > wsrecord.MaxPayload {
+	n := uint64(b[1] & 127)
+	head := 2
+	switch n {
+	case 126:
+		if len(b) < 4 {
+			return 0, nil
+		}
+		n = uint64(binary.BigEndian.Uint16(b[2:4]))
+		head = 4
+		if n < 126 {
+			return 0, fmt.Errorf("invalid WebSocket length encoding")
+		}
+	case 127:
+		if len(b) < 10 {
+			return 0, nil
+		}
+		n = binary.BigEndian.Uint64(b[2:10])
+		head = 10
+		if n < 65536 || n>>63 != 0 {
+			return 0, fmt.Errorf("invalid WebSocket length encoding")
+		}
+	}
+	control := opcode >= 8
+	switch opcode {
+	case 0, 1, 2, 8, 9, 10:
+	default:
+		return 0, fmt.Errorf("unsupported WebSocket opcode")
+	}
+	if control && (!fin || n > 125 || compressed) {
+		return 0, fmt.Errorf("invalid WebSocket control frame")
+	}
+	if n > wsrecord.MaxPayload {
 		return 0, fmt.Errorf("WebSocket frame exceeds capture limit")
 	}
-	head, n := h.Size, h.Length
+	if masked {
+		head += 4
+	}
 	if uint64(len(b)) < uint64(head)+n {
 		return 0, nil
 	}
 	payload := b[head : head+int(n)]
-	if h.Masked {
-		wsframe.Unmask(payload, h.Mask)
+	if masked {
+		key := b[head-4 : head]
+		for i := range payload {
+			payload[i] ^= key[i%4]
+		}
 	}
 	if control {
 		if opcode == 8 && (len(payload) == 1 || len(payload) > 1 && !utf8.Valid(payload[2:])) {

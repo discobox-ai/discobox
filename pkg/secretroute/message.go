@@ -63,8 +63,7 @@ func ParseMessage(data []byte) (*Message, error) {
 }
 
 // ParseDocument reads data as one JSON value of any kind, as strictly as
-// ParseMessage: what a JSON request body's places are read in, so a body and
-// a message resolve pointers, escapes and duplicate members alike.
+// ParseMessage: what a typed route's ws= array is checked with.
 func ParseDocument(data []byte) (*Message, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("%w: invalid UTF-8", ErrNotMessage)
