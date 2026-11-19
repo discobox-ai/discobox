@@ -31,7 +31,7 @@
     "files": [
       {
         "path": ".claude/settings.json",
-        "content": "{\"theme\":\"dark\",\"skipDangerousModePermissionPrompt\":true,\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}"
+        "content": "{\"theme\":\"dark\",\"disableClaudeAiConnectors\":true,\"skipDangerousModePermissionPrompt\":true,\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}"
       }
     ],
     "secrets": [
