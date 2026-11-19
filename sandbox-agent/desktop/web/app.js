@@ -37,6 +37,12 @@ const dom = {
   btnNotes: $('btn-notes'),
   btnFullscreen: $('btn-fullscreen'),
   btnReconnect: $('btn-reconnect'),
+  btnClipboard: $('btn-clipboard'),
+  clipboardDialog: $('clipboard-dialog'),
+  clipboardText: $('clipboard-text'),
+  clipboardStatus: $('clipboard-status'),
+  clipboardRefresh: $('clipboard-refresh'),
+  clipboardCopy: $('clipboard-copy'),
   btnCopy: $('btn-copy'),
   scale: $('scale'),
   annotateHint: $('annotate-hint'),
@@ -84,6 +90,22 @@ const state = {
 
 const RESIZE_SETTLE_MS = 220;
 const MAX_RETRIES = 6;
+const HANDSHAKE_TIMEOUT_MS = 10000;
+const MAX_CLIPBOARD_BYTES = 64 * 1024;
+// Match the keysyms noVNC sends when it maps Apple's Command keys.
+const appleKeyboard = /mac|ipad|iphone|ipod/i.test(navigator.platform);
+const pasteModifierKeys = new Map([
+  ['ControlLeft', 0xffe3], ['ControlRight', 0xffe4],
+  ['ShiftLeft', 0xffe1], ['ShiftRight', 0xffe2],
+  ['MetaLeft', appleKeyboard ? 0xffe9 : 0xffeb],
+  ['MetaRight', appleKeyboard ? 0xffeb : 0xffec],
+]);
+const heldPasteModifiers = new Set();
+let shiftPaste = false;
+let pasteInProgress = false;
+let handshakeTimer;
+let reconnectTimer;
+let stableConnectionTimer;
 
 // ------------------------------------------------------------------ startup
 
@@ -128,6 +150,42 @@ function wireControls() {
   dom.btnFullscreen.addEventListener('click', toggleFullscreen);
   dom.scale.addEventListener('change', chooseScale);
   dom.btnCopy.addEventListener('click', copyPrompt);
+  dom.btnClipboard.addEventListener('click', () => {
+    dom.clipboardDialog.showModal();
+    refreshClipboard();
+  });
+  dom.clipboardRefresh.addEventListener('click', refreshClipboard);
+  dom.clipboardCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(dom.clipboardText.value);
+      dom.clipboardStatus.textContent = 'Copied';
+    } catch {
+      dom.clipboardText.select();
+      dom.clipboardStatus.textContent = 'Use your browser’s Copy command to copy the selected text.';
+    }
+  });
+
+  // Let the browser deliver a paste event before sending the shortcut to X.
+  // noVNC otherwise forwards the V key immediately, using stale desktop text.
+  dom.screen.addEventListener('keydown', (event) => {
+    if (pasteModifierKeys.has(event.code)) heldPasteModifiers.add(event.code);
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'v') {
+      shiftPaste = event.shiftKey;
+      event.stopPropagation();
+      if (event.repeat) event.preventDefault();
+    }
+  }, { capture: true });
+  dom.screen.addEventListener('keyup', (event) => {
+    heldPasteModifiers.delete(event.code);
+    if (event.key.toLowerCase() === 'v') shiftPaste = false;
+  }, { capture: true });
+  const releasePasteModifiers = () => {
+    heldPasteModifiers.clear();
+    shiftPaste = false;
+  };
+  dom.screen.addEventListener('blur', releasePasteModifiers, { capture: true });
+  window.addEventListener('blur', releasePasteModifiers);
+  dom.screen.addEventListener('paste', pasteToDesktop);
   dom.noteDialogTabScreen.addEventListener('click', () => {
     if (state.open) showCapture(state.open, 'screen');
   });
@@ -282,13 +340,82 @@ function rescaleViewport() {
   state.rfb.scaleViewport = true;
 }
 
+async function pasteToDesktop(event) {
+  if (!state.connected || !event.clipboardData) return;
+  event.preventDefault();
+  if (pasteInProgress) {
+    toast('Wait for the current paste to finish.');
+    return;
+  }
+  pasteInProgress = true;
+  const rfb = state.rfb;
+  const withShift = shiftPaste;
+  shiftPaste = false;
+  const text = event.clipboardData.getData('text/plain');
+  const oversized = new TextEncoder().encode(text).length > MAX_CLIPBOARD_BYTES;
+  try {
+    await postJSON('/api/clipboard', { text: oversized ? '' : text });
+    if (oversized) {
+      toast('Paste was too large. The desktop clipboard was cleared.', 'error');
+      return;
+    }
+    if (state.rfb !== rfb || !state.connected) return;
+    sendPasteShortcut(rfb, withShift);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    pasteInProgress = false;
+  }
+}
+
+function sendPasteShortcut(rfb, withShift) {
+  const send = (code, down) => rfb.sendKey(pasteModifierKeys.get(code), code, down);
+  const addControl = !heldPasteModifiers.has('ControlLeft') && !heldPasteModifiers.has('ControlRight');
+  const heldShift = ['ShiftLeft', 'ShiftRight'].filter(code => heldPasteModifiers.has(code));
+  const released = ['MetaLeft', 'MetaRight'].filter(code => heldPasteModifiers.has(code));
+  if (!withShift) released.push(...heldShift);
+  const addShift = withShift && heldShift.length === 0;
+  // Change only the modifiers the browser's shortcut needs, then restore
+  // the keys noVNC still considers physically held.
+  if (addControl) send('ControlLeft', true);
+  if (addShift) send('ShiftLeft', true);
+  released.forEach(code => send(code, false));
+  rfb.sendKey(withShift ? 0x56 : 0x76, 'KeyV');
+  released.forEach(code => send(code, true));
+  if (addShift) send('ShiftLeft', false);
+  if (addControl) send('ControlLeft', false);
+}
+
+async function refreshClipboard() {
+  dom.clipboardRefresh.disabled = true;
+  dom.clipboardCopy.disabled = true;
+  dom.clipboardText.value = '';
+  dom.clipboardStatus.textContent = 'Reading the desktop clipboard…';
+  try {
+    const { text } = await postJSON('/api/clipboard', {});
+    dom.clipboardText.value = text;
+    dom.clipboardCopy.disabled = false;
+    dom.clipboardStatus.textContent = '';
+  } catch (err) {
+    dom.clipboardStatus.textContent = err.message;
+  } finally {
+    dom.clipboardRefresh.disabled = false;
+  }
+}
+
 // --------------------------------------------------------------- connection
 
 function connect() {
-  if (state.rfb) {
-    try { state.rfb.disconnect(); } catch { /* already gone */ }
-    state.rfb = null;
-  }
+  clearTimeout(reconnectTimer);
+  clearTimeout(handshakeTimer);
+  clearTimeout(stableConnectionTimer);
+  heldPasteModifiers.clear();
+  shiftPaste = false;
+  const previous = state.rfb;
+  state.rfb = null;
+  state.connected = false;
+  dom.btnClipboard.disabled = true;
+  if (previous) previous.disconnect();
   dom.curtain.hidden = false;
   dom.curtain.classList.remove('fading');
   dom.curtainText.textContent = 'Waking the desktop…';
@@ -304,41 +431,49 @@ function connect() {
   rfb.background = '#000';
   rfb.showDotCursor = true;
 
-  // Every handler below checks that it is still the current connection first.
-  // disconnect() does not detach listeners and noVNC dispatches 'disconnect'
-  // asynchronously from the socket close, so the *previous* connection's
-  // handler runs after this one is already in state.rfb -- painting
-  // "Disconnected" over a desktop that is connecting or connected. A
-  // user-initiated disconnect carries clean === true, which falls past the
-  // retry branch straight to the error state, so pressing Reconnect on a
-  // healthy session was the way to see it.
+  // noVNC can dispatch events from a replaced connection asynchronously.
   const current = () => state.rfb === rfb;
 
   rfb.addEventListener('connect', () => {
     if (!current()) return;
+    clearTimeout(handshakeTimer);
     state.connected = true;
-    state.retries = 0;
+    dom.btnClipboard.disabled = false;
+    // Keep the budget across brief handshakes during a restart loop.
+    stableConnectionTimer = setTimeout(() => { state.retries = 0; }, 5000);
     setStatus('connected', 'Connected');
     dom.curtain.classList.add('fading');
-    setTimeout(() => { dom.curtain.hidden = true; }, 280);
+    setTimeout(() => {
+      if (current() && state.connected) dom.curtain.hidden = true;
+    }, 280);
+    const canvas = dom.screen.querySelector('canvas');
+    if (canvas && (!state.geometry || canvas.width !== state.geometry.width
+        || canvas.height !== state.geometry.height)) {
+      resizeDisplay({ force: true });
+    }
     rescaleViewport();
   });
 
-  rfb.addEventListener('disconnect', (event) => {
+  rfb.addEventListener('disconnect', () => {
     if (!current()) return;
+    clearTimeout(handshakeTimer);
+    clearTimeout(stableConnectionTimer);
+    heldPasteModifiers.clear();
+    shiftPaste = false;
     state.connected = false;
+    dom.btnClipboard.disabled = true;
     dom.curtain.hidden = false;
     dom.curtain.classList.remove('fading');
-    if (event.detail && event.detail.clean === false && state.retries < MAX_RETRIES) {
+    if (state.retries < MAX_RETRIES) {
       state.retries += 1;
       const wait = Math.min(400 * state.retries, 2500);
       setStatus('connecting', `Reconnecting… (${state.retries}/${MAX_RETRIES})`);
       dom.curtainText.textContent = 'Reconnecting to the desktop…';
-      setTimeout(connect, wait);
+      reconnectTimer = setTimeout(connect, wait);
       return;
     }
-    setStatus('error', 'Disconnected');
-    dom.curtainText.textContent = 'The desktop connection closed. Click the status at the top to reconnect.';
+    setStatus('error', 'Could not reconnect');
+    dom.curtainText.textContent = 'Automatic reconnect attempts ended. Click the status at the top to try again.';
   });
 
   rfb.addEventListener('desktopname', (event) => {
@@ -349,6 +484,9 @@ function connect() {
   });
 
   state.rfb = rfb;
+  handshakeTimer = setTimeout(() => {
+    if (current() && !state.connected) rfb.disconnect();
+  }, HANDSHAKE_TIMEOUT_MS);
 }
 
 // setStatus paints the state, and makes it the way back when the way back is

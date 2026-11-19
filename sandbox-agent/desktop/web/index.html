@@ -36,6 +36,7 @@
     <button class="btn" id="btn-notes" type="button" aria-pressed="false">
       Notes <span class="count" id="notes-count">0</span>
     </button>
+    <button class="btn" id="btn-clipboard" type="button" disabled>Clipboard</button>
     <label class="btn btn-select" for="scale" title="Device scale. Detected from this screen; applies to programs started afterwards.">
       Density
       <select id="scale">
@@ -105,6 +106,19 @@
 <!-- One note, opened from the list: what the screen looked like when it was
      taken, and everything that can be done about it. The screenshot is the
      record — the desktop behind this dialog has moved on. -->
+<dialog class="note-dialog" id="clipboard-dialog" aria-labelledby="clipboard-title">
+  <div class="note-dialog-body">
+    <label id="clipboard-title" for="clipboard-text">Desktop clipboard</label>
+    <textarea class="note-dialog-text" id="clipboard-text" rows="5" readonly></textarea>
+    <div id="clipboard-status" role="status"></div>
+    <div class="note-dialog-actions">
+      <button class="btn" id="clipboard-refresh" type="button">Refresh</button>
+      <button class="btn" id="clipboard-copy" type="button" disabled>Copy</button>
+      <form method="dialog"><button class="btn" type="submit">Close</button></form>
+    </div>
+  </div>
+</dialog>
+
 <dialog class="note-dialog" id="note-dialog">
   <form method="dialog" class="note-dialog-close-form">
     <button class="btn btn-icon" id="note-dialog-close" value="close" aria-label="Close">

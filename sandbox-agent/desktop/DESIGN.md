@@ -87,6 +87,7 @@ existing 6080 socket rather than a second connection the page opens itself.
 | Route | Does |
 | --- | --- |
 | `GET /api/session` | Limits, handoff prompt and record path; geometry only if X is already up. |
+| `POST /api/clipboard` | Read or write the desktop's plain-text CLIPBOARD selection. |
 | `POST /api/display` | CSS box in, framebuffer out (`Display.Resize`). |
 | `POST /api/scale` | Device scale; `auto` marks the viewer's detection (`Display.SetScale`). |
 | `GET` `POST /api/feedback`, `PATCH` `DELETE /api/feedback/{id}` | List, capture, edit or tick, delete a note. |
@@ -100,6 +101,23 @@ is tunnelled without the other.
 
 Port 6080 keeps its own contract for the client that already speaks it,
 including the `?x=&y=` resize this package does not use.
+
+## Clipboard
+
+A browser paste event sends plain text to the desktop's X11 CLIPBOARD via
+xclip. The viewer forwards the paste shortcut after X accepts the text.
+Pastes above 64 KiB replace the selection with empty text. PRIMARY remains
+available for the desktop's middle-click selection.
+
+Opening or refreshing the Clipboard panel reads the desktop selection. Copy
+writes that text to the browser clipboard on the person's click. The browser
+clipboard is read only through paste events. Clipboard requests use JSON, and
+the clipboard API and VNC upgrade check the browser Origin against the Host.
+Clipboard requests accept localhost, numeric IP addresses, and the viewer's
+configured listen host. The viewer page requires a top-level window.
+
+Screenshot routes only serve named PNGs within the screenshot directory, with
+a sandbox CSP and MIME sniffing disabled.
 
 ## Size follows the window; scale does not
 
@@ -118,12 +136,13 @@ Every distinct size becomes a modeline that outlives the process, so sizes are
 bucketed to 64px and the table is capped. Reaching the cap **evicts the oldest
 mode**; it must not refuse the resize. The reachable width × height grid is far
 larger than the cap, so a long session finds new sizes as a matter of course, and
-erroring would wedge the viewer at whatever size it happened to be — permanently,
-since a failed resize is not retried at the same window size. Eviction forgets
+refusing a resize would leave the viewer at its previous size. Eviction forgets
 unconditionally and asks the server to drop the mode best-effort, which is the
 right way round: this table is what has to stay bounded, and the server refuses
 to delete a mode in use. A mode the server kept is found again by the existing
-`known` check, which re-attaches it instead of recreating it.
+XRandR query, which also detects when a restarted X server lost the cached
+modes. On reconnect the viewer compares the initial VNC framebuffer with its
+last requested geometry and re-asks for its size if they differ.
 
 **Scale** is an integer, decided once per session, and it is the desktop's
 HiDPI-ness. It drives four things that must agree:
@@ -379,6 +398,9 @@ sandbox has booted: labels are resolved at registration without pulling
 filesystem layers. The link is only useful against a running sandbox anyway.
 
 ### The state is the way back
+
+The viewer retries a lost VNC connection up to six times, with increasing
+delays. A connection has to stay up for five seconds to reset the retry budget.
 
 When the connection dies the status itself becomes the reconnect control — a
 real `<button>`, so it is reachable by keyboard and announced as one, and

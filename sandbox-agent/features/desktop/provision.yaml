@@ -25,6 +25,7 @@ steps:
         - thunar
         - x11-xserver-utils
         - x11vnc
+        - xclip
         - xdotool
         - xfce4-appfinder
         - xfce4-panel

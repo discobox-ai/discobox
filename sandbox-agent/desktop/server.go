@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"os"
 	"os/user"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -111,15 +110,16 @@ func (c *Config) applyDefaults() {
 // same-origin path through to the VNC websocket, and the annotation record the
 // page writes into.
 type Server struct {
-	log     *slog.Logger
-	store   *Store
-	display *Display
-	proxy   *httputil.ReverseProxy
-	static  fs.FS
-	novnc   http.Handler
-	brand   http.Handler
-	prompt  string
-	handler http.Handler
+	listenHost string
+	log        *slog.Logger
+	store      *Store
+	display    *Display
+	proxy      *httputil.ReverseProxy
+	static     fs.FS
+	novnc      http.Handler
+	brand      http.Handler
+	prompt     string
+	handler    http.Handler
 
 	// releaseOnce guards the readiness notification, which lets the desktop
 	// session start. It fires exactly once, whatever gets there first.
@@ -188,15 +188,17 @@ func New(log *slog.Logger, cfg Config) (*Server, error) {
 	display.EnvDir = envDir
 	display.VSCodeArgv = vscodeArgv
 	display.Log = log
+	listenHost, _, _ := net.SplitHostPort(cfg.Addr)
 	s := &Server{
-		log:     log,
-		store:   store,
-		display: display,
-		proxy:   proxy,
-		static:  static,
-		novnc:   http.StripPrefix("/novnc/", http.FileServer(http.Dir(cfg.NoVNCDir))),
-		brand:   http.StripPrefix("/brand/", http.FileServer(http.Dir(cfg.BrandDir))),
-		prompt:  prompt(store.MarkdownPath()),
+		listenHost: listenHost,
+		log:        log,
+		store:      store,
+		display:    display,
+		proxy:      proxy,
+		static:     static,
+		novnc:      http.StripPrefix("/novnc/", http.FileServer(http.Dir(cfg.NoVNCDir))),
+		brand:      http.StripPrefix("/brand/", http.FileServer(http.Dir(cfg.BrandDir))),
+		prompt:     prompt(store.MarkdownPath()),
 	}
 	s.handler = s.routes()
 	return s, nil
@@ -226,6 +228,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/websockify", s.serveWebsockify)
 	mux.HandleFunc("GET /api/session", s.serveSession)
 	mux.HandleFunc("POST /api/display", s.serveResize)
+	mux.HandleFunc("POST /api/clipboard", s.serveClipboard)
 	mux.HandleFunc("POST /api/scale", s.serveScale)
 	mux.HandleFunc("GET /api/feedback", s.serveFeedbackList)
 	mux.HandleFunc("POST /api/feedback", s.serveFeedbackCreate)
@@ -335,6 +338,7 @@ func (s *Server) serveIndex(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
 }
@@ -344,17 +348,71 @@ func (s *Server) serveIndex(w http.ResponseWriter, _ *http.Request) {
 // pointing the page at 6080 directly means one port is the whole desktop: one
 // thing to forward, and one thing to reach.
 func (s *Server) serveWebsockify(w http.ResponseWriter, r *http.Request) {
-	s.proxy.ServeHTTP(w, r)
+	if s.checkViewerOrigin(w, r) {
+		s.proxy.ServeHTTP(w, r)
+	}
+}
+
+// HTTP through a TCP forward retains the browser's Host and Origin, including
+// when the user binds the forward to a LAN address or uses a local DNS alias.
+func (s *Server) checkViewerOrigin(w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err == nil && (u.Scheme == "http" || u.Scheme == "https") &&
+		strings.EqualFold(u.Host, r.Host) && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" {
+		return true
+	}
+	s.fail(w, http.StatusForbidden, errors.New("desktop: request must come from the viewer's own origin"))
+	return false
 }
 
 func (s *Server) serveShot(w http.ResponseWriter, r *http.Request) {
-	full, err := s.store.ShotPath(path.Join(shotsDir, r.PathValue("name")))
+	name := r.PathValue("name")
+	if !filepath.IsLocal(name) || filepath.Base(name) != name {
+		http.NotFound(w, r)
+		return
+	}
+	root, err := os.OpenRoot(filepath.Dir(s.store.MarkdownPath()))
 	if err != nil {
-		s.fail(w, http.StatusBadRequest, err)
+		http.NotFound(w, r)
+		return
+	}
+	defer root.Close()
+	shots, err := root.OpenRoot(shotsDir)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer shots.Close()
+	info, err := shots.Stat(name)
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := shots.Open(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	info, err = f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	var signature [8]byte
+	if _, err := f.ReadAt(signature[:], 0); err != nil || string(signature[:]) != "\x89PNG\r\n\x1a\n" {
+		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	http.ServeFile(w, r, full)
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	http.ServeContent(w, r, name, info.ModTime(), f)
 }
 
 type sessionResponse struct {
