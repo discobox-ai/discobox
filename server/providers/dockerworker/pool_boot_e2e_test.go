@@ -46,7 +46,7 @@ func TestPoolContainerBootsWithNoFailedUnitsE2E(t *testing.T) {
 	defer func() {
 		cleanup := context.WithoutCancel(ctx)
 		_, _ = cli.ContainerRemove(cleanup, created.ID, client.ContainerRemoveOptions{Force: true})
-		_, _ = cli.VolumeRemove(cleanup, poolScopedVolumeName(pool.ID, "docker"), client.VolumeRemoveOptions{Force: true})
+		_, _ = cli.VolumeRemove(cleanup, legacyPoolVolumeName(pool.ID), client.VolumeRemoveOptions{Force: true})
 	}()
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatal(err)

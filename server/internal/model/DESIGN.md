@@ -306,7 +306,7 @@ state, and delete the row.
 
 Pool repair is not delete. Repair is an in-place recovery operation that
 replaces the runtime under the same pool identity and must preserve the pool
-row and pool-local state (named volumes).
+row and pool-local state (its bind-mounted state trees).
 
 `Sandbox.PendingHarnessChange` is a durable proposal, separate from its effective
 manifest until its pool reserves the stopped runtime. Its indexed

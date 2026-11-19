@@ -536,13 +536,20 @@ Pool runtime lifecycle is not the same as pool row deletion. The engine
 replaces the pool-agent container (and a VM driver may replace the VM) for an
 existing pool during reconciliation or repair, but the pool row and pool ID
 are preserved: recovery is strictly in-place, and pool-local state survives in
-named Docker volumes. Pool row deletion is intent-based and allowed only after
+the bind-mounted state trees. A pool container mounts no volume: no daemon runs
+in it (its agent drives the hosting daemon through the bound socket, and
+BuildKit keeps its state in `PoolBuild`). Pools made before that carry an empty
+legacy `discobox-pool-<id>-docker` volume once mounted at `/var/lib/docker`,
+which the engine removes before it creates the pool's next container; dropping
+the mount bumped the layout version in the config revision, so drift recreates
+every older pool's container once. Pool row
+deletion is intent-based and allowed only after
 the control plane proves no sandbox is assigned to the pool.
 
 `RemovePool` removes everything the engine made for the pool on its daemon.
 `Engine.RemovePoolRuntime` is the runtime: the pool container, console,
-sandbox network, and the named volume holding the inner `/var/lib/docker`
-(`RemoveVolumes` drops anonymous volumes only). On a daemon shared with other
+sandbox network, and an older pool's legacy volume (`RemoveVolumes` drops
+anonymous volumes only). On a daemon shared with other
 pools (`DedicatedDaemon` false: the local Docker driver) `RemovePool` first
 removes the pool's own state directories, `layout.PoolTrees` (data, cache,
 proxy, identity), with a one-shot container on the pool container's image —
@@ -561,8 +568,8 @@ makes a daemon reachable, so failing there strands the pool row and its disks
 permanently — which is exactly what a VM guest that boots without bringing
 Docker up would cause. On a VM backend the skip leaks nothing, because
 `DeleteVM` destroys the guest and everything in it; on a shared daemon it
-leaves the volume and the trees, and the warning names both for an operator to
-remove. A daemon that answers and still refuses the removal is reporting
+leaves the trees, and an older pool's legacy volume, and the warning names them
+for an operator to remove. A daemon that answers and still refuses the removal is reporting
 something a retry can fix, and that error keeps driving the reconcile.
 
 A pool container that is stopped but has not drifted (same image and
@@ -735,11 +742,11 @@ them with pool rows, and uses the engine's config revision
 (`Engine.ShouldReconcileWorkerContainer`) for drift. For pool rows that still
 exist it marks the pool dirty; the only direct side effect allowed is deleting
 an orphan managed runtime with no pool row (`Engine.RemovePoolRuntime`: its
-container, console, network and named volume, never its state trees, which a
+container, console, network and legacy volume, never its state trees, which a
 row restored from a backup still needs). VM-per-pool
 backends get drift detection through `InspectVM` during normal reconciliation.
 
-The server-created runtime (pool container, console, network, named volume)
+The server-created runtime (pool container, console, network, legacy volume)
 is the watcher's / `RemovePool`'s job. A pool deleted through the control plane
 has its state directories removed by `RemovePool` too, from the list
 `pkg/layout` owns (`PoolTrees`). Trees whose deletion never reached the host —

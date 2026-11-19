@@ -463,7 +463,7 @@ func TestContainerLabelsIdentifyPool(t *testing.T) {
 
 func TestContainerMountsBindDockerSocket(t *testing.T) {
 	engine := newTestEngine(t, Config{DockerSocket: "/custom/docker.sock"})
-	mounts := engine.containerMounts("worker-1")
+	mounts := engine.containerMounts()
 
 	if !hasMountWithReadOnly(mounts, "/custom/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing Docker socket bind mount", mounts)
@@ -474,7 +474,7 @@ func TestContainerMountsBindDockerSocket(t *testing.T) {
 // container masks the unit the sandbox base image enables.
 func TestContainerMountsMaskDockerSocketUnit(t *testing.T) {
 	engine := newTestEngine(t, Config{})
-	mounts := engine.containerMounts("worker-1")
+	mounts := engine.containerMounts()
 
 	if !hasMountWithReadOnly(mounts, "/dev/null", dockerSocketUnitPath, true) {
 		t.Fatalf("mounts = %#v, missing /dev/null mask over %s", mounts, dockerSocketUnitPath)
@@ -486,7 +486,7 @@ func TestContainerMountsBindConfiguredHostMounts(t *testing.T) {
 		{Source: "/home", ReadOnly: true},
 		{Source: "/Users", ReadOnly: true},
 	}})
-	mounts := engine.containerMounts("worker-1")
+	mounts := engine.containerMounts()
 
 	if !hasMountWithReadOnly(mounts, "/home", "/host/home", true) {
 		t.Fatalf("mounts = %#v, missing readonly /home host mount", mounts)
@@ -500,7 +500,7 @@ func TestContainerMountsBindConfiguredHostMounts(t *testing.T) {
 // code inside the pool never has to know where the host keeps it.
 func TestContainerMountsBindEveryStateTreeAtItsContainerPath(t *testing.T) {
 	engine := newTestEngine(t, Config{})
-	mounts := engine.containerMounts("worker-1")
+	mounts := engine.containerMounts()
 
 	for _, tree := range layout.Container().MountRoots() {
 		if !hasMountWithReadOnly(mounts, tree, tree, false) {
@@ -517,7 +517,7 @@ func TestContainerMountsBindEveryStateTreeAtItsContainerPath(t *testing.T) {
 // side; the container path is unchanged.
 func TestContainerMountsRelocateOnlyTheHostSideOfStateTrees(t *testing.T) {
 	engine := newTestEngine(t, Config{HostStateRoot: "/var/lib/docker/discobox"})
-	mounts := engine.containerMounts("worker-1")
+	mounts := engine.containerMounts()
 
 	for _, tree := range layout.Container().MountRoots() {
 		host := "/var/lib/docker/discobox" + strings.TrimPrefix(tree, layout.ContainerRoot)
@@ -532,7 +532,7 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 		DockerSocket: "/run/user/1000/docker.sock",
 		HostMounts:   []HostMount{{Source: dockerSocketPath}},
 	})
-	mounts := engine.containerMounts("worker-1")
+	mounts := engine.containerMounts()
 
 	if !hasMountWithReadOnly(mounts, "/run/user/1000/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing configured Docker socket bind", mounts)
@@ -542,19 +542,18 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 	}
 }
 
-func TestContainerMountsScopeVolumes(t *testing.T) {
+// A pool container mounts no volume at all: no daemon runs in it (its agent
+// drives the hosting daemon through the bound socket, and BuildKit keeps its
+// state in the cache tree), and Discobox state is bound, not a volume.
+func TestContainerMountsHaveNoVolume(t *testing.T) {
 	engine := newTestEngine(t, Config{})
-	mounts := engine.containerMounts("worker:one")
-
-	if !hasVolumeMount(mounts, "discobox-pool-worker-one-docker", "/var/lib/docker") {
-		t.Fatalf("mounts = %#v, missing pool-scoped Docker volume", mounts)
-	}
-	// The nested daemon's own storage stays a named volume: it is the pool's
-	// scratch image store, and Docker's own graph driver needs a real Linux
-	// filesystem underneath it. Discobox state does not — it is bound.
+	mounts := engine.containerMounts()
 	for _, m := range mounts {
-		if m.Type == mount.TypeVolume && strings.HasPrefix(m.Target, layout.ContainerRoot) {
-			t.Fatalf("mounts = %#v, Discobox state must be bound, not a named volume", mounts)
+		if m.Type == mount.TypeVolume {
+			t.Fatalf("mounts = %#v, want no volume; %s is one", mounts, m.Target)
+		}
+		if m.Target == "/var/lib/docker" {
+			t.Fatalf("mounts = %#v, nothing in a pool container uses /var/lib/docker", mounts)
 		}
 	}
 }
@@ -580,7 +579,7 @@ func TestHostMountJSONAcceptsDockerStyleStrings(t *testing.T) {
 		t.Fatalf("decode host mounts: %v", err)
 	}
 	engine := newTestEngine(t, Config{HostMounts: mounts})
-	containerMounts := engine.containerMounts("worker-1")
+	containerMounts := engine.containerMounts()
 
 	if !hasMountWithReadOnly(containerMounts, "/home", "/host/home", true) {
 		t.Fatalf("mounts = %#v, missing readonly /home mount", containerMounts)
@@ -611,13 +610,13 @@ func TestContainerNameUsesPoolID(t *testing.T) {
 }
 
 func TestScopedVolumeNames(t *testing.T) {
-	if got := poolScopedVolumeName("worker:one", "docker"); got != "discobox-pool-worker-one-docker" {
+	if got := legacyPoolVolumeName("worker:one"); got != "discobox-pool-worker-one-docker" {
 		t.Fatalf("pool volume name = %q", got)
 	}
 	if got := projectScopedVolumeName("project:one", "discobox"); got != "discobox-project-project-one-discobox" {
 		t.Fatalf("project volume name = %q", got)
 	}
-	if got := poolScopedVolumeName("", "docker"); got != "discobox-pool-unknown-docker" {
+	if got := legacyPoolVolumeName(""); got != "discobox-pool-unknown-docker" {
 		t.Fatalf("worker fallback volume name = %q", got)
 	}
 }
@@ -759,15 +758,6 @@ func findMount(mounts []mount.Mount, source, target string) *mount.Mount {
 		}
 	}
 	return nil
-}
-
-func hasVolumeMount(mounts []mount.Mount, source, target string) bool {
-	for _, m := range mounts {
-		if m.Type == mount.TypeVolume && m.Source == source && m.Target == target {
-			return true
-		}
-	}
-	return false
 }
 
 // deadDaemonDriver owns a VM whose Docker daemon cannot be reached: a guest
@@ -928,13 +918,13 @@ func TestRemovePoolRemovesItsInnerDockerVolume(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	want := "/volumes/" + poolScopedVolumeName("pool-1", "docker")
+	want := "/volumes/" + legacyPoolVolumeName("pool-1")
 	for _, p := range deleted {
 		if strings.HasSuffix(p, want) {
 			return
 		}
 	}
-	t.Fatalf("RemovePool never removed volume %s; DELETE requests: %v", poolScopedVolumeName("pool-1", "docker"), deleted)
+	t.Fatalf("RemovePool never removed volume %s; DELETE requests: %v", legacyPoolVolumeName("pool-1"), deleted)
 }
 
 // poolRemovalDaemon fakes a shared daemon holding one running pool container,
@@ -1037,7 +1027,7 @@ func TestRemovePoolRemovesItsStateTreesOnASharedDaemon(t *testing.T) {
 	create := daemon.index("POST /containers/create")
 	wait := daemon.index("POST /containers/state-removal/wait")
 	remove := daemon.index("DELETE /containers/" + ContainerName("pool-1"))
-	volume := daemon.index("DELETE /volumes/" + poolScopedVolumeName("pool-1", "docker"))
+	volume := daemon.index("DELETE /volumes/" + legacyPoolVolumeName("pool-1"))
 	if stop < 0 || create < stop || wait < create || remove < wait || volume < remove {
 		t.Errorf("want stop < create < wait < remove container < remove volume, got %d %d %d %d %d; requests: %v", stop, create, wait, remove, volume, daemon.requests)
 	}

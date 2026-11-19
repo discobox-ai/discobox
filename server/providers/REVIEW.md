@@ -23,9 +23,9 @@
   or pool downsizing unless the control plane has proven no sandbox is assigned
   to that pool. The engine may recreate the pool host container (and a driver its
   VM) for an existing pool, but must preserve the pool host row and pool ID.
-- Pool repair must preserve state: container recreation keeps state in named
-  volumes that survive container removal, and the engine replaces the VM only
-  when it is missing or unhealthy. A VM `HostedHere` whose Docker daemon does
+- Pool repair must preserve state: container recreation keeps state in the
+  bind-mounted state trees, which outlive the container, and the engine
+  replaces the VM only when it is missing or unhealthy. A VM `HostedHere` whose Docker daemon does
   not answer is unhealthy whatever its running state says. Set `HostedHere`
   only for a VM this process runs and reaches without a network: for any other,
   a silent daemon may be the path's fault, and a restart kills a healthy pool.
@@ -134,10 +134,14 @@
   pool deletion is the only thing that removes it.
 - A path that removes a pool for good — `RemovePool`, or the drift watcher's
   cleanup of a container with no pool row — goes through
-  `Engine.RemovePoolRuntime`, never a bare `ContainerRemove`: the pool's inner
-  Docker store is a *named* volume, which `RemoveVolumes` leaves, and the
-  console and network go with it (#32, missed on both paths). Recreating a
-  pool's container (repair, drift) must not: it keeps the named volume.
+  `Engine.RemovePoolRuntime`, never a bare `ContainerRemove`: an older pool's
+  legacy volume is *named*, which `RemoveVolumes` leaves, and the console and
+  network go with it (#32, missed on both paths).
+- Do not mount a volume into the pool container. No daemon runs in it: the
+  agent drives the hosting daemon through the bound socket, and pool state
+  belongs in a `layout` tree, where `RemovePool` and the reapers can find it.
+  The `/var/lib/docker` volume pools once mounted held nothing and leaked on
+  every delete (#32).
 - What `RemovePool` deletes of a pool's state comes from `layout.PoolTrees`,
   never a list of its own. Only an explicit pool deletion removes them
   (identity included) and at once; the watcher's orphan path must not, since a

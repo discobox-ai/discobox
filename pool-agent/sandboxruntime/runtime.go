@@ -2264,9 +2264,10 @@ func (r *DockerSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger *
 // a slow interval (ADR 0040).
 //
 // The pool agent owns this daemon, so it is the thing that reclaims it: images
-// land here by sync and by pull, they persist in the pool's /var/lib/docker
-// volume across pool container replacement, and nothing else is in a position to
-// clean them up when the control plane cannot be reached.
+// land here by sync and by pull, they persist on this daemon across pool
+// container replacement (the pool container runs no daemon of its own), and
+// nothing else is in a position to clean them up when the control plane cannot
+// be reached.
 func (r *DockerSandboxRuntime) WatchImages(ctx context.Context, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
