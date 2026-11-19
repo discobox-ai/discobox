@@ -221,12 +221,6 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	if err != nil {
 		return err
 	}
-	// A machine made from a snapshot whose agent does not come up on its
-	// first start blames the snapshot (ADR 26-11-03-986 §6): one never
-	// started before this start, whose agent has never answered. A machine
-	// started before may have answered unseen (its start cut short after the
-	// boot, the pool agent gone), and then holds the sandbox's work.
-	firstFromSnapshot := record.Snapshot != "" && !record.Started && !r.snapshotProven(sandboxID)
 	r.publishSandboxState(ctx, sandboxID, StateStarting)
 	r.urls.Delete(sandboxID)
 	boot := r.beginBoot(sandboxID)
@@ -255,9 +249,19 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		if inst, err = r.upgradeMachine(ctx, sandboxID, inst, &record); err != nil {
 			return fail(err)
 		}
-		// Its root is no snapshot's now, so nothing blames one.
-		firstFromSnapshot = firstFromSnapshot && record.Snapshot != ""
 	}
+	// A machine made from a snapshot whose agent does not come up on its
+	// first start blames the snapshot (ADR 26-11-03-986 §6): one never
+	// started before this start, whose agent has never answered. A machine
+	// started before may have answered unseen (its start cut short after the
+	// boot, the pool agent gone), and then holds the sandbox's work on its
+	// root — unless it keeps that work on its volume: then a root from the
+	// snapshot that never answers (a rebuild's, upgradeMachine) is replaced
+	// by a fresh one, and blames nothing, since the box has run and its
+	// volume, which its agent reads at boot, is its own to break.
+	fromSnapshot := record.Snapshot != "" && !r.snapshotProven(sandboxID)
+	firstFromSnapshot := fromSnapshot && !record.Started
+	rootFromSnapshot := fromSnapshot && record.Started && r.keepsDataOnVolume(inst, record)
 	r.publishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
 	if !running {
 		if err := r.engine.Start(ctx, inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
@@ -303,8 +307,13 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	}
 	r.publishSandboxPhase(ctx, sandboxID, PhaseWaitingForAgent)
 	if err := r.finishBoot(ctx, sandboxID, boot); err != nil {
-		if firstFromSnapshot && ctx.Err() == nil && errors.Is(err, errAgentNeverUp) {
-			return r.remakeFresh(ctx, sandboxID, record.Snapshot, err)
+		if ctx.Err() == nil && errors.Is(err, errAgentNeverUp) {
+			switch {
+			case firstFromSnapshot:
+				return r.remakeFresh(ctx, sandboxID, record.Snapshot, err)
+			case rootFromSnapshot:
+				return r.remakeOnFreshRoot(ctx, sandboxID, record.Snapshot, err)
+			}
 		}
 		return err
 	}
@@ -383,6 +392,33 @@ func (r *MachineSandboxRuntime) remakeFresh(ctx context.Context, sandboxID, key 
 		slog.WarnContext(ctx, "record a snapshot whose sandbox did not come up", "snapshot", snapshotMachineName(key), "error", err)
 	}
 	if err := r.remakeMachine(ctx, sandboxID); err != nil {
+		return errors.Join(cause, err)
+	}
+	return r.startLocked(ctx, sandboxID)
+}
+
+// remakeOnFreshRoot gives a sandbox's machine that keeps its data on its
+// volume a fresh root from the driver's base in place of the root from the
+// snapshot keyed key whose agent never came up, its volumes kept, and starts
+// it. The snapshot stands: the box has run, and its volume, which its agent
+// reads at boot, is the box's own to break, so its agent never answering
+// says nothing of a snapshot every box of its plan shares. A fresh root that
+// does not come up either fails the start. The caller holds the sandbox's
+// power lock.
+func (r *MachineSandboxRuntime) remakeOnFreshRoot(ctx context.Context, sandboxID, key string, cause error) error {
+	slog.WarnContext(ctx, "a sandbox machine's new root from a snapshot did not come up; giving it a fresh root, keeping its volumes",
+		"sandboxId", sandboxID, "snapshot", snapshotMachineName(key), "error", cause)
+	record, ok, err := r.readMachineRecord(sandboxID)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	if !ok {
+		return errors.Join(cause, ErrNoContainer)
+	}
+	// No snapshot's from here, whatever the driver does with the root.
+	record.Snapshot = ""
+	record.NewRoot, record.NewRootSnapshot, record.NewRootAsked = true, "", false
+	if err := r.writeMachineRecord(sandboxID, record); err != nil {
 		return errors.Join(cause, err)
 	}
 	return r.startLocked(ctx, sandboxID)

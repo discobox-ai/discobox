@@ -210,17 +210,28 @@ type machineRecord struct {
 	// Started reports a machine started since it was made: one that was not
 	// is created, not stopped.
 	Started bool `json:"started,omitempty"`
-	// Snapshot is the key of the snapshot the machine was made from; empty
-	// is a machine made fresh. One whose agent never answers before it has
-	// answered once (snapshotProvenName) drops the snapshot and is made again
-	// fresh (ADR 26-11-03-986 §6).
+	// Snapshot is the key of the snapshot the machine's root was made from,
+	// at its create or by its last new root; empty is a root made fresh. A
+	// machine made from one whose agent never answers on its first start
+	// drops the snapshot and is made again fresh (ADR 26-11-03-986 §6,
+	// remakeFresh); a new root from one whose agent never answers is given a
+	// fresh root in its place, and the snapshot stands (remakeOnFreshRoot).
 	Snapshot string `json:"snapshot,omitempty"`
-	// NewRoot asks that the machine be given a fresh root from the driver's
-	// base before it next boots, by a rebuild of a machine that keeps its
-	// data on a volume (remakeOnNewRoot). It is recorded before the driver
-	// is asked and dropped once the driver has given the root, so an upgrade
-	// cut short is finished by the next start (disco-vm ADR 26-11-03-782 §3).
+	// NewRoot asks that the machine be given a new root before it next
+	// boots, by a rebuild of a machine that keeps its data on a volume
+	// (remakeOnNewRoot). It is recorded before the driver is asked and
+	// dropped once the driver has given the root, so an upgrade cut short is
+	// finished by the next start (disco-vm ADR 26-11-03-782 §3).
 	NewRoot bool `json:"newRoot,omitempty"`
+	// NewRootSnapshot is the key of the plan's snapshot the new root is a
+	// copy of, as the rebuild that asked for it found it (snapshotFor);
+	// empty is a fresh root from the driver's base.
+	NewRootSnapshot string `json:"newRootSnapshot,omitempty"`
+	// NewRootAsked records that the driver was asked for the new root with
+	// NewRootSnapshot as it stands: an upgrade cut short is finished only
+	// with the From it was begun with, so the next start asks again with
+	// the same one rather than looking the snapshot up again.
+	NewRootAsked bool `json:"newRootAsked,omitempty"`
 	// DataOnVolume is that the machine's sandbox agent keeps the sandbox's
 	// data on the machine's data volume, its working root included, as the
 	// pool read from the volume (recordDataOnVolume): only then is it given a
@@ -602,10 +613,10 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		// machine has not been started by this record. An upgrade it asked
 		// for stays asked for: a driver may give the machine a new ID part
 		// way through one.
-		record = machineRecord{Instance: inst.ID, Snapshot: snapshot, NewRoot: record.NewRoot}
+		record = machineRecord{Instance: inst.ID, Snapshot: snapshot, NewRoot: record.NewRoot, NewRootSnapshot: record.NewRootSnapshot, NewRootAsked: record.NewRootAsked}
 	}
 	if existing != nil {
-		r.remakeOnNewRoot(ctx, inst, &record)
+		r.remakeOnNewRoot(ctx, inst, &record, req)
 	}
 	listen, err := r.agentListenAddress(ctx, inst)
 	if err != nil {
@@ -755,15 +766,28 @@ func readGuestFile(ctx context.Context, guest machine.Guest, path string) (strin
 
 // remakeOnNewRoot records that a sandbox's machine being made again is given
 // a new root at its next start (upgradeMachine) when it keeps its data on a
-// volume: a fresh one from the driver's base, as a container is built again
-// from its image. One that does not keeps its root, which is all the sandbox
-// has, and is placed again on it.
-func (r *MachineSandboxRuntime) remakeOnNewRoot(ctx context.Context, inst machine.Instance, record *machineRecord) {
+// volume, as a container is built again from its image: a copy of its plan's
+// snapshot where req has one (snapshotFor), and otherwise a fresh one from
+// the driver's base, which a nil req, a rebuild with no create in hand,
+// always is. One that does not keep its data on a volume keeps its root,
+// which is all the sandbox has, and is placed again on it. A new root already
+// asked for keeps the root it was asked from: the driver may have begun it,
+// and finishes it only from that one (a pool from before newRootSnapshot
+// asked every new root fresh).
+func (r *MachineSandboxRuntime) remakeOnNewRoot(ctx context.Context, inst machine.Instance, record *machineRecord, req *workerapimodel.PoolSandboxCreateRequest) {
 	if record.NewRoot || !r.keepsDataOnVolume(inst, *record) {
 		return
 	}
 	slog.InfoContext(ctx, "giving a sandbox machine a new root at its next start, keeping its volumes", "machine", inst.Name)
-	record.NewRoot = true
+	record.NewRoot, record.NewRootSnapshot, record.NewRootAsked = true, "", false
+	if req == nil {
+		return
+	}
+	// Only looked up here: the start that gives the root holds it and reads
+	// it again (newRootFrom), since it may be gone by then.
+	_, key, release := r.snapshotFor(ctx, req)
+	release()
+	record.NewRootSnapshot = key
 }
 
 // rebuildInPlace makes a running sandbox's machine again on the bootstrap
@@ -779,16 +803,41 @@ func (r *MachineSandboxRuntime) rebuildInPlace(ctx context.Context, sandboxID st
 }
 
 // upgradeMachine gives the stopped machine the new root its record asks for
-// (disco-vm ADR 26-11-03-782): it keeps its name, its settings and its data
-// and cache volumes, and its old root is gone. The pool's record of what it
+// (disco-vm ADR 26-11-03-782): a copy of its plan's snapshot where the record
+// names one that is still published (newRootFrom), and otherwise a fresh one
+// from the driver's base. It keeps its name, its settings and its data and
+// cache volumes, and its old root is gone. The pool's record of what it
 // placed goes with that root, so the start that follows places everything
-// again, the agent layer with it. An upgrade that fails part way fails the
-// start and is finished by the next, since the record still asks for it. One
-// the driver refuses outright (ErrUnsupported: a driver that attaches no data
-// volume now, or has no base) is dropped, and the machine is placed again on
-// the root it has, as a machine without a volume is.
+// again, the agent layer with it. Which root it is asked for is recorded
+// before the driver is asked, so an upgrade that fails part way fails the
+// start and is finished by the next with the same one. A snapshot gone
+// before the driver copied it is a fresh root instead. One the driver
+// refuses outright (ErrUnsupported: a driver that attaches no data volume
+// now, or has no base) is dropped, and the machine is placed again on the
+// root it has, as a machine without a volume is.
 func (r *MachineSandboxRuntime) upgradeMachine(ctx context.Context, sandboxID string, inst machine.Instance, record *machineRecord) (machine.Instance, error) {
-	upgraded, err := r.engine.Upgrade(ctx, inst.Name, engine.UpgradeOptions{})
+	from, release, err := r.newRootFrom(ctx, sandboxID, record)
+	if err != nil {
+		return inst, err
+	}
+	defer release()
+	if !record.NewRootAsked {
+		record.NewRootAsked = true
+		if err := r.writeMachineRecord(sandboxID, *record); err != nil {
+			return inst, err
+		}
+	}
+	upgraded, err := r.engine.Upgrade(ctx, inst.Name, engine.UpgradeOptions{From: from})
+	if from != "" && (errors.Is(err, engine.ErrNotFound) || errors.Is(err, machine.ErrNotFound)) {
+		// The snapshot went before the driver copied it, which leaves the
+		// machine as it was: a fresh root, recorded before it is asked for.
+		slog.WarnContext(ctx, "a snapshot is gone; giving the sandbox's machine a fresh root", "snapshot", from, "sandboxId", sandboxID, "error", err)
+		record.NewRootSnapshot = ""
+		if err := r.writeMachineRecord(sandboxID, *record); err != nil {
+			return inst, err
+		}
+		upgraded, err = r.engine.Upgrade(ctx, inst.Name, engine.UpgradeOptions{})
+	}
 	switch {
 	case errors.Is(err, machine.ErrUnsupported):
 		slog.WarnContext(ctx, "the driver gives a sandbox machine no new root; placing it again on the one it has", "sandboxId", sandboxID, "error", err)
@@ -796,7 +845,7 @@ func (r *MachineSandboxRuntime) upgradeMachine(ctx context.Context, sandboxID st
 	case err != nil:
 		return inst, fmt.Errorf("give sandbox %s's machine a new root: %w", sandboxID, err)
 	default:
-		slog.InfoContext(ctx, "gave a sandbox machine a new root, keeping its volumes", "sandboxId", sandboxID)
+		slog.InfoContext(ctx, "gave a sandbox machine a new root, keeping its volumes", "sandboxId", sandboxID, "snapshot", record.NewRootSnapshot)
 		if err := fsdurable.Remove(r.placedRecordPath(sandboxID)); err != nil {
 			return inst, err
 		}
@@ -808,15 +857,56 @@ func (r *MachineSandboxRuntime) upgradeMachine(ctx context.Context, sandboxID st
 			return inst, err
 		}
 		record.Bootstrap.Runtime.AgentRuntime.ListenAddress = listen
-		// A fresh root is no snapshot's: nothing of a snapshot is left to
-		// blame or prove.
+		// A new root is unproven: one from a snapshot whose agent never
+		// answers blames the snapshot (startLocked), and a fresh one has
+		// nothing of a snapshot left to blame.
 		if err := os.Remove(r.snapshotProvenPath(sandboxID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return inst, err
 		}
-		record.Snapshot = ""
+		record.Snapshot = record.NewRootSnapshot
 	}
 	record.Instance, record.NewRoot = upgraded.ID, false
+	record.NewRootSnapshot, record.NewRootAsked = "", false
 	return upgraded, r.writeMachineRecord(sandboxID, *record)
+}
+
+// newRootFrom is the snapshot VM the machine's new root is a copy of, held
+// until release is called so nothing destroys it while the driver copies it,
+// and empty for a fresh root. Only the VM the plan's done record names is
+// copied (snapshotState; ADR 26-11-03-986 §§4-5). Not yet asked of the
+// driver, a snapshot not published now is a fresh root, recorded in record.
+// Asked already, the driver may have begun the root and finishes it only
+// from the same VM: it is asked again from it while it is published, and
+// while no VM has its name and no build of the plan is under way, when the
+// driver either finishes without it or says it is not found
+// (upgradeMachine); a VM of the name no record names, or a build under way
+// that may make one, fails the start, and the next start asks again.
+func (r *MachineSandboxRuntime) newRootFrom(ctx context.Context, sandboxID string, record *machineRecord) (string, func(), error) {
+	key := record.NewRootSnapshot
+	if key == "" {
+		return "", func() {}, nil
+	}
+	name := snapshotMachineName(key)
+	held := r.holdSnapshot(key)
+	state, _, err := r.snapshotState(ctx, key)
+	switch {
+	case err != nil:
+		held()
+		return "", nil, fmt.Errorf("look up snapshot %s for sandbox %s's new root: %w", name, sandboxID, err)
+	case state == snapshotPublished:
+		return name, held, nil
+	case record.NewRootAsked && state == snapshotAbsent && !r.buildingSnapshots()[key]:
+		// A build already past its hold check makes a VM of this name next:
+		// no VM now is no snapshot only while none is under way.
+		return name, held, nil
+	case record.NewRootAsked:
+		held()
+		return "", nil, fmt.Errorf("sandbox %s's new root was begun from snapshot %s, which is being built again; it is finished at a later start", sandboxID, name)
+	}
+	held()
+	slog.WarnContext(ctx, "the snapshot a sandbox machine's new root was to be copied from is gone; giving it a fresh root", "snapshot", name, "sandboxId", sandboxID)
+	record.NewRootSnapshot = ""
+	return "", func() {}, nil
 }
 
 // remakeMachine destroys the sandbox's machine and makes a new one, fresh
@@ -847,7 +937,7 @@ func (r *MachineSandboxRuntime) remakeMachine(ctx context.Context, sandboxID str
 	}
 	record.Instance, record.Started, record.Snapshot = inst.ID, false, ""
 	// A new machine: nothing of the old one's root or volume is left.
-	record.NewRoot, record.DataOnVolume = false, false
+	record.NewRoot, record.NewRootSnapshot, record.NewRootAsked, record.DataOnVolume = false, "", false, false
 	record.Bootstrap.Runtime.AgentRuntime.ListenAddress = listen
 	return r.writeMachineRecord(sandboxID, record)
 }
@@ -872,7 +962,7 @@ func (r *MachineSandboxRuntime) rebuildForProjectLayer(ctx context.Context, sb *
 	if err != nil {
 		return err
 	}
-	r.remakeOnNewRoot(ctx, inst, &record)
+	r.remakeOnNewRoot(ctx, inst, &record, nil)
 	if err := r.writeMachineRecord(sb.SandboxID, record); err != nil {
 		return err
 	}

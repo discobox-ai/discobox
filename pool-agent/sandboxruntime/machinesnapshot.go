@@ -183,33 +183,63 @@ func (r *MachineSandboxRuntime) snapshotFor(ctx context.Context, req *workerapim
 	key = plan.Key()
 	name := snapshotMachineName(key)
 	held := r.holdSnapshot(key)
-	record, ok, err := r.readSnapshotRecord(key)
-	if err != nil {
-		slog.WarnContext(ctx, "read a snapshot's record; making the sandbox's machine fresh", "snapshot", name, "error", err)
-	}
-	if ok {
-		inst, err := r.engine.Driver.Instance(ctx, name)
-		switch {
-		case err == nil && inst.ID == record.Instance:
-			if now := time.Now().UTC(); now.Sub(record.LastUsed) >= snapshotUseStamp {
-				record.LastUsed = now
-				if err := r.writeSnapshotRecord(key, record); err != nil {
-					slog.WarnContext(ctx, "record a snapshot's use", "snapshot", name, "error", err)
-				}
+	state, record, err := r.snapshotState(ctx, key)
+	switch {
+	case err != nil:
+		// The record or the driver cannot be read now: fresh, and no build
+		// asked for, since the snapshot may well be there.
+		slog.WarnContext(ctx, "look up a snapshot; making the sandbox's machine fresh", "snapshot", name, "error", err)
+		held()
+		return "", "", release
+	case state == snapshotPublished:
+		if now := time.Now().UTC(); now.Sub(record.LastUsed) >= snapshotUseStamp {
+			record.LastUsed = now
+			if err := r.writeSnapshotRecord(key, record); err != nil {
+				slog.WarnContext(ctx, "record a snapshot's use", "snapshot", name, "error", err)
 			}
-			slog.InfoContext(ctx, "making a sandbox machine from a snapshot", "snapshot", name, "sandboxId", req.SandboxId)
-			return name, key, held
-		case err != nil && !errors.Is(err, machine.ErrNotFound):
-			// The driver cannot be asked now: fresh, and no build asked
-			// for, since the snapshot may well be there.
-			slog.WarnContext(ctx, "look up a snapshot; making the sandbox's machine fresh", "snapshot", name, "error", err)
-			held()
-			return "", "", release
 		}
+		slog.InfoContext(ctx, "making a sandbox machine from a snapshot", "snapshot", name, "sandboxId", req.SandboxId)
+		return name, key, held
 	}
 	held()
 	r.requestSnapshot(plan, r.buildMachineSnapshot)
 	return "", "", release
+}
+
+// snapshotState is what is under a plan's snapshot name now.
+type snapshotState int
+
+const (
+	// snapshotAbsent is no VM of the name.
+	snapshotAbsent snapshotState = iota
+	// snapshotUnpublished is a VM of the name no done record names: a build
+	// under way, or one dropped while a create held it. It is never started
+	// or copied (ADR 26-11-03-986 §5).
+	snapshotUnpublished
+	// snapshotPublished is the VM the plan's done record names: the
+	// snapshot (§4).
+	snapshotPublished
+)
+
+// snapshotState reads, under the plan keyed key's name, whether its done
+// record names the VM the driver has there, and returns that record when it
+// does. An error is a record or a driver that cannot be read now, which says
+// nothing either way.
+func (r *MachineSandboxRuntime) snapshotState(ctx context.Context, key string) (snapshotState, snapshotRecord, error) {
+	record, ok, err := r.readSnapshotRecord(key)
+	if err != nil {
+		return snapshotAbsent, snapshotRecord{}, err
+	}
+	inst, err := r.engine.Driver.Instance(ctx, snapshotMachineName(key))
+	switch {
+	case errors.Is(err, machine.ErrNotFound):
+		return snapshotAbsent, snapshotRecord{}, nil
+	case err != nil:
+		return snapshotAbsent, snapshotRecord{}, err
+	case ok && inst.ID == record.Instance:
+		return snapshotPublished, record, nil
+	}
+	return snapshotUnpublished, snapshotRecord{}, nil
 }
 
 // buildMachineSnapshot builds plan's snapshot (ADR 26-11-03-986 §4): it

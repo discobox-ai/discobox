@@ -409,6 +409,14 @@ durable state asks the same question.
 - **A build's box is described by `boxConfig`, as a sandbox's is.** A host or
   network setting added to one and not the other makes a snapshot a box of
   another kind than the ones started from it.
+- **Only what the sandbox never controlled blames a shared snapshot.** A
+  snapshot is every box of its plan's, so only a machine's first start,
+  before its box has run anything, drops it or holds its plan back
+  (`remakeFresh`). A box that has run owns its data volume, which its agent
+  reads at boot, and can make its own agent never answer: its failure costs
+  that box alone (`remakeOnFreshRoot`). Why: the first version of the
+  snapshot root on a rebuild dropped the snapshot from there, so a box could
+  force every rebuild of its plan's other boxes off it.
 
 ## Records the pool keeps
 
@@ -552,6 +560,13 @@ changed. A step added that lays a binary needs it there too.
   pool's memory. Why: the first per-start check ran the guest's `cat` and
   buffered its output whole, so a box could swap `cat` and take down the pool
   agent every sandbox of the pool shares.
+- **A new root is finished from the root it was begun from.** disco-vm's
+  drivers finish an upgrade cut short only with the `From` it began with, so
+  the pool records which before it asks (`newRootSnapshot`, `newRootAsked`),
+  never re-chooses it, and still copies only a VM the done record names, never
+  one of a plan whose build is under way.
+  Why: a record a pool from before `newRootSnapshot` left (fresh, maybe
+  begun) re-chosen from the plan's snapshot left the box unable to start.
 
 ## Removing a machine
 
@@ -570,7 +585,11 @@ pass keeps to its own exact shape: a sweep that matched a bare prefix would
 take an operator's `snap-foo`, and one that grew a third shape needs its own
 reason here. A sandbox's machine made from a snapshot is made again fresh
 only before its agent has ever answered (`snapshot-proven`, written where the
-answer is seen): after that its disk is the sandbox's work.
+answer is seen): after that its disk is the sandbox's work. A machine that
+keeps its data on its volume is never destroyed for its snapshot: a root
+from the snapshot that never answers is replaced by a fresh root
+(`remakeOnFreshRoot`), since its volume holds the sandbox's work whether or
+not the root ever answered.
 
 ## The API on an ingress URL
 
