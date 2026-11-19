@@ -1,11 +1,12 @@
 # 26-11-19-797 — A box reprovisions its failed features on its own, a few times, and shows what still failed
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-19
+  Accepted by the owner by merging #1406, 2026-11-19.
 - **Issue**: [#1289](https://github.com/discobox-ai/discobox/issues/1289)
-- **Would supersede**: [26-11-11-560](26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md),
+- **Supersedes**: [26-11-11-560](26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md),
   Deferred, "Reprovisioning automatically": the agent now does (§§1–3).
-- **Would narrow**: [26-11-11-560](26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)
+- **Narrows**: [26-11-11-560](26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)
   §5, "No console surface": the console still offers no reprovision, but it
   no longer shows a failed feature "as it does today". The row is marked
   (§5, owner, on #1289).
