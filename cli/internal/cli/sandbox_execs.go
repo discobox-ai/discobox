@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
 
@@ -616,16 +617,12 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 		}
 		return nil, fmt.Errorf("attach exec: %w", err)
 	}
-	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
-	frames := &websocketAttachFrames{
-		directAttachFrames: &directAttachFrames{conn: netConn},
-		socket:             conn,
-	}
+	frames := newWebsocketAttachFrames(ctx, conn)
 	go func() {
-		if err := pingAttachWebSocket(ctx, conn); err != nil {
+		if err := frames.keepalive(ctx, attachPingInterval, attachPingTimeout); err != nil {
 			// The server side is gone; close the conn so the attach session's
 			// blocked reads and writes unblock instead of hanging forever.
-			_ = netConn.Close()
+			_ = frames.Close()
 		}
 	}()
 	return frames, nil
@@ -798,34 +795,6 @@ const attachPingInterval = 30 * time.Second
 // attachPingTimeout bounds how long a ping waits for the server's pong before
 // the connection is considered dead.
 const attachPingTimeout = 10 * time.Second
-
-// pingAttachWebSocket sends keepalive pings every attachPingInterval until ctx
-// is canceled, returning an error when a ping goes unanswered for
-// attachPingTimeout. Pongs are processed by the attach session's read loop.
-func pingAttachWebSocket(ctx context.Context, conn *websocket.Conn) error {
-	return pingAttachWebSocketWithIntervals(ctx, conn, attachPingInterval, attachPingTimeout)
-}
-
-func pingAttachWebSocketWithIntervals(ctx context.Context, conn *websocket.Conn, interval, timeout time.Duration) error {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			pingCtx, cancel := context.WithTimeout(ctx, timeout)
-			err := conn.Ping(pingCtx)
-			cancel()
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				return err
-			}
-		}
-	}
-}
 
 type sandboxExecRecordResponse struct {
 	Exec sandboxExecRecord `json:"exec"`
@@ -1271,8 +1240,67 @@ func (c *directAttachFrames) Close() error { return c.conn.Close() }
 type websocketAttachFrames struct {
 	*directAttachFrames
 	socket *websocket.Conn
+	// readingSince is when the ReadFrame now waiting on the socket began, in
+	// Unix nanoseconds, and zero while none is: the session is delivering the
+	// last frame to its stdout or stderr. The websocket reads a pong only
+	// inside a read, so a pong is overdue only while a read is waiting.
+	readingSince atomic.Int64
+}
+
+func newWebsocketAttachFrames(ctx context.Context, socket *websocket.Conn) *websocketAttachFrames {
+	return &websocketAttachFrames{
+		directAttachFrames: &directAttachFrames{conn: websocket.NetConn(ctx, socket, websocket.MessageBinary)},
+		socket:             socket,
+	}
+}
+
+func (c *websocketAttachFrames) ReadFrame() (frame.Frame, error) {
+	c.readingSince.Store(time.Now().UnixNano())
+	defer c.readingSince.Store(0)
+	return c.directAttachFrames.ReadFrame()
 }
 
 func (c *websocketAttachFrames) Probe(ctx context.Context) error {
 	return c.socket.Ping(ctx)
+}
+
+// keepalive pings the server every interval until ctx is canceled, and
+// returns an error when the server is gone: a ping failed outright, or its
+// pong did not come within timeout while a read was waiting on the socket the
+// whole time. A pong that did not come while the session was writing output
+// to a consumer that paused (`| less`, a slow disk) is not read yet rather
+// than missing, so it holds the attach back instead of ending it; the next
+// ping, once a read is waiting, still finds a dead server.
+func (c *websocketAttachFrames) keepalive(ctx context.Context, interval, timeout time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			sent := time.Now().UnixNano()
+			pingCtx, cancel := context.WithTimeout(ctx, timeout)
+			err := c.socket.Ping(pingCtx)
+			timedOut := pingCtx.Err() != nil
+			cancel()
+			if err == nil {
+				continue
+			}
+			if ctx.Err() != nil {
+				return nil
+			}
+			if timedOut && !c.readWaitingSince(sent) {
+				continue
+			}
+			return err
+		}
+	}
+}
+
+// readWaitingSince reports whether a read has been waiting on the socket
+// since at least t (Unix nanoseconds).
+func (c *websocketAttachFrames) readWaitingSince(t int64) bool {
+	since := c.readingSince.Load()
+	return since != 0 && since <= t
 }

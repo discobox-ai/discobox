@@ -27,6 +27,14 @@ Global review expectations:
   generator not written in Go cannot import it and keeps the same rules
   itself, as `scripts/build-harness-settings.mjs` does (`writeIfChanged`); a
   change to one is made to the other.
+- A websocket keepalive must not call its peer dead for a ping left
+  unanswered while this end was not reading. coder/websocket reads a pong only
+  inside a `Read`, so a reader stopped behind a paused consumer (`| less`) holds
+  the pong behind its data. Count a missing pong only while a read was
+  waiting, as `websocketAttachFrames.keepalive` in `cli/internal/cli` does, or
+  never, as `pkg/wstunnel` does. Check both ends of the socket: the exec
+  attach's CLI end got this wrong (#1268) and its sandbox agent end still does
+  (#1408).
 - A file or tree something trusts after a hard stop (a record, a marker, a
   key, a cache entry, a harness's settings) is staged and renamed through
   `pkg/fsdurable`, in every module, and so is any staged write that syncs at

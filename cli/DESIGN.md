@@ -1595,6 +1595,14 @@ session, `pkg/execstream/client`.
   re-declares a frame constant: the compiler cannot catch a mirror that has
   drifted, and a corrupted stream is the first symptom.
   See [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
+- An exec attach's websocket keepalive (`websocketAttachFrames.keepalive`)
+  calls the server dead only when its pong is overdue while a read is waiting
+  on the socket. The websocket reads pongs only inside a read, and the
+  session's one reader stops while it writes output to a consumer that has
+  paused (`| less`, a slow disk), so a pong missed then is unread, not
+  missing, and the CLI does not end the attach for it. This is the CLI's end
+  only: the sandbox agent pings the same socket and still ends an attach
+  whose consumer pauses long enough to block its output (#1408).
 - Everything the session does to this machine goes through `client.Console`:
   raw mode, terminal size, signal delivery, stopping and resuming, and putting
   the display back. The real one is `client.OSConsole`; it is the seam that lets
