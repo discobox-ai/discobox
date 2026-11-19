@@ -16,13 +16,14 @@ elif [ "$#" -gt 0 ]; then
 	# single spaces is the wrapper's half of the convention (ADR 0086 §3).
 	#
 	# opencode's positional argument is the project directory, not a prompt,
-	# so the prompt goes to --prompt, which the TUI submits once it is ready.
+	# so the TUI submits --prompt=<prompt> once it is ready. The joined form
+	# keeps a leading dash in the prompt from being parsed as a flag.
 	prompt="$1"
 	shift
 	for word in "$@"; do
 		prompt="$prompt $word"
 	done
-	set -- --prompt "$prompt"
+	set -- "--prompt=$prompt"
 fi
 
 # The configured credentials live in opencode's database, which only opencode

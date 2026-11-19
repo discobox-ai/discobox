@@ -107,9 +107,9 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{"split words are one prompt", []string{"fix", "the", "failing", "tests"}, []string{"--standalone", "--auto", "--prompt", "fix the failing tests"}},
-		{"an already quoted prompt is unchanged", []string{"fix the failing tests"}, []string{"--standalone", "--auto", "--prompt", "fix the failing tests"}},
-		{"a dash-led prompt is still the prompt", []string{"--verbose please"}, []string{"--standalone", "--auto", "--prompt", "--verbose please"}},
+		{"split words are one prompt", []string{"fix", "the", "failing", "tests"}, []string{"--standalone", "--auto", "--prompt=fix the failing tests"}},
+		{"an already quoted prompt is unchanged", []string{"fix the failing tests"}, []string{"--standalone", "--auto", "--prompt=fix the failing tests"}},
+		{"a dash-led prompt is still the prompt", []string{"-x", "fix", "it"}, []string{"--standalone", "--auto", "--prompt=-x fix it"}},
 		{"no prompt passes none", nil, []string{"--standalone", "--auto"}},
 		// A resumed session already carries the prompt (ADR 0086 §4).
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--standalone", "--auto", "--continue"}},
