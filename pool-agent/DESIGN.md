@@ -1005,7 +1005,9 @@ The control plane POSTs the authoritative set of known pool IDs; the agent reaps
 the agent-created footprint — sandbox containers and the
 `projects/{project_id}/pools/{X}` / `proxy/projects/{project_id}/pools/{X}`
 subtrees — of any other pool it observes. It is a no-op where each pool has its
-own isolated daemon.
+own isolated daemon. A pool deleted through the control plane does not wait for
+it: the engine's `RemovePool` removes that pool's directories itself
+(`layout.PoolTrees`), which is the only removal a project's last pool gets.
 
 The known set is every pool in the project, across provider instances, because
 it is the authority for a reaper that scans project-scoped trees: a set narrower

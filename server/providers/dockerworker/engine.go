@@ -441,7 +441,7 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 			return err
 		}
 	} else {
-		removeErr := e.removePoolContainer(ctx, lease.Client, pool.ID)
+		removeErr := e.removePoolHost(ctx, lease.Client, pool)
 		lease.Release()
 		// A daemon that cannot be reached is not a reason to refuse a delete.
 		// Nothing about retrying makes it reachable, so returning here strands
@@ -449,10 +449,11 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 		// to a VM guest that boots but never brings Docker up, the case the pool
 		// host console exists for.
 		//
-		// Skipping the removal leaks nothing. On a VM backend, DeleteVM below
-		// destroys the guest and every container in it. On the local Docker
-		// driver, where DeleteVM is a no-op, the drift watcher reclaims a
-		// managed pool container that no longer has a pool row.
+		// On a VM backend the skip leaks nothing: DeleteVM below destroys the
+		// guest with every container, volume and state tree in it. On a daemon
+		// shared with other pools, where DeleteVM is a no-op, it leaves the
+		// volume and the pool's state trees behind, which the warning names
+		// for an operator to remove.
 		//
 		// Only connection failures are tolerated: a daemon that answers and
 		// still refuses the removal is reporting something a retry can fix, and
@@ -461,8 +462,12 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 			if !client.IsErrConnectionFailed(removeErr) {
 				return removeErr
 			}
-			slog.WarnContext(ctx, "removing pool runtime without reaching its Docker daemon",
-				"pool_id", pool.ID, "error", removeErr)
+			args := []any{"pool_id", pool.ID, "error", removeErr}
+			if !e.cfg.DedicatedDaemon {
+				args = append(args, "volume", poolScopedVolumeName(pool.ID, "docker"),
+					"trees", e.daemonPaths(layout.Container().PoolTrees(pool.ProjectID, pool.ID)))
+			}
+			slog.WarnContext(ctx, "removing pool runtime without reaching its Docker daemon", args...)
 		}
 	}
 	if err := e.driver.DeleteVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
@@ -993,9 +998,29 @@ func (e *Engine) agentPortBinding() network.PortBinding {
 	return network.PortBinding{HostIP: netip.MustParseAddr("127.0.0.1")}
 }
 
-func (e *Engine) removePoolContainer(ctx context.Context, cli *client.Client, poolID string) error {
-	name := ContainerName(poolID)
-	if _, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
+// removePoolHost removes everything the engine made for a deleted pool on its
+// daemon: on a shared daemon its state trees first, then its runtime
+// (RemovePoolRuntime). Each step tolerates what is already gone, so a retry
+// after a partial removal finishes it.
+func (e *Engine) removePoolHost(ctx context.Context, cli *client.Client, pool *model.Pool) error {
+	// A dedicated daemon's disk holds the trees, and DeleteVM destroys it.
+	if !e.cfg.DedicatedDaemon {
+		if err := e.removePoolStateTrees(ctx, cli, pool); err != nil {
+			return err
+		}
+	}
+	return e.RemovePoolRuntime(ctx, cli, pool.ID)
+}
+
+// RemovePoolRuntime removes a pool's container, console, sandbox network, and
+// the named volume that holds its inner Docker store, which ContainerRemove's
+// RemoveVolumes does not touch (it drops anonymous volumes only). It leaves
+// the pool's state trees: the drift watcher calls it for a pool container
+// whose row is gone, and a row that comes back from a restored database needs
+// its identity and data (the agent's pool-sync reaper takes the rest, after
+// its retention).
+func (e *Engine) RemovePoolRuntime(ctx context.Context, cli *client.Client, poolID string) error {
+	if _, err := cli.ContainerRemove(ctx, ContainerName(poolID), client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return err
 	}
 	// The console is engine-created but reconcile-free, so pool teardown is the
@@ -1003,7 +1028,130 @@ func (e *Engine) removePoolContainer(ctx context.Context, cli *client.Client, po
 	if err := e.removeConsoleContainer(ctx, cli, poolID); err != nil {
 		return err
 	}
-	return e.removeSandboxNetwork(ctx, cli, poolID)
+	if err := e.removeSandboxNetwork(ctx, cli, poolID); err != nil {
+		return err
+	}
+	volume := poolScopedVolumeName(poolID, "docker")
+	if _, err := cli.VolumeRemove(ctx, volume, client.VolumeRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("remove pool volume %s: %w", volume, err)
+	}
+	return nil
+}
+
+// removePoolStateTrees removes a deleted pool's own directories of the state
+// trees (layout.PoolTrees) on a daemon shared with other pools. Nothing else
+// would: the agent's reaper of unknown pools runs only in a live agent of the
+// same project, so never for a project's last pool, and no reaper may
+// enumerate identity keys (ADR 0063).
+//
+// The data goes at once, without the 24-hour retention a reaper keeps (ADR
+// 26-10-01-876). That retention guards a reaper's inference from a set the
+// control plane answers; this is an explicit, authorized pool deletion, and a
+// pool with a sandbox row cannot be deleted at all (owner, 2026-11-18).
+//
+// The trees are on the daemon's filesystem, which the server may not share
+// (Docker Desktop's VM) and whose BuildKit state is root's, so a short-lived
+// container on the daemon removes them, binding them exactly as the pool
+// container did. It runs the pool container's own image, after that container
+// is stopped so its agent cannot write into the trees again; the stopped
+// container stays until the trees are gone, so a retry still has its image.
+func (e *Engine) removePoolStateTrees(ctx context.Context, cli *client.Client, pool *model.Pool) error {
+	if !isPathSegment(pool.ProjectID) || !isPathSegment(pool.ID) {
+		// An ID that is not one path segment would name a parent of other
+		// pools' trees, or nothing of this pool's.
+		slog.WarnContext(ctx, "not removing the state trees of a pool without a project and pool ID",
+			"project_id", pool.ProjectID, "pool_id", pool.ID)
+		return nil
+	}
+	state := layout.Container()
+	trees := state.PoolTrees(pool.ProjectID, pool.ID)
+	existing, err := cli.ContainerInspect(ctx, ContainerName(pool.ID), client.ContainerInspectOptions{})
+	var image string
+	switch {
+	case err == nil:
+		timeout := 0
+		if _, err := cli.ContainerStop(ctx, existing.Container.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
+			return fmt.Errorf("stop pool container: %w", err)
+		}
+		image = existing.Container.Image
+	case cerrdefs.IsNotFound(err):
+		if image, err = e.localPoolImage(ctx, cli); err != nil {
+			return err
+		}
+	default:
+		return err
+	}
+	if image == "" {
+		// Pulling an image only to delete would hold the pool's deletion
+		// hostage to a registry.
+		slog.WarnContext(ctx, "no pool image on the daemon; leaving the deleted pool's state trees",
+			"pool_id", pool.ID, "configured_image", e.cfg.SandboxBaseImage, "trees", e.daemonPaths(trees))
+		return nil
+	}
+	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image:       image,
+			User:        "0:0",
+			Entrypoint:  []string{"rm", "-rf", "--"},
+			Cmd:         trees,
+			Healthcheck: &container.HealthConfig{Test: []string{"NONE"}},
+			Labels:      map[string]string{LabelManaged: "true", LabelPoolID: pool.ID, LabelProjectID: pool.ProjectID},
+		},
+		HostConfig: &container.HostConfig{NetworkMode: "none", Mounts: e.stateMounts()},
+	})
+	if err != nil {
+		return fmt.Errorf("create pool state removal: %w", err)
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_, _ = cli.ContainerRemove(cleanup, created.ID, client.ContainerRemoveOptions{Force: true})
+	}()
+	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("start pool state removal: %w", err)
+	}
+	result := cli.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-result.Error:
+		return fmt.Errorf("wait for pool state removal: %w", err)
+	case status := <-result.Result:
+		if status.StatusCode != 0 {
+			return fmt.Errorf("remove pool state trees: exit status %d%s", status.StatusCode, containerLogSuffix(ctx, cli, created.ID))
+		}
+	}
+	return nil
+}
+
+// localPoolImage is the image the engine would launch a pool from that is
+// already on cli's daemon, without pulling: the configured sandbox base image,
+// or failing that the superseded local one ensureImage falls back to. Empty
+// means neither is there.
+func (e *Engine) localPoolImage(ctx context.Context, cli *client.Client) (string, error) {
+	if _, err := cli.ImageInspect(ctx, e.cfg.SandboxBaseImage); err == nil {
+		return e.cfg.SandboxBaseImage, nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return "", fmt.Errorf("inspect pool image %q: %w", e.cfg.SandboxBaseImage, err)
+	}
+	image, _ := e.fallbackPoolImage(ctx, cli)
+	return image, nil
+}
+
+// daemonPaths is where the daemon sees each of paths, for a message an
+// operator acts on there.
+func (e *Engine) daemonPaths(paths []string) []string {
+	hostState := layout.Container().HostMapping(e.cfg.HostStateRoot)
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = hostState.HostPath(p)
+	}
+	return out
+}
+
+// isPathSegment reports whether id is usable as one segment of a state path.
+func isPathSegment(id string) bool {
+	return id != "" && id != "." && id != ".." && !strings.ContainsAny(id, `/\`)
 }
 
 // removeSandboxNetwork removes the per-pool internal network. Any container
@@ -1094,24 +1242,11 @@ func shouldRemoveExistingContainer(existing container.InspectResponse, desiredIm
 	return false
 }
 
-func (e *Engine) containerMounts(poolID string) []mount.Mount {
-	mounts := []mount.Mount{
-		{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath},
-		// The sandbox base image enables docker.socket for a sandbox's own
-		// daemon. Here the host's socket is already bound at the unit's
-		// listen path (/var/run is a link to /run), so the unit would fail
-		// with "Address already in use" and leave the container degraded.
-		// /dev/null over the unit file masks it in this container only;
-		// sandboxes on the same image keep their socket-activated daemon.
-		{Type: mount.TypeBind, Source: "/dev/null", Target: dockerSocketUnitPath, ReadOnly: true},
-	}
-	// Bound at the same path rather than under the host-mount root, like the
-	// Docker socket above: the agent only dials it, so there is no host path to
-	// translate. The backend's guest-side relay owns the socket in this
-	// directory; backends without one leave the field empty.
-	if dir := cleanAbsPath(e.cfg.RelaySocketDir); dir != "" {
-		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: dir, Target: dir})
-	}
+// stateMounts binds the state trees from where the daemon keeps them at the
+// path the container reads. The pool container and the container that removes
+// a deleted pool's trees both bind exactly these.
+func (e *Engine) stateMounts() []mount.Mount {
+	var mounts []mount.Mount
 	// The state trees come from the shared layout package, so the engine, the
 	// agent, and the proxy cannot drift on where anything lives.
 	state := layout.Container()
@@ -1130,6 +1265,28 @@ func (e *Engine) containerMounts(poolID string) []mount.Mount {
 			BindOptions: &mount.BindOptions{CreateMountpoint: true},
 		})
 	}
+	return mounts
+}
+
+func (e *Engine) containerMounts(poolID string) []mount.Mount {
+	mounts := []mount.Mount{
+		{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath},
+		// The sandbox base image enables docker.socket for a sandbox's own
+		// daemon. Here the host's socket is already bound at the unit's
+		// listen path (/var/run is a link to /run), so the unit would fail
+		// with "Address already in use" and leave the container degraded.
+		// /dev/null over the unit file masks it in this container only;
+		// sandboxes on the same image keep their socket-activated daemon.
+		{Type: mount.TypeBind, Source: "/dev/null", Target: dockerSocketUnitPath, ReadOnly: true},
+	}
+	// Bound at the same path rather than under the host-mount root, like the
+	// Docker socket above: the agent only dials it, so there is no host path to
+	// translate. The backend's guest-side relay owns the socket in this
+	// directory; backends without one leave the field empty.
+	if dir := cleanAbsPath(e.cfg.RelaySocketDir); dir != "" {
+		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: dir, Target: dir})
+	}
+	mounts = append(mounts, e.stateMounts()...)
 	for _, hostMount := range e.cfg.HostMounts {
 		mounts = append(mounts, mount.Mount{
 			Type:     mount.TypeBind,

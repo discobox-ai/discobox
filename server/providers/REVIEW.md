@@ -82,6 +82,22 @@
   agent.
 - Keep console teardown in `RemovePool`. Nothing reconciles the console, so
   pool deletion is the only thing that removes it.
+- A path that removes a pool for good — `RemovePool`, or the drift watcher's
+  cleanup of a container with no pool row — goes through
+  `Engine.RemovePoolRuntime`, never a bare `ContainerRemove`: the pool's inner
+  Docker store is a *named* volume, which `RemoveVolumes` leaves, and the
+  console and network go with it (#32, missed on both paths). Recreating a
+  pool's container (repair, drift) must not: it keeps the named volume.
+- What `RemovePool` deletes of a pool's state comes from `layout.PoolTrees`,
+  never a list of its own. Only an explicit pool deletion removes them
+  (identity included) and at once; the watcher's orphan path must not, since a
+  row restored from a backup still needs its identity key and data (ADR 0063,
+  ADR 26-10-01-876). The agent's `reapUnknownPools` keeps its own data, cache
+  and proxy roots because it must never reach identity: a tree added to
+  `layout.MountRoots` goes into both.
+- Cite an ADR only for what it decided. A retention or reaping rule justified
+  by an ADR that does not say it is a finding (#32 cited ADR 0063 for the
+  removal of a pool's identity directory, which that ADR never decided).
 - Do not add optional provider metadata, status, or lifecycle interfaces.
   `sandbox.Provider`, `poolruntime.RuntimeProvider`, and `dockerworker.Driver`
   state required behavior directly. Optional feature interfaces need a runtime

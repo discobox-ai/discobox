@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -809,10 +810,9 @@ func (d *refusingDaemonDriver) DeleteVM(context.Context, string) error {
 
 // A pool whose daemon cannot be reached must still delete. Nothing about
 // retrying makes a daemon reachable, so refusing here strands the pool row and
-// its disks forever. Skipping the container removal leaks nothing: DeleteVM
-// destroys the guest and everything in it, and on the local Docker driver —
-// where DeleteVM is a no-op — the drift watcher reclaims a managed pool
-// container that no longer has a pool row.
+// its disks forever. Skipping the removal leaks nothing on a VM backend, the
+// only kind that tolerates it: DeleteVM destroys the guest and everything in
+// it.
 func TestRemovePoolDeletesTheVMWhenItsDaemonIsUnreachable(t *testing.T) {
 	driver := &deadDaemonDriver{}
 	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
@@ -891,6 +891,232 @@ func TestRemovePoolSurfacesAReachableDaemonsFailure(t *testing.T) {
 	}
 	if driver.deleteCalls != 0 {
 		t.Errorf("DeleteVM was called %d times despite a live daemon refusing", driver.deleteCalls)
+	}
+}
+
+// Removing a pool removes the named volume that holds its inner Docker store.
+// ContainerRemove's RemoveVolumes drops only anonymous volumes, and on the
+// local Docker driver DeleteVM is a no-op, so nothing else ever would.
+func TestRemovePoolRemovesItsInnerDockerVolume(t *testing.T) {
+	var mu sync.Mutex
+	var deleted []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			mu.Lock()
+			deleted = append(deleted, r.URL.Path)
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"not found"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	driver := &refusingDaemonDriver{host: server.URL}
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, &model.Pool{ID: "pool-1"}); err != nil {
+		t.Fatalf("RemovePool: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := "/volumes/" + poolScopedVolumeName("pool-1", "docker")
+	for _, p := range deleted {
+		if strings.HasSuffix(p, want) {
+			return
+		}
+	}
+	t.Fatalf("RemovePool never removed volume %s; DELETE requests: %v", poolScopedVolumeName("pool-1", "docker"), deleted)
+}
+
+// poolRemovalDaemon fakes a shared daemon holding one running pool container,
+// and records each request RemovePool makes, in order.
+type poolRemovalDaemon struct {
+	// noPoolContainer is a daemon whose pool container is already gone, as
+	// after a retry, holding the configured image instead.
+	noPoolContainer bool
+
+	mu       sync.Mutex
+	requests []string
+	created  *struct {
+		container.Config
+		HostConfig container.HostConfig
+	}
+}
+
+func (d *poolRemovalDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := stripDockerAPIVersion(r.URL.Path)
+	d.mu.Lock()
+	d.requests = append(d.requests, r.Method+" "+path)
+	d.mu.Unlock()
+	switch {
+	case d.noPoolContainer && r.Method == http.MethodGet && path == "/images/worker-image/json":
+		_, _ = w.Write([]byte(`{"Id":"sha256:worker-image"}`))
+	case !d.noPoolContainer && r.Method == http.MethodGet && path == "/containers/"+ContainerName("pool-1")+"/json":
+		_, _ = w.Write([]byte(`{"Id":"pool-container","Image":"sha256:pool-image","State":{"Running":true}}`))
+	case r.Method == http.MethodPost && path == "/containers/create":
+		var body struct {
+			container.Config
+			HostConfig container.HostConfig
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		d.mu.Lock()
+		d.created = &body
+		d.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"Id":"state-removal"}`))
+	case r.Method == http.MethodPost && path == "/containers/state-removal/wait":
+		_, _ = w.Write([]byte(`{"StatusCode":0}`))
+	case r.Method == http.MethodPost || r.Method == http.MethodDelete:
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"not found"}`))
+	}
+}
+
+func (d *poolRemovalDaemon) index(request string) int {
+	for i, got := range d.requests {
+		if got == request {
+			return i
+		}
+	}
+	return -1
+}
+
+// On a daemon shared with other pools, nothing removes a deleted pool's state
+// trees but RemovePool: the agent's reaper of unknown pools runs only in a live
+// agent of the same project, and none reaps identity keys. They are removed by
+// a container on the pool's own image, after the pool's agent is stopped and
+// before its container goes.
+func TestRemovePoolRemovesItsStateTreesOnASharedDaemon(t *testing.T) {
+	daemon := &poolRemovalDaemon{}
+	server := httptest.NewServer(daemon)
+	t.Cleanup(server.Close)
+
+	engine, err := New(Config{SandboxBaseImage: "worker-image", HostStateRoot: "/srv/discobox"}, &refusingDaemonDriver{host: server.URL})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, &model.Pool{ID: "pool-1", ProjectID: "prj"}); err != nil {
+		t.Fatalf("RemovePool: %v", err)
+	}
+	daemon.mu.Lock()
+	defer daemon.mu.Unlock()
+	if daemon.created == nil {
+		t.Fatalf("no state removal container was created; requests: %v", daemon.requests)
+	}
+	state := layout.Container()
+	if daemon.created.Image != "sha256:pool-image" {
+		t.Errorf("state removal image = %q, want the pool container's own image", daemon.created.Image)
+	}
+	got := append(append([]string{}, daemon.created.Entrypoint...), daemon.created.Cmd...)
+	want := append([]string{"rm", "-rf", "--"}, state.PoolTrees("prj", "pool-1")...)
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("state removal runs %q, want %q", got, want)
+	}
+	for _, tree := range state.MountRoots() {
+		source := "/srv/discobox" + strings.TrimPrefix(tree, layout.ContainerRoot)
+		found := false
+		for _, m := range daemon.created.HostConfig.Mounts {
+			found = found || m.Type == mount.TypeBind && m.Source == source && m.Target == tree
+		}
+		if !found {
+			t.Errorf("state removal does not mount %s at %s; mounts: %+v", source, tree, daemon.created.HostConfig.Mounts)
+		}
+	}
+	stop := daemon.index("POST /containers/pool-container/stop")
+	create := daemon.index("POST /containers/create")
+	wait := daemon.index("POST /containers/state-removal/wait")
+	remove := daemon.index("DELETE /containers/" + ContainerName("pool-1"))
+	volume := daemon.index("DELETE /volumes/" + poolScopedVolumeName("pool-1", "docker"))
+	if stop < 0 || create < stop || wait < create || remove < wait || volume < remove {
+		t.Errorf("want stop < create < wait < remove container < remove volume, got %d %d %d %d %d; requests: %v", stop, create, wait, remove, volume, daemon.requests)
+	}
+}
+
+// With the pool container already gone, as on a retry, the trees are removed
+// with the image the engine would launch that is on the daemon, never pulled.
+func TestRemovePoolRemovesTheTreesWithALocalImageWhenItsContainerIsGone(t *testing.T) {
+	daemon := &poolRemovalDaemon{noPoolContainer: true}
+	server := httptest.NewServer(daemon)
+	t.Cleanup(server.Close)
+
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, &refusingDaemonDriver{host: server.URL})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, &model.Pool{ID: "pool-1", ProjectID: "prj"}); err != nil {
+		t.Fatalf("RemovePool: %v", err)
+	}
+	daemon.mu.Lock()
+	defer daemon.mu.Unlock()
+	if daemon.created == nil || daemon.created.Image != "worker-image" {
+		t.Fatalf("state removal container = %+v, want one on worker-image; requests: %v", daemon.created, daemon.requests)
+	}
+	for _, request := range daemon.requests {
+		if strings.Contains(request, "/images/create") {
+			t.Errorf("RemovePool pulled an image: %s", request)
+		}
+	}
+}
+
+// A pool on its own VM's daemon keeps its trees on the disk DeleteVM destroys,
+// so no state removal container runs there.
+func TestRemovePoolLeavesTheTreesOfADedicatedDaemonToDeleteVM(t *testing.T) {
+	daemon := &poolRemovalDaemon{}
+	server := httptest.NewServer(daemon)
+	t.Cleanup(server.Close)
+
+	driver := &refusingDaemonDriver{host: server.URL}
+	engine, err := New(Config{SandboxBaseImage: "worker-image", DedicatedDaemon: true}, driver)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, &model.Pool{ID: "pool-1", ProjectID: "prj"}); err != nil {
+		t.Fatalf("RemovePool: %v", err)
+	}
+	daemon.mu.Lock()
+	defer daemon.mu.Unlock()
+	if daemon.created != nil {
+		t.Errorf("a state removal container ran on a dedicated daemon; requests: %v", daemon.requests)
+	}
+	if driver.deleteCalls != 1 {
+		t.Errorf("DeleteVM calls = %d, want 1", driver.deleteCalls)
+	}
+}
+
+// A state removal that fails keeps the pool's container, so the retry the
+// error drives still has the image to run on.
+func TestRemovePoolKeepsThePoolContainerWhenItsTreesCannotBeRemoved(t *testing.T) {
+	daemon := &poolRemovalDaemon{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/state-removal/wait") {
+			_, _ = w.Write([]byte(`{"StatusCode":1}`))
+			return
+		}
+		daemon.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	driver := &refusingDaemonDriver{host: server.URL}
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, &model.Pool{ID: "pool-1", ProjectID: "prj"}); err == nil {
+		t.Fatal("RemovePool succeeded although its state trees were not removed")
+	}
+	daemon.mu.Lock()
+	defer daemon.mu.Unlock()
+	if daemon.index("DELETE /containers/"+ContainerName("pool-1")) >= 0 {
+		t.Errorf("the pool container was removed although its trees were not; requests: %v", daemon.requests)
+	}
+	if driver.deleteCalls != 0 {
+		t.Errorf("DeleteVM calls = %d, want 0", driver.deleteCalls)
 	}
 }
 

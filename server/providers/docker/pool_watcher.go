@@ -143,8 +143,9 @@ func (w dockerPoolWatcher) scan(ctx context.Context) (bool, error) {
 			continue
 		}
 		// Orphan managed pool runtime with no pool row: no persisted lifecycle
-		// is left to reconcile, delete it directly.
-		if _, err := w.client.ContainerRemove(ctx, containers[i].ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		// is left to reconcile, delete it directly — with its console, network
+		// and named volume, which removing the container alone leaves.
+		if err := w.engine.RemovePoolRuntime(ctx, w.client, poolID); err != nil {
 			return false, err
 		}
 	}

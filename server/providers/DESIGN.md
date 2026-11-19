@@ -489,16 +489,31 @@ are preserved: recovery is strictly in-place, and pool-local state survives in
 named Docker volumes. Pool row deletion is intent-based and allowed only after
 the control plane proves no sandbox is assigned to the pool.
 
-Removing a pool does not require reaching its Docker daemon. `RemovePool`
-removes the pool container first, but a *connection* failure is logged and
-skipped rather than returned: nothing about retrying makes a daemon reachable,
-so failing there strands the pool row and its disks permanently — which is
-exactly what a VM guest that boots without bringing Docker up would cause. The
-skip leaks nothing, because `DeleteVM` destroys the guest and everything in it,
-and on the local Docker driver, where `DeleteVM` is a no-op, the drift watcher
-reclaims a managed pool container that no longer has a pool row. A daemon that
-answers and still refuses the removal is reporting something a retry can fix,
-and that error keeps driving the reconcile.
+`RemovePool` removes everything the engine made for the pool on its daemon.
+`Engine.RemovePoolRuntime` is the runtime: the pool container, console,
+sandbox network, and the named volume holding the inner `/var/lib/docker`
+(`RemoveVolumes` drops anonymous volumes only). On a daemon shared with other
+pools (`DedicatedDaemon` false: the local Docker driver) `RemovePool` first
+removes the pool's own state directories, `layout.PoolTrees` (data, cache,
+proxy, identity), with a one-shot container on the pool container's image —
+or, with no container left, an image already on the daemon, never pulled —
+after stopping that container and before removing it, so a failed attempt still
+has the image on retry. Nothing else would: the agent's reaper of unknown pools
+needs a live agent of the same project, and no reaper may enumerate identity
+keys (ADR 0063). The data goes at once, without the reaper's 24-hour retention
+(ADR 26-10-01-876): that retention guards a reaper's inference, and this is an
+explicit, authorized deletion of a pool that has no sandbox row. A dedicated
+daemon's trees are on the disk `DeleteVM` destroys.
+
+Removing a pool does not require reaching its Docker daemon. A *connection*
+failure is logged and skipped rather than returned: nothing about retrying
+makes a daemon reachable, so failing there strands the pool row and its disks
+permanently — which is exactly what a VM guest that boots without bringing
+Docker up would cause. On a VM backend the skip leaks nothing, because
+`DeleteVM` destroys the guest and everything in it; on a shared daemon it
+leaves the volume and the trees, and the warning names both for an operator to
+remove. A daemon that answers and still refuses the removal is reporting
+something a retry can fix, and that error keeps driving the reconcile.
 
 `RepairPool` is the recovery hook for pools whose runtime is known to be
 unhealthy, including a runtime whose agent never registered within the
@@ -648,16 +663,23 @@ watcher over the shared daemon: it lists managed pool containers, compares
 them with pool rows, and uses the engine's config revision
 (`Engine.ShouldReconcileWorkerContainer`) for drift. For pool rows that still
 exist it marks the pool dirty; the only direct side effect allowed is deleting
-an orphan managed runtime (the pool container) with no pool row. VM-per-pool
+an orphan managed runtime with no pool row (`Engine.RemovePoolRuntime`: its
+container, console, network and named volume, never its state trees, which a
+row restored from a backup still needs). VM-per-pool
 backends get drift detection through `InspectVM` during normal reconciliation.
 
-The server-created runtime (pool container, network, named volume) is the
-watcher's / `RemovePool`'s job; the *agent-created* footprint (sandbox
-containers and host data/proxy subtrees) is reaped by the pool agent itself.
-On each successful `ReconcilePool`, the provider hands the now-ready agent the
-authoritative pool set via the `pool-sync` API, so a shared host daemon reclaims
-whole orphaned pools without the control plane re-deriving the agent's teardown
-logic. This is a no-op on isolated per-pool daemons.
+The server-created runtime (pool container, console, network, named volume)
+is the watcher's / `RemovePool`'s job. A pool deleted through the control plane
+has its state directories removed by `RemovePool` too, from the list
+`pkg/layout` owns (`PoolTrees`). Trees whose deletion never reached the host —
+a pool row gone without `RemovePool`, sandbox containers and data left by a
+delete that skipped an unreachable pool — are the agent's: on each successful
+`ReconcilePool`, the provider hands the now-ready agent the authoritative pool
+set via the `pool-sync` API, and the agent reaps their data, cache and proxy
+directories after its retention. No reaper removes an identity directory (ADR
+0063), so a pool gone without `RemovePool` (its row deleted directly, or its
+container cleaned up as an orphan) keeps its `agent.key` on a shared host until
+an operator removes it. This is a no-op on isolated per-pool daemons.
 
 The watcher's initial drift scan and its event loop both run in the
 background: provider initialization starts the watcher and returns
