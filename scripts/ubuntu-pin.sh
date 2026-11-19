@@ -157,6 +157,21 @@ check() {
         if (image == "${UBUNTU_IMAGE}") listed = 0
         else if (image in stages) listed = stages[image]
         else if (image == "scratch") listed = 1
+        else if (image ~ /[$][{]TARGET(OS|ARCH)[}]/) {
+          # An earlier stage picked by the target platform
+          # (`FROM platform-${TARGETOS}`): every earlier stage its name can
+          # expand to, and at least one; listed only if all of them are.
+          pattern = image
+          gsub(/[$][{]TARGET(OS|ARCH)[}]/, "[a-z0-9]+", pattern)
+          gsub(/[.]/, "[.]", pattern)
+          pattern = "^" pattern "$"
+          matched = 0; listed = 1
+          for (name in stages) if (name ~ pattern) { matched = 1; if (!stages[name]) listed = 0 }
+          if (!matched) {
+            printf "%s:%d: FROM %s: names no earlier stage for any target platform\n", FILENAME, FNR, image
+            listed = 1
+          }
+        }
         else {
           printf "%s:%d: FROM %s: build on ${UBUNTU_IMAGE}, an earlier stage, or scratch\n", FILENAME, FNR, image
           listed = 1
