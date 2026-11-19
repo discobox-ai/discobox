@@ -453,7 +453,7 @@ tasks:
         vars: { HARNESS: shell }
 
   build:harness-bundle:
-    desc: Build one harness's bundle (HARNESS=codex|claude-code|opencode|copilot|omp|pi|shell, optional OCI_LAYOUT and BUILDER)
+    desc: Build one harness's bundle (HARNESS=codex|claude-code|opencode|copilot|omp|pi|shell)
     requires:
       vars: [HARNESS]
     vars:
@@ -462,8 +462,6 @@ tasks:
       HARNESS_BUNDLE: '{{default (printf "discobox-harness-%s:local" .HARNESS) .HARNESS_BUNDLE}}'
       HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
       IMAGE_CONFIG: harness/{{.HARNESS_DIR}}/image.json
-      OCI_LAYOUT: '{{default "" .OCI_LAYOUT}}'
-      BUILDER: '{{default "default" .BUILDER}}'
     preconditions:
       - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
         msg: "unknown harness: {{.HARNESS}}"
@@ -475,14 +473,9 @@ tasks:
       # unquoted command substitution would split one into several arguments.
       - |
         set -eu
-        set -- -f harness/{{.HARNESS_DIR}}/Dockerfile \
+        docker build -f harness/{{.HARNESS_DIR}}/Dockerfile \
           --build-arg "HARNESS_METADATA=$(jq -c . {{.IMAGE_CONFIG}})" \
           -t {{.HARNESS_BUNDLE}} .
-        if [ -n "{{.OCI_LAYOUT}}" ]; then
-          docker buildx build --builder "{{.BUILDER}}" --provenance=false --output "type=oci,dest={{.OCI_LAYOUT}}" "$@"
-        else
-          docker build "$@"
-        fi
 
   compile:
     desc: Alias for build
@@ -1191,12 +1184,6 @@ tasks:
       - python3 -B test/ux-smoke/test_runner.py
       - timeout --signal=TERM --kill-after=60s 25m python3 test/ux-smoke/run.py
 
-  ci:harness-migration:
-    desc: Upgrade the released v0.19.5 Docker database and harness homes
-    platforms: [linux]
-    cmds:
-      - timeout --signal=TERM --kill-after=90s 45m python3 -B test/ux-smoke/harness_migration.py
-
   ci:test:
     desc: Run every module's tests the way CI does
     # No Docker and no harness bundles: the suite that would need them seeds its
@@ -1243,6 +1230,16 @@ tasks:
     cmds:
       - task: check:darwin
       - task: release:build
+
+  release:validate-harness-migration:
+    desc: Validate a published candidate against v0.19.5 harness state (CANDIDATE=vX.Y.Z-rc.N)
+    platforms: [linux/amd64]
+    requires:
+      vars: [CANDIDATE]
+    env:
+      MIGRATION_CANDIDATE: '{{.CANDIDATE}}'
+    cmds:
+      - timeout --signal=TERM --kill-after=90s 45m python3 -B test/ux-smoke/harness_migration.py "$MIGRATION_CANDIDATE"
 
   release:build:
     desc: Build this platform's release binaries into build/release/bin
