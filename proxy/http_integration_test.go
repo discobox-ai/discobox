@@ -2184,10 +2184,10 @@ func TestCloseWaitsForInFlightMITMExchange(t *testing.T) {
 	// Give a late record the time to be counted as dropped, so the failure
 	// says what happened to it.
 	deadline := time.Now().Add(2 * time.Second)
-	for server.audit.Dropped() == 0 && time.Now().Before(deadline) {
+	for server.audit.Drops("").Dropped == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if dropped := server.audit.Dropped(); dropped != 0 {
+	if dropped := server.audit.Drops("").Dropped; dropped != 0 {
 		t.Errorf("audit dropped %d event(s) after Close, want 0", dropped)
 	}
 	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
@@ -2272,7 +2272,7 @@ func TestCloseRecordsAnUpgradeItCuts(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 	<-errCh
-	if dropped := server.audit.Dropped(); dropped != 0 {
+	if dropped := server.audit.Drops("").Dropped; dropped != 0 {
 		t.Errorf("audit dropped %d event(s) at Close, want 0", dropped)
 	}
 	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})

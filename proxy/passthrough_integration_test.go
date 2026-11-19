@@ -226,7 +226,7 @@ func TestCloseRecordsAPassthroughTunnelsCloseRow(t *testing.T) {
 	if err := f.server.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	if dropped := f.server.audit.Dropped(); dropped != 0 {
+	if dropped := f.server.audit.Drops("").Dropped; dropped != 0 {
 		t.Errorf("audit dropped %d event(s) at Close, want 0", dropped)
 	}
 	rows := readTunnelRows(t, f.dsn)
