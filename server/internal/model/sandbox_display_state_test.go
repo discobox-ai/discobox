@@ -58,6 +58,12 @@ func TestSandboxDisplayState(t *testing.T) {
 		{name: "failed stopping", desired: "present", state: "failed", runtimeState: "stopping", errMessage: "boom", generation: 2, observed: 2, want: "error"},
 		{name: "failed running archived", desired: "archived", state: "failed", runtimeState: "running", errMessage: "boom", generation: 2, observed: 2, want: "error"},
 		{name: "failed running deleted", desired: "deleted", state: "failed", runtimeState: "running", errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		// An archive or a purge of a failed sandbox still retrying: it records
+		// no error, and the state it is tearing down does not name it (#1043,
+		// #928). Once it settles with an error, that error is what it is.
+		{name: "purge of a failed sandbox in flight", desired: model.DesiredStateDeleted, state: model.SandboxStateFailed, runtimeState: "stopped", generation: 3, observed: 2, want: "deleting"},
+		{name: "archive of a failed sandbox in flight", desired: model.DesiredStateArchived, state: model.SandboxStateFailed, runtimeState: "stopped", generation: 3, observed: 2, want: "archiving"},
+		{name: "archive of a failed sandbox settled", desired: model.DesiredStateArchived, state: model.SandboxStateFailed, errMessage: "boom", generation: 3, observed: 3, want: "error"},
 		{name: "invalid lifecycle", desired: "", state: "", want: "error"},
 
 		// A repair recorded and not yet landed answers before the failure it
@@ -70,7 +76,7 @@ func TestSandboxDisplayState(t *testing.T) {
 		{name: "repair landed", desired: model.DesiredStatePresent, state: model.SandboxStateReady, runtimeState: model.SandboxRuntimeStateStopped, generation: 4, observed: 4, repair: 4, want: "stopped"},
 		{name: "repair failed", desired: model.DesiredStatePresent, state: model.SandboxStateFailed, errMessage: "boom", generation: 4, observed: 4, repair: 4, want: "error"},
 		{name: "intent after a repair", desired: model.DesiredStatePresent, state: model.SandboxStateFailed, generation: 5, observed: 4, repair: 4, want: "error"},
-		{name: "archive requested over a repair", desired: model.DesiredStateArchived, state: model.SandboxStateFailed, generation: 4, observed: 3, repair: 4, want: "error"},
+		{name: "archive requested over a repair", desired: model.DesiredStateArchived, state: model.SandboxStateFailed, generation: 4, observed: 3, repair: 4, want: "archiving"},
 	}
 
 	for _, tt := range tests {

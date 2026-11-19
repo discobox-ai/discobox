@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,18 +84,22 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) (reconcile
 // disagree is re-marked, whatever it is doing and however long ago the mark was
 // lost (ADR 0017 §1). A settled failure has already advanced
 // ObservedGeneration, so it is converged by design and this does not re-drive
-// it until new intent arrives — except a purge's: a row meant to be deleted
-// that still exists is unfinished whatever its generations say, and one a
-// server before #928 settled is re-driven from here (ADR 0022 §3).
-// It has one addition the generation comparison cannot express: archived
-// sandboxes past their retention. Those have converged — their generations
+// it until new intent arrives.
+// It has two additions the generation comparison cannot express. Archived
+// sandboxes past their retention: those have converged — their generations
 // agree, and by design nothing re-drives them — so the deadline is the only
 // thing that makes them work again, and the future-dated mark carrying it is a
 // mark like any other and can be lost. A lost mark here means data kept
 // forever, so retention gets the same backstop everything else has
-// (ADR 0022 §4).
+// (ADR 0022 §4). And every sandbox meant to be deleted: a purge is finished
+// only when its row is gone (ADR 0022 §3), so one a server before #928 settled
+// as failed is unfinished although its generations agree.
 func (r *SandboxReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 	pairs, err := r.store.ListSandboxRefsNeedingReconcile(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deleting, err := r.store.ListSandboxRefsBeingDeleted(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -102,9 +107,10 @@ func (r *SandboxReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(pairs)+len(expired))
-	seen := make(map[string]struct{}, len(pairs)+len(expired))
-	for _, p := range append(pairs, expired...) {
+	refs := slices.Concat(pairs, deleting, expired)
+	ids := make([]string, 0, len(refs))
+	seen := make(map[string]struct{}, len(refs))
+	for _, p := range refs {
 		id := SandboxDirtyID(p.ProjectID, p.SandboxID)
 		if _, ok := seen[id]; ok {
 			continue
@@ -290,10 +296,13 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 			// of an upgrade: the server restarts first and the pool's agent is
 			// replaced after it. Settling here latched a failure no later
 			// reconcile looked at again, so a sandbox re-pinned in that window
-			// stayed failed once its pool had caught up. The engine retries the
-			// create with backoff, and the first one the pool's new agent takes
-			// converges it. The state is kept so a sandbox that has never run is
-			// still started by that create.
+			// stayed failed once its pool had caught up. Say why it waits, and
+			// leave the generation unobserved and the state as it was: the
+			// engine retries the create with backoff, and the first one the
+			// pool's new agent takes converges it. The state is kept so a
+			// sandbox that has never run is still started by that create. A
+			// create is not a teardown, so it records its cause where an
+			// unsettled teardown does not (teardownNotAnswered).
 			sandbox.RecordFailure(sandbox.State, err.Error(), "")
 			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 				return reconcile.Result{}, updateErr
@@ -372,6 +381,18 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 		return r.softDelete(ctx, sandbox, generation)
 	}
 
+	// A purge a server before #928 settled as failed is converged, so a retry
+	// that failed again would read as recorded and settle once more, keeping
+	// that server's error and the scan's interval for backoff. The scan
+	// re-drives it; it starts over here as fresh delete intent, which clears
+	// the old failure, the way a retention's expiry submits one.
+	if sandbox.Converged() && sandbox.ErrorMessage != nil {
+		updated, err := r.recordDeleteIntent(ctx, sandbox, generation)
+		if err != nil {
+			return err
+		}
+		sandbox, generation = updated, updated.Generation
+	}
 	if err := r.deleteSandbox(ctx, sandbox); err != nil {
 		// A purge is never settled: whatever stopped the removal — the pool's
 		// host away, its proxy, an agent not yet upgraded, the pool's own

@@ -1362,6 +1362,19 @@ func (s *Sandbox) DisplayState() string {
 	if s.Repairing() {
 		return "repairing"
 	}
+	// An archive or a purge that has not finished answers before the state it
+	// is tearing down, as a repair does: one the pool has not taken yet is left
+	// unsettled with nothing recorded while the engine retries it (#1043,
+	// #928), so a sandbox archived or purged from `failed` still reads that
+	// state, and "error" would name the thing being torn down.
+	if !s.Converged() && s.ErrorMessage == nil {
+		switch {
+		case s.DesiredState == DesiredStateDeleted && s.State != SandboxStateDeleted:
+			return "deleting"
+		case s.DesiredState == DesiredStateArchived && s.State != SandboxStateArchived:
+			return "archiving"
+		}
+	}
 	if s.ErrorMessage != nil || s.State == SandboxStateFailed {
 		if s.DesiredState == DesiredStatePresent && s.RuntimeState == SandboxRuntimeStateRunning {
 			return s.runningDisplayState()

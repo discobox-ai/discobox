@@ -56,10 +56,7 @@ type SandboxOperationRef struct {
 }
 
 // ListSandboxRefsNeedingReconcile returns refs of sandboxes whose generations
-// disagree, and of every sandbox meant to be deleted. It is the reconcile
-// engine's lost-mark backstop (ADR 0017 §1). A purge is finished only when its
-// row is gone (ADR 0022 §3), so a row asking for deletion is unfinished whatever
-// its generations say: one a failure settled is still re-driven.
+// disagree. It is the reconcile engine's lost-mark backstop (ADR 0017 §1).
 //
 // The generation comparison is the source of truth, so this needs no cutoff and
 // no notion of an operation being in flight. The query it replaces asked which
@@ -74,7 +71,32 @@ func (s *Store) ListSandboxRefsNeedingReconcile(ctx context.Context) ([]SandboxO
 	var rows []model.Sandbox
 	if err := read.Model(&model.Sandbox{}).
 		Select("project_id", "id").
-		Where("generation > observed_generation OR desired_state = ?", model.DesiredStateDeleted).
+		Where("generation > observed_generation").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	refs := make([]SandboxOperationRef, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, SandboxOperationRef{ProjectID: row.ProjectID, SandboxID: row.ID})
+	}
+	return refs, nil
+}
+
+// ListSandboxRefsBeingDeleted returns refs of every sandbox meant to be
+// deleted, whatever its generations say. A purge is finished only when its row
+// is gone (ADR 0022 §3), and a server before #928 settled a failed one as
+// converged, so ListSandboxRefsNeedingReconcile is blind to it; this is the
+// scan's backstop for those, as ListArchivedSandboxRefsExpiredBefore is for
+// retention. The set is small: a sandbox is in it only while its purge runs.
+func (s *Store) ListSandboxRefsBeingDeleted(ctx context.Context) ([]SandboxOperationRef, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []model.Sandbox
+	if err := read.Model(&model.Sandbox{}).
+		Select("project_id", "id").
+		Where("desired_state = ?", model.DesiredStateDeleted).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
