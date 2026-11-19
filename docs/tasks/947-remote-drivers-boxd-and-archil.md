@@ -88,10 +88,9 @@ them). Everything below that depends on #1006 waits for those too.
     driver's key, swapped by the pool's own proxy in the token exchange's
     body (§9, #1012).
 - **The owner's answers to Q1–Q8** (2026-11-12, recorded on #947):
-  - **Q1.** The live run happens **once**, in a dedicated one-off box given the
-    real key. It is not automated. Every live check of the boxd track is a step
-    of that one session (B6). A lasting way to run live checks is a follow-up
-    (R5), which archil's live steps wait for.
+  - **Q1.** B6 ran the initial live validation once. R5 uses dedicated test
+    keys in fresh, pinned validation boxes for interval and release checks.
+    See [the live validation decision](../adr/26-11-18-174-live-provider-checks-run-on-an-interval-and-at-release-in-a-box-the-manager-launches-with-test-keys.md).
   - **Q2.** `deliverProviderKey` is dropped, and the key goes through the
     pool proxy's body swap (#1012). Issued boxd keys are no longer the path,
     and the previous B10 is gone.
@@ -163,33 +162,13 @@ and **the manager holds them** in its credential store, never in its agent's
 context. The manager is itself an agent that reads issue comments, worker
 reports and reviews, which anyone can write.
 
-A key leaves the store only for the one live run (Q1). That run happens in a
-dedicated one-off box given the real key, and never in a worker's box. The box
-keeps the key in only if all of these hold:
-
-- **Only reviewed code.** It runs a revision that has landed on `main` through
-  human review, pinned by commit, never a worker's branch.
-- **No agent while the key is there.** The pinned script alone drives the run.
-  No harness or agent session runs in the box while it holds the key, since an
-  agent there has passwordless sudo and reads text anyone can write: an issue,
-  a PR, a provider's response.
-- **Set up first, key last, in this order:**
-  1. Build the pinned revision, and fill the bundle cache by digest, so every
-     bundle reference is pinned `@sha256:…` and no registry is needed.
-  2. Narrow the box's egress to the exact hosts below. Its egress policy is a
-     host allowlist, so it can hold them. What it cannot do is fetch build
-     inputs (Go modules, GitHub) once narrowed, which is why step 1 comes
-     first.
-  3. Hand over the key, as a **raw binding** (ADR 26-10-27-840) routed to the
-     provider's hosts alone. The box's proxy holds the value in memory, refuses
-     it on any host its routes do not name, and redacts it from every audit
-     row and stored body. boxd's token exchange carries the key in its body,
-     so a plain file would leave it in the audit any project member reads. It
-     goes from the binding's variable into the provider's config, never on a
-     command line, and never into an agent's context.
-
-  If the box's egress cannot be narrowed, rule 1 alone keeps the key in, and
-  the run's report says so.
+For repeat runs under R5, the manager binds a dedicated provider test key
+and a dedicated harness test key to a fresh validation box. The box runs a
+reviewed commit from `main` or a release tag, and the validation agent drives
+the checked-in procedure. Raw bindings are limited to the hosts that need
+each key. The box can build the pinned revision and report to GitHub with
+its usual egress. The keys stay out of the agent's context, command lines
+and audit output.
 
 The exact hosts:
 - the provider's API hosts as disco-vm dials them: boxd's `boxd.sh:9443`,
@@ -211,7 +190,7 @@ registry.
 |---|---|---|---|
 | **A boxd API key (`bxd_…`)** | by the manager (granted) | B6 (the one session, which carries B1's, B3's, B11's and B12's live checks) | A key of an org dedicated to this track. Neither the org nor the key's owner may hold host-bound secrets, since a machine reaches those hosts whatever its fence says. A new org without a payment method may run 2 machines (a pool plus one sandbox), which B6 outgrows, so the org needs a payment method or a quota of at least 4 |
 | **An Archil API key (`key-…`)** | by the manager (granted) | A1, A8, A9, by R5's means | A key of an account that holds nothing else, since it never expires and reaches the whole account. Its region is set by `ARCHIL_REGION` (`aws-us-east-1` by default) today, and by the driver's region field once B12 lands |
-| **A harness credential** (for Claude Code, an Anthropic key or subscription) | not covered by the grant: the owner provides it, or names one the manager already holds | B6, A9 (they run a harness) | A project secret on the run's server, so the sandbox sees only its sentinel through the pool's proxy. Revoked or rotated with the provider keys when the track ends |
+| **A harness credential** (for Claude Code, an Anthropic key or subscription) | not covered by the grant: the owner provides it, or names one the manager already holds | B6, A9 and repeat validation runs (they run a harness) | A project secret on the run's server, so the sandbox sees only its sentinel through the pool's proxy. Revoked or rotated with the provider keys when the track ends |
 
 **After the live run**, whoever ran it, in this order:
 - deletes the run's pools first, which withdraws each pool's grant of the key

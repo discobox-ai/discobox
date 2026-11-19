@@ -1,7 +1,8 @@
 # 26-11-18-174 — Live provider checks run on an interval and at release, in a box the manager launches with test keys
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-18
+- Accepted by the owner by merging #1382, 2026-11-19
 - **Replaces** (not an ADR): the remote-drivers plan's
   (`docs/tasks/947-remote-drivers-boxd-and-archil.md`) Q1 answer, "the live
   run happens once … it is not automated", and three of its

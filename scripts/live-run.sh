@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The one live run of a remote driver, end to end (docs/tasks/947, R2): make a
+# A repeatable live run of a remote driver, end to end: make a
 # provider and a pool on DRIVER, start a discobox on it running a harness,
 # attach to it, probe its egress and its machine's ingress URL (on boxd, its
 # closed default proxy too), keep the evidence, delete everything it made,
@@ -12,6 +12,7 @@
 #                       whether this box's egress was narrowed to the plan's
 #                       hosts before the key came in; the report says which
 #                       (required, except on a dry run)
+#   --region REGION    boxd region to exercise (fra or nyc, default: fra)
 #   --harness SLUG      the harness the discobox runs (default: claude-code;
 #                       a fresh server's project has no default harness)
 #   --allow HOST        the one host the discobox's own egress allows, which
@@ -39,27 +40,15 @@
 #   go tool task live-run DRIVER=boxd -- --egress-narrowed yes
 #   go tool task live-run DRIVER=boxd DRY_RUN=1
 #
-# The run is made once, in a one-off box, under the rules of the plan's
-# Credentials section: only a revision that landed on main, built first
-# (live-run:build); the box's egress narrowed next; the key handed over last,
-# as a raw binding in the variable disco-vm reads for the driver
-# (BOXD_API_KEY, ARCHIL_API_KEY). No agent runs in the box while it holds the
-# key. The server is the box's own, run from the pinned build, which the CLI
-# reaches on its local socket, never through the box's proxy: the key goes to
-# it in the provider's config, the body of a request a raw binding's routes
-# would not name. Inside a discobox the CLI's default server is the gate
-# ($DISCOBOX_SERVER, api.discobox.internal), the outer server, which must
-# never get the key: the run refuses it before anything is sent, so pass the
-# box's own server with --server, or unset DISCOBOX_SERVER for the CLI's
-# local one. The server calls the provider with the key sealed in
-# that config; the box calls the provider itself only through disco-vm, in the
-# leftover sweep, on the binding's own routes. It goes from
-# the variable into that config through jq's environment, in a 0600 file the
-# CLI reads as @file: never on a command line, where /proc/<pid>/cmdline shows
-# it, and never printed.
+# Scheduled and release validation runs use a fresh box on a reviewed,
+# pinned commit. The manager binds dedicated test keys to their own hosts.
+# The provider key is supplied in the variable disco-vm reads for the
+# driver (BOXD_API_KEY or ARCHIL_API_KEY). Prepare the harness credential
+# as a project secret on the run's server before calling this script.
 #
-# The project's harness credential is a project secret the owner set on the
-# server beforehand, so the discobox sees only its sentinel.
+# Pass the box's own server with --server unix:///path/to/socket or set
+# DISCOBOX_SERVER to that socket URL. The script requires a Unix socket. The provider config is read from a private
+# temporary file so the key is never on the command line.
 #
 # A check passes only on what it observed. One whose probe could not reach
 # its target (the ingress URL from a box whose egress does not name its host,
@@ -79,6 +68,7 @@
 set -euo pipefail
 
 driver=
+region=
 narrowed=
 harness=claude-code
 allow_host=example.com
@@ -101,6 +91,8 @@ while [ "$#" -gt 0 ]; do
 	--driver=*) driver=${1#*=}; shift ;;
 	--egress-narrowed) need "$@"; narrowed=$2; shift 2 ;;
 	--egress-narrowed=*) narrowed=${1#*=}; shift ;;
+	--region) need "$@"; region=$2; shift 2 ;;
+	--region=*) region=${1#*=}; shift ;;
 	--harness) need "$@"; harness=$2; shift 2 ;;
 	--harness=*) harness=${1#*=}; shift ;;
 	--allow) need "$@"; allow_host=$2; shift 2 ;;
@@ -125,13 +117,19 @@ done
 
 # The variable is disco-vm's own name for the driver's key, so the binding
 # serves the provider's config and disco-vm's listing alike. boxd requires a
-# region, in the provider's config and in disco-vm's (BOXD_REGION): the run's
-# is the home region, fra, whose machines' default proxies are in boxd.sh's
-# zone, which the ingress probe below reaches them at.
-region=
+# region both in the provider's config and in disco-vm's environment.
 case $driver in
-boxd) key_var=BOXD_API_KEY; region=fra ;;
-archil) key_var=ARCHIL_API_KEY ;;
+boxd)
+	key_var=BOXD_API_KEY
+	region=${region:-fra}
+	case $region in
+	fra) proxy_zone=boxd.sh; other_region=nyc ;;
+	nyc) proxy_zone=nyc.boxd.sh; other_region=fra ;;
+	*) echo "--region takes fra or nyc" >&2; exit 2 ;;
+	esac ;;
+archil)
+	key_var=ARCHIL_API_KEY
+	[ -z "$region" ] || { echo "--region is supported for boxd" >&2; exit 2; } ;;
 '') echo "--driver is required: boxd or archil" >&2; exit 2 ;;
 *) echo "--driver $driver: the live run takes boxd or archil" >&2; exit 2 ;;
 esac
@@ -269,6 +267,8 @@ scope() { printf '%s' "$1" | tr '[:upper:]_' '[:lower:]-'; }
 provider_id=
 pool_id=
 box_id=
+second_box_id=
+test_secret_id=
 out=
 screen=
 answers=
@@ -276,7 +276,7 @@ answers=
 # --- evidence, cleanup and report --------------------------------------
 
 # keep NAME ARGS... saves what a discobox call prints, output and errors, under
-# the evidence directory. The cleanup comes after; this run happens once.
+# the evidence directory before cleanup runs.
 keep() {
 	local file=$evidence/$1
 	shift
@@ -287,6 +287,9 @@ collect() {
 	if [ -n "$box_id" ]; then
 		keep discobox.json -o json admin box get "$box_id"
 		keep screen.txt capture --scrollback 5000 "$box_id"
+	fi
+	if [ -n "$second_box_id" ]; then
+		keep second-discobox.json -o json admin box get "$second_box_id"
 	fi
 	if [ -n "$pool_id" ]; then
 		keep pool.json -o json admin pool get "$pool_id"
@@ -339,7 +342,9 @@ leftovers() {
 	# A driver that issues no keys says so, and so does boxd to an API key,
 	# which may neither list keys nor issue them (disco-vm docs/drivers/boxd.md):
 	# with the run's key, nothing was issued to leave.
-	if out=$(dvm 0 '[]' "$scope" key ls --json 2>&1); then
+	if [ -z "$prefix" ]; then
+		: # No pool was created, so no key can be identified as ours.
+	elif out=$(dvm 0 '[]' "$scope" key ls --json 2>&1); then
 		keys=$(issued "$out" "$prefix")
 	elif ! printf '%s' "$out" | grep -qiE 'PermissionDenied|permission denied|interactive session|not supported'; then
 		unlisted="$unlisted keys ($out)"
@@ -348,7 +353,7 @@ leftovers() {
 		fail "$step-listed" "disco-vm could not list scope $scope's $unlisted"
 	fi
 	if [ -z "$machines$caches$keys" ]; then
-		[ -n "$unlisted" ] || pass "$step" "nothing left in scope $scope"
+		[ -n "$unlisted" ] || pass "$step" "nothing left in scope $scope${region:+ in $region}"
 		return
 	fi
 	fail "$step" "left in scope $scope: machines [$(words "$machines")] caches [$(words "$caches")] keys [$(words "$keys")]; removing them"
@@ -356,12 +361,26 @@ leftovers() {
 	for n in $keys; do dvm 0 '' "$scope" key revoke "$n" >&2 || note "could not revoke key $n"; done
 	for n in $machines; do dvm 0 '' "$scope" rm --force "$n" >&2 || note "could not remove $n"; done
 	for n in $caches; do dvm 0 '' "$scope" cache rm "$n" >&2 || note "could not remove cache $n"; done
-	out=$(dvm 0 'ID  NAME  FROM  OS  STATE  CREATED' "$scope" ls -a 2>&1 || true)
-	machines=$(names "$out")
-	keys=
-	if out=$(dvm 0 '[]' "$scope" key ls --json 2>/dev/null); then keys=$(issued "$out" "$prefix"); fi
-	if [ -n "$machines$keys" ]; then
-		fail "$step-removed" "still left in scope $scope after removing: machines [$(words "$machines")] keys [$(words "$keys")]; remove them by hand"
+	local remaining
+	if ! remaining=$(dvm 0 'ID  NAME  FROM  OS  STATE  CREATED' "$scope" ls -a 2>&1); then
+		fail "$step-removed" "could not read machines after removal"
+		return
+	fi
+	machines=$(names "$remaining")
+	if ! remaining=$(dvm 0 '[]' "$scope" cache ls --json 2>&1); then
+		fail "$step-removed" "could not read caches after removal"
+		return
+	fi
+	caches=$(field "$remaining" '.[]?.key // empty')
+	if [ -n "$keys" ]; then
+		if ! remaining=$(dvm 0 '[]' "$scope" key ls --json 2>&1); then
+			fail "$step-removed" "could not read issued keys after removal"
+			return
+		fi
+		keys=$(issued "$remaining" "$prefix")
+	fi
+	if [ -n "$machines$caches$keys" ]; then
+		fail "$step-removed" "still left after removing: machines [$(words "$machines")] caches [$(words "$caches")] keys [$(words "$keys")]"
 	else
 		pass "$step-removed" "removed what was left in scope $scope"
 	fi
@@ -371,6 +390,20 @@ cleanup() {
 	set +e
 	collect
 	echo "--- cleanup" >&2
+	if [ -n "$test_secret_id" ]; then
+		if dc 0 '' secret rm "$test_secret_id" >&2; then
+			pass cleanup-test-secret "removed the run's test secret"
+		else
+			fail cleanup-test-secret "could not remove the run's test secret"
+		fi
+	fi
+	if [ -n "$second_box_id" ]; then
+		if dc 0 '' admin box purge "$second_box_id" >&2; then
+			pass cleanup-second-discobox "purged $second_box_id"
+		else
+			fail cleanup-second-discobox "could not purge $second_box_id"
+		fi
+	fi
 	if [ -n "$box_id" ]; then
 		if dc 0 '' admin box purge "$box_id" >&2; then
 			pass cleanup-discobox "purged $box_id"
@@ -399,6 +432,10 @@ cleanup() {
 	# the provider's scope, named for the pool's.
 	if [ -n "$pool_id" ]; then leftovers left-pool-scope "$(scope "$pool_id")" "$(scope "$pool_id")-"; fi
 	if [ -n "$provider_id" ]; then leftovers left-provider-scope "$(scope "$provider_id")" "${pool_id:+$(scope "$pool_id")-}"; fi
+	if [ "$driver" = boxd ]; then
+		if [ -n "$pool_id" ]; then region=$other_region leftovers "left-pool-scope-$other_region" "$(scope "$pool_id")" ""; fi
+		if [ -n "$provider_id" ]; then region=$other_region leftovers "left-provider-scope-$other_region" "$(scope "$provider_id")" ""; fi
+	fi
 }
 
 finish() {
@@ -428,10 +465,10 @@ finish() {
 		else
 			echo "**$failed step(s) did not pass** (FAIL, or CHECK for a person to judge)."
 		fi
-		if grep -qE '^FAIL	left-[a-z]+-scope	' "$results"; then
+		if grep -qE '^FAIL	left-[a-z]+-scope(-[a-z]+)?	left in scope ' "$results"; then
 			echo "Something was left under the run's scopes; see the left- rows."
 		fi
-		if grep -qE '^FAIL	left-[a-z]+-scope-listed	' "$results"; then
+		if grep -qE '^FAIL	left-[a-z]+-scope(-[a-z]+)?-listed	' "$results"; then
 			echo "disco-vm could not list all of the run's scopes, so what is left there is not known; see the -listed rows."
 		fi
 	} | tee "$evidence/report.md"
@@ -465,9 +502,9 @@ for ((i = 0; i < ${#dc_flags[@]}; i++)); do
 	esac
 done
 case $dry:$server in
-1:*discobox.internal*) note "the server is $server, this box's gate: a live run refuses it" ;;
-0:*discobox.internal*)
-	fail preflight "the server is $server, this box's gate to the outer server, which must never get the key: pass the box's own with --server, or unset DISCOBOX_SERVER"
+1:*|0:unix:///*) ;;
+*)
+	fail preflight "the server is ${server:-unset}; live validation requires --server unix:///path/to/socket for the box's own server"
 	exit 1 ;;
 esac
 if ! dcout out 0 '[]' -o json admin provider list; then
@@ -475,6 +512,30 @@ if ! dcout out 0 '[]' -o json admin provider list; then
 	exit 1
 fi
 pass preflight "tools on PATH, \$$key_var set, the server ${server:-local} answers"
+
+if [ -n "$harness" ]; then
+	if ! dcout out 0 '{}' -o json admin harness get "$harness"; then
+		fail preflight "could not read harness $harness"
+		exit 1
+	fi
+fi
+if [ "$harness" = claude-code ]; then
+	if ! dcout out 0 '{"boundSecrets":[{"use":true,"envVar":"ANTHROPIC_API_KEY","routes":[[{"hosts":["api.anthropic.com"]}]]}]}' -o json secret bound --harness "$harness" ||
+		! printf '%s' "$out" | jq -e '
+		[.boundSecrets[]? | select(.use and (.notApplied == null) and (.envVar == "ANTHROPIC_API_KEY" or .envVar == "CLAUDE_CODE_OAUTH_TOKEN"))]
+		| length > 0 and all(.[]; .envVar as $env
+			| any(.routes[]?;
+				[.[] | select(.blocked != true) | .hosts[]] as $hosts
+				| ($hosts | index("api.anthropic.com")) != null
+				and all($hosts[]; . == "api.anthropic.com" or
+					($env == "CLAUDE_CODE_OAUTH_TOKEN" and (. == "claude.ai" or . == "mcp-proxy.anthropic.com"))))
+		)
+		' >/dev/null; then
+		fail preflight "Claude Code has no bound Anthropic credential limited to the harness's hosts on the run's server"
+		exit 1
+	fi
+	pass preflight "the run's server has a host-scoped Claude Code credential binding"
+fi
 
 echo "--- provider" >&2
 # The provider's config, on the driver's own provider type (ADR
@@ -544,12 +605,81 @@ while :; do
 done
 pass pool-ready "active after ${waited}s"
 
+echo "--- test secret" >&2
+# Bind a harmless unique value with no exchange routes. Its sentinel has
+# a distinct, known shape so the guest can check it without printing either
+# the sentinel or the value.
+test_value=live-run-value-$nonce
+secret_config=$work/test-secret.json
+jq -n --arg token "$test_value" '{token: $token}' >"$secret_config"
+if ! dcout out 0 '{"id":"sec_dryrun"}' -o json secret create --name "$name" --type token --format 'live-run-sentinel-{hex:32}' --value-json "@$secret_config"; then
+	fail sentinels "could not create the test secret"
+	exit 1
+fi
+rm -f "$secret_config"
+test_secret_id=$(field "$out" '.id // empty')
+if [ -z "$test_secret_id" ] || ! dcout out 0 '' secret bind "$test_secret_id" --project-wide --as DISCOBOX_LIVE_RUN_TEST; then
+	fail sentinels "could not bind the test secret"
+	exit 1
+fi
+
+probe_sentinel() {
+	local id=$1 step=$2 waited=0
+	# A runtime config can arrive after the box first reports running.
+	while :; do
+		# shellcheck disable=SC2016 # This command expands its arguments in the sandbox.
+		if dc 0 '' exec "$id" -- sh -c '
+			if env | grep -Fq -- "$1"; then exit 1; fi
+			sudo -n jq -e --arg raw "$1" "$2" /run/discobox/secrets/secrets.json
+		' probe "$test_value" '
+			(.DISCOBOX_LIVE_RUN_TEST | strings | test("^live-run-sentinel-[0-9a-f]{32}$")) and
+			all(.. | strings; contains($raw) | not)
+		' >/dev/null 2>&1; then
+			pass "$step" "$id has the expected test sentinel after ${waited}s"
+			return
+		fi
+		if [ "$waited" -ge "$pool_wait" ]; then
+			fail "$step" "$id did not expose the expected test sentinel within $pool_timeout"
+			return
+		fi
+		pause 10
+		waited=$((waited + 10))
+	done
+}
+probe_pool_sentinel() {
+	local id=$1
+	# shellcheck disable=SC2016 # The arguments expand on the pool machine.
+	if dvm 0 '' "$(scope "$provider_id")" exec "$(scope "$pool_id")" sh -c '
+		raw=$3 query=$4
+		set -- /var/lib/discobox/projects/*/pools/"$1"/sandboxes/"$2"/runtime-config.json
+		[ "$#" = 1 ] && jq -e --arg raw "$raw" "$query" "$1"
+	' probe "$pool_id" "$id" "$test_value" '
+		(.document.secretEnv.DISCOBOX_LIVE_RUN_TEST | strings | test("^live-run-sentinel-[0-9a-f]{32}$")) and
+		all(.. | strings; contains($raw) | not)
+	' >/dev/null 2>&1; then
+		pass pool-sentinels "the pool recorded a sentinel for $id"
+	else
+		fail pool-sentinels "the pool's runtime config for $id did not show the expected sentinel"
+	fi
+}
+if [ "$driver" = boxd ]; then
+	if dvm 0 '' "$(scope "$provider_id")" exec "$(scope "$pool_id")" sh -c '
+		test ! -e /etc/discobox/pool-agent/provisioning-key.json &&
+		jq -e ".driverConfig.inMachine == true and (.driverConfig | has(\"apiKey\") | not)" /etc/discobox/pool-agent/bootstrap.json
+	' >/dev/null 2>&1; then
+		pass pool-credential "boxd pool uses in-machine authentication and has no provider key in its bootstrap or provisioning key file"
+	else
+		fail pool-credential "could not confirm in-machine authentication without a provider key in the pool bootstrap"
+	fi
+fi
+
 echo "--- discobox" >&2
 # The prompt asks for something its own text does not hold, so finding the
 # answer on the screen shows the harness reached its model.
 want=$(printf '%s' "$nonce" | awk '{ s = ""; for (i = length($0); i > 0; i--) s = s substr($0, i, 1); print s }')
 prompt="Reply with the string $nonce written backwards, and nothing else. Do not run any tool."
-run_args=(run --no-source --pool "$pool_id" -d -p "$prompt")
+run_args=(run --no-source --pool "$pool_id" -d)
+[ "$harness" = claude-code ] || run_args+=(-p "$prompt")
 [ -z "$harness" ] || run_args+=(-H "$harness")
 # Its progress goes to stderr, apart from the JSON on stdout.
 if ! dcout out 0 '{"id":"sbx_dryrun"}' -o json "${run_args[@]}"; then
@@ -559,21 +689,6 @@ fi
 box_id=$(field "$out" '.id // empty')
 [ -n "$box_id" ] || { fail discobox "run printed no id: $out $err"; exit 1; }
 pass discobox "created $box_id"
-
-if ! dcout out 0 'finished' wait "$box_id" --until finished --until blocked --for "$harness_timeout"; then
-	fail harness "did not finish within $harness_timeout: $out $err"
-else
-	dcout screen 0 "$want" capture "$box_id" || true
-	case $out in
-	*blocked*) fail harness "blocked instead of answering: $out" ;;
-	*)
-		if printf '%s' "$screen" | grep -qF "$want"; then
-			pass harness "answered $want"
-		else
-			fail harness "finished, but its screen does not show $want: $(printf '%s' "$screen" | tail -5)"
-		fi ;;
-	esac
-fi
 
 # Attaching is the stream a person gets: its first screen is enough. With no
 # terminal it is raw; stdin stays open for a while, so it does not detach at
@@ -613,6 +728,34 @@ while :; do
 	pause 10
 	waited=$((waited + 10))
 done
+
+if [ "$harness" = claude-code ]; then
+	harness_started=$SECONDS
+	if answer=$(ext 0 "$want" timeout -k 5s "$harness_timeout" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$box_id" -- claude -p "$prompt" </dev/null 2>"$work/harness.err") &&
+		printf '%s\n' "$answer" | grep -Fxq "$want"; then
+		pass harness "Claude Code returned the expected answer after $((SECONDS - harness_started))s"
+	else
+		fail harness "Claude Code did not return the expected answer within $harness_timeout"
+	fi
+else
+	if ! dcout out 0 'finished' wait "$box_id" --until finished --until blocked --for "$harness_timeout"; then
+		fail harness "did not finish within $harness_timeout: $out $err"
+	else
+		dcout screen 0 "$want" capture "$box_id" || true
+		case $out in
+		*blocked*) fail harness "blocked instead of answering: $out" ;;
+		*)
+			if printf '%s' "$screen" | grep -qF "$want"; then
+				pass harness "answered $want"
+			else
+				fail harness "finished, but its screen does not show $want: $(printf '%s' "$screen" | tail -5)"
+			fi ;;
+		esac
+	fi
+fi
+
+probe_sentinel "$box_id" sentinels
+probe_pool_sentinel "$box_id"
 
 echo "--- egress" >&2
 # The discobox's own level: it may reach the one allowed host, and the
@@ -804,8 +947,7 @@ fi
 # docs/drivers/boxd.md, The ingress URL). That proxy is probed itself,
 # whatever disco-vm url said: a check of only the URL the driver reports
 # cannot see a proxy it stopped reporting. The machine is
-# dvm-<pool>--<name> (the same file, Create), in the home region's zone,
-# boxd.sh: the provider is made in the home region, fra.
+# dvm-<pool>--<name> (the same file, Create), in the selected region's zone.
 #
 # boxd answers 502 too where a proxy left open forwards to a port nothing
 # listens on, which it picks from the ports below (the first the guest
@@ -823,7 +965,7 @@ fi
 # challenge (x-boxd-proxy: challenge) in place of its 502: that answer names
 # a disco-vm pin from before it did.
 if [ "$driver" = boxd ]; then
-	proxy=https://dvm-$(scope "$pool_id")--$machine.boxd.sh
+	proxy=https://dvm-$(scope "$pool_id")--$machine.$proxy_zone
 	marker="discobox-live-run-listener"
 	listen=$(cat <<'EOF'
 command -v python3 >/dev/null 2>&1 || { echo "no-python3"; exit 0; }
@@ -907,4 +1049,93 @@ listening 8080 8000 3000 5000 5173" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} 
 			check closed-proxy "$proxy answers HTTP $code (server '$server'): $body; read it: boxd's own refusal passes, anything from the guest fails"
 		fi ;;
 	esac
+fi
+
+if [ "$driver" = boxd ]; then
+	machine_scope=$(scope "$pool_id")
+	if ! listed=$(dvm 0 "ID NAME FROM OS STATE CREATED
+dry-id $machine - linux running now" "$machine_scope" ls -a); then
+		fail region "could not list the sandbox scope in $region"
+	elif ! names "$listed" | grep -Fxq "$machine"; then
+		fail region "$machine was not listed in $region"
+	elif ! listed=$(region=$other_region dvm 0 'ID NAME FROM OS STATE CREATED' "$machine_scope" ls -a); then
+		check region "could not list the sandbox scope in $other_region"
+	elif names "$listed" | grep -Fxq "$machine"; then
+		fail region "$machine is also listed in $other_region"
+	else
+		pass region "$machine is listed in $region and absent from $other_region"
+	fi
+fi
+
+echo "--- snapshot" >&2
+# Creating the first box schedules its plan's snapshot on the pool. Wait
+# for the pool to hold it before creating a second box with the same plan.
+waited=0
+snapshot=
+while :; do
+	if ! dcout out 0 '{"resources":{"snapshots":{"held":[{"key":"dry-snapshot"}]}}}' -o json admin pool get "$pool_id"; then
+		fail snapshot "could not read the pool's snapshots: $err"
+		break
+	fi
+	snapshot=$(field "$out" '.resources.snapshots.held[0].key // empty')
+	if [ -n "$snapshot" ]; then
+		pass snapshot "pool holds $snapshot after ${waited}s"
+		break
+	fi
+	if [ "$waited" -ge "$pool_wait" ]; then
+		fail snapshot "no held snapshot after $pool_timeout: $(field "$out" '.resources.snapshots.failed // [] | tojson')"
+		break
+	fi
+	pause 10
+	waited=$((waited + 10))
+done
+if [ -n "$snapshot" ]; then
+	second_args=(run --no-source --pool "$pool_id" -d)
+	[ -z "$harness" ] || second_args+=(-H "$harness")
+	if dcout out 0 '{"id":"sbx_dryrun2"}' -o json "${second_args[@]}"; then
+		second_box_id=$(field "$out" '.id // empty')
+	fi
+	if [ -z "$second_box_id" ]; then
+		fail snapshot-start "could not create the second discobox: $err"
+	else
+		waited=0
+		while :; do
+			if ! dcout out 0 '{"runtime":{"state":"running","startedFrom":{"from":"snapshot","snapshot":"dry-snapshot"}}}' -o json admin box get "$second_box_id"; then
+				fail snapshot-start "could not read the second discobox: $err"
+				break
+			fi
+			state=$(field "$out" '.runtime.state // "unknown"')
+			if [ "$state" = running ]; then
+				started_from=$(field "$out" '.runtime.startedFrom | select(.from == "snapshot") | .snapshot // empty')
+				if [ "$started_from" = "$snapshot" ]; then
+					pass snapshot-start "$second_box_id started from $snapshot after ${waited}s"
+					probe_sentinel "$second_box_id" snapshot-sentinels
+					probe_pool_sentinel "$second_box_id"
+				else
+					fail snapshot-start "$second_box_id started from ${started_from:-no snapshot}, expected $snapshot"
+				fi
+				break
+			fi
+			if [ "$state" = failed ] || [ "$waited" -ge "$pool_wait" ]; then
+				fail snapshot-start "$second_box_id is $state after ${waited}s"
+				break
+			fi
+			pause 10
+			waited=$((waited + 10))
+		done
+	fi
+fi
+
+echo "--- channel" >&2
+if dcout out 0 'control-plane channel open' admin pool logs "$pool_id" --tail 0; then
+	printf '%s\n' "$out" >"$evidence/channel.log"
+	opens=$(printf '%s\n' "$out" | awk '/control-plane channel open/ { n++ } END { print n+0 }')
+	cuts=$(printf '%s\n' "$out" | awk '/control-plane channel closed/ { n++ } END { print n+0 }')
+	if [ "$opens" -eq 0 ]; then
+		check channel "the pool journal records no control-plane channel opening"
+	else
+		pass channel "pool journal: $cuts cuts, $((opens - 1)) successful redials"
+	fi
+else
+	check channel "could not read the pool journal: $err"
 fi
