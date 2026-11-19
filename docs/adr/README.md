@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-19-441](26-11-19-441-explicit-pool-deletion-cleans-up-its-shared-daemon-containers.md) | Explicit pool deletion cleans up its shared-daemon containers | Proposed |
 | [26-11-19-797](26-11-19-797-a-box-reprovisions-its-failed-features-on-its-own-a-few-times-and-shows-what-still-failed.md) | A box reprovisions its failed features on its own, a few times, and shows what still failed | Proposed (would supersede [26-11-11-560](26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)'s Deferred automatic reprovision, and narrow its §5 "No console surface": a running row with a feature still failed is marked) |
 | [26-11-19-927](26-11-19-927-a-person-may-rebind-a-boxs-variable-to-another-secret-and-the-sentinel-stays.md) | A person may rebind a box's variable to another secret, and the sentinel stays | Proposed (would amend 26-11-02-022 §5's refusal of a variable holding another secret, for a person naming the binding it replaces; 26-11-03-329 §2's dormant additions, for a rebind; and 26-11-11-539 §1's generation, which names its secret) |
 | [26-11-19-735](26-11-19-735-ubuntu-apt-tries-ordered-mirrors-for-each-architecture.md) | Ubuntu apt tries ordered mirrors for each architecture | Proposed (would supersede [26-11-16-365](26-11-16-365-every-linux-base-is-the-newest-ubuntu-lts-read-from-a-fast-mirror.md) §3's mirror order) |
