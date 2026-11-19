@@ -850,7 +850,7 @@ func TestARebuildCutShortWaitsOutABuildOfItsSnapshot(t *testing.T) {
 	}
 	// A build of the plan, past its hold check, before its create.
 	r.snapshots.mu.Lock()
-	r.snapshots.active = map[string]context.CancelFunc{key: func() {}}
+	r.snapshots.active = map[string]*snapshotBuild{key: {cancel: func() {}}}
 	r.snapshots.mu.Unlock()
 	if err := r.StartSandbox(ctx, "sbx_3", nil); err == nil || !strings.Contains(err.Error(), "being built again") {
 		t.Fatalf("a start while its snapshot is being built = %v, want it refused", err)
