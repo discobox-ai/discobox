@@ -783,11 +783,11 @@ func (e *Engine) startPoolContainer(ctx context.Context, cli *client.Client, exi
 		return err
 	}
 	markPoolStarted(pool)
-	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	startCtx, releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	// No agent runs in a stopped container, so the pool's agent counts as
 	// started from just before it starts (ADR 26-11-15-294 §1).
-	sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartBox)
-	_, err := cli.ContainerStart(ctx, existing.ID, client.ContainerStartOptions{})
+	sandbox.ReportAgentStarted(startCtx, time.Now(), sandbox.AgentStartBox)
+	_, err := cli.ContainerStart(startCtx, existing.ID, client.ContainerStartOptions{})
 	releaseStart()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -796,12 +796,12 @@ func (e *Engine) startPoolContainer(ctx context.Context, cli *client.Client, exi
 		return &poolStartError{err: err}
 	}
 	steps.Step(ctx, "started the pool's stopped container in place", "container", shortContainerID(existing.ID))
-	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
+	agentCtx, releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
 	defer releaseAgent()
 	// Every attempt of the wait is bounded, not only the pauses between
 	// them: the pass's context never ends, and a guest whose Docker accepts
 	// a connection and never answers would hold it for ever.
-	waitCtx, cancel := context.WithTimeout(ctx, agentStartTimeout)
+	waitCtx, cancel := context.WithTimeout(agentCtx, agentStartTimeout)
 	defer cancel()
 	if declaresHealthcheck(existing) {
 		// The healthcheck the container was created with probes the agent
