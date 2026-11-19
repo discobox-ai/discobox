@@ -37,8 +37,7 @@ message and `At` its pointers; candidates are a WebSocket route whose place
 allows the pointer in that message, or a blocked route without a protocol
 block. Specificity is host then path as for every use; conditions add none.
 
-`ParseMessage` reads one strict JSON object (`ParseDocument` any value, which
-the proxy reads body places in too): no duplicate members, no
+`ParseMessage` reads one strict JSON object (`ParseDocument` any value): no duplicate members, no
 unpaired surrogates, depth 64, with numbers kept as exact decimals
 (`canonicalNumber`), so `2` and `2.0` are one value and no float rounding
 joins two. Conditions are stored in that canonical spelling, which makes

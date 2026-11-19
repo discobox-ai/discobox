@@ -708,9 +708,6 @@ Key properties:
     as an HTTP response would. The capture is kept clean of it: every value
     swapped in is added to the connection's redactions before it is sent
     (`StreamSession.Redact`).
-  - Body places read through the same strict reader
-    (`secretroute.ParseDocument`), so a body and a message resolve pointers,
-    escapes and duplicate members alike.
 - **A sentinel is also matched through base64.** Git's HTTP transport sends a
   credential as `Authorization: Basic base64(user:password)`, so a sentinel
   traveling that way is invisible to a literal scan and the upstream is handed
