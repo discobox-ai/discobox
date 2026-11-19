@@ -2,9 +2,13 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -29,9 +33,10 @@ const statusLayerAPI = "api"
 // emits. It is the transport's diagnosis plus the two things only this side
 // knows: which client asked, and whether the API answered it.
 type statusReport struct {
-	Pools    []statusPoolOutbound `json:"pools,omitempty"`
-	Client   statusClient         `json:"client"`
-	Endpoint endpoint.Diagnosis   `json:"endpoint"`
+	ProviderChecks []statusProviderCheck `json:"providerChecks,omitempty"`
+	Pools          []statusPoolOutbound  `json:"pools,omitempty"`
+	Client         statusClient          `json:"client"`
+	Endpoint       endpoint.Diagnosis    `json:"endpoint"`
 	// Server is what the server says about its own iroh listener, when this
 	// client could reach it to ask. It is the other half of the report: every
 	// layer above is this client's view of one transport, and this is the
@@ -138,6 +143,7 @@ func (a *App) runStatus(cmd *cobra.Command, timeout time.Duration) error {
 	}
 
 	report.Endpoint = endpoint.Diagnose(ctx, a.serverURL, endpoint.DiagnoseOptions{})
+	transportReachable := report.Endpoint.OK()
 	report.Endpoint.Steps = append(report.Endpoint.Steps, a.statusAPILayer(ctx, report.Endpoint))
 	report.Reachable = report.Endpoint.OK()
 	// Asked of the server only when it answered: an ID read off the address
@@ -153,7 +159,10 @@ func (a *App) runStatus(cmd *cobra.Command, timeout time.Duration) error {
 	// value of the command: it is the one place that says whether the transport
 	// other machines dial is working.
 	report.Server = a.statusServer(ctx, report.Endpoint)
-	report.Pools = a.statusPoolOutbound(ctx, report.Endpoint)
+	a.statusPools(ctx, &report)
+	if !transportReachable && resolveErr == nil && parsed.Scheme == "unix" && runtime.GOOS == "linux" {
+		report.ProviderChecks = a.statusLocalHost(ctx)
+	}
 	return a.writeStatus(cmd, report)
 }
 
@@ -389,6 +398,17 @@ func printStatus(out io.Writer, color colorWhen, report statusReport) {
 	}
 
 	printStatusServer(writer, paint, report.Server)
+	for _, check := range report.ProviderChecks {
+		fmt.Fprint(writer, "provider  ")
+		if check.PoolID != "" {
+			fmt.Fprintf(writer, "%s · ", terminalSafe(check.PoolID))
+		}
+		fmt.Fprintf(writer, "%s · %s", terminalSafe(check.Type), terminalSafe(check.Outcome))
+		if check.Message != "" {
+			fmt.Fprintf(writer, " · %s", terminalSafe(check.Message))
+		}
+		fmt.Fprintln(writer)
+	}
 	for _, pool := range report.Pools {
 		status := pool.Outbound
 		fmt.Fprintf(writer, "pool      %s · outbound %s (%s)\n", terminalSafe(pool.ID), terminalSafe(status.Mode.Or("direct")), terminalSafe(status.Source.Or("unknown")))
@@ -517,27 +537,67 @@ type statusPoolOutbound struct {
 	Outbound apimodel.PoolOutboundStatus `json:"outbound"`
 }
 
-func (a *App) statusPoolOutbound(ctx context.Context, diagnosis endpoint.Diagnosis) []statusPoolOutbound {
-	if !diagnosis.OK() || diagnosis.ServerStatus == health.StatusStarting {
+type statusProviderCheck struct {
+	PoolID  string `json:"poolId,omitempty"`
+	Type    string `json:"type"`
+	Outcome string `json:"outcome"`
+	Message string `json:"message,omitempty"`
+}
+
+// statusLocalHost can diagnose failed first startup even when there is no
+// provider instance or running API to ask.
+func (a *App) statusLocalHost(ctx context.Context) []statusProviderCheck {
+	resolver := a.serverResolver(nil)
+	binary, err := resolver.resolve(ctx)
+	if err != nil {
 		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, binary, "--version", "--check-host")
+	// The checkout is not a trusted place to load an implicit server env file.
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), resolver.env...)
+	if envFile := os.Getenv("DISCOBOX_ENV_FILE"); envFile != "" {
+		if abs, err := filepath.Abs(envFile); err == nil {
+			cmd.Env = append(cmd.Env, "DISCOBOX_ENV_FILE="+abs)
+		}
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var checks []statusProviderCheck
+	if err := json.Unmarshal(output, &checks); err != nil {
+		return nil
+	}
+	return checks
+}
+
+func (a *App) statusPools(ctx context.Context, report *statusReport) {
+	diagnosis := report.Endpoint
+	if !diagnosis.OK() || diagnosis.ServerStatus == health.StatusStarting {
+		return
 	}
 	base, httpClient, err := a.httpClientWithAutoStart(false)
 	if err != nil {
-		return nil
+		return
 	}
 	client, err := newServerAPIClient(base, httpClient)
 	if err != nil {
-		return nil
+		return
 	}
 	res, err := client.ListProjects(ctx)
 	if err != nil {
-		return nil
+		return
 	}
 	projects, err := expectResponse[apimodel.ListProjectsBody](res)
 	if err != nil {
-		return nil
+		return
 	}
-	var result []statusPoolOutbound
+
 	for _, project := range projects.GetProjects() {
 		res, err := client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: project.ID})
 		if err != nil {
@@ -549,9 +609,38 @@ func (a *App) statusPoolOutbound(ctx context.Context, diagnosis endpoint.Diagnos
 		}
 		for _, pool := range pools.GetPools() {
 			if outbound, ok := pool.Outbound.Get(); ok {
-				result = append(result, statusPoolOutbound{ID: pool.ID, Outbound: outbound})
+				report.Pools = append(report.Pools, statusPoolOutbound{ID: pool.ID, Outbound: outbound})
 			}
+			if pool.ID != project.DefaultPoolId.Or("") {
+				continue
+			}
+			res, err := client.GetSandboxProviderInstance(ctx, apiclientgen.GetSandboxProviderInstanceParams{
+				ProjectId: project.ID, ProviderId: pool.ProviderInstanceId,
+			})
+			if err != nil {
+				continue
+			}
+			provider, err := expectResponse[apimodel.SandboxProviderInstance](res)
+			if err != nil || (provider.Type != "docker" && provider.Type != "libkrun") {
+				continue
+			}
+			checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			resCheck, err := client.CheckSandboxProviderHost(checkCtx, apiclientgen.CheckSandboxProviderHostParams{
+				ProjectId: project.ID, ProviderId: provider.ID,
+			})
+			cancel()
+			check := statusProviderCheck{PoolID: pool.ID, Type: provider.Type}
+			if err == nil {
+				var result *apimodel.ProviderCheck
+				result, err = expectResponse[apimodel.ProviderCheck](resCheck)
+				if err == nil {
+					check.Outcome, check.Message = string(result.Outcome), result.Message.Or("")
+				}
+			}
+			if err != nil {
+				check.Outcome, check.Message = "check failed", err.Error()
+			}
+			report.ProviderChecks = append(report.ProviderChecks, check)
 		}
 	}
-	return result
 }

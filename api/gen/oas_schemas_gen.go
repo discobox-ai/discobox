@@ -3207,6 +3207,7 @@ func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
 func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
 func (*ErrorModelStatusCode) authorizePoolSandboxStartRes()             {}
+func (*ErrorModelStatusCode) checkSandboxProviderHostRes()              {}
 func (*ErrorModelStatusCode) checkSandboxProviderInstanceRes()          {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
 func (*ErrorModelStatusCode) completePoolSandboxSuspendRes()            {}
@@ -21162,6 +21163,7 @@ func (s *ProviderCheck) SetOutcome(val ProviderCheckOutcome) {
 	s.Outcome = val
 }
 
+func (*ProviderCheck) checkSandboxProviderHostRes()     {}
 func (*ProviderCheck) checkSandboxProviderInstanceRes() {}
 
 // Ok: the provider reaches what its pools need. refused: something answered and refused (a key it

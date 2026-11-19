@@ -33,6 +33,10 @@ type AuthorizePoolSandboxStartRes interface {
 	authorizePoolSandboxStartRes()
 }
 
+type CheckSandboxProviderHostRes interface {
+	checkSandboxProviderHostRes()
+}
+
 type CheckSandboxProviderInstanceRes interface {
 	checkSandboxProviderInstanceRes()
 }

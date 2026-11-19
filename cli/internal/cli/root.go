@@ -867,6 +867,8 @@ func localServerEnv(listen string) []string {
 		endpoint.AddressEnv,
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
+		"DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH",
+		"XDG_RUNTIME_DIR",
 		"DISCOBOX_CACHE_DIR",
 		ServerConfigFileEnv,
 		"DISCOBOX_CONFIG_DIR",

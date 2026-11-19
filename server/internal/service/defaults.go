@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/providers"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"
 	"github.com/discobox-ai/x/id"
@@ -226,8 +227,8 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 	}
 	switch runtime.GOOS {
 	case "linux":
-		err := libkrun.CheckHost(ctx, libkrun.Config{}, true)
-		if err == nil {
+		krunErr, dockerErr := providers.CheckDefaultLinuxHost(ctx)
+		if krunErr == nil {
 			provider.Type = libkrun.ProviderType
 			provider.Name = "libkrun"
 			for _, listen := range listenEndpoints {
@@ -241,10 +242,13 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 			}
 			return provider, "", nil
 		}
+		if dockerErr != nil {
+			return nil, "", fmt.Errorf("no usable driver for the default pool: libkrun is unavailable (%w); Docker is unavailable (%w)", krunErr, dockerErr)
+		}
 		provider.Type = "docker"
 		provider.Name = "Docker"
 		provider.Config = defaultDockerProviderConfig()
-		return provider, fmt.Sprintf("libkrun is unavailable (%v). Using Docker for the Default pool: sandboxes share the host kernel without a VM isolation boundary.", err), nil
+		return provider, fmt.Sprintf("libkrun is unavailable (%v). Using Docker for the Default pool: sandboxes share the host kernel without a VM isolation boundary.", krunErr), nil
 	case "darwin":
 		// Every field of the vz config has a default (see its Definition), so the
 		// built-in instance carries no configuration of its own, exactly as on
@@ -269,8 +273,7 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 
 func defaultDockerProviderConfig() model.RawJSON {
 	config := map[string]any{
-		"bindDockerSocket": "/var/run/docker.sock",
-		"agentPort":        providerdocker.DefaultAgentPort(),
+		"agentPort": providerdocker.DefaultAgentPort(),
 	}
 	if hostMounts := defaultDockerHostMounts(); len(hostMounts) > 0 {
 		config["hostMounts"] = hostMounts
