@@ -46,7 +46,7 @@ teardown_file() {
   done
   [ "$saw_preparing" = true ]
   # A real missing ID is still 404 while primary preparation is in progress.
-  code="$(curl -sS -o "$BATS_TEST_TMPDIR/unknown" -w '%{http_code}' "$DISCOBOX_BATS_SERVER/api/projects/$project/sandboxes/$id/execs/exec-does-not-exist/screen")"
+  code="$(curl -sS -o "$BATS_TEST_TMPDIR/unknown" -w '%{http_code}' "$DISCOBOX_BATS_SERVER/projects/$project/sandboxes/$id/agent/execs/exec-does-not-exist/screen")"
   [ "$code" = 404 ]
   grep -q 'sandbox exec not found' "$BATS_TEST_TMPDIR/unknown"
   # Command creation waits on readiness, then runs without a primary-ID lookup.

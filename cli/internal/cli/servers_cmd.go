@@ -7,11 +7,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/spf13/cobra"
-
-	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/spf13/cobra"
 )
 
 // newServersCommand implements `discobox admin remote`: the servers this client
@@ -99,7 +97,7 @@ func (a *App) listServers(cmd *cobra.Command) error {
 	// is asked only if it is already running.
 	if primary := set[0]; !primary.registered {
 		if baseURL, httpClient, err := a.httpClientWithAutoStart(false); err == nil {
-			if client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient)); err == nil {
+			if client, err := newServerAPIClient(baseURL, httpClient); err == nil {
 				if name := offeredName(cmd.Context(), client); name != "" {
 					primary.name = name
 				}
@@ -374,7 +372,7 @@ func (a *App) setPrimaryServer(cmd *cobra.Command, name string, registerCurrent 
 			if err != nil {
 				return err
 			}
-			client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient))
+			client, err := newServerAPIClient(baseURL, httpClient)
 			if err != nil {
 				return err
 			}

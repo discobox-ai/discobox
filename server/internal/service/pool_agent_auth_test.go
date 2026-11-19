@@ -132,7 +132,7 @@ func updateTestPoolStatus(ctx context.Context, svc *service.Service, appStore *s
 }
 
 func authenticateTestPoolAgent(ctx context.Context, appStore *store.Store, authorization, poolID string) (context.Context, error) {
-	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/pools/"+poolID+"/status", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/pool-agent/"+poolID+"/status", nil)
 	req.Header.Set("Authorization", authorization)
 	principal, ok, err := (auth.PoolAuthenticator{Store: appStore}).Authenticate(req)
 	if err != nil {

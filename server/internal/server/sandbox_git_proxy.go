@@ -203,8 +203,9 @@ func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease, r
 			rawQuery := req.In.URL.RawQuery
 			req.SetURL(target)
 			req.Out.URL.Path = target.Path
-			req.Out.URL.RawPath = ""
+			req.Out.URL.RawPath = target.RawPath
 			req.Out.URL.RawQuery = rawQuery
+			req.Out.URL.ForceQuery = req.In.URL.ForceQuery
 			req.Out.Host = target.Host
 			req.SetXForwarded()
 		},

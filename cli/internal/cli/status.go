@@ -215,7 +215,7 @@ func (a *App) statusAPIStep(ctx context.Context) endpoint.DiagnosisStep {
 		step.Error = err.Error()
 		return step
 	}
-	client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient))
+	client, err := newServerAPIClient(baseURL, httpClient)
 	if err != nil {
 		step.Status = endpoint.DiagnosisFailed
 		step.Summary = "no API client for this endpoint"
@@ -257,7 +257,7 @@ func (a *App) statusServer(ctx context.Context, diagnosis endpoint.Diagnosis) *s
 	if err != nil {
 		return nil
 	}
-	client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient))
+	client, err := newServerAPIClient(baseURL, httpClient)
 	if err != nil {
 		return nil
 	}
@@ -525,7 +525,7 @@ func (a *App) statusPoolOutbound(ctx context.Context, diagnosis endpoint.Diagnos
 	if err != nil {
 		return nil
 	}
-	client, err := apiclientgen.NewClient(base, apiclientgen.WithClient(httpClient))
+	client, err := newServerAPIClient(base, httpClient)
 	if err != nil {
 		return nil
 	}

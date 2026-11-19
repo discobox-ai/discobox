@@ -60,7 +60,7 @@ func (UnimplementedHandler) AssignSandboxHarnessSecrets(ctx context.Context, req
 // frames write to exec stdin, output frames stream process output, and close-input frames close
 // stdin without detaching output.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (r AttachSandboxExecRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -77,7 +77,7 @@ func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params Attach
 // produced before an attach exists is lost. The exit status is not encoded in the response: read it
 // from the exec record, which is authoritative.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (r AttachSandboxExecOnceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -87,7 +87,7 @@ func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req Attac
 // Check that an explicit start is still current, immediately before execution under the pool's power
 // lock.
 //
-// GET /api/pools/{poolId}/sandbox-start-authorization
+// GET /pool-agent/{poolId}/sandbox-start-authorization
 func (UnimplementedHandler) AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (r AuthorizePoolSandboxStartRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -118,7 +118,7 @@ func (UnimplementedHandler) ClearPoolCache(ctx context.Context, params ClearPool
 //
 // Record a successful suspend once, before releasing the pool's power lock.
 //
-// POST /api/pools/{poolId}/sandbox-suspend-completion
+// POST /pool-agent/{poolId}/sandbox-suspend-completion
 func (UnimplementedHandler) CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (r CompletePoolSandboxSuspendRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -140,7 +140,7 @@ func (UnimplementedHandler) CompleteSandboxSourcePush(ctx context.Context, req *
 //
 //	404 for a source that does not exist, 409 for a destination that does unless replace is set.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy
 func (UnimplementedHandler) CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (r CopySandboxFileRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -226,7 +226,7 @@ func (UnimplementedHandler) CreateSandbox(ctx context.Context, req *CreateSandbo
 //
 // Record an agent's credential request.
 //
-// POST /api/pools/{poolId}/sandbox-credential-requests
+// POST /pool-agent/{poolId}/sandbox-credential-requests
 func (UnimplementedHandler) CreateSandboxCredentialRequest(ctx context.Context, req *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (r CreateSandboxCredentialRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -235,7 +235,7 @@ func (UnimplementedHandler) CreateSandboxCredentialRequest(ctx context.Context, 
 //
 // Create an exec runtime in a sandbox.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 func (UnimplementedHandler) CreateSandboxExec(ctx context.Context, req *CreateSandboxExecRequest, params CreateSandboxExecParams) (r CreateSandboxExecRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -262,7 +262,7 @@ func (UnimplementedHandler) CreateSandboxSecretBinding(ctx context.Context, req 
 //
 // Record an agent's host trust request.
 //
-// POST /api/pools/{poolId}/sandbox-trust-requests
+// POST /pool-agent/{poolId}/sandbox-trust-requests
 func (UnimplementedHandler) CreateSandboxTrustRequest(ctx context.Context, req *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (r CreateSandboxTrustRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -363,7 +363,7 @@ func (UnimplementedHandler) DeleteSandbox(ctx context.Context, params DeleteSand
 //
 // Destroy an exec runtime in a sandbox.
 //
-// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+// DELETE /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 func (UnimplementedHandler) DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (r DeleteSandboxExecRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -440,7 +440,7 @@ func (UnimplementedHandler) DenyTrustRequest(ctx context.Context, params DenyTru
 //
 // Discard sandbox harness config changes.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 func (UnimplementedHandler) DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (r DiscardSandboxHarnessConfigChangesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -460,7 +460,7 @@ func (UnimplementedHandler) DismissSecretRefreshRequest(ctx context.Context, par
 // metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
 // selected source root. Ownership and special files are excluded.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 func (UnimplementedHandler) ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (r ExportSandboxFilesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -533,7 +533,7 @@ func (UnimplementedHandler) GetPool(ctx context.Context, params GetPoolParams) (
 // digest as they are sent, and a blob that does not match is cut off rather than completed.
 // Immutable and cacheable forever.
 //
-// GET /api/pools/{poolId}/assets/blobs/{digest}
+// GET /pool-agent/{poolId}/assets/blobs/{digest}
 func (UnimplementedHandler) GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (r GetPoolAssetBlobRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -544,7 +544,7 @@ func (UnimplementedHandler) GetPoolAssetBlob(ctx context.Context, params GetPool
 // by the release or by a harness config of the pool's project, or one such an index lists, under the
 // name its pin carries; anything else is a 404. Immutable.
 //
-// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+// GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}
 func (UnimplementedHandler) GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (r GetPoolAssetManifestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -589,7 +589,7 @@ func (UnimplementedHandler) GetSandbox(ctx context.Context, params GetSandboxPar
 //
 // Poll an agent credential request.
 //
-// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+// GET /pool-agent/{poolId}/sandbox-credential-requests/{requestId}
 func (UnimplementedHandler) GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (r GetSandboxCredentialRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -598,7 +598,7 @@ func (UnimplementedHandler) GetSandboxCredentialRequest(ctx context.Context, par
 //
 // Get an exec runtime in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 func (UnimplementedHandler) GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (r GetSandboxExecRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -607,7 +607,7 @@ func (UnimplementedHandler) GetSandboxExec(ctx context.Context, params GetSandbo
 //
 // Get the latest opaque resource snapshot for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources
 func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (r GetSandboxExecResourcesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -619,7 +619,7 @@ func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params 
 // for an exec with no terminal. A discobox that is not running is answered from the screen it last
 // posted, which has no scrollback.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen
 func (UnimplementedHandler) GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (r GetSandboxExecScreenRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -628,7 +628,7 @@ func (UnimplementedHandler) GetSandboxExecScreen(ctx context.Context, params Get
 //
 // Get sandbox harness config changes.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+// GET /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
 func (UnimplementedHandler) GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (r GetSandboxHarnessConfigChangesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -646,7 +646,7 @@ func (UnimplementedHandler) GetSandboxProviderInstance(ctx context.Context, para
 //
 // Get a declared service in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (r GetSandboxServiceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -655,7 +655,7 @@ func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSan
 //
 // Poll an agent host trust request.
 //
-// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+// GET /pool-agent/{poolId}/sandbox-trust-requests/{requestId}
 func (UnimplementedHandler) GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (r GetSandboxTrustRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -700,7 +700,7 @@ func (UnimplementedHandler) GetServerInfo(ctx context.Context) (r GetServerInfoR
 //
 // Discover this server's own peer ID.
 //
-// GET /peer
+// GET /server/peer
 func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -722,7 +722,7 @@ func (UnimplementedHandler) GetTrustRequest(ctx context.Context, params GetTrust
 // metadata is finalized after children. preserve applies ordinary permissions and access and
 // modification times, never ownership or privileged bits.
 //
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 func (UnimplementedHandler) ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (r ImportSandboxFilesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -778,7 +778,7 @@ func (UnimplementedHandler) ListDNSAudit(ctx context.Context, params ListDNSAudi
 //
 // running sandbox; the read never starts one.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events
 func (UnimplementedHandler) ListExecEvents(ctx context.Context, params ListExecEventsParams) (r ListExecEventsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -808,7 +808,7 @@ func (UnimplementedHandler) ListHarnessConfigs(ctx context.Context, params ListH
 //
 // List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks
 func (UnimplementedHandler) ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (r ListHarnessHooksRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -836,7 +836,7 @@ func (UnimplementedHandler) ListPeers(ctx context.Context) (r ListPeersRes, _ er
 // List every sandbox the control plane holds on this pool, the set the pool agent may not reap the
 // trees of.
 //
-// GET /api/pools/{poolId}/sandboxes
+// GET /pool-agent/{poolId}/sandboxes
 func (UnimplementedHandler) ListPoolHeldSandboxes(ctx context.Context, params ListPoolHeldSandboxesParams) (r ListPoolHeldSandboxesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -845,7 +845,7 @@ func (UnimplementedHandler) ListPoolHeldSandboxes(ctx context.Context, params Li
 //
 // List the live host trusts of every sandbox on the pool.
 //
-// GET /api/pools/{poolId}/sandbox-host-trusts
+// GET /pool-agent/{poolId}/sandbox-host-trusts
 func (UnimplementedHandler) ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (r ListPoolHostTrustsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -899,7 +899,7 @@ func (UnimplementedHandler) ListSSHKeys(ctx context.Context, params ListSSHKeysP
 //
 // List the credentials a sandbox's bindings give it.
 //
-// GET /api/pools/{poolId}/sandbox-credentials
+// GET /pool-agent/{poolId}/sandbox-credentials
 func (UnimplementedHandler) ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (r ListSandboxCredentialsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -908,7 +908,7 @@ func (UnimplementedHandler) ListSandboxCredentials(ctx context.Context, params L
 //
 // List recent audit events for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events
 func (UnimplementedHandler) ListSandboxExecEvents(ctx context.Context, params ListSandboxExecEventsParams) (r ListSandboxExecEventsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -917,7 +917,7 @@ func (UnimplementedHandler) ListSandboxExecEvents(ctx context.Context, params Li
 //
 // List logs for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs
 func (UnimplementedHandler) ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (r ListSandboxExecLogsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -926,7 +926,7 @@ func (UnimplementedHandler) ListSandboxExecLogs(ctx context.Context, params List
 //
 // List recent opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history
 func (UnimplementedHandler) ListSandboxExecResourceHistory(ctx context.Context, params ListSandboxExecResourceHistoryParams) (r ListSandboxExecResourceHistoryRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -935,7 +935,7 @@ func (UnimplementedHandler) ListSandboxExecResourceHistory(ctx context.Context, 
 //
 // List exec runtimes in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 func (UnimplementedHandler) ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (r ListSandboxExecsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -945,7 +945,7 @@ func (UnimplementedHandler) ListSandboxExecs(ctx context.Context, params ListSan
 // Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
 // is not a directory.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/list
 func (UnimplementedHandler) ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (r ListSandboxFilesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -982,7 +982,7 @@ func (UnimplementedHandler) ListSandboxProviderInstances(ctx context.Context, pa
 // Returns the transcript of the service's current or last run. A service that has never run has an
 // empty transcript rather than an error.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs
 func (UnimplementedHandler) ListSandboxServiceLogs(ctx context.Context, params ListSandboxServiceLogsParams) (r ListSandboxServiceLogsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -993,7 +993,7 @@ func (UnimplementedHandler) ListSandboxServiceLogs(ctx context.Context, params L
 // the state of the exec running it. Declarations are re-read on every request, so a service file
 // added or edited while the sandbox is up appears immediately.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services
 func (UnimplementedHandler) ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (r ListSandboxServicesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1003,7 +1003,7 @@ func (UnimplementedHandler) ListSandboxServices(ctx context.Context, params List
 // Lists the tools the sandbox's image and primary source declare, in filename order within each.
 // Declarations are re-read on every request.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/tools
 func (UnimplementedHandler) ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (r ListSandboxToolsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1096,7 +1096,7 @@ func (UnimplementedHandler) ListTrustRequests(ctx context.Context, params ListTr
 //
 // Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir
 func (UnimplementedHandler) MakeSandboxDirectory(ctx context.Context, req *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (r MakeSandboxDirectoryRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1105,7 +1105,7 @@ func (UnimplementedHandler) MakeSandboxDirectory(ctx context.Context, req *Sandb
 //
 // Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
 //
-// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+// POST /pool-agent/{poolId}/sandbox-agent-status-tokens
 func (UnimplementedHandler) MintSandboxAgentStatusTokens(ctx context.Context, req *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (r MintSandboxAgentStatusTokensRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1116,7 +1116,7 @@ func (UnimplementedHandler) MintSandboxAgentStatusTokens(ctx context.Context, re
 // destination that does unless replace is set, which replaces whatever is there, a directory
 // included. A Windows discobox replaces a file only.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 func (UnimplementedHandler) MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (r MoveSandboxFileRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1159,7 +1159,7 @@ func (UnimplementedHandler) PutProjectGateway(ctx context.Context, req *PutProje
 // Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
 // directory.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 func (UnimplementedHandler) ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (r ReadSandboxFileRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1186,7 +1186,7 @@ func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params Reconci
 //
 // Reconsider sandbox harness config changes.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
 func (UnimplementedHandler) ReconsiderSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (r ReconsiderSandboxHarnessConfigChangesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1227,7 +1227,7 @@ func (UnimplementedHandler) ReleaseSandbox(ctx context.Context, params ReleaseSa
 // Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
 // that is not empty unless recursive is set.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove
 func (UnimplementedHandler) RemoveSandboxFile(ctx context.Context, req *SandboxFileRemoveRequest, params RemoveSandboxFileParams) (r RemoveSandboxFileRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1254,7 +1254,7 @@ func (UnimplementedHandler) RepairSandbox(ctx context.Context, params RepairSand
 //
 // Report what this pool and each sandbox on it are consuming.
 //
-// POST /api/pools/{poolId}/resources
+// POST /pool-agent/{poolId}/resources
 func (UnimplementedHandler) ReportPoolResources(ctx context.Context, req *ReportPoolResourcesBody, params ReportPoolResourcesParams) (r ReportPoolResourcesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1263,7 +1263,7 @@ func (UnimplementedHandler) ReportPoolResources(ctx context.Context, req *Report
 //
 // Report observed sandbox states from the pool agent.
 //
-// POST /api/pools/{poolId}/sandbox-states
+// POST /pool-agent/{poolId}/sandbox-states
 func (UnimplementedHandler) ReportPoolSandboxStates(ctx context.Context, req *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (r ReportPoolSandboxStatesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1272,7 +1272,7 @@ func (UnimplementedHandler) ReportPoolSandboxStates(ctx context.Context, req *Re
 //
 // Report polled sandbox-agent status for one or more hosted sandboxes.
 //
-// POST /api/pools/{poolId}/sandbox-agent-status
+// POST /pool-agent/{poolId}/sandbox-agent-status
 func (UnimplementedHandler) ReportSandboxAgentStatus(ctx context.Context, req *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (r ReportSandboxAgentStatusRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1282,7 +1282,7 @@ func (UnimplementedHandler) ReportSandboxAgentStatus(ctx context.Context, req *R
 // Report the inventory of one or more hosted sandboxes, in full when it changed and by digest when
 // it did not.
 //
-// POST /api/pools/{poolId}/sandbox-inventories
+// POST /pool-agent/{poolId}/sandbox-inventories
 func (UnimplementedHandler) ReportSandboxInventories(ctx context.Context, req *ReportSandboxInventoriesBody, params ReportSandboxInventoriesParams) (r ReportSandboxInventoriesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1291,7 +1291,7 @@ func (UnimplementedHandler) ReportSandboxInventories(ctx context.Context, req *R
 //
 // Report what an upstream made of a swapped credential.
 //
-// POST /api/pools/{poolId}/sandbox-secret-rejections
+// POST /pool-agent/{poolId}/sandbox-secret-rejections
 func (UnimplementedHandler) ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (r ReportSandboxSecretRejectionRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1310,7 +1310,7 @@ func (UnimplementedHandler) ReportSandboxSecretRejection(ctx context.Context, re
 // anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
 // of the sandbox itself.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision
 func (UnimplementedHandler) ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (r ReprovisionSandboxRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1332,7 +1332,7 @@ func (UnimplementedHandler) ResetHarnessConfig(ctx context.Context, params Reset
 //
 // Resolve the server environment values a sandbox's gateway sets headers from.
 //
-// POST /api/pools/{poolId}/resolve-gateway-headers
+// POST /pool-agent/{poolId}/resolve-gateway-headers
 func (UnimplementedHandler) ResolveGatewayHeaders(ctx context.Context, req *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (r ResolveGatewayHeadersRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1348,7 +1348,7 @@ func (UnimplementedHandler) ResolveGatewayHeaders(ctx context.Context, req *Reso
 // carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
 // resolved is a 502.
 //
-// GET /api/pools/{poolId}/assets/{name}
+// GET /pool-agent/{poolId}/assets/{name}
 func (UnimplementedHandler) ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (r ResolvePoolAssetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1357,7 +1357,7 @@ func (UnimplementedHandler) ResolvePoolAsset(ctx context.Context, params Resolve
 //
 // Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
 //
-// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+// POST /pool-agent/{poolId}/resolve-sandbox-raw-secret
 func (UnimplementedHandler) ResolveSandboxRawSecret(ctx context.Context, req *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (r ResolveSandboxRawSecretRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1366,7 +1366,7 @@ func (UnimplementedHandler) ResolveSandboxRawSecret(ctx context.Context, req *Re
 //
 // Resolve a sandbox sentinel secret.
 //
-// POST /api/pools/{poolId}/resolve-sandbox-secret
+// POST /pool-agent/{poolId}/resolve-sandbox-secret
 func (UnimplementedHandler) ResolveSandboxSecret(ctx context.Context, req *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (r ResolveSandboxSecretRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1386,7 +1386,7 @@ func (UnimplementedHandler) RestartSandbox(ctx context.Context, req *RestartSand
 // Stops the service if it is running and starts it again under the same exec ID. A service that is
 // not running is simply started.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart
 func (UnimplementedHandler) RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (r RestartSandboxServiceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1397,7 +1397,7 @@ func (UnimplementedHandler) RestartSandboxService(ctx context.Context, params Re
 // config or credential revisions have advanced. Unrelated fields and personal file overrides remain
 // intact. Candidate identity, harness assignment, manifest and validation checks still apply.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 func (UnimplementedHandler) SaveSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (r SaveSandboxHarnessConfigChangesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1408,7 +1408,7 @@ func (UnimplementedHandler) SaveSandboxHarnessConfigChanges(ctx context.Context,
 // counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
 // for an exec with no terminal or closed input.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input
 func (UnimplementedHandler) SendSandboxExecInput(ctx context.Context, req *SandboxExecInputBody, params SendSandboxExecInputParams) (r SendSandboxExecInputRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1446,7 +1446,7 @@ func (UnimplementedHandler) SetDefaultProject(ctx context.Context, params SetDef
 // file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
 // privileged bits.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata
 func (UnimplementedHandler) SetSandboxFileMetadata(ctx context.Context, req *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (r SetSandboxFileMetadataRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1469,7 +1469,7 @@ func (UnimplementedHandler) StartSandbox(ctx context.Context, req *StartSandboxB
 //
 // Starts a prepared sandbox exec after any desired attach stream has connected.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start
 func (UnimplementedHandler) StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (r StartSandboxExecRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1479,7 +1479,7 @@ func (UnimplementedHandler) StartSandboxExec(ctx context.Context, params StartSa
 // Starts the service, or returns it unchanged when it is already running. A service that has run
 // before is relaunched under its existing exec ID rather than given a new one.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start
 func (UnimplementedHandler) StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (r StartSandboxServiceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1489,7 +1489,7 @@ func (UnimplementedHandler) StartSandboxService(ctx context.Context, params Star
 // Reports one path as the discobox's default user sees it. Every files operation acts as that user,
 // with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat
 func (UnimplementedHandler) StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (r StatSandboxFileRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1508,7 +1508,7 @@ func (UnimplementedHandler) StopSandbox(ctx context.Context, req *StopSandboxBod
 // Ends the service's run and keeps its record, so its output is still readable and starting it again
 // resumes the same exec identity.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop
 func (UnimplementedHandler) StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (r StopSandboxServiceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1534,7 +1534,7 @@ func (UnimplementedHandler) StopSandboxService(ctx context.Context, params StopS
 // The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
 // query parameter. An idle stream sends a comment every 15 seconds.
 //
-// GET /api/projects/{projectId}/events
+// GET /projects/{projectId}/events
 func (UnimplementedHandler) StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (r StreamSandboxEventsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1543,7 +1543,7 @@ func (UnimplementedHandler) StreamSandboxEvents(ctx context.Context, params Stre
 //
 // Stream opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream
 func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (r StreamSandboxExecResourcesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1610,7 +1610,7 @@ func (UnimplementedHandler) UpdatePool(ctx context.Context, req *UpdatePoolBody,
 //
 // Update pool status.
 //
-// POST /api/pools/{poolId}/status
+// POST /pool-agent/{poolId}/status
 func (UnimplementedHandler) UpdatePoolStatus(ctx context.Context, req *UpdatePoolStatusBody, params UpdatePoolStatusParams) (r UpdatePoolStatusRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1688,7 +1688,7 @@ func (UnimplementedHandler) UpgradeSandbox(ctx context.Context, req *UpgradeSand
 // answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
 // recorded between two calls is missed.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait
 func (UnimplementedHandler) WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (r WaitSandboxExecRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -1700,7 +1700,7 @@ func (UnimplementedHandler) WaitSandboxExec(ctx context.Context, req *SandboxExe
 // when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
 // is a directory, 404 when ifMissing refuses.
 //
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 func (UnimplementedHandler) WriteSandboxFile(ctx context.Context, req WriteSandboxFileReq, params WriteSandboxFileParams) (r WriteSandboxFileRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

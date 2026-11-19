@@ -63,9 +63,11 @@ func TestAgentCredentialRoutesRequireTheBrokerScope(t *testing.T) {
 		{"request with only the resolve scope", http.MethodPost, requestPath, requestBody, resolveOnly, http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := callRoute(t, router, tc.method, tc.path, tc.body, tc.token)
-			if resp.Code != tc.want {
-				t.Fatalf("status = %d, want %d; body = %s", resp.Code, tc.want, resp.Body.String())
+			for _, path := range []string{tc.path, strings.Replace(tc.path, "/api/pools/", "/pool-agent/", 1)} {
+				resp := callRoute(t, router, tc.method, path, tc.body, tc.token)
+				if resp.Code != tc.want {
+					t.Fatalf("%s: status = %d, want %d; body = %s", path, resp.Code, tc.want, resp.Body.String())
+				}
 			}
 		})
 	}

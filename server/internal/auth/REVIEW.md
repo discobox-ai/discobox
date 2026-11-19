@@ -6,7 +6,7 @@
 - Authorizers should assert what a route is, not what it is not. Avoid negative checks like "not a pool agent route" as authorization criteria because new or misspelled routes can be unintentionally allowed.
 - One successful authorizer is sufficient to allow the request; order authorizers from most specific to broadest.
 - Avoid authorization by exclusion. General authenticated authorization must use an explicit exact-path or path-prefix allow-list (`authenticatedAllowedPaths`).
-- A new pool agent route must add its action to `poolRuntimeActions` in the same change. Unlisted routes are not pool routes and answer 403 to the real agent, which no service-level test notices; `TestEveryPoolRouteInTheContractIsAllowlisted` fails for any path under `/api/pools/{poolId}/` in `server.yaml` that is not on it, so a route there that is not the pool agent's must be named as an exception in that test. Mark an action as taking a trailing resource ID only if it does; accepting one everywhere lets an unlisted subroute inherit pool access.
+- A new pool agent route must add its action to `poolRuntimeActions` in the same change. Unlisted routes are not pool routes and answer 403 to the real agent, which no service-level test notices; `TestEveryPoolRouteInTheContractIsAllowlisted` fails for any path under `/pool-agent/{poolId}/` in `server.yaml` that is not on it, so a route there that is not the pool agent's must be named as an exception in that test. Mark an action as taking a trailing resource ID only if it does; accepting one everywhere lets an unlisted subroute inherit pool access.
 - Do not authorize from request-body fields. Use principal, method, path parameters, query parameters, headers, and resource ownership loaded from those attributes. There is no exception; do not add an unauthenticated registration route for a pool or a box — its maker enrolls its key over the channel it made it with (ADR 26-10-24-953 §4).
 - Pool authentication must derive the principal's `PoolID` from the validated assertion, never from the URL or request body; the URL pool ID is only checked against it.
 - Pool runtime operations must compare the authenticated pool principal's `PoolID` to the path `poolId` before updating state.
@@ -39,3 +39,7 @@
   default user with `ScopeAll` (ADR 26-10-30-875 §3);
   `TestAPoolsControlPlaneStreamReachesOnlyThatPoolsRoutes` drives a real hub to
   catch it.
+- Default-project authorization and rewriting must agree on the project
+  segment. Check that the escaped segment decodes to `default` before
+  replacing it, and preserve the escaped suffix. A separator within that
+  segment can otherwise change the authorized route during dispatch.

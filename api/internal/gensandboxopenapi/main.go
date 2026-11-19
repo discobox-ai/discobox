@@ -52,7 +52,20 @@ func run() error {
 			nextPathItem[method] = nextOperation
 		}
 		if len(nextPathItem) > 0 {
-			outPaths[path] = nextPathItem
+			const prefix = "/projects/{projectId}/sandboxes/{sandboxId}/"
+			suffix, ok := strings.CutPrefix(path, prefix)
+			if !ok {
+				return fmt.Errorf("%s: marked sandbox agent path %s must start with %s", sourcePath, path, prefix)
+			}
+			// The sandbox also serves its own changes and discard endpoints.
+			// On the control plane those are local, with no agent segment.
+			if suffix != "harness-config-changes" && suffix != "harness-config-changes/discard" {
+				suffix, ok = strings.CutPrefix(suffix, "agent/")
+				if !ok {
+					return fmt.Errorf("%s: forwarded sandbox agent path %s must include /agent/", sourcePath, path)
+				}
+			}
+			outPaths["/api"+prefix+suffix] = nextPathItem
 		}
 	}
 	if len(outPaths) == 0 {
@@ -69,7 +82,7 @@ func run() error {
 		return fmt.Errorf("%s has no paths", privatePath)
 	}
 	for path, value := range privatePaths {
-		if _, exists := paths[path]; exists {
+		if _, exists := outPaths[path]; exists {
 			return fmt.Errorf("%s: %s is already defined in %s", privatePath, path, sourcePath)
 		}
 		outPaths[path] = value

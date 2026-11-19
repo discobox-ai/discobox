@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	defaultStatusPath                   = "/api/pools/{poolId}/status"
-	defaultStatesPath                   = "/api/pools/{poolId}/sandbox-states"
-	defaultSandboxAgentStatusTokensPath = "/api/pools/{poolId}/sandbox-agent-status-tokens" //nolint:gosec // Route path, not a credential value.
-	defaultSandboxAgentStatusPath       = "/api/pools/{poolId}/sandbox-agent-status"
-	defaultSandboxInventoriesPath       = "/api/pools/{poolId}/sandbox-inventories"
-	defaultPoolResourcesPath            = "/api/pools/{poolId}/resources"
-	defaultHeldSandboxesPath            = "/api/pools/{poolId}/sandboxes"
+	defaultStatusPath                   = "/pool-agent/{poolId}/status"
+	defaultStatesPath                   = "/pool-agent/{poolId}/sandbox-states"
+	defaultSandboxAgentStatusTokensPath = "/pool-agent/{poolId}/sandbox-agent-status-tokens" //nolint:gosec // Route path, not a credential value.
+	defaultSandboxAgentStatusPath       = "/pool-agent/{poolId}/sandbox-agent-status"
+	defaultSandboxInventoriesPath       = "/pool-agent/{poolId}/sandbox-inventories"
+	defaultPoolResourcesPath            = "/pool-agent/{poolId}/resources"
+	defaultHeldSandboxesPath            = "/pool-agent/{poolId}/sandboxes"
 )
 
 // HTTPClient is a pool agent's client of the control plane HTTP API.
@@ -398,7 +398,7 @@ func (c *HTTPClient) AuthorizeStart(ctx context.Context, projectID, poolID strin
 		return err
 	}
 	query := url.Values{"sandboxId": {sandboxID}, "epoch": {strconv.FormatInt(epoch, 10)}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/pools/"+url.PathEscape(poolID)+"/sandbox-start-authorization?"+query.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/pool-agent/"+url.PathEscape(poolID)+"/sandbox-start-authorization?"+query.Encode(), nil)
 	if err != nil {
 		return err
 	}
@@ -420,7 +420,7 @@ func (c *HTTPClient) CompleteSuspend(ctx context.Context, projectID, poolID stri
 		return err
 	}
 	query := url.Values{"sandboxId": {sandboxID}, "requestId": {requestID}, "epoch": {strconv.FormatInt(epoch, 10)}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/pools/"+url.PathEscape(poolID)+"/sandbox-suspend-completion?"+query.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/pool-agent/"+url.PathEscape(poolID)+"/sandbox-suspend-completion?"+query.Encode(), nil)
 	if err != nil {
 		return err
 	}

@@ -27,14 +27,14 @@ func newServerPeerRouterForTest(peer services.ServerPeer) *chi.Mux {
 	return router
 }
 
-func getServerPeer(t *testing.T, router http.Handler) (int, map[string]any) {
+func getServerPeer(t *testing.T, router http.Handler, path string) (int, map[string]any) {
 	t.Helper()
 	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/peer", nil))
+	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil))
 	var body map[string]any
 	if resp.Body.Len() > 0 {
 		if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
-			t.Fatalf("decode GET /peer body %q: %v", resp.Body.String(), err)
+			t.Fatalf("decode GET %s body %q: %v", path, resp.Body.String(), err)
 		}
 	}
 	return resp.Code, body
@@ -42,7 +42,7 @@ func getServerPeer(t *testing.T, router http.Handler) (int, map[string]any) {
 
 // What a client asks when it wants to know what to dial (ADR 0098).
 //
-// This covers routing and the handler only: NewRouter installs no middleware,
+// This covers routing and the handler only: NewRouter installs no authorization middleware,
 // so the authorization layer does not run here. That layer has its own test —
 // TestAuthenticatedAllowedPaths in internal/auth — because it is the part that
 // was silently wrong the first time this route was wired, and no test that
@@ -56,14 +56,16 @@ func TestServerPeerRouteServesThePeerID(t *testing.T) {
 	}
 	router := newServerPeerRouterForTest(services.ServerPeer{ID: id.String()})
 
-	status, body := getServerPeer(t, router)
-	if status != http.StatusOK {
-		t.Fatalf("GET /peer status = %d, want %d", status, http.StatusOK)
-	}
-	// The one written form, so what this serves can be compared by eye against
-	// what the server logged and what a client dials (ADR 0097 §5).
-	if body["peerId"] != id.String() {
-		t.Fatalf("peerId = %v, want %q", body["peerId"], id.String())
+	for _, path := range []string{"/peer", "/server/peer"} {
+		status, body := getServerPeer(t, router, path)
+		if status != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, status, http.StatusOK)
+		}
+		// The one written form, so what this serves can be compared by eye against
+		// what the server logged and what a client dials (ADR 0097 §5).
+		if body["peerId"] != id.String() {
+			t.Fatalf("peerId = %v, want %q", body["peerId"], id.String())
+		}
 	}
 }
 
@@ -74,9 +76,9 @@ func TestServerPeerRouteServesThePeerID(t *testing.T) {
 func TestServerPeerRouteOmitsTheIDWhenThereIsNone(t *testing.T) {
 	router := newServerPeerRouterForTest(services.ServerPeer{})
 
-	status, body := getServerPeer(t, router)
+	status, body := getServerPeer(t, router, "/server/peer")
 	if status != http.StatusOK {
-		t.Fatalf("GET /peer status = %d, want %d", status, http.StatusOK)
+		t.Fatalf("GET /server/peer status = %d, want %d", status, http.StatusOK)
 	}
 	if value, ok := body["peerId"]; ok {
 		t.Fatalf("peerId = %v, want it absent on a server with no peer identity", value)

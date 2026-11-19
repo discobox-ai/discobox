@@ -35,7 +35,7 @@ func TestCredentialsEndpointHandsTheSandboxItsRawSecrets(t *testing.T) {
 		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
 			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
 		}
-		if r.URL.Path != "/api/pools/"+testPoolID+"/resolve-sandbox-raw-secret" {
+		if r.URL.Path != "/pool-agent/"+testPoolID+"/resolve-sandbox-raw-secret" {
 			http.NotFound(w, r)
 			return
 		}

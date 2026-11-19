@@ -30,7 +30,7 @@ const httpAuditTruncatedHeader = "X-Discobox-Audit-Truncated"
 // generated scaffold would buffer. The pool is in the path because an audit
 // row's ID is only unique within the pool that recorded it.
 func registerPoolHTTPAuditRoutes(router chi.Router, service services.PoolService) {
-	router.Method(http.MethodGet, "/api/projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}/{artifact}", poolHTTPAuditArtifactHandler(service))
+	router.Method(http.MethodGet, "/projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}/{artifact}", poolHTTPAuditArtifactHandler(service))
 }
 
 func poolHTTPAuditArtifactHandler(service services.PoolService) http.Handler {

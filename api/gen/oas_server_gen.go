@@ -40,7 +40,7 @@ type Handler interface {
 	// frames write to exec stdin, output frames stream process output, and close-input frames close
 	// stdin without detaching output.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (AttachSandboxExecRes, error)
 	// AttachSandboxExecOnce implements attach-sandbox-exec-once operation.
 	//
@@ -54,14 +54,14 @@ type Handler interface {
 	// produced before an attach exists is lost. The exit status is not encoded in the response: read it
 	// from the exec record, which is authoritative.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
 	// AuthorizePoolSandboxStart implements authorize-pool-sandbox-start operation.
 	//
 	// Check that an explicit start is still current, immediately before execution under the pool's power
 	// lock.
 	//
-	// GET /api/pools/{poolId}/sandbox-start-authorization
+	// GET /pool-agent/{poolId}/sandbox-start-authorization
 	AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error)
 	// CheckSandboxProviderInstance implements check-sandbox-provider-instance operation.
 	//
@@ -83,7 +83,7 @@ type Handler interface {
 	//
 	// Record a successful suspend once, before releasing the pool's power lock.
 	//
-	// POST /api/pools/{poolId}/sandbox-suspend-completion
+	// POST /pool-agent/{poolId}/sandbox-suspend-completion
 	CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (CompletePoolSandboxSuspendRes, error)
 	// CompleteSandboxSourcePush implements complete-sandbox-source-push operation.
 	//
@@ -98,7 +98,7 @@ type Handler interface {
 	// Copies a file, a link, or a directory with everything it holds to another path within the discobox.
 	//  404 for a source that does not exist, 409 for a destination that does unless replace is set.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy
 	CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
 	// CreateAPIAccessRequest implements create-api-access-request operation.
 	//
@@ -154,13 +154,13 @@ type Handler interface {
 	//
 	// Record an agent's credential request.
 	//
-	// POST /api/pools/{poolId}/sandbox-credential-requests
+	// POST /pool-agent/{poolId}/sandbox-credential-requests
 	CreateSandboxCredentialRequest(ctx context.Context, req *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (CreateSandboxCredentialRequestRes, error)
 	// CreateSandboxExec implements create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 	CreateSandboxExec(ctx context.Context, req *CreateSandboxExecRequest, params CreateSandboxExecParams) (CreateSandboxExecRes, error)
 	// CreateSandboxProviderInstance implements create-sandbox-provider-instance operation.
 	//
@@ -178,7 +178,7 @@ type Handler interface {
 	//
 	// Record an agent's host trust request.
 	//
-	// POST /api/pools/{poolId}/sandbox-trust-requests
+	// POST /pool-agent/{poolId}/sandbox-trust-requests
 	CreateSandboxTrustRequest(ctx context.Context, req *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (CreateSandboxTrustRequestRes, error)
 	// CreateSecret implements create-secret operation.
 	//
@@ -246,7 +246,7 @@ type Handler interface {
 	//
 	// Destroy an exec runtime in a sandbox.
 	//
-	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	// DELETE /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (DeleteSandboxExecRes, error)
 	// DeleteSandboxHostTrust implements delete-sandbox-host-trust operation.
 	//
@@ -296,7 +296,7 @@ type Handler interface {
 	//
 	// Discard sandbox harness config changes.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 	DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (DiscardSandboxHarnessConfigChangesRes, error)
 	// DismissSecretRefreshRequest implements dismiss-secret-refresh-request operation.
 	//
@@ -310,7 +310,7 @@ type Handler interface {
 	// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
 	// selected source root. Ownership and special files are excluded.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 	ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesRes, error)
 	// ForceJob implements force-job operation.
 	//
@@ -359,7 +359,7 @@ type Handler interface {
 	// digest as they are sent, and a blob that does not match is cut off rather than completed.
 	// Immutable and cacheable forever.
 	//
-	// GET /api/pools/{poolId}/assets/blobs/{digest}
+	// GET /pool-agent/{poolId}/assets/blobs/{digest}
 	GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (GetPoolAssetBlobRes, error)
 	// GetPoolAssetManifest implements get-pool-asset-manifest operation.
 	//
@@ -367,7 +367,7 @@ type Handler interface {
 	// by the release or by a harness config of the pool's project, or one such an index lists, under the
 	// name its pin carries; anything else is a 404. Immutable.
 	//
-	// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+	// GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}
 	GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error)
 	// GetProject implements get-project operation.
 	//
@@ -397,19 +397,19 @@ type Handler interface {
 	//
 	// Poll an agent credential request.
 	//
-	// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+	// GET /pool-agent/{poolId}/sandbox-credential-requests/{requestId}
 	GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (GetSandboxCredentialRequestRes, error)
 	// GetSandboxExec implements get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 	GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (GetSandboxExecRes, error)
 	// GetSandboxExecResources implements get-sandbox-exec-resources operation.
 	//
 	// Get the latest opaque resource snapshot for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (GetSandboxExecResourcesRes, error)
 	// GetSandboxExecScreen implements get-sandbox-exec-screen operation.
 	//
@@ -418,13 +418,13 @@ type Handler interface {
 	// for an exec with no terminal. A discobox that is not running is answered from the screen it last
 	// posted, which has no scrollback.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error)
 	// GetSandboxHarnessConfigChanges implements get-sandbox-harness-config-changes operation.
 	//
 	// Get sandbox harness config changes.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
 	GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (GetSandboxHarnessConfigChangesRes, error)
 	// GetSandboxProviderInstance implements get-sandbox-provider-instance operation.
 	//
@@ -436,13 +436,13 @@ type Handler interface {
 	//
 	// Get a declared service in a sandbox.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
 	// GetSandboxTrustRequest implements get-sandbox-trust-request operation.
 	//
 	// Poll an agent host trust request.
 	//
-	// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+	// GET /pool-agent/{poolId}/sandbox-trust-requests/{requestId}
 	GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (GetSandboxTrustRequestRes, error)
 	// GetSecret implements get-secret operation.
 	//
@@ -472,7 +472,7 @@ type Handler interface {
 	//
 	// Discover this server's own peer ID.
 	//
-	// GET /peer
+	// GET /server/peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
 	// GetTrustRequest implements get-trust-request operation.
 	//
@@ -488,7 +488,7 @@ type Handler interface {
 	// metadata is finalized after children. preserve applies ordinary permissions and access and
 	// modification times, never ownership or privileged bits.
 	//
-	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 	ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error)
 	// ListAPIAccessRequests implements list-api-access-requests operation.
 	//
@@ -524,7 +524,7 @@ type Handler interface {
 	//  recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a
 	// running sandbox; the read never starts one.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events
 	ListExecEvents(ctx context.Context, params ListExecEventsParams) (ListExecEventsRes, error)
 	// ListHTTPAudit implements list-http-audit operation.
 	//
@@ -545,7 +545,7 @@ type Handler interface {
 	//
 	// List recent sandbox harness hook payload logs.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks
 	ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (ListHarnessHooksRes, error)
 	// ListJobs implements list-jobs operation.
 	//
@@ -564,13 +564,13 @@ type Handler interface {
 	// List every sandbox the control plane holds on this pool, the set the pool agent may not reap the
 	// trees of.
 	//
-	// GET /api/pools/{poolId}/sandboxes
+	// GET /pool-agent/{poolId}/sandboxes
 	ListPoolHeldSandboxes(ctx context.Context, params ListPoolHeldSandboxesParams) (ListPoolHeldSandboxesRes, error)
 	// ListPoolHostTrusts implements list-pool-host-trusts operation.
 	//
 	// List the live host trusts of every sandbox on the pool.
 	//
-	// GET /api/pools/{poolId}/sandbox-host-trusts
+	// GET /pool-agent/{poolId}/sandbox-host-trusts
 	ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (ListPoolHostTrustsRes, error)
 	// ListPools implements list-pools operation.
 	//
@@ -606,38 +606,38 @@ type Handler interface {
 	//
 	// List the credentials a sandbox's bindings give it.
 	//
-	// GET /api/pools/{poolId}/sandbox-credentials
+	// GET /pool-agent/{poolId}/sandbox-credentials
 	ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error)
 	// ListSandboxExecEvents implements list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events
 	ListSandboxExecEvents(ctx context.Context, params ListSandboxExecEventsParams) (ListSandboxExecEventsRes, error)
 	// ListSandboxExecLogs implements list-sandbox-exec-logs operation.
 	//
 	// List logs for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs
 	ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (ListSandboxExecLogsRes, error)
 	// ListSandboxExecResourceHistory implements list-sandbox-exec-resource-history operation.
 	//
 	// List recent opaque resource snapshots for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history
 	ListSandboxExecResourceHistory(ctx context.Context, params ListSandboxExecResourceHistoryParams) (ListSandboxExecResourceHistoryRes, error)
 	// ListSandboxExecs implements list-sandbox-execs operation.
 	//
 	// List exec runtimes in a sandbox.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error)
 	// ListSandboxFiles implements list-sandbox-files operation.
 	//
 	// Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
 	// is not a directory.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/list
 	ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (ListSandboxFilesRes, error)
 	// ListSandboxHostTrusts implements list-sandbox-host-trusts operation.
 	//
@@ -662,7 +662,7 @@ type Handler interface {
 	// Returns the transcript of the service's current or last run. A service that has never run has an
 	// empty transcript rather than an error.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs
 	ListSandboxServiceLogs(ctx context.Context, params ListSandboxServiceLogsParams) (ListSandboxServiceLogsRes, error)
 	// ListSandboxServices implements list-sandbox-services operation.
 	//
@@ -670,14 +670,14 @@ type Handler interface {
 	// the state of the exec running it. Declarations are re-read on every request, so a service file
 	// added or edited while the sandbox is up appears immediately.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services
 	ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (ListSandboxServicesRes, error)
 	// ListSandboxTools implements list-sandbox-tools operation.
 	//
 	// Lists the tools the sandbox's image and primary source declare, in filename order within each.
 	// Declarations are re-read on every request.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/tools
 	ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (ListSandboxToolsRes, error)
 	// ListSandboxes implements list-sandboxes operation.
 	//
@@ -740,13 +740,13 @@ type Handler interface {
 	//
 	// Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir
 	MakeSandboxDirectory(ctx context.Context, req *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (MakeSandboxDirectoryRes, error)
 	// MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
 	//
-	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+	// POST /pool-agent/{poolId}/sandbox-agent-status-tokens
 	MintSandboxAgentStatusTokens(ctx context.Context, req *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
 	// MoveSandboxFile implements move-sandbox-file operation.
 	//
@@ -754,7 +754,7 @@ type Handler interface {
 	// destination that does unless replace is set, which replaces whatever is there, a directory
 	// included. A Windows discobox replaces a file only.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 	MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (MoveSandboxFileRes, error)
 	// PullSandboxSource implements pull-sandbox-source operation.
 	//
@@ -785,7 +785,7 @@ type Handler interface {
 	// Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
 	// directory.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 	ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (ReadSandboxFileRes, error)
 	// ReconcilePool implements reconcile-pool operation.
 	//
@@ -803,7 +803,7 @@ type Handler interface {
 	//
 	// Reconsider sandbox harness config changes.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
 	ReconsiderSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (ReconsiderSandboxHarnessConfigChangesRes, error)
 	// RefreshHarnessConfigImage implements refresh-harness-config-image operation.
 	//
@@ -832,7 +832,7 @@ type Handler interface {
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
 	// that is not empty unless recursive is set.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove
 	RemoveSandboxFile(ctx context.Context, req *SandboxFileRemoveRequest, params RemoveSandboxFileParams) (RemoveSandboxFileRes, error)
 	// RepairSandbox implements repair-sandbox operation.
 	//
@@ -853,32 +853,32 @@ type Handler interface {
 	//
 	// Report what this pool and each sandbox on it are consuming.
 	//
-	// POST /api/pools/{poolId}/resources
+	// POST /pool-agent/{poolId}/resources
 	ReportPoolResources(ctx context.Context, req *ReportPoolResourcesBody, params ReportPoolResourcesParams) (ReportPoolResourcesRes, error)
 	// ReportPoolSandboxStates implements report-pool-sandbox-states operation.
 	//
 	// Report observed sandbox states from the pool agent.
 	//
-	// POST /api/pools/{poolId}/sandbox-states
+	// POST /pool-agent/{poolId}/sandbox-states
 	ReportPoolSandboxStates(ctx context.Context, req *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error)
 	// ReportSandboxAgentStatus implements report-sandbox-agent-status operation.
 	//
 	// Report polled sandbox-agent status for one or more hosted sandboxes.
 	//
-	// POST /api/pools/{poolId}/sandbox-agent-status
+	// POST /pool-agent/{poolId}/sandbox-agent-status
 	ReportSandboxAgentStatus(ctx context.Context, req *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error)
 	// ReportSandboxInventories implements report-sandbox-inventories operation.
 	//
 	// Report the inventory of one or more hosted sandboxes, in full when it changed and by digest when
 	// it did not.
 	//
-	// POST /api/pools/{poolId}/sandbox-inventories
+	// POST /pool-agent/{poolId}/sandbox-inventories
 	ReportSandboxInventories(ctx context.Context, req *ReportSandboxInventoriesBody, params ReportSandboxInventoriesParams) (ReportSandboxInventoriesRes, error)
 	// ReportSandboxSecretRejection implements report-sandbox-secret-rejection operation.
 	//
 	// Report what an upstream made of a swapped credential.
 	//
-	// POST /api/pools/{poolId}/sandbox-secret-rejections
+	// POST /pool-agent/{poolId}/sandbox-secret-rejections
 	ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
 	// ReprovisionSandbox implements reprovision-sandbox operation.
 	//
@@ -894,7 +894,7 @@ type Handler interface {
 	// anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
 	// of the sandbox itself.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision
 	ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (ReprovisionSandboxRes, error)
 	// ResetHarnessConfig implements reset-harness-config operation.
 	//
@@ -910,7 +910,7 @@ type Handler interface {
 	//
 	// Resolve the server environment values a sandbox's gateway sets headers from.
 	//
-	// POST /api/pools/{poolId}/resolve-gateway-headers
+	// POST /pool-agent/{poolId}/resolve-gateway-headers
 	ResolveGatewayHeaders(ctx context.Context, req *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
 	// ResolvePoolAsset implements resolve-pool-asset operation.
 	//
@@ -923,19 +923,19 @@ type Handler interface {
 	// carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
 	// resolved is a 502.
 	//
-	// GET /api/pools/{poolId}/assets/{name}
+	// GET /pool-agent/{poolId}/assets/{name}
 	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
 	// ResolveSandboxRawSecret implements resolve-sandbox-raw-secret operation.
 	//
 	// Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
 	//
-	// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+	// POST /pool-agent/{poolId}/resolve-sandbox-raw-secret
 	ResolveSandboxRawSecret(ctx context.Context, req *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (ResolveSandboxRawSecretRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
 	//
-	// POST /api/pools/{poolId}/resolve-sandbox-secret
+	// POST /pool-agent/{poolId}/resolve-sandbox-secret
 	ResolveSandboxSecret(ctx context.Context, req *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error)
 	// RestartSandbox implements restart-sandbox operation.
 	//
@@ -949,7 +949,7 @@ type Handler interface {
 	// Stops the service if it is running and starts it again under the same exec ID. A service that is
 	// not running is simply started.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart
 	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error)
 	// SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
 	//
@@ -957,7 +957,7 @@ type Handler interface {
 	// config or credential revisions have advanced. Unrelated fields and personal file overrides remain
 	// intact. Candidate identity, harness assignment, manifest and validation checks still apply.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 	SaveSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error)
 	// SendSandboxExecInput implements send-sandbox-exec-input operation.
 	//
@@ -965,7 +965,7 @@ type Handler interface {
 	// counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
 	// for an exec with no terminal or closed input.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input
 	SendSandboxExecInput(ctx context.Context, req *SandboxExecInputBody, params SendSandboxExecInputParams) (SendSandboxExecInputRes, error)
 	// SetDefaultHarnessConfig implements set-default-harness-config operation.
 	//
@@ -991,7 +991,7 @@ type Handler interface {
 	// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
 	// privileged bits.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata
 	SetSandboxFileMetadata(ctx context.Context, req *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (SetSandboxFileMetadataRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
@@ -1006,21 +1006,21 @@ type Handler interface {
 	//
 	// Starts a prepared sandbox exec after any desired attach stream has connected.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start
 	StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (StartSandboxExecRes, error)
 	// StartSandboxService implements start-sandbox-service operation.
 	//
 	// Starts the service, or returns it unchanged when it is already running. A service that has run
 	// before is relaunched under its existing exec ID rather than given a new one.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start
 	StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (StartSandboxServiceRes, error)
 	// StatSandboxFile implements stat-sandbox-file operation.
 	//
 	// Reports one path as the discobox's default user sees it. Every files operation acts as that user,
 	// with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat
 	StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (StatSandboxFileRes, error)
 	// StopSandbox implements stop-sandbox operation.
 	//
@@ -1033,7 +1033,7 @@ type Handler interface {
 	// Ends the service's run and keeps its record, so its output is still readable and starting it again
 	// resumes the same exec identity.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop
 	StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (StopSandboxServiceRes, error)
 	// StreamSandboxEvents implements stream-sandbox-events operation.
 	//
@@ -1054,13 +1054,13 @@ type Handler interface {
 	// The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
 	// query parameter. An idle stream sends a comment every 15 seconds.
 	//
-	// GET /api/projects/{projectId}/events
+	// GET /projects/{projectId}/events
 	StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (StreamSandboxEventsRes, error)
 	// StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 	//
 	// Stream opaque resource snapshots for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
 	// SuspendSandbox implements suspend-sandbox operation.
 	//
@@ -1106,7 +1106,7 @@ type Handler interface {
 	//
 	// Update pool status.
 	//
-	// POST /api/pools/{poolId}/status
+	// POST /pool-agent/{poolId}/status
 	UpdatePoolStatus(ctx context.Context, req *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error)
 	// UpdateProject implements update-project operation.
 	//
@@ -1160,7 +1160,7 @@ type Handler interface {
 	// answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
 	// recorded between two calls is missed.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait
 	WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (WaitSandboxExecRes, error)
 	// WriteSandboxFile implements write-sandbox-file operation.
 	//
@@ -1169,7 +1169,7 @@ type Handler interface {
 	// when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
 	// is a directory, 404 when ifMissing refuses.
 	//
-	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 	WriteSandboxFile(ctx context.Context, req WriteSandboxFileReq, params WriteSandboxFileParams) (WriteSandboxFileRes, error)
 }
 

@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -56,7 +57,10 @@ func Authorization(authorizers ...Authorizer) func(http.Handler) http.Handler {
 				if ok {
 					if resolvedProjectID := r.Context().Value(defaultProjectIDContextKey{}); resolvedProjectID != nil {
 						if projectID, ok := resolvedProjectID.(string); ok && projectID != "" {
-							replaceProjectIDInPath(r, projectID)
+							if !replaceDefaultProjectInPath(r, projectID) {
+								http.Error(w, "invalid default project path", http.StatusForbidden)
+								return
+							}
 						}
 					}
 					next.ServeHTTP(w, r)
@@ -83,10 +87,6 @@ type defaultProjectIDContextKey struct{}
 func projectIDFromPath(path string) (string, bool) {
 	prefix := "/projects/"
 	rest := strings.TrimPrefix(path, prefix)
-	if rest == path {
-		prefix = "/api/projects/"
-		rest = strings.TrimPrefix(path, prefix)
-	}
 	if rest == path || rest == "" {
 		return "", false
 	}
@@ -94,19 +94,29 @@ func projectIDFromPath(path string) (string, bool) {
 	return projectID, projectID != ""
 }
 
-func replaceProjectIDInPath(r *http.Request, projectID string) {
-	prefix := "/projects/"
-	rest := strings.TrimPrefix(r.URL.Path, prefix)
-	if rest == r.URL.Path {
-		prefix = "/api/projects/"
-		rest = strings.TrimPrefix(r.URL.Path, prefix)
+func replaceDefaultProjectInPath(r *http.Request, projectID string) bool {
+	const prefix = "/projects/"
+	rest, ok := strings.CutPrefix(r.URL.EscapedPath(), prefix)
+	segment, suffix, hasSuffix := strings.Cut(rest, "/")
+	project, err := url.PathUnescape(segment)
+	// Replace the same project segment the authorizer checked. A separator
+	// embedded in the escaped segment can otherwise change the route.
+	if !ok || err != nil || project != "default" {
+		return false
 	}
-	_, suffix, hasSuffix := strings.Cut(rest, "/")
-	nextPath := prefix + projectID
+	escaped := prefix + url.PathEscape(projectID)
 	if hasSuffix {
-		nextPath += "/" + suffix
+		escaped += "/" + suffix
 	}
-	r.URL.Path = nextPath
-	r.URL.RawPath = ""
+	path, err := url.PathUnescape(escaped)
+	if err != nil {
+		return false
+	}
+	r.URL.Path = path
+	r.URL.RawPath = escaped
+	if escaped == (&url.URL{Path: path}).EscapedPath() {
+		r.URL.RawPath = ""
+	}
 	r.RequestURI = r.URL.RequestURI()
+	return true
 }

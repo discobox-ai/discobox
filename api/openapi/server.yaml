@@ -7997,7 +7997,7 @@ info:
     version: 0.1.0
 openapi: 3.1.1
 paths:
-    /api/projects/{projectId}/events:
+    /projects/{projectId}/events:
         get:
             description: |-
                 The project's sandbox state changes as server-sent events (ADR 26-10-29-316). An event is sent when a sandbox is created or deleted, and when its existence, its power state, its display state, the state of the program in its primary session or its tags change; its data is a SandboxEventData, the sandbox's whole state. A sandbox allowed to call the API reads its whole project's stream, as it lists its sandboxes (ADR 26-11-01-560).
@@ -8041,7 +8041,7 @@ paths:
             summary: Stream the project's sandbox state changes.
             tags:
                 - Sandboxes
-    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes:
+    /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes:
         get:
             operationId: get-sandbox-harness-config-changes
             summary: Get sandbox harness config changes.
@@ -8071,7 +8071,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
-    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save:
+    /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save:
         post:
             operationId: save-sandbox-harness-config-changes
             summary: Save sandbox harness config changes.
@@ -8107,7 +8107,7 @@ paths:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
-    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider:
+    /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider:
         post:
             operationId: reconsider-sandbox-harness-config-changes
             summary: Reconsider sandbox harness config changes.
@@ -8142,7 +8142,7 @@ paths:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
-    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard:
+    /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard:
         post:
             operationId: discard-sandbox-harness-config-changes
             summary: Discard sandbox harness config changes.
@@ -8313,7 +8313,7 @@ paths:
             summary: Force a pending, scheduled, or backoff job to run immediately
             tags:
                 - jobs
-    /api/pools/{poolId}/assets/{name}:
+    /pool-agent/{poolId}/assets/{name}:
         get:
             description: |-
                 The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13, ADR 26-10-24-953 §§2, 4): for a bundle the release names (the platform, agent and pool bundles), what the release's reference resolves to, asked afresh; for a harness's bundle, the digest a harness config of the pool's project records, which a moved tag changes only once the config is re-pinned. Read by the pool when it re-pins, and by a pool's box as it provisions itself; the digest it is served under is the Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be resolved is a 502.
@@ -8378,7 +8378,7 @@ paths:
             summary: Resolve a bundle name in the pool's scope to its current manifest
             tags:
                 - Pools
-    /api/pools/{poolId}/assets/{name}/manifests/{digest}:
+    /pool-agent/{poolId}/assets/{name}/manifests/{digest}:
         get:
             description: |-
                 A pinned index or manifest, by digest (ADR 26-10-16-423 §13). Answered only for a manifest pinned by the release or by a harness config of the pool's project, or one such an index lists, under the name its pin carries; anything else is a 404. Immutable.
@@ -8450,7 +8450,7 @@ paths:
             summary: Get a manifest in the pool's scope by digest
             tags:
                 - Pools
-    /api/pools/{poolId}/assets/blobs/{digest}:
+    /pool-agent/{poolId}/assets/blobs/{digest}:
         get:
             description: |-
                 One blob — a config or a layer — by digest (ADR 26-10-16-423 §13). Answered only for a blob a manifest in the pool's scope references; anything else is a 404. The bytes are checked against the digest as they are sent, and a blob that does not match is cut off rather than completed. Immutable and cacheable forever.
@@ -8503,7 +8503,7 @@ paths:
             summary: Get a blob in the pool's scope by digest
             tags:
                 - Pools
-    /api/pools/{poolId}/status:
+    /pool-agent/{poolId}/status:
         post:
             operationId: update-pool-status
             parameters:
@@ -8542,7 +8542,7 @@ paths:
             summary: Update pool status
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-states:
+    /pool-agent/{poolId}/sandbox-states:
         post:
             operationId: report-pool-sandbox-states
             parameters:
@@ -8577,7 +8577,7 @@ paths:
             summary: Report observed sandbox states from the pool agent
             tags:
                 - Pools
-    /api/pools/{poolId}/resources:
+    /pool-agent/{poolId}/resources:
         post:
             operationId: report-pool-resources
             parameters:
@@ -8612,7 +8612,7 @@ paths:
             summary: Report what this pool and each sandbox on it are consuming
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-inventories:
+    /pool-agent/{poolId}/sandbox-inventories:
         post:
             operationId: report-sandbox-inventories
             parameters:
@@ -8651,7 +8651,7 @@ paths:
             summary: Report the inventory of one or more hosted sandboxes, in full when it changed and by digest when it did not
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-agent-status:
+    /pool-agent/{poolId}/sandbox-agent-status:
         post:
             operationId: report-sandbox-agent-status
             parameters:
@@ -8686,7 +8686,7 @@ paths:
             summary: Report polled sandbox-agent status for one or more hosted sandboxes
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-agent-status-tokens:
+    /pool-agent/{poolId}/sandbox-agent-status-tokens:
         post:
             operationId: mint-sandbox-agent-status-tokens
             parameters:
@@ -8725,7 +8725,7 @@ paths:
             summary: Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-start-authorization:
+    /pool-agent/{poolId}/sandbox-start-authorization:
         get:
             operationId: authorize-pool-sandbox-start
             summary: Check that an explicit start is still current, immediately before execution under the pool's power lock
@@ -8761,7 +8761,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-suspend-completion:
+    /pool-agent/{poolId}/sandbox-suspend-completion:
         post:
             operationId: complete-pool-sandbox-suspend
             summary: Record a successful suspend once, before releasing the pool's power lock
@@ -8804,7 +8804,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             tags:
                 - Pools
-    /api/pools/{poolId}/sandboxes:
+    /pool-agent/{poolId}/sandboxes:
         get:
             operationId: list-pool-held-sandboxes
             parameters:
@@ -8837,7 +8837,7 @@ paths:
             summary: List every sandbox the control plane holds on this pool, the set the pool agent may not reap the trees of
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-credentials:
+    /pool-agent/{poolId}/sandbox-credentials:
         get:
             operationId: list-sandbox-credentials
             parameters:
@@ -8877,7 +8877,7 @@ paths:
             summary: List the credentials a sandbox's bindings give it
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-credential-requests:
+    /pool-agent/{poolId}/sandbox-credential-requests:
         post:
             operationId: create-sandbox-credential-request
             parameters:
@@ -8916,7 +8916,7 @@ paths:
             summary: Record an agent's credential request
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-credential-requests/{requestId}:
+    /pool-agent/{poolId}/sandbox-credential-requests/{requestId}:
         get:
             operationId: get-sandbox-credential-request
             parameters:
@@ -8963,7 +8963,7 @@ paths:
             summary: Poll an agent credential request
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-secret-rejections:
+    /pool-agent/{poolId}/sandbox-secret-rejections:
         post:
             operationId: report-sandbox-secret-rejection
             parameters:
@@ -8998,7 +8998,7 @@ paths:
             summary: Report what an upstream made of a swapped credential
             tags:
                 - Pools
-    /api/pools/{poolId}/resolve-gateway-headers:
+    /pool-agent/{poolId}/resolve-gateway-headers:
         post:
             operationId: resolve-gateway-headers
             parameters:
@@ -9037,7 +9037,7 @@ paths:
             summary: Resolve the server environment values a sandbox's gateway sets headers from
             tags:
                 - Pools
-    /api/pools/{poolId}/resolve-sandbox-secret:
+    /pool-agent/{poolId}/resolve-sandbox-secret:
         post:
             operationId: resolve-sandbox-secret
             parameters:
@@ -9076,7 +9076,7 @@ paths:
             summary: Resolve a sandbox sentinel secret
             tags:
                 - Pools
-    /api/pools/{poolId}/resolve-sandbox-raw-secret:
+    /pool-agent/{poolId}/resolve-sandbox-raw-secret:
         post:
             operationId: resolve-sandbox-raw-secret
             parameters:
@@ -10815,7 +10815,7 @@ paths:
             summary: Suspend a sandbox
             tags:
                 - Sandboxes
-    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks:
         get:
             operationId: list-harness-hooks
             parameters:
@@ -10906,7 +10906,7 @@ paths:
             tags:
                 - Harness Hooks
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events:
         get:
             description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a running sandbox; the read never starts one.
             operationId: list-exec-events
@@ -10992,7 +10992,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision:
         post:
             description: Runs the sandbox's provisioning again for every feature that failed, and the features that failed because they require one, in the running sandbox. Nothing else about the sandbox changes - no rebuild, no new container or machine, no restart of it or of anything running in it - and a feature that is ready or off runs nothing. A failed feature the sandbox waits for before it launches anything makes it wait again, so a terminal launched meanwhile waits for the outcome. The run goes on whether or not the caller stays; follow it in the sandbox's reported provisioning, where each feature it runs moves to provisioning and then to ready, or to failed with its new error. When nothing failed, nothing runs. When a run is already in progress, this joins it. Conflicts when the sandbox is not running, which this never starts (its next start provisions anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure of the sandbox itself.
             operationId: reprovision-sandbox
@@ -11026,7 +11026,7 @@ paths:
             tags:
                 - Sandbox Status
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/services:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/services:
         get:
             description: Lists the services declared under .discobox/services in the sandbox's primary source, each with the state of the exec running it. Declarations are re-read on every request, so a service file added or edited while the sandbox is up appears immediately.
             operationId: list-sandbox-services
@@ -11060,7 +11060,7 @@ paths:
             tags:
                 - Sandbox Services
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/tools:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/tools:
         get:
             description: Lists the tools the sandbox's image and primary source declare, in filename order within each. Declarations are re-read on every request.
             operationId: list-sandbox-tools
@@ -11094,7 +11094,7 @@ paths:
             tags:
                 - Sandbox Tools
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}:
         get:
             operationId: get-sandbox-service
             parameters:
@@ -11133,7 +11133,7 @@ paths:
             tags:
                 - Sandbox Services
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs:
         get:
             description: Returns the transcript of the service's current or last run. A service that has never run has an empty transcript rather than an error.
             operationId: list-sandbox-service-logs
@@ -11173,7 +11173,7 @@ paths:
             tags:
                 - Sandbox Services
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start:
         post:
             description: Starts the service, or returns it unchanged when it is already running. A service that has run before is relaunched under its existing exec ID rather than given a new one.
             operationId: start-sandbox-service
@@ -11213,7 +11213,7 @@ paths:
             tags:
                 - Sandbox Services
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop:
         post:
             description: Ends the service's run and keeps its record, so its output is still readable and starting it again resumes the same exec identity.
             operationId: stop-sandbox-service
@@ -11253,7 +11253,7 @@ paths:
             tags:
                 - Sandbox Services
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart:
         post:
             description: Stops the service if it is running and starts it again under the same exec ID. A service that is not running is simply started.
             operationId: restart-sandbox-service
@@ -11293,7 +11293,7 @@ paths:
             tags:
                 - Sandbox Services
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs:
         get:
             operationId: list-sandbox-execs
             parameters:
@@ -11372,7 +11372,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}:
         get:
             operationId: get-sandbox-exec
             parameters:
@@ -11445,7 +11445,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs:
         get:
             operationId: list-sandbox-exec-logs
             parameters:
@@ -11484,7 +11484,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen:
         get:
             description: The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent scrollback on request. Reading it does not attach, resize the terminal, or count as activity. 409 for an exec with no terminal. A discobox that is not running is answered from the screen it last posted, which has no scrollback.
             operationId: get-sandbox-exec-screen
@@ -11531,7 +11531,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input:
         post:
             description: Writes text and named keys to the terminal, in order, the way typing into an attach does, and counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409 for an exec with no terminal or closed input.
             operationId: send-sandbox-exec-input
@@ -11577,7 +11577,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait:
         post:
             description: Blocks until one of the given conditions holds — a named harness hook event from this terminal, no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes. Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing recorded between two calls is missed.
             operationId: wait-sandbox-exec
@@ -11623,7 +11623,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach:
         get:
             description: Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input frames write to exec stdin, output frames stream process output, and close-input frames close stdin without detaching output.
             operationId: attach-sandbox-exec
@@ -11725,7 +11725,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start:
         post:
             description: Starts a prepared sandbox exec after any desired attach stream has connected.
             operationId: start-sandbox-exec
@@ -11765,7 +11765,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events:
         get:
             operationId: list-sandbox-exec-events
             parameters:
@@ -11812,7 +11812,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources:
         get:
             operationId: get-sandbox-exec-resources
             parameters:
@@ -11851,7 +11851,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history:
         get:
             operationId: list-sandbox-exec-resource-history
             parameters:
@@ -11898,7 +11898,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream:
         get:
             operationId: stream-sandbox-exec-resources
             parameters:
@@ -11937,7 +11937,7 @@ paths:
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive:
         get:
             description: Streams regular files and directories under a files/ prefix, starting with the root directory metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the selected source root. Ownership and special files are excluded.
             operationId: export-sandbox-files
@@ -12028,7 +12028,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata:
         post:
             description: Sets optional ordinary permission bits and access and modification times on an existing pinned file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or privileged bits.
             operationId: set-sandbox-file-metadata
@@ -12068,7 +12068,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat:
         get:
             description: Reports one path as the discobox's default user sees it. Every files operation acts as that user, with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
             operationId: stat-sandbox-file
@@ -12108,7 +12108,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/list:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/list:
         get:
             description: Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that is not a directory.
             operationId: list-sandbox-files
@@ -12148,7 +12148,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/content:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content:
         get:
             description: Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a directory.
             operationId: read-sandbox-file
@@ -12288,7 +12288,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir:
         post:
             description: Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
             operationId: make-sandbox-directory
@@ -12328,7 +12328,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove:
         post:
             description: Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory that is not empty unless recursive is set.
             operationId: remove-sandbox-file
@@ -12364,7 +12364,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/move:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move:
         post:
             description: Moves a path to another within the discobox. 404 for a source that does not exist, 409 for a destination that does unless replace is set, which replaces whatever is there, a directory included. A Windows discobox replaces a file only.
             operationId: move-sandbox-file
@@ -12404,7 +12404,7 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy:
+    /projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy:
         post:
             description: Copies a file, a link, or a directory with everything it holds to another path within the discobox. 404 for a source that does not exist, 409 for a destination that does unless replace is set.
             operationId: copy-sandbox-file
@@ -13548,7 +13548,7 @@ paths:
             summary: Discover this server's SSH ingress endpoint and host key
             tags:
                 - SSH
-    /peer:
+    /server/peer:
         get:
             operationId: get-server-peer
             responses:
@@ -14245,7 +14245,7 @@ paths:
             summary: Revoke a sandbox's trust of a host
             tags:
                 - HostTrusts
-    /api/pools/{poolId}/sandbox-trust-requests:
+    /pool-agent/{poolId}/sandbox-trust-requests:
         post:
             operationId: create-sandbox-trust-request
             parameters:
@@ -14284,7 +14284,7 @@ paths:
             summary: Record an agent's host trust request
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-trust-requests/{requestId}:
+    /pool-agent/{poolId}/sandbox-trust-requests/{requestId}:
         get:
             operationId: get-sandbox-trust-request
             parameters:
@@ -14331,7 +14331,7 @@ paths:
             summary: Poll an agent host trust request
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-host-trusts:
+    /pool-agent/{poolId}/sandbox-host-trusts:
         get:
             operationId: list-pool-host-trusts
             parameters:

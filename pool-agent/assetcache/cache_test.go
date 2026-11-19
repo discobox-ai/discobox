@@ -139,7 +139,7 @@ func newFixture(t *testing.T) *fixture {
 		Sandboxes: sandboxes,
 		Snapshots: snapshots,
 		Fetch: func(ctx context.Context, path string) (io.ReadCloser, error) {
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/pools/pool_1/assets"+path, nil)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/pool-agent/pool_1/assets"+path, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -187,7 +187,7 @@ func (f *fixture) get(sandboxID, method, path string) *httptest.ResponseRecorder
 	return rec
 }
 
-const serverPrefix = "/api/pools/pool_1/assets"
+const serverPrefix = "/pool-agent/pool_1/assets"
 
 // Concurrent reads of one blob, by two sandboxes pinning it, share one fetch
 // from the server, and every one of them is answered the blob.

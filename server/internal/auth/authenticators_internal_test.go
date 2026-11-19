@@ -21,34 +21,34 @@ func TestPoolRuntimePathAllowlist(t *testing.T) {
 		path string
 		want bool
 	}{
-		{"a listed action", "/api/pools/pool-1/status", true},
-		{"sentinel resolution", "/api/pools/pool-1/resolve-sandbox-secret", true},
-		{"raw secret resolution", "/api/pools/pool-1/resolve-sandbox-raw-secret", true},
-		{"gateway header resolution", "/api/pools/pool-1/resolve-gateway-headers", true},
-		{"listing agent credentials", "/api/pools/pool-1/sandbox-credentials", true},
-		{"recording a credential request", "/api/pools/pool-1/sandbox-credential-requests", true},
-		{"a retired judge route", "/api/pools/pool-1/judge", false},
-		{"the retired policy facts route", "/api/pools/pool-1/sandbox-policy-facts", false},
-		{"polling one credential request", "/api/pools/pool-1/sandbox-credential-requests/sreq_abc", true},
-		{"recording a trust request", "/api/pools/pool-1/sandbox-trust-requests", true},
-		{"polling one trust request", "/api/pools/pool-1/sandbox-trust-requests/treq_abc", true},
-		{"reading the pool's host trusts", "/api/pools/pool-1/sandbox-host-trusts", true},
-		{"a subroute below the pool's host trusts", "/api/pools/pool-1/sandbox-host-trusts/trust_abc", false},
-		{"reading the sandboxes the pool holds", "/api/pools/pool-1/sandboxes", true},
-		{"a subroute below the pool's sandboxes", "/api/pools/pool-1/sandboxes/sbx_abc", false},
-		{"resolving an asset name", "/api/pools/pool-1/assets/discobox-platform", true},
-		{"reading an asset manifest", "/api/pools/pool-1/assets/discobox-platform/manifests/sha256:abc", true},
-		{"reading an asset blob", "/api/pools/pool-1/assets/blobs/sha256:abc", true},
-		{"a subroute below an asset manifest", "/api/pools/pool-1/assets/discobox-platform/manifests/sha256:abc/extra", false},
+		{"a listed action", "/pool-agent/pool-1/status", true},
+		{"sentinel resolution", "/pool-agent/pool-1/resolve-sandbox-secret", true},
+		{"raw secret resolution", "/pool-agent/pool-1/resolve-sandbox-raw-secret", true},
+		{"gateway header resolution", "/pool-agent/pool-1/resolve-gateway-headers", true},
+		{"listing agent credentials", "/pool-agent/pool-1/sandbox-credentials", true},
+		{"recording a credential request", "/pool-agent/pool-1/sandbox-credential-requests", true},
+		{"a retired judge route", "/pool-agent/pool-1/judge", false},
+		{"the retired policy facts route", "/pool-agent/pool-1/sandbox-policy-facts", false},
+		{"polling one credential request", "/pool-agent/pool-1/sandbox-credential-requests/sreq_abc", true},
+		{"recording a trust request", "/pool-agent/pool-1/sandbox-trust-requests", true},
+		{"polling one trust request", "/pool-agent/pool-1/sandbox-trust-requests/treq_abc", true},
+		{"reading the pool's host trusts", "/pool-agent/pool-1/sandbox-host-trusts", true},
+		{"a subroute below the pool's host trusts", "/pool-agent/pool-1/sandbox-host-trusts/trust_abc", false},
+		{"reading the sandboxes the pool holds", "/pool-agent/pool-1/sandboxes", true},
+		{"a subroute below the pool's sandboxes", "/pool-agent/pool-1/sandboxes/sbx_abc", false},
+		{"resolving an asset name", "/pool-agent/pool-1/assets/discobox-platform", true},
+		{"reading an asset manifest", "/pool-agent/pool-1/assets/discobox-platform/manifests/sha256:abc", true},
+		{"reading an asset blob", "/pool-agent/pool-1/assets/blobs/sha256:abc", true},
+		{"a subroute below an asset manifest", "/pool-agent/pool-1/assets/discobox-platform/manifests/sha256:abc/extra", false},
 
-		{"an unlisted action", "/api/pools/pool-1/secrets", false},
-		{"a misspelled action", "/api/pools/pool-1/sandbox-credential", false},
+		{"an unlisted action", "/pool-agent/pool-1/secrets", false},
+		{"a misspelled action", "/pool-agent/pool-1/sandbox-credential", false},
 		// An action that takes no resource ID must not acquire one: otherwise an
 		// unlisted subroute inherits pool access from its listed parent.
-		{"a resource ID on an action that has none", "/api/pools/pool-1/status/extra", false},
-		{"a subroute below a resource ID", "/api/pools/pool-1/sandbox-credential-requests/sreq_abc/approve", false},
-		{"no action at all", "/api/pools/pool-1", false},
-		{"a project route", "/api/projects/proj-1/sandboxes", false},
+		{"a resource ID on an action that has none", "/pool-agent/pool-1/status/extra", false},
+		{"a subroute below a resource ID", "/pool-agent/pool-1/sandbox-credential-requests/sreq_abc/approve", false},
+		{"no action at all", "/pool-agent/pool-1", false},
+		{"a project route", "/projects/proj-1/sandboxes", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isPoolRuntimePath(tc.path); got != tc.want {
@@ -67,17 +67,17 @@ func TestPoolRuntimePathAllowlist(t *testing.T) {
 	}
 }
 
-// Every route the OpenAPI contract puts under /api/pools/{poolId}/ must be
+// Every route the OpenAPI contract puts under /pool-agent/{poolId}/ must be
 // listed, since the contract is what the pool agent actually calls.
 func TestEveryPoolRuntimeActionIsReachable(t *testing.T) {
 	for action := range poolRuntimeActions {
-		if !isPoolRuntimePath("/api/pools/pool-1/" + action) {
+		if !isPoolRuntimePath("/pool-agent/pool-1/" + action) {
 			t.Fatalf("action %q is listed but its own path does not match", action)
 		}
 	}
 }
 
-// Every route the contract puts under /api/pools/{poolId}/ is a pool agent's,
+// Every route the contract puts under /pool-agent/{poolId}/ is a pool agent's,
 // and is on the allowlist. Without this, a route added to the contract and its
 // handler but not to poolRuntimeActions passes every service-level test and
 // answers 403 to the real agent. A route there that is not the pool agent's
@@ -92,12 +92,12 @@ func TestEveryPoolRouteInTheContractIsAllowlisted(t *testing.T) {
 	param := regexp.MustCompile(`\{[^}]+\}`)
 	checked := 0
 	for path := range doc.Paths {
-		rest, ok := strings.CutPrefix(path, "/api/pools/{poolId}/")
+		rest, ok := strings.CutPrefix(path, "/pool-agent/{poolId}/")
 		if !ok {
 			continue
 		}
 		checked++
-		if concrete := "/api/pools/pool-1/" + param.ReplaceAllString(rest, "id-1"); !isPoolRuntimePath(concrete) {
+		if concrete := "/pool-agent/pool-1/" + param.ReplaceAllString(rest, "id-1"); !isPoolRuntimePath(concrete) {
 			t.Errorf("%s is a pool agent route in the contract but not in poolRuntimeActions", path)
 		}
 	}

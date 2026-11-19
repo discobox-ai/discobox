@@ -18,6 +18,8 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
+const sandboxAgentRoutePrefix = "/projects/{projectId}/sandboxes/{sandboxId}/agent"
+
 // registerSandboxAgentTerminalRoutes forwards the sandbox agent's exec and
 // service API, and says of each route what a request on it is for
 // (ADR 26-10-12-711 §1). This is the one table of which of them starts a
@@ -50,7 +52,6 @@ import (
 // The inspects and the screen are the reads a sandbox's last inventory
 // answers while it is not running (sandboxInventoryRead, ADR 26-10-11-657 §4).
 func registerSandboxAgentTerminalRoutes(router chi.Router, service services.SandboxService) {
-	const base = "/api/projects/{projectId}/sandboxes/{sandboxId}"
 	observe, inspect, read, action := services.SandboxObserve, services.SandboxInspect, services.SandboxRead, services.SandboxAction
 	attach := action("exec attach")
 	attach.Attach = true
@@ -98,7 +99,7 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 		{http.MethodPost, "/files/move", action("file move")},
 		{http.MethodPost, "/files/copy", action("file copy")},
 	} {
-		router.Method(route.method, base+route.path, sandboxAgentTerminalProxyHandler(service, route.use, route.use == createExec))
+		router.Method(route.method, sandboxAgentRoutePrefix+route.path, sandboxAgentTerminalProxyHandler(service, route.use, route.use == createExec))
 	}
 }
 
@@ -158,7 +159,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 			return
 		}
 
-		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxID, sandboxModel.ID, r.URL.Path)
+		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxID, sandboxModel.ID, r.URL.EscapedPath())
 		if err != nil {
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -216,13 +217,13 @@ func sandboxInventoryRead(r *http.Request) (services.InventoryRead, bool) {
 	// chi has matched the route, so the ids are read from it rather than cut
 	// from the path: an exec named "screen" is still an exec.
 	execID, serviceID := chi.URLParam(r, "execId"), chi.URLParam(r, "serviceId")
-	pattern := chi.RouteContext(r.Context()).RoutePattern()
+	pattern := strings.TrimPrefix(chi.RouteContext(r.Context()).RoutePattern(), sandboxAgentRoutePrefix)
 	switch {
-	case strings.HasSuffix(pattern, "/sandboxes/{sandboxId}/execs"):
+	case pattern == "/execs":
 		return services.InventoryRead{Part: services.InventoryExecs}, true
-	case strings.HasSuffix(pattern, "/sandboxes/{sandboxId}/services"):
+	case pattern == "/services":
 		return services.InventoryRead{Part: services.InventoryServices}, true
-	case strings.HasSuffix(pattern, "/sandboxes/{sandboxId}/tools"):
+	case pattern == "/tools":
 		return services.InventoryRead{Part: services.InventoryTools}, true
 	case strings.HasSuffix(pattern, "/execs/{execId}"):
 		return services.InventoryRead{Part: services.InventoryExec, ID: execID}, true
@@ -264,8 +265,8 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	// the path: an exec or a service named "files" is not one. Its scopes are
 	// its own, so a role may read a discobox's files and run nothing in it
 	// (ADR 26-10-22-499 §3).
-	pattern := chi.RouteContext(r.Context()).RoutePattern()
-	if strings.Contains(pattern, "/sandboxes/{sandboxId}/files/") {
+	pattern := strings.TrimPrefix(chi.RouteContext(r.Context()).RoutePattern(), sandboxAgentRoutePrefix)
+	if strings.HasPrefix(pattern, "/files/") {
 		if r.Method == http.MethodGet {
 			return []string{poolagentauth.ScopeFilesRead}
 		}
@@ -273,17 +274,17 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	}
 	// Running the box's provisioning again acts in it as starting an exec
 	// does (ADR 26-11-11-560 §5).
-	if strings.HasSuffix(pattern, "/sandboxes/{sandboxId}/reprovision") {
+	if pattern == "/reprovision" {
 		return []string{poolagentauth.ScopeExecWrite}
 	}
 	// The events of every exec, read across them: the exec event trail.
-	if strings.HasSuffix(r.URL.Path, "/exec-events") {
+	if pattern == "/exec-events" {
 		if r.Method == http.MethodGet {
 			return []string{poolagentauth.ScopeExecRead}
 		}
 		return nil
 	}
-	if strings.Contains(r.URL.Path, "/harness-hooks") {
+	if pattern == "/harness-hooks" {
 		if r.Method == http.MethodGet {
 			return []string{poolagentauth.ScopeExecRead}
 		}
@@ -294,10 +295,10 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	// stopping or restarting one is creating or ending an exec.
 	// Listing tools reads declaration files, and what it says is how to start
 	// an exec, so it is read like one (ADR 0125 §7).
-	if strings.HasSuffix(r.URL.Path, "/tools") && r.Method == http.MethodGet {
+	if pattern == "/tools" && r.Method == http.MethodGet {
 		return []string{poolagentauth.ScopeExecRead}
 	}
-	if strings.Contains(r.URL.Path, "/services") {
+	if pattern == "/services" || strings.HasPrefix(pattern, "/services/") {
 		switch r.Method {
 		case http.MethodGet:
 			return []string{poolagentauth.ScopeExecRead}
@@ -307,12 +308,12 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 			return nil
 		}
 	}
-	if strings.Contains(r.URL.Path, "/execs") {
-		if strings.HasSuffix(r.URL.Path, "/attach") {
+	if pattern == "/execs" || strings.HasPrefix(pattern, "/execs/") {
+		if strings.HasSuffix(pattern, "/attach") {
 			return []string{poolagentauth.ScopeExecWrite, poolagentauth.ScopeExecRead}
 		}
 		// A wait is a POST only because it carries a body; it reads (ADR 0137).
-		if strings.HasSuffix(r.URL.Path, "/wait") {
+		if strings.HasSuffix(pattern, "/wait") {
 			return []string{poolagentauth.ScopeExecRead}
 		}
 		switch r.Method {
@@ -327,13 +328,21 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	return nil
 }
 
-func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, poolID, routeSandboxID, sandboxID, path string) (*url.URL, error) {
-	if !strings.HasPrefix(path, "/api/projects/") {
-		return nil, fmt.Errorf("sandbox agent-terminal proxy path %q must start with /api/projects/", path)
-	}
-	suffix := strings.TrimPrefix(path, "/api/projects/"+routeProjectID+"/sandboxes/"+routeSandboxID)
-	if suffix == path {
+func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, poolID, routeSandboxID, sandboxID, escapedPath string) (*url.URL, error) {
+	prefix := "/projects/" + routeProjectID + "/sandboxes/" + routeSandboxID + "/agent"
+	escapedSuffix, ok := strings.CutPrefix(escapedPath, prefix)
+	if !ok || !strings.HasPrefix(escapedSuffix, "/") {
 		return nil, fmt.Errorf("sandbox agent-terminal proxy path identity does not match route")
 	}
-	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, suffix)
+	suffix, err := url.PathUnescape(escapedSuffix)
+	if err != nil {
+		return nil, fmt.Errorf("decode sandbox agent-terminal path: %w", err)
+	}
+	target, err := sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, "")
+	if err != nil {
+		return nil, err
+	}
+	target.RawPath = target.EscapedPath() + escapedSuffix
+	target.Path += suffix
+	return target, nil
 }

@@ -815,14 +815,14 @@ func (s *Server) handleAssignSandboxHarnessSecretsRequest(args [2]string, argsEs
 // frames write to exec stdin, output frames stream process output, and close-input frames close
 // stdin without detaching output.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 func (s *Server) handleAttachSandboxExecRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("attach-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -974,14 +974,14 @@ func (s *Server) handleAttachSandboxExecRequest(args [3]string, argsEscaped bool
 // produced before an attach exists is lost. The exit status is not encoded in the response: read it
 // from the exec record, which is authoritative.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 func (s *Server) handleAttachSandboxExecOnceRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("attach-sandbox-exec-once"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -1141,14 +1141,14 @@ func (s *Server) handleAttachSandboxExecOnceRequest(args [3]string, argsEscaped 
 // Check that an explicit start is still current, immediately before execution under the pool's power
 // lock.
 //
-// GET /api/pools/{poolId}/sandbox-start-authorization
+// GET /pool-agent/{poolId}/sandbox-start-authorization
 func (s *Server) handleAuthorizePoolSandboxStartRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("authorize-pool-sandbox-start"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-start-authorization"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-start-authorization"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -1590,14 +1590,14 @@ func (s *Server) handleClearPoolCacheRequest(args [2]string, argsEscaped bool, w
 //
 // Record a successful suspend once, before releasing the pool's power lock.
 //
-// POST /api/pools/{poolId}/sandbox-suspend-completion
+// POST /pool-agent/{poolId}/sandbox-suspend-completion
 func (s *Server) handleCompletePoolSandboxSuspendRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("complete-pool-sandbox-suspend"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-suspend-completion"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-suspend-completion"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -1911,14 +1911,14 @@ func (s *Server) handleCompleteSandboxSourcePushRequest(args [2]string, argsEsca
 //
 //	404 for a source that does not exist, 409 for a destination that does unless replace is set.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy
 func (s *Server) handleCopySandboxFileRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("copy-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/copy"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -3461,14 +3461,14 @@ func (s *Server) handleCreateSandboxRequest(args [1]string, argsEscaped bool, w 
 //
 // Record an agent's credential request.
 //
-// POST /api/pools/{poolId}/sandbox-credential-requests
+// POST /pool-agent/{poolId}/sandbox-credential-requests
 func (s *Server) handleCreateSandboxCredentialRequestRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("create-sandbox-credential-request"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-credential-requests"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-credential-requests"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -3619,14 +3619,14 @@ func (s *Server) handleCreateSandboxCredentialRequestRequest(args [1]string, arg
 //
 // Create an exec runtime in a sandbox.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 func (s *Server) handleCreateSandboxExecRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("create-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -4105,14 +4105,14 @@ func (s *Server) handleCreateSandboxSecretBindingRequest(args [2]string, argsEsc
 //
 // Record an agent's host trust request.
 //
-// POST /api/pools/{poolId}/sandbox-trust-requests
+// POST /pool-agent/{poolId}/sandbox-trust-requests
 func (s *Server) handleCreateSandboxTrustRequestRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("create-sandbox-trust-request"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-trust-requests"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-trust-requests"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -5749,14 +5749,14 @@ func (s *Server) handleDeleteSandboxRequest(args [2]string, argsEscaped bool, w 
 //
 // Destroy an exec runtime in a sandbox.
 //
-// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+// DELETE /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 func (s *Server) handleDeleteSandboxExecRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("delete-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -7076,14 +7076,14 @@ func (s *Server) handleDenyTrustRequestRequest(args [2]string, argsEscaped bool,
 //
 // Discard sandbox harness config changes.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 func (s *Server) handleDiscardSandboxHarnessConfigChangesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("discard-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -7387,14 +7387,14 @@ func (s *Server) handleDismissSecretRefreshRequestRequest(args [2]string, argsEs
 // metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
 // selected source root. Ownership and special files are excluded.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 func (s *Server) handleExportSandboxFilesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("export-sandbox-files"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/archive"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -8576,14 +8576,14 @@ func (s *Server) handleGetPoolRequest(args [2]string, argsEscaped bool, w http.R
 // digest as they are sent, and a blob that does not match is cut off rather than completed.
 // Immutable and cacheable forever.
 //
-// GET /api/pools/{poolId}/assets/blobs/{digest}
+// GET /pool-agent/{poolId}/assets/blobs/{digest}
 func (s *Server) handleGetPoolAssetBlobRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-pool-asset-blob"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/assets/blobs/{digest}"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/assets/blobs/{digest}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -8725,14 +8725,14 @@ func (s *Server) handleGetPoolAssetBlobRequest(args [2]string, argsEscaped bool,
 // by the release or by a harness config of the pool's project, or one such an index lists, under the
 // name its pin carries; anything else is a 404. Immutable.
 //
-// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+// GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}
 func (s *Server) handleGetPoolAssetManifestRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-pool-asset-manifest"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/assets/{name}/manifests/{digest}"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/assets/{name}/manifests/{digest}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -9437,14 +9437,14 @@ func (s *Server) handleGetSandboxRequest(args [2]string, argsEscaped bool, w htt
 //
 // Poll an agent credential request.
 //
-// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+// GET /pool-agent/{poolId}/sandbox-credential-requests/{requestId}
 func (s *Server) handleGetSandboxCredentialRequestRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-credential-request"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-credential-requests/{requestId}"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-credential-requests/{requestId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -9588,14 +9588,14 @@ func (s *Server) handleGetSandboxCredentialRequestRequest(args [2]string, argsEs
 //
 // Get an exec runtime in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 func (s *Server) handleGetSandboxExecRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -9739,14 +9739,14 @@ func (s *Server) handleGetSandboxExecRequest(args [3]string, argsEscaped bool, w
 //
 // Get the latest opaque resource snapshot for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources
 func (s *Server) handleGetSandboxExecResourcesRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-exec-resources"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -9893,14 +9893,14 @@ func (s *Server) handleGetSandboxExecResourcesRequest(args [3]string, argsEscape
 // for an exec with no terminal. A discobox that is not running is answered from the screen it last
 // posted, which has no scrollback.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen
 func (s *Server) handleGetSandboxExecScreenRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-exec-screen"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -10048,14 +10048,14 @@ func (s *Server) handleGetSandboxExecScreenRequest(args [3]string, argsEscaped b
 //
 // Get sandbox harness config changes.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+// GET /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
 func (s *Server) handleGetSandboxHarnessConfigChangesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -10342,14 +10342,14 @@ func (s *Server) handleGetSandboxProviderInstanceRequest(args [2]string, argsEsc
 //
 // Get a declared service in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 func (s *Server) handleGetSandboxServiceRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -10493,14 +10493,14 @@ func (s *Server) handleGetSandboxServiceRequest(args [3]string, argsEscaped bool
 //
 // Poll an agent host trust request.
 //
-// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+// GET /pool-agent/{poolId}/sandbox-trust-requests/{requestId}
 func (s *Server) handleGetSandboxTrustRequestRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-trust-request"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-trust-requests/{requestId}"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-trust-requests/{requestId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -11209,14 +11209,14 @@ func (s *Server) handleGetServerInfoRequest(args [0]string, argsEscaped bool, w 
 //
 // Discover this server's own peer ID.
 //
-// GET /peer
+// GET /server/peer
 func (s *Server) handleGetServerPeerRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-server-peer"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/peer"),
+		semconv.HTTPRouteKey.String("/server/peer"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -11484,14 +11484,14 @@ func (s *Server) handleGetTrustRequestRequest(args [2]string, argsEscaped bool, 
 // metadata is finalized after children. preserve applies ordinary permissions and access and
 // modification times, never ownership or privileged bits.
 //
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 func (s *Server) handleImportSandboxFilesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("import-sandbox-files"),
 		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/archive"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -12427,14 +12427,14 @@ func (s *Server) handleListDNSAuditRequest(args [1]string, argsEscaped bool, w h
 //
 // running sandbox; the read never starts one.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events
 func (s *Server) handleListExecEventsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-exec-events"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/exec-events"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -12935,14 +12935,14 @@ func (s *Server) handleListHarnessConfigsRequest(args [1]string, argsEscaped boo
 //
 // List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks
 func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-harness-hooks"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -13382,14 +13382,14 @@ func (s *Server) handleListPeersRequest(args [0]string, argsEscaped bool, w http
 // List every sandbox the control plane holds on this pool, the set the pool agent may not reap the
 // trees of.
 //
-// GET /api/pools/{poolId}/sandboxes
+// GET /pool-agent/{poolId}/sandboxes
 func (s *Server) handleListPoolHeldSandboxesRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-pool-held-sandboxes"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandboxes"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandboxes"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -13525,14 +13525,14 @@ func (s *Server) handleListPoolHeldSandboxesRequest(args [1]string, argsEscaped 
 //
 // List the live host trusts of every sandbox on the pool.
 //
-// GET /api/pools/{poolId}/sandbox-host-trusts
+// GET /pool-agent/{poolId}/sandbox-host-trusts
 func (s *Server) handleListPoolHostTrustsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-pool-host-trusts"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-host-trusts"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-host-trusts"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -14364,14 +14364,14 @@ func (s *Server) handleListSSHKeysRequest(args [1]string, argsEscaped bool, w ht
 //
 // List the credentials a sandbox's bindings give it.
 //
-// GET /api/pools/{poolId}/sandbox-credentials
+// GET /pool-agent/{poolId}/sandbox-credentials
 func (s *Server) handleListSandboxCredentialsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-credentials"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-credentials"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-credentials"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -14511,14 +14511,14 @@ func (s *Server) handleListSandboxCredentialsRequest(args [1]string, argsEscaped
 //
 // List recent audit events for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events
 func (s *Server) handleListSandboxExecEventsRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-exec-events"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -14666,14 +14666,14 @@ func (s *Server) handleListSandboxExecEventsRequest(args [3]string, argsEscaped 
 //
 // List logs for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs
 func (s *Server) handleListSandboxExecLogsRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-exec-logs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -14817,14 +14817,14 @@ func (s *Server) handleListSandboxExecLogsRequest(args [3]string, argsEscaped bo
 //
 // List recent opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history
 func (s *Server) handleListSandboxExecResourceHistoryRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-exec-resource-history"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -14972,14 +14972,14 @@ func (s *Server) handleListSandboxExecResourceHistoryRequest(args [3]string, arg
 //
 // List exec runtimes in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 func (s *Server) handleListSandboxExecsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-execs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -15120,14 +15120,14 @@ func (s *Server) handleListSandboxExecsRequest(args [2]string, argsEscaped bool,
 // Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
 // is not a directory.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/list
 func (s *Server) handleListSandboxFilesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-files"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/list"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/list"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -15686,14 +15686,14 @@ func (s *Server) handleListSandboxProviderInstancesRequest(args [1]string, argsE
 // Returns the transcript of the service's current or last run. A service that has never run has an
 // empty transcript rather than an error.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs
 func (s *Server) handleListSandboxServiceLogsRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-service-logs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -15839,14 +15839,14 @@ func (s *Server) handleListSandboxServiceLogsRequest(args [3]string, argsEscaped
 // the state of the exec running it. Declarations are re-read on every request, so a service file
 // added or edited while the sandbox is up appears immediately.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services
 func (s *Server) handleListSandboxServicesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-services"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -15987,14 +15987,14 @@ func (s *Server) handleListSandboxServicesRequest(args [2]string, argsEscaped bo
 // Lists the tools the sandbox's image and primary source declare, in filename order within each.
 // Declarations are re-read on every request.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/tools
 func (s *Server) handleListSandboxToolsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-tools"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/tools"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/tools"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -17512,14 +17512,14 @@ func (s *Server) handleListTrustRequestsRequest(args [1]string, argsEscaped bool
 //
 // Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir
 func (s *Server) handleMakeSandboxDirectoryRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("make-sandbox-directory"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -17674,14 +17674,14 @@ func (s *Server) handleMakeSandboxDirectoryRequest(args [2]string, argsEscaped b
 //
 // Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
 //
-// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+// POST /pool-agent/{poolId}/sandbox-agent-status-tokens
 func (s *Server) handleMintSandboxAgentStatusTokensRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("mint-sandbox-agent-status-tokens"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-agent-status-tokens"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-agent-status-tokens"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -17834,14 +17834,14 @@ func (s *Server) handleMintSandboxAgentStatusTokensRequest(args [1]string, argsE
 // destination that does unless replace is set, which replaces whatever is there, a directory
 // included. A Windows discobox replaces a file only.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 func (s *Server) handleMoveSandboxFileRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("move-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/move"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/move"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -18478,14 +18478,14 @@ func (s *Server) handlePutProjectGatewayRequest(args [2]string, argsEscaped bool
 // Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
 // directory.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 func (s *Server) handleReadSandboxFileRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("read-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/content"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/content"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -18931,14 +18931,14 @@ func (s *Server) handleReconcileSandboxRequest(args [2]string, argsEscaped bool,
 //
 // Reconsider sandbox harness config changes.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
 func (s *Server) handleReconsiderSandboxHarnessConfigChangesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("reconsider-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -19554,14 +19554,14 @@ func (s *Server) handleReleaseSandboxRequest(args [2]string, argsEscaped bool, w
 // Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
 // that is not empty unless recursive is set.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove
 func (s *Server) handleRemoveSandboxFileRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("remove-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/remove"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -19872,14 +19872,14 @@ func (s *Server) handleRepairSandboxRequest(args [2]string, argsEscaped bool, w 
 //
 // Report what this pool and each sandbox on it are consuming.
 //
-// POST /api/pools/{poolId}/resources
+// POST /pool-agent/{poolId}/resources
 func (s *Server) handleReportPoolResourcesRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-pool-resources"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/resources"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/resources"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -20030,14 +20030,14 @@ func (s *Server) handleReportPoolResourcesRequest(args [1]string, argsEscaped bo
 //
 // Report observed sandbox states from the pool agent.
 //
-// POST /api/pools/{poolId}/sandbox-states
+// POST /pool-agent/{poolId}/sandbox-states
 func (s *Server) handleReportPoolSandboxStatesRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-pool-sandbox-states"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-states"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-states"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -20188,14 +20188,14 @@ func (s *Server) handleReportPoolSandboxStatesRequest(args [1]string, argsEscape
 //
 // Report polled sandbox-agent status for one or more hosted sandboxes.
 //
-// POST /api/pools/{poolId}/sandbox-agent-status
+// POST /pool-agent/{poolId}/sandbox-agent-status
 func (s *Server) handleReportSandboxAgentStatusRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-sandbox-agent-status"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-agent-status"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-agent-status"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -20347,14 +20347,14 @@ func (s *Server) handleReportSandboxAgentStatusRequest(args [1]string, argsEscap
 // Report the inventory of one or more hosted sandboxes, in full when it changed and by digest when
 // it did not.
 //
-// POST /api/pools/{poolId}/sandbox-inventories
+// POST /pool-agent/{poolId}/sandbox-inventories
 func (s *Server) handleReportSandboxInventoriesRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-sandbox-inventories"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-inventories"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-inventories"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -20505,14 +20505,14 @@ func (s *Server) handleReportSandboxInventoriesRequest(args [1]string, argsEscap
 //
 // Report what an upstream made of a swapped credential.
 //
-// POST /api/pools/{poolId}/sandbox-secret-rejections
+// POST /pool-agent/{poolId}/sandbox-secret-rejections
 func (s *Server) handleReportSandboxSecretRejectionRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-sandbox-secret-rejection"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-secret-rejections"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/sandbox-secret-rejections"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -20673,14 +20673,14 @@ func (s *Server) handleReportSandboxSecretRejectionRequest(args [1]string, argsE
 // anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
 // of the sandbox itself.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision
 func (s *Server) handleReprovisionSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("reprovision-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/reprovision"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -20975,14 +20975,14 @@ func (s *Server) handleResetHarnessConfigRequest(args [2]string, argsEscaped boo
 //
 // Resolve the server environment values a sandbox's gateway sets headers from.
 //
-// POST /api/pools/{poolId}/resolve-gateway-headers
+// POST /pool-agent/{poolId}/resolve-gateway-headers
 func (s *Server) handleResolveGatewayHeadersRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-gateway-headers"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/resolve-gateway-headers"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/resolve-gateway-headers"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -21140,14 +21140,14 @@ func (s *Server) handleResolveGatewayHeadersRequest(args [1]string, argsEscaped 
 // carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
 // resolved is a 502.
 //
-// GET /api/pools/{poolId}/assets/{name}
+// GET /pool-agent/{poolId}/assets/{name}
 func (s *Server) handleResolvePoolAssetRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-pool-asset"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/assets/{name}"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/assets/{name}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -21287,14 +21287,14 @@ func (s *Server) handleResolvePoolAssetRequest(args [2]string, argsEscaped bool,
 //
 // Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
 //
-// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+// POST /pool-agent/{poolId}/resolve-sandbox-raw-secret
 func (s *Server) handleResolveSandboxRawSecretRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-sandbox-raw-secret"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/resolve-sandbox-raw-secret"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/resolve-sandbox-raw-secret"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -21445,14 +21445,14 @@ func (s *Server) handleResolveSandboxRawSecretRequest(args [1]string, argsEscape
 //
 // Resolve a sandbox sentinel secret.
 //
-// POST /api/pools/{poolId}/resolve-sandbox-secret
+// POST /pool-agent/{poolId}/resolve-sandbox-secret
 func (s *Server) handleResolveSandboxSecretRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-sandbox-secret"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/resolve-sandbox-secret"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/resolve-sandbox-secret"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -21767,14 +21767,14 @@ func (s *Server) handleRestartSandboxRequest(args [2]string, argsEscaped bool, w
 // Stops the service if it is running and starts it again under the same exec ID. A service that is
 // not running is simply started.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart
 func (s *Server) handleRestartSandboxServiceRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("restart-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -21920,14 +21920,14 @@ func (s *Server) handleRestartSandboxServiceRequest(args [3]string, argsEscaped 
 // config or credential revisions have advanced. Unrelated fields and personal file overrides remain
 // intact. Candidate identity, harness assignment, manifest and validation checks still apply.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 func (s *Server) handleSaveSandboxHarnessConfigChangesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("save-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -22084,14 +22084,14 @@ func (s *Server) handleSaveSandboxHarnessConfigChangesRequest(args [2]string, ar
 // counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
 // for an exec with no terminal or closed input.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input
 func (s *Server) handleSendSandboxExecInputRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("send-sandbox-exec-input"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -22689,14 +22689,14 @@ func (s *Server) handleSetDefaultProjectRequest(args [1]string, argsEscaped bool
 // file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
 // privileged bits.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata
 func (s *Server) handleSetSandboxFileMetadataRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("set-sandbox-file-metadata"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -23018,14 +23018,14 @@ func (s *Server) handleStartSandboxRequest(args [2]string, argsEscaped bool, w h
 //
 // Starts a prepared sandbox exec after any desired attach stream has connected.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start
 func (s *Server) handleStartSandboxExecRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("start-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -23170,14 +23170,14 @@ func (s *Server) handleStartSandboxExecRequest(args [3]string, argsEscaped bool,
 // Starts the service, or returns it unchanged when it is already running. A service that has run
 // before is relaunched under its existing exec ID rather than given a new one.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start
 func (s *Server) handleStartSandboxServiceRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("start-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -23322,14 +23322,14 @@ func (s *Server) handleStartSandboxServiceRequest(args [3]string, argsEscaped bo
 // Reports one path as the discobox's default user sees it. Every files operation acts as that user,
 // with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat
 func (s *Server) handleStatSandboxFileRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stat-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/stat"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -23636,14 +23636,14 @@ func (s *Server) handleStopSandboxRequest(args [2]string, argsEscaped bool, w ht
 // Ends the service's run and keeps its record, so its output is still readable and starting it again
 // resumes the same exec identity.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop
 func (s *Server) handleStopSandboxServiceRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stop-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -23804,14 +23804,14 @@ func (s *Server) handleStopSandboxServiceRequest(args [3]string, argsEscaped boo
 // The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
 // query parameter. An idle stream sends a comment every 15 seconds.
 //
-// GET /api/projects/{projectId}/events
+// GET /projects/{projectId}/events
 func (s *Server) handleStreamSandboxEventsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stream-sandbox-events"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/events"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/events"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -23955,14 +23955,14 @@ func (s *Server) handleStreamSandboxEventsRequest(args [1]string, argsEscaped bo
 //
 // Stream opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream
 func (s *Server) handleStreamSandboxExecResourcesRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stream-sandbox-exec-resources"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -25037,14 +25037,14 @@ func (s *Server) handleUpdatePoolRequest(args [2]string, argsEscaped bool, w htt
 //
 // Update pool status.
 //
-// POST /api/pools/{poolId}/status
+// POST /pool-agent/{poolId}/status
 func (s *Server) handleUpdatePoolStatusRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("update-pool-status"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/status"),
+		semconv.HTTPRouteKey.String("/pool-agent/{poolId}/status"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -26331,14 +26331,14 @@ func (s *Server) handleUpgradeSandboxRequest(args [2]string, argsEscaped bool, w
 // answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
 // recorded between two calls is missed.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait
 func (s *Server) handleWaitSandboxExecRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("wait-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -26500,14 +26500,14 @@ func (s *Server) handleWaitSandboxExecRequest(args [3]string, argsEscaped bool, 
 // when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
 // is a directory, 404 when ifMissing refuses.
 //
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 func (s *Server) handleWriteSandboxFileRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("write-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/content"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/content"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)

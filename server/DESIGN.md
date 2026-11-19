@@ -45,6 +45,17 @@ The Server REST API contract is owned by the root module at
 `api/openapi/server.yaml`. Server handlers should implement that contract instead
 of deriving the contract from Go route registration.
 
+Server-owned resources and streams live under `/projects`, `/server`,
+`/peers`, `/providers`, and `/ssh`. The control plane forwards
+`/projects/{projectId}/sandboxes/{sandboxId}/agent/…` into the sandbox agent.
+The sandbox's `http` and `git-*` paths carry those protocols. Pool agents call
+the control plane under `/pool-agent/{poolId}/`. The agents' own listeners keep
+their existing wire paths.
+
+`legacyServerRoutes` rewrites an explicit set of legacy paths before
+authentication, authorization, and dispatch. Startup uses the same lookup
+when selecting the error format. Aliases stay out of the published contract.
+
 Composition:
 
 - `internal/server.NewRouter`, `NewApp`, and `NewOpenAPIRouter`
@@ -111,7 +122,7 @@ Current proxy routes:
   The pool agent owns reaching `{port}` inside the sandbox. Traffic to a port
   is an action: the server has the pool start a stopped sandbox before it
   forwards.
-- `/api/projects/{projectId}/sandboxes/{sandboxId}/execs...`, `.../services...`,
+- `/projects/{projectId}/sandboxes/{sandboxId}/agent/execs...`, `.../services...`,
   `.../harness-hooks`, `.../exec-events` and `.../reprovision` forward their path suffix to the pool-agent sandbox
   route, which reaches the sandbox-agent exec API. The pool agent and sandbox
   agent own serving that API; the server owns project authorization, scope
@@ -122,7 +133,7 @@ Current proxy routes:
   [What a request is for](internal/resources/sandboxes/DESIGN.md#what-a-request-is-for).
   `wait=ready` on an exec create predates every action waiting, and is taken
   and not forwarded.
-- `/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach?host=&port=`
+- `/projects/{projectId}/sandboxes/{sandboxId}/agent/tcp/attach?host=&port=`
   forwards the websocket upgrade to the sandbox-agent `/tcp/attach` endpoint,
   which dials `host:port` from inside the sandbox's network namespace and
   speaks `pkg/execstream/frame` over it (ADR 0024 §§3-4). It is that tunnel exposed
@@ -130,7 +141,7 @@ Current proxy routes:
   reaches the same endpoint in-process for `direct-tcpip` channels. Everything
   past the handshake is the tunnel's own framing, so the server validates the
   target, authorizes the project, and injects the lease, and owns nothing else.
-- `/api/projects/{projectId}/sandboxes/{sandboxId}/udp/attach?host=&port=` is
+- `/projects/{projectId}/sandboxes/{sandboxId}/agent/udp/attach?host=&port=` is
   the same handler for the sandbox-agent's datagram tunnel (ADR 0109): one
   datagram per frame, under `udp:connect`. SSH has no counterpart, so nothing
   in-process reaches it.
@@ -158,7 +169,7 @@ Current proxy routes:
 
 ### Pool Host Console
 
-`/api/projects/{projectId}/pools/{poolId}/console` is hand-wired next to the
+`/projects/{projectId}/pools/{poolId}/console` is hand-wired next to the
 proxies above but is not one of them: nothing is forwarded to a pool agent. The
 control plane terminates the websocket itself and pumps `pkg/execstream/frame`
 between the client and a TTY the provider opened on the pool host
@@ -195,7 +206,7 @@ what it already showed.
 
 ### Pool Proxy Audit Recordings
 
-`/api/projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}/{artifact}`
+`/projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}/{artifact}`
 streams a body or upgraded stream the pool proxy recorded beside an audit row
 (ADR 0130 §5). It is hand-wired beside `list-http-audit` for the transfer
 routes' reason: the body is unbounded opaque bytes the generated scaffold would
@@ -208,7 +219,7 @@ body cleanly.
 
 ### Pool Host Logs
 
-`/api/projects/{projectId}/pools/{poolId}/logs` is hand-wired for the same
+`/projects/{projectId}/pools/{poolId}/logs` is hand-wired for the same
 reason as the console and shares its authorization story, but it is a plain
 streaming `GET`: the bytes travel one way, so there is no framing and no
 websocket. `?tail=` bounds it and `?follow=true` keeps it open, and each write
@@ -229,7 +240,7 @@ Two things are the handler's own:
 
 ### Sandbox Events
 
-`/api/projects/{projectId}/events` is the project's sandbox state changes as
+`/projects/{projectId}/events` is the project's sandbox state changes as
 server-sent events ([ADR 26-10-29-316](../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)).
 It is documented in `server.yaml`, `stream-sandbox-events`, with the event data
 as `SandboxEventData`, and hand-wired (`sandbox_events.go`) because each event
@@ -248,7 +259,7 @@ resumes from its cursor.
 
 ### Pool Guest Image
 
-`POST /api/projects/{projectId}/pools/{poolId}/guest-image` is hand-wired beside
+`POST /projects/{projectId}/pools/{poolId}/guest-image` is hand-wired beside
 the console and the host log for the same reason: it goes through the provider
 driver rather than the pool agent, and it streams. It rebuilds the guest image
 the pool's backend boots, on that pool's own host (ADR 0062 §7); `?source=`
@@ -260,8 +271,8 @@ disconnecting closes the build.
 
 ### Discobox Export and Import
 
-`GET /api/projects/{projectId}/sandboxes/{sandboxId}/export` and
-`POST /api/projects/{projectId}/sandboxes/import` move a discobox between
+`GET /projects/{projectId}/sandboxes/{sandboxId}/export` and
+`POST /projects/{projectId}/sandboxes/import` move a discobox between
 servers (ADR 0123). They are hand-wired for the reason the git proxy is: each
 body is an opaque stream of unbounded length, which the contract cannot describe
 and the generated scaffold would buffer — and what is in it is a whole workspace.
@@ -361,8 +372,8 @@ There is no exception for a pool. Its maker records the key its box made
 before its agent starts
 ([ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
 §4), so every pool-agent request carries the authenticated pool principal,
-such as `/api/pools/{poolId}/status`; the actions a pool principal may reach
-under `/api/pools/{poolId}/` are an allowlist in `internal/auth`.
+such as `/pool-agent/{poolId}/status`; the actions a pool principal may reach
+under `/pool-agent/{poolId}/` are an allowlist in `internal/auth`.
 
 Enrollment happens each time a pool's maker makes its box, at create and at
 repair (`poolruntime.ProvisionBox`), not at an agent start. The box keeps its identity
@@ -370,7 +381,7 @@ key on the pool's durable storage, so a remade box prints the same key and
 enrolls it again, and a restarted agent signs with it as before; the agent
 never makes one.
 Agent-observed sandbox state is reported at
-`/api/pools/{poolId}/sandbox-states` under the same pool-principal rule; the
+`/pool-agent/{poolId}/sandbox-states` under the same pool-principal rule; the
 sandbox IDs are runtime evidence, not user authorization input.
 
 ## Delivering and Re-delivering Source (`discobox push`)
@@ -537,7 +548,7 @@ default user's), so that one must be stopped first.
 
 ### The Server's Own Peer ID
 
-`GET /peer` serves this server's peer ID, resolved when the iroh endpoint was
+`GET /server/peer` serves this server's peer ID, resolved when the iroh endpoint was
 configured (ADR 0098), and beside it `irohListener`: what the listener is doing
 right now (see Transport Logging and Reach). It is the same shape as `GET /ssh`
 — a server telling a client who it is, over the transport that client already
@@ -571,9 +582,9 @@ offers when it registers this server, and nothing else reads it — it need not
 be unique, and a client may register the server under a name of its own.
 
 It is a setting rather than something the API can change, so there is one
-place that decides it. It is not part of `GET /peer`, because a server that
+place that decides it. It is not part of `GET /server/peer`, because a server that
 does not listen for peers still has a name. Authenticated, and listed in
-`authenticatedAllowedPaths`, for `/peer`'s reason. An unnamed server — no
+`authenticatedAllowedPaths`, for `/server/peer`'s reason. An unnamed server — no
 setting and no readable hostname — omits the field, and a client names it after
 its address, as it does a server that predates the route.
 
@@ -596,7 +607,7 @@ to its sockets directly — a working deployment, and a completely different one
 from what its address implies. The watch polls every 15 seconds in the
 background, logs the first reading at startup and every change after it (lost
 its relay, back on one and after how long), and serves the latest reading on
-`GET /peer` as `irohListener` — so an operator who reaches the server by any
+`GET /server/peer` as `irohListener` — so an operator who reaches the server by any
 transport can ask about the one that is broken. It is a report and not a step;
 nothing waits on it.
 
@@ -985,7 +996,7 @@ never moves a running sandbox, and they are what the pool lets the box fetch
 ## Observation vs Intent
 
 An observation never becomes intent. The pool agent reports what its containers
-are doing on its own channel (`/api/pools/{poolId}/sandbox-states`), and the
+are doing on its own channel (`/pool-agent/{poolId}/sandbox-states`), and the
 control plane records it as observed state: no desired state, no generation, no
 operation. A generation versions the spec, and nothing the runtime saw changes
 what was asked for.
@@ -1015,7 +1026,7 @@ See ADR 0017 §§9–10.
 ## Resource Accounting
 
 Pool agents report what their pool and each sandbox on it consume, on their own
-channel (`/api/pools/{poolId}/resources`, ADR 0071). It is a third observation
+channel (`/pool-agent/{poolId}/resources`, ADR 0071). It is a third observation
 channel alongside sandbox states and sandbox-agent status, and like both it is
 telemetry: no generation and no desired state. The pool agent sends it every
 thirty seconds.

@@ -84,6 +84,7 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 		// The event stream is served, whole (TestASandboxReadsItsProjectsEventStream);
 		// another project's is not.
 		{http.MethodGet, "/api/projects/another-project/events", http.StatusForbidden},
+		{http.MethodGet, "/projects/another-project/events", http.StatusForbidden},
 		{http.MethodGet, "/projects/another-project/sandboxes", http.StatusForbidden},
 		{http.MethodGet, "/projects", http.StatusForbidden},
 		{http.MethodGet, "/peers", http.StatusForbidden},
@@ -116,12 +117,17 @@ func TestASandboxReadsItsProjectsEventStream(t *testing.T) {
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
-	for _, project := range []string{projectID, "default"} {
-		t.Run(project, func(t *testing.T) {
+	for _, path := range []string{
+		"/projects/" + projectID + "/events",
+		"/api/projects/" + projectID + "/events",
+		"/projects/default/events",
+		"/api/projects/default/events",
+	} {
+		t.Run(path, func(t *testing.T) {
 			token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
 			streamCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+"/api/projects/"+project+"/events", nil)
+			req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+path, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

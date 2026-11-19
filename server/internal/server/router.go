@@ -64,7 +64,7 @@ type AppOptions struct {
 	// data directory, neither of which this constructor owns.
 	SSHIngress services.SSHIngress
 
-	// ServerPeer is what GET /peer serves: this server's own peer ID, which
+	// ServerPeer is what GET /server/peer serves: this server's own peer ID, which
 	// every server has (ADR 0117). Resolved by the caller because the identity
 	// is loaded with the iroh configuration, which happens before this
 	// constructor runs (ADR 0098).
@@ -147,6 +147,7 @@ func DefaultAppOptions() AppOptions {
 // NewRouter creates a chi router backed by the generated OpenAPI server.
 func NewRouter(svc services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
+	router.Use(legacyServerRoutes)
 	RegisterHealthRoutes(router)
 	RegisterDocsRoutes(router)
 	registerSandboxGitRoutes(router, svc.Sandboxes)
@@ -289,6 +290,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*ch
 		authenticators = append(authenticators, auth.DefaultUserAuthenticator{UserID: opts.UserID})
 	}
 	router := chi.NewRouter()
+	router.Use(legacyServerRoutes)
 	router.Use(auth.Authentication(authenticators...))
 	router.Use(auth.Authorization(
 		// First, so a sandbox is held to its role before any authorizer that

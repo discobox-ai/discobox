@@ -32,7 +32,7 @@ const (
 )
 
 func registerSandboxEventRoutes(router chi.Router, service services.SandboxService) {
-	router.Method(http.MethodGet, "/api/projects/{projectId}/events", sandboxEventsHandler(service, sandboxEventPollInterval, sandboxEventPingInterval))
+	router.Method(http.MethodGet, "/projects/{projectId}/events", sandboxEventsHandler(service, sandboxEventPollInterval, sandboxEventPingInterval))
 }
 
 func sandboxEventsHandler(service services.SandboxService, poll, ping time.Duration) http.Handler {

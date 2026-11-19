@@ -381,7 +381,7 @@ func TestAnUnreachableControlPlaneTellsTheSandboxNoHostDetail(t *testing.T) {
 			if want := "the control plane is not reachable from the pool right now"; sent != want {
 				t.Errorf("message sent to the sandbox = %q, want %q", sent, want)
 			}
-			for _, leak := range []string{socket, "dial unix", "/api/pools/"} {
+			for _, leak := range []string{socket, "dial unix", "/pool-agent/"} {
 				if strings.Contains(sent, leak) {
 					t.Errorf("message sent to the sandbox = %q, names host detail %q", sent, leak)
 				}

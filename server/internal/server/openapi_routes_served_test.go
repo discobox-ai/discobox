@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,7 +66,8 @@ func TestEveryPublishedOperationIsServedByTheServer(t *testing.T) {
 			if forwarded && !op.Shared {
 				t.Errorf("%s %s: forwarded operation %s is missing x-sandbox-agent", method, path, op.ID)
 			}
-			if op.Shared && sandboxPaths[path][verb].ID != op.ID {
+			agentPath := "/api" + strings.Replace(path, "/sandboxes/{sandboxId}/agent/", "/sandboxes/{sandboxId}/", 1)
+			if op.Shared && sandboxPaths[agentPath][verb].ID != op.ID {
 				t.Errorf("%s %s: agent contract does not publish shared operation %s", method, path, op.ID)
 			}
 		}
@@ -97,7 +99,7 @@ func TestEveryPublishedOperationIsServedByTheServer(t *testing.T) {
 		if !ok || route.OperationID() != id {
 			t.Errorf("%s %s: missing generated agent route for %s", method, path, id)
 		}
-		if _, ok := controlPlane.FindRoute(method, sample); ok || proxy.Match(chi.NewRouteContext(), method, sample) {
+		if _, ok := controlPlane.FindRoute(method, sample); ok || proxy.Match(chi.NewRouteContext(), method, sample) || legacyServerPathMatcher.Match(chi.NewRouteContext(), http.MethodGet, sample) {
 			t.Errorf("%s %s: agent-only operation is available on the server", method, path)
 		}
 	}

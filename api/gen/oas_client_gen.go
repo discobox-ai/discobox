@@ -59,7 +59,7 @@ type Invoker interface {
 	// frames write to exec stdin, output frames stream process output, and close-input frames close
 	// stdin without detaching output.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (AttachSandboxExecRes, error)
 	// AttachSandboxExecOnce invokes attach-sandbox-exec-once operation.
 	//
@@ -73,14 +73,14 @@ type Invoker interface {
 	// produced before an attach exists is lost. The exit status is not encoded in the response: read it
 	// from the exec record, which is authoritative.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
 	// AuthorizePoolSandboxStart invokes authorize-pool-sandbox-start operation.
 	//
 	// Check that an explicit start is still current, immediately before execution under the pool's power
 	// lock.
 	//
-	// GET /api/pools/{poolId}/sandbox-start-authorization
+	// GET /pool-agent/{poolId}/sandbox-start-authorization
 	AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error)
 	// CheckSandboxProviderInstance invokes check-sandbox-provider-instance operation.
 	//
@@ -102,7 +102,7 @@ type Invoker interface {
 	//
 	// Record a successful suspend once, before releasing the pool's power lock.
 	//
-	// POST /api/pools/{poolId}/sandbox-suspend-completion
+	// POST /pool-agent/{poolId}/sandbox-suspend-completion
 	CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (CompletePoolSandboxSuspendRes, error)
 	// CompleteSandboxSourcePush invokes complete-sandbox-source-push operation.
 	//
@@ -117,7 +117,7 @@ type Invoker interface {
 	// Copies a file, a link, or a directory with everything it holds to another path within the discobox.
 	//  404 for a source that does not exist, 409 for a destination that does unless replace is set.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy
 	CopySandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
 	// CreateAPIAccessRequest invokes create-api-access-request operation.
 	//
@@ -173,13 +173,13 @@ type Invoker interface {
 	//
 	// Record an agent's credential request.
 	//
-	// POST /api/pools/{poolId}/sandbox-credential-requests
+	// POST /pool-agent/{poolId}/sandbox-credential-requests
 	CreateSandboxCredentialRequest(ctx context.Context, request *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (CreateSandboxCredentialRequestRes, error)
 	// CreateSandboxExec invokes create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 	CreateSandboxExec(ctx context.Context, request *CreateSandboxExecRequest, params CreateSandboxExecParams) (CreateSandboxExecRes, error)
 	// CreateSandboxProviderInstance invokes create-sandbox-provider-instance operation.
 	//
@@ -197,7 +197,7 @@ type Invoker interface {
 	//
 	// Record an agent's host trust request.
 	//
-	// POST /api/pools/{poolId}/sandbox-trust-requests
+	// POST /pool-agent/{poolId}/sandbox-trust-requests
 	CreateSandboxTrustRequest(ctx context.Context, request *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (CreateSandboxTrustRequestRes, error)
 	// CreateSecret invokes create-secret operation.
 	//
@@ -265,7 +265,7 @@ type Invoker interface {
 	//
 	// Destroy an exec runtime in a sandbox.
 	//
-	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	// DELETE /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (DeleteSandboxExecRes, error)
 	// DeleteSandboxHostTrust invokes delete-sandbox-host-trust operation.
 	//
@@ -315,7 +315,7 @@ type Invoker interface {
 	//
 	// Discard sandbox harness config changes.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 	DiscardSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (DiscardSandboxHarnessConfigChangesRes, error)
 	// DismissSecretRefreshRequest invokes dismiss-secret-refresh-request operation.
 	//
@@ -329,7 +329,7 @@ type Invoker interface {
 	// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
 	// selected source root. Ownership and special files are excluded.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 	ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesRes, error)
 	// ForceJob invokes force-job operation.
 	//
@@ -378,7 +378,7 @@ type Invoker interface {
 	// digest as they are sent, and a blob that does not match is cut off rather than completed.
 	// Immutable and cacheable forever.
 	//
-	// GET /api/pools/{poolId}/assets/blobs/{digest}
+	// GET /pool-agent/{poolId}/assets/blobs/{digest}
 	GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (GetPoolAssetBlobRes, error)
 	// GetPoolAssetManifest invokes get-pool-asset-manifest operation.
 	//
@@ -386,7 +386,7 @@ type Invoker interface {
 	// by the release or by a harness config of the pool's project, or one such an index lists, under the
 	// name its pin carries; anything else is a 404. Immutable.
 	//
-	// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+	// GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}
 	GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error)
 	// GetProject invokes get-project operation.
 	//
@@ -416,19 +416,19 @@ type Invoker interface {
 	//
 	// Poll an agent credential request.
 	//
-	// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+	// GET /pool-agent/{poolId}/sandbox-credential-requests/{requestId}
 	GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (GetSandboxCredentialRequestRes, error)
 	// GetSandboxExec invokes get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 	GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (GetSandboxExecRes, error)
 	// GetSandboxExecResources invokes get-sandbox-exec-resources operation.
 	//
 	// Get the latest opaque resource snapshot for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (GetSandboxExecResourcesRes, error)
 	// GetSandboxExecScreen invokes get-sandbox-exec-screen operation.
 	//
@@ -437,13 +437,13 @@ type Invoker interface {
 	// for an exec with no terminal. A discobox that is not running is answered from the screen it last
 	// posted, which has no scrollback.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error)
 	// GetSandboxHarnessConfigChanges invokes get-sandbox-harness-config-changes operation.
 	//
 	// Get sandbox harness config changes.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
 	GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (GetSandboxHarnessConfigChangesRes, error)
 	// GetSandboxProviderInstance invokes get-sandbox-provider-instance operation.
 	//
@@ -455,13 +455,13 @@ type Invoker interface {
 	//
 	// Get a declared service in a sandbox.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
 	// GetSandboxTrustRequest invokes get-sandbox-trust-request operation.
 	//
 	// Poll an agent host trust request.
 	//
-	// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+	// GET /pool-agent/{poolId}/sandbox-trust-requests/{requestId}
 	GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (GetSandboxTrustRequestRes, error)
 	// GetSecret invokes get-secret operation.
 	//
@@ -491,7 +491,7 @@ type Invoker interface {
 	//
 	// Discover this server's own peer ID.
 	//
-	// GET /peer
+	// GET /server/peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
 	// GetTrustRequest invokes get-trust-request operation.
 	//
@@ -507,7 +507,7 @@ type Invoker interface {
 	// metadata is finalized after children. preserve applies ordinary permissions and access and
 	// modification times, never ownership or privileged bits.
 	//
-	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 	ImportSandboxFiles(ctx context.Context, request ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error)
 	// ListAPIAccessRequests invokes list-api-access-requests operation.
 	//
@@ -543,7 +543,7 @@ type Invoker interface {
 	//  recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a
 	// running sandbox; the read never starts one.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events
 	ListExecEvents(ctx context.Context, params ListExecEventsParams) (ListExecEventsRes, error)
 	// ListHTTPAudit invokes list-http-audit operation.
 	//
@@ -564,7 +564,7 @@ type Invoker interface {
 	//
 	// List recent sandbox harness hook payload logs.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks
 	ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (ListHarnessHooksRes, error)
 	// ListJobs invokes list-jobs operation.
 	//
@@ -583,13 +583,13 @@ type Invoker interface {
 	// List every sandbox the control plane holds on this pool, the set the pool agent may not reap the
 	// trees of.
 	//
-	// GET /api/pools/{poolId}/sandboxes
+	// GET /pool-agent/{poolId}/sandboxes
 	ListPoolHeldSandboxes(ctx context.Context, params ListPoolHeldSandboxesParams) (ListPoolHeldSandboxesRes, error)
 	// ListPoolHostTrusts invokes list-pool-host-trusts operation.
 	//
 	// List the live host trusts of every sandbox on the pool.
 	//
-	// GET /api/pools/{poolId}/sandbox-host-trusts
+	// GET /pool-agent/{poolId}/sandbox-host-trusts
 	ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (ListPoolHostTrustsRes, error)
 	// ListPools invokes list-pools operation.
 	//
@@ -625,38 +625,38 @@ type Invoker interface {
 	//
 	// List the credentials a sandbox's bindings give it.
 	//
-	// GET /api/pools/{poolId}/sandbox-credentials
+	// GET /pool-agent/{poolId}/sandbox-credentials
 	ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error)
 	// ListSandboxExecEvents invokes list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events
 	ListSandboxExecEvents(ctx context.Context, params ListSandboxExecEventsParams) (ListSandboxExecEventsRes, error)
 	// ListSandboxExecLogs invokes list-sandbox-exec-logs operation.
 	//
 	// List logs for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs
 	ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (ListSandboxExecLogsRes, error)
 	// ListSandboxExecResourceHistory invokes list-sandbox-exec-resource-history operation.
 	//
 	// List recent opaque resource snapshots for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history
 	ListSandboxExecResourceHistory(ctx context.Context, params ListSandboxExecResourceHistoryParams) (ListSandboxExecResourceHistoryRes, error)
 	// ListSandboxExecs invokes list-sandbox-execs operation.
 	//
 	// List exec runtimes in a sandbox.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error)
 	// ListSandboxFiles invokes list-sandbox-files operation.
 	//
 	// Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
 	// is not a directory.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/list
 	ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (ListSandboxFilesRes, error)
 	// ListSandboxHostTrusts invokes list-sandbox-host-trusts operation.
 	//
@@ -681,7 +681,7 @@ type Invoker interface {
 	// Returns the transcript of the service's current or last run. A service that has never run has an
 	// empty transcript rather than an error.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs
 	ListSandboxServiceLogs(ctx context.Context, params ListSandboxServiceLogsParams) (ListSandboxServiceLogsRes, error)
 	// ListSandboxServices invokes list-sandbox-services operation.
 	//
@@ -689,14 +689,14 @@ type Invoker interface {
 	// the state of the exec running it. Declarations are re-read on every request, so a service file
 	// added or edited while the sandbox is up appears immediately.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services
 	ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (ListSandboxServicesRes, error)
 	// ListSandboxTools invokes list-sandbox-tools operation.
 	//
 	// Lists the tools the sandbox's image and primary source declare, in filename order within each.
 	// Declarations are re-read on every request.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/tools
 	ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (ListSandboxToolsRes, error)
 	// ListSandboxes invokes list-sandboxes operation.
 	//
@@ -759,13 +759,13 @@ type Invoker interface {
 	//
 	// Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir
 	MakeSandboxDirectory(ctx context.Context, request *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (MakeSandboxDirectoryRes, error)
 	// MintSandboxAgentStatusTokens invokes mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
 	//
-	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+	// POST /pool-agent/{poolId}/sandbox-agent-status-tokens
 	MintSandboxAgentStatusTokens(ctx context.Context, request *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
 	// MoveSandboxFile invokes move-sandbox-file operation.
 	//
@@ -773,7 +773,7 @@ type Invoker interface {
 	// destination that does unless replace is set, which replaces whatever is there, a directory
 	// included. A Windows discobox replaces a file only.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 	MoveSandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params MoveSandboxFileParams) (MoveSandboxFileRes, error)
 	// PullSandboxSource invokes pull-sandbox-source operation.
 	//
@@ -804,7 +804,7 @@ type Invoker interface {
 	// Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
 	// directory.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 	ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (ReadSandboxFileRes, error)
 	// ReconcilePool invokes reconcile-pool operation.
 	//
@@ -822,7 +822,7 @@ type Invoker interface {
 	//
 	// Reconsider sandbox harness config changes.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
 	ReconsiderSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (ReconsiderSandboxHarnessConfigChangesRes, error)
 	// RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
 	//
@@ -851,7 +851,7 @@ type Invoker interface {
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
 	// that is not empty unless recursive is set.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove
 	RemoveSandboxFile(ctx context.Context, request *SandboxFileRemoveRequest, params RemoveSandboxFileParams) (RemoveSandboxFileRes, error)
 	// RepairSandbox invokes repair-sandbox operation.
 	//
@@ -872,32 +872,32 @@ type Invoker interface {
 	//
 	// Report what this pool and each sandbox on it are consuming.
 	//
-	// POST /api/pools/{poolId}/resources
+	// POST /pool-agent/{poolId}/resources
 	ReportPoolResources(ctx context.Context, request *ReportPoolResourcesBody, params ReportPoolResourcesParams) (ReportPoolResourcesRes, error)
 	// ReportPoolSandboxStates invokes report-pool-sandbox-states operation.
 	//
 	// Report observed sandbox states from the pool agent.
 	//
-	// POST /api/pools/{poolId}/sandbox-states
+	// POST /pool-agent/{poolId}/sandbox-states
 	ReportPoolSandboxStates(ctx context.Context, request *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error)
 	// ReportSandboxAgentStatus invokes report-sandbox-agent-status operation.
 	//
 	// Report polled sandbox-agent status for one or more hosted sandboxes.
 	//
-	// POST /api/pools/{poolId}/sandbox-agent-status
+	// POST /pool-agent/{poolId}/sandbox-agent-status
 	ReportSandboxAgentStatus(ctx context.Context, request *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error)
 	// ReportSandboxInventories invokes report-sandbox-inventories operation.
 	//
 	// Report the inventory of one or more hosted sandboxes, in full when it changed and by digest when
 	// it did not.
 	//
-	// POST /api/pools/{poolId}/sandbox-inventories
+	// POST /pool-agent/{poolId}/sandbox-inventories
 	ReportSandboxInventories(ctx context.Context, request *ReportSandboxInventoriesBody, params ReportSandboxInventoriesParams) (ReportSandboxInventoriesRes, error)
 	// ReportSandboxSecretRejection invokes report-sandbox-secret-rejection operation.
 	//
 	// Report what an upstream made of a swapped credential.
 	//
-	// POST /api/pools/{poolId}/sandbox-secret-rejections
+	// POST /pool-agent/{poolId}/sandbox-secret-rejections
 	ReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
 	// ReprovisionSandbox invokes reprovision-sandbox operation.
 	//
@@ -913,7 +913,7 @@ type Invoker interface {
 	// anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
 	// of the sandbox itself.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision
 	ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (ReprovisionSandboxRes, error)
 	// ResetHarnessConfig invokes reset-harness-config operation.
 	//
@@ -929,7 +929,7 @@ type Invoker interface {
 	//
 	// Resolve the server environment values a sandbox's gateway sets headers from.
 	//
-	// POST /api/pools/{poolId}/resolve-gateway-headers
+	// POST /pool-agent/{poolId}/resolve-gateway-headers
 	ResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
 	// ResolvePoolAsset invokes resolve-pool-asset operation.
 	//
@@ -942,19 +942,19 @@ type Invoker interface {
 	// carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
 	// resolved is a 502.
 	//
-	// GET /api/pools/{poolId}/assets/{name}
+	// GET /pool-agent/{poolId}/assets/{name}
 	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
 	// ResolveSandboxRawSecret invokes resolve-sandbox-raw-secret operation.
 	//
 	// Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
 	//
-	// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+	// POST /pool-agent/{poolId}/resolve-sandbox-raw-secret
 	ResolveSandboxRawSecret(ctx context.Context, request *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (ResolveSandboxRawSecretRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
 	//
-	// POST /api/pools/{poolId}/resolve-sandbox-secret
+	// POST /pool-agent/{poolId}/resolve-sandbox-secret
 	ResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error)
 	// RestartSandbox invokes restart-sandbox operation.
 	//
@@ -968,7 +968,7 @@ type Invoker interface {
 	// Stops the service if it is running and starts it again under the same exec ID. A service that is
 	// not running is simply started.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart
 	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error)
 	// SaveSandboxHarnessConfigChanges invokes save-sandbox-harness-config-changes operation.
 	//
@@ -976,7 +976,7 @@ type Invoker interface {
 	// config or credential revisions have advanced. Unrelated fields and personal file overrides remain
 	// intact. Candidate identity, harness assignment, manifest and validation checks still apply.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 	SaveSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error)
 	// SendSandboxExecInput invokes send-sandbox-exec-input operation.
 	//
@@ -984,7 +984,7 @@ type Invoker interface {
 	// counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
 	// for an exec with no terminal or closed input.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input
 	SendSandboxExecInput(ctx context.Context, request *SandboxExecInputBody, params SendSandboxExecInputParams) (SendSandboxExecInputRes, error)
 	// SetDefaultHarnessConfig invokes set-default-harness-config operation.
 	//
@@ -1010,7 +1010,7 @@ type Invoker interface {
 	// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
 	// privileged bits.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata
 	SetSandboxFileMetadata(ctx context.Context, request *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (SetSandboxFileMetadataRes, error)
 	// StartSandbox invokes start-sandbox operation.
 	//
@@ -1025,21 +1025,21 @@ type Invoker interface {
 	//
 	// Starts a prepared sandbox exec after any desired attach stream has connected.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start
 	StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (StartSandboxExecRes, error)
 	// StartSandboxService invokes start-sandbox-service operation.
 	//
 	// Starts the service, or returns it unchanged when it is already running. A service that has run
 	// before is relaunched under its existing exec ID rather than given a new one.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start
 	StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (StartSandboxServiceRes, error)
 	// StatSandboxFile invokes stat-sandbox-file operation.
 	//
 	// Reports one path as the discobox's default user sees it. Every files operation acts as that user,
 	// with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat
 	StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (StatSandboxFileRes, error)
 	// StopSandbox invokes stop-sandbox operation.
 	//
@@ -1052,7 +1052,7 @@ type Invoker interface {
 	// Ends the service's run and keeps its record, so its output is still readable and starting it again
 	// resumes the same exec identity.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop
 	StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (StopSandboxServiceRes, error)
 	// StreamSandboxEvents invokes stream-sandbox-events operation.
 	//
@@ -1073,13 +1073,13 @@ type Invoker interface {
 	// The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
 	// query parameter. An idle stream sends a comment every 15 seconds.
 	//
-	// GET /api/projects/{projectId}/events
+	// GET /projects/{projectId}/events
 	StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (StreamSandboxEventsRes, error)
 	// StreamSandboxExecResources invokes stream-sandbox-exec-resources operation.
 	//
 	// Stream opaque resource snapshots for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
 	// SuspendSandbox invokes suspend-sandbox operation.
 	//
@@ -1125,7 +1125,7 @@ type Invoker interface {
 	//
 	// Update pool status.
 	//
-	// POST /api/pools/{poolId}/status
+	// POST /pool-agent/{poolId}/status
 	UpdatePoolStatus(ctx context.Context, request *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error)
 	// UpdateProject invokes update-project operation.
 	//
@@ -1179,7 +1179,7 @@ type Invoker interface {
 	// answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
 	// recorded between two calls is missed.
 	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait
 	WaitSandboxExec(ctx context.Context, request *SandboxExecWaitBody, params WaitSandboxExecParams) (WaitSandboxExecRes, error)
 	// WriteSandboxFile invokes write-sandbox-file operation.
 	//
@@ -1188,7 +1188,7 @@ type Invoker interface {
 	// when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
 	// is a directory, 404 when ifMissing refuses.
 	//
-	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+	// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 	WriteSandboxFile(ctx context.Context, request WriteSandboxFileReq, params WriteSandboxFileParams) (WriteSandboxFileRes, error)
 }
 
@@ -1802,7 +1802,7 @@ func (c *Client) sendAssignSandboxHarnessSecrets(ctx context.Context, request *A
 // frames write to exec stdin, output frames stream process output, and close-input frames close
 // stdin without detaching output.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 func (c *Client) AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (AttachSandboxExecRes, error) {
 	res, err := c.sendAttachSandboxExec(ctx, params)
 	return res, err
@@ -1812,7 +1812,7 @@ func (c *Client) sendAttachSandboxExec(ctx context.Context, params AttachSandbox
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("attach-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -1846,7 +1846,7 @@ func (c *Client) sendAttachSandboxExec(ctx context.Context, params AttachSandbox
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -1884,7 +1884,7 @@ func (c *Client) sendAttachSandboxExec(ctx context.Context, params AttachSandbox
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -1941,7 +1941,7 @@ func (c *Client) sendAttachSandboxExec(ctx context.Context, params AttachSandbox
 // produced before an attach exists is lost. The exit status is not encoded in the response: read it
 // from the exec record, which is authoritative.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach
 func (c *Client) AttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error) {
 	res, err := c.sendAttachSandboxExecOnce(ctx, request, params)
 	return res, err
@@ -1951,7 +1951,7 @@ func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSa
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("attach-sandbox-exec-once"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/attach"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -1985,7 +1985,7 @@ func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSa
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -2023,7 +2023,7 @@ func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -2076,7 +2076,7 @@ func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSa
 // Check that an explicit start is still current, immediately before execution under the pool's power
 // lock.
 //
-// GET /api/pools/{poolId}/sandbox-start-authorization
+// GET /pool-agent/{poolId}/sandbox-start-authorization
 func (c *Client) AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error) {
 	res, err := c.sendAuthorizePoolSandboxStart(ctx, params)
 	return res, err
@@ -2086,7 +2086,7 @@ func (c *Client) sendAuthorizePoolSandboxStart(ctx context.Context, params Autho
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("authorize-pool-sandbox-start"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-start-authorization"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-start-authorization"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -2120,7 +2120,7 @@ func (c *Client) sendAuthorizePoolSandboxStart(ctx context.Context, params Autho
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -2429,7 +2429,7 @@ func (c *Client) sendClearPoolCache(ctx context.Context, params ClearPoolCachePa
 //
 // Record a successful suspend once, before releasing the pool's power lock.
 //
-// POST /api/pools/{poolId}/sandbox-suspend-completion
+// POST /pool-agent/{poolId}/sandbox-suspend-completion
 func (c *Client) CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (CompletePoolSandboxSuspendRes, error) {
 	res, err := c.sendCompletePoolSandboxSuspend(ctx, params)
 	return res, err
@@ -2439,7 +2439,7 @@ func (c *Client) sendCompletePoolSandboxSuspend(ctx context.Context, params Comp
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("complete-pool-sandbox-suspend"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-suspend-completion"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-suspend-completion"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -2473,7 +2473,7 @@ func (c *Client) sendCompletePoolSandboxSuspend(ctx context.Context, params Comp
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -2687,7 +2687,7 @@ func (c *Client) sendCompleteSandboxSourcePush(ctx context.Context, request *Com
 //
 //	404 for a source that does not exist, 409 for a destination that does unless replace is set.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy
 func (c *Client) CopySandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error) {
 	res, err := c.sendCopySandboxFile(ctx, request, params)
 	return res, err
@@ -2697,7 +2697,7 @@ func (c *Client) sendCopySandboxFile(ctx context.Context, request *SandboxFileTr
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("copy-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/copy"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/copy"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -2731,7 +2731,7 @@ func (c *Client) sendCopySandboxFile(ctx context.Context, request *SandboxFileTr
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -2769,7 +2769,7 @@ func (c *Client) sendCopySandboxFile(ctx context.Context, request *SandboxFileTr
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/copy"
+	pathParts[4] = "/agent/files/copy"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -3624,7 +3624,7 @@ func (c *Client) sendCreateSandbox(ctx context.Context, request *CreateSandboxBo
 //
 // Record an agent's credential request.
 //
-// POST /api/pools/{poolId}/sandbox-credential-requests
+// POST /pool-agent/{poolId}/sandbox-credential-requests
 func (c *Client) CreateSandboxCredentialRequest(ctx context.Context, request *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (CreateSandboxCredentialRequestRes, error) {
 	res, err := c.sendCreateSandboxCredentialRequest(ctx, request, params)
 	return res, err
@@ -3634,7 +3634,7 @@ func (c *Client) sendCreateSandboxCredentialRequest(ctx context.Context, request
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("create-sandbox-credential-request"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-credential-requests"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-credential-requests"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -3668,7 +3668,7 @@ func (c *Client) sendCreateSandboxCredentialRequest(ctx context.Context, request
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -3720,7 +3720,7 @@ func (c *Client) sendCreateSandboxCredentialRequest(ctx context.Context, request
 //
 // Create an exec runtime in a sandbox.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 func (c *Client) CreateSandboxExec(ctx context.Context, request *CreateSandboxExecRequest, params CreateSandboxExecParams) (CreateSandboxExecRes, error) {
 	res, err := c.sendCreateSandboxExec(ctx, request, params)
 	return res, err
@@ -3730,7 +3730,7 @@ func (c *Client) sendCreateSandboxExec(ctx context.Context, request *CreateSandb
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("create-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -3764,7 +3764,7 @@ func (c *Client) sendCreateSandboxExec(ctx context.Context, request *CreateSandb
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -3802,7 +3802,7 @@ func (c *Client) sendCreateSandboxExec(ctx context.Context, request *CreateSandb
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs"
+	pathParts[4] = "/agent/execs"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -4067,7 +4067,7 @@ func (c *Client) sendCreateSandboxSecretBinding(ctx context.Context, request *Cr
 //
 // Record an agent's host trust request.
 //
-// POST /api/pools/{poolId}/sandbox-trust-requests
+// POST /pool-agent/{poolId}/sandbox-trust-requests
 func (c *Client) CreateSandboxTrustRequest(ctx context.Context, request *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (CreateSandboxTrustRequestRes, error) {
 	res, err := c.sendCreateSandboxTrustRequest(ctx, request, params)
 	return res, err
@@ -4077,7 +4077,7 @@ func (c *Client) sendCreateSandboxTrustRequest(ctx context.Context, request *Cre
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("create-sandbox-trust-request"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-trust-requests"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-trust-requests"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -4111,7 +4111,7 @@ func (c *Client) sendCreateSandboxTrustRequest(ctx context.Context, request *Cre
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -5207,7 +5207,7 @@ func (c *Client) sendDeleteSandbox(ctx context.Context, params DeleteSandboxPara
 //
 // Destroy an exec runtime in a sandbox.
 //
-// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+// DELETE /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 func (c *Client) DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (DeleteSandboxExecRes, error) {
 	res, err := c.sendDeleteSandboxExec(ctx, params)
 	return res, err
@@ -5217,7 +5217,7 @@ func (c *Client) sendDeleteSandboxExec(ctx context.Context, params DeleteSandbox
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("delete-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -5251,7 +5251,7 @@ func (c *Client) sendDeleteSandboxExec(ctx context.Context, params DeleteSandbox
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [6]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -5289,7 +5289,7 @@ func (c *Client) sendDeleteSandboxExec(ctx context.Context, params DeleteSandbox
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -6244,7 +6244,7 @@ func (c *Client) sendDenyTrustRequest(ctx context.Context, params DenyTrustReque
 //
 // Discard sandbox harness config changes.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 func (c *Client) DiscardSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (DiscardSandboxHarnessConfigChangesRes, error) {
 	res, err := c.sendDiscardSandboxHarnessConfigChanges(ctx, request, params)
 	return res, err
@@ -6254,7 +6254,7 @@ func (c *Client) sendDiscardSandboxHarnessConfigChanges(ctx context.Context, req
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("discard-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6288,7 +6288,7 @@ func (c *Client) sendDiscardSandboxHarnessConfigChanges(ctx context.Context, req
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -6473,7 +6473,7 @@ func (c *Client) sendDismissSecretRefreshRequest(ctx context.Context, params Dis
 // metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
 // selected source root. Ownership and special files are excluded.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 func (c *Client) ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesRes, error) {
 	res, err := c.sendExportSandboxFiles(ctx, params)
 	return res, err
@@ -6483,7 +6483,7 @@ func (c *Client) sendExportSandboxFiles(ctx context.Context, params ExportSandbo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("export-sandbox-files"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/archive"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6517,7 +6517,7 @@ func (c *Client) sendExportSandboxFiles(ctx context.Context, params ExportSandbo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -6555,7 +6555,7 @@ func (c *Client) sendExportSandboxFiles(ctx context.Context, params ExportSandbo
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/archive"
+	pathParts[4] = "/agent/files/archive"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -7422,7 +7422,7 @@ func (c *Client) sendGetPool(ctx context.Context, params GetPoolParams) (res Get
 // digest as they are sent, and a blob that does not match is cut off rather than completed.
 // Immutable and cacheable forever.
 //
-// GET /api/pools/{poolId}/assets/blobs/{digest}
+// GET /pool-agent/{poolId}/assets/blobs/{digest}
 func (c *Client) GetPoolAssetBlob(ctx context.Context, params GetPoolAssetBlobParams) (GetPoolAssetBlobRes, error) {
 	res, err := c.sendGetPoolAssetBlob(ctx, params)
 	return res, err
@@ -7432,7 +7432,7 @@ func (c *Client) sendGetPoolAssetBlob(ctx context.Context, params GetPoolAssetBl
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-pool-asset-blob"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/assets/blobs/{digest}"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/assets/blobs/{digest}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -7466,7 +7466,7 @@ func (c *Client) sendGetPoolAssetBlob(ctx context.Context, params GetPoolAssetBl
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [4]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -7535,7 +7535,7 @@ func (c *Client) sendGetPoolAssetBlob(ctx context.Context, params GetPoolAssetBl
 // by the release or by a harness config of the pool's project, or one such an index lists, under the
 // name its pin carries; anything else is a 404. Immutable.
 //
-// GET /api/pools/{poolId}/assets/{name}/manifests/{digest}
+// GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}
 func (c *Client) GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error) {
 	res, err := c.sendGetPoolAssetManifest(ctx, params)
 	return res, err
@@ -7545,7 +7545,7 @@ func (c *Client) sendGetPoolAssetManifest(ctx context.Context, params GetPoolAss
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-pool-asset-manifest"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/assets/{name}/manifests/{digest}"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/assets/{name}/manifests/{digest}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -7579,7 +7579,7 @@ func (c *Client) sendGetPoolAssetManifest(ctx context.Context, params GetPoolAss
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [6]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8053,7 +8053,7 @@ func (c *Client) sendGetSandbox(ctx context.Context, params GetSandboxParams) (r
 //
 // Poll an agent credential request.
 //
-// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+// GET /pool-agent/{poolId}/sandbox-credential-requests/{requestId}
 func (c *Client) GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (GetSandboxCredentialRequestRes, error) {
 	res, err := c.sendGetSandboxCredentialRequest(ctx, params)
 	return res, err
@@ -8063,7 +8063,7 @@ func (c *Client) sendGetSandboxCredentialRequest(ctx context.Context, params Get
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-credential-request"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-credential-requests/{requestId}"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-credential-requests/{requestId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8097,7 +8097,7 @@ func (c *Client) sendGetSandboxCredentialRequest(ctx context.Context, params Get
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [4]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8182,7 +8182,7 @@ func (c *Client) sendGetSandboxCredentialRequest(ctx context.Context, params Get
 //
 // Get an exec runtime in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}
 func (c *Client) GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (GetSandboxExecRes, error) {
 	res, err := c.sendGetSandboxExec(ctx, params)
 	return res, err
@@ -8192,7 +8192,7 @@ func (c *Client) sendGetSandboxExec(ctx context.Context, params GetSandboxExecPa
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8226,7 +8226,7 @@ func (c *Client) sendGetSandboxExec(ctx context.Context, params GetSandboxExecPa
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [6]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8264,7 +8264,7 @@ func (c *Client) sendGetSandboxExec(ctx context.Context, params GetSandboxExecPa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8312,7 +8312,7 @@ func (c *Client) sendGetSandboxExec(ctx context.Context, params GetSandboxExecPa
 //
 // Get the latest opaque resource snapshot for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources
 func (c *Client) GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (GetSandboxExecResourcesRes, error) {
 	res, err := c.sendGetSandboxExecResources(ctx, params)
 	return res, err
@@ -8322,7 +8322,7 @@ func (c *Client) sendGetSandboxExecResources(ctx context.Context, params GetSand
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-exec-resources"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8356,7 +8356,7 @@ func (c *Client) sendGetSandboxExecResources(ctx context.Context, params GetSand
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8394,7 +8394,7 @@ func (c *Client) sendGetSandboxExecResources(ctx context.Context, params GetSand
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8446,7 +8446,7 @@ func (c *Client) sendGetSandboxExecResources(ctx context.Context, params GetSand
 // for an exec with no terminal. A discobox that is not running is answered from the screen it last
 // posted, which has no scrollback.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen
 func (c *Client) GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error) {
 	res, err := c.sendGetSandboxExecScreen(ctx, params)
 	return res, err
@@ -8456,7 +8456,7 @@ func (c *Client) sendGetSandboxExecScreen(ctx context.Context, params GetSandbox
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-exec-screen"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/screen"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8490,7 +8490,7 @@ func (c *Client) sendGetSandboxExecScreen(ctx context.Context, params GetSandbox
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8528,7 +8528,7 @@ func (c *Client) sendGetSandboxExecScreen(ctx context.Context, params GetSandbox
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8598,7 +8598,7 @@ func (c *Client) sendGetSandboxExecScreen(ctx context.Context, params GetSandbox
 //
 // Get sandbox harness config changes.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+// GET /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
 func (c *Client) GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (GetSandboxHarnessConfigChangesRes, error) {
 	res, err := c.sendGetSandboxHarnessConfigChanges(ctx, params)
 	return res, err
@@ -8608,7 +8608,7 @@ func (c *Client) sendGetSandboxHarnessConfigChanges(ctx context.Context, params 
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8642,7 +8642,7 @@ func (c *Client) sendGetSandboxHarnessConfigChanges(ctx context.Context, params 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8821,7 +8821,7 @@ func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetS
 //
 // Get a declared service in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 func (c *Client) GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error) {
 	res, err := c.sendGetSandboxService(ctx, params)
 	return res, err
@@ -8831,7 +8831,7 @@ func (c *Client) sendGetSandboxService(ctx context.Context, params GetSandboxSer
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8865,7 +8865,7 @@ func (c *Client) sendGetSandboxService(ctx context.Context, params GetSandboxSer
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [6]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8903,7 +8903,7 @@ func (c *Client) sendGetSandboxService(ctx context.Context, params GetSandboxSer
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/services/"
+	pathParts[4] = "/agent/services/"
 	{
 		// Encode "serviceId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -8951,7 +8951,7 @@ func (c *Client) sendGetSandboxService(ctx context.Context, params GetSandboxSer
 //
 // Poll an agent host trust request.
 //
-// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+// GET /pool-agent/{poolId}/sandbox-trust-requests/{requestId}
 func (c *Client) GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (GetSandboxTrustRequestRes, error) {
 	res, err := c.sendGetSandboxTrustRequest(ctx, params)
 	return res, err
@@ -8961,7 +8961,7 @@ func (c *Client) sendGetSandboxTrustRequest(ctx context.Context, params GetSandb
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-sandbox-trust-request"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-trust-requests/{requestId}"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-trust-requests/{requestId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -8995,7 +8995,7 @@ func (c *Client) sendGetSandboxTrustRequest(ctx context.Context, params GetSandb
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [4]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -9487,7 +9487,7 @@ func (c *Client) sendGetServerInfo(ctx context.Context) (res GetServerInfoRes, e
 //
 // Discover this server's own peer ID.
 //
-// GET /peer
+// GET /server/peer
 func (c *Client) GetServerPeer(ctx context.Context) (GetServerPeerRes, error) {
 	res, err := c.sendGetServerPeer(ctx)
 	return res, err
@@ -9497,7 +9497,7 @@ func (c *Client) sendGetServerPeer(ctx context.Context) (res GetServerPeerRes, e
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("get-server-peer"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/peer"),
+		semconv.URLTemplateKey.String("/server/peer"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -9531,7 +9531,7 @@ func (c *Client) sendGetServerPeer(ctx context.Context) (res GetServerPeerRes, e
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/peer"
+	pathParts[0] = "/server/peer"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -9676,7 +9676,7 @@ func (c *Client) sendGetTrustRequest(ctx context.Context, params GetTrustRequest
 // metadata is finalized after children. preserve applies ordinary permissions and access and
 // modification times, never ownership or privileged bits.
 //
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive
 func (c *Client) ImportSandboxFiles(ctx context.Context, request ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error) {
 	res, err := c.sendImportSandboxFiles(ctx, request, params)
 	return res, err
@@ -9686,7 +9686,7 @@ func (c *Client) sendImportSandboxFiles(ctx context.Context, request ImportSandb
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("import-sandbox-files"),
 		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/archive"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/archive"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -9720,7 +9720,7 @@ func (c *Client) sendImportSandboxFiles(ctx context.Context, request ImportSandb
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -9758,7 +9758,7 @@ func (c *Client) sendImportSandboxFiles(ctx context.Context, request ImportSandb
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/archive"
+	pathParts[4] = "/agent/files/archive"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -10557,7 +10557,7 @@ func (c *Client) sendListDNSAudit(ctx context.Context, params ListDNSAuditParams
 //
 // running sandbox; the read never starts one.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events
 func (c *Client) ListExecEvents(ctx context.Context, params ListExecEventsParams) (ListExecEventsRes, error) {
 	res, err := c.sendListExecEvents(ctx, params)
 	return res, err
@@ -10567,7 +10567,7 @@ func (c *Client) sendListExecEvents(ctx context.Context, params ListExecEventsPa
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-exec-events"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/exec-events"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/exec-events"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -10601,7 +10601,7 @@ func (c *Client) sendListExecEvents(ctx context.Context, params ListExecEventsPa
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -10639,7 +10639,7 @@ func (c *Client) sendListExecEvents(ctx context.Context, params ListExecEventsPa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/exec-events"
+	pathParts[4] = "/agent/exec-events"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -11181,7 +11181,7 @@ func (c *Client) sendListHarnessConfigs(ctx context.Context, params ListHarnessC
 //
 // List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks
 func (c *Client) ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (ListHarnessHooksRes, error) {
 	res, err := c.sendListHarnessHooks(ctx, params)
 	return res, err
@@ -11191,7 +11191,7 @@ func (c *Client) sendListHarnessHooks(ctx context.Context, params ListHarnessHoo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-harness-hooks"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/harness-hooks"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -11225,7 +11225,7 @@ func (c *Client) sendListHarnessHooks(ctx context.Context, params ListHarnessHoo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -11263,7 +11263,7 @@ func (c *Client) sendListHarnessHooks(ctx context.Context, params ListHarnessHoo
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/harness-hooks"
+	pathParts[4] = "/agent/harness-hooks"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -11601,7 +11601,7 @@ func (c *Client) sendListPeers(ctx context.Context) (res ListPeersRes, err error
 // List every sandbox the control plane holds on this pool, the set the pool agent may not reap the
 // trees of.
 //
-// GET /api/pools/{poolId}/sandboxes
+// GET /pool-agent/{poolId}/sandboxes
 func (c *Client) ListPoolHeldSandboxes(ctx context.Context, params ListPoolHeldSandboxesParams) (ListPoolHeldSandboxesRes, error) {
 	res, err := c.sendListPoolHeldSandboxes(ctx, params)
 	return res, err
@@ -11611,7 +11611,7 @@ func (c *Client) sendListPoolHeldSandboxes(ctx context.Context, params ListPoolH
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-pool-held-sandboxes"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandboxes"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandboxes"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -11645,7 +11645,7 @@ func (c *Client) sendListPoolHeldSandboxes(ctx context.Context, params ListPoolH
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -11694,7 +11694,7 @@ func (c *Client) sendListPoolHeldSandboxes(ctx context.Context, params ListPoolH
 //
 // List the live host trusts of every sandbox on the pool.
 //
-// GET /api/pools/{poolId}/sandbox-host-trusts
+// GET /pool-agent/{poolId}/sandbox-host-trusts
 func (c *Client) ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (ListPoolHostTrustsRes, error) {
 	res, err := c.sendListPoolHostTrusts(ctx, params)
 	return res, err
@@ -11704,7 +11704,7 @@ func (c *Client) sendListPoolHostTrusts(ctx context.Context, params ListPoolHost
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-pool-host-trusts"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-host-trusts"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-host-trusts"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -11738,7 +11738,7 @@ func (c *Client) sendListPoolHostTrusts(ctx context.Context, params ListPoolHost
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12233,7 +12233,7 @@ func (c *Client) sendListSSHKeys(ctx context.Context, params ListSSHKeysParams) 
 //
 // List the credentials a sandbox's bindings give it.
 //
-// GET /api/pools/{poolId}/sandbox-credentials
+// GET /pool-agent/{poolId}/sandbox-credentials
 func (c *Client) ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error) {
 	res, err := c.sendListSandboxCredentials(ctx, params)
 	return res, err
@@ -12243,7 +12243,7 @@ func (c *Client) sendListSandboxCredentials(ctx context.Context, params ListSand
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-credentials"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-credentials"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-credentials"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -12277,7 +12277,7 @@ func (c *Client) sendListSandboxCredentials(ctx context.Context, params ListSand
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12344,7 +12344,7 @@ func (c *Client) sendListSandboxCredentials(ctx context.Context, params ListSand
 //
 // List recent audit events for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events
 func (c *Client) ListSandboxExecEvents(ctx context.Context, params ListSandboxExecEventsParams) (ListSandboxExecEventsRes, error) {
 	res, err := c.sendListSandboxExecEvents(ctx, params)
 	return res, err
@@ -12354,7 +12354,7 @@ func (c *Client) sendListSandboxExecEvents(ctx context.Context, params ListSandb
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-exec-events"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/events"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -12388,7 +12388,7 @@ func (c *Client) sendListSandboxExecEvents(ctx context.Context, params ListSandb
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12426,7 +12426,7 @@ func (c *Client) sendListSandboxExecEvents(ctx context.Context, params ListSandb
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12496,7 +12496,7 @@ func (c *Client) sendListSandboxExecEvents(ctx context.Context, params ListSandb
 //
 // List logs for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs
 func (c *Client) ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (ListSandboxExecLogsRes, error) {
 	res, err := c.sendListSandboxExecLogs(ctx, params)
 	return res, err
@@ -12506,7 +12506,7 @@ func (c *Client) sendListSandboxExecLogs(ctx context.Context, params ListSandbox
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-exec-logs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/logs"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -12540,7 +12540,7 @@ func (c *Client) sendListSandboxExecLogs(ctx context.Context, params ListSandbox
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12578,7 +12578,7 @@ func (c *Client) sendListSandboxExecLogs(ctx context.Context, params ListSandbox
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12627,7 +12627,7 @@ func (c *Client) sendListSandboxExecLogs(ctx context.Context, params ListSandbox
 //
 // List recent opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history
 func (c *Client) ListSandboxExecResourceHistory(ctx context.Context, params ListSandboxExecResourceHistoryParams) (ListSandboxExecResourceHistoryRes, error) {
 	res, err := c.sendListSandboxExecResourceHistory(ctx, params)
 	return res, err
@@ -12637,7 +12637,7 @@ func (c *Client) sendListSandboxExecResourceHistory(ctx context.Context, params 
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-exec-resource-history"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/history"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -12671,7 +12671,7 @@ func (c *Client) sendListSandboxExecResourceHistory(ctx context.Context, params 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12709,7 +12709,7 @@ func (c *Client) sendListSandboxExecResourceHistory(ctx context.Context, params 
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12779,7 +12779,7 @@ func (c *Client) sendListSandboxExecResourceHistory(ctx context.Context, params 
 //
 // List exec runtimes in a sandbox.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs
 func (c *Client) ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error) {
 	res, err := c.sendListSandboxExecs(ctx, params)
 	return res, err
@@ -12789,7 +12789,7 @@ func (c *Client) sendListSandboxExecs(ctx context.Context, params ListSandboxExe
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-execs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -12823,7 +12823,7 @@ func (c *Client) sendListSandboxExecs(ctx context.Context, params ListSandboxExe
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12861,7 +12861,7 @@ func (c *Client) sendListSandboxExecs(ctx context.Context, params ListSandboxExe
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs"
+	pathParts[4] = "/agent/execs"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -12892,7 +12892,7 @@ func (c *Client) sendListSandboxExecs(ctx context.Context, params ListSandboxExe
 // Lists a directory, each entry with its stat. 404 for a path that does not exist, 409 for one that
 // is not a directory.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/list
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/list
 func (c *Client) ListSandboxFiles(ctx context.Context, params ListSandboxFilesParams) (ListSandboxFilesRes, error) {
 	res, err := c.sendListSandboxFiles(ctx, params)
 	return res, err
@@ -12902,7 +12902,7 @@ func (c *Client) sendListSandboxFiles(ctx context.Context, params ListSandboxFil
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-files"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/list"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/list"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -12936,7 +12936,7 @@ func (c *Client) sendListSandboxFiles(ctx context.Context, params ListSandboxFil
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -12974,7 +12974,7 @@ func (c *Client) sendListSandboxFiles(ctx context.Context, params ListSandboxFil
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/list"
+	pathParts[4] = "/agent/files/list"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -13302,7 +13302,7 @@ func (c *Client) sendListSandboxProviderInstances(ctx context.Context, params Li
 // Returns the transcript of the service's current or last run. A service that has never run has an
 // empty transcript rather than an error.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs
 func (c *Client) ListSandboxServiceLogs(ctx context.Context, params ListSandboxServiceLogsParams) (ListSandboxServiceLogsRes, error) {
 	res, err := c.sendListSandboxServiceLogs(ctx, params)
 	return res, err
@@ -13312,7 +13312,7 @@ func (c *Client) sendListSandboxServiceLogs(ctx context.Context, params ListSand
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-service-logs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/logs"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -13346,7 +13346,7 @@ func (c *Client) sendListSandboxServiceLogs(ctx context.Context, params ListSand
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -13384,7 +13384,7 @@ func (c *Client) sendListSandboxServiceLogs(ctx context.Context, params ListSand
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/services/"
+	pathParts[4] = "/agent/services/"
 	{
 		// Encode "serviceId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -13435,7 +13435,7 @@ func (c *Client) sendListSandboxServiceLogs(ctx context.Context, params ListSand
 // the state of the exec running it. Declarations are re-read on every request, so a service file
 // added or edited while the sandbox is up appears immediately.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services
 func (c *Client) ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (ListSandboxServicesRes, error) {
 	res, err := c.sendListSandboxServices(ctx, params)
 	return res, err
@@ -13445,7 +13445,7 @@ func (c *Client) sendListSandboxServices(ctx context.Context, params ListSandbox
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-services"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -13479,7 +13479,7 @@ func (c *Client) sendListSandboxServices(ctx context.Context, params ListSandbox
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -13517,7 +13517,7 @@ func (c *Client) sendListSandboxServices(ctx context.Context, params ListSandbox
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/services"
+	pathParts[4] = "/agent/services"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -13548,7 +13548,7 @@ func (c *Client) sendListSandboxServices(ctx context.Context, params ListSandbox
 // Lists the tools the sandbox's image and primary source declare, in filename order within each.
 // Declarations are re-read on every request.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/tools
 func (c *Client) ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (ListSandboxToolsRes, error) {
 	res, err := c.sendListSandboxTools(ctx, params)
 	return res, err
@@ -13558,7 +13558,7 @@ func (c *Client) sendListSandboxTools(ctx context.Context, params ListSandboxToo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("list-sandbox-tools"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/tools"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/tools"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -13592,7 +13592,7 @@ func (c *Client) sendListSandboxTools(ctx context.Context, params ListSandboxToo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -13630,7 +13630,7 @@ func (c *Client) sendListSandboxTools(ctx context.Context, params ListSandboxToo
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/tools"
+	pathParts[4] = "/agent/tools"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -14920,7 +14920,7 @@ func (c *Client) sendListTrustRequests(ctx context.Context, params ListTrustRequ
 //
 // Creates a directory. 409 when the path exists, unless parents is set and it is a directory.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir
 func (c *Client) MakeSandboxDirectory(ctx context.Context, request *SandboxFileMkdirRequest, params MakeSandboxDirectoryParams) (MakeSandboxDirectoryRes, error) {
 	res, err := c.sendMakeSandboxDirectory(ctx, request, params)
 	return res, err
@@ -14930,7 +14930,7 @@ func (c *Client) sendMakeSandboxDirectory(ctx context.Context, request *SandboxF
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("make-sandbox-directory"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/mkdir"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -14964,7 +14964,7 @@ func (c *Client) sendMakeSandboxDirectory(ctx context.Context, request *SandboxF
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -15002,7 +15002,7 @@ func (c *Client) sendMakeSandboxDirectory(ctx context.Context, request *SandboxF
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/mkdir"
+	pathParts[4] = "/agent/files/mkdir"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -15035,7 +15035,7 @@ func (c *Client) sendMakeSandboxDirectory(ctx context.Context, request *SandboxF
 //
 // Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
 //
-// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+// POST /pool-agent/{poolId}/sandbox-agent-status-tokens
 func (c *Client) MintSandboxAgentStatusTokens(ctx context.Context, request *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error) {
 	res, err := c.sendMintSandboxAgentStatusTokens(ctx, request, params)
 	return res, err
@@ -15045,7 +15045,7 @@ func (c *Client) sendMintSandboxAgentStatusTokens(ctx context.Context, request *
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("mint-sandbox-agent-status-tokens"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-agent-status-tokens"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-agent-status-tokens"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -15079,7 +15079,7 @@ func (c *Client) sendMintSandboxAgentStatusTokens(ctx context.Context, request *
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -15133,7 +15133,7 @@ func (c *Client) sendMintSandboxAgentStatusTokens(ctx context.Context, request *
 // destination that does unless replace is set, which replaces whatever is there, a directory
 // included. A Windows discobox replaces a file only.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 func (c *Client) MoveSandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params MoveSandboxFileParams) (MoveSandboxFileRes, error) {
 	res, err := c.sendMoveSandboxFile(ctx, request, params)
 	return res, err
@@ -15143,7 +15143,7 @@ func (c *Client) sendMoveSandboxFile(ctx context.Context, request *SandboxFileTr
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("move-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/move"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/move"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -15177,7 +15177,7 @@ func (c *Client) sendMoveSandboxFile(ctx context.Context, request *SandboxFileTr
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -15215,7 +15215,7 @@ func (c *Client) sendMoveSandboxFile(ctx context.Context, request *SandboxFileTr
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/move"
+	pathParts[4] = "/agent/files/move"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -15615,7 +15615,7 @@ func (c *Client) sendPutProjectGateway(ctx context.Context, request *PutProjectG
 // Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a
 // directory.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 func (c *Client) ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (ReadSandboxFileRes, error) {
 	res, err := c.sendReadSandboxFile(ctx, params)
 	return res, err
@@ -15625,7 +15625,7 @@ func (c *Client) sendReadSandboxFile(ctx context.Context, params ReadSandboxFile
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("read-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/content"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/content"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -15659,7 +15659,7 @@ func (c *Client) sendReadSandboxFile(ctx context.Context, params ReadSandboxFile
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -15697,7 +15697,7 @@ func (c *Client) sendReadSandboxFile(ctx context.Context, params ReadSandboxFile
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/content"
+	pathParts[4] = "/agent/files/content"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -16003,7 +16003,7 @@ func (c *Client) sendReconcileSandbox(ctx context.Context, params ReconcileSandb
 //
 // Reconsider sandbox harness config changes.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
 func (c *Client) ReconsiderSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (ReconsiderSandboxHarnessConfigChangesRes, error) {
 	res, err := c.sendReconsiderSandboxHarnessConfigChanges(ctx, request, params)
 	return res, err
@@ -16013,7 +16013,7 @@ func (c *Client) sendReconsiderSandboxHarnessConfigChanges(ctx context.Context, 
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("reconsider-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -16047,7 +16047,7 @@ func (c *Client) sendReconsiderSandboxHarnessConfigChanges(ctx context.Context, 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -16462,7 +16462,7 @@ func (c *Client) sendReleaseSandbox(ctx context.Context, params ReleaseSandboxPa
 // Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
 // that is not empty unless recursive is set.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/remove
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove
 func (c *Client) RemoveSandboxFile(ctx context.Context, request *SandboxFileRemoveRequest, params RemoveSandboxFileParams) (RemoveSandboxFileRes, error) {
 	res, err := c.sendRemoveSandboxFile(ctx, request, params)
 	return res, err
@@ -16472,7 +16472,7 @@ func (c *Client) sendRemoveSandboxFile(ctx context.Context, request *SandboxFile
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("remove-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/remove"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/remove"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -16506,7 +16506,7 @@ func (c *Client) sendRemoveSandboxFile(ctx context.Context, request *SandboxFile
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -16544,7 +16544,7 @@ func (c *Client) sendRemoveSandboxFile(ctx context.Context, request *SandboxFile
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/remove"
+	pathParts[4] = "/agent/files/remove"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -16698,7 +16698,7 @@ func (c *Client) sendRepairSandbox(ctx context.Context, params RepairSandboxPara
 //
 // Report what this pool and each sandbox on it are consuming.
 //
-// POST /api/pools/{poolId}/resources
+// POST /pool-agent/{poolId}/resources
 func (c *Client) ReportPoolResources(ctx context.Context, request *ReportPoolResourcesBody, params ReportPoolResourcesParams) (ReportPoolResourcesRes, error) {
 	res, err := c.sendReportPoolResources(ctx, request, params)
 	return res, err
@@ -16708,7 +16708,7 @@ func (c *Client) sendReportPoolResources(ctx context.Context, request *ReportPoo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-pool-resources"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/resources"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/resources"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -16742,7 +16742,7 @@ func (c *Client) sendReportPoolResources(ctx context.Context, request *ReportPoo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -16794,7 +16794,7 @@ func (c *Client) sendReportPoolResources(ctx context.Context, request *ReportPoo
 //
 // Report observed sandbox states from the pool agent.
 //
-// POST /api/pools/{poolId}/sandbox-states
+// POST /pool-agent/{poolId}/sandbox-states
 func (c *Client) ReportPoolSandboxStates(ctx context.Context, request *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error) {
 	res, err := c.sendReportPoolSandboxStates(ctx, request, params)
 	return res, err
@@ -16804,7 +16804,7 @@ func (c *Client) sendReportPoolSandboxStates(ctx context.Context, request *Repor
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-pool-sandbox-states"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-states"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-states"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -16838,7 +16838,7 @@ func (c *Client) sendReportPoolSandboxStates(ctx context.Context, request *Repor
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -16890,7 +16890,7 @@ func (c *Client) sendReportPoolSandboxStates(ctx context.Context, request *Repor
 //
 // Report polled sandbox-agent status for one or more hosted sandboxes.
 //
-// POST /api/pools/{poolId}/sandbox-agent-status
+// POST /pool-agent/{poolId}/sandbox-agent-status
 func (c *Client) ReportSandboxAgentStatus(ctx context.Context, request *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error) {
 	res, err := c.sendReportSandboxAgentStatus(ctx, request, params)
 	return res, err
@@ -16900,7 +16900,7 @@ func (c *Client) sendReportSandboxAgentStatus(ctx context.Context, request *Repo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-sandbox-agent-status"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-agent-status"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-agent-status"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -16934,7 +16934,7 @@ func (c *Client) sendReportSandboxAgentStatus(ctx context.Context, request *Repo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -16987,7 +16987,7 @@ func (c *Client) sendReportSandboxAgentStatus(ctx context.Context, request *Repo
 // Report the inventory of one or more hosted sandboxes, in full when it changed and by digest when
 // it did not.
 //
-// POST /api/pools/{poolId}/sandbox-inventories
+// POST /pool-agent/{poolId}/sandbox-inventories
 func (c *Client) ReportSandboxInventories(ctx context.Context, request *ReportSandboxInventoriesBody, params ReportSandboxInventoriesParams) (ReportSandboxInventoriesRes, error) {
 	res, err := c.sendReportSandboxInventories(ctx, request, params)
 	return res, err
@@ -16997,7 +16997,7 @@ func (c *Client) sendReportSandboxInventories(ctx context.Context, request *Repo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-sandbox-inventories"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-inventories"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-inventories"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17031,7 +17031,7 @@ func (c *Client) sendReportSandboxInventories(ctx context.Context, request *Repo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17083,7 +17083,7 @@ func (c *Client) sendReportSandboxInventories(ctx context.Context, request *Repo
 //
 // Report what an upstream made of a swapped credential.
 //
-// POST /api/pools/{poolId}/sandbox-secret-rejections
+// POST /pool-agent/{poolId}/sandbox-secret-rejections
 func (c *Client) ReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error) {
 	res, err := c.sendReportSandboxSecretRejection(ctx, request, params)
 	return res, err
@@ -17093,7 +17093,7 @@ func (c *Client) sendReportSandboxSecretRejection(ctx context.Context, request *
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("report-sandbox-secret-rejection"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-secret-rejections"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/sandbox-secret-rejections"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17127,7 +17127,7 @@ func (c *Client) sendReportSandboxSecretRejection(ctx context.Context, request *
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17189,7 +17189,7 @@ func (c *Client) sendReportSandboxSecretRejection(ctx context.Context, request *
 // anyway), or when it has no provisioning. Unlike a repair, it records nothing and clears no failure
 // of the sandbox itself.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/reprovision
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision
 func (c *Client) ReprovisionSandbox(ctx context.Context, params ReprovisionSandboxParams) (ReprovisionSandboxRes, error) {
 	res, err := c.sendReprovisionSandbox(ctx, params)
 	return res, err
@@ -17199,7 +17199,7 @@ func (c *Client) sendReprovisionSandbox(ctx context.Context, params ReprovisionS
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("reprovision-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/reprovision"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/reprovision"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17233,7 +17233,7 @@ func (c *Client) sendReprovisionSandbox(ctx context.Context, params ReprovisionS
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17271,7 +17271,7 @@ func (c *Client) sendReprovisionSandbox(ctx context.Context, params ReprovisionS
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/reprovision"
+	pathParts[4] = "/agent/reprovision"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -17438,7 +17438,7 @@ func (c *Client) sendResetHarnessConfig(ctx context.Context, params ResetHarness
 //
 // Resolve the server environment values a sandbox's gateway sets headers from.
 //
-// POST /api/pools/{poolId}/resolve-gateway-headers
+// POST /pool-agent/{poolId}/resolve-gateway-headers
 func (c *Client) ResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error) {
 	res, err := c.sendResolveGatewayHeaders(ctx, request, params)
 	return res, err
@@ -17448,7 +17448,7 @@ func (c *Client) sendResolveGatewayHeaders(ctx context.Context, request *Resolve
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-gateway-headers"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/resolve-gateway-headers"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/resolve-gateway-headers"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17482,7 +17482,7 @@ func (c *Client) sendResolveGatewayHeaders(ctx context.Context, request *Resolve
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17541,7 +17541,7 @@ func (c *Client) sendResolveGatewayHeaders(ctx context.Context, request *Resolve
 // carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
 // resolved is a 502.
 //
-// GET /api/pools/{poolId}/assets/{name}
+// GET /pool-agent/{poolId}/assets/{name}
 func (c *Client) ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error) {
 	res, err := c.sendResolvePoolAsset(ctx, params)
 	return res, err
@@ -17551,7 +17551,7 @@ func (c *Client) sendResolvePoolAsset(ctx context.Context, params ResolvePoolAss
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-pool-asset"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/assets/{name}"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/assets/{name}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17585,7 +17585,7 @@ func (c *Client) sendResolvePoolAsset(ctx context.Context, params ResolvePoolAss
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [4]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17652,7 +17652,7 @@ func (c *Client) sendResolvePoolAsset(ctx context.Context, params ResolvePoolAss
 //
 // Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
 //
-// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+// POST /pool-agent/{poolId}/resolve-sandbox-raw-secret
 func (c *Client) ResolveSandboxRawSecret(ctx context.Context, request *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (ResolveSandboxRawSecretRes, error) {
 	res, err := c.sendResolveSandboxRawSecret(ctx, request, params)
 	return res, err
@@ -17662,7 +17662,7 @@ func (c *Client) sendResolveSandboxRawSecret(ctx context.Context, request *Resol
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-sandbox-raw-secret"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/resolve-sandbox-raw-secret"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/resolve-sandbox-raw-secret"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17696,7 +17696,7 @@ func (c *Client) sendResolveSandboxRawSecret(ctx context.Context, request *Resol
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17748,7 +17748,7 @@ func (c *Client) sendResolveSandboxRawSecret(ctx context.Context, request *Resol
 //
 // Resolve a sandbox sentinel secret.
 //
-// POST /api/pools/{poolId}/resolve-sandbox-secret
+// POST /pool-agent/{poolId}/resolve-sandbox-secret
 func (c *Client) ResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error) {
 	res, err := c.sendResolveSandboxSecret(ctx, request, params)
 	return res, err
@@ -17758,7 +17758,7 @@ func (c *Client) sendResolveSandboxSecret(ctx context.Context, request *ResolveS
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-sandbox-secret"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/resolve-sandbox-secret"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/resolve-sandbox-secret"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -17792,7 +17792,7 @@ func (c *Client) sendResolveSandboxSecret(ctx context.Context, request *ResolveS
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -17961,7 +17961,7 @@ func (c *Client) sendRestartSandbox(ctx context.Context, request *RestartSandbox
 // Stops the service if it is running and starts it again under the same exec ID. A service that is
 // not running is simply started.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart
 func (c *Client) RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error) {
 	res, err := c.sendRestartSandboxService(ctx, params)
 	return res, err
@@ -17971,7 +17971,7 @@ func (c *Client) sendRestartSandboxService(ctx context.Context, params RestartSa
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("restart-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/restart"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -18005,7 +18005,7 @@ func (c *Client) sendRestartSandboxService(ctx context.Context, params RestartSa
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18043,7 +18043,7 @@ func (c *Client) sendRestartSandboxService(ctx context.Context, params RestartSa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/services/"
+	pathParts[4] = "/agent/services/"
 	{
 		// Encode "serviceId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18094,7 +18094,7 @@ func (c *Client) sendRestartSandboxService(ctx context.Context, params RestartSa
 // config or credential revisions have advanced. Unrelated fields and personal file overrides remain
 // intact. Candidate identity, harness assignment, manifest and validation checks still apply.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 func (c *Client) SaveSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error) {
 	res, err := c.sendSaveSandboxHarnessConfigChanges(ctx, request, params)
 	return res, err
@@ -18104,7 +18104,7 @@ func (c *Client) sendSaveSandboxHarnessConfigChanges(ctx context.Context, reques
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("save-sandbox-harness-config-changes"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -18138,7 +18138,7 @@ func (c *Client) sendSaveSandboxHarnessConfigChanges(ctx context.Context, reques
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18211,7 +18211,7 @@ func (c *Client) sendSaveSandboxHarnessConfigChanges(ctx context.Context, reques
 // counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
 // for an exec with no terminal or closed input.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input
 func (c *Client) SendSandboxExecInput(ctx context.Context, request *SandboxExecInputBody, params SendSandboxExecInputParams) (SendSandboxExecInputRes, error) {
 	res, err := c.sendSendSandboxExecInput(ctx, request, params)
 	return res, err
@@ -18221,7 +18221,7 @@ func (c *Client) sendSendSandboxExecInput(ctx context.Context, request *SandboxE
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("send-sandbox-exec-input"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/input"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -18255,7 +18255,7 @@ func (c *Client) sendSendSandboxExecInput(ctx context.Context, request *SandboxE
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18293,7 +18293,7 @@ func (c *Client) sendSendSandboxExecInput(ctx context.Context, request *SandboxE
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18664,7 +18664,7 @@ func (c *Client) sendSetDefaultProject(ctx context.Context, params SetDefaultPro
 // file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
 // privileged bits.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata
 func (c *Client) SetSandboxFileMetadata(ctx context.Context, request *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (SetSandboxFileMetadataRes, error) {
 	res, err := c.sendSetSandboxFileMetadata(ctx, request, params)
 	return res, err
@@ -18674,7 +18674,7 @@ func (c *Client) sendSetSandboxFileMetadata(ctx context.Context, request *Sandbo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("set-sandbox-file-metadata"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/metadata"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -18708,7 +18708,7 @@ func (c *Client) sendSetSandboxFileMetadata(ctx context.Context, request *Sandbo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18746,7 +18746,7 @@ func (c *Client) sendSetSandboxFileMetadata(ctx context.Context, request *Sandbo
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/metadata"
+	pathParts[4] = "/agent/files/metadata"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -18899,7 +18899,7 @@ func (c *Client) sendStartSandbox(ctx context.Context, request *StartSandboxBody
 //
 // Starts a prepared sandbox exec after any desired attach stream has connected.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start
 func (c *Client) StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (StartSandboxExecRes, error) {
 	res, err := c.sendStartSandboxExec(ctx, params)
 	return res, err
@@ -18909,7 +18909,7 @@ func (c *Client) sendStartSandboxExec(ctx context.Context, params StartSandboxEx
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("start-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/start"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -18943,7 +18943,7 @@ func (c *Client) sendStartSandboxExec(ctx context.Context, params StartSandboxEx
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -18981,7 +18981,7 @@ func (c *Client) sendStartSandboxExec(ctx context.Context, params StartSandboxEx
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19031,7 +19031,7 @@ func (c *Client) sendStartSandboxExec(ctx context.Context, params StartSandboxEx
 // Starts the service, or returns it unchanged when it is already running. A service that has run
 // before is relaunched under its existing exec ID rather than given a new one.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start
 func (c *Client) StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (StartSandboxServiceRes, error) {
 	res, err := c.sendStartSandboxService(ctx, params)
 	return res, err
@@ -19041,7 +19041,7 @@ func (c *Client) sendStartSandboxService(ctx context.Context, params StartSandbo
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("start-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/start"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -19075,7 +19075,7 @@ func (c *Client) sendStartSandboxService(ctx context.Context, params StartSandbo
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19113,7 +19113,7 @@ func (c *Client) sendStartSandboxService(ctx context.Context, params StartSandbo
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/services/"
+	pathParts[4] = "/agent/services/"
 	{
 		// Encode "serviceId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19163,7 +19163,7 @@ func (c *Client) sendStartSandboxService(ctx context.Context, params StartSandbo
 // Reports one path as the discobox's default user sees it. Every files operation acts as that user,
 // with that user's permissions (ADR 26-10-22-499). 404 for a path that does not exist.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/stat
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat
 func (c *Client) StatSandboxFile(ctx context.Context, params StatSandboxFileParams) (StatSandboxFileRes, error) {
 	res, err := c.sendStatSandboxFile(ctx, params)
 	return res, err
@@ -19173,7 +19173,7 @@ func (c *Client) sendStatSandboxFile(ctx context.Context, params StatSandboxFile
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stat-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/stat"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/stat"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -19207,7 +19207,7 @@ func (c *Client) sendStatSandboxFile(ctx context.Context, params StatSandboxFile
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19245,7 +19245,7 @@ func (c *Client) sendStatSandboxFile(ctx context.Context, params StatSandboxFile
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/stat"
+	pathParts[4] = "/agent/files/stat"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -19409,7 +19409,7 @@ func (c *Client) sendStopSandbox(ctx context.Context, request *StopSandboxBody, 
 // Ends the service's run and keeps its record, so its output is still readable and starting it again
 // resumes the same exec identity.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop
 func (c *Client) StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (StopSandboxServiceRes, error) {
 	res, err := c.sendStopSandboxService(ctx, params)
 	return res, err
@@ -19419,7 +19419,7 @@ func (c *Client) sendStopSandboxService(ctx context.Context, params StopSandboxS
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stop-sandbox-service"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}/stop"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -19453,7 +19453,7 @@ func (c *Client) sendStopSandboxService(ctx context.Context, params StopSandboxS
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19491,7 +19491,7 @@ func (c *Client) sendStopSandboxService(ctx context.Context, params StopSandboxS
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/services/"
+	pathParts[4] = "/agent/services/"
 	{
 		// Encode "serviceId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19557,7 +19557,7 @@ func (c *Client) sendStopSandboxService(ctx context.Context, params StopSandboxS
 // The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
 // query parameter. An idle stream sends a comment every 15 seconds.
 //
-// GET /api/projects/{projectId}/events
+// GET /projects/{projectId}/events
 func (c *Client) StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (StreamSandboxEventsRes, error) {
 	res, err := c.sendStreamSandboxEvents(ctx, params)
 	return res, err
@@ -19567,7 +19567,7 @@ func (c *Client) sendStreamSandboxEvents(ctx context.Context, params StreamSandb
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stream-sandbox-events"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/events"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/events"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -19601,7 +19601,7 @@ func (c *Client) sendStreamSandboxEvents(ctx context.Context, params StreamSandb
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19688,7 +19688,7 @@ func (c *Client) sendStreamSandboxEvents(ctx context.Context, params StreamSandb
 //
 // Stream opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream
 func (c *Client) StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error) {
 	res, err := c.sendStreamSandboxExecResources(ctx, params)
 	return res, err
@@ -19698,7 +19698,7 @@ func (c *Client) sendStreamSandboxExecResources(ctx context.Context, params Stre
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("stream-sandbox-exec-resources"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/resources/stream"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -19732,7 +19732,7 @@ func (c *Client) sendStreamSandboxExecResources(ctx context.Context, params Stre
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -19770,7 +19770,7 @@ func (c *Client) sendStreamSandboxExecResources(ctx context.Context, params Stre
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -20502,7 +20502,7 @@ func (c *Client) sendUpdatePool(ctx context.Context, request *UpdatePoolBody, pa
 //
 // Update pool status.
 //
-// POST /api/pools/{poolId}/status
+// POST /pool-agent/{poolId}/status
 func (c *Client) UpdatePoolStatus(ctx context.Context, request *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error) {
 	res, err := c.sendUpdatePoolStatus(ctx, request, params)
 	return res, err
@@ -20512,7 +20512,7 @@ func (c *Client) sendUpdatePoolStatus(ctx context.Context, request *UpdatePoolSt
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("update-pool-status"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/status"),
+		semconv.URLTemplateKey.String("/pool-agent/{poolId}/status"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -20546,7 +20546,7 @@ func (c *Client) sendUpdatePoolStatus(ctx context.Context, request *UpdatePoolSt
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/pools/"
+	pathParts[0] = "/pool-agent/"
 	{
 		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -21385,7 +21385,7 @@ func (c *Client) sendUpgradeSandbox(ctx context.Context, request *UpgradeSandbox
 // answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
 // recorded between two calls is missed.
 //
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait
 func (c *Client) WaitSandboxExec(ctx context.Context, request *SandboxExecWaitBody, params WaitSandboxExecParams) (WaitSandboxExecRes, error) {
 	res, err := c.sendWaitSandboxExec(ctx, request, params)
 	return res, err
@@ -21395,7 +21395,7 @@ func (c *Client) sendWaitSandboxExec(ctx context.Context, request *SandboxExecWa
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("wait-sandbox-exec"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/execs/{execId}/wait"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -21429,7 +21429,7 @@ func (c *Client) sendWaitSandboxExec(ctx context.Context, request *SandboxExecWa
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [7]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -21467,7 +21467,7 @@ func (c *Client) sendWaitSandboxExec(ctx context.Context, request *SandboxExecWa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/execs/"
+	pathParts[4] = "/agent/execs/"
 	{
 		// Encode "execId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -21522,7 +21522,7 @@ func (c *Client) sendWaitSandboxExec(ctx context.Context, request *SandboxExecWa
 // when ifExists refuses (as an If-None-Match does) or ifVersion no longer matches, 409 when the path
 // is a directory, 404 when ifMissing refuses.
 //
-// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
+// PUT /projects/{projectId}/sandboxes/{sandboxId}/agent/files/content
 func (c *Client) WriteSandboxFile(ctx context.Context, request WriteSandboxFileReq, params WriteSandboxFileParams) (WriteSandboxFileRes, error) {
 	res, err := c.sendWriteSandboxFile(ctx, request, params)
 	return res, err
@@ -21532,7 +21532,7 @@ func (c *Client) sendWriteSandboxFile(ctx context.Context, request WriteSandboxF
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("write-sandbox-file"),
 		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/content"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent/files/content"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -21566,7 +21566,7 @@ func (c *Client) sendWriteSandboxFile(ctx context.Context, request WriteSandboxF
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [5]string
-	pathParts[0] = "/api/projects/"
+	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -21604,7 +21604,7 @@ func (c *Client) sendWriteSandboxFile(ctx context.Context, request WriteSandboxF
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/files/content"
+	pathParts[4] = "/agent/files/content"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"

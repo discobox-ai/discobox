@@ -28,7 +28,7 @@ their own.
 delete marks the proxy policy push of every discobox in the project in its own
 transaction (`MarkProxyPolicyChangedTx`), which is how a change reaches running
 ones. And `ResolveGatewayHeaders` answers a pool's proxy
-(`/api/pools/{poolId}/resolve-gateway-headers`, the `secret:resolve` scope)
+(`/pool-agent/{poolId}/resolve-gateway-headers`, the `secret:resolve` scope)
 with the values of `DISCOBOX_GATEWAY_*` variables of the server's environment:
 only for a sandbox on that pool, only for a gateway the configuration file
 keeps, and only the variables the sandbox's project's gateway names as it now

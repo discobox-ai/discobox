@@ -23,7 +23,7 @@ type Authorizer interface {
 }
 
 // ProjectAuthorizer authorizes user membership for project-scoped routes and
-// resolves /projects/default and /api/projects/default for downstream handlers.
+// resolves /projects/default for downstream handlers.
 type ProjectAuthorizer struct {
 	Store *store.Store
 }
@@ -166,30 +166,30 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes/*/complete-source-push", names: withinCaller},
 	// Reading and typing into a discobox's terminals (ADR 26-10-01-397 §1),
 	// and reading one's record, transcript, and events.
-	{method: http.MethodGet, path: "sandboxes/*/execs", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/logs", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/events", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/screen", names: childDiscobox},
-	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: childDiscobox},
-	{method: http.MethodPost, path: "sandboxes/*/execs/*/input", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/agent/execs", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/execs/*", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/execs/*/logs", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/execs/*/events", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/execs/*/screen", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/agent/execs/*/wait", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/agent/execs/*/input", names: withinCaller},
 	// Child commands and files (ADR 26-11-04-684). Attach is a write.
-	{method: http.MethodPost, path: "sandboxes/*/execs", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/execs/*/start", names: withinCaller},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/attach", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/execs/*/attach", names: withinCaller},
-	{method: http.MethodDelete, path: "sandboxes/*/execs/*", names: withinCaller},
-	{method: http.MethodGet, path: "sandboxes/*/files/stat", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/files/list", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/files/content", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/files/archive", names: childDiscobox},
-	{method: http.MethodPut, path: "sandboxes/*/files/content", names: withinCaller},
-	{method: http.MethodPut, path: "sandboxes/*/files/archive", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/files/mkdir", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/files/remove", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/files/move", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/files/copy", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/files/metadata", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/execs", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/execs/*/start", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/agent/execs/*/attach", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/execs/*/attach", names: withinCaller},
+	{method: http.MethodDelete, path: "sandboxes/*/agent/execs/*", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/agent/files/stat", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/files/list", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/files/content", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/files/archive", names: childDiscobox},
+	{method: http.MethodPut, path: "sandboxes/*/agent/files/content", names: withinCaller},
+	{method: http.MethodPut, path: "sandboxes/*/agent/files/archive", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/files/mkdir", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/files/remove", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/files/move", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/files/copy", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/files/metadata", names: withinCaller},
 	// Starting, stopping, and restarting a discobox (ADR 26-10-02-478 §1), and
 	// repairing or upgrading it onto the image its harness config resolves to.
 	{method: http.MethodPost, path: "sandboxes/*/start", names: withinCaller},
@@ -199,7 +199,7 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes/*/upgrade", names: withinCaller},
 	// Running a discobox's failed provisioning again, in place (ADR
 	// 26-11-11-560 §5). It applies only bundles the discobox is pinned to.
-	{method: http.MethodPost, path: "sandboxes/*/reprovision", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/reprovision", names: withinCaller},
 	// Archiving a discobox, which keeps its data for the project's retention
 	// (ADR 26-11-03-724 §1). Purge, which destroys the data at once, and
 	// unarchive, how a person takes an archive back, stay a person's and are
@@ -213,12 +213,12 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPatch, path: "sandboxes/*", names: withinCaller},
 	// A discobox's services: reading them and their logs, and starting,
 	// stopping, and restarting the commands it declares.
-	{method: http.MethodGet, path: "sandboxes/*/services", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/services/*", names: childDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/services/*/logs", names: childDiscobox},
-	{method: http.MethodPost, path: "sandboxes/*/services/*/start", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/services/*/stop", names: withinCaller},
-	{method: http.MethodPost, path: "sandboxes/*/services/*/restart", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/agent/services", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/services/*", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/agent/services/*/logs", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/agent/services/*/start", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/services/*/stop", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/agent/services/*/restart", names: withinCaller},
 	// HTTP to any port of a discobox, with any method.
 	{method: anyMethod, path: "sandboxes/*/http/*", names: withinCaller},
 	{method: anyMethod, path: "sandboxes/*/http/*/**", names: withinCaller},
@@ -404,7 +404,6 @@ func projectRoute(path string) (string, string, bool) {
 	if !ok {
 		return "", "", false
 	}
-	path = strings.TrimPrefix(path, "/api")
 	rest := strings.TrimPrefix(path, "/projects/"+projectID)
 	return projectID, strings.Trim(rest, "/"), true
 }
@@ -541,9 +540,9 @@ var authenticatedAllowedPaths = []string{
 	// project membership to check and the value is one an authenticated caller
 	// is entitled to know — it is the address they reached this server at, or
 	// the one they would.
-	"/peer",
+	"/server/peer",
 	// What this server calls itself (ADR 0116 §2), for the same reason as
-	// /peer: server-scoped, and nothing an authenticated caller is not
+	// /server/peer: server-scoped, and nothing an authenticated caller is not
 	// entitled to.
 	"/server",
 	"/projects",

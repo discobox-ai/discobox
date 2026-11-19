@@ -91,7 +91,7 @@ func TestResolverApproved(t *testing.T) {
 	if gotAuth != "Bearer tok-123" {
 		t.Fatalf("auth = %q", gotAuth)
 	}
-	if gotPath != "/api/pools/"+testPoolID+"/resolve-sandbox-secret" {
+	if gotPath != "/pool-agent/"+testPoolID+"/resolve-sandbox-secret" {
 		t.Fatalf("path = %q", gotPath)
 	}
 	if gotBody.SandboxID != "sb-1" || gotBody.Sentinel != "SENT" || gotBody.Host != "api.example.com" {
@@ -225,7 +225,7 @@ func TestReportNamesTheSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("report: %v", err)
 	}
-	if gotPath != "/api/pools/"+testPoolID+"/sandbox-secret-rejections" {
+	if gotPath != "/pool-agent/"+testPoolID+"/sandbox-secret-rejections" {
 		t.Fatalf("path = %q", gotPath)
 	}
 	want := rejectionRequestBody{SandboxID: "sb-1", Sentinel: "SENTINEL", Host: "api.example.com", Outcome: string(proxy.SecretRejected)}

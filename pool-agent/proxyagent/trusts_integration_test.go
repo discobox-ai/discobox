@@ -35,7 +35,7 @@ type fakeTrustControlPlane struct {
 func (f *fakeTrustControlPlane) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	prefix := "/api/pools/" + testPoolID + "/"
+	prefix := "/pool-agent/" + testPoolID + "/"
 	switch {
 	case r.Method == http.MethodHead && r.URL.Path == "/":
 		// The sandbox agent's port probe, inside a discobox; not the broker.
