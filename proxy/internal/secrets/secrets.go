@@ -215,6 +215,11 @@ type Resolver interface {
 	// and a cached value never carries a request its routes refuse. A
 	// resolver that cannot answer returns an error, and nothing is resolved
 	// or sent.
+	//
+	// It answers from what the resolver holds, without waiting on the
+	// network, and returns when ctx ends: the proxy decides a WebSocket
+	// message with it while no configuration may be installed
+	// (Swapper.Decide), so a slow Authorize would hold up every sandbox's.
 	Authorize(ctx context.Context, req AuthorizeRequest) (Verdict, error)
 	// Gate answers a request for the gate host, which never goes to the
 	// internet (Config.GateHost), from the upstream behind the gate. One it

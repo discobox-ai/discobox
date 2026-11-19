@@ -200,6 +200,10 @@
   then waits behind a ping or another message on a stalled origin can go
   out after the revocation it was decided before. This order has been wrong
   both ways once each.
+- `Resolver.Authorize` answers from what the resolver holds and honours its
+  context: `Swapper.Decide` calls it under the publish lock with a context
+  bounded by `decideBound`. A resolver that asked the control plane there
+  would make every pool configuration wait on the network.
 - Every new place a credential is swapped into keeps its value out of what
   comes back: a body swap's response is not spooled (`bodySwapped`), a
   message swap's values are added to the connection's capture redactions

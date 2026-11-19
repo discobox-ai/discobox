@@ -110,17 +110,36 @@ func TestApplyMessageSwapsAtEachPlace(t *testing.T) {
 func TestDecideRefusesAStaleRevision(t *testing.T) {
 	sw := bodySwapper("v", nil)
 	sent := 0
-	send := func() error { sent++; return nil }
+	send := func(context.Context) error { sent++; return nil }
 	revision := sw.Revision()
-	if stale, err := sw.Decide(revision, "sandbox-1", []string{bodySentinel}, send); stale || err != nil || sent != 1 {
+	if stale, err := sw.Decide(context.Background(), revision, "sandbox-1", []string{bodySentinel}, send); stale || err != nil || sent != 1 {
 		t.Fatalf("stale=%v err=%v sent=%d", stale, err, sent)
 	}
 	sw.Reconfigure(Config{Sentinels: map[string][]string{"sandbox-1": {bodySentinel}}})
-	if stale, _ := sw.Decide(revision, "sandbox-1", []string{bodySentinel}, send); !stale || sent != 1 {
+	if stale, _ := sw.Decide(context.Background(), revision, "sandbox-1", []string{bodySentinel}, send); !stale || sent != 1 {
 		t.Fatalf("an old revision sent: stale=%v sent=%d", stale, sent)
 	}
 	revision = sw.Revision()
-	if stale, _ := sw.Decide(revision, "sandbox-1", []string{"bxd_OTHER"}, send); !stale || sent != 1 {
+	if stale, _ := sw.Decide(context.Background(), revision, "sandbox-1", []string{"bxd_OTHER"}, send); !stale || sent != 1 {
 		t.Fatalf("a sentinel the client does not hold sent: stale=%v sent=%d", stale, sent)
+	}
+	// The decision is bounded: one that waits on its context ends by
+	// decideBound, and so does the publish lock it holds.
+	start := time.Now()
+	if _, err := sw.Decide(context.Background(), revision, "sandbox-1", []string{bodySentinel}, func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}); err == nil || time.Since(start) > 2*decideBound {
+		t.Fatalf("a waiting decision returned %v after %v", err, time.Since(start))
+	}
+	applied := make(chan struct{})
+	go func() {
+		sw.Reconfigure(Config{Sentinels: map[string][]string{"sandbox-1": {bodySentinel}}})
+		close(applied)
+	}()
+	select {
+	case <-applied:
+	case <-time.After(2 * decideBound):
+		t.Fatal("a configuration waited past the decision's bound")
 	}
 }

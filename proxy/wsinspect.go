@@ -376,11 +376,11 @@ func (i *messageInspector) forward(item *heldItem) error {
 		// configuration waits on this lock.
 		i.writing.Lock()
 		var decided *wsframe.Error
-		stale, err := swapper.Decide(revision, i.client.ID, uses.Sentinels(), func() error {
+		stale, err := swapper.Decide(i.ctx, revision, i.client.ID, uses.Sentinels(), func(ctx context.Context) error {
 			// Decided again at the moment of sending, so a binding that
 			// lapsed or a route narrowed while the message was resolved
 			// stops it. No network I/O here: publication waits on this.
-			verdict, err := swapper.Authorize(i.ctx, req)
+			verdict, err := swapper.Authorize(ctx, req)
 			switch {
 			case err != nil:
 				decided = &wsframe.Error{Code: wsframe.CloseInternalError, Reason: "credential unavailable: the credential's routes could not be read: " + err.Error()}
