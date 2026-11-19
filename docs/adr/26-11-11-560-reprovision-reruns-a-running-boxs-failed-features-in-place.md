@@ -1,6 +1,6 @@
 # 26-11-11-560 — Reprovision runs a running box's failed features again, in place
 
-- **Status**: Accepted
+- **Status**: Accepted (automatic reprovision deferral superseded and §5 narrowed by [26-11-19-797](26-11-19-797-a-box-reprovisions-its-failed-features-on-its-own-a-few-times-and-shows-what-still-failed.md))
 - **Date**: 2026-11-11
   Accepted by the owner by merging #1026, 2026-11-12.
 - **Narrows**: [26-11-09-062](26-11-09-062-a-harness-change-wakes-the-pool-like-a-port.md)
