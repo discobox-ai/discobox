@@ -42,6 +42,7 @@ type Tracker struct {
 	// reprovisioned is closed, and replaced, when it ends.
 	rerunning     bool
 	reprovisioned chan struct{}
+	automatic     automaticRetry
 }
 
 // NewTracker is a tracker writing path, or nothing when path is empty. Its
@@ -81,6 +82,10 @@ func (t *Tracker) Status() provisionspec.Status {
 func (t *Tracker) statusLocked() provisionspec.Status {
 	status := t.status
 	status.Features = maps.Clone(t.status.Features)
+	if status.Retry != nil {
+		retry := *status.Retry
+		status.Retry = &retry
+	}
 	return status
 }
 
@@ -135,6 +140,10 @@ func (t *Tracker) Changes() *statuswait.Signal {
 func (t *Tracker) Rerun() (provisionspec.Status, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.rerunLocked(false)
+}
+
+func (t *Tracker) rerunLocked(automatic bool) (provisionspec.Status, bool) {
 	if t.running || !t.status.State.Done() {
 		return t.statusLocked(), false
 	}
@@ -151,6 +160,14 @@ func (t *Tracker) Rerun() (provisionspec.Status, bool) {
 	}
 	t.updateLocked(func(status *provisionspec.Status) {
 		t.running, t.rerunning = true, true
+		if !automatic {
+			t.automatic.attempt = 0
+			if t.automatic.timer != nil {
+				t.automatic.timer.Stop()
+			}
+		}
+		t.automatic.timer = nil
+		status.Retry = nil
 		for _, name := range failed {
 			feature := status.Features[name]
 			status.Features[name] = provisionspec.FeatureStatus{State: provisionspec.StatePending, Async: feature.Async, Log: feature.Log}
@@ -330,6 +347,7 @@ func (t *Tracker) finished() {
 
 func (t *Tracker) finishedLocked() {
 	t.running = false
+	t.scheduleRetryLocked()
 	if t.rerunning {
 		t.rerunning = false
 		close(t.reprovisioned)
@@ -376,13 +394,14 @@ func (t *Tracker) state() provisionspec.State {
 		failed = failed || feature.State == provisionspec.StateFailed
 	}
 	switch {
-	case failed:
-		return provisionspec.StateFailed
 	case t.running || !t.readyDecided:
 		if len(t.status.Features) == 0 && !t.running {
 			return provisionspec.StatePending
 		}
 		return provisionspec.StateProvisioning
+	}
+	if failed {
+		return provisionspec.StateFailed
 	}
 	return provisionspec.StateReady
 }

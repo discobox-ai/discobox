@@ -229,11 +229,6 @@ func run(name string, args []string) int {
 		statusPath = provisionspec.StatusPath
 	}
 	tracker := provision.NewTracker(statusPath)
-	go func() {
-		if err := provisionBox(ctx, tracker, runtimeConfig, configPath, cfg.Features, false); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("provision", "error", err)
-		}
-	}()
 	serverConfig := server.ConfigFromHarnessConfig(cfg)
 	serverConfig.RuntimeConfig = runtimeConfig
 	serverConfig.Provision = tracker
@@ -242,6 +237,9 @@ func run(name string, args []string) int {
 	// from inside the box (ADR 26-11-11-560 §5). Only a Linux box provisions.
 	if runtime.GOOS == "linux" {
 		reprovision := &reprovisioner{ctx: ctx, tracker: tracker, runtimeConfig: runtimeConfig, configPath: configPath, features: cfg.Features}
+		tracker.EnableAutomaticRetry(ctx, func(status provisionspec.Status) {
+			reprovision.run(!hasPending(status))
+		})
 		serverConfig.Reprovision = reprovision.Reprovision
 		go func() {
 			if err := provision.WatchRetries(ctx, provision.RetryDir, func() { reprovision.Reprovision() }); err != nil {
@@ -249,6 +247,11 @@ func run(name string, args []string) int {
 			}
 		}()
 	}
+	go func() {
+		if err := provisionBox(ctx, tracker, runtimeConfig, configPath, cfg.Features, false); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("provision", "error", err)
+		}
+	}()
 	// Its pool serves its sandboxes' agents over TLS, with the keypair it
 	// placed and renews in the runtime-config document, or plain HTTP, as the
 	// bootstrap says (ADR 26-10-29-481 §3).

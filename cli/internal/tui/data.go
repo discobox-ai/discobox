@@ -387,7 +387,8 @@ type Sandbox struct {
 	// row is under the cursor: the features still being provisioned, or the
 	// ones that failed (ADR 26-10-16-423 §6). Empty once all are ready. It
 	// was written by the box and made displayable already.
-	Provisioning string
+	Provisioning    string
+	ProvisionFailed bool
 	// HarnessConfigPending reports a captured local settings or credential change.
 	HarnessConfigPending bool
 	// HarnessConfigCandidate is that change's candidate ID, as the box reports

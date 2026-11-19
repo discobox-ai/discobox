@@ -20,9 +20,12 @@ var waitPoll = 200 * time.Millisecond
 // (ADR 26-10-16-423 §5): ready, failed or off. A feature the box does not
 // report once its run has started is not one it provisions — its image came
 // with it — and is done. waiting is called once, with what is still being
-// provisioned, if Wait has to wait at all.
-func Wait(ctx context.Context, path string, features []string, waiting func(provisionspec.Status, []string)) (provisionspec.Status, error) {
+// provisioned, if Wait has to wait at all. When waitForRetry is set, a
+// failed async feature with a scheduled retry waits through that attempt.
+// waiting also reports the retry if it was scheduled after the first report.
+func Wait(ctx context.Context, path string, features []string, waitForRetry bool, waiting func(provisionspec.Status, []string)) (provisionspec.Status, error) {
 	told := false
+	var retry *provisionspec.ScheduledRetry
 	for {
 		status, ok, err := provisionspec.ReadStatus(path)
 		if err != nil {
@@ -32,11 +35,16 @@ func Wait(ctx context.Context, path string, features []string, waiting func(prov
 			return status, nil
 		}
 		var pending []string
+		var scheduled bool
 		for _, name := range features {
 			feature, reported := status.Features[name]
 			switch {
 			case !ok, !reported && status.State == provisionspec.StatePending:
 				pending = append(pending, name)
+			case waitForRetry && feature.Async && feature.State == provisionspec.StateFailed && status.Retry != nil &&
+				(retry == nil || *retry == *status.Retry):
+				pending = append(pending, name)
+				scheduled = true
 			case reported && !feature.State.Done():
 				pending = append(pending, name)
 			}
@@ -47,9 +55,14 @@ func Wait(ctx context.Context, path string, features []string, waiting func(prov
 		if len(pending) == 0 {
 			return status, nil
 		}
-		if !told && waiting != nil {
-			waiting(status, pending)
+		if !told || scheduled && retry == nil {
+			if waiting != nil {
+				waiting(status, pending)
+			}
 			told = true
+		}
+		if scheduled {
+			retry = status.Retry
 		}
 		select {
 		case <-ctx.Done():

@@ -13735,6 +13735,52 @@ func (o OptSandboxAgentProvisionFeatureHow) Or(d SandboxAgentProvisionFeatureHow
 	return d
 }
 
+// NewOptSandboxAgentProvisionRetry returns new OptSandboxAgentProvisionRetry with value set to v.
+func NewOptSandboxAgentProvisionRetry(v SandboxAgentProvisionRetry) OptSandboxAgentProvisionRetry {
+	return OptSandboxAgentProvisionRetry{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProvisionRetry is optional SandboxAgentProvisionRetry.
+type OptSandboxAgentProvisionRetry struct {
+	Value SandboxAgentProvisionRetry
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProvisionRetry was set.
+func (o OptSandboxAgentProvisionRetry) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProvisionRetry) Reset() {
+	var v SandboxAgentProvisionRetry
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProvisionRetry) SetTo(v SandboxAgentProvisionRetry) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProvisionRetry) Get() (v SandboxAgentProvisionRetry, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProvisionRetry) Or(d SandboxAgentProvisionRetry) SandboxAgentProvisionRetry {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAutomaticRepair returns new OptSandboxAutomaticRepair with value set to v.
 func NewOptSandboxAutomaticRepair(v SandboxAutomaticRepair) OptSandboxAutomaticRepair {
 	return OptSandboxAutomaticRepair{
@@ -23735,6 +23781,47 @@ func (s *SandboxAgentProvisionFeatureState) UnmarshalText(data []byte) error {
 	}
 }
 
+// The next automatic provisioning retry, present only until it starts.
+// Ref: #/components/schemas/SandboxAgentProvisionRetry
+type SandboxAgentProvisionRetry struct {
+	// The number of the attempt that is scheduled.
+	Attempt int `json:"attempt"`
+	// The maximum number of automatic attempts.
+	Of int `json:"of"`
+	// When the scheduled attempt is due.
+	At time.Time `json:"at"`
+}
+
+// GetAttempt returns the value of Attempt.
+func (s *SandboxAgentProvisionRetry) GetAttempt() int {
+	return s.Attempt
+}
+
+// GetOf returns the value of Of.
+func (s *SandboxAgentProvisionRetry) GetOf() int {
+	return s.Of
+}
+
+// GetAt returns the value of At.
+func (s *SandboxAgentProvisionRetry) GetAt() time.Time {
+	return s.At
+}
+
+// SetAttempt sets the value of Attempt.
+func (s *SandboxAgentProvisionRetry) SetAttempt(val int) {
+	s.Attempt = val
+}
+
+// SetOf sets the value of Of.
+func (s *SandboxAgentProvisionRetry) SetOf(val int) {
+	s.Of = val
+}
+
+// SetAt sets the value of At.
+func (s *SandboxAgentProvisionRetry) SetAt(val time.Time) {
+	s.At = val
+}
+
 // Where the sandbox's provisioning stands this boot (ADR 26-10-16-423 §6). Every string in it is
 // text the sandbox wrote.
 // Ref: #/components/schemas/SandboxAgentProvisionStatus
@@ -23747,8 +23834,9 @@ type SandboxAgentProvisionStatus struct {
 	// provisioning.
 	Ready bool `json:"ready"`
 	// Why readiness failed, or why provisioning could not start.
-	Error     OptString `json:"error"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Error     OptString                     `json:"error"`
+	UpdatedAt time.Time                     `json:"updatedAt"`
+	Retry     OptSandboxAgentProvisionRetry `json:"retry"`
 	// Each feature the sandbox provisions, by name. A tool the sandbox's image came with is not one.
 	Features SandboxAgentProvisionStatusFeatures `json:"features"`
 }
@@ -23771,6 +23859,11 @@ func (s *SandboxAgentProvisionStatus) GetError() OptString {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *SandboxAgentProvisionStatus) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
+}
+
+// GetRetry returns the value of Retry.
+func (s *SandboxAgentProvisionStatus) GetRetry() OptSandboxAgentProvisionRetry {
+	return s.Retry
 }
 
 // GetFeatures returns the value of Features.
@@ -23796,6 +23889,11 @@ func (s *SandboxAgentProvisionStatus) SetError(val OptString) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *SandboxAgentProvisionStatus) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+// SetRetry sets the value of Retry.
+func (s *SandboxAgentProvisionStatus) SetRetry(val OptSandboxAgentProvisionRetry) {
+	s.Retry = val
 }
 
 // SetFeatures sets the value of Features.

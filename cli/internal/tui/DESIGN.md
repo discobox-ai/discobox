@@ -1570,7 +1570,11 @@ clients never recombine existence and power. A present, running box with a
 recorded reconcile failure stays running, subject to blocking provisioning
 (ADR 26-11-07-519). A non-empty `Message` adds a warning glyph beside its state,
 including without colour, and replaces the name under the cursor. Running
-actions, program status and counts keep using `StateRunning`.
+actions, program status and counts keep using `StateRunning`. Final
+provisioning failure on an observed-running box adds the same warning glyph,
+including when failed readiness gives the row a composed error state. When an automatic retry
+is scheduled, the provisioning text under the cursor says it is retrying
+(ADR 26-11-19-797).
 `HasRuntime` is the presence of `runtimeState` on the wire, which the API omits
 until the pool agent has reported (absent is not `stopped`). It includes stopped
 containers, so it is distinct from being running.

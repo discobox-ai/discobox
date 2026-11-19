@@ -1279,6 +1279,13 @@ func sandboxAgentProvisionStatus(status provisionspec.Status) sandboxapi.Sandbox
 	if status.Error != "" {
 		out.Error = sandboxapi.NewOptString(status.Error)
 	}
+	if retry := status.Retry; retry != nil {
+		out.Retry = sandboxapi.NewOptSandboxAgentProvisionRetry(sandboxapi.SandboxAgentProvisionRetry{
+			Attempt: retry.Attempt,
+			Of:      retry.Of,
+			At:      retry.At,
+		})
+	}
 	for name, feature := range status.Features {
 		item := sandboxapi.SandboxAgentProvisionFeature{
 			State:   sandboxapi.SandboxAgentProvisionFeatureState(feature.State),

@@ -28,7 +28,7 @@ const (
 	StateOff State = "off"
 )
 
-// Done reports whether nothing more will happen to what is in s this boot.
+// Done reports whether s is the outcome of a provisioning attempt.
 func (s State) Done() bool {
 	return s == StateReady || s == StateFailed || s == StateOff
 }
@@ -58,6 +58,14 @@ type Status struct {
 	Error     string                   `json:"error,omitempty"`
 	UpdatedAt time.Time                `json:"updatedAt"`
 	Features  map[string]FeatureStatus `json:"features"`
+	Retry     *ScheduledRetry          `json:"retry,omitempty"`
+}
+
+// ScheduledRetry describes the next automatic reprovision attempt.
+type ScheduledRetry struct {
+	Attempt int       `json:"attempt"`
+	Of      int       `json:"of"`
+	At      time.Time `json:"at"`
 }
 
 // FeatureStatus is one feature's line of the document. Every string in it

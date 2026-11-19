@@ -1226,3 +1226,21 @@ func TestRunningWarningKeepsActions(t *testing.T) {
 		t.Fatalf("review config did not open: %s", dialogText(m))
 	}
 }
+
+func TestProvisioningWarningMarksFinalFailureAwayFromCursor(t *testing.T) {
+	for _, state := range []State{StateRunning, StateError, StateRepairing} {
+		box := Sandbox{ID: "box", Name: "fixture", State: state, Provisioning: "feature failed", ProvisionFailed: true}
+		list := listForTest(Session{}, []Sandbox{box})
+		st := newStyles(false)
+		row, _ := list.row(st, &zones{}, box, 0, 0, false)
+		wantWarning := state != StateRepairing
+		if strings.Contains(row, "⚠") != wantWarning || !strings.Contains(row, "fixture") {
+			t.Fatalf("state %v final failure: %q", state, row)
+		}
+		box.Provisioning, box.ProvisionFailed = "retrying: feature failed", false
+		row, _ = list.row(st, &zones{}, box, 0, 0, true)
+		if strings.Contains(row, "⚠") || !strings.Contains(row, "retrying") {
+			t.Fatalf("state %v pending retry: %q", state, row)
+		}
+	}
+}

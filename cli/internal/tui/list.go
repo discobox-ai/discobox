@@ -1389,7 +1389,8 @@ func (l *sandboxList) rowHead(st *styles, s Sandbox, atCursor bool) string {
 		// in line.
 		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
 	}
-	if s.State == StateRunning && s.Message != "" {
+	provisionWarning := s.ProvisionFailed && (s.State == StateRunning || s.State == StateError)
+	if provisionWarning || (s.State == StateRunning && s.Message != "") {
 		head += st.statusWA.Render("⚠") + " "
 	}
 	return head

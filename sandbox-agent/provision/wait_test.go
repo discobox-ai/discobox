@@ -37,7 +37,7 @@ func TestWait(t *testing.T) {
 	done := make(chan provisionspec.Status, 1)
 	var told []string
 	go func() {
-		status, err := Wait(context.Background(), path, []string{"docker", "make"}, func(status provisionspec.Status, pending []string) {
+		status, err := Wait(context.Background(), path, []string{"docker", "make"}, false, func(status provisionspec.Status, pending []string) {
 			told = append(told, Describe(status, pending))
 		})
 		if err != nil {
@@ -100,20 +100,45 @@ func TestWaitWholeRunIncludesBackgroundFeatures(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "provision.json")
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := Wait(ctx, path, nil, nil); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := Wait(ctx, path, nil, false, nil); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("missing run completed: %v", err)
 	}
 	writeStatus(t, path, provisionspec.Status{State: provisionspec.StateProvisioning, Ready: true, Features: map[string]provisionspec.FeatureStatus{"async-tool": {State: provisionspec.StateProvisioning, Async: true}}})
 	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := Wait(ctx, path, nil, nil); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := Wait(ctx, path, nil, false, nil); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("background run completed early: %v", err)
 	}
 	for _, state := range []provisionspec.State{provisionspec.StateReady, provisionspec.StateFailed} {
 		writeStatus(t, path, provisionspec.Status{State: state})
-		status, err := Wait(context.Background(), path, nil, nil)
+		status, err := Wait(context.Background(), path, nil, false, nil)
 		if err != nil || status.State != state {
 			t.Fatalf("completed run=%s %v, want %s", status.State, err, state)
 		}
+	}
+}
+
+func TestPlaceholderWaitsForOnlyOneScheduledRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "provision.json")
+	status := provisionspec.Status{
+		State: provisionspec.StateFailed,
+		Ready: true,
+		Features: map[string]provisionspec.FeatureStatus{
+			"tool": {State: provisionspec.StateFailed, Async: true, Error: "fetch failed"},
+		},
+		Retry: &provisionspec.ScheduledRetry{Attempt: 1, Of: 3, At: time.Now().UTC()},
+	}
+	writeStatus(t, path, status)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	got, err := Wait(ctx, path, []string{"tool"}, true, func(seen provisionspec.Status, _ []string) {
+		if seen.Retry == nil || seen.Retry.Attempt != 1 {
+			t.Fatalf("wait reported unexpected status: %+v", seen)
+		}
+		status.Retry.Attempt = 2
+		writeStatus(t, path, status)
+	})
+	if err != nil || got.Retry == nil || got.Retry.Attempt != 2 || Problem(got, "tool") == nil {
+		t.Fatalf("wait should report the next failure, got %+v, %v", got, err)
 	}
 }

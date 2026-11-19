@@ -975,7 +975,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	if agent, ok := sandboxProgramStatus(sb); ok {
 		row.Agent = agent
 	}
-	row.Provisioning = sandboxProvisioning(sb)
+	row.Provisioning, row.ProvisionFailed = sandboxProvisioning(sb)
 	if status, ok := sb.Runtime.AgentStatus.Get(); ok {
 		var candidate string
 		if json.Unmarshal(status["harnessConfigCandidate"], &candidate) == nil {
