@@ -134,12 +134,9 @@
   once the deadline has passed: one would fail only on the deadline, and the
   pool would then report `context deadline exceeded` in place of the daemon's
   own error. Anything a driver does under the acquire context, an SSH
-  handshake included, must end when that context does. An attached `docker
-  exec` (`ContainerGuest`, `machine.Run`) is not bounded this way: the client
-  reads its upgrade over a hijacked connection that ignores the context once
-  dialed (#1361). Until that is fixed, a bounded check inside a pool container
-  runs detached and reads the exit code from exec inspect
-  (`dockerworker.ExecExitCode`); the start's agent wait broke this rule once
+  handshake included, must end when that context does; a hijacked Docker
+  call (an attached exec, an attach) does only on the moby client the root
+  `REVIEW.md` names (#1361). The start's agent wait broke this rule once
   already (ADR 26-11-17-503).
 - Compare a pool container against the image the engine would launch *now*
   (`Engine.resolvePoolImage`), never against `cfg.SandboxBaseImage` directly.
