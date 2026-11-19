@@ -42,7 +42,8 @@ covers the newer ones and how to pin a version.
 
 Discobox generates SSH aliases in its local state directory. On the first
 interactive SSH config sync, it asks whether it may add Include lines to
-`~/.ssh/config` (and the Windows SSH config under WSL). The default is No.
+`~/.ssh/config` (and the Windows SSH config under WSL). Yes is selected when the prompt can be shown. Without a terminal,
+Discobox leaves your SSH config alone unless you already opted in.
 The Includes let OpenSSH reach a discobox by ID with `ssh BOX_ID` through the
 Discobox server. Use `discobox admin ssh-config enable` or
 `discobox admin ssh-config disable` to change your choice. `discobox admin uninstall`
