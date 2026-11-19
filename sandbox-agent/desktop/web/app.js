@@ -234,7 +234,7 @@ async function reportScale() {
       auto: true,
     }));
   } catch (err) {
-    console.warn('could not report the screen scale', err);
+    toast(`${err.message || err}. Reload the viewer to retry.`, 'error');
   }
 }
 
@@ -256,11 +256,8 @@ async function chooseScale() {
       ? `${density} — restarting the desktop to apply it`
       : `${density} — programs started from now on use it`);
   } catch (err) {
-    // Put the control back to the scale the desktop is actually at. Leaving it
-    // showing the value that failed means picking that value again fires no
-    // change event, so the obvious way to retry does nothing at all.
     if (state.geometry) dom.scale.value = String(state.geometry.scale);
-    toast(String(err.message || err), 'error');
+    toast(`${err.message || err}. Reload the viewer to retry.`, 'error');
   }
 }
 

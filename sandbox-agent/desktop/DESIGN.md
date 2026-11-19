@@ -182,7 +182,7 @@ process or scope to one X server:
   `GDK_SCALE` into its own scale — on a private Xvfb, devicePixelRatio 2 with
   them inherited and 1 without.
 
-`SetScale` writes the durable half first and commits `d.applied` last.
+`SetScale` writes the durable half first and marks `d.applied` after applying the X settings.
 `scale.env` is written before anything that needs an X server, because that file
 is what the session and every login shell read when they start and a scale asked
 for while X is down should still be the one X comes up at. **`d.scale` is
@@ -194,20 +194,15 @@ not leave them disagreeing. That is the mixed-channel state
 [`sandbox-agent/REVIEW.md`](../REVIEW.md) forbids:
 2× widgets around 1× text.
 
-`d.applied` is what waits for all of it, and it is the flag that makes a failure
-repairable: the unchanged-value short-circuit needs it, so a half-finished change
-is retried rather than returned early forever. `d.chosen` is set up front — a
-person decided, whether or not applying it then worked — and it outranks the
-viewer's detection on the **value only**: an auto report from a chosen display
-keeps the chosen scale and then carries on, because a page load is the only
-thing that happens on its own and it has to be able to finish an unapplied
-choice.
+An unchanged request skips applying the settings only when the X settings have
+been applied and no session restart is pending. A density change after the
+session is released leaves a restart pending until the logout command succeeds.
+A failed logout returns HTTP 503. The same density can be requested again to
+finish the restart. `d.chosen` preserves the explicitly selected scale even on
+failure, so an automatic report on the next page load retries that choice.
 
 The response to `POST /api/scale` carries `restarted` alongside the geometry.
-Picking a density that is already in effect changes nothing and restarts
-nothing, and neither does a change made before the session is released — so a
-viewer that always warned about losing open windows would be wrong most of the
-times it said it.
+A settled density and a change made before session release require no logout.
 
 ### The viewer must not start the desktop
 

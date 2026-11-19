@@ -819,3 +819,69 @@ func TestAnAutoReportStillFinishesAnUnappliedChoice(t *testing.T) {
 		t.Fatalf("the auto report wrote %d; a choice outranks the reported value", scale)
 	}
 }
+
+// A failed logout leaves the session at the old density. The API must expose
+// that failure and retry logout when asked for the same density again.
+func TestAFailedSessionRestartIsRetriedForTheSameScale(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the X tool stubs are POSIX shell")
+	}
+	bin := t.TempDir()
+	logouts := filepath.Join(bin, "logouts")
+	xrandr := "#!/bin/sh\n" +
+		"echo 'Screen 0: minimum 8 x 8, current 1280 x 768, maximum 32767 x 32767'\n" +
+		"echo 'DUMMY0 connected primary 1280x768+0+0'\n"
+	// The first logout fails, as a timed-out one does; every later one works.
+	logout := "#!/bin/sh\necho x >> " + logouts + "\n" +
+		"[ \"$(wc -l < " + logouts + ")\" -gt 1 ] || exit 1\n"
+	for name, body := range map[string]string{
+		"xrandr":               xrandr,
+		"xrdb":                 "#!/bin/sh\ncat >/dev/null\n",
+		"xfconf-query":         "#!/bin/sh\n",
+		"xfce4-session-logout": logout,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+			t.Fatalf("write %s stub: %v", name, err)
+		}
+	}
+	t.Setenv("PATH", bin+":/usr/bin:/bin")
+	countLogouts := func() int {
+		body, err := os.ReadFile(logouts)
+		if os.IsNotExist(err) {
+			return 0
+		}
+		if err != nil {
+			t.Fatalf("read logouts: %v", err)
+		}
+		return strings.Count(string(body), "x")
+	}
+
+	display := NewDisplay(":91")
+	display.EnvDir = t.TempDir()
+	if _, _, err := display.SetScale(t.Context(), 1, false); err != nil {
+		t.Fatalf("settle at 1x: %v", err)
+	}
+	display.Release()
+
+	server, _ := newTestServer(t)
+	server.display = display
+	request := scaleRequest{Scale: 2}
+	failed := do(t, server, http.MethodPost, "/api/scale", request)
+	if failed.Code != http.StatusServiceUnavailable || countLogouts() != 1 {
+		t.Fatalf("first request returned %d after %d logouts: %s", failed.Code, countLogouts(), failed.Body)
+	}
+
+	retry := do(t, server, http.MethodPost, "/api/scale", request)
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry returned %d: %s", retry.Code, retry.Body)
+	}
+	result := decode[scaleResponse](t, retry)
+	if !result.Restarted || result.Scale != 2 || countLogouts() != 2 {
+		t.Fatalf("retry returned %+v after %d logouts", result, countLogouts())
+	}
+
+	settled := do(t, server, http.MethodPost, "/api/scale", request)
+	if settled.Code != http.StatusOK || countLogouts() != 2 {
+		t.Fatalf("settled request returned %d after %d logouts: %s", settled.Code, countLogouts(), settled.Body)
+	}
+}
