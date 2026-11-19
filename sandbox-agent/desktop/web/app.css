@@ -1,7 +1,4 @@
-/* The desktop viewer's own chrome. The palette is the brand's: the mark's
-   purple frames the desktop, and the wordmark's gold-purple-teal gradient is
-   the only other color on the page, so the desktop inside the frame is the
-   brightest thing on screen and everything around it recedes. */
+/* The desktop viewer's chrome uses the brand's purple to frame the display. */
 
 :root {
   color-scheme: dark;
@@ -20,7 +17,6 @@
   --mark: #f45cff;
   --gold: #fdcc11;
   --teal: #06eaa7;
-  --gradient: linear-gradient(90deg, var(--gold) 0%, var(--purple) 56%, var(--teal) 100%);
 
   --bar-h: 52px;
   --radius: 12px;
@@ -61,16 +57,6 @@ body {
   backdrop-filter: blur(12px);
   position: relative;
   z-index: 30;
-}
-
-/* The gradient reads as a hairline under the bar rather than as a band. */
-.bar::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0; bottom: -1px;
-  height: 1px;
-  background: var(--gradient);
-  opacity: 0.55;
 }
 
 .brand {
