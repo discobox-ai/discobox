@@ -367,10 +367,13 @@ var mountInfoUnescaper = strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, 
 // sandbox.json — unlike group/account creation, this can't happen any earlier
 // in provision. A group the image names but the base OS doesn't have (e.g. a
 // harness Dockerfile forgetting to install the package that creates it) is
-// skipped rather than failing sandbox boot over a foreseeable image mistake.
-// Root already has every access these groups would grant, so it has none of
-// this to do.
-func (b *booter) ensureAdditionalGroups(id identity, groups []string) error {
+// skipped rather than failing sandbox boot over a foreseeable image mistake,
+// and logged, so a user left without it has a line saying why. The first call
+// runs before a feature's trees are fetched, so a group only a feature makes
+// (`brew`'s) is missing then and joined by JoinFeatureGroups after: the line
+// is information, not a warning. Root already has every access these groups
+// would grant, so it has none of this to do.
+func (b *booter) ensureAdditionalGroups(logger *slog.Logger, id identity, groups []string) error {
 	if id.uid == 0 || len(groups) == 0 {
 		return nil
 	}
@@ -381,6 +384,7 @@ func (b *booter) ensureAdditionalGroups(id identity, groups []string) error {
 			continue
 		}
 		if _, ok := b.lookup("getent", "group", group); !ok {
+			logger.Info("not adding the sandbox user to a group this machine does not have (yet)", "group", group, "user", id.name)
 			continue
 		}
 		present = append(present, group)

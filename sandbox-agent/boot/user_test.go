@@ -1,7 +1,9 @@
 package boot
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,7 +39,7 @@ func newFakeGroupsBooter(present ...string) (*booter, *fakeGroups) {
 
 func TestEnsureAdditionalGroupsAddsPresentGroups(t *testing.T) {
 	b, f := newFakeGroupsBooter("docker")
-	if err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker"}); err != nil {
+	if err := b.ensureAdditionalGroups(slog.New(slog.DiscardHandler), identity{uid: 1000, name: "dev"}, []string{"docker"}); err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	want := []string{"usermod", "--append", "--groups", "docker", "dev"}
@@ -48,7 +50,7 @@ func TestEnsureAdditionalGroupsAddsPresentGroups(t *testing.T) {
 
 func TestEnsureAdditionalGroupsSkipsMissingGroup(t *testing.T) {
 	b, f := newFakeGroupsBooter() // "docker" group doesn't exist on this image
-	if err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker"}); err != nil {
+	if err := b.ensureAdditionalGroups(slog.New(slog.DiscardHandler), identity{uid: 1000, name: "dev"}, []string{"docker"}); err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	if len(f.runs) != 0 {
@@ -56,9 +58,23 @@ func TestEnsureAdditionalGroupsSkipsMissingGroup(t *testing.T) {
 	}
 }
 
+// A group skipped is logged, naming it: a user left without the docker group
+// otherwise has nothing in the boot log saying why (#1471).
+func TestEnsureAdditionalGroupsLogsASkippedGroup(t *testing.T) {
+	b, _ := newFakeGroupsBooter("video")
+	var log bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&log, nil))
+	if err := b.ensureAdditionalGroups(logger, identity{uid: 1000, name: "dev"}, []string{"docker", "video"}); err != nil {
+		t.Fatalf("ensureAdditionalGroups: %v", err)
+	}
+	if !strings.Contains(log.String(), "group=docker") || strings.Contains(log.String(), "group=video") {
+		t.Fatalf("log = %q, want a line for docker only", log.String())
+	}
+}
+
 func TestEnsureAdditionalGroupsSkipsRoot(t *testing.T) {
 	b, f := newFakeGroupsBooter("docker")
-	if err := b.ensureAdditionalGroups(identity{uid: 0, name: "root"}, []string{"docker"}); err != nil {
+	if err := b.ensureAdditionalGroups(slog.New(slog.DiscardHandler), identity{uid: 0, name: "root"}, []string{"docker"}); err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	if len(f.runs) != 0 {
@@ -68,7 +84,7 @@ func TestEnsureAdditionalGroupsSkipsRoot(t *testing.T) {
 
 func TestEnsureAdditionalGroupsNoGroups(t *testing.T) {
 	b, f := newFakeGroupsBooter("docker")
-	if err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, nil); err != nil {
+	if err := b.ensureAdditionalGroups(slog.New(slog.DiscardHandler), identity{uid: 1000, name: "dev"}, nil); err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	if len(f.runs) != 0 {
