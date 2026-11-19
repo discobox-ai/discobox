@@ -1184,13 +1184,21 @@ flowchart LR
 
   | the machine | a rebuild |
   | --- | --- |
-  | keeps its data on its data volume | a new root, fresh from the base, never the plan's snapshot (a snapshot root that did not come up would be blamed and remade, and that remake destroys the machine with its volume): stopped, `Engine.Upgrade` to a fresh root from the base, started, and everything placed again; its data and cache volumes, name and settings kept |
+  | keeps its data on its data volume | a new root: stopped, `Engine.Upgrade` to a copy of its plan's snapshot where the rebuild found one (`snapshotFor`) and it is still published at the start that gives it, and to a fresh root from the base otherwise, started, and everything placed again; its data and cache volumes, name and settings kept |
   | does not (boxd; one made before its driver attached a volume; an agent that does not wire it) | in place: a new bootstrap, the same disk, a restart if it ran, since the disk is all the sandbox has |
 
-  The new root is asked for in `machine.json` (`newRoot`) before the driver
-  is called, and done by the next start, so a stopped machine gets it when
-  it starts and an upgrade cut short is finished by the start after (disco-vm
-  ADR 26-11-03-782 §3). A new root drops the placement record, so the agent
+  The new root is asked for in `machine.json` (`newRoot`, and the plan's
+  snapshot key, `newRootSnapshot`, which only a rebuild with its create in
+  hand looks up: a project layer's rebuild by the status poll is fresh)
+  before the driver is called, and done by the next start, so a stopped
+  machine gets it when it starts and an upgrade cut short is finished by the
+  start after (disco-vm ADR 26-11-03-782 §3), from the same root: the driver
+  finishes one only with the `From` it began with, so once asked
+  (`newRootAsked`) it is asked again from it, and only the driver's not-found
+  turns it into a fresh root; a VM of that name no done record names fails
+  the start instead. A snapshot root whose agent never answers is replaced
+  by a fresh root in the same start, its volumes kept, never destroyed
+  ([Snapshots](#snapshots)). A new root drops the placement record, so the agent
   layer is placed again, and re-reads the service's listen address into the
   bootstrap. The pool keeps the bootstrap whole in `machine.json`, so the
   status poll's convergence rebuilds with no create request.
@@ -1857,7 +1865,8 @@ provisions from scratch, and nothing below exists. `machinesnapshot.go`.
 - **A snapshot is dropped record first**, then its VM: by a cache clear
   (every one), by the reclaim (unused for `snapshotRetention`, by
   `lastUsed`), or because a sandbox made from it never came up. A create
-  holds the snapshot for its `Create` call: a VM a create holds is left for
+  holds the snapshot for its `Create` call, and a new root for its
+  `Upgrade` (`newRootFrom`): a VM a create holds is left for
   the sweep, and a build of that plan waits for the next create to ask. A
   clear waits out the build it ended before it drops anything, and a create
   writes `lastUsed` at most hourly. A sweep, like a build, holds the build
@@ -1875,7 +1884,12 @@ provisions from scratch, and nothing below exists. `machinesnapshot.go`.
   (`errAgentNeverUp`: its machine stopped first, or the wait ran out) on the
   machine's first start, before it has answered once, drops the snapshot, whose plan then waits as a failed
   build's does, is destroyed, and is made again fresh in the same start
-  (`remakeFresh`). Nothing else of a start blames the snapshot, a failed
+  (`remakeFresh`). A machine that keeps its data on its volume, given a
+  new root from the snapshot by a rebuild, whose agent never answers on
+  that root blames nothing: it is given a fresh root in the same start, its
+  volumes kept (`remakeOnFreshRoot`), and the snapshot stands, since a box
+  that has run can break its own volume, which its agent reads at boot.
+  Nothing else of a start blames the snapshot, a failed
   placement included. `machine.json` records the snapshot a machine was made
   from (`snapshot`); the sandbox's tree marks that its agent has answered
   (`snapshot-proven`, written by the wait that sees the answer).

@@ -494,3 +494,341 @@ func TestASnapshotBuildReachesItsPoolByTheSandboxesHop(t *testing.T) {
 		}
 	}
 }
+
+// A machine that keeps its data on its volume, rebuilt while its plan has a
+// snapshot, is given a root from that snapshot, and keeps its data and cache
+// volumes: its new root does not provision every feature from scratch.
+func TestAMachineKeptOnItsVolumeIsRebuiltOnItsPlansSnapshot(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	first := machineSnapshotCreate("sbx_7")
+	key := machineSnapshotKey(t, f, first)
+	if _, err := r.CreateSandbox(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	waitForSnapshotBuilds(t, r)
+	if _, ok, _ := r.readSnapshotRecord(key); !ok {
+		t.Fatal("no snapshot was built")
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+
+	req := machineSnapshotCreate("sbx_7")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if got := machineSnapshotKey(t, f, req); got != key {
+		t.Fatalf("the moved spec's plan is %s, want the same plan %s", got, key)
+	}
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want one", f.driver.upgrades)
+	}
+	if inst, err = f.owner.Instance(ctx, "sbx-7"); err != nil {
+		t.Fatal(err)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+	if record, _, _ := r.readMachineRecord("sbx_7"); record.Snapshot != key {
+		t.Errorf("the rebuilt machine's record names snapshot %q, want its plan's %s", record.Snapshot, key)
+	}
+	if !guestHas(t, f, "sbx_7", "/provisioned") {
+		t.Error("the rebuilt machine's new root does not hold what its plan's snapshot provisioned: it was given a fresh root from the base")
+	}
+}
+
+// snapshotMachineWithFiles creates sandboxID from a plan with a snapshot,
+// built behind its first create, and lays files on its root and volumes, so
+// that what a new root keeps can be read. It returns the plan's key.
+func snapshotMachineWithFiles(t *testing.T, f *machineFixture, sandboxID string) string {
+	t.Helper()
+	ctx := context.Background()
+	r := f.runtime
+	req := machineSnapshotCreate(sandboxID)
+	key := machineSnapshotKey(t, f, req)
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	waitForSnapshotBuilds(t, r)
+	if _, ok, _ := r.readSnapshotRecord(key); !ok {
+		t.Fatal("no snapshot was built")
+	}
+	name, err := machineName(sandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+	return key
+}
+
+// assertFreshRootKeptVolumes checks the running sandboxID's machine was given
+// a fresh root from the driver's base, no snapshot's, and kept its volumes.
+func assertFreshRootKeptVolumes(t *testing.T, f *machineFixture, sandboxID string) {
+	t.Helper()
+	name, err := machineName(sandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(context.Background(), name)
+	if err != nil {
+		t.Fatalf("%s's machine: %v; want it kept", sandboxID, err)
+	}
+	assertNewRootKeptVolumes(t, f.runtime, inst)
+	if record, _, _ := f.runtime.readMachineRecord(sandboxID); record.Snapshot != "" || record.NewRootSnapshot != "" || record.NewRootAsked {
+		t.Errorf("%s's record %+v; want a root no snapshot's, and nothing left asked", sandboxID, record)
+	}
+	if guestHas(t, f, sandboxID, "/provisioned") {
+		t.Errorf("%s's new root holds what a snapshot provisioned, want a fresh one", sandboxID)
+	}
+}
+
+// A rebuild's root from its plan's snapshot whose agent never comes up is
+// replaced by a fresh root in the same create, never destroyed: its volumes
+// hold the sandbox's data. The snapshot stands, and its plan is not held
+// back: a box that has run can break its own volume, which its agent reads at
+// boot, so its agent never answering is no word on a snapshot its plan's
+// other boxes share.
+func TestARebuiltRootFromASnapshotThatNeverComesUpIsMadeFreshKeepingItsVolumes(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_7")
+	f.agents.mu.Lock()
+	f.agents.sealedBroken = true
+	f.agents.mu.Unlock()
+	r.agentReadyTimeout = 2 * time.Second
+
+	req := machineSnapshotCreate("sbx_7")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	sb, err := r.CreateSandbox(ctx, req)
+	if err != nil {
+		t.Fatalf("a rebuild whose snapshot root never came up: %v", err)
+	}
+	if sb.Status != StatusRunning || f.driver.upgrades != 2 {
+		t.Fatalf("sbx_7 = %+v after %d upgrades, want it running on two: the snapshot's root, then a fresh one", sb, f.driver.upgrades)
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_7")
+	if _, ok, _ := r.readSnapshotRecord(key); !ok {
+		t.Error("a rebuilt box whose snapshot root never came up dropped the snapshot its plan shares")
+	}
+	if r.snapshotFailedRecently(key, time.Now()) {
+		t.Error("a rebuilt box whose snapshot root never came up held its plan back")
+	}
+}
+
+// A new root a pool from before newRootSnapshot asked for (newRoot alone,
+// which it asked fresh, and may have begun) is finished fresh, even when a
+// create in between finds the plan's snapshot: the driver finishes a root
+// only from the one it began.
+func TestANewRootAskedByAnOlderPoolIsFinishedFresh(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	snapshotMachineWithFiles(t, f, "sbx_5")
+	if err := r.StopSandbox(ctx, "sbx_5", nil); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(r.machineRecordPath("sbx_5"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old map[string]any
+	if err := json.Unmarshal(data, &old); err != nil {
+		t.Fatal(err)
+	}
+	old["newRoot"] = true
+	delete(old, "newRootSnapshot")
+	delete(old, "newRootAsked")
+	if data, err = json.Marshal(old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.machineRecordPath("sbx_5"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	req := machineSnapshotCreate("sbx_5")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want one", f.driver.upgrades)
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_5")
+}
+
+// A snapshot dropped between the rebuild that found it and the start that
+// gives the new root is a fresh root.
+func TestARebuildWhoseSnapshotIsGoneByItsStartGetsAFreshRoot(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_8")
+	if err := r.StopSandbox(ctx, "sbx_8", nil); err != nil {
+		t.Fatal(err)
+	}
+	req := machineSnapshotCreate("sbx_8")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	req.Config.Start = workerclient.NewOptBool(false)
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_8"); err != nil || !record.NewRoot || record.NewRootSnapshot != key {
+		t.Fatalf("sbx_8's record %+v, %v; want a new root asked from its plan's snapshot", record, err)
+	}
+	if err := r.dropSnapshot(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_8", nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want one", f.driver.upgrades)
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_8")
+}
+
+// An upgrade from a snapshot cut short is finished by the next start from the
+// same snapshot, as recorded before the driver was asked.
+func TestARebuildFromASnapshotCutShortIsFinishedFromIt(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_9")
+	f.driver.upgradeFailures = 1
+	req := machineSnapshotCreate("sbx_9")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err == nil || !strings.Contains(err.Error(), "cut short") {
+		t.Fatalf("create on an upgrade cut short = %v, want it failed", err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_9"); err != nil || !record.NewRoot || !record.NewRootAsked || record.NewRootSnapshot != key {
+		t.Fatalf("sbx_9's record %+v, %v; want the upgrade from its snapshot recorded as asked", record, err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_9", nil); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+	if record, _, _ := r.readMachineRecord("sbx_9"); record.Snapshot != key || record.NewRootAsked {
+		t.Errorf("sbx_9's record %+v; want its root the snapshot's, nothing left asked", record)
+	}
+	if !guestHas(t, f, "sbx_9", "/provisioned") {
+		t.Error("the finished upgrade's root is not the snapshot's")
+	}
+}
+
+// An upgrade from a snapshot cut short, whose snapshot is gone by the next
+// start, is asked again from it, and the driver's not-found makes it a fresh
+// root.
+func TestARebuildCutShortWhoseSnapshotIsGoneGetsAFreshRoot(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_6")
+	f.driver.upgradeFailures = 1
+	req := machineSnapshotCreate("sbx_6")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err == nil {
+		t.Fatal("a create on an upgrade cut short succeeded")
+	}
+	if err := r.dropSnapshot(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_6", nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 3 {
+		t.Fatalf("upgrades = %d, want the one cut short, the one from the gone snapshot, and the fresh one", f.driver.upgrades)
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_6")
+}
+
+// An upgrade from a snapshot cut short is never finished from a VM of the
+// snapshot's name that no done record names (a build of the plan under way):
+// the start fails and leaves the upgrade asked, and once the snapshot is
+// published again the next start finishes it from it.
+func TestARebuildCutShortIsNotFinishedFromAnUnpublishedSnapshot(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_4")
+	published, _, err := r.readSnapshotRecord(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.driver.upgradeFailures = 1
+	req := machineSnapshotCreate("sbx_4")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err == nil {
+		t.Fatal("a create on an upgrade cut short succeeded")
+	}
+	if err := r.unpublishSnapshot(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_4", nil); err == nil || !strings.Contains(err.Error(), "being built again") {
+		t.Fatalf("a start whose snapshot is unpublished = %v, want it refused", err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want only the one cut short", f.driver.upgrades)
+	}
+	if record, _, err := r.readMachineRecord("sbx_4"); err != nil || !record.NewRoot || !record.NewRootAsked || record.NewRootSnapshot != key {
+		t.Fatalf("sbx_4's record %+v, %v; want the upgrade from its snapshot still asked", record, err)
+	}
+	if err := r.writeSnapshotRecord(key, published); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_4", nil); err != nil {
+		t.Fatal(err)
+	}
+	if record, _, _ := r.readMachineRecord("sbx_4"); record.Snapshot != key {
+		t.Errorf("sbx_4's record %+v; want its root the snapshot's", record)
+	}
+	if !guestHas(t, f, "sbx_4", "/provisioned") {
+		t.Error("the finished upgrade's root is not the snapshot's")
+	}
+}
+
+// An upgrade from a snapshot cut short whose snapshot's VM is gone is not
+// asked again from it while a build of the plan is under way: the build
+// makes a VM of that name, which no done record names yet.
+func TestARebuildCutShortWaitsOutABuildOfItsSnapshot(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_3")
+	f.driver.upgradeFailures = 1
+	req := machineSnapshotCreate("sbx_3")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err == nil {
+		t.Fatal("a create on an upgrade cut short succeeded")
+	}
+	if err := r.dropSnapshot(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	// A build of the plan, past its hold check, before its create.
+	r.snapshots.mu.Lock()
+	r.snapshots.active = map[string]context.CancelFunc{key: func() {}}
+	r.snapshots.mu.Unlock()
+	if err := r.StartSandbox(ctx, "sbx_3", nil); err == nil || !strings.Contains(err.Error(), "being built again") {
+		t.Fatalf("a start while its snapshot is being built = %v, want it refused", err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want only the one cut short", f.driver.upgrades)
+	}
+	r.snapshots.mu.Lock()
+	delete(r.snapshots.active, key)
+	r.snapshots.mu.Unlock()
+	if err := r.StartSandbox(ctx, "sbx_3", nil); err != nil {
+		t.Fatal(err)
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_3")
+}
