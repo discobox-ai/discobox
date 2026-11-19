@@ -511,6 +511,8 @@ type pickerOptions struct {
 	// ambiguous is the error when there are several choices but no terminal to
 	// ask on.
 	ambiguous string
+	// confirmSingle asks even when there is only one choice.
+	confirmSingle bool
 	// recentKey namespaces the remembered last pick. Empty disables the memory.
 	recentKey string
 	// live rewrites the prompt line while the picker is up, for a question
@@ -521,17 +523,16 @@ type pickerOptions struct {
 	live func() (string, bool)
 }
 
-// pickOne returns the single item's ID when there is exactly one, and otherwise
-// asks the user to choose. It prompts on stderr so a chosen-then-streamed
-// command keeps stdout clean.
+// pickOne returns a sole choice immediately unless it needs confirmation.
+// The picker draws on stderr so stdout stays available for command output.
 func pickOne(cmd *cobra.Command, prompt string, items []pickerItem, opts pickerOptions) (string, error) {
 	askable := isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.ErrOrStderr())
 	switch {
-	case len(items) == 1:
+	case len(items) == 1 && !opts.confirmSingle:
 		return items[0].id, nil
 	case len(items) == 0:
 		return "", errors.New(opts.empty)
-	case len(items) > 1 && !askable:
+	case !askable:
 		return "", errors.New(opts.ambiguous)
 	}
 	model := newPickerModel(prompt, items, lastSelection(opts.recentKey))
