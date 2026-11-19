@@ -20,7 +20,9 @@ func TestEncodeParseRoundTrip(t *testing.T) {
 			}
 			got := bytes.Clone(frame[h.Size:])
 			Unmask(got, h.Mask)
-			if mask && n > 0 && bytes.Equal(frame[h.Size:], payload) {
+			// A key that leaves 16 bytes as they were is a 2^-32 chance;
+			// for one byte it is 1 in 256, so short payloads are not asked.
+			if mask && n >= 16 && bytes.Equal(frame[h.Size:], payload) {
 				t.Fatalf("n=%d: a masked payload went out as itself", n)
 			}
 			if !bytes.Equal(got, payload) {

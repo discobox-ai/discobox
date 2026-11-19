@@ -205,7 +205,8 @@ func dialTestWebSocket(t *testing.T, proxyAddr string, material proxy.ClientMate
 	if !pool.AppendCertsFromPEM(caPEM) {
 		t.Fatal("parse CA")
 	}
-	conn, err := tls.Dial("tcp", proxyAddr, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert}, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12})
+	dialer := &tls.Dialer{Config: &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert}, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12}}
+	conn, err := dialer.DialContext(t.Context(), "tcp", proxyAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
