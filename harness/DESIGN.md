@@ -867,8 +867,9 @@ ChatGPT also has a headless sign-in, and the rest connect with a key.
   keybinds; opencode 2 migrates an opencode 1 `tui.json` into it) — and
   `.local/state/opencode/model.json`, the `/models` choice.
 - **The policy baseline is `--auto`** on the launch, approving every tool use a
-  rule does not deny, and a launch prompt goes to `--prompt`, which the TUI
-  submits. opencode's system layer, `/etc/opencode`, is its *managed*
+  rule does not deny. The TUI submits the launch prompt from
+  `--prompt=<prompt>`. The joined form preserves a leading dash in the prompt.
+  opencode's system layer, `/etc/opencode`, is its *managed*
   configuration, which outranks a project's own rules, and the user's global
   config is replaced by a saved change — so neither is the place for it.
 - **Discobox's own settings for the harness** live in
