@@ -82,6 +82,7 @@ duplicated number.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [26-11-19-927](26-11-19-927-a-person-may-rebind-a-boxs-variable-to-another-secret-and-the-sentinel-stays.md) | A person may rebind a box's variable to another secret, and the sentinel stays | Proposed (would amend 26-11-02-022 §5's refusal of a variable holding another secret, for a person naming the binding it replaces; 26-11-03-329 §2's dormant additions, for a rebind; and 26-11-11-539 §1's generation, which names its secret) |
+| [26-11-19-735](26-11-19-735-ubuntu-apt-tries-ordered-mirrors-for-each-architecture.md) | Ubuntu apt tries ordered mirrors for each architecture | Proposed (would supersede [26-11-16-365](26-11-16-365-every-linux-base-is-the-newest-ubuntu-lts-read-from-a-fast-mirror.md) §3's mirror order) |
 | [26-11-18-571](26-11-18-571-a-server-routes-path-says-who-answers-it-and-nothing-is-under-api.md) | A server route's path says who answers it, and nothing is under `/api` | Accepted |
 | [26-11-18-067](26-11-18-067-a-framed-vz-vsock-connection-half-closes.md) | A framed vz VSOCK connection half-closes | Accepted (supersedes [26-11-17-182](26-11-17-182-a-vz-vsock-connection-is-always-drained-and-the-guest-sends-only-what-the-host-has-granted.md)'s deferral of `CloseWrite`: a framed connection's `CloseWrite` is its stream's half-close, and yamux's stream close timeout is off) |
 | [26-11-18-245](26-11-18-245-credential-requests-bound-bytes-and-routes.md) | Credential requests bound bytes and routes | Accepted (supersedes 26-11-02-022 §2’s policy-count limit) |
