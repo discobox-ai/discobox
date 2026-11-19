@@ -8,8 +8,8 @@ import (
 
 func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 	definitions := Definitions()
-	if len(definitions) != len(DefaultDrivers()) {
-		t.Fatalf("definitions = %d, want one per default driver (%d)", len(definitions), len(DefaultDrivers()))
+	if len(definitions) != len(harness.BuiltinDirectories()) {
+		t.Fatalf("definitions = %d, want one per built-in (%d)", len(definitions), len(harness.BuiltinDirectories()))
 	}
 	byID := map[string]harness.Definition{}
 	for _, definition := range definitions {

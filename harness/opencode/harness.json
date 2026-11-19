@@ -1,0 +1,602 @@
+{
+  "schema": 1,
+  "id": "opencode",
+  "bundle": "discobox-harness-opencode",
+  "name": "OpenCode",
+  "description": "OpenCode coding harness, with any provider it includes.",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "install": {
+    "requires": [
+      "core",
+      "node"
+    ],
+    "package": "@opencode/cli",
+    "executable": "opencode"
+  },
+  "launch": {
+    "args": [
+      "--standalone",
+      "--auto"
+    ],
+    "resume": [
+      "--continue"
+    ],
+    "prompt": {
+      "form": "option-joined",
+      "option": "--prompt"
+    }
+  },
+  "environment": {
+    "static": {
+      "OPENCODE_DISABLE_AUTOUPDATE": "1"
+    },
+    "fromSettings": ".config/discobox/opencode-harness.json"
+  },
+  "settings": {
+    "files": [
+      {
+        "path": ".config/discobox/opencode-harness.json",
+        "content": "{\n  \"about\": \"Discobox's settings for the opencode harness. Edit with: discobox admin harness edit opencode .config/discobox/opencode-harness.json\",\n  \"webSearch\": null\n}\n"
+      }
+    ],
+    "policy": [
+      {
+        "asset": "assets/managed-config.json",
+        "path": "/etc/opencode/opencode.json",
+        "layer": "managed"
+      }
+    ]
+  },
+  "localState": {
+    "trust": {
+      "strategy": "none",
+      "none": "--auto approves every tool use a rule does not deny; opencode asks no folder trust."
+    },
+    "memory": {
+      "strategy": "none",
+      "none": "opencode keeps no memories in the box."
+    }
+  },
+  "credentials": {
+    "store": {
+      "strategy": "native",
+      "document": ".config/discobox/opencode-credentials.json",
+      "database": ".local/share/opencode/opencode.db",
+      "importFailure": "could not load the configured opencode credentials; starting without them"
+    }
+  },
+  "hooks": {
+    "provider": "opencode",
+    "transport": "plugin",
+    "path": "/usr/local/libexec/discobox/opencode-hook-plugin",
+    "asset": "assets/hook-plugin"
+  },
+  "capture": {
+    "version": 1,
+    "watch": [
+      ".config/opencode/opencode.json",
+      ".config/opencode/opencode.jsonc",
+      ".config/opencode/config.json",
+      ".config/opencode/cli.json",
+      ".local/state/opencode/model.json",
+      ".config/discobox/opencode-harness.json",
+      ".config/discobox/opencode-credentials.json",
+      ".local/share/opencode/opencode.db",
+      ".local/share/opencode/opencode.db-wal"
+    ],
+    "providers": [
+      {
+        "id": "anthropic",
+        "envName": "OPENCODE_ANTHROPIC_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.anthropic.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai",
+        "envName": "OPENCODE_OPENAI_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://auth.openai.com/oauth/token",
+          "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+        },
+        "routes": [
+          {
+            "hosts": [
+              "api.openai.com"
+            ]
+          }
+        ],
+        "typeRoutes": {
+          "oauth": [
+            {
+              "hosts": [
+                "chatgpt.com"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "google",
+        "envName": "OPENCODE_GOOGLE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "generativelanguage.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google-vertex",
+        "envName": "OPENCODE_GOOGLE_VERTEX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "groq",
+        "envName": "OPENCODE_GROQ_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.groq.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "mistral",
+        "envName": "OPENCODE_MISTRAL_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.mistral.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openrouter",
+        "envName": "OPENCODE_OPENROUTER_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "openrouter.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "xai",
+        "envName": "OPENCODE_XAI_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://auth.x.ai/oauth2/token",
+          "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
+          "encoding": "form"
+        },
+        "routes": [
+          {
+            "hosts": [
+              "api.x.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "github-copilot",
+        "envName": "OPENCODE_GITHUB_COPILOT_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/swe/internal/memory/**",
+              "/mcp/readonly/**",
+              "/v1/messages/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.api.github.com",
+              "api.github.com"
+            ],
+            "paths": [
+              "/copilot_internal/**",
+              "/repos/github/copilot-cli/releases/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/**",
+              "/mcp/**"
+            ],
+            "blocked": true
+          },
+          {
+            "hosts": [
+              "*.github.com",
+              "github.com"
+            ],
+            "blocked": true
+          }
+        ]
+      },
+      {
+        "id": "deepseek",
+        "envName": "OPENCODE_DEEPSEEK_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.deepseek.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cerebras",
+        "envName": "OPENCODE_CEREBRAS_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.cerebras.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "zai",
+        "envName": "OPENCODE_ZAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.z.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "kimi-coding",
+        "envName": "OPENCODE_KIMI_CODING_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.kimi.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "minimax",
+        "envName": "OPENCODE_MINIMAX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.minimax.io"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "huggingface",
+        "envName": "OPENCODE_HUGGINGFACE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "router.huggingface.co"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "azure",
+        "envName": "OPENCODE_AZURE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "amazon-bedrock",
+        "envName": "OPENCODE_AMAZON_BEDROCK_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "google-gemini-cli",
+        "envName": "OPENCODE_GOOGLE_GEMINI_CLI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "cloudcode-pa.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google-antigravity",
+        "envName": "OPENCODE_GOOGLE_ANTIGRAVITY_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "daily-cloudcode-pa.googleapis.com",
+              "daily-cloudcode-pa.sandbox.googleapis.com",
+              "cloudcode-pa.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai-codex",
+        "envName": "OPENCODE_OPENAI_CODEX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "chatgpt.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "xai-oauth",
+        "envName": "OPENCODE_XAI_OAUTH_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.x.ai",
+              "cli-chat-proxy.grok.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "alibaba",
+        "envName": "OPENCODE_ALIBABA_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "togetherai",
+        "envName": "OPENCODE_TOGETHERAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.together.xyz"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fireworks-ai",
+        "envName": "OPENCODE_FIREWORKS_AI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.fireworks.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "perplexity",
+        "envName": "OPENCODE_PERPLEXITY_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.perplexity.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cohere",
+        "envName": "OPENCODE_COHERE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.cohere.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "opencode",
+        "envName": "OPENCODE_OPENCODE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "opencode.ai"
+            ]
+          }
+        ]
+      }
+    ],
+    "settings": [
+      {
+        "path": ".config/opencode/opencode.json",
+        "format": "jsonc",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "provider.*.options.apiKey",
+          "provider.*.options.headers",
+          "mcp.*.environment",
+          "mcp.*.headers",
+          "mcp.*.oauth.clientSecret"
+        ]
+      },
+      {
+        "path": ".config/opencode/opencode.jsonc",
+        "format": "jsonc",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "provider.*.options.apiKey",
+          "provider.*.options.headers",
+          "mcp.*.environment",
+          "mcp.*.headers",
+          "mcp.*.oauth.clientSecret"
+        ]
+      },
+      {
+        "path": ".config/opencode/config.json",
+        "format": "jsonc",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "provider.*.options.apiKey",
+          "provider.*.options.headers",
+          "mcp.*.environment",
+          "mcp.*.headers",
+          "mcp.*.oauth.clientSecret"
+        ]
+      },
+      {
+        "path": ".config/opencode/cli.json",
+        "format": "jsonc",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "provider.*.options.apiKey",
+          "provider.*.options.headers",
+          "mcp.*.environment",
+          "mcp.*.headers",
+          "mcp.*.oauth.clientSecret"
+        ]
+      },
+      {
+        "path": ".local/state/opencode/model.json",
+        "format": "json",
+        "createOnly": true,
+        "exclude": [
+          "recent"
+        ]
+      },
+      {
+        "path": ".config/discobox/opencode-harness.json",
+        "format": "json",
+        "exclude": [
+          "about"
+        ]
+      }
+    ],
+    "credentialFiles": [
+      ".config/discobox/opencode-credentials.json"
+    ],
+    "credentialSettings": [
+      {
+        "path": ".config/discobox/opencode-credentials.json",
+        "format": "json",
+        "fields": {
+          "*.id": "string",
+          "*.integrationID": "string",
+          "*.active": "boolean",
+          "*.label": "string",
+          "*.value.type": "string",
+          "*.value.key": "secret",
+          "*.value.access": "secret-or-placeholder",
+          "*.value.refresh": "secret-or-placeholder",
+          "*.value.expires": "number",
+          "*.value.accountId": "string",
+          "*.value.email": "string",
+          "*.value.projectId": "string",
+          "*.value.methodID": "string",
+          "*.value.metadata.accountID": "string",
+          "*.value.metadata.email": "string"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,573 @@
+{
+  "schema": 1,
+  "id": "omp",
+  "bundle": "discobox-harness-omp",
+  "name": "omp",
+  "description": "omp (oh-my-pi) coding harness, with any provider it signs in to.",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "install": {
+    "requires": [
+      "bun",
+      "core",
+      "node"
+    ],
+    "package": "@oh-my-pi/pi-coding-agent",
+    "executable": "omp",
+    "env": {
+      "ONNXRUNTIME_NODE_INSTALL_CUDA": "skip"
+    }
+  },
+  "launch": {
+    "args": [
+      "--auto-approve",
+      "--allow-home"
+    ],
+    "resume": [
+      "--continue"
+    ],
+    "prompt": {
+      "form": "separator"
+    }
+  },
+  "environment": {
+    "static": {
+      "PI_CONFIG_FILES": "/etc/omp/discobox.yml"
+    },
+    "aliases": [
+      {
+        "name": "PI_PROXY",
+        "from": "HTTPS_PROXY"
+      }
+    ],
+    "profile": "/etc/profile.d/omp-proxy.sh"
+  },
+  "settings": {
+    "policy": [
+      {
+        "asset": "assets/discobox.yml",
+        "path": "/etc/omp/discobox.yml",
+        "layer": "overlay"
+      }
+    ]
+  },
+  "localState": {
+    "trust": {
+      "strategy": "none",
+      "none": "--auto-approve approves every tool; omp asks no folder trust."
+    },
+    "memory": {
+      "strategy": "none",
+      "none": "omp keeps no memories in the box."
+    }
+  },
+  "credentials": {
+    "store": {
+      "strategy": "native",
+      "document": ".config/discobox/omp-credentials.json",
+      "database": ".omp/agent/agent.db",
+      "importFailure": "omp could not import the harness's credentials."
+    }
+  },
+  "hooks": {
+    "provider": "omp",
+    "transport": "extension",
+    "path": "/usr/local/libexec/discobox/omp-hook-extension.js",
+    "asset": "assets/hook-extension.js",
+    "homeFile": ".omp/agent/extensions/discobox-hooks.js"
+  },
+  "capture": {
+    "version": 1,
+    "watch": [
+      ".omp/agent/config.yml",
+      ".config/discobox/omp-harness.json",
+      ".config/discobox/omp-credentials.json",
+      ".omp/agent/agent.db",
+      ".omp/agent/agent.db-wal"
+    ],
+    "providers": [
+      {
+        "id": "anthropic",
+        "envName": "OMP_ANTHROPIC_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
+          "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        },
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.anthropic.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai",
+        "envName": "OMP_OPENAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.openai.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google",
+        "envName": "OMP_GOOGLE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "generativelanguage.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google-vertex",
+        "envName": "OMP_GOOGLE_VERTEX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "groq",
+        "envName": "OMP_GROQ_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.groq.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "mistral",
+        "envName": "OMP_MISTRAL_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.mistral.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openrouter",
+        "envName": "OMP_OPENROUTER_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "openrouter.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "xai",
+        "envName": "OMP_XAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.x.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "github-copilot",
+        "envName": "OMP_GITHUB_COPILOT_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/swe/internal/memory/**",
+              "/mcp/readonly/**",
+              "/v1/messages/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.api.github.com",
+              "api.github.com"
+            ],
+            "paths": [
+              "/copilot_internal/**",
+              "/repos/github/copilot-cli/releases/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/**",
+              "/mcp/**"
+            ],
+            "blocked": true
+          },
+          {
+            "hosts": [
+              "*.github.com",
+              "github.com"
+            ],
+            "blocked": true
+          }
+        ]
+      },
+      {
+        "id": "deepseek",
+        "envName": "OMP_DEEPSEEK_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.deepseek.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cerebras",
+        "envName": "OMP_CEREBRAS_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.cerebras.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "zai",
+        "envName": "OMP_ZAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.z.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "kimi-coding",
+        "envName": "OMP_KIMI_CODING_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.kimi.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "minimax",
+        "envName": "OMP_MINIMAX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.minimax.io"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "huggingface",
+        "envName": "OMP_HUGGINGFACE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "router.huggingface.co"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "azure",
+        "envName": "OMP_AZURE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "amazon-bedrock",
+        "envName": "OMP_AMAZON_BEDROCK_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "google-gemini-cli",
+        "envName": "OMP_GOOGLE_GEMINI_CLI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "cloudcode-pa.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google-antigravity",
+        "envName": "OMP_GOOGLE_ANTIGRAVITY_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "daily-cloudcode-pa.googleapis.com",
+              "daily-cloudcode-pa.sandbox.googleapis.com",
+              "cloudcode-pa.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai-codex",
+        "envName": "OMP_OPENAI_CODEX_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://auth.openai.com/oauth/token",
+          "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+        },
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "chatgpt.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "xai-oauth",
+        "envName": "OMP_XAI_OAUTH_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://auth.x.ai/oauth2/token",
+          "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
+          "encoding": "form"
+        },
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.x.ai",
+              "cli-chat-proxy.grok.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "alibaba",
+        "envName": "OMP_ALIBABA_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "togetherai",
+        "envName": "OMP_TOGETHERAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.together.xyz"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fireworks-ai",
+        "envName": "OMP_FIREWORKS_AI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.fireworks.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "perplexity",
+        "envName": "OMP_PERPLEXITY_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.perplexity.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cohere",
+        "envName": "OMP_COHERE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "api.cohere.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "opencode",
+        "envName": "OMP_OPENCODE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "multipleAccounts": true,
+        "routes": [
+          {
+            "hosts": [
+              "opencode.ai"
+            ]
+          }
+        ]
+      }
+    ],
+    "settings": [
+      {
+        "path": ".omp/agent/config.yml",
+        "format": "yaml",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "providers.*.apiKey",
+          "providers.*.headers",
+          "mcpServers.*.env",
+          "mcpServers.*.headers"
+        ]
+      },
+      {
+        "path": ".config/discobox/omp-harness.json",
+        "format": "json",
+        "exclude": [
+          "about"
+        ]
+      }
+    ],
+    "credentialFiles": [
+      ".config/discobox/omp-credentials.json"
+    ],
+    "credentialSettings": [
+      {
+        "path": ".config/discobox/omp-credentials.json",
+        "format": "json",
+        "fields": {
+          "version": "number",
+          "credentials.*.provider": "string",
+          "credentials.*.credential.type": "string",
+          "credentials.*.credential.key": "secret",
+          "credentials.*.credential.access": "secret-or-placeholder",
+          "credentials.*.credential.refresh": "secret-or-placeholder",
+          "credentials.*.credential.expires": "number",
+          "credentials.*.credential.accountId": "string",
+          "credentials.*.credential.email": "string",
+          "credentials.*.credential.projectId": "string",
+          "credentials.*.credential.methodID": "string"
+        }
+      }
+    ]
+  }
+}

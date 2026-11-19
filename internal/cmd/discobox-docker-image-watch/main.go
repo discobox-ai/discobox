@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/internal/harnessbundle"
 	"github.com/discobox-ai/discobox/pkg/devimage"
 )
 
@@ -77,6 +78,10 @@ type imageSpec struct {
 	// empty for an image whose build labels no manifest.
 	metadataFile string
 	metadataArg  string
+	// stage writes the build context before every build of it and every
+	// rendering of its metadata: a harness's bundle is staged from its
+	// declaration. Nil for an image built from its sources as they are.
+	stage func() error
 	// contextDir, dockerfile and target describe the same build as buildArgs,
 	// but declaratively, for build-mode: the server builds these on the
 	// destination Docker daemon, so there is no docker CLI invocation to derive
@@ -93,21 +98,6 @@ type imageSpec struct {
 	// builds it and the server saves its layout (server/internal/devbundles).
 	bundle    bool
 	layoutDir string
-}
-
-type harnessImage struct {
-	name string
-	dir  string
-}
-
-var harnessImages = []harnessImage{
-	{name: "codex", dir: "codex-cli"},
-	{name: "claude-code", dir: "claude-code"},
-	{name: "opencode", dir: "opencode"},
-	{name: "copilot", dir: "copilot"},
-	{name: "omp", dir: "omp"},
-	{name: "pi", dir: "pi"},
-	{name: "shell", dir: "shell"},
 }
 
 func main() {
@@ -590,48 +580,71 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			files:        sortedFiles(platformSeen),
 		},
 	}
-	for _, harnessImage := range harnessImages {
-		harnessDir := filepath.Join("harness", harnessImage.dir)
-		// The whole directory: it is the harness's feature, whose every file
-		// the bundle may carry (provision.yaml names them).
+	// Every built-in harness's bundle, staged from its declaration
+	// (ADR 26-11-06-596): the inventory, its declaration and assets, the
+	// shared runtime and Dockerfile, and the generator that stages them are
+	// what a bundle is made from, so a change to any rebuilds it.
+	harnessTree := filepath.Join(repoRoot, "harness")
+	builtins, err := harness.LoadBuiltins(os.DirFS(harnessTree))
+	if err != nil {
+		return nil, err
+	}
+	generatorFiles, err := goModuleFiles(ctx, repoRoot, repoRoot, "./internal/cmd/discobox-harness-bundle")
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range builtins {
 		bundleSeen := map[string]struct{}{}
-		if err := addTree(filepath.Join(repoRoot, harnessDir), bundleSeen); err != nil {
-			return nil, err
+		trees := []string{d.Directory}
+		if d.Coding() {
+			// The shell's bundle is its label alone; the runtime is a coding
+			// harness's.
+			trees = append(trees, harnessbundle.RuntimeDir)
 		}
-		addFile(repoRoot, ".dockerignore", bundleSeen)
-		if harnessImage.name != "shell" {
-			for _, name := range []string{"runtime.cjs", "settings.cjs", "settings-LICENSE.txt"} {
-				addFile(repoRoot, filepath.Join("harness", "capture", name), bundleSeen)
+		for _, tree := range trees {
+			if err := addTree(filepath.Join(harnessTree, tree), bundleSeen); err != nil {
+				return nil, err
 			}
 		}
-		// Every harness has one, `shell` included: a bundle names the platform
-		// API version it runs on (ADR 26-10-16-423 §2).
-		metadataFile := filepath.Join(repoRoot, harnessDir, "image.json")
-		if _, err := os.Stat(metadataFile); err != nil {
-			return nil, fmt.Errorf("harness %s: %w", harnessImage.name, err)
+		addFile(harnessTree, harnessbundle.Dockerfile, bundleSeen)
+		for _, file := range generatorFiles {
+			bundleSeen[file] = struct{}{}
 		}
-		bundleRef := "discobox-harness-" + harnessImage.name
-		// The bundle is FROM scratch, built from its feature and the shared
-		// exporter files using the repository-root context.
+		stageDir := filepath.Join(repoRoot, filepath.FromSlash(harnessbundle.StageDir), d.Directory)
+		target := harnessbundle.Target(d)
+		bundleRef := d.Bundle
 		specs = append(specs, imageSpec{
-			name:      "harness-" + harnessImage.name,
+			name:      "harness-" + d.ID,
 			devPrefix: bundleRef + ":dev-", buildDir: repoRoot,
-			envImageKey: harnessBundleEnvKey(harnessImage.name),
-			// The metadata argument is filled in from image.json by buildImage
-			// at build time; the placeholder marks where it lands.
-			buildArgs: bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, bundleRef), "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "bundle",
-				"--build-arg", harness.MetadataBuildArg+"=", "."),
-			metadataFile: metadataFile,
+			envImageKey: harnessBundleEnvKey(d.ID),
+			// The metadata argument is filled in from the staged label by
+			// buildImage at build time; the placeholder marks where it lands.
+			buildArgs: bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, bundleRef), "-f", filepath.Join(stageDir, "Dockerfile"), "--target", target,
+				"--build-arg", harness.MetadataBuildArg+"=", stageDir),
+			stage:        stageHarness(harnessTree, d.Directory, stageDir),
+			metadataFile: filepath.Join(stageDir, harnessbundle.LabelFile),
 			metadataArg:  harness.MetadataBuildArg,
-			contextDir:   repoRoot,
-			dockerfile:   filepath.Join(harnessDir, "Dockerfile"),
-			target:       "bundle",
+			contextDir:   stageDir,
+			dockerfile:   "Dockerfile",
+			target:       target,
 			bundle:       true,
 			layoutDir:    bundleLayoutDirOf(repoRoot, bundleRef),
 			files:        sortedFiles(bundleSeen),
 		})
 	}
 	return specs, nil
+}
+
+// stageHarness stages a harness's bundle from the tree as it is now, for the
+// build about to run.
+func stageHarness(tree, directory, stageDir string) func() error {
+	return func() error {
+		bundle, err := harnessbundle.Generate(os.DirFS(tree), directory)
+		if err != nil {
+			return err
+		}
+		return bundle.Write(stageDir)
+	}
 }
 
 // bundleLayoutDirOf is the directory the bundle named name is exported into.
@@ -1001,6 +1014,11 @@ func developmentImages(ctx context.Context, repoRoot string, specs []imageSpec, 
 // build only because the Dockerfiles refuse an empty one, so this is separated
 // from the docker invocation to be assertable on its own.
 func renderBuildArgs(spec imageSpec) ([]string, error) {
+	if spec.stage != nil {
+		if err := spec.stage(); err != nil {
+			return nil, err
+		}
+	}
 	buildArgs := append([]string{}, spec.buildArgs...)
 	replace := func(prefix, value string) {
 		for i, arg := range buildArgs {

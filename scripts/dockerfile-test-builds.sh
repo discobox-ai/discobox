@@ -89,13 +89,10 @@ build_dockerfile() {
       run_task "$dockerfile" build:agent-bundle
       run_task "$dockerfile" build:platform-bundle
       ;;
-    harness/*/Dockerfile)
-      # The harness that changed: a bundle is FROM scratch and builds alone.
-      harness_dir="${dockerfile#harness/}"
-      harness_dir="${harness_dir%/Dockerfile}"
-      harness="$harness_dir"
-      [ "$harness_dir" = codex-cli ] && harness=codex
-      run_task "$dockerfile" build:harness-bundle HARNESS="$harness"
+    harness/Dockerfile)
+      # The one Dockerfile every built-in harness's bundle is built with, each
+      # from the context staged from its declaration.
+      run_task "$dockerfile" build:harness-bundles
       ;;
     test/harness-stub/Dockerfile|test/performance/terminal-latency/image/Dockerfile|test/ux-smoke/image/Dockerfile)
       # Bundles like every harness's, each of which refuses to build without

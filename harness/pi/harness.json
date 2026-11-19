@@ -1,0 +1,495 @@
+{
+  "schema": 1,
+  "id": "pi",
+  "bundle": "discobox-harness-pi",
+  "name": "pi",
+  "description": "pi coding harness, with any provider it signs in to.",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "install": {
+    "requires": [
+      "core",
+      "node"
+    ],
+    "package": "@earendil-works/pi-coding-agent",
+    "executable": "pi",
+    "osPackages": {
+      "debian": [
+        "fd-find"
+      ]
+    }
+  },
+  "launch": {
+    "args": [
+      "--approve"
+    ],
+    "resume": [
+      "--continue"
+    ],
+    "prompt": {
+      "form": "separator",
+      "leadingAt": "space"
+    }
+  },
+  "environment": {
+    "static": {
+      "PI_SKIP_VERSION_CHECK": "1",
+      "PI_TELEMETRY": "0",
+      "PI_CLIPBOARD_OSC52": "1"
+    }
+  },
+  "settings": {},
+  "localState": {
+    "trust": {
+      "strategy": "none",
+      "none": "--approve trusts the project's own pi settings and resources for the process; pi asks no approval before a tool call."
+    },
+    "memory": {
+      "strategy": "none",
+      "none": "pi keeps no memories in the box."
+    }
+  },
+  "credentials": {
+    "store": {
+      "strategy": "file",
+      "document": ".pi/agent/auth.json"
+    }
+  },
+  "hooks": {
+    "provider": "pi",
+    "transport": "extension",
+    "path": "/usr/local/libexec/discobox/pi-hook-extension.js",
+    "asset": "assets/hook-extension.js",
+    "homeFile": ".pi/agent/extensions/discobox-hooks.js"
+  },
+  "capture": {
+    "version": 1,
+    "watch": [
+      ".pi/agent/settings.json",
+      ".pi/agent/keybindings.json",
+      ".config/discobox/pi-harness.json",
+      ".pi/agent/auth.json"
+    ],
+    "providers": [
+      {
+        "id": "anthropic",
+        "envName": "PI_ANTHROPIC_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
+          "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        },
+        "routes": [
+          {
+            "hosts": [
+              "api.anthropic.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai",
+        "envName": "PI_OPENAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.openai.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google",
+        "envName": "PI_GOOGLE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "generativelanguage.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google-vertex",
+        "envName": "PI_GOOGLE_VERTEX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "groq",
+        "envName": "PI_GROQ_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.groq.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "mistral",
+        "envName": "PI_MISTRAL_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.mistral.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openrouter",
+        "envName": "PI_OPENROUTER_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "openrouter.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "xai",
+        "envName": "PI_XAI_CREDENTIAL",
+        "types": [
+          "token",
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://auth.x.ai/oauth2/token",
+          "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
+          "encoding": "form"
+        },
+        "routes": [
+          {
+            "hosts": [
+              "api.x.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "github-copilot",
+        "envName": "PI_GITHUB_COPILOT_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "host": "api.github.com",
+        "routes": [
+          {
+            "hosts": [
+              "api.github.com"
+            ],
+            "methods": [
+              "GET"
+            ],
+            "paths": [
+              "/copilot_internal/v2/token"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "deepseek",
+        "envName": "PI_DEEPSEEK_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.deepseek.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cerebras",
+        "envName": "PI_CEREBRAS_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.cerebras.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "zai",
+        "envName": "PI_ZAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.z.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "kimi-coding",
+        "envName": "PI_KIMI_CODING_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.kimi.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "minimax",
+        "envName": "PI_MINIMAX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.minimax.io"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "huggingface",
+        "envName": "PI_HUGGINGFACE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "router.huggingface.co"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "azure",
+        "envName": "PI_AZURE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "amazon-bedrock",
+        "envName": "PI_AMAZON_BEDROCK_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "google-gemini-cli",
+        "envName": "PI_GOOGLE_GEMINI_CLI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "cloudcode-pa.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "google-antigravity",
+        "envName": "PI_GOOGLE_ANTIGRAVITY_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "daily-cloudcode-pa.googleapis.com",
+              "daily-cloudcode-pa.sandbox.googleapis.com",
+              "cloudcode-pa.googleapis.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai-codex",
+        "envName": "PI_OPENAI_CODEX_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "chatgpt.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "xai-oauth",
+        "envName": "PI_XAI_OAUTH_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.x.ai",
+              "cli-chat-proxy.grok.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "alibaba",
+        "envName": "PI_ALIBABA_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
+      },
+      {
+        "id": "togetherai",
+        "envName": "PI_TOGETHERAI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.together.xyz"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fireworks-ai",
+        "envName": "PI_FIREWORKS_AI_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.fireworks.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "perplexity",
+        "envName": "PI_PERPLEXITY_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.perplexity.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cohere",
+        "envName": "PI_COHERE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.cohere.ai"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "opencode",
+        "envName": "PI_OPENCODE_CREDENTIAL",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "opencode.ai"
+            ]
+          }
+        ]
+      }
+    ],
+    "settings": [
+      {
+        "path": ".pi/agent/settings.json",
+        "format": "json",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "providers.*.apiKey",
+          "providers.*.headers",
+          "lastChangelogVersion"
+        ]
+      },
+      {
+        "path": ".pi/agent/keybindings.json",
+        "format": "json",
+        "exclude": []
+      },
+      {
+        "path": ".config/discobox/pi-harness.json",
+        "format": "json",
+        "exclude": [
+          "about"
+        ]
+      }
+    ],
+    "credentialFiles": [
+      ".pi/agent/auth.json"
+    ],
+    "credentialSettings": [
+      {
+        "path": ".pi/agent/auth.json",
+        "format": "json",
+        "fields": {
+          "*.type": "string",
+          "*.key": "secret",
+          "*.access": "secret-or-placeholder",
+          "*.refresh": "secret-or-placeholder",
+          "*.expires": "number",
+          "*.accountId": "string",
+          "*.email": "string",
+          "*.projectId": "string",
+          "*.methodID": "string"
+        }
+      }
+    ]
+  }
+}

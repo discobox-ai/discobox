@@ -8,8 +8,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/harness/internal/harnesstest"
 )
 
+// The launcher prepares local trust and onboarding under the lock the
+// agent's handoff holds, so it never restores a raw login over a sentinel the
+// handoff just installed.
 func TestInitializationWaitsForCredentialHandoffLock(t *testing.T) {
 	for _, bin := range []string{"node", "flock", "sh"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -42,22 +47,12 @@ func TestInitializationWaitsForCredentialHandoffLock(t *testing.T) {
 	if ready, err := bufio.NewReader(output).ReadString('\n'); err != nil || ready != "locked\n" {
 		t.Fatalf("lock holder: %q %v", ready, err)
 	}
-	wrapper, err := os.ReadFile("capture.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimePath, err := filepath.Abs("../capture/runtime.cjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadataPath, err := filepath.Abs("image.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := strings.ReplaceAll(string(wrapper), "/usr/local/libexec/discobox/harness-capture/runtime.cjs", runtimePath)
-	script = strings.ReplaceAll(script, `$(dirname "$0")/claude-code-image.json`, metadataPath)
-	cmd := exec.CommandContext(t.Context(), "sh", "-c", script, "capture", "init")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	// The launcher's preparation, as the launcher runs it.
+	box := harnesstest.Stage(t, ".").Install(t, nil)
+	launchStub := "#!/bin/sh\nexit 0\n"
+	box.Stub(t, "claude", launchStub)
+	cmd := box.Command(t, "/usr/local/bin/discobox-harness-run")
+	cmd.Env = append(cmd.Env, "HOME="+home)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

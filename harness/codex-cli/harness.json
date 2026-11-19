@@ -1,0 +1,203 @@
+{
+  "schema": 1,
+  "id": "codex",
+  "bundle": "discobox-harness-codex",
+  "name": "Codex",
+  "description": "OpenAI Codex coding harness.",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "install": {
+    "requires": [
+      "core",
+      "node"
+    ],
+    "package": "@openai/codex",
+    "executable": "codex"
+  },
+  "launch": {
+    "resume": [
+      "resume",
+      "--last"
+    ],
+    "prompt": {
+      "form": "positional"
+    },
+    "home": {
+      "env": "CODEX_HOME",
+      "default": ".codex"
+    },
+    "retry": {
+      "status": 1,
+      "delays": [
+        2,
+        5,
+        10,
+        20
+      ],
+      "sessions": "sessions"
+    }
+  },
+  "environment": {
+    "defaults": {
+      "SSH_CONNECTION": "127.0.0.1 0 127.0.0.1 0"
+    }
+  },
+  "settings": {
+    "policy": [
+      {
+        "asset": "assets/system-config.toml",
+        "path": "/etc/codex/config.toml",
+        "layer": "system"
+      }
+    ]
+  },
+  "localState": {
+    "trust": {
+      "strategy": "system-layer",
+      "layer": "/etc/codex/config.toml",
+      "lock": "/run/lock/discobox-codex-trust.lock"
+    },
+    "memory": {
+      "strategy": "bind-mount",
+      "name": "codex",
+      "target": "memories"
+    }
+  },
+  "credentials": {
+    "secrets": [
+      {
+        "name": "OPENAI_API_KEY",
+        "required": true,
+        "oneOfGroup": "auth",
+        "delivery": "file",
+        "routes": [
+          {
+            "hosts": [
+              "api.openai.com"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "CODEX_OAUTH_TOKEN",
+        "required": true,
+        "oneOfGroup": "auth",
+        "delivery": "file",
+        "routes": [
+          {
+            "hosts": [
+              "chatgpt.com"
+            ]
+          }
+        ]
+      }
+    ],
+    "store": {
+      "strategy": "file",
+      "document": ".codex/auth.json"
+    }
+  },
+  "hooks": {
+    "provider": "codex-cli",
+    "transport": "command",
+    "format": "codex",
+    "path": "/etc/codex/hooks.json",
+    "timeout": 3,
+    "events": [
+      "SessionStart",
+      "SessionEnd",
+      "PreToolUse",
+      "PermissionRequest",
+      "PostToolUse",
+      "UserPromptSubmit",
+      "PreCompact",
+      "PostCompact",
+      "SubagentStart",
+      "SubagentStop",
+      "Stop",
+      "Interrupt"
+    ]
+  },
+  "capture": {
+    "version": 1,
+    "watch": [
+      ".codex/config.toml",
+      ".codex/auth.json"
+    ],
+    "providers": [
+      {
+        "id": "openai-key",
+        "envName": "OPENAI_API_KEY",
+        "types": [
+          "token"
+        ],
+        "host": "api.openai.com",
+        "routes": [
+          {
+            "hosts": [
+              "api.openai.com"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "openai",
+        "envName": "CODEX_OAUTH_TOKEN",
+        "types": [
+          "oauth"
+        ],
+        "oauth": {
+          "tokenUrl": "https://auth.openai.com/oauth/token",
+          "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+        },
+        "routes": [
+          {
+            "hosts": [
+              "chatgpt.com"
+            ]
+          }
+        ]
+      }
+    ],
+    "settings": [
+      {
+        "path": ".codex/config.toml",
+        "format": "toml",
+        "exclude": [
+          "projects",
+          "tui.model_availability_nux",
+          "tui.screen_reader_detection_done",
+          "api_key",
+          "model_providers.*.api_key",
+          "model_providers.*.experimental_bearer_token",
+          "model_providers.*.http_headers",
+          "mcp_servers.*.env",
+          "mcp_servers.*.http_headers",
+          "mcp_servers.*.bearer_token",
+          "shell_environment_policy.set",
+          "profiles.*.shell_environment_policy.set",
+          "mcp_servers.*.oauth.client_secret",
+          "profiles.*.mcp_servers.*.oauth.client_secret",
+          "model_providers.*.auth",
+          "profiles.*.model_providers.*.auth"
+        ]
+      }
+    ],
+    "credentialFiles": [
+      ".codex/auth.json"
+    ],
+    "credentialSettings": [
+      {
+        "path": ".codex/auth.json",
+        "format": "json",
+        "fields": {
+          "OPENAI_API_KEY": "secret-or-null",
+          "tokens.access_token": "secret",
+          "tokens.refresh_token": "placeholder",
+          "tokens.id_token": "id-token",
+          "tokens.account_id": "string",
+          "last_refresh": "string"
+        }
+      }
+    ]
+  }
+}

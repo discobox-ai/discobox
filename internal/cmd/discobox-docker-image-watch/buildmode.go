@@ -95,6 +95,11 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 // buildModeArgs renders a spec's build arguments: the manifest metadata read
 // from image.json, or none for an image whose build labels no manifest.
 func buildModeArgs(spec imageSpec) (map[string]string, error) {
+	if spec.stage != nil {
+		if err := spec.stage(); err != nil {
+			return nil, err
+		}
+	}
 	args := map[string]string{}
 	if spec.metadataFile != "" {
 		metadata, err := harnessMetadata(spec.metadataFile)

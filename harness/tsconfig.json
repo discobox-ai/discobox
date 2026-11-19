@@ -1,0 +1,27 @@
+{
+  // The harness runtime and every built-in's adapter (harness/DESIGN.md).
+  // tsc only checks: discobox-harness-bundle compiles each file to an ES
+  // module with esbuild when it stages a bundle, and node's test runner runs
+  // the sources by stripping their types.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": false,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts", "**/*.mts"],
+  "exclude": ["**/testdata/**"]
+}

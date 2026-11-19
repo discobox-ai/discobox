@@ -441,46 +441,45 @@ tasks:
 
   build:harness-bundles:
     desc: Build each included harness's bundle
+    vars:
+      # The inventory is the harness package's (harness/builtin.go), in the
+      # order the server seeds it.
+      HARNESSES:
+        sh: go run ./internal/cmd/discobox-harness-bundle list | cut -d' ' -f1
     cmds:
-      - task: build:harness-bundle
-        vars: { HARNESS: codex }
-      - task: build:harness-bundle
-        vars: { HARNESS: claude-code }
-      - task: build:harness-bundle
-        vars: { HARNESS: opencode }
-      - task: build:harness-bundle
-        vars: { HARNESS: copilot }
-      - task: build:harness-bundle
-        vars: { HARNESS: omp }
-      - task: build:harness-bundle
-        vars: { HARNESS: pi }
-      - task: build:harness-bundle
-        vars: { HARNESS: shell }
+      - for: { var: HARNESSES }
+        task: build:harness-bundle
+        vars: { HARNESS: '{{.ITEM}}' }
 
   build:harness-bundle:
-    desc: Build one harness's bundle (HARNESS=codex|claude-code|opencode|copilot|omp|pi|shell)
+    desc: Build one harness's bundle (HARNESS=its id or directory, e.g. codex or claude-code)
     requires:
       vars: [HARNESS]
     vars:
+      # HARNESS names the harness by its id or its directory; the bundle is
+      # named by the id and staged by the directory, as the watcher does.
+      HARNESS_ID:
+        sh: go run ./internal/cmd/discobox-harness-bundle resolve {{.HARNESS}} | cut -d' ' -f1
+      HARNESS_DIR:
+        sh: go run ./internal/cmd/discobox-harness-bundle resolve {{.HARNESS}} | cut -d' ' -f2
       # The bundle is what a harness is published as, what a box on it
       # applies, and what a third party builds FROM.
-      HARNESS_BUNDLE: '{{default (printf "discobox-harness-%s:local" .HARNESS) .HARNESS_BUNDLE}}'
-      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
-      IMAGE_CONFIG: harness/{{.HARNESS_DIR}}/image.json
-    preconditions:
-      - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
-        msg: "unknown harness: {{.HARNESS}}"
-      - sh: test -f harness/{{.HARNESS_DIR}}/image.json
-        msg: "harness {{.HARNESS}} has no image.json: every harness bundle names the platform API version it runs on"
+      HARNESS_BUNDLE: '{{default (printf "discobox-harness-%s:local" .HARNESS_ID) .HARNESS_BUNDLE}}'
+      HARNESS_STAGE: build/harness-bundles/{{.HARNESS_DIR}}
     cmds:
-      # Built as an argv list rather than an interpolated string: a manifest
-      # carries descriptions and env values with spaces in them, and an
-      # unquoted command substitution would split one into several arguments.
+      # Staged from the harness's declaration (ADR 26-11-06-596): the staged
+      # directory is the whole build context, its `target` the stage to build
+      # and its image.json the label. Built as an argv list rather than an
+      # interpolated string: a manifest carries descriptions and env values
+      # with spaces in them, and an unquoted command substitution would split
+      # one into several arguments.
       - |
         set -eu
-        docker build -f harness/{{.HARNESS_DIR}}/Dockerfile \
-          --build-arg "HARNESS_METADATA=$(jq -c . {{.IMAGE_CONFIG}})" \
-          -t {{.HARNESS_BUNDLE}} .
+        go run ./internal/cmd/discobox-harness-bundle stage -o {{.HARNESS_STAGE}} {{.HARNESS_DIR}}
+        docker build -f {{.HARNESS_STAGE}}/Dockerfile \
+          --target "$(cat {{.HARNESS_STAGE}}/target)" \
+          --build-arg "HARNESS_METADATA=$(jq -c . {{.HARNESS_STAGE}}/image.json)" \
+          -t {{.HARNESS_BUNDLE}} {{.HARNESS_STAGE}}
 
   compile:
     desc: Alias for build
@@ -852,6 +851,23 @@ tasks:
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
       - cd access && ../build/tools/{{.LINT_BIN}} run
+      - task: check:ts
+
+  check:ts:
+    desc: Lint, format-check and typecheck the harness runtime and adapters (oxlint, oxfmt, tsc)
+    # The harness's TypeScript follows repostd's node toolchain (its ADR 0002):
+    # oxlint type-aware, oxfmt in Remix's style, and tsc checking only, since
+    # discobox-harness-bundle compiles it at staging. The rules are the
+    # package.json scripts, which the hook runs too.
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm run check:ts
+
+  fmt:ts:
+    desc: Format the harness runtime and adapters with oxfmt
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm run fmt:ts
 
   check:deadcode:
     desc: Fail on functions no main or test program reaches on linux, darwin, or windows
@@ -931,21 +947,14 @@ tasks:
         set -eu
         missing=""
         # dockerfile:context. A COPY source is relative to the build context,
-        # not to the Dockerfile. Harness bundles share the repository-root
-        # context so they can carry their common exporter implementation.
+        # not to the Dockerfile. A harness bundle's context is staged from its
+        # declaration, and staging checks every path it names (below).
         for entry in \
           server/providers/dockerworker/sandbox-image/Dockerfile:server/providers/dockerworker/sandbox-image \
           pool-agent/Dockerfile:. \
           sandbox-agent/Dockerfile:. \
           vm-image/Dockerfile:. \
-          vm-image/kernel/Dockerfile:. \
-          harness/claude-code/Dockerfile:. \
-          harness/codex-cli/Dockerfile:. \
-          harness/opencode/Dockerfile:. \
-          harness/copilot/Dockerfile:. \
-          harness/omp/Dockerfile:. \
-          harness/pi/Dockerfile:. \
-          harness/shell/Dockerfile:.; do
+          vm-image/kernel/Dockerfile:.; do
           dockerfile="${entry%:*}"
           context="${entry##*:}"
           # All but the last token of a COPY are sources; --from copies from an
@@ -965,6 +974,10 @@ tasks:
           printf '%s' "$missing" >&2
           exit 1
         fi
+      # Every built-in harness's declaration validates and stages: what its
+      # bundle's context holds is generated, and generation refuses a missing
+      # or unreferenced asset (ADR 26-11-06-596 §2).
+      - go run ./internal/cmd/discobox-harness-bundle check
 
   check:ubuntu:
     desc: Every Linux stage builds on the one Ubuntu resolute pin and its mirror list, Docker CE and Go are one pinned version each, and every copy of each agrees
@@ -1088,12 +1101,20 @@ tasks:
       - cd access && ../build/tools/{{.LINT_BIN}} run --fix
 
   fmt:
+    desc: Format every tracked Go source, and the harness's TypeScript
+    cmds:
+      - task: fmt:go
+      - task: fmt:ts
+
+  fmt:go:
     desc: Format every tracked Go source
+    # What the Go format hook runs on a .go change; the harness's TypeScript
+    # has its own hook (12-harness-typescript.sh).
     cmds:
       - git ls-files -z '*.go' | xargs -0 gofmt -w
 
   fmt:verify:
-    desc: Fail when a tracked Go source is not gofmt-clean
+    desc: Fail when a tracked Go source is not gofmt-clean, or the harness TypeScript is not oxfmt-clean
     cmds:
       - |
         set -eu
@@ -1103,6 +1124,8 @@ tasks:
           echo "$unformatted" >&2
           exit 1
         fi
+      - pnpm install --frozen-lockfile
+      - pnpm run check:ts-fmt
 
   tidy:
     desc: Tidy every workspace module's go.mod/go.sum
@@ -2135,6 +2158,9 @@ tasks:
 
   release:images:
     desc: Build and push the multi-arch sandbox base image, the pool, agent and platform bundles, and the harness bundles for RELEASE_TAG
+    vars:
+      HARNESSES:
+        sh: go run ./internal/cmd/discobox-harness-bundle list | cut -d' ' -f1
     cmds:
       # Every sandbox container and every Docker pool's runs it; the server
       # names it as dockerworker.DefaultSandboxBaseImage (ADR 26-10-16-423 §10,
@@ -2179,47 +2205,38 @@ tasks:
       # development default is a local tag that resolves to nothing on a
       # user's machine — a released binary that did not publish them seeds
       # harnesses it cannot run. No harness is an image (ADR 26-10-16-423 §10).
-      - task: release:harness-bundle
-        vars: { HARNESS: claude-code }
-      - task: release:harness-bundle
-        vars: { HARNESS: codex }
-      - task: release:harness-bundle
-        vars: { HARNESS: opencode }
-      - task: release:harness-bundle
-        vars: { HARNESS: copilot }
-      - task: release:harness-bundle
-        vars: { HARNESS: omp }
-      - task: release:harness-bundle
-        vars: { HARNESS: pi }
-      - task: release:harness-bundle
-        vars: { HARNESS: shell }
+      - for: { var: HARNESSES }
+        task: release:harness-bundle
+        vars: { HARNESS: '{{.ITEM}}' }
 
   release:harness-bundle:
-    desc: Build and push one harness's bundle (HARNESS=claude-code|codex|opencode|copilot|omp|pi|shell)
+    desc: Build and push one harness's bundle (HARNESS=its id or directory, e.g. codex or claude-code)
     requires:
       vars: [HARNESS]
     vars:
-      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
-    preconditions:
-      - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
-        msg: "unknown harness: {{.HARNESS}}"
-      - sh: test -f harness/{{.HARNESS_DIR}}/image.json
-        msg: "harness {{.HARNESS}} has no image.json: every harness bundle names the platform API version it runs on"
+      HARNESS_ID:
+        sh: go run ./internal/cmd/discobox-harness-bundle resolve {{.HARNESS}} | cut -d' ' -f1
+      HARNESS_DIR:
+        sh: go run ./internal/cmd/discobox-harness-bundle resolve {{.HARNESS}} | cut -d' ' -f2
+      HARNESS_STAGE: build/harness-bundles/{{.HARNESS_DIR}}
     cmds:
+      - go run ./internal/cmd/discobox-harness-bundle stage -o {{.HARNESS_STAGE}} {{.HARNESS_DIR}}
       # The bundle, discobox-harness-<name>: what a box on the harness applies
       # and a third party builds FROM. Platform-neutral, one manifest and no
       # per-architecture index (ADR 26-10-16-423 §2): its layers are COPYs of
       # files that are the same on every architecture, and its steps select by
-      # platform when they run. The command substitution is left for the shell
-      # release:image runs, so a manifest carrying spaces stays one argument.
+      # platform when they run. The command substitutions are left for the
+      # shell release:image runs, so a manifest carrying spaces stays one
+      # argument.
       - task: release:image
         vars:
-          IMAGE: harness-{{.HARNESS}}
-          DOCKERFILE: harness/{{.HARNESS_DIR}}/Dockerfile
-          CONTEXT: .
+          IMAGE: harness-{{.HARNESS_ID}}
+          DOCKERFILE: '{{.HARNESS_STAGE}}/Dockerfile'
+          CONTEXT: '{{.HARNESS_STAGE}}'
+          TARGET: '$(cat {{.HARNESS_STAGE}}/target)'
           SINGLE_MANIFEST: "yes"
           BUNDLE: "yes"
-          BUILD_ARGS: --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
+          BUILD_ARGS: --build-arg HARNESS_METADATA="$(jq -c . {{.HARNESS_STAGE}}/image.json)"
 
   release:image:
     desc: Build and push one multi-arch image (IMAGE names it; DOCKERFILE/CONTEXT/TARGET/BUILD_ARGS override the defaults, SINGLE_MANIFEST=yes pushes one platform-neutral manifest)

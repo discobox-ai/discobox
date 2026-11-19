@@ -12,6 +12,7 @@ require (
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/ebitengine/purego v0.11.1
 	github.com/elazarl/goproxy v1.9.0
+	github.com/evanw/esbuild v0.28.2
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
 	github.com/hashicorp/yamux v0.1.2

@@ -13,7 +13,7 @@
 import { mkdtempSync, writeFileSync, readFileSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import plugin from "../hook-plugin/server.js";
+import plugin from "../assets/hook-plugin/server.js";
 
 const dir = mkdtempSync(join(tmpdir(), "opencode-plugin-driver-"));
 const log = join(dir, "published");

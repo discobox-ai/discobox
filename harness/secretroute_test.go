@@ -2,8 +2,6 @@ package harness
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -40,31 +38,25 @@ func TestADeclaredSecretReadsItsRoutes(t *testing.T) {
 // A missing static declaration must not hide a captured provider. Every
 // credential type needs registered policy or an explicit refusal to capture.
 func TestBuiltInCredentialDestinationInventory(t *testing.T) {
-	paths, err := filepath.Glob("*/image.json")
+	builtins, err := Builtins()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range paths {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
+	for _, declaration := range builtins {
+		path := declaration.Directory
+		var secrets []Secret
+		if len(declaration.Credentials.Secrets) > 0 {
+			if err := json.Unmarshal(declaration.Credentials.Secrets, &secrets); err != nil {
+				t.Fatal(err)
+			}
 		}
-		var manifest struct {
-			Harness struct {
-				Secrets  []Secret                   `json:"secrets"`
-				SaveBack *harnesscapture.Definition `json:"saveBack"`
-			} `json:"harness"`
-		}
-		if err := json.Unmarshal(raw, &manifest); err != nil {
-			t.Fatal(err)
-		}
-		if filepath.Dir(path) == "shell" {
-			if len(manifest.Harness.Secrets) > 0 || manifest.Harness.SaveBack != nil {
+		if path == "shell" {
+			if len(secrets) > 0 || declaration.SaveBack() != nil {
 				t.Fatal("shell now collects credentials: add explicit policy")
 			}
 			continue
 		}
-		d := manifest.Harness.SaveBack
+		d := declaration.SaveBack()
 		if d == nil || len(d.Providers) == 0 {
 			t.Fatalf("%s: coding harness has no credential inventory", path)
 		}
@@ -82,7 +74,7 @@ func TestBuiltInCredentialDestinationInventory(t *testing.T) {
 				}
 			}
 		}
-		for _, s := range manifest.Harness.Secrets {
+		for _, s := range secrets {
 			if len(s.Routes) == 0 {
 				t.Errorf("%s: static secret %s has no routes", path, s.Name)
 			}

@@ -20,7 +20,7 @@ import (
 // extensionSet reads one `const NAME = new Set([...])` out of the extension.
 func extensionSet(t *testing.T, name string) []string {
 	t.Helper()
-	text := readFile(t, "hook-extension.js")
+	text := readFile(t, "assets/hook-extension.js")
 	first := strings.Index(text, name+" = new Set([")
 	if first < 0 {
 		t.Fatalf("extension declares no %s", name)
@@ -56,7 +56,7 @@ func TestEveryPublishedEventHasACanonicalNameOrIsKnownNotTo(t *testing.T) {
 	noCanonicalName := []string{"before_subagent_spawn", "auto_retry_start", "credential_disabled"}
 	published := extensionSet(t, "PUBLISHED_EVENTS")
 	for _, event := range published {
-		canonical := harness.CanonicalHookEvent(Driver{}.ID(), event)
+		canonical := harness.CanonicalHookEvent(provider(t), event)
 		if slices.Contains(noCanonicalName, event) {
 			if canonical != "" {
 				t.Errorf("event %s now maps to %q; drop it from noCanonicalName", event, canonical)
@@ -83,7 +83,7 @@ func TestMappedEventsAreAllPublished(t *testing.T) {
 		"session_start", "session_shutdown", "before_agent_start", "tool_call", "tool_result",
 		"tool_approval_requested", "session_before_compact", "session_compact", "session_stop",
 	} {
-		if harness.CanonicalHookEvent(Driver{}.ID(), event) == "" {
+		if harness.CanonicalHookEvent(provider(t), event) == "" {
 			t.Errorf("event %s lost its canonical name", event)
 		}
 		if !slices.Contains(published, event) {
@@ -100,7 +100,7 @@ func TestEveryCanonicalSessionEventIsMainOnly(t *testing.T) {
 	mainOnly := extensionSet(t, "MAIN_ONLY_EVENTS")
 	for _, event := range extensionSet(t, "PUBLISHED_EVENTS") {
 		isSession := strings.HasPrefix(event, "session_") || event == "before_agent_start"
-		if isSession && harness.CanonicalHookEvent(Driver{}.ID(), event) != "" && !slices.Contains(mainOnly, event) {
+		if isSession && harness.CanonicalHookEvent(provider(t), event) != "" && !slices.Contains(mainOnly, event) {
 			t.Errorf("%s has a canonical name but is published for subagents too", event)
 		}
 		if strings.HasPrefix(event, "tool_") && slices.Contains(mainOnly, event) {
@@ -123,7 +123,7 @@ func TestStreamRateEventsAreNotPublished(t *testing.T) {
 // A publish holds a tool call up while it runs, so it is bounded, as the other
 // images' command hooks are, to between one and three seconds.
 func TestPublishIsBounded(t *testing.T) {
-	match := regexp.MustCompile(`const PUBLISH_TIMEOUT_MS = (\d+);`).FindStringSubmatch(readFile(t, "hook-extension.js"))
+	match := regexp.MustCompile(`const PUBLISH_TIMEOUT_MS = (\d+);`).FindStringSubmatch(readFile(t, "assets/hook-extension.js"))
 	if match == nil {
 		t.Fatal("extension declares no PUBLISH_TIMEOUT_MS")
 	}
@@ -189,8 +189,8 @@ func TestExtensionPublishes(t *testing.T) {
 	_, published, returned := runExtension(t, "/run/discobox/hooks.sock")
 	var events []string
 	for _, hook := range published {
-		if hook.Provider != (Driver{}).ID() {
-			t.Errorf("published under provider %q, want %q", hook.Provider, Driver{}.ID())
+		if hook.Provider != provider(t) {
+			t.Errorf("published under provider %q, want %q", hook.Provider, provider(t))
 		}
 		events = append(events, hook.Event)
 	}
@@ -238,5 +238,17 @@ func TestExtensionIsSilentWithoutTheHookSocket(t *testing.T) {
 	registered, published, _ := runExtension(t, "")
 	if len(registered) != 0 || len(published) != 0 {
 		t.Fatalf("registered %v and published %v with no hook socket", registered, published)
+	}
+}
+
+// The declaration names the provider hooks are published under, and the
+// extension publishes under its own constant: they are one name.
+func TestTheDeclaredProviderIsTheExtensions(t *testing.T) {
+	match := regexp.MustCompile(`const PROVIDER = "([^"]+)";`).FindStringSubmatch(readFile(t, "assets/hook-extension.js"))
+	if match == nil {
+		t.Fatal("the extension declares no PROVIDER")
+	}
+	if got := provider(t); got != match[1] {
+		t.Fatalf("declared hooks.provider %q, extension publishes as %q", got, match[1])
 	}
 }

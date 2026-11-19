@@ -1,10 +1,13 @@
-package harness
+package harness_test
 
 import (
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/harnesstest"
 )
 
 // npmByName is npm run as a command, as opposed to named in a comment or as
@@ -18,21 +21,23 @@ var npmByName = regexp.MustCompile(`(?m)^[^#\n]*(^|[\s;&|(])npm\s`)
 // into /usr/local/bin installs into that user's home, and never npm's default
 // global prefix.
 func TestNPMInstallersGoThroughNPMGlobal(t *testing.T) {
-	for script, pkg := range map[string]string{
-		"../sandbox-agent/features/node/install-pnpm.sh": "pnpm",
-		"claude-code/install-cli.sh":                     "@anthropic-ai/claude-code",
-		"codex-cli/install-cli.sh":                       "@openai/codex",
-		"copilot/install-cli.sh":                         "@github/copilot",
-		"omp/install-cli.sh":                             "@oh-my-pi/pi-coding-agent",
-		"opencode/install-cli.sh":                        "@opencode/cli",
-		"pi/install-cli.sh":                              "@earendil-works/pi-coding-agent",
-	} {
+	pnpm, err := os.ReadFile("../sandbox-agent/features/node/install-pnpm.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts := map[string]string{"install-pnpm.sh": string(pnpm)}
+	packages := map[string]string{"install-pnpm.sh": "pnpm"}
+	for _, dir := range harness.BuiltinDirectories() {
+		staged := harnesstest.Stage(t, dir)
+		if !staged.Declaration().Coding() {
+			continue
+		}
+		scripts[dir] = string(staged.FeatureFile(t, "install-cli.sh"))
+		packages[dir] = staged.Declaration().Install.Package
+	}
+	for script, text := range scripts {
+		pkg := packages[script]
 		t.Run(script, func(t *testing.T) {
-			data, err := os.ReadFile(script)
-			if err != nil {
-				t.Fatal(err)
-			}
-			text := string(data)
 			if !strings.Contains(text, "exec /usr/local/libexec/discobox/npm-global install "+pkg+"\n") {
 				t.Errorf("%s does not install %s with npm-global", script, pkg)
 			}

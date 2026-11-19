@@ -53,6 +53,8 @@
   Windows version resource a release executable links, and the check that it did),
   `discobox-main-build` (a main build's version, and the pruning of main builds
   older than fourteen days),
+  `discobox-harness-bundle` (stages a built-in harness's bundle from its
+  declaration, and checks every declaration),
   `discobox-vm-pins` (the release's refusal of a pool VM guest or kernel pin older
   than `vm-image/`).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.

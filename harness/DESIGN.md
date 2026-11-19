@@ -1,22 +1,142 @@
 # Harness Design
 
 This package owns the shared harness bundle contract (the manifest labels and
-their layering, volume and env resolution) and the built-in harness bundles:
-their manifests, harness-owned hook definitions, launchers, and save-back
-exporters.
+their layering, volume and env resolution) and the built-in harnesses: one
+declaration and one vendor adapter each, the shared runtime their launchers and
+save-back run on, and the generator their bundles are staged by.
 
 A harness has no setup step (ADR 26-11-02-152). Every registered harness runs;
 a box on one with no login saved starts it signed out, the person signs in
 there, and that box's save-back offers the login and settings as a harness
 change to save for every box on the harness config.
 
+## Built-in harness shape
+
+Every built-in harness is one declaration and one vendor adapter
+([ADR 26-11-06-596](../docs/adr/26-11-06-596-built-in-harnesses-have-one-declaration-and-one-vendor-adapter.md)).
+Its bundle is generated from them and stays the only published contract: a
+third-party bundle still registers through its labels and `provision.yaml`
+(ADR 26-10-16-423 §3) and never sees this format.
+
+```text
+harness/<directory>/
+  harness.json   the declaration: every part below, or the part declared
+                 absent with a reason ({"none": "..."} or strategy "none")
+  adapter.ts     the vendor operations the declaration selects, typed by
+                 runtime/types.ts (the shell's is empty)
+  DESIGN.md      vendor semantics, evidence and supported limitations
+  assets/        literal policy files and SDK hook entry points, each named by
+                 the declaration
+  testdata/, *_test.go
+```
+
+```mermaid
+flowchart LR
+  decl["harness/&lt;dir&gt;/harness.json<br/>adapter.ts, assets/"] --> gen
+  rt["harness/runtime/<br/>launch.sh, main.ts, runtime.ts, settings.mjs"] --> gen
+  df["harness/Dockerfile"] --> gen
+  gen["discobox-harness-bundle<br/>(internal/harnessbundle)"] --> stage["build/harness-bundles/&lt;dir&gt;/<br/>image.json, target, features/&lt;dir&gt;/"]
+  stage --> build["docker build: build:harness-bundle,<br/>release:harness-bundle, the dev watcher"]
+  build --> bundle["discobox-harness-&lt;id&gt;"]
+```
+
+`harness.Declaration` is the schema (version 1), decoded strictly: an unknown
+key, an unsupported schema, a missing or unreferenced asset, or two parts that
+disagree fail `Validate`, and so the build, `go test ./harness/...` and
+`discobox-harness-bundle check`. Each fact has one home, and every copy of it
+is generated: the package and command are both the install step and
+`agent.conf`; the launch is both the launcher and its drift check; a secret
+and the capture provider spending the same credential must name the same
+routes. Egress hosts, spending routes, rejection scopes and refresh endpoints
+stay separate fields with separate meanings.
+
+| Part | Declares | Generated as | Runs |
+| --- | --- | --- | --- |
+| Identity | `id` (harness ID and config slug), `bundle`, `name`, `description`, `platformAPIVersion` | label `harness.id`, `name`, `description`; the registry's `Definition` | at registration |
+| Install | `requires`, `package`, `executable`, `osPackages`, `env` | the `cli` step (`npm-global` install and check), a `packages` step, `agent.conf`, label `env` | at provisioning, machine-scoped |
+| Launch | `args`, `resume`, `prompt` (form, option, leading `@`), `home`, `retry` | `discobox-harness-run` and its `check-launcher.sh` | every conventional launch, as the sandbox user |
+| Environment | `static`, `defaults`, `aliases` and their `profile`, `fromSettings`, `volumes` | label `env` and `volumes`; launcher calls; a `/etc/profile.d` script | static in the manifest; the rest at launch and in login shells |
+| Settings | `files` (portable seeds), `policy` assets and their vendor `layer` | label `harness.files`; file steps | seeds by delivery; policy at provisioning |
+| Local state | `trust` (`none`, `local-state`, `system-layer`), `memory` (`none`, `managed-setting`, `bind-mount`) | launcher calls; the system layer's baseline | at launch, before the CLI |
+| Credentials | `secrets`, `egressHosts`, `store` (`none`, `file`, `native`) | label `secrets`, `egressHosts` | delivery by the agent; a native import at launch; export and handoff at capture |
+| Hooks | `provider`; `command` (format, path, timeout, events), `extension` (asset, path, home file) or `plugin` (asset, path) | a command hook file, or the asset's file steps and the home file | wired at provisioning; published on the vendor's callback |
+| Capture | the save-back definition, less its commands | label `saveBack`, naming `<id>-capture` | the agent's watch, export, reconsideration and handoff |
+
+**What every coding harness shares is the runtime's**, `harness/runtime`,
+which its feature installs at `/usr/local/libexec/discobox/harness-runtime/`:
+
+- `launch.sh` is the launcher. A harness's generated `discobox-harness-run`
+  is a short list of calls into it, in lifecycle order: environment defaults
+  and aliases; source-scoped memory; system-layer trust, as root under its
+  lock; the capture runtime's `prepare` under the capture lock (local-state
+  trust, a native store's guarded import, environment from settings, whose
+  `NAME=VALUE` lines it exports); then the prompt joined into one argument,
+  encoded as declared or replaced by the resume arguments, and the CLI
+  `exec`'d, or run under the declared retry. Argv is never evaluated by a
+  shell: declared arguments are words validation keeps free of quoting and
+  whitespace, and the prompt stays one quoted word. The platform's
+  pre-harness source gate runs before it, unchanged.
+- `runtime.ts` is the capture runtime, run by `main.ts`: the export, reconsideration and
+  acknowledged-handoff transaction, the native-store guard, `prepare` and the
+  system-layer `trust` writer, with safe file access, atomic writes,
+  reference resolution and baseline projection. It never branches on a
+  harness: the adapter the declaration selected supplies every vendor fact,
+  and a harness whose adapter lacks an operation its declaration selects is
+  refused when it is loaded (`operations`). The adapter is handed bounded
+  helpers and the working directory, never the sandbox's configuration.
+
+| Adapter operation | Selected by | Who |
+| --- | --- | --- |
+| `entries`, `files`, and `compose` unless it `retiresLogin` | a capture definition | every coding harness |
+| `apply` (`handoffNative` instead, for a native store) | a credential store | every coding harness |
+| `plan` (a provider store's secrets, the vendor `normalize`) | many logins in one store | opencode, omp, pi |
+| `login` (a renewable single login's secret and entry) | one login the control plane renews | claude-code, codex |
+| `exportNative`, `importNative`, `handoffNative` | `credentials.store: native` | opencode, omp |
+| `prepareLocalState` | `localState.trust: local-state` | claude-code |
+| `systemTrust` | `localState.trust: system-layer` | codex |
+| `launchEnvironment` | `environment.fromSettings` | opencode |
+| `material`, `settings`, `signedOut`, `unsupported`, `moreEntries`, `secondDocument`, `wanted`, `renewable`, `retiresLogin`, `singleCredential` | the vendor's document semantics, where they differ from the default | as each DESIGN.md says |
+
+**The runtime and adapters are TypeScript**, typed against one contract,
+`runtime/types.ts`, and run as ES modules on the box's own Node, which every
+coding harness's feature requires (22.19 or newer). Nothing compiles on the
+box and nothing builds in a Dockerfile: `discobox-harness-bundle` compiles each
+file to the ES module of the same name with esbuild's Go API as it stages, one
+file at a time with its types erased and nothing bundled, so what a box runs
+is the source's own code. Types are checked, linted and formatted by
+`go tool task check:ts` (tsc, oxlint type-aware and oxfmt, following
+repostd's node toolchain), and tests run the sources under node's own runner.
+The settings parsers are the one prebuilt module, `runtime/settings.mjs`,
+bundled with their npm dependencies by `go tool task
+generate:harness-settings`.
+
+**The installed paths are the ones they were**: `/usr/local/bin/discobox-harness-run`,
+`<id>-capture` (which a saved definition and a pinned bundle name),
+`<id>-image.json`, `agent.conf`, every policy and hook path, and every home
+path and credential document shape. New beside them are `<id>-harness.json`,
+`<id>-adapter.mjs` and `harness-runtime/`. A box provisioned before stays
+holding the files its earlier bundle installed that this one does not
+(`harness-capture/`, `<id>-normalize.cjs`, `codex-trust.cjs`,
+`opencode-credentials`): provisioning removes nothing a feature stops
+installing, and nothing reads them any more. A bundle is staged
+deterministically, so an unchanged harness's layer is the one a box holds.
+
+**Adding a built-in** is the [`add-harness`](../.agents/skills/add-harness/SKILL.md)
+checklist: fill `harness.json`, implement the operations it selects in
+`adapter.ts`, add the assets it names, write its `DESIGN.md`, add its
+directory to `builtinDirectories` (`builtin.go`), name its hook events in
+`hookevent.go`, and test it with `internal/harnesstest` and
+`runtime/runtime.test.ts`. No Dockerfile, Go driver, watcher entry, Taskfile
+entry or shell script is written by hand.
+
 ## Saving local configuration
 
 The six coding harnesses declare `harness.saveBack` (ADR 26-10-26-573): watched
 home-relative paths, installed export/handoff commands, settings exclusions,
 credential-file schemas, and authoritative provider metadata. Each built-in coding
-harness bundle carries `capture/runtime.cjs`, `capture/settings.cjs`, and the parser
-licenses beside its metadata and normalization module. The generic platform
+harness bundle carries the shared runtime (`runtime/main.ts` and
+`runtime/runtime.ts` compiled, `runtime/settings.mjs` and the parser licenses) beside its label, declaration
+and adapter. The generic platform
 ships none of these: export/handoff are arbitrary installed commands, not a Node
 API. These six built-ins use Node through their own feature dependency. Save-back
 is the only way a login or setting reaches a harness config from a box;
@@ -62,8 +182,8 @@ current settings and delivered baselines.
 Credential files still use strict schemas and sentinel references; they are never
 ordinary settings. Recognized exclusions do not themselves create diagnostics.
 JSON/JSONC accepts comments and trailing commas where the CLI does. TOML and YAML
-use the pinned `smol-toml` and `yaml` parsers, bundled into `settings.cjs` by
-`go tool task generate:harness-settings`; its source is `settings-source.cjs`.
+use the pinned `smol-toml` and `yaml` parsers, bundled into `settings.mjs` by
+`go tool task generate:harness-settings`; its source is `settings.mts`.
 The checked-in parser bundle and `settings-LICENSE.txt` ship with each coding
 harness, so export
 requires no package installation. Parse failures retain prior state. Older
@@ -101,17 +221,17 @@ only from the private agent input. Malformed guard context fails closed.
 The lock coordinates Discobox operations; it cannot serialize a vendor CLI's
 OAuth refresh against the control plane, the accepted race in the ADR.
 
-`capture/runtime.test.cjs` tests normalization, sentinel handling, generation
+`runtime/runtime.test.ts` tests normalization, sentinel handling, generation
 conflicts and native-command DB handoff. `TestBuiltInCaptureProtocol` also runs
 all six actual exporter commands and validates their output using the server's
 shared protocol validator.
 
 ## Image Contract
 
-Built-in harness Dockerfiles use the repository root as their build context,
-including release and remote dev builds, so each can copy the shared capture
-implementation into its own feature. The watcher tracks those assets for all six
-coding harnesses; shell carries no capture implementation.
+A built-in's bundle is built by `harness/Dockerfile` from the context staged
+from its declaration ([Built-in harness shape](#built-in-harness-shape)), in
+release, local and remote development builds alike; the watcher rebuilds it
+when its declaration, its assets, the runtime or the generator changes.
 
 - **A harness is a bundle** ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §2): a `FROM scratch` image of its features, `/features/<name>/`, applied
@@ -128,10 +248,10 @@ coding harnesses; shell carries no capture implementation.
   destinations it needs to reach (`harness.egressHosts`, joining the harness's
   egress level and never restricting anything themselves, ADR 26-10-01-032 §3),
   and any command overrides are published in the bundle's OCI labels (`harness.ImageMetadata`) for
-  server-side registration. `image.json` is the authoring source a label is
-  compacted from (see `Taskfile.yml`). Save-back bundles also install that same
-  document beside their capture command, which reads its provider
-  definitions, so refresh clients and route policy have one source.
+  server-side registration. A built-in's label is generated from its
+  declaration. Save-back bundles also install that same document beside
+  their capture command, which reads its provider definitions, so refresh
+  clients and route policy have one source.
 - **A configure declaration is refused** (ADR 26-11-02-152 §2): a `config`
   key under `harness` — the configure command, its reminder, its callback
   ports — fails to parse (`Image.UnmarshalJSON`), naming the retired key, so a
@@ -268,12 +388,12 @@ coding harnesses; shell carries no capture implementation.
   to "fix". This is the wrapper's half of the convention and part of what a
   third-party harness bundle signs up for; the runtime types the words as the
   user's shell split them and does not rejoin them, because what is on screen
-  is an editable command line the user may extend. Each included `launch.sh` is
-  tested by running it under a POSIX shell with a stubbed agent
-  (`internal/launchertest`).
+  is an editable command line the user may extend. Each built-in's generated
+  launcher is tested by installing its staged feature and running it under a
+  POSIX shell with a stubbed agent (`internal/harnesstest`).
 - **The prompt trails every launch**, relaunch included (ADR 0086 §4). A
-  wrapper resuming a session ignores it — both included launchers replace it
-  with their own resume flags — but because the command is *typed* (ADR 0027),
+  wrapper resuming a session ignores it — every included launcher replaces it
+  with its declared resume arguments — but because the command is *typed* (ADR 0027),
   a sandbox whose first launch failed still shows what it was asked to do, as
   an editable command line.
 - The resolved manifest is snapshotted onto the harness config at registration
@@ -285,26 +405,26 @@ coding harnesses; shell carries no capture implementation.
 - Runtime commands are never supplied by the server or pool-agent: the
   harness's feature installs its CLI when a box provisions it, as the next
   point says.
-- Each harness folder owns its `Dockerfile`, `image.json`, launcher, exporter,
-  and other image-specific assets. The folder is the harness's feature
+- A built-in's feature
   ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
-  §4): its `provision.yaml` installs the CLI (`install-cli.sh`) and places
-  each file where the harness reads it, requiring the platform features it
-  runs on (`node`, and `bun` for omp). An npm CLI is installed by the node
+  §4) is generated: its `provision.yaml` installs the CLI (`install-cli.sh`)
+  and places each file where the harness reads it, requiring the platform
+  features it runs on (`node`, and `bun` for omp). An npm CLI is installed by the node
   feature's `npm-global`: with the npm the node feature chose (adopted or
   its own), into Discobox's prefix `/usr/local/lib/discobox/npm`, its
   commands linked into `/usr/local/bin` — never `npm install -g`, whose npm
   and prefix are whatever the box's PATH finds, on boxd one user's nvm. The
   `cli` step's `check-cli.sh` (`npm-global check`) puts it back when it
-  left the prefix or was shadowed. Launchers, configure and capture scripts
+  left the prefix or was shadowed. Launchers and capture commands
   run `node` by name: the node feature links the chosen one into
   `/usr/local/bin`. See
   [`provision`](../sandbox-agent/provision/DESIGN.md#where-a-feature-installs).
-- **A harness Dockerfile builds one artifact, its bundle** (§2): one `FROM
-  scratch` stage, `bundle`, holding the feature's files under
-  `/features/<feature>/` and the manifest in labels, published as
-  `discobox-harness-<name>`, the name a box applies and a third party builds
-  `FROM`. `harness/shell`'s bundle carries no feature, only its label. A
+- **`harness/Dockerfile` builds one artifact per harness, its bundle** (§2):
+  `FROM scratch`, its `label` stage carrying the manifest and its `bundle`
+  stage adding the staged feature's files under `/features/<directory>/`,
+  published as `discobox-harness-<id>`, the name a box applies and a third
+  party builds `FROM`. The staged context's `target` names the stage: the
+  shell's bundle is its `label` stage, with no feature and so no layer. A
   published harness bundle is one `linux/amd64` manifest with no attestations
   — its content is the same on every architecture, and its steps select
   theirs when they run — where the platform bundle is a multi-architecture
@@ -372,8 +492,9 @@ coding harnesses; shell carries no capture implementation.
     `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.
 - **The agent version a sandbox runs comes from that store, not from the
   image** ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
-  A harness bundle's feature declares what it installed in
-  `/usr/local/libexec/discobox/agent.conf` (`AGENT_PACKAGE`, `AGENT_BIN`, and
+  A harness bundle's feature records what it installed in
+  `/usr/local/libexec/discobox/agent.conf`, generated from its declared
+  `install.package` and `install.executable` (`AGENT_PACKAGE`, `AGENT_BIN`, and
   optionally `AGENT_IMAGE_DIRS`, where its own copy is read from when not
   Discobox's npm prefix), and the platform does the rest from
   `/etc/profile.d/sandbox-agent-store.sh`: `discobox-agent-store pin` points
@@ -381,7 +502,7 @@ coding harnesses; shell carries no capture implementation.
   never again (a pin for another package of the same command, left by an
   earlier image, is replaced), and a detached `refresh` advances the store at most twice a day
   per pool user. Launchers are untouched by this — the pin is ahead of
-  `/usr/bin` on PATH, so `launch.sh` still just runs its agent — and an image
+  `/usr/bin` on PATH, so the launcher still just runs its agent — and an image
   with no `agent.conf` (the `shell` harness) is unaffected. Because the store is
   the version source, each image also turns its agent's own updater off:
   `DISABLE_AUTOUPDATER` in claude-code's env layer, `check_for_update_on_startup`
@@ -408,23 +529,33 @@ coding harnesses; shell carries no capture implementation.
   configure flow's declared, exactly-bound ports are retired with it
   (ADR 26-11-02-152 §2, superseding ADR 26-10-09-867).
 
-## Driver Model
+## Identity and registry
 
-- `harness.Driver` identifies one built-in harness's included bundle through
-  `ID()` and `Definition()`, and nothing else. The definition catalog is a
-  registration shortcut — seeding reads only a definition's `ID` (the slug),
-  `Name` and `Bundle` (`harnessdefs.Seeds`); runtime metadata comes from the
-  bundle's labels, composed on the platform layer. A driver holds no behavior
-  a harness bundle cannot declare for itself — that is what keeps a
-  third-party harness a pure registration story.
-- A `Definition` names its bundle, `discobox-harness-<id>`, through
-  `harness.BundleRef`, never as a literal, as `PlatformBundleRef` names the
-  platform bundle. One `BundleRegistry`/`BundleTag` pair backs every one,
-  unset and `local` by default and overwritten at link time by a release
-  (`Taskfile.yml`'s `release:binary`), so the built-in harnesses a binary seeds
-  are the bundles that shipped with it. One pair rather than a reference per
-  bundle: a release publishes them together, and independent references could
-  disagree about which release a sandbox is running.
+- A built-in's identity is four names, each declared once and none derived
+  from another: its **directory** (`codex-cli`), its **ID**, which is its
+  harness ID and its built-in config's slug (`codex`), its **hook provider**
+  (`hooks.provider`, `codex-cli`, ADR 0146), and its **bundle**
+  (`discobox-harness-codex`, held to `discobox-harness-<id>` by validation).
+  Renaming any is a migration, never a refactor.
+- `harness.Builtins` reads every built-in's declaration, embedded in this
+  package (`builtin.go`), in the inventory's order, `builtinDirectories`: the
+  one list of built-ins, which the registry, the bundle build and the
+  development watcher all read. The shell is last because nobody picks it for
+  an agent. `registry.Definitions` derives each built-in's `Definition` from
+  its declaration, for the control plane to seed built-in harness configs; it
+  is a manifest, not a dispatch table, and there is no Go package per harness.
+  Seeding reads only a definition's `ID` (the slug), `Name` and `Bundle`
+  (`harnessdefs.Seeds`); runtime metadata comes from the bundle's labels,
+  composed on the platform layer, which is what keeps a third-party harness a
+  pure registration story.
+- A `Definition` names its bundle through `harness.BundleRef`, never as a
+  literal, as `PlatformBundleRef` names the platform bundle. One
+  `BundleRegistry`/`BundleTag` pair backs every one, unset and `local` by
+  default and overwritten at link time by a release (`Taskfile.yml`'s
+  `release:binary`), so the built-in harnesses a binary seeds are the bundles
+  that shipped with it. One pair rather than a reference per bundle: a release
+  publishes them together, and independent references could disagree about
+  which release a sandbox is running.
 - A harness's **platform** is not a definition's to declare (ADR 0145 §1). A
   bundle names none: one artifact for every architecture, whose steps select
   the platform they run on, so a pool of any platform runs it, and the
@@ -432,102 +563,41 @@ coding harnesses; shell carries no capture implementation.
   26-11-01-122). See
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md).
 - A harness has no setup command. Every included coding harness starts
-  signed out in a box with nothing saved, and declares `saveBack` so a sign-in
+  signed out in a box with nothing saved, and declares `capture` so a sign-in
   there can be saved for the harness config — see
   [Credentials per harness](#credentials-per-harness).
-- Provider-specific implementations live in one folder per harness:
-  - `claude-code`
-  - `codex-cli`
-  - `opencode` — opencode 2 (`@opencode/cli`), which replaced opencode 1
-    (`opencode-ai`) and keeps its credentials in a database rather than a file
-    ([ADR 26-10-15-848](../docs/adr/26-10-15-848-the-opencode-harness-runs-opencode-2.md)).
-  - `copilot` — GitHub Copilot CLI (`@github/copilot`). Its slug, folder,
-    image and hook provider are all `copilot`.
-  - `omp` — omp, "oh-my-pi" (`@oh-my-pi/pi-coding-agent`), a Bun script that
-    runs on the base image's Bun. Its slug, folder, image and hook provider
-    are all `omp`.
-  - `pi` — pi (`@earendil-works/pi-coding-agent`), the agent omp descends
-    from, a Node script that runs on the base image's Node. Its slug, folder,
-    image and hook provider are all `pi`.
-  - `shell` — the login shell, and the end of the resolution chain. Its
-    Dockerfile installs nothing (the platform already ships the shell) and its
-    `image.json` names only the platform API version it runs on: no identity
-    to declare beyond its reserved slug, no secrets, no save-back, and its
-    env and volumes are the platform's layer. The reserved slug is also what withholds the harness-run
-    convention from it — a command typed into this terminal would be a second
-    shell inside the first. It is otherwise an ordinary harness in every
-    mechanism that touches it (ADR 0043, ADR 0086 §3).
-- `registry` is the list of harnesses a release ships, exposed as
-  `Definitions()` for the control plane to seed built-in harness configs. It is
-  a manifest, not a dispatch table: nothing looks a driver up by harness type at
-  runtime.
+- The built-ins, each with its own `DESIGN.md`:
+  [`claude-code`](claude-code/DESIGN.md), [`codex-cli`](codex-cli/DESIGN.md),
+  [`opencode`](opencode/DESIGN.md) (opencode 2, [ADR 26-10-15-848](../docs/adr/26-10-15-848-the-opencode-harness-runs-opencode-2.md)),
+  [`copilot`](copilot/DESIGN.md), [`omp`](omp/DESIGN.md), [`pi`](pi/DESIGN.md)
+  and [`shell`](shell/DESIGN.md), the login shell and the end of the
+  resolution chain, an ordinary harness in every mechanism that touches it
+  (ADR 0043, ADR 0086 §3) that declares every part absent.
 
 ## Managed Layers
 
 Prefer managed or system-owned configuration layers so hook capture is not
-subject to repo trust prompts or user/project override:
+subject to repo trust prompts or user/project override. Where each vendor's
+lives, and why, is that harness's `DESIGN.md` ("Hooks and policy layer"):
 
-- Claude Code: `/etc/claude-code/managed-settings.json` on Linux/WSL.
-  The image bakes this file beside the Claude Code binary, making the hook
-  definition an image-owned compatibility unit; the Go driver does not
-  construct or merge Claude Code's hook format.
-- Codex CLI: `/etc/codex/hooks.json`, laid by the harness's feature beside its
-  `/etc/codex/config.toml` system layer. The hook definition and Codex binary
-  are one image-versioned compatibility unit; the Go driver does not construct
-  or merge Codex's hook format. Every configured lifecycle event invokes the
-  generic publisher with its provider and event name while its stdin payload is
-  stored unchanged. System hooks are treated as managed and trusted by policy.
-- opencode: `/etc/opencode/opencode.json`, naming an image-owned plugin
-  directory by absolute path under `plugins`
-  ([ADR 0147](../docs/adr/0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md)).
-  opencode has no command hook at any layer — its lifecycle reaches plugins
-  and nothing else — so `hook-plugin/` (an opencode 2 plugin: a directory whose
-  `server.js` default-exports `{id, setup}`; a single file is refused) is what
-  claude-code, codex-cli and copilot declare as commands, and it invokes the same generic
-  publisher. It publishes only when `DISCOBOX_HOOK_SOCKET` is set, which keeps
-  it silent in a build and outside a Discobox terminal. It hears the lifecycle
-  through the bus, which a plugin subscribes to after opencode starts: the
-  TUI, which is how the launcher runs a session, creates its session later and
-  published every event in each run measured, while `opencode run` can create
-  its session, and exit, before the subscription is up. The managed layer is
-  read last of all, after the user's global config and a project's, and plugin
-  entries accumulate across layers rather than replacing, so naming this one
-  neither loses to a saved harness change nor drops a plugin the user
-  added. Its policy baseline is a launch flag rather than a system layer (see
-  [OpenCode](#opencode)).
-- Copilot: `/etc/github-copilot/policy.d/discobox.json`. Copilot loads every
-  file in that directory as **policy** hooks, beside the user's own
-  (`~/.copilot/hooks`, the `hooks` setting) rather than instead of them, and
-  keeps them when the user's settings say `disableAllHooks`. Its
-  `/etc/github-copilot/managed-settings.json` is read too, but not for hooks.
-  The file uses Copilot's own hook schema (`version: 1`, `bash` commands) and
-  publishes all fifteen of its events.
-- omp: **no system layer** for hooks or settings
-  ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
-  Its lifecycle reaches JavaScript extensions alone, as opencode's does, so
-  `hook-extension.js` is the unit, installed beside the launcher; the
-  image's harness files put a one-line re-export of it in
-  `~/.omp/agent/extensions/discobox-hooks.js`. omp discovers that directory
-  beside the user's own `extensions:` setting rather than instead of it — an
-  overlay naming `extensions:` replaces the user's list, which is why the
-  extension is not named there. It publishes an allowlist of events, each
-  payload projected to its scalar fields and a tool event's `input`: omp's
-  payloads carry the system prompt, transcript, images and compaction entries
-  under many names. The home file can be removed and
-  `--no-extensions` skips it, which claude-code's and Copilot's hooks survive.
-  The policy baseline is the `PI_CONFIG_FILES` overlay `/etc/omp/discobox.yml`,
-  scalars only, and two launch flags (see [omp](#omp)).
-- pi: **no system layer** and no settings overlay either ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)).
-  The same shape as omp's: `hook-extension.js` installed beside the
-  launcher, reached from `~/.pi/agent/extensions/discobox-hooks.js`. Each
-  published event carries the fields named for it, not a projection by shape:
-  pi's `before_agent_start` carries the whole system prompt as a plain string.
-  The policy baseline is the image's env and the launcher's `--approve` (see
-  [pi](#pi)).
+- Claude Code: `/etc/claude-code/managed-settings.json`, command hooks
+  generated from the declared events ([claude-code](claude-code/DESIGN.md)).
+- Codex: `/etc/codex/hooks.json` beside its `/etc/codex/config.toml` system
+  layer, generated likewise ([codex-cli](codex-cli/DESIGN.md)).
+- opencode: a plugin directory named by its managed layer,
+  `/etc/opencode/opencode.json`; it has no command hook
+  ([ADR 0147](../docs/adr/0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md),
+  [opencode](opencode/DESIGN.md)).
+- Copilot: `/etc/github-copilot/policy.d/discobox.json`, policy hooks beside
+  the user's own, generated likewise ([copilot](copilot/DESIGN.md)).
+- omp and pi: no system layer for hooks; an extension the bundle installs,
+  loaded from a home file the manifest delivers ([omp](omp/DESIGN.md),
+  [pi](pi/DESIGN.md)).
 
 Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
-the sandbox agent's generic publisher; no Go code in this package writes or
-merges a harness's settings.
+the sandbox agent's generic publisher. The generator writes a command
+transport's hook file from the declared events, and nothing writes or merges a
+harness's settings at runtime.
 
 The plugin publishes an **allowlist** of nine bus events plus the tool
 domain's `execute.before` / `.after` hooks, published as `tool.execute.before`
@@ -612,6 +682,8 @@ has no memory feature:
   parent. Memories written before the partition, at `.../harnesses/<name>/`,
   are copied into it once, and only for the uid that owns them. A launcher
   that cannot make the partition leaves the CLI on its local default.
+- Both are the shared launcher's memory strategies (`localState.memory`):
+  `managed-setting` and `bind-mount`.
 - Claude Code's `autoMemoryDirectory` is
   `.../users/<uid>/harnesses/claude-code/memories`. A path naming the uid
   cannot be baked into the image's `/etc/claude-code/managed-settings.json`,
@@ -645,7 +717,7 @@ a harness memory format.
 
 The same preference decides where a harness's *policy* baseline goes when
 the CLI has a system layer for it. The codex feature lays
-`/etc/codex/config.toml` (`codex-cli/system-config.toml`) with
+`/etc/codex/config.toml` (`codex-cli/assets/system-config.toml`) with
 `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` — the
 sandbox is the isolation boundary, so Codex's own approval prompts and inner
 sandbox would only guard a machine that exists to be written to. It is the
@@ -695,342 +767,13 @@ forward, at its own number when that is free (see [Image Contract](#image-contra
 every built-in also offers a device-code, paste-back or key sign-in for when
 it is not.
 
-### Claude Code
-
-`/login` inside a box writes one of two credentials, both read by the export:
-
-- `~/.claude/.credentials.json` — a subscription login's rotating OAuth blob
-  (access token + **refresh token** + expiry), saved as an `oauth` secret
-  (`CLAUDE_CODE_OAUTH_TOKEN`) with the fixed Anthropic `tokenUrl`/`clientId`
-  from the provider definition, so the control plane refreshes the access
-  token as it expires (see `resources/harnessconfigs/DESIGN.md` → OAuth
-  secrets). Only `/login` yields a refresh token; `claude setup-token` does
-  not. The blob's `scopes` and `subscriptionType` travel with it. They are not
-  credentials — they say what the login may do — and Claude Code gates Remote
-  Control on finding `user:profile` recorded beside the token, so they are
-  kept rather than assumed.
-- `primaryApiKey` in `~/.claude.json` — an Anthropic Console account's
-  long-lived managed key, saved as a plain `token` secret
-  (`ANTHROPIC_API_KEY`). A later sandbox gets its sentinel back **in the same
-  field**, through a credential document whose `primaryApiKey` is an explicit
-  secret reference. Startup also initializes this field from the current
-  sentinel context when absent or carrying a known old alias; it preserves a
-  newer local login.
-
-Neither credential is exported as an environment variable. Both are declared
-`delivery: file` (`harness.SecretDeliveryFile`), so the sentinel is minted and
-rendered into the file the CLI reads, and the variable is withheld — a CLI
-that finds both prefers the variable, and the variable carries none of the
-metadata the file does. The delivered credentials file's expiry is far out,
-so Claude Code never tries to rotate a sentinel.
-
-- The launcher runs `claude-code-capture init`. It merges onboarding, the
-  auto-mode nudge marker, and trust for the actual current directory into
-  `.claude.json`, preserving other projects, preferences and newer local
-  credentials. Malformed state is left intact and startup fails.
-- `.claude/settings.json` is exported as the user left it, and remains
-  literal. The bundle defaults to bypass-permission mode and disables
-  claude.ai connectors with `disableClaudeAiConnectors: true`. A saved or
-  explicitly configured settings file takes precedence over the bundle default.
-  The OAuth route to `mcp-proxy.anthropic.com` remains available when connectors
-  are enabled. `~/.claude.json` carries the credential and per-workspace trust
-  map and stays local to the box.
-- Both credentials declare `rejectionScope`: `api.anthropic.com`, `/v1/messages`. A
-  secret's `rejectionScope` (`harness.RejectionRule`: a host, and path prefixes
-  on a segment boundary) names the requests that answer for the credential;
-  only what an upstream makes of one of them draws or clears the refused
-  credential's band. Anthropic's runner poll refuses a subscription login that
-  works and its event logging accepts anything, so neither is evidence. A
-  harness whose API answers the same everywhere declares none
-  ([ADR 26-10-13-595](../docs/adr/26-10-13-595-a-harness-names-the-requests-whose-refusal-means-its-login-is-dead.md)).
-
-### Codex CLI
-
-Codex's onboarding offers **ChatGPT in a browser**, **ChatGPT by device
-code**, or an API key, and all of them write `$CODEX_HOME/auth.json`. The
-browser sign-in completes against a callback server on the box's
-localhost:1455; device code is the way when that port is taken on the user's
-machine.
-
-- **Both credentials are delivered as a file, never an environment variable**
-  (`delivery: file`). Codex leaves no choice: the interactive TUI reads no
-  credential variable at all (only `codex exec` honors `CODEX_API_KEY`), and a
-  ChatGPT token has no variable to be read from. `~/.codex/auth.json` is the
-  one delivery both halves of the harness agree on, so it is delivered as a
-  credential document with the sentinel in the credential's place.
-- An **API key** sign-in leaves `{"OPENAI_API_KEY": "sk-…"}`, saved as a plain
-  `token` secret (`OPENAI_API_KEY`).
-- A **ChatGPT** sign-in leaves `tokens.{id_token, access_token, refresh_token,
-  account_id}`, saved as an `oauth` secret (`CODEX_OAUTH_TOKEN`) with OpenAI's
-  fixed token endpoint and client id and the access token's own `exp`, so the
-  control plane refreshes it as it expires. Two details of the delivered file
-  follow from the credential living in the control plane:
-  - `last_refresh` is far future. Codex rotates a token whose `last_refresh` is
-    older than 28 days, and a rotation from inside a sandbox could not succeed —
-    the refresh token is not there — nor does it need to, since a sentinel does
-    not go stale.
-  - The account travels as **claims in an unsigned `id_token`**, rebuilt from
-    the real one, not as the signed token codex wrote. Codex needs the claims —
-    it addresses the ChatGPT backend with the account id, and refuses to start
-    without a plan type — and never verifies the signature, so re-signing buys
-    nothing while keeping a signed identity assertion out of a harness file that
-    is not a secret. The plan type is also recorded on the secret as
-    `subscriptionType`, the same non-secret "what this grant is" metadata
-    claude-code records scopes as.
-- There is no baseline auth.json: an empty one reads as signed in.
-- Literal user preferences in `~/.codex/config.toml` are exported, excluding
-  parsed `[projects]` tables. Before every start the launcher records its
-  actual cwd in `/etc/codex/config.toml`, under a system-layer lock. The
-  system file combines the image's defaults with an inline TOML `projects`
-  map, retaining previously trusted folders. Restarts, source-less boxes and
-  alternate working directories use the same path. Later direct `codex`
-  starts in those folders see the same trust, without launch flags or edits
-  to portable user preferences. Trusting `/` does not trust child repositories.
-  The pinned-binary PTY test (`task test:codex-trust`) runs the old override
-  as an untrusted control, then launch, restart and direct starts. It removes
-  explicit approval/sandbox defaults from its fixture because those can hide
-  a broken trust entry. Its Codex version is pinned in
-  `test/codex-trust/version`; a vendor upgrade updates that contract test.
-- Existing stored trust suffixes and credential references are converted in
-  place by the server migration. Old sandbox bootstraps and capture checkpoints
-  use the same bounded conversion on read. Unknown executable templates fail
-  explicitly; migration never evaluates them or discards user preferences.
-- **The launcher starts Codex again when it failed before its session
-  began.** A signed-in Codex TUI exits with status 1 at bootstrap when its
-  first requests cannot connect (`account/read failed ... workspace routing
-  discovery failed`), with no retry of its own, and that ends the box's job. So
-  the launcher runs `codex` rather than exec'ing it, and on status 1 with no
-  rollout under `$CODEX_HOME/sessions` new or grown (a resume appends to its
-  rollout) it starts it again, five attempts in all, waiting 2, 5, 10 and 20
-  seconds. A new or grown rollout means the session began and holds the
-  prompt, so it is never started again; a clean exit (how a user quits
-  sign-in), a death by signal, and any other status (a usage error, a missing
-  binary) are left alone. Rollouts are compared by name and size, not by time,
-  so no clock has to agree with another. Claude Code's launcher has none: a
-  failed model request at its start leaves it on its screen, retrying the
-  request itself.
-
-### OpenCode
-
-A user connects as many models.dev providers as they like with `/connect`, so
-the image declares no secrets at all: their names are only known once
-something is connected. See
-[ADR 0127](../docs/adr/0127-the-opencode-harness-runs-opencode-1.md) and
-[ADR 26-10-15-848](../docs/adr/26-10-15-848-the-opencode-harness-runs-opencode-2.md).
-ChatGPT's browser sign-in calls back to 1455 and DigitalOcean's to 1456;
-ChatGPT also has a headless sign-in, and the rest connect with a key.
-
-- **Every opencode command runs `--standalone`**: the launcher and the
-  credentials helper. Without it opencode talks to a per-user background
-  service, which outlives the terminal that started it and would run the hook
-  plugin in that terminal's environment for every terminal after it.
-- **Credentials are rows in opencode's database**, read and written only
-  through `opencode auth export` and `auth import`, opencode's own interchange
-  format: `{id, integrationID, label, active, value}`, where `value` is
-  `{type: key, key}`, `{type: oauth, methodID, access, refresh, expires,
-  metadata}`, or `{type: external, methodID}`. Import never updates an id it
-  already holds.
-- **One secret per provider**, `OPENCODE_<PROVIDER>_CREDENTIAL`, from the
-  provider's active credential. The name is stable per provider, so a save
-  that replaces a credential updates its secret in place. An `external`
-  credential holds no secret and is not captured.
-- **The secret's type follows how the credential renews.** A key is a `token`.
-  An OAuth sign-in whose `refresh_token` grant the control plane can perform —
-  OpenAI (ChatGPT, the client and endpoint the codex image refreshes), xAI
-  (whose endpoint takes the request form-encoded, recorded as
-  `tokenRequestEncoding: form`) — is an `oauth` secret. Any other OAuth sign-in
-  (GitHub Copilot; DigitalOcean and Snowflake, which cannot be renewed from
-  here) is a `token` holding its access token, and the export says when it
-  expires.
-- **Delivery is the export as a credential document**,
-  `.config/discobox/opencode-credentials.json`: each entry under the image's
-  own id, `cred_discobox_<provider>`, with the sentinel in place of its key or
-  access token, `refresh` a placeholder that can never be spent (or the
-  sentinel, where the access token is also the refresh field), and `expires`
-  far future where the control plane renews the token, so opencode never
-  attempts a refresh the sandbox could not complete. The launcher runs
-  `opencode-credentials sync` before opencode starts. Each `opencode auth`
-  command is a standalone server start (10 to 40 seconds on a loaded machine),
-  so it runs nothing while what it last synced is still what is delivered;
-  otherwise it exports (unless there is no database yet), logs out and
-  imports only the image-owned credentials that differ, and switches an
-  image-owned credential that is not active to active wherever its provider
-  has another credential (import activates one only for a provider that has
-  none, and logging out a provider's active credential promotes another). A
-  credential the user connected by hand in a sandbox has another id and is
-  never logged out or changed, though a changed configuration takes back
-  which one is active. A configuration made under ADR
-  0127 delivers opencode 1's `auth.json` instead; the helper reads it with
-  opencode's own legacy mapping, so it keeps working until a new sign-in is
-  saved, and on a sandbox that ran opencode 1 the switch keeps it active over
-  opencode's own import of the same file. The helper is the one place the
-  image's entries are made (`own`).
-- It also exports opencode's settings as the user left them — the global
-  `opencode.json`, `opencode.jsonc`, `config.json`, and `cli.json` (theme,
-  keybinds; opencode 2 migrates an opencode 1 `tui.json` into it) — and
-  `.local/state/opencode/model.json`, the `/models` choice.
-- **The policy baseline is `--auto`** on the launch, approving every tool use a
-  rule does not deny. The TUI submits the launch prompt from
-  `--prompt=<prompt>`. The joined form preserves a leading dash in the prompt.
-  opencode's system layer, `/etc/opencode`, is its *managed*
-  configuration, which outranks a project's own rules, and the user's global
-  config is replaced by a saved change — so neither is the place for it.
-- **Discobox's own settings for the harness** live in
-  `.config/discobox/opencode-harness.json`, a plain harness file the image
-  declares: `webSearch`. It is edited in a box and saved as a harness change,
-  or with `discobox admin harness edit opencode
-  .config/discobox/opencode-harness.json`. opencode 2 searches with every
-  provider by default, through a keyless search service. The launcher reads
-  `webSearch`: `false` denies the `websearch` permission through
-  `OPENCODE_CONFIG_CONTENT`, which takes the tool away from the model; `true`
-  and `null` — the image's baseline — leave opencode's default.
-
-### GitHub Copilot
-
-A box signs in inside Copilot, by `/login` or with a token
-([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md)).
-`/login`'s browser sign-in calls back to a port it picks fresh each run
-(`listen(0)`; GitHub accepts any loopback port); device code is the way when
-that port is taken on the user's machine. Its token is an OAuth App `gho_`
-token with `repo` scope among others; a fine-grained PAT with only "Copilot
-Requests" is the least-privilege alternative.
-
-- **Storage is `~/.copilot/config.json`**, Copilot's own state file (JSON
-  under `//` comment lines): `authTokens["<host>:<login>"].token`, for the
-  account `lastLoggedInUser` names. A sandbox has no keychain, and Copilot
-  stores the token in plaintext only under `storeTokenPlaintext`, which the
-  export never carries into shared settings.
-- **One `token` secret, `COPILOT_GITHUB_TOKEN`, delivered in the
-  environment.** Copilot documents that variable for headless use and it
-  outranks a stored login; `gh` and git never read it, and Copilot strips it
-  from the environment of the commands its agent runs. Neither sign-in yields
-  anything to refresh. `config.json` is never exported as a file: it is
-  Copilot's state, rewritten as it runs. After a save the handoff removes the
-  saved plaintext token; a running process keeps its previous environment
-  until it restarts.
-- **Only github.com.** A login to another host is refused by the export: an
-  Enterprise Cloud account also needs `COPILOT_GH_HOST` in every sandbox, and
-  a harness change carries no env.
-- **The token is held to Copilot's own traffic.** `COPILOT_GITHUB_TOKEN`
-  declares routes (ADR 26-10-02-924), which a save writes onto the secret:
-  Copilot's own endpoints under `githubcopilot.com` and `api.github.com` are
-  sent; its MCP server, its agents and the rest of `github.com` are blocked
-  routes, which a judge used to read (ADR 26-10-27-880); anything else is
-  refused. The agent needs a binding of its own to do more on GitHub.
-- It exports `~/.copilot/settings.json` as the user left it (`/config model`,
-  theme, status line), minus `storeTokenPlaintext`.
-- **The policy baseline is two switches.** `COPILOT_ALLOW_ALL=true` in the
-  image's env trusts the directory Copilot starts in — without it an
-  interactive launch stops on a folder-trust dialog that `--allow-all` does
-  not skip — and the launcher passes `--allow-all`, since the variable alone
-  leaves an interactive session on manual approval. A launch prompt goes to
-  `--interactive=`, whose `=` keeps a prompt starting with a dash a prompt;
-  resume is `--continue`, which opens a new session when there is none.
-- Copilot unpacks itself under `~/.cache/copilot/pkg` on first run (about
-  185 MB per version), which the base layer's `%HOME%/.cache` volume already
-  makes per-user pool cache.
-
-### omp
-
-A harness whose credentials are any number of providers'
-([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
-The image declares no secrets. A box signs in with `/login`; every omp
-browser sign-in (ChatGPT 1455, Anthropic 54545, Gemini CLI 8085, Antigravity
-51121, OpenRouter 54549) also takes the redirect URL pasted back, which is the
-way when its port is taken on the user's machine.
-
-- **Credentials live in SQLite** (`~/.omp/agent/agent.db`), and omp moves them
-  with `omp auth export` and `omp auth import`: `{version: 1, credentials:
-  [{provider, credential}]}`, where a credential is `{type: api_key, key}` or
-  `{type: oauth, access, refresh, expires, …identity}`. An import replaces the
-  same provider's key and the same account's login, and keeps the rest.
-- **One secret per credential**, `OMP_<PROVIDER>_CREDENTIAL`, a second account
-  of one provider `_2`. omp exports several accounts in no fixed order, so a
-  credential is named by which secret it is: the one whose sentinel it still
-  holds, else the previous secret of the same account (provider, `accountId`,
-  `email`), else the provider's lowest free name. A key is a `token`; an OAuth
-  login the control plane can renew — Anthropic and ChatGPT with the clients
-  the claude-code and codex images are renewed with, xAI form-encoded — is an
-  `oauth` secret; any other login is a `token` holding its access token, and
-  the export says when it expires, or that it has.
-- **Delivery is the export document as a credential document**,
-  `.config/discobox/omp-credentials.json`, with sentinels in place of keys and
-  access tokens, `refresh` a placeholder (or the sentinel, for GitHub Copilot,
-  which stores its token in both), and `expires` far future where the control
-  plane renews. `launch.sh` imports it before starting omp, on every launch.
-  An imported sentinel goes out as the request's credential and is never
-  refreshed. omp reads ChatGPT's `chatgpt-account-id` from the access token's
-  claims, which a sentinel does not carry.
-- **`PI_PROXY` follows `HTTPS_PROXY`** (`proxy-env.sh`, installed as
-  `/etc/profile.d/omp-proxy.sh` and sourced by the launcher). omp's Anthropic
-  transport is its own client that reads only `PI_PROXY`, and without it
-  connects direct, which a sandbox's egress does not allow: every Anthropic
-  request hangs into "Connection error.". It is derived rather than written
-  into the manifest, where a build in a discobox would rewrite the loopback
-  address (ADR 26-10-01-425).
-- `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`, at build time and in the image's env
-  (the version store installs omp in the sandbox): omp's onnxruntime-node
-  dependency otherwise downloads onnxruntime's CUDA build from GitHub on
-  install, which no sandbox can use and which hung a build outright.
-- It exports `.omp/agent/config.yml` as omp wrote it; not `models.yml`, which
-  holds literal keys and `!` commands, as pi's `models.json` does, so custom
-  providers are configured in each sandbox.
-- **The policy baseline** is `PI_CONFIG_FILES=/etc/omp/discobox.yml` in the
-  image's env — `startup.setupWizard: false`, whose wizard otherwise stalls an
-  unattended launch, and `startup.checkUpdate: false` — and the launcher's
-  `--auto-approve` and `--allow-home`. A launch prompt follows `--` as one
-  argument: omp sends each positional argument as its own message and reads
-  an `@`-led one as a file. Resume is `--continue`, which opens a new session
-  when there is none.
-
-### pi
-
-The agent omp descends from, with the same any-providers credentials
-([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)).
-The image declares no secrets. A box signs in with `/login`; each browser
-sign-in (Anthropic 53692, OpenAI 1455, Radius 1456, OpenRouter on a port of
-its own) also takes the redirect URL pasted back, and Copilot, xAI, Kimi and
-Meta sign in by device code.
-
-- **Credentials live in `~/.pi/agent/auth.json`**, one entry per provider:
-  `{type: api_key, key, env?}` or `{type: oauth, access, refresh, expires, …}`.
-  pi leaves a valid file as it is, through a run and through a 401.
-- **One secret per provider**, `PI_<PROVIDER>_CREDENTIAL`. A key is a `token`;
-  an Anthropic or xAI login is an `oauth` secret, renewed with the clients the
-  claude-code and opencode images are renewed with; any other login is a
-  `token` holding its access token, and the export says when it expires, or
-  that it has. Left out, and said: a key that is a `!` command (pi runs it), a
-  ChatGPT subscription (`openai-codex`), whose account pi reads from the
-  access token's claims and fails locally without, and an entry with no key or
-  token at all (Bedrock's AWS profile or credential chain), which uses
-  credentials kept on the machine pi runs on.
-- **A Copilot login's secret is its GitHub token**, bound to `api.github.com`
-  (or `api.<domain>` for GitHub Enterprise). pi exchanges it, at
-  `copilot_internal/v2/token` with the token as a bearer header, for a Copilot
-  token of about 30 minutes, which it keeps in `access`. That exchange runs in
-  the sandbox, through the proxy, so the real Copilot token lands in the
-  sandbox's `auth.json`; the GitHub token does not. An unchanged refresh
-  sentinel with a changed `access` is that exchange, not a new login.
-- **Delivery is auth.json as a credential document**, with sentinels in
-  place of keys and access tokens, `refresh` a placeholder and `expires` far
-  future where the control plane renews; a Copilot entry carries the sentinel
-  in `refresh`, a placeholder `access` and `expires` zero, so pi exchanges
-  before its first request.
-- It exports `settings.json` and `keybindings.json` as pi wrote them; not
-  `models.json` or `mcp.json`, which hold literal keys and commands.
-- **The policy baseline** is the image's env — `PI_SKIP_VERSION_CHECK=1`,
-  `PI_TELEMETRY=0`, since pi otherwise reports an install on a first run and
-  after each upgrade and adds attribution headers to some providers'
-  requests, and `PI_CLIPBOARD_OSC52=1` so a copy reaches the user's terminal as well as the
-  box's X clipboard — `fd-find` installed, since pi otherwise downloads `fd`
-  from GitHub on its first run, and the launcher's `--approve`: pi's
-  project-trust dialog otherwise stalls a launch in any repository with
-  `.agents/skills` or `.pi/`. pi asks no approval before a tool call, and
-  honors `HTTPS_PROXY` for every provider. A launch prompt follows `--` as one
-  argument, led by a space when it starts with `@`: pi sends each positional
-  argument as its own message, and reads an `@`-led one as a file to attach
-  even after `--`. Resume is `--continue`, which opens a new session when
-  there is none.
+What each CLI writes, what its export makes of it, and how it is delivered is
+that harness's own: [Claude Code](claude-code/DESIGN.md#credentials-and-settings),
+[Codex](codex-cli/DESIGN.md#credentials-and-settings),
+[OpenCode](opencode/DESIGN.md#credentials-and-settings),
+[GitHub Copilot](copilot/DESIGN.md#credentials-and-settings),
+[omp](omp/DESIGN.md#credentials-and-settings) and
+[pi](pi/DESIGN.md#credentials-and-settings).
 
 Literal settings and explicit credential references follow [ADR 26-10-30-457](../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).
 
