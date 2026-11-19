@@ -247,6 +247,42 @@ func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 	}
 }
 
+// The platform bundle's darwin entry carries sandbox-agent/image.darwin.json
+// as its platform layer (ADR 26-11-11-963 §9). The shell harness, which adds
+// nothing of its own, composes on it as on Linux's, and what results, given
+// the one account and shell a macOS sandbox names, is a macOS sandbox's
+// manifest: no volumes, no groups, and the desktop and nested Docker declared
+// absent by being left out (ADR 0145 §§3, 7). Whether another harness's own
+// layer suits a macOS sandbox is that harness's to say, not the platform's.
+func TestTheDarwinPlatformLayerIsAMacOSSandboxs(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..", "..")
+	linux := map[string]string{harness.ImageLayerLabelPrefix + harness.PlatformLayer: compactFile(t, filepath.Join(repoRoot, "sandbox-agent", "image.json"))}
+	darwin := map[string]string{harness.ImageLayerLabelPrefix + harness.PlatformLayer: compactFile(t, filepath.Join(repoRoot, "sandbox-agent", "image.darwin.json"))}
+	shell := map[string]string{harness.ImageLabel: compactFile(t, filepath.Join(repoRoot, "harness", "shell", "image.json"))}
+
+	onLinux, err := harness.ComposeBundleLabels(linux, shell)
+	if err != nil {
+		t.Fatalf("the shell harness on Linux's platform layer: %v", err)
+	}
+	metadata, err := harness.ComposeBundleLabels(darwin, shell)
+	if err != nil {
+		t.Fatalf("the shell harness on darwin's platform layer: %v", err)
+	}
+	if metadata.PlatformAPIVersion != onLinux.PlatformAPIVersion {
+		t.Fatalf("darwin's platform layer provides %q, Linux's %q: a harness names one platform API version for both", metadata.PlatformAPIVersion, onLinux.PlatformAPIVersion)
+	}
+	metadata.Account, metadata.Shell = "dev", "/bin/zsh"
+	if err := metadata.ValidateFor("darwin"); err != nil {
+		t.Fatalf("darwin's platform layer is no macOS sandbox's manifest: %v", err)
+	}
+	if metadata.Features != (harness.Features{}) {
+		t.Fatalf("darwin's platform layer declares features %+v, which a macOS sandbox lacks", metadata.Features)
+	}
+	if !strings.Contains(metadata.Env["PATH"], "/usr/local/lib/discobox/placeholders") {
+		t.Fatalf("darwin's PATH %q leaves out the placeholders a feature not yet provisioned answers from", metadata.Env["PATH"])
+	}
+}
+
 // A harness manifest must not restate what the base layer already declares.
 // Restating is how the duplication ADR 0086 removed accumulated in the first
 // place, and a stale copy silently outranks the base.

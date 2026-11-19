@@ -1,0 +1,24 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "env": {
+    "HOMEBREW_CELLAR": "/opt/homebrew/Cellar",
+    "HOMEBREW_NO_ANALYTICS": "1",
+    "HOMEBREW_NO_AUTO_UPDATE": "1",
+    "HOMEBREW_PREFIX": "/opt/homebrew",
+    "HOMEBREW_REPOSITORY": "/opt/homebrew",
+    "NIX_CONFIG": "experimental-features = nix-command flakes",
+    "NIX_REMOTE": "daemon",
+    "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
+    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/go/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/lib/discobox/placeholders"
+  },
+  "harness": {
+    "files": [
+      {
+        "path": ".config/pnpm/config.yaml",
+        "createOnly": true,
+        "content": "storeDir: ~/.local/share/pnpm\n"
+      }
+    ]
+  }
+}

@@ -1,6 +1,14 @@
 version: "3"
 
 vars:
+  # The platforms of the agent and platform bundles' indexes: Linux's, and
+  # darwin's for a macOS sandbox (ADR 26-11-11-963 §9). PLATFORM_BUNDLE_ARGS
+  # are each OS's manifest layer, which a platform build including that OS
+  # requires; the command substitutions are left for the shell that builds.
+  SANDBOX_BUNDLE_PLATFORMS: linux/amd64,linux/arm64,darwin/arm64
+  PLATFORM_BUNDLE_ARGS: >-
+    --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
+    --build-arg DARWIN_IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.darwin.json)"
   # What `task dev` adds to the local socket the server always binds. Every
   # build carries the transport (ADR 0067), so this applies everywhere;
   # DISCOBOX_DEV_IROH=0 drops it for anyone who wants the socket alone.
@@ -698,6 +706,31 @@ tasks:
     desc: Run Docker provider integration tests
     cmds:
       - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/docker -run Integration -count=1 -v
+
+  test:darwin-bundles:
+    desc: Build the agent and platform bundles for every platform the release does, darwin's included, and serve them through the asset service's tests
+    # The bundles' darwin entries (ADR 26-11-11-963 §9) are built only by the
+    # release, so this builds them as release:image does — the same
+    # platforms, the same manifest layers and clamped file times — into OCI
+    # layouts, and the assets package's tests read them as a development
+    # server reads its own (TestTheBuiltDarwinBundlesAreServed).
+    deps:
+      - buildx:builder
+    vars:
+      OUT: '{{.ROOT_DIR}}/build/darwin-bundles'
+    cmds:
+      - rm -rf {{.OUT}} && mkdir -p {{.OUT}}
+      - >-
+        docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.SANDBOX_BUNDLE_PLATFORMS}}
+        -f sandbox-agent/Dockerfile --target agent --build-arg SOURCE_DATE_EPOCH=315532800
+        --output type=oci,dest={{.OUT}}/agent.tar,rewrite-timestamp=true .
+      - >-
+        docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.SANDBOX_BUNDLE_PLATFORMS}}
+        -f sandbox-agent/Dockerfile --target platform {{.PLATFORM_BUNDLE_ARGS}} --build-arg SOURCE_DATE_EPOCH=315532800
+        --output type=oci,dest={{.OUT}}/platform.tar,rewrite-timestamp=true .
+      - >-
+        cd server && DISCOBOX_TEST_AGENT_BUNDLE_LAYOUT={{.OUT}}/agent.tar DISCOBOX_TEST_PLATFORM_BUNDLE_LAYOUT={{.OUT}}/platform.tar
+        go test ./internal/resources/assets -run TestTheBuiltDarwinBundlesAreServed -count=1 -v
 
   test:image-reclaim:
     desc: Run the image reaper's Docker integration tests against a throwaway daemon of each image store (classic and containerd)
@@ -2144,25 +2177,29 @@ tasks:
           TARGET: bundle
           BUNDLE: "yes"
       # The agent bundle the server's release pins (ADR 26-10-24-953 §2): the
-      # agent alone, a multi-architecture index like the platform bundle.
+      # agent alone, a multi-architecture index like the platform bundle, with
+      # darwin's agent beside Linux's (ADR 26-11-11-963 §9).
       - task: release:image
         vars:
           IMAGE: agent
           DOCKERFILE: sandbox-agent/Dockerfile
           TARGET: agent
           BUNDLE: "yes"
+          PLATFORMS: '{{.SANDBOX_BUNDLE_PLATFORMS}}'
       # The platform bundle the server's release pins (ADR 26-10-16-423 §7): a
       # multi-architecture index like the images, since it carries the agent
-      # binaries. IMAGE_LAYER_METADATA is not optional: without it the build
-      # refuses, rather than publishing a platform layer every harness bundle
-      # is rejected against (ADR 26-10-16-423 §2).
+      # binaries, darwin's entry included (ADR 26-11-11-963 §9). Each OS's
+      # manifest layer is not optional: without it the build refuses, rather
+      # than publishing a platform layer every harness bundle is rejected
+      # against (ADR 26-10-16-423 §2).
       - task: release:image
         vars:
           IMAGE: platform
           DOCKERFILE: sandbox-agent/Dockerfile
           TARGET: platform
           BUNDLE: "yes"
-          BUILD_ARGS: --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
+          PLATFORMS: '{{.SANDBOX_BUNDLE_PLATFORMS}}'
+          BUILD_ARGS: '{{.PLATFORM_BUNDLE_ARGS}}'
       # Harness bundles ship with the release for the same reason the images
       # do. The built-in harness configs a server seeds name these, and their
       # development default is a local tag that resolves to nothing on a
@@ -2220,7 +2257,9 @@ tasks:
       # content is the same on every one, and without the provenance and SBOM
       # attestations, which buildx would otherwise attach by wrapping even a
       # single platform's manifest in an index.
-      PLATFORMS: '{{if .SINGLE_MANIFEST}}linux/amd64{{else}}linux/amd64,linux/arm64{{end}}'
+      # PLATFORMS overrides the platforms of an index: the agent and platform
+      # bundles' carry darwin's (SANDBOX_BUNDLE_PLATFORMS).
+      PLATFORMS: '{{if .PLATFORMS}}{{.PLATFORMS}}{{else if .SINGLE_MANIFEST}}linux/amd64{{else}}linux/amd64,linux/arm64{{end}}'
       ATTEST_ARGS: '{{if .SINGLE_MANIFEST}}--provenance=false --sbom=false{{end}}'
       # A bundle (BUNDLE=yes) is pushed with every file's time clamped to one
       # epoch, harness.BundleSourceDateEpoch (the image watcher's tests hold
