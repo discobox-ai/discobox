@@ -113,9 +113,14 @@ return promptly and must not call the observed `Conn`. Consumers should hand
 events to a buffered channel, atomic snapshot, or similarly non-blocking state
 holder.
 
-An attach must continuously drain `ReadFrame`. That is already true for normal
-terminal sessions and is required both to process action acknowledgements and
-to let the WebSocket implementation process pong control frames.
+An attach drains `ReadFrame` only as fast as its consumer takes the output.
+A consumer that pauses (`discobox exec … | less`) stops the reads, and with
+them the action acknowledgements and the pongs the WebSocket implementation
+reads only inside a read. A pong missed then is unread, not missing: the
+transport's keepalive, not this package, tells that from a dead peer (the CLI
+attach stream pattern in [`cli/DESIGN.md`](../../../cli/DESIGN.md#attach-stream-pattern)).
+`TimingHeartbeat` does not, so a probe made while the consumer is paused can
+report a slow or failed round trip on a live connection.
 
 ### Sources
 
@@ -198,7 +203,7 @@ as separate time series and never average them into one latency value.
 
 | Observation | What is known | Suggested status |
 | --- | --- | --- |
-| Heartbeat is slow or times out | The physical WebSocket/proxy path to the sandbox-agent is slow or unavailable. | `Connection slow` or `Connection lost`, with heartbeat RTT when available. |
+| Heartbeat is slow or times out while the attach is reading | The physical WebSocket/proxy path to the sandbox-agent is slow or unavailable. A probe made while the consumer was paused says nothing: its pong waits unread behind the output. | `Connection slow` or `Connection lost`, with heartbeat RTT when available. |
 | Heartbeat is healthy and input acknowledgement is slow | The network path reached the sandbox-agent promptly, but positioned input was delayed before the exec host applied it. | `Input delivery slow`, with acknowledgement RTT. |
 | Both are slow | The physical path is already slow and may explain some or all input delay. | Prefer the connection warning; optionally show both RTT values in details. |
 | Both are healthy and expected output is absent | Disco delivered input to the PTY promptly. The process may be busy, not reading, intentionally not echoing, or delayed by sandbox scheduling. | Connection is healthy. Do not claim that the application failed. |

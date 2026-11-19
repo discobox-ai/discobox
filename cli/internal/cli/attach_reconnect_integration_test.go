@@ -170,19 +170,18 @@ func TestAttachWebSocketKeepaliveClosesUnresponsivePeerAndUnblocksRead(t *testin
 	}
 	defer socket.CloseNow()
 	<-serverSocket
-	conn := websocket.NetConn(ctx, socket, websocket.MessageBinary)
+	frames := newWebsocketAttachFrames(ctx, socket)
 
 	readDone := make(chan error, 1)
 	go func() {
-		var payload [1]byte
-		_, err := conn.Read(payload[:])
+		_, err := frames.ReadFrame()
 		readDone <- err
 	}()
 	pingDone := make(chan error, 1)
 	go func() {
-		err := pingAttachWebSocketWithIntervals(ctx, socket, 10*time.Millisecond, 30*time.Millisecond)
+		err := frames.keepalive(ctx, 10*time.Millisecond, 30*time.Millisecond)
 		if err != nil {
-			_ = conn.Close()
+			_ = frames.Close()
 		}
 		pingDone <- err
 	}()
@@ -202,5 +201,48 @@ func TestAttachWebSocketKeepaliveClosesUnresponsivePeerAndUnblocksRead(t *testin
 		}
 	case <-ctx.Done():
 		t.Fatal("keepalive failure did not unblock the websocket read")
+	}
+}
+
+// A paused stdout consumer stops the attach session from reading frames. The
+// server is alive and answering pings the whole time, so the keepalive must not
+// call it dead just because the client is not reading.
+func TestAttachWebSocketKeepaliveSurvivesPausedReader(t *testing.T) {
+	releaseServer := make(chan struct{})
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		socket, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		// The server reads continuously, so it answers every ping.
+		ctx := socket.CloseRead(r.Context())
+		// Output is waiting for the client, as an exec's would be.
+		_ = socket.Write(ctx, websocket.MessageBinary, []byte("output"))
+		select {
+		case <-releaseServer:
+		case <-ctx.Done():
+		}
+		_ = socket.CloseNow()
+	}))
+	defer server.Close()
+	defer close(releaseServer)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	socket, response, err := websocket.Dial(ctx, "ws"+server.URL[len("http"):], nil)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socket.CloseNow()
+	frames := newWebsocketAttachFrames(ctx, socket)
+
+	// No one reads the client's socket: the output consumer is paused.
+	pingCtx, stopPing := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer stopPing()
+	if err := frames.keepalive(pingCtx, 10*time.Millisecond, 30*time.Millisecond); err != nil {
+		t.Fatalf("keepalive declared a live peer dead while output delivery was paused: %v", err)
 	}
 }
