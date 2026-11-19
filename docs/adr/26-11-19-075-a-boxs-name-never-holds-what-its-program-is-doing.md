@@ -169,11 +169,15 @@ needs a unique human-typable key.
 ## Consequences
 
 - `discobox ls` shows a box's name steady while its agent works, and the
-  status beside it. The suffix #1462 reports leaves the NAME column. If the
-  program writes the status into its window title itself rather than into
-  the OSC 7501 msg, it stays there: the window title is the harness's text.
-  Which one Claude Code does, and whether its msg clears after the shell
-  exits, is being reproduced on #1462. Neither changes this decision.
+  status beside it. The suffix #1462 reports leaves the NAME column. A
+  reproduction on Claude Code 2.1.329 confirmed where it comes from: "1 shell
+  still running" is the OSC 7501 msg (`state=working`), and the window title
+  is the session title alone. Claude Code then reports `done` with no msg
+  within seconds of the shell exiting, so nothing on our side kept it. A
+  suffix that stays reflects a shell that never exits, or a Claude Code older
+  than 2.1.328, which fixed a stale "shell still running". A program that
+  writes its status into its window title would still show it in `name`:
+  the window title is the harness's text.
 - The console's `boxTitle`/`recordTitle`/`unnamedName` rebuild of the name
   goes away. The root `REVIEW.md` rule on naming changes gets shorter: the
   rename-dialog trap is gone.
