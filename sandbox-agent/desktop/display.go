@@ -89,6 +89,8 @@ type Display struct {
 	// the session is already running at the old one and has to be restarted to
 	// pick the new one up.
 	released bool
+	// restartPending tracks a scale change the running session has yet to read.
+	restartPending bool
 }
 
 // The bounds a requested size is held to. The floor keeps a window nobody has
@@ -259,10 +261,8 @@ func (d *Display) Resize(ctx context.Context, cssWidth, cssHeight int) (Geometry
 // GDK_SCALE, Qt's screen factor — is read once at startup, so a running program
 // keeps the scale it began with. That is a property of X11, not of this code.
 // A session that is already running is therefore restarted, and the second
-// return value says whether that happened: it does not for a scale that did not
-// move, nor before the session has been released, and the viewer has to tell a
-// person which of those they are getting before it warns them about losing
-// their windows.
+// return value says whether logout succeeded. A failed restart is returned as
+// an error and can be retried at the same scale.
 func (d *Display) SetScale(ctx context.Context, scale int, auto bool) (Geometry, bool, error) {
 	scale = clamp(scale, MinScale, MaxScale)
 
@@ -284,11 +284,10 @@ func (d *Display) SetScale(ctx context.Context, scale int, auto bool) (Geometry,
 	// reads and this process cannot know whether the file on disk agrees with
 	// it. A sandbox restarted after a 2x session comes back with d.scale at 1
 	// and a file still saying 2.
-	if scale == d.scale && d.applied {
+	if scale == d.scale && d.applied && !d.restartPending {
 		geometry, err := d.geometryLocked(ctx)
 		return geometry, false, err
 	}
-	changed := scale != d.scale
 
 	// The durable half first, and before anything that needs an X server. The
 	// environment file is what the session and every login shell read when they
@@ -307,30 +306,22 @@ func (d *Display) SetScale(ctx context.Context, scale int, auto bool) (Geometry,
 		}
 	}
 	d.writeVSCodeScale(scale)
+	if scale != d.scale && d.released {
+		d.restartPending = true
+	}
 	d.scale = scale
+	d.applied = false
 	if err := d.applyServerScale(ctx, scale); err != nil {
 		return Geometry{}, false, err
 	}
-
-	// d.applied is what waits for all of it, and it is the flag that makes a
-	// failure repairable: the short-circuit above needs it, so a call that got
-	// halfway leaves the next one -- an auto report from the next page load,
-	// with no user action at all -- to run the live half again.
 	d.applied = true
-	// A session already running started its panel, desktop and window manager
-	// at the old scale and cannot be told the new one any other way. Before the
-	// session is released this is free: it has not started yet, and it will
-	// read the file we just wrote.
-	restarted := false
-	if changed && d.released {
+
+	restarted := d.restartPending
+	if restarted {
 		if err := d.restartSession(ctx); err != nil {
-			// Not fatal. The scale is set, everything launched from here on is
-			// correct, and the desktop that is already up is merely stale --
-			// which is better than refusing the change outright.
-			d.log("restart the desktop session after a scale change", err)
-		} else {
-			restarted = true
+			return Geometry{}, false, err
 		}
+		d.restartPending = false
 	}
 	geometry, err := d.geometryLocked(ctx)
 	return geometry, restarted, err

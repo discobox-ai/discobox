@@ -362,13 +362,9 @@ absent.
   file outlives the process while the in-memory scale resets to 1, so skipping
   either leaves a restarted sandbox running its session at one scale and its
   server at another.
-- `SetScale` commits `d.scale` **with** the `scale.env` write and `d.applied`
-  only after every step has succeeded. The first pairing is what keeps the file
-  and the process agreeing — they are one fact, and the session reads the file
-  while the framebuffer and the DPI come from `d.scale`, so a change whose X half
-  fails must not leave them apart. The second is what keeps a failure repairable:
-  the unchanged-value short-circuit needs `d.applied`, so committing it early
-  makes every later call at that value return without doing anything.
+- `SetScale` commits `d.scale` with the `scale.env` write and sets `d.applied`
+  after applying the X settings. A pending session restart keeps the same
+  density request retryable until logout succeeds.
 - The desktop's density and cursor size are written to xfconf's `xsettings`
   channel, never with `xrdb`. `xfsettingsd` owns those values and writes the
   matching X resources itself, so a merge behind its back is undone at its next
