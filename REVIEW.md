@@ -113,15 +113,16 @@ Global review expectations:
   request that changes only `docs/` runs `ci:docs` and skips every other job,
   so a check reachable only from `verify`, `ci:test` or `ci:check` lets such a
   PR pass and fails the next push to `main`. Nothing enforces this.
-- A CI job gated on `changes` fails closed: its `if` is
-  `!cancelled() && needs.changes.outputs.code != 'false'`. A bare
-  `needs.changes.outputs.code == 'true'` skips the job when `changes` fails,
-  and a skipped job passes a required check, so nothing would have run.
-- A workflow's concurrency group keys a pull request's runs on
-  `github.event.pull_request.number || github.ref`, never on `github.ref`
-  alone. An event on a merged or closed PR (a label added after the merge)
-  has the base branch as `github.ref`, so a ref-keyed PR run joined main's
-  group and cancelled main's push run (#1271).
+- A CI job gated on `changes` uses
+  `!cancelled() && needs.changes.outputs.code != 'false'` so a failed
+  `changes` job still runs the code checks. A skipped `changes` job allows
+  main pushes through and skips all jobs on an ignored pull request label
+  event.
+- A workflow's concurrency group keys eligible pull request runs on the
+  pull request number. An event on a merged or closed PR can have the base
+  branch as `github.ref`, so grouping by ref alone let a label event cancel
+  main's push run (#1271). Ignored label events use a per-run group so they
+  cannot cancel active or pending CI.
 - A run that publishes is never cancelled: a cancelled one leaves a release
   half made. That takes two things. `cancel-in-progress` is `false` for it
   (or `${{ !startsWith(github.ref, 'refs/tags/') }}` when the workflow's

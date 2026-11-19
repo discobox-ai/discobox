@@ -37,8 +37,12 @@ permissions:
 # in main's group and cancel main's push run (#1271). A push to main has no
 # pull_request, so it falls back to its ref. No tag runs this workflow; a
 # workflow that a tag runs never cancels the tag's run (REVIEW.md).
+# Ignored label events get their own group so they cannot cancel active or
+# pending CI for the pull request.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: >-
+    ci-${{ (github.event.action == 'labeled' && github.event.label.name != 'macos')
+    && format('ignored-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -48,8 +52,9 @@ jobs:
   # `if`. A push to main always has code, so on a push `changes` is skipped and
   # never takes a runner.
   #
-  # The gate fails closed: a run whose `changes` failed or was skipped runs
-  # everything but `docs`, which the rest cover. Its output is then empty, never
+  # On a pull request, a skipped `changes` job means the label event was
+  # ignored. A failed `changes` job or the intentional skip on a main push
+  # runs everything but `docs`. Its output is then empty, never
   # 'false', so each `code != 'false'` holds. Without `!cancelled()` a failed or
   # skipped `needs` would skip every job, and a skipped job satisfies a
   # required check.
@@ -63,7 +68,7 @@ jobs:
   # the module download. It runs on the same runner as every other job: on
   # Depot's 2-CPU default, pushes to main got a runner that never ran a step.
   changes:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'macos')
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 5
     outputs:
@@ -93,7 +98,9 @@ jobs:
 
   check:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: &code-check >-
+      ${{ !cancelled() && needs.changes.outputs.code != 'false'
+      && (github.event_name != 'pull_request' || needs.changes.result != 'skipped') }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -104,7 +111,7 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -115,7 +122,7 @@ jobs:
 
   codex-trust:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 15
     steps:
@@ -126,7 +133,7 @@ jobs:
 
   ux-smoke:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -148,7 +155,7 @@ jobs:
   # has a daemon of that store (ADR 26-11-13-655).
   image-reclaim:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 20
     steps:
@@ -159,7 +166,7 @@ jobs:
 
   verify:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -173,7 +180,7 @@ jobs:
   # tag exercised it (ADR 0066 Context).
   build:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
@@ -190,7 +197,10 @@ jobs:
   # come in that one size. The job runs without Nix (ADR 26-11-02-173).
   darwin:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) }}
+    if: &darwin-check >-
+      ${{ !cancelled() && needs.changes.outputs.code != 'false'
+      && (github.event_name != 'pull_request'
+      || (needs.changes.result != 'skipped' && contains(github.event.pull_request.labels.*.name, 'macos'))) }}
     runs-on: depot-macos-15
     timeout-minutes: 45
     steps:
@@ -204,7 +214,7 @@ jobs:
   # than after it.
   darwin-test:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) }}
+    if: *darwin-check
     runs-on: depot-macos-15
     timeout-minutes: 30
     steps:
@@ -220,7 +230,7 @@ jobs:
   # executes.
   windows:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: *code-check
     runs-on: depot-windows-2025-4
     timeout-minutes: 45
     steps:

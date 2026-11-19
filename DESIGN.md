@@ -297,16 +297,16 @@ flowchart TD
   composite action as `nix develop -c go tool task <target>` on Linux, or as
   plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). The
   one exception is CI's first job, `changes`, which runs
-  `scripts/ci-changes.sh` with only git on a pull request (a push skips it):
-  it decides *when*, and every other job waits on it. A pull request that changes only `docs/` skips every job
-  but `docs` (`ci:docs`, the checks that read `docs/`); any other run, and
-  every push to `main`, runs them all, and so does a run whose `changes`
-  failed or was skipped. A newer run cancels the older one in its group, on
-  `main` as on a pull request, so a `main` commit a newer push supersedes may
-  end with a cancelled run (a pull request's runs are grouped by its number,
-  never with `main`'s). Jobs are skipped by `if`, never by `paths-ignore`, so a required
-  check still reports. Go's
-  build and test cache is Depot Cache, which Depot's runners set as
+  `scripts/ci-changes.sh` with only git on eligible pull request events. Every
+  other job waits on it. A docs-only pull request runs `docs` (`ci:docs`, the
+  checks that read `docs/`) after `changes`. Other eligible runs, including
+  main pushes and runs where `changes` fails, run the code checks. The Darwin
+  jobs also require the `macos` label on pull requests. Adding any other
+  label skips every job and uses a per-run concurrency group to protect
+  active and pending CI. Eligible pull request runs share a group keyed by
+  PR number. Main pushes share a group keyed by ref. A newer run cancels
+  the older one in its group. Job conditions report skipped checks to GitHub.
+  Go's build and test cache is Depot Cache, which Depot's runners set as
   `GOCACHEPROG` for runs of the repository's own branches: a branch push and a
   same-repository pull request read and write it per object. A pull request
   from a fork (every worker's) gets none and builds cold on purpose: Depot
