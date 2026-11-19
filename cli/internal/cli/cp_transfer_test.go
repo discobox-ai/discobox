@@ -96,6 +96,12 @@ func copyRemote(t *testing.T) (*App, *api.Client, map[string]string, map[string]
 				return
 			}
 			if err := os.WriteFile(name, b, 0644); err != nil {
+				if os.IsNotExist(err) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusNotFound)
+					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					return
+				}
 				http.Error(w, err.Error(), 400)
 				return
 			}
@@ -292,5 +298,41 @@ func TestCopyIncompleteBodyNeverPublishes(t *testing.T) {
 				t.Fatalf("temporary files remain: %v", entries)
 			}
 		})
+	}
+}
+
+func TestCopyReportsMissingDestinationParent(t *testing.T) {
+	app, client, _, _ := copyRemote(t)
+	source := filepath.Join(t.TempDir(), "a.txt")
+	if err := os.WriteFile(source, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	operands := []cpOperand{
+		{path: source},
+		{remote: true, reference: "one", path: "/nonexistent/dir/a.txt"},
+	}
+	err := app.copyOperands(t.Context(), client, "project", operands, copyOptions{})
+	if err == nil || !strings.Contains(err.Error(), "nonexistent") || strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("copy error = %v, want a missing destination error without upgrade advice", err)
+	}
+}
+
+func TestCopyRequestReportsUnavailableRoute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
+	operand := cpOperand{remote: true, reference: "one", path: "a.txt"}
+	resp, err := app.copyRequest(t.Context(), "project", operand, "content", http.MethodPut, strings.NewReader("x"), nil)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("copy error = %v, want upgrade advice for an unavailable route", err)
 	}
 }
