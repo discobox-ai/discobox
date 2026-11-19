@@ -1,5 +1,5 @@
 {
-  "apiVersion": "discobox.dev/image/v1",
+  "apiVersion": "discobox.ai/image/v1",
   "platformAPIVersion": "discobox.ai/platform/v1",
   "env": {
     "COPILOT_ALLOW_ALL": "true",

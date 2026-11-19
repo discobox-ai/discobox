@@ -97,8 +97,8 @@ esac
 			t.Fatal(err)
 		}
 	}
-	before := `{"apiVersion":"discobox.dev/image/v1","harness":{"id":"test","name":"Before"}}`
-	after := `{"apiVersion":"discobox.dev/image/v1","harness":{"id":"test","name":"After"}}`
+	before := `{"apiVersion":"discobox.ai/image/v1","harness":{"id":"test","name":"Before"}}`
+	after := `{"apiVersion":"discobox.ai/image/v1","harness":{"id":"test","name":"After"}}`
 	write("image.json", before)
 	write("fixture", harnessLayout(t, before))
 	spec := imageSpec{name: "harness-test", bundle: true, devPrefix: "test:dev-", buildDir: dir, layoutDir: dir, files: []string{metadata}, metadataFile: metadata, metadataArg: "HARNESS_METADATA", buildArgs: []string{"build", "test", "--build-arg", "HARNESS_METADATA="}}

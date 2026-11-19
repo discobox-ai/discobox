@@ -15,8 +15,17 @@ import (
 )
 
 // ImageAPIVersion is the contract version for the payload carried by
-// ImageLabel.
-const ImageAPIVersion = "discobox.dev/image/v1"
+// ImageLabel, and the one every manifest declares.
+const ImageAPIVersion = "discobox.ai/image/v1"
+
+// LegacyImageAPIVersion is the same contract under the namespace it was first
+// published in, which Discobox does not own. Bundles already in registries
+// carry it in their labels, so a layer declaring it is still read. It is read
+// as it stands, not rewritten to ImageAPIVersion: the composed manifest's
+// digest is a config's pin, and rewriting it would move the pins of every
+// config snapshotted from such a bundle with nothing in the bundle changed.
+// Until when it is read is #1409.
+const LegacyImageAPIVersion = "discobox.dev/image/v1"
 
 // ImageMetadata is the full non-secret payload a harness image declares: env
 // defaults, declarative volumes, supplementary OS groups the sandbox user

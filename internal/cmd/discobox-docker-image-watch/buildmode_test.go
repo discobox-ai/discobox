@@ -180,7 +180,7 @@ func TestHarnessDeclarationChangesBuildModeReference(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(`{"apiVersion":"discobox.dev/image/v1","harness":{"id":"test","name":"Before"}}`)
+	write(`{"apiVersion":"discobox.ai/image/v1","harness":{"id":"test","name":"Before"}}`)
 	spec := imageSpec{name: "harness-test", bundle: true, devPrefix: "test:dev-", buildDir: dir, files: []string{metadata}, metadataFile: metadata, metadataArg: "HARNESS_METADATA", contextDir: dir, dockerfile: "Dockerfile", target: "bundle"}
 	out := t.TempDir()
 	stamp := func() devimage.Bundle {
@@ -198,7 +198,7 @@ func TestHarnessDeclarationChangesBuildModeReference(t *testing.T) {
 	if same := stamp(); same.Reference != before.Reference {
 		t.Fatal("unchanged input changed reference")
 	}
-	write(`{"apiVersion":"discobox.dev/image/v1","harness":{"id":"test","name":"After"}}`)
+	write(`{"apiVersion":"discobox.ai/image/v1","harness":{"id":"test","name":"After"}}`)
 	after := stamp()
 	if before.Reference == after.Reference || before.Build.Args["HARNESS_METADATA"] == after.Build.Args["HARNESS_METADATA"] {
 		t.Fatal("declaration edit reused reference or old metadata")

@@ -186,7 +186,9 @@ func parseImageLayer(name, raw string) (ImageLayer, error) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &metadata); err != nil {
 		return ImageLayer{}, fmt.Errorf("parse image layer %q: %w", name, err)
 	}
-	if version := strings.TrimSpace(metadata.APIVersion); version != "" && version != ImageAPIVersion {
+	switch version := strings.TrimSpace(metadata.APIVersion); version {
+	case "", ImageAPIVersion, LegacyImageAPIVersion:
+	default:
 		return ImageLayer{}, fmt.Errorf("image layer %q declares unsupported apiVersion %q; want %q", name, version, ImageAPIVersion)
 	}
 	return ImageLayer{Name: name, Metadata: metadata}, nil

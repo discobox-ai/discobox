@@ -36,7 +36,7 @@ func bundleLabels(own string) map[string]string {
 
 // testPlatformLayer is a platform layer providing the platform API version
 // and the display every box has.
-const testPlatformLayer = `{"apiVersion":"discobox.dev/image/v1","platformAPIVersion":"discobox.ai/platform/v1","env":{"DISPLAY":":0"}}`
+const testPlatformLayer = `{"apiVersion":"discobox.ai/image/v1","platformAPIVersion":"discobox.ai/platform/v1","env":{"DISPLAY":":0"}}`
 
 // parseBundle composes a harness bundle's labels on a platform bundle whose
 // layer is platformLayer, as registration does.
