@@ -885,3 +885,78 @@ func TestAFailedSessionRestartIsRetriedForTheSameScale(t *testing.T) {
 		t.Fatalf("settled request returned %d after %d logouts: %s", settled.Code, countLogouts(), settled.Body)
 	}
 }
+
+func TestScreenshotRouteServesOnlyInertPNGs(t *testing.T) {
+	server, dir := newTestServer(t)
+	shots := filepath.Join(dir, shotsDir)
+	png := []byte("\x89PNG\r\n\x1a\n image")
+	for name, data := range map[string][]byte{
+		"renamed.png": png,
+		"df-0002.png": []byte("<script>alert(1)</script>"),
+		"page.html":   []byte("<script>alert(1)</script>"),
+	} {
+		if err := os.WriteFile(filepath.Join(shots, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other.png"), png, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../other.png", filepath.Join(shots, "df-0003.png")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"df-0002.png", "df-0003.png", "page.html"} {
+		if shot := do(t, server, http.MethodGet, "/shots/"+name, nil); shot.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", name, shot.Code)
+		}
+	}
+	shot := do(t, server, http.MethodGet, "/shots/renamed.png", nil)
+	if shot.Code != http.StatusOK || shot.Body.String() != string(png) {
+		t.Fatalf("screenshot = %d %q", shot.Code, shot.Body.String())
+	}
+	for header, want := range map[string]string{
+		"Content-Type":            "image/png",
+		"X-Content-Type-Options":  "nosniff",
+		"Content-Security-Policy": "sandbox; default-src 'none'",
+	} {
+		if got := shot.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+}
+
+func TestViewerRejectsCrossOriginClipboardAndVNC(t *testing.T) {
+	server, _ := newTestServer(t)
+	for _, test := range []struct {
+		method, path string
+	}{
+		{http.MethodPost, "/api/clipboard"},
+		{http.MethodGet, "/websockify"},
+	} {
+		for _, addresses := range []struct{ host, origin string }{
+			{"localhost:6900", "https://other.example"},
+			{"localhost:6900", "null"},
+		} {
+			request := httptest.NewRequestWithContext(t.Context(), test.method, "http://"+addresses.host+test.path, strings.NewReader("{}"))
+			request.Header.Set("Origin", addresses.origin)
+			request.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusForbidden {
+				t.Errorf("%s with host %q and origin %q: got %d, want 403", test.path, addresses.host, addresses.origin, recorder.Code)
+			}
+		}
+	}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://other.example/api/clipboard", strings.NewReader("{}"))
+	request.Header.Set("Origin", "http://other.example")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Errorf("clipboard on unrelated Host = %d, want 403", recorder.Code)
+	}
+	viewer := do(t, server, http.MethodGet, "/", nil)
+	if got := viewer.Header().Get("Content-Security-Policy"); got != "frame-ancestors 'none'" {
+		t.Errorf("viewer frame policy = %q", got)
+	}
+}

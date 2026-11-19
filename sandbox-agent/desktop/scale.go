@@ -285,7 +285,11 @@ func (d *Display) restartSession(ctx context.Context) error {
 // which is what anything reading the screen's physical size derives a density
 // from, and then everything applyLiveScale hands the session.
 func (d *Display) applyServerScale(ctx context.Context, scale int) error {
-	output, err := d.connectedOutput(ctx)
+	known, err := d.run(ctx, "--query")
+	if err != nil {
+		return err
+	}
+	output, err := connectedOutput(known)
 	if err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -230,12 +231,16 @@ func (d *Display) Resize(ctx context.Context, cssWidth, cssHeight int) (Geometry
 
 	width, height := NormalizeSize(cssWidth*d.scale, cssHeight*d.scale)
 
-	output, err := d.connectedOutput(ctx)
+	known, err := d.run(ctx, "--query")
+	if err != nil {
+		return Geometry{}, err
+	}
+	output, err := connectedOutput(known)
 	if err != nil {
 		return Geometry{}, err
 	}
 	mode := fmt.Sprintf("%dx%d_%d.00", width, height, refreshRate)
-	if err := d.ensureMode(ctx, output, mode, width, height); err != nil {
+	if err := d.ensureMode(ctx, known, output, mode, width, height); err != nil {
 		return Geometry{}, err
 	}
 	// --dpi rides along with the mode change rather than following it: xrandr
@@ -473,18 +478,14 @@ func (d *Display) geometryLocked(ctx context.Context) (Geometry, error) {
 	}
 	width, _ := strconv.Atoi(match[1])
 	height, _ := strconv.Atoi(match[2])
-	output, err := d.connectedOutput(ctx)
+	output, err := connectedOutput(out)
 	if err != nil {
 		return Geometry{}, err
 	}
 	return d.geometryOf(width, height, output), nil
 }
 
-func (d *Display) connectedOutput(ctx context.Context) (string, error) {
-	out, err := d.run(ctx, "--query")
-	if err != nil {
-		return "", err
-	}
+func connectedOutput(out string) (string, error) {
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[1] == "connected" {
@@ -494,21 +495,28 @@ func (d *Display) connectedOutput(ctx context.Context) (string, error) {
 	return "", errors.New("desktop: no connected XRandR output")
 }
 
-// ensureMode creates the modeline for a size the server has not been asked for
-// before and attaches it to the output. Modes are remembered so a viewer that
-// settles between two sizes stops shelling out entirely.
-func (d *Display) ensureMode(ctx context.Context, output, mode string, width, height int) error {
-	if d.modes[output+" "+mode] {
+// ensureMode creates and attaches a modeline when the current X server
+// lacks it. The cache tracks eviction order across requests.
+func (d *Display) ensureMode(ctx context.Context, known, output, mode string, width, height int) error {
+	key := output + " " + mode
+	modeExists := strings.Contains(known, mode)
+	if d.modes[key] && modeExists {
 		return nil
 	}
-	known, err := d.run(ctx, "--query")
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(known, mode) {
-		for len(d.modes) >= MaxDynamicModes {
-			d.evictOldestModeLocked(ctx)
+	// After X restarts, modes cached by the viewer no longer exist. Keep
+	// any modes the server still knows in the eviction order.
+	d.modeOrder = slices.DeleteFunc(d.modeOrder, func(key string) bool {
+		_, trackedMode, _ := strings.Cut(key, " ")
+		if strings.Contains(known, trackedMode) {
+			return false
 		}
+		delete(d.modes, key)
+		return true
+	})
+	for len(d.modes) >= MaxDynamicModes {
+		d.evictOldestModeLocked(ctx)
+	}
+	if !modeExists {
 		modeline, err := d.modeline(ctx, width, height)
 		if err != nil {
 			return err
@@ -520,10 +528,7 @@ func (d *Display) ensureMode(ctx context.Context, output, mode string, width, he
 	if err := d.addTolerant(ctx, []string{"--addmode", output, mode}); err != nil {
 		return err
 	}
-	key := output + " " + mode
-	if !d.modes[key] {
-		d.modeOrder = append(d.modeOrder, key)
-	}
+	d.modeOrder = append(d.modeOrder, key)
 	d.modes[key] = true
 	return nil
 }
