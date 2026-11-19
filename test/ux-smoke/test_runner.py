@@ -1,5 +1,7 @@
 """Smoke runner regression tests; no Docker daemon required."""
 import importlib.util
+import io
+from contextlib import redirect_stderr
 from pathlib import Path
 import subprocess
 import sys
@@ -79,6 +81,25 @@ class BuilderReadinessTest(unittest.TestCase):
                                      "print('personal-override')"])
             self.assertEqual(output.strip(), "personal-override")
             self.assertIn("preparing the discobox", (Path(directory) / "commands.log").read_text())
+
+    def test_timeout_keeps_mirrors_before_log_tail(self):
+        runner = self.runner
+        diagnostics = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(runner, "ARTIFACTS", Path(directory)), \
+                patch.object(runner.os, "killpg", wraps=runner.os.killpg) as kill_group, \
+                redirect_stderr(diagnostics):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.command([sys.executable, "-u", "-c",
+                                "import sys, time; "
+                                "print('#7 0.1 http://mirror.invalid/ubuntu\\tpriority:1', file=sys.stderr); "
+                                "print('x' * 20000, file=sys.stderr); "
+                                "print('fetch stalled', file=sys.stderr); time.sleep(30)"],
+                               limit=1)
+            kill_group.assert_called_once()
+        self.assertIn("timed out after 1s", diagnostics.getvalue())
+        self.assertIn("mirror.invalid", diagnostics.getvalue())
+        self.assertIn("fetch stalled", diagnostics.getvalue())
 
 
 class PurgeCleanupTest(unittest.TestCase):

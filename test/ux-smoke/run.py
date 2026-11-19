@@ -4,11 +4,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import socket
 import sqlite3
 import subprocess
+import sys
 import tarfile
 import threading
 import time
@@ -58,12 +60,37 @@ def command(args, *, limit=120, expected=0, input=None):
     # Write while the command runs so bootstrap failures/timeouts retain output.
     # Progress belongs to stderr; assertions and JSON parsing consume stdout.
     # Keep both files open during execution so timeouts retain both streams.
-    with output_path.open("w") as output, error_path.open("w") as errors:
-        result = subprocess.run(list(map(str, args)), cwd=ROOT, env=ENV,
-                                input=input, stdout=output, stderr=errors,
-                                text=True, timeout=limit)
-    result.stdout = output_path.read_text()
-    result.stderr = error_path.read_text()
+    try:
+        with output_path.open("w") as output, error_path.open("w") as errors:
+            with subprocess.Popen(list(map(str, args)), cwd=ROOT, env=ENV,
+                                  stdin=subprocess.PIPE if input is not None else None,
+                                  stdout=output, stderr=errors, text=True,
+                                  start_new_session=True) as process:
+                try:
+                    process.communicate(input, timeout=limit)
+                except BaseException:
+                    # Task can have a Docker client and buildx below it. Stop
+                    # all of them before reading logs or tearing down the stack.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+                    raise
+    except subprocess.TimeoutExpired:
+        print(f"Command timed out after {limit}s: {args}", file=sys.stderr, flush=True)
+        for path in (output_path, error_path):
+            with path.open("rb") as log:
+                # The apt step prints its list before fetching. Keep it even
+                # when subsequent package progress pushes it past the tail.
+                for line in log:
+                    if re.search(rb"https?://[^\s]+\tpriority:[123]\s*$", line):
+                        print(line.decode(errors="replace"), end="", file=sys.stderr)
+                log.seek(max(0, path.stat().st_size - 16384))
+                print(f"--- {path.name} (tail) ---\n{log.read().decode(errors='replace')}",
+                      file=sys.stderr, flush=True)
+        raise
+    result = subprocess.CompletedProcess(args, process.returncode, output_path.read_text(), error_path.read_text())
     with COMMAND_LOCK, (ARTIFACTS / "commands.log").open("a") as log:
         log.write(f"$ {args!r}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}\nexit={result.returncode} duration={time.monotonic()-started:.2f}s\n")
     if result.returncode != expected:
@@ -121,6 +148,7 @@ def bundle(name, dockerfile, context=".", target=None, metadata=None):
 def build_stack():
     # Isolate runtime configuration without throwing away the caller's Go cache.
     ENV["GOCACHE"] = subprocess.check_output(["go", "env", "GOCACHE"], text=True).strip()
+    ENV["BUILDKIT_PROGRESS"] = "plain"
     started = time.monotonic()
     # A single Go invocation shares compilation across both binaries. Overlap it
     # with image builds; three workers bound CPU/memory on the four-core CI host.

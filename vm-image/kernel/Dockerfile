@@ -20,8 +20,8 @@
 # Linux stage (see "Ubuntu" in the root DESIGN.md). Only the toolchain is
 # Ubuntu's: the kernel it builds is libkrunfw's, whatever Ubuntu ships.
 ARG UBUNTU_IMAGE=public.ecr.aws/docker/library/ubuntu:resolute-20261105.1@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
-ARG UBUNTU_MIRROR_AMD64=http://azure.archive.ubuntu.com/ubuntu
-ARG UBUNTU_MIRROR_ARM64=http://azure.ports.ubuntu.com/ubuntu-ports
+ARG UBUNTU_MIRROR_AMD64=http://mirrors.edge.kernel.org/ubuntu
+ARG UBUNTU_MIRROR_ARM64=http://mirrors.mit.edu/ubuntu-ports
 
 FROM ${UBUNTU_IMAGE} AS build
 ARG UBUNTU_MIRROR_AMD64
@@ -29,12 +29,12 @@ ARG UBUNTU_MIRROR_ARM64
 
 RUN set -eu \
     && case "$(dpkg --print-architecture)" in \
-        amd64) mirror=$UBUNTU_MIRROR_AMD64 fallback=http://archive.ubuntu.com/ubuntu ;; \
-        arm64) mirror=$UBUNTU_MIRROR_ARM64 fallback=http://ports.ubuntu.com/ubuntu-ports ;; \
+        amd64) first=$UBUNTU_MIRROR_AMD64 second=http://ftp.osuosl.org/pub/ubuntu third=http://azure.archive.ubuntu.com/ubuntu ;; \
+        arm64) first=$UBUNTU_MIRROR_ARM64 second=http://azure.ports.ubuntu.com/ubuntu-ports third=http://ports.ubuntu.com/ubuntu-ports ;; \
         *) echo "no Ubuntu mirror for $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac \
     && mkdir -p /etc/apt/mirrors \
-    && printf '%s\tpriority:1\n%s\tpriority:2\n' "$mirror" "$fallback" > /etc/apt/mirrors/ubuntu.list \
+    && printf '%s\tpriority:1\n%s\tpriority:2\n%s\tpriority:3\n' "$first" "$second" "$third" > /etc/apt/mirrors/ubuntu.list \
     && printf '%s\n' 'Types: deb' 'URIs: mirror+file:/etc/apt/mirrors/ubuntu.list' \
         'Suites: resolute' 'Components: main universe' \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
@@ -43,8 +43,9 @@ RUN set -eu \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' 'Valid-Until-Max: 604800' \
         > /etc/apt/sources.list.d/ubuntu.sources \
     && printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "5";' > /etc/apt/apt.conf.d/80-discobox-apt \
-    && echo "apt reads $mirror, then $fallback"
-RUN apt-get update \
+    && echo "apt reads $first, then $second, then $third"
+RUN cat /etc/apt/mirrors/ubuntu.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         bc \
         binutils \
