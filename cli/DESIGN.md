@@ -921,8 +921,8 @@ waits on that server for `ReadyTimeout`, as on one starting, saying it waits
 for the server to answer, and never launches beside it: a second server would
 ask the first to shut down at the singleton lock. Once it answers, it is judged
 like any other answer, so an older one is still replaced; one found under the
-launch lock and waited out is otherwise left alone. Two cases still read as
-absent: a TCP dial that times out (Windows refuses a closed loopback port only
+launch lock and waited out is otherwise left alone. To the probes that decide
+whether to launch, two cases still read as absent: a TCP dial that times out (Windows refuses a closed loopback port only
 after about two seconds, past the probe timeout, so reading that as a server
 would stall every cold start there), and a full backlog on macOS, which refuses
 it the same way as a socket whose server has exited.
