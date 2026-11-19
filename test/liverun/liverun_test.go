@@ -1,4 +1,4 @@
-// Package liverun_test runs scripts/live-run.sh, the one live run's recipe,
+// Package liverun_test runs scripts/live-run.sh, the live validation recipe,
 // without a provider: its dry run, and its live path against stand-in
 // discobox, disco-vm and curl commands that record how they were called.
 package liverun_test
@@ -22,16 +22,24 @@ const stubDiscobox = `#!/usr/bin/env bash
 set -eu
 printf '%s\n' "discobox $*" >>"$STUB/calls"
 args=()
-for a in "$@"; do case $a in --server|--server=*|http://*|-o|json) ;; *) args+=("$a") ;; esac; done
+for a in "$@"; do case $a in --server|--server=*|unix://*|-o|json) ;; *) args+=("$a") ;; esac; done
 set -- "${args[@]}"
 case "$1 ${2:-} ${3:-}" in
+"admin harness get") echo '{}' ;;
+"secret bound --harness") cat "$STUB/harness-binding" 2>/dev/null || echo '{"boundSecrets":[{"use":true,"envVar":"ANTHROPIC_API_KEY","routes":[[{"hosts":["api.anthropic.com"]}]]}]}' ;;
+"secret create --name") echo '{"id":"sec_T1"}' ;;
+"secret bind sec_T1"|"secret rm sec_T1") ;;
 "admin provider list") echo '[]' ;;
 "admin box get")
 	# $STUB/provision, when there, is the discobox's provisioning state.
-	cat "$STUB/provision" 2>/dev/null || echo '{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"ready"}}}}' ;;
-"admin pool logs") echo "pool journal" ;;
+	if [ "$4" = sbx_T2 ]; then
+		cat "$STUB/second-box" 2>/dev/null || echo '{"runtime":{"state":"running","startedFrom":{"from":"snapshot","snapshot":"snapshot-1"}}}'
+	else
+		cat "$STUB/provision" 2>/dev/null || echo '{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"ready"}}}}'
+	fi ;;
+"admin pool logs") echo "control-plane channel open" ;;
 "admin provider create")
-	for a in "$@"; do case $a in @*) cp "${a#@}" "$STUB/provider.json" ;; esac; done
+	for a in "$@"; do case $a in @*) cp "${a#@}" "$STUB/provider.json"; jq -r ".driver.region" "$STUB/provider.json" >"$STUB/provider-region" ;; esac; done
 	echo '{"id":"prov_T1"}' ;;
 "admin provider check")
 	# The server answers a failed check 200 with its outcome; the CLI prints
@@ -48,7 +56,7 @@ case "$1 ${2:-} ${3:-}" in
 		echo '{"state":"failed","errorMessage":"pool pool_T1 bootstrap provision: bootstrap stopped making progress"}'; exit 0
 	fi
 	[ ! -e "$STUB/pool.deleted" ] || { echo 'request failed: 404 Not Found' >&2; exit 1; }
-	cat "$STUB/pool.state" 2>/dev/null || echo '{"state":"active","ready":true,"schedulable":true}' ;;
+	cat "$STUB/pool.state" 2>/dev/null || echo '{"state":"active","ready":true,"schedulable":true,"resources":{"snapshots":{"held":[{"key":"snapshot-1"}]}}}' ;;
 "admin pool rm") touch "$STUB/pool.deleted" ;;
 "admin provider get")
 	if [ -e "$STUB/provider.deleted" ]; then cat "$STUB/provider.gone" >&2 2>/dev/null || echo 'request failed: 404 Not Found' >&2; exit 1; fi
@@ -58,10 +66,15 @@ case "$1 ${2:-} ${3:-}" in
 "admin box update")
 	[ ! -e "$STUB/box-update-refused" ] || { echo 'request failed: 403 Forbidden' >&2; exit 1; } ;;
 run*)
+	if [ -e "$STUB/created-first" ]; then
+		echo '{"id":"sbx_T2"}'
+		exit 0
+	fi
 	if [ -e "$STUB/no-default-harness" ] && ! printf '%s\n' "$@" | grep -qx -- -H; then
 		echo 'request failed: 409 Conflict: no harness given and this project has no default; pass --harness, or set one with ` + "`discobox admin harness set-default <harness>`" + `' >&2; exit 1
 	fi
-	prompt=$(printf '%s\n' "$@" | grep -o 'string [0-9a-f]* written' | awk '{ print $2 }')
+	touch "$STUB/created-first"
+	prompt=$(printf '%s\n' "$@" | awk 'match($0, /string [0-9a-f]+ written/) { print substr($0, RSTART+7, RLENGTH-15) }')
 	# Reversed in awk: rev is util-linux's, which neither the devShell nor a
 	# discobox provides.
 	printf '%s' "$prompt" | awk '{ for (i = length($0); i > 0; i--) printf "%s", substr($0, i, 1) }' >"$STUB/answer"
@@ -74,6 +87,10 @@ attach*) echo "the screen" ;;
 exec*)
 	# The listener the closed-proxy step starts prints the ports it bound.
 	case "$*" in
+	*"claude -p"*)
+		prompt=$(printf '%s\n' "$@" | grep -o 'string [0-9a-f]* written' | awk '{print $2}')
+		printf '%s' "$prompt" | awk '{for (i = length($0); i > 0; i--) printf "%s", substr($0, i, 1); print ""}' ;;
+	*/run/discobox/secrets/secrets.json*) echo true ;;
 	*discobox-live-run-listener*) cat "$STUB/listener" 2>/dev/null || printf 'busy \nlistening 8080 8000 3000 5000 5173\n' ;;
 	*)
 		# $STUB/probes-before, while it is there, is what the probes see
@@ -89,16 +106,21 @@ esac
 const stubDiscoVM = `#!/usr/bin/env bash
 set -eu
 printf '%s\n' "disco-vm $*" >>"$STUB/calls"
-[ "$2" != boxd ] || [ "${BOXD_REGION:-}" = fra ] || { echo 'disco-vm: boxd: configuration: region is required' >&2; exit 1; }
+[ "$2" != boxd ] || [[ "${BOXD_REGION:-}" = fra || "${BOXD_REGION:-}" = nyc ]] || { echo 'disco-vm: boxd: configuration: region is required' >&2; exit 1; }
 [ "$1 $3" = "--driver --pool" ] || { echo "stub disco-vm: no driver and scope: $*" >&2; exit 3; }
 scope=$4; shift 4
 case "$1 ${2:-}" in
 "ls -a")
 	[ ! -e "$STUB/ls-fails-$scope" ] || { echo 'disco-vm: boxd: exchange API key: 401 Unauthorized: invalid API key' >&2; exit 1; }
 	echo 'ID  NAME  FROM  OS  STATE  CREATED'
+	if [ "$BOXD_REGION" != "$(cat "$STUB/provider-region")" ]; then exit 0; fi
+	if [ "$scope" = pool-t1 ] && [ ! -e "$STUB/pool.deleted" ]; then
+		echo "abc sbx-t1 - linux running 1m"
+	fi
 	if [ -e "$STUB/left-$scope" ]; then
 		while read -r n; do echo "abc  $n  -  linux  running  1m"; done <"$STUB/left-$scope"
 	fi ;;
+"exec pool-t1") echo true ;;
 "cache ls") echo '[]' ;;
 "key ls")
 	# boxd refuses key management, the listing included, to an API key,
@@ -179,7 +201,7 @@ func liveRun(t *testing.T, setup func(stub string)) run {
 	}
 	evidence := filepath.Join(stub, "evidence")
 	report := filepath.Join(evidence, "report.md")
-	args := []string{script(t), "--driver", "boxd", "--egress-narrowed", "yes", "--evidence", evidence, "--attach-for", "0s", "--egress-timeout", "0s", "--server", "http://server.test"}
+	args := []string{script(t), "--driver", "boxd", "--egress-narrowed", "yes", "--evidence", evidence, "--attach-for", "0s", "--egress-timeout", "0s", "--server", "unix:///tmp/live-run-test.sock"}
 	if extra, err := os.ReadFile(filepath.Join(stub, "args")); err == nil {
 		args = append(args, strings.Fields(string(extra))...)
 	}
@@ -211,26 +233,67 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	}
 	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach", "provision",
 		"egress-level", "egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-allowed-direct", "egress-unlisted-direct", "egress-ip-direct",
-		"ingress-url", "closed-proxy", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
+		"ingress-url", "closed-proxy", "region", "sentinels", "pool-credential", "snapshot", "snapshot-start", "snapshot-sentinels", "channel", "cleanup-second-discobox", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
 		if !strings.Contains(r.report, "| PASS | "+step+" |") {
 			t.Errorf("report has no passing %s row:\n%s", step, r.report)
 		}
 	}
 	// The discobox is restricted to the allowed host, and the egress probes
 	// run against the hosts the run names.
-	assertCall(t, r, "discobox --server http://server.test admin box update sbx_T1 --egress-deny-by-default --egress-allow example.com")
+	assertCall(t, r, "discobox --server unix:///tmp/live-run-test.sock admin box update sbx_T1 --egress-deny-by-default --egress-allow example.com")
 	// The cleanup's order: the discobox, the pool (its grant of the key goes
 	// with it), the provider, then what the provider holds, in each scope.
-	order := []string{"admin box purge sbx_T1", "admin pool rm pool_T1", "admin provider rm prov_T1",
+	order := []string{"admin box purge sbx_T2", "admin box purge sbx_T1", "admin pool rm pool_T1", "admin provider rm prov_T1",
 		"--pool pool-t1 ls -a", "--pool prov-t1 ls -a"}
 	last := -1
 	for _, want := range order {
-		i := indexOf(r.calls, want)
-		if i < 0 || i < last {
+		i := indexOf(r.calls[last+1:], want)
+		if i < 0 {
 			t.Fatalf("%q is not called in order %v:\n%s", want, order, strings.Join(r.calls, "\n"))
 		}
-		last = i
+		last += i + 1
 	}
+}
+
+func TestLiveRunChecksNonDefaultRegion(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "args"), "--region nyc", 0o644)
+	})
+	if r.exit != 0 || !strings.Contains(r.report, "| PASS | region | sbx-t1 is listed in nyc and absent from fra") {
+		t.Fatalf("non-default region run failed:\n%s", r.report)
+	}
+	assertCall(t, r, "https://dvm-pool-t1--sbx-t1.nyc.boxd.sh")
+}
+
+func TestLiveRunRequiresHarnessCredential(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "harness-binding"), `{"boundSecrets":[]}`+"\n", 0o644)
+	})
+	if r.exit == 0 || !strings.Contains(r.report, "Claude Code has no bound Anthropic credential") {
+		t.Fatalf("run did not reject an absent credential:\n%s", r.report)
+	}
+	if indexOf(r.calls, "admin provider create") >= 0 {
+		t.Fatal("the provider was created before preflight passed")
+	}
+}
+
+func TestLiveRunRejectsUnrestrictedHarnessCredential(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "harness-binding"), `{"boundSecrets":[{"use":true,"envVar":"ANTHROPIC_API_KEY","routes":[[{"hosts":["*"]}]]}]}`+"\n", 0o644)
+	})
+	if r.exit == 0 || !strings.Contains(r.report, "no bound Anthropic credential limited to the harness's hosts") {
+		t.Fatalf("run did not reject an unrestricted credential:\n%s", r.report)
+	}
+}
+
+func TestLiveRunRejectsSecondBoxFromBase(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "second-box"), `{"runtime":{"state":"running","startedFrom":{"from":"base"}}}`+"\n", 0o644)
+	})
+	if r.exit == 0 || !strings.Contains(r.report, "| FAIL | snapshot-start | sbx_T2 started from no snapshot, expected snapshot-1") {
+		t.Fatalf("run did not reject the second box's origin:\n%s", r.report)
+	}
+	assertCall(t, r, "admin box purge sbx_T2")
 }
 
 // The run narrows the discobox's own egress level, never the pool's: a
@@ -249,7 +312,7 @@ func TestLiveRunNarrowsTheDiscoboxNotThePool(t *testing.T) {
 	if narrow < 0 {
 		t.Fatalf("the discobox's own egress level is never restricted:\n%s", strings.Join(r.calls, "\n"))
 	}
-	if probe := indexOf(r.calls, "exec"); probe >= 0 && probe < narrow {
+	if probe := indexOf(r.calls, "exec sbx_T1 -- sh -lc"); probe >= 0 && probe < narrow {
 		t.Fatalf("egress is probed before the discobox is narrowed:\n%s", strings.Join(r.calls, "\n"))
 	}
 }
@@ -744,7 +807,7 @@ func TestDryRun(t *testing.T) {
 		t.Skip("the script is bash")
 	}
 	empty := t.TempDir()
-	cmd := exec.CommandContext(t.Context(), "bash", script(t), "--driver", "boxd", "--dry-run", "--evidence", filepath.Join(empty, "evidence"), "--server", "http://server.test") //nolint:gosec // G204: the repository's own script
+	cmd := exec.CommandContext(t.Context(), "bash", script(t), "--driver", "boxd", "--dry-run", "--evidence", filepath.Join(empty, "evidence"), "--server", "unix:///tmp/live-run-test.sock") //nolint:gosec // G204: the repository's own script
 	// Nothing on PATH but what reads answers: a call out would fail.
 	jq, err := exec.LookPath("jq")
 	if err != nil {
@@ -778,7 +841,7 @@ func TestDryRun(t *testing.T) {
 		t.Fatalf("the dry run's report claims an observation, or did not finish:\n%s", s)
 	}
 	for _, want := range []string{
-		"+ discobox --server http://server.test -o json admin provider create --type boxd --name live-boxd-",
+		"+ discobox --server unix:///tmp/live-run-test.sock -o json admin provider create --type boxd --name live-boxd-",
 		`config: {"driver":{"apiKey":"<$BOXD_API_KEY>","region":"fra"}}`,
 		"+ disco-vm --driver boxd --pool pool-dryrun ls -a",
 		"| DRY | left-provider-scope |",
