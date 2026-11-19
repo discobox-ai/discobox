@@ -106,6 +106,11 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	var workflow struct {
+		On struct {
+			MergeGroup struct {
+				Types []string `yaml:"types"`
+			} `yaml:"merge_group"`
+		} `yaml:"on"`
 		Jobs map[string]struct {
 			Needs any    `yaml:"needs"`
 			If    string `yaml:"if"`
@@ -114,18 +119,21 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		t.Fatal(err)
 	}
+	if types := workflow.On.MergeGroup.Types; len(types) != 1 || types[0] != "checks_requested" {
+		t.Errorf("CI merge_group types = %v, want [checks_requested]", types)
+	}
 	changes, ok := workflow.Jobs["changes"]
 	if !ok {
 		t.Fatal("ci.yml has no changes job")
 	}
-	// Main pushes skip change detection and run the code checks.
+	// Main pushes and merge groups skip change detection and run the code checks.
 	// Unrelated label events skip change detection and all dependent jobs.
 	if want := "github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'macos')"; changes.If != want {
 		t.Errorf("job changes runs if %q, want %q", changes.If, want)
 	}
 	for name, job := range workflow.Jobs {
 		// A failed changes job leaves its output empty, so the job runs.
-		// A skipped changes job also allows pushes through.
+		// A skipped changes job also allows pushes and merge groups through.
 		want := "${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || needs.changes.result != 'skipped') }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
 		switch name {
 		case "changes":
@@ -134,7 +142,7 @@ func TestEveryJobWaitsOnChanges(t *testing.T) {
 			want = "needs.changes.outputs.code == 'false'"
 		case "darwin", "darwin-test":
 			// macOS bills at 20x: a pull request runs these only with the
-			// `macos` label, and a push to main always does.
+			// `macos` label. Main pushes and merge groups always run them.
 			want = "${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name != 'pull_request' || (needs.changes.result != 'skipped' && contains(github.event.pull_request.labels.*.name, 'macos'))) }}" //nolint:misspell // GitHub's expression function is spelled cancelled().
 		}
 		if job.Needs != "changes" {

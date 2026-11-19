@@ -300,12 +300,12 @@ flowchart TD
   `scripts/ci-changes.sh` with only git on eligible pull request events. Every
   other job waits on it. A docs-only pull request runs `docs` (`ci:docs`, the
   checks that read `docs/`) after `changes`. Other eligible runs, including
-  main pushes and runs where `changes` fails, run the code checks. The Darwin
-  jobs also require the `macos` label on pull requests. Adding any other
+  main pushes, merge groups, and runs where `changes` fails, run the code checks.
+  The Darwin jobs also require the `macos` label on pull requests. Adding any other
   label skips every job and uses a per-run concurrency group to protect
   active and pending CI. Eligible pull request runs share a group keyed by
-  PR number. Main pushes share a group keyed by ref. A newer run cancels
-  the older one in its group. Job conditions report skipped checks to GitHub.
+  PR number. Main pushes and merge groups use their own refs. A newer
+  run cancels the older one in its group. Job conditions report skipped checks to GitHub.
   Go's build and test cache is Depot Cache, which Depot's runners set as
   `GOCACHEPROG` for runs of the repository's own branches: a branch push and a
   same-repository pull request read and write it per object. A pull request
