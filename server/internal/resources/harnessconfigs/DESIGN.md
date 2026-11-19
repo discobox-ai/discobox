@@ -63,7 +63,9 @@ true of it, and true *by rule* rather than by slug:
   layer provides.
 - **A bundle carrying a whiteout is refused**, read from its layers
   (`refuseWhiteouts`): from the registry, the layers of its manifest (the
-  platform bundle's for this machine's platform, of its index); from the local
+  platform bundle's for this machine's platform, of its index, or else its
+  first Linux platform's: never another OS's entry, such as darwin's, whose
+  manifest is a macOS sandbox's, `publishedImage`); from the local
   daemon, what it saves, for its own platform where the daemon can be asked;
   from a development bundle's layout, the layers its manifest lists.
   A bundle's tree is its layers side by side, so a deletion has nothing to
