@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -130,7 +131,7 @@ func (b *Bundle) Write(dir string) error {
 	for _, name := range slices.Sorted(maps.Keys(b.Files)) {
 		f := b.Files[name]
 		p := filepath.Join(dir, filepath.FromSlash(name))
-		if info, err := os.Lstat(p); err == nil && info.Mode().IsRegular() && info.Mode().Perm() == f.Mode {
+		if info, err := os.Lstat(p); err == nil && info.Mode().IsRegular() && sameMode(info.Mode(), f.Mode) {
 			if current, err := os.ReadFile(p); err == nil && bytes.Equal(current, f.Content) {
 				continue
 			}
@@ -147,6 +148,14 @@ func (b *Bundle) Write(dir string) error {
 		}
 	}
 	return nil
+}
+
+// sameMode reports whether a staged file's mode is the one it would be
+// written with. Windows keeps no POSIX permissions (every file reads back
+// 0666 or 0444), so there only the content says whether a file changed; the
+// build context's modes come from the build, not the file.
+func sameMode(have, want fs.FileMode) bool {
+	return runtime.GOOS == "windows" || have.Perm() == want
 }
 
 // FeatureDir is the feature's directory in the staged context.

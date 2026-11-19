@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 func tree(t *testing.T) string {
@@ -101,13 +103,33 @@ func TestFeaturesInstallAtTheExistingPaths(t *testing.T) {
 				t.Errorf("%s installs nothing at %s", dir, p)
 			}
 		}
+		// What a box runs is executable: its step says so, which is what the
+		// box applies, and so does the file installed here, on a filesystem
+		// that keeps POSIX permissions.
+		spec, err := provisionspec.Parse(bundle.Files[bundle.FeatureDir()+"/"+provisionspec.FileName].Content)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, p := range []string{"/usr/local/bin/discobox-harness-run", bundle.Declaration.CaptureCommand()} {
+			if mode := stepMode(spec, p); mode != "0755" {
+				t.Errorf("%s installs %s with mode %q, want 0755", dir, p, mode)
+			}
 			info, err := os.Stat(filepath.Join(root, filepath.FromSlash(p)))
-			if err == nil && info.Mode().Perm()&0o111 == 0 {
+			if err == nil && runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
 				t.Errorf("%s installs %s not executable", dir, p)
 			}
 		}
 	}
+}
+
+// stepMode is the mode the file step installing path declares.
+func stepMode(spec provisionspec.Spec, path string) string {
+	for _, step := range spec.Steps {
+		if step.File != nil && step.File.Path == path {
+			return step.File.Mode
+		}
+	}
+	return ""
 }
 
 // The shell's bundle is its label, with no feature and so no layer.
