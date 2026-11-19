@@ -1,8 +1,9 @@
 # 26-11-19-735 — Ubuntu apt tries ordered mirrors for each architecture
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-19
-- **Would supersede**: [26-11-16-365](26-11-16-365-every-linux-base-is-the-newest-ubuntu-lts-read-from-a-fast-mirror.md) §3's mirror
+- Accepted by the owner by merging #1433, 2026-11-19
+- **Supersedes**: [26-11-16-365](26-11-16-365-every-linux-base-is-the-newest-ubuntu-lts-read-from-a-fast-mirror.md) §3's mirror
   order and the requirement to use one mirror family for both architectures.
 - **Issue**: [#1420](https://github.com/discobox-ai/discobox/issues/1420)
 

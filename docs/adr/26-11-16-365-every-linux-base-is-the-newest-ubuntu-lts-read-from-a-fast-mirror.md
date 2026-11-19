@@ -1,5 +1,7 @@
 # 26-11-16-365 — Every Linux base is the newest Ubuntu LTS, read from a fast mirror
 
+> The mirror order in §3 was superseded by [26-11-19-735](26-11-19-735-ubuntu-apt-tries-ordered-mirrors-for-each-architecture.md).
+
 - **Status**: Accepted
 - **Date**: 2026-11-16
 - Accepted by the owner by merging #1243, 2026-11-17
