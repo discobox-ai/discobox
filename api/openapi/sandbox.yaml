@@ -845,6 +845,25 @@ components:
             required:
                 - state
             type: object
+        SandboxAgentProvisionRetry:
+            additionalProperties: false
+            description: The next automatic provisioning retry, present only until it starts.
+            properties:
+                at:
+                    description: When the scheduled attempt is due.
+                    format: date-time
+                    type: string
+                attempt:
+                    description: The number of the attempt that is scheduled.
+                    type: integer
+                of:
+                    description: The maximum number of automatic attempts.
+                    type: integer
+            required:
+                - attempt
+                - of
+                - at
+            type: object
         SandboxAgentProvisionStatus:
             additionalProperties: false
             description: Where the sandbox's provisioning stands this boot (ADR 26-10-16-423 §6). Every string in it is text the sandbox wrote.
@@ -860,6 +879,8 @@ components:
                 ready:
                     description: Whether what the sandbox waits for before it launches anything is in place - core, what the harness requires, and every feature's wiring. Features provisioned in the background may still be provisioning.
                     type: boolean
+                retry:
+                    $ref: '#/components/schemas/SandboxAgentProvisionRetry'
                 state:
                     description: pending - not started; provisioning - a feature is still being provisioned; ready - every feature is; failed - all are done, and one failed or readiness did.
                     enum:

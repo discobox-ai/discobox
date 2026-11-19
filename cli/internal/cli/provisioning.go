@@ -20,13 +20,13 @@ import (
 //
 // The document is read by sandboxcreate.RecordedProvision. Every string in it
 // was written by the box, and is made displayable here.
-func sandboxProvisioning(sb apimodel.Sandbox) string {
+func sandboxProvisioning(sb apimodel.Sandbox) (text string, finalFailure bool) {
 	if state, ok := sb.Runtime.RuntimeState.Get(); !ok || state != apiclientgen.SandboxRuntimeRuntimeStateRunning {
-		return ""
+		return "", false
 	}
 	status, ok := sandboxcreate.RecordedProvision(sb.Runtime)
 	if !ok {
-		return ""
+		return "", false
 	}
 	var provisioning, failed []string
 	for _, name := range slices.Sorted(maps.Keys(status.Features)) {
@@ -37,7 +37,6 @@ func sandboxProvisioning(sb apimodel.Sandbox) string {
 			failed = append(failed, name)
 		}
 	}
-	var text string
 	switch {
 	case status.State == provisionspec.StateFailed && !status.Ready && status.Error != "":
 		text = "provisioning failed: " + status.Error
@@ -48,5 +47,10 @@ func sandboxProvisioning(sb apimodel.Sandbox) string {
 	case len(provisioning) > 0:
 		text = "provisioning " + strings.Join(provisioning, ", ")
 	}
-	return terminalSafe(programstatus.Displayable(text, programstatus.MaxMsg))
+	// Lead with the retry so it stays visible in a narrow console row.
+	if status.Retry != nil && text != "" {
+		text = "retrying: " + text
+	}
+	finalFailure = status.State == provisionspec.StateFailed && status.Retry == nil
+	return terminalSafe(programstatus.Displayable(text, programstatus.MaxMsg)), finalFailure
 }

@@ -244,6 +244,11 @@ Nothing about the box changes; it is not a repair.
 - **Asked in the box.** `discobox-provision retry` writes a file in `RetryDir`
   (sticky, writable by all), which the agent takes once it has started or
   joined the run (`WatchRetries`), then waits on `provision.json`.
+- **Automatic retries.** The sandbox agent enables the tracker's three retries
+  for failed runs (ADR 26-11-19-797). The tracker publishes the next attempt
+  and its deadline in `provision.json` when the run ends. Starting a manual
+  run cancels the timer and resets the count under the same lock as the run
+  transition. Automatic attempts use the same reprovision path.
 - **A run that cannot start** (`Fail`) fails every feature it made pending, so
   nothing waits forever.
 - **After it.** `Tracker.Reprovisioned` fires when its run ends, and the
@@ -258,7 +263,9 @@ the run writes when it writes one). A placeholder execs `discobox-provision
 run FEATURE COMMAND`, which says on stderr that it waits, waits on
 `provision.json`, then finds the real command past the placeholders and execs
 it. A feature's placeholders go when it is ready, and every boot replaces the
-set. `discobox-provision wait FEATURE...` is the same wait for anything else.
+set. A placeholder for a failed async feature waits through the next
+scheduled retry and reports that attempt's outcome. `discobox-provision wait
+FEATURE...` waits for the current attempt.
 
 ## Applying contents
 

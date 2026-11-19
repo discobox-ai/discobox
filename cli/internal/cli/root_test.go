@@ -2562,3 +2562,24 @@ func TestLocalServerEnvNormalizesInheritedTrustPaths(t *testing.T) {
 		t.Fatal("empty trust settings were dropped")
 	}
 }
+
+// A running box whose async feature ended failed still counts as ready, so
+// nothing else marks it: ls names the failed feature in its ERROR column.
+func TestWriteSandboxesTableNamesAFailedFeature(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	sb := provisioningSandbox(apiclientgen.SandboxRuntimeRuntimeStateRunning,
+		`{"state":"failed","ready":true,"features":{"node":{"state":"ready"},"rust":{"state":"failed","error":"step rustup failed: exit status 56"}}}`)
+	sb.ID = "sandbox-1"
+	sb.Config = apimodel.SandboxConfig{Name: "alpha"}
+	sb.Runtime.DisplayState = apiclientgen.NewOptSandboxRuntimeDisplayState("running")
+	if err := app.writeSandboxes(cmd, []apimodel.Sandbox{sb}, nil); err != nil {
+		t.Fatalf("writeSandboxes: %v", err)
+	}
+	if want := "rust failed to provision"; !strings.Contains(out.String(), want) {
+		t.Fatalf("sandboxes output = %q, want %q", out.String(), want)
+	}
+}

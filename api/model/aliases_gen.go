@@ -164,6 +164,7 @@ type SSHKey = apigen.SSHKey
 type Sandbox = apigen.Sandbox
 type SandboxAgentProgramStatus = apigen.SandboxAgentProgramStatus
 type SandboxAgentProvisionFeature = apigen.SandboxAgentProvisionFeature
+type SandboxAgentProvisionRetry = apigen.SandboxAgentProvisionRetry
 type SandboxAgentProvisionStatus = apigen.SandboxAgentProvisionStatus
 type SandboxAgentStatusEntry = apigen.SandboxAgentStatusEntry
 type SandboxAgentStatusToken = apigen.SandboxAgentStatusToken

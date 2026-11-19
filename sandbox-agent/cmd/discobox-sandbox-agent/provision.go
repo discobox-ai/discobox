@@ -268,7 +268,7 @@ func applyDeliveredBundles(ctx context.Context, wait bool) int {
 		}
 	}
 	if wait {
-		status, err := provision.Wait(ctx, provisionspec.StatusPath, nil, nil)
+		status, err := provision.Wait(ctx, provisionspec.StatusPath, nil, false, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -295,7 +295,7 @@ func applyDeliveredBundles(ctx context.Context, wait bool) int {
 }
 
 func provisionWait(ctx context.Context, features []string) int {
-	status, err := provision.Wait(ctx, provisionspec.StatusPath, features, func(status provisionspec.Status, pending []string) {
+	status, err := provision.Wait(ctx, provisionspec.StatusPath, features, false, func(status provisionspec.Status, pending []string) {
 		fmt.Fprintf(os.Stderr, "discobox-provision: waiting for %s\n", provision.Describe(status, pending))
 	})
 	if err != nil {
@@ -321,7 +321,7 @@ func provisionRetry(ctx context.Context, dir, statusPath string) int {
 		fmt.Fprintln(os.Stderr, "discobox-provision:", err)
 		return 1
 	}
-	status, err := provision.Wait(ctx, statusPath, nil, func(status provisionspec.Status, _ []string) {
+	status, err := provision.Wait(ctx, statusPath, nil, false, func(status provisionspec.Status, _ []string) {
 		var pending []string
 		for name, feature := range status.Features {
 			if !feature.State.Done() {
@@ -354,7 +354,11 @@ func provisionRetry(ctx context.Context, dir, statusPath string) int {
 // provisionRun is a placeholder's: say the feature is still provisioning,
 // wait for it, and run the real command in this process's place.
 func provisionRun(ctx context.Context, feature, command string, args []string) int {
-	status, err := provision.Wait(ctx, provisionspec.StatusPath, []string{feature}, func(status provisionspec.Status, pending []string) {
+	status, err := provision.Wait(ctx, provisionspec.StatusPath, []string{feature}, true, func(status provisionspec.Status, pending []string) {
+		if status.Retry != nil && status.Features[feature].State == provisionspec.StateFailed {
+			fmt.Fprintf(os.Stderr, "discobox: the %s feature failed to provision. Waiting for the automatic retry\n", feature)
+			return
+		}
 		fmt.Fprintf(os.Stderr, "discobox: %s is not installed yet: the %s feature is still provisioning. Waiting for it: %s\n", command, feature, provision.Describe(status, pending))
 	})
 	if err != nil {

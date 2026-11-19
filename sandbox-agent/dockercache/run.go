@@ -29,7 +29,7 @@ import (
 func Run(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	status, err := provision.Wait(ctx, provisionspec.StatusPath, []string{"docker"}, func(status provisionspec.Status, pending []string) {
+	status, err := provision.Wait(ctx, provisionspec.StatusPath, []string{"docker"}, false, func(status provisionspec.Status, pending []string) {
 		notice("waiting for " + provision.Describe(status, pending))
 	})
 	if err == nil {

@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 )
 
 // A reprovision acts in the box as starting an exec does: exec:write lets it
@@ -64,5 +67,32 @@ func TestReprovisionWithNoProvisioningConflicts(t *testing.T) {
 	router.ServeHTTP(resp, req)
 	if resp.Code != http.StatusConflict {
 		t.Fatalf("status = %d %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestStatusIncludesScheduledReprovision(t *testing.T) {
+	tracker := provision.NewTracker("")
+	tracker.EnableAutomaticRetry(t.Context(), func(provisionspec.Status) {
+		t.Error("retry started during the status request")
+	})
+	tracker.Fail(errors.New("fetch failed"))
+	defer tracker.Rerun()
+	router, token, _ := runtimeConfigRouterWithPoolConfig(t, func(cfg *Config) {
+		cfg.Provision = tracker
+	})
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token(ScopeStatusRead))
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	var body struct {
+		Provision provisionspec.Status `json:"provision"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := tracker.Status().Retry
+	got := body.Provision.Retry
+	if resp.Code != http.StatusOK || got == nil || want == nil || got.Attempt != want.Attempt || got.Of != want.Of || !got.At.Equal(want.At.Truncate(time.Second)) {
+		t.Fatalf("status response %d: retry %+v, want %+v", resp.Code, got, want)
 	}
 }

@@ -111,6 +111,10 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		if serverOf != nil {
 			fmt.Fprintf(tw, "%s\t", serverOf[sandbox.ID])
 		}
+		message := sandboxMessage(sandbox)
+		if message == "" {
+			message, _ = sandboxProvisioning(sandbox)
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sandboxDisplayState(sandbox),
 			programStatusColumn(sandbox),
@@ -120,7 +124,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			git.diffColumn(),
 			sandboxUpgradeState(sandbox),
 			truncateTableValue(sandboxTagsColumn(sandbox), 40),
-			truncateTableValue(sandboxMessage(sandbox), 80),
+			truncateTableValue(message, 80),
 			formatTime(sandbox.CreatedAt),
 			sandboxSource(sandbox),
 			terminalSafe(sandbox.ParentSandboxId.Or("-")),

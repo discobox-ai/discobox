@@ -1500,8 +1500,10 @@ bidirectional overrides or invisible formatting.
 The same status carries the box's provisioning (`runtime.agentStatus.provision`,
 its `provision.json`, ADR 26-10-16-423 §6), read the same way
 (`sandboxProvisioning`) into one line: the features still provisioning, or the
-ones that failed, and nothing once all are ready. Under the console's cursor
-it takes the name's place, after an error and a blocked agent's text.
+ones that failed, and nothing once all are ready. When the agent has a retry
+scheduled, the summary says it is retrying (ADR 26-11-19-797). The ERROR
+column in `discobox ls` uses this summary when there is no recorded error or
+automatic repair cause. Under the console's cursor it takes the name's place, after an error and a blocked agent's text.
 
 `discobox admin box reprovision` runs a running box's failed features again
 in place (`reprovision.go`, [ADR 26-11-11-560](../docs/adr/26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)).
