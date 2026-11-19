@@ -472,8 +472,9 @@ it stands for, so a create reads it alike from anywhere.
 
 `discobox skill` prints the embedded `discobox-host` skill stamped with the
 client version (ADR 26-11-17-675). It points agents to the running CLI's tool
-help for the declaration reference. With explicit install or uninstall, the
-command manages copies in the user, Git worktree, or supplied skill
+help for the declaration reference and explains how to check for duplicates and
+prepare a public issue report from the host. With explicit install or uninstall,
+the command manages copies in the user, Git worktree, or supplied skill
 directories. Admin uninstall lists and removes marked user copies.
 
 Local sandbox creation skips skill files whose front matter marks them
