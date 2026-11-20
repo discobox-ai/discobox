@@ -117,7 +117,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 #
 # Bumping it can also invalidate the `discobox-review` skill, which documents
 # this binary's interface from another repository and is installed further
-# down: re-read `sandbox-agent/features/review/skills/discobox-review/SKILL.md` against
+# down: re-read `sandbox-agent/features/core/skills/discobox-review/SKILL.md` against
 # the version you move to. Nothing else in the build will notice.
 ARG REVIEW_VERSION=v0.0.0-20261024044123-efdd16533e4e
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \

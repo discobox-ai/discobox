@@ -312,7 +312,11 @@ func writeTreeFile(t *testing.T, root, rel, content string, mode os.FileMode) {
 // repository's on a name they share, and leave its other skills alone
 // (ADR 26-10-09-395 §3).
 func TestTheSandboxsSkillsWinOverTheRepositorys(t *testing.T) {
-	source, home := t.TempDir(), t.TempDir()
+	image, source, home := t.TempDir(), t.TempDir(), t.TempDir()
+	builtins := []string{"discobox", "discobox-access", "discobox-monitor", "discobox-review"}
+	for _, name := range builtins {
+		writeTreeFile(t, image, filepath.Join(name, "SKILL.md"), name+"\n", 0o644)
+	}
 	writeSkill(t, source, filepath.Join("review", "SKILL.md"), "the repository's\n", 0o644)
 	writeSkill(t, source, filepath.Join("review", "old.md"), "kept\n", 0o644)
 	writeSkill(t, source, filepath.Join("other", "SKILL.md"), "untouched\n", 0o644)
@@ -321,7 +325,10 @@ func TestTheSandboxsSkillsWinOverTheRepositorys(t *testing.T) {
 		{Path: "logo.png", Content: []byte{0x89, 0}},
 	}}}
 
-	// The repository's, then the sandbox's, in installSkills' order.
+	// Install built-ins, repository skills, and --skills content in launch order.
+	if err := installTree(image, home); err != nil {
+		t.Fatalf("install built-in skills: %v", err)
+	}
 	if err := installDeclaredSkills(source, home); err != nil {
 		t.Fatalf("install declared skills: %v", err)
 	}
@@ -330,6 +337,11 @@ func TestTheSandboxsSkillsWinOverTheRepositorys(t *testing.T) {
 	}
 	for _, dir := range skillDirectories {
 		root := filepath.Join(home, dir)
+		for _, name := range builtins {
+			if got := readFile(t, filepath.Join(root, name, "SKILL.md")); got != name+"\n" {
+				t.Fatalf("%s/%s/SKILL.md = %q, want the built-in skill", dir, name, got)
+			}
+		}
 		if got := readFile(t, filepath.Join(root, "review", "SKILL.md")); got != "the sandbox's\n" {
 			t.Fatalf("%s: review = %q, want the sandbox's", dir, got)
 		}
