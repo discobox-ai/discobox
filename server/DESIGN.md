@@ -421,8 +421,9 @@ worktree route.
 `releaseManifest` (`DISCOBOX_RELEASE_MANIFEST`) selects a complete runtime image
 set independently of the server binary version. It takes precedence over image
 settings, disables development image sync, and supplies harness seeding and
-provider image pins from the same inventory. Startup stages those images before
-service initialization and exposes the download phase through startup health.
+provider image pins from the same inventory. Pool providers resolve runtime
+images when they need them. Startup reads harness bundle metadata during
+service initialization and retains the bounded handover for existing pools.
 See [release manifests](../pkg/releasemanifest/DESIGN.md).
 
 `config.Load` resolves three layers in order: literal defaults from struct

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -155,18 +154,6 @@ func Run(ctx context.Context) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- serveAll(httpServer, listeners) }()
 
-	if cfg.Release != nil {
-		startup.setPhase("downloading release images")
-		_, err := imagecache.Open(cfg.ImageCacheDir).Stage(ctx, cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH), imagecache.Options{
-			OnProgress: func(p imagecache.Progress) {
-				startup.setPhase(fmt.Sprintf("downloading release images (%d/%d): %s", p.Index, p.Images, p.Image))
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("stage release images: %w", err)
-		}
-		startup.setPhase("opening the database")
-	}
 	db, err := database.New(database.Config{
 		Driver:  cfg.DatabaseDriver,
 		DSN:     cfg.DatabaseDSN,

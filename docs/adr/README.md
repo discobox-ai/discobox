@@ -89,7 +89,7 @@ duplicated number.
 | [26-11-19-780](26-11-19-780-the-docker-sandbox-base-ships-node-and-npm.md) | The Docker sandbox base ships Node and npm | Proposed |
 | [26-11-18-479](26-11-18-479-a-new-credential-can-keep-reviewed-places-on-exact-hosts.md) | A new credential can keep reviewed places on exact hosts | Accepted (amends 26-11-11-857 for body and WebSocket permissions) |
 | [26-11-18-571](26-11-18-571-a-server-routes-path-says-who-answers-it-and-nothing-is-under-api.md) | A server route's path says who answers it, and nothing is under `/api` | Accepted |
-| [26-11-18-127](26-11-18-127-pool-artifacts-are-fetched-when-a-pool-needs-them.md) | Pool artifacts are fetched when a pool needs them | Proposed (amends 0113 §§1–2 for automatic staging) |
+| [26-11-18-127](26-11-18-127-pool-artifacts-are-fetched-when-a-pool-needs-them.md) | Pool artifacts are fetched when a pool needs them | Accepted (amends 0113 §§1–2 for automatic staging) |
 | [26-11-18-067](26-11-18-067-a-framed-vz-vsock-connection-half-closes.md) | A framed vz VSOCK connection half-closes | Accepted (supersedes [26-11-17-182](26-11-17-182-a-vz-vsock-connection-is-always-drained-and-the-guest-sends-only-what-the-host-has-granted.md)'s deferral of `CloseWrite`: a framed connection's `CloseWrite` is its stream's half-close, and yamux's stream close timeout is off) |
 | [26-11-18-245](26-11-18-245-credential-requests-bound-bytes-and-routes.md) | Credential requests bound bytes and routes | Accepted (supersedes 26-11-02-022 §2’s policy-count limit) |
 | [26-11-18-649](26-11-18-649-a-boxs-manager-publishes-versioned-skills.md) | A box's manager publishes versioned skills | Proposed |

@@ -203,10 +203,9 @@ and starting and waiting for the agent — around the
 calls that perform them. A driver refines that from inside: `vz` and `libkrun` report
 fetching the VM image, which the engine can only see as part of starting a VM.
 
-A phase with a denominator reports it, and a phase without one is held. A pull
-is its own heartbeat — the Docker pulls report as their stream advances, and
-the guest image fetch reports on a ticker so a stalled download keeps the phase
-fresh rather than aging out mid-fetch — so a pull is never held.
+A phase with a denominator reports it. A held phase restates its last
+report during quiet stretches, including a Docker pull with no new stream
+events. Finishing the hold drains its heartbeat before the next phase begins.
 
 A refinement runs inside a held phase — the guest image fetch inside the
 engine's `starting_vm` — so the hold carries it. `Hold` returns a context the

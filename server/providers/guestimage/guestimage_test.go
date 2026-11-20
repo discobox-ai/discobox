@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -410,7 +411,10 @@ func TestResolveReportsFetchProgress(t *testing.T) {
 	if len(reports) < 2 {
 		t.Fatalf("reports = %d, want an opening one and a closing one at least", len(reports))
 	}
-	first := reports[0]
+	if reports[0].Reference != reference || reports[0].Total != 0 {
+		t.Fatalf("opening report = %+v, want named artifact before its size is known", reports[0])
+	}
+	first := reports[1]
 	if first.Reference != reference {
 		t.Errorf("first report reference = %q, want %q", first.Reference, reference)
 	}
@@ -562,4 +566,86 @@ func pushGuestImageForPlatform(t *testing.T, contents map[string][]byte, platfor
 	}
 	requests.Store(0)
 	return tag.Repository.Name() + "@" + digest.String(), requests
+}
+
+func TestResolveSharesCurrentFetchProgress(t *testing.T) {
+	t.Run("completed download", func(t *testing.T) { testResolveJoinsFetch(t, false) })
+	t.Run("canceled leader", func(t *testing.T) { testResolveJoinsFetch(t, true) })
+}
+
+func testResolveJoinsFetch(t *testing.T, cancelLeader bool) {
+	t.Helper()
+	reference, _ := pushGuestImage(t, map[string][]byte{"root.ext4": []byte("root filesystem")})
+	resolver, err := New(Config{
+		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
+		CacheDir:  t.TempDir(),
+		Platform:  linuxAMD64(),
+		Artifacts: []Artifact{{Name: "root.ext4"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	leaderProgress := make(chan Progress, 1)
+	release := make(chan struct{})
+	var once sync.Once
+	resume := func() { once.Do(func() { close(release) }) }
+	defer resume()
+	leader := make(chan error, 1)
+	leaderCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		var paused bool
+		_, err := resolver.Resolve(leaderCtx, func(progress Progress) {
+			if !paused && (cancelLeader || progress.Total > 0) && !progress.Done {
+				paused = true
+				leaderProgress <- progress
+				<-release
+			}
+		})
+		leader <- err
+	}()
+
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
+	var current Progress
+	select {
+	case current = <-leaderProgress:
+	case err := <-leader:
+		t.Fatalf("leader finished before reporting download progress: %v", err)
+	case <-timer.C:
+		t.Fatal("leader did not report download progress")
+	}
+
+	joinedProgress := make(chan Progress, 1)
+	joined := make(chan error, 1)
+	go func() {
+		first := true
+		_, err := resolver.Resolve(t.Context(), func(progress Progress) {
+			if first {
+				first = false
+				joinedProgress <- progress
+			}
+		})
+		joined <- err
+	}()
+	select {
+	case got := <-joinedProgress:
+		if got.Reference != reference || got.Current != current.Current || got.Total != current.Total {
+			t.Errorf("joining progress = %+v, want %+v", got, current)
+		}
+	case <-timer.C:
+		t.Fatal("joining resolver did not get progress while the download was paused")
+	}
+	if cancelLeader {
+		cancel()
+	}
+	resume()
+	if err := <-leader; (err != nil) != cancelLeader {
+		t.Errorf("leader error = %v, canceled = %t", err, cancelLeader)
+	}
+	if err := <-joined; err != nil {
+		t.Fatalf("joining resolver: %v", err)
+	}
 }

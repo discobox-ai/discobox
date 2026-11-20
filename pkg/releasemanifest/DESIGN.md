@@ -53,10 +53,9 @@ read any harness's manifest from, so `dev:released-images` needs a release
 from bundles on.
 
 The CLI can stage directly from the manifest without executing a development
-server to discover images. Direct server startup stages the same image set
-before initializing services, while its startup endpoint reports the download.
-Pool provisioning subsequently imports cached container images before making a
-pool available. Harness seeding reads metadata from the selected release's
+server to discover images. Pool provisioning fetches the boot artifacts it
+needs through the shared cache and imports cached container images before
+pulling from the registry. Harness seeding reads metadata from the selected release's
 bundles and fails startup if inspection fails. The manifest supplies the seed set even when the
 development binary knows about additional harnesses.
 

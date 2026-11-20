@@ -179,6 +179,17 @@ type Resolver struct {
 
 	mu       sync.Mutex
 	resolved *Bundle
+	flight   *resolution
+}
+
+// resolution shares the latest progress and final result with pools that need
+// the same artifact. The resolver mutex protects its fields.
+type resolution struct {
+	latest  Progress
+	changed chan struct{}
+	done    bool
+	bundle  *Bundle
+	err     error
 }
 
 // New validates a guest image configuration without touching the network.
@@ -250,8 +261,14 @@ func (r *Resolver) LocalDir() string {
 // server keeps booting the guest it resolved first for as long as it runs.
 func (r *Resolver) Invalidate() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	for r.flight != nil {
+		changed := r.flight.changed
+		r.mu.Unlock()
+		<-changed
+		r.mu.Lock()
+	}
 	r.resolved = nil
+	r.mu.Unlock()
 }
 
 // Reference reports the configured guest image reference, or "" when an
@@ -267,21 +284,72 @@ func (r *Resolver) Reference() string {
 // Resolve returns the artifact bundle, pulling and extracting the guest image
 // the first time it is needed on this host.
 //
-// report, when set, narrates the pull. It is only ever called for a fetch that
-// actually moves bytes: an override directory, a local build, and a cache hit
-// all resolve without touching the network and have nothing to narrate.
+// report narrates registry work, including the latest progress of an ongoing
+// fetch for callers that join it. Cache hits resolve without progress.
 func (r *Resolver) Resolve(ctx context.Context, report ProgressFunc) (*Bundle, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	for r.flight != nil {
+		flight := r.flight
+		r.mu.Unlock()
+		bundle, err := r.wait(ctx, flight, report)
+		if err == nil {
+			return bundle, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		// A failed fetch may have used a different pool's deadline. Give
+		// this caller the same chance to resolve as a fresh caller.
+		r.mu.Lock()
+	}
 	if r.resolved != nil {
-		return r.resolved, nil
+		bundle := r.resolved
+		r.mu.Unlock()
+		return bundle, nil
 	}
-	bundle, err := r.resolve(ctx, report)
-	if err != nil {
-		return nil, err
-	}
+	flight := &resolution{changed: make(chan struct{})}
+	r.flight = flight
+	r.mu.Unlock()
+
+	bundle, err := r.resolve(ctx, func(progress Progress) {
+		r.mu.Lock()
+		flight.latest = progress
+		close(flight.changed)
+		flight.changed = make(chan struct{})
+		r.mu.Unlock()
+		if report != nil {
+			report(progress)
+		}
+	})
+	r.mu.Lock()
+	flight.bundle, flight.err, flight.done = bundle, err, true
 	r.resolved = bundle
-	return bundle, nil
+	r.flight = nil
+	close(flight.changed)
+	r.mu.Unlock()
+	return bundle, err
+}
+
+func (r *Resolver) wait(ctx context.Context, flight *resolution, report ProgressFunc) (*Bundle, error) {
+	var previous chan struct{}
+	for {
+		r.mu.Lock()
+		latest, changed := flight.latest, flight.changed
+		done, bundle, err := flight.done, flight.bundle, flight.err
+		r.mu.Unlock()
+		if report != nil && latest.Reference != "" && changed != previous {
+			report(latest)
+		}
+		if done {
+			return bundle, err
+		}
+		previous = changed
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-changed:
+		}
+	}
 }
 
 func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, error) {
@@ -385,20 +453,15 @@ func fetchProgress(reference string, report ProgressFunc) func(imagecache.Progre
 	}
 	var last time.Time
 	var lastRetry *imagecache.Retry
+	var lastTotal int64
 	return func(fetch imagecache.Progress) {
-		// The store opens with a report that names the image before its
-		// manifests say how big it is. The driver has announced the phase
-		// already, and a byte counter with no denominator says nothing more.
-		if fetch.Total == 0 && !fetch.Done {
-			return
-		}
 		// A retry starting, ending or moving on to another attempt is passed on
 		// with the store's report that first carries it, rather than held for
 		// this interval: it is what explains a count that steps back.
-		if !fetch.Done && sameRetry(fetch.Retry, lastRetry) && time.Since(last) < progressInterval {
+		if !fetch.Done && fetch.Total == lastTotal && sameRetry(fetch.Retry, lastRetry) && time.Since(last) < progressInterval {
 			return
 		}
-		last, lastRetry = time.Now(), fetch.Retry
+		last, lastRetry, lastTotal = time.Now(), fetch.Retry, fetch.Total
 		report(Progress{
 			Reference:      reference,
 			Current:        fetch.Current,

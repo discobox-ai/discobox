@@ -11,7 +11,7 @@ import (
 )
 
 // Images is every image a first run on this machine will want, for the CLI that
-// stages them before starting this server (ADR 0113 §1): what the default
+// explicitly stages images (ADR 0113 §1): what the default
 // provider on this OS boots, then the sandbox base image, which a Docker
 // pool's container and every sandbox run — in the order a first run needs
 // them. No harness is an image, and bundles

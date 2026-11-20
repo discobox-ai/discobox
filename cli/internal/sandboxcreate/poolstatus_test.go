@@ -7,6 +7,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 )
 
 func poolWith(progress apimodel.PoolProvisionProgress, observed time.Time) *apimodel.Pool {
@@ -21,7 +22,7 @@ func poolWith(progress apimodel.PoolProvisionProgress, observed time.Time) *apim
 func TestPoolProvisionStatusNamesTheDriversWork(t *testing.T) {
 	for _, tc := range []struct {
 		phase apiclientgen.PoolProvisionPhase
-		want  Step
+		want  string
 	}{
 		{apiclientgen.PoolProvisionPhasePreloadingImages, "preloading images (one-time setup per image version)"},
 		{apiclientgen.PoolProvisionPhaseFetchingVMImage, "fetching the VM image"},
@@ -33,8 +34,8 @@ func TestPoolProvisionStatusNamesTheDriversWork(t *testing.T) {
 		{apiclientgen.PoolProvisionPhaseWaitingForPoolAgent, "waiting for the pool agent to come up"},
 	} {
 		pool := poolWith(apimodel.PoolProvisionProgress{Phase: tc.phase}, time.Now())
-		if got := PoolProvisionStatus(pool); got != tc.want {
-			t.Errorf("PoolProvisionStatus(%s) = %q, want %q", tc.phase, got, tc.want)
+		if got := provisionprogress.PoolStatus(pool); got != tc.want {
+			t.Errorf("provisionprogress.PoolStatus(%s) = %q, want %q", tc.phase, got, tc.want)
 		}
 	}
 }
@@ -52,10 +53,10 @@ func TestPoolProvisionStatusRendersAPullWithItsBytes(t *testing.T) {
 			LayersComplete: apiclientgen.NewOptInt(3),
 		}),
 	}, time.Now())
-	got := string(PoolProvisionStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	for _, want := range []string{"discobox-pool-agent:v1", "500.0 MiB", "1000.0 MiB", "3/40 layers"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("PoolProvisionStatus() = %q, missing %q", got, want)
+			t.Fatalf("provisionprogress.PoolStatus() = %q, missing %q", got, want)
 		}
 	}
 }
@@ -78,9 +79,9 @@ func TestPoolProvisionStatusNamesALayerFetchedAgain(t *testing.T) {
 			}),
 		}),
 	}, time.Now())
-	got := string(PoolProvisionStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	if want := "2/9 layers, retrying layer 3 of 9 after its transfer ended at 172.0 MiB"; !strings.Contains(got, want) {
-		t.Fatalf("PoolProvisionStatus() = %q, missing %q", got, want)
+		t.Fatalf("provisionprogress.PoolStatus() = %q, missing %q", got, want)
 	}
 }
 
@@ -89,19 +90,19 @@ func TestPoolProvisionStatusNamesALayerFetchedAgain(t *testing.T) {
 func TestPoolProvisionStatusIgnoresAStalePhase(t *testing.T) {
 	pool := poolWith(
 		apimodel.PoolProvisionProgress{Phase: apiclientgen.PoolProvisionPhaseStartingVM},
-		time.Now().Add(-2*ProvisionProgressFresh),
+		time.Now().Add(-2*provisionprogress.ProvisionProgressFresh),
 	)
-	if got := PoolProvisionStatus(pool); got != "" {
-		t.Fatalf("PoolProvisionStatus() = %q, want nothing for a stale phase", got)
+	if got := provisionprogress.PoolStatus(pool); got != "" {
+		t.Fatalf("provisionprogress.PoolStatus() = %q, want nothing for a stale phase", got)
 	}
 }
 
 func TestPoolProvisionStatusSaysNothingWithoutARecord(t *testing.T) {
-	if got := PoolProvisionStatus(&apimodel.Pool{}); got != "" {
-		t.Fatalf("PoolProvisionStatus() = %q, want nothing", got)
+	if got := provisionprogress.PoolStatus(&apimodel.Pool{}); got != "" {
+		t.Fatalf("provisionprogress.PoolStatus() = %q, want nothing", got)
 	}
-	if got := PoolProvisionStatus(nil); got != "" {
-		t.Fatalf("PoolProvisionStatus(nil) = %q, want nothing", got)
+	if got := provisionprogress.PoolStatus(nil); got != "" {
+		t.Fatalf("provisionprogress.PoolStatus(nil) = %q, want nothing", got)
 	}
 }
 
@@ -117,16 +118,16 @@ func TestPoolProvisionStatusShortensADigestPinnedImage(t *testing.T) {
 			Total:   apiclientgen.NewOptInt64(490 << 20),
 		}),
 	}, time.Now())
-	got := string(PoolProvisionStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	if !strings.Contains(got, "discobox-vm@a384499ea85a") {
-		t.Errorf("PoolProvisionStatus() = %q, want the short digest", got)
+		t.Errorf("provisionprogress.PoolStatus() = %q, want the short digest", got)
 	}
 	if strings.Contains(got, "db2479c8") {
-		t.Errorf("PoolProvisionStatus() = %q, still carries the whole digest", got)
+		t.Errorf("provisionprogress.PoolStatus() = %q, still carries the whole digest", got)
 	}
 	for _, want := range []string{"210.0 MiB", "490.0 MiB"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("PoolProvisionStatus() = %q, missing %q", got, want)
+			t.Errorf("provisionprogress.PoolStatus() = %q, missing %q", got, want)
 		}
 	}
 }
@@ -139,7 +140,7 @@ func TestPoolPreloadStatusReportsBytesWithoutClaimingAPull(t *testing.T) {
 			Current: apiclientgen.NewOptInt64(1 << 20), Total: apiclientgen.NewOptInt64(2 << 20),
 		}),
 	}, time.Now())
-	got := string(PoolProvisionStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	for _, want := range []string{"preloading images (one-time setup per image version)", "discobox-harness-shell:v1", "1.0 MiB", "2.0 MiB"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status %q lacks %q", got, want)
@@ -166,7 +167,7 @@ func TestPoolPreloadStatusReportsExtractionOnceItStarts(t *testing.T) {
 			LayersExtracted: apiclientgen.NewOptInt(37),
 		}),
 	}, time.Now())
-	got := string(PoolProvisionStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	want := "preloading images (one-time setup per image version): discobox-harness-claude-code:v1 — extracting 1.0 MiB of 4.0 MiB, 37/84 layers"
 	if got != want {
 		t.Fatalf("status = %q, want %q", got, want)

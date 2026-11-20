@@ -284,3 +284,47 @@ func shortHeartbeat(t *testing.T) func() {
 	poolPhaseHeartbeat = 10 * time.Millisecond
 	return func() { poolPhaseHeartbeat = previous }
 }
+
+func TestHoldReleaseWaitsForAnActiveHeartbeat(t *testing.T) {
+	defer shortHeartbeat(t)()
+
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(finish) }) }
+	defer unblock()
+	reports := 0
+	reporter := PoolProgressReporter(func(context.Context, string, PoolProvisionProgress) {
+		reports++
+		if reports == 2 {
+			close(started)
+			<-finish
+		}
+	})
+
+	_, release := reporter.Hold(t.Context(), "pool_1", PoolPhasePullingPoolImage)
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("heartbeat did not enter the reporter")
+	}
+	releasing := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		close(releasing)
+		release()
+		close(stopped)
+	}()
+	<-releasing
+	select {
+	case <-stopped:
+		t.Error("release returned while the heartbeat was still writing progress")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("release did not return after the heartbeat finished")
+	}
+}

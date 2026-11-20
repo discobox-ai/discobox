@@ -7,6 +7,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 )
 
 // provisioning builds a sandbox whose runtime says what the test is about.
@@ -64,7 +65,7 @@ func TestProvisionStatusReportsAnUnknownPhase(t *testing.T) {
 // insisting on work that finished long ago.
 func TestProvisionStatusIgnoresAStalePhase(t *testing.T) {
 	runtime := recentProgress(apiclientgen.SandboxProvisionPhasePullingImage)
-	runtime.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now().Add(-2 * ProvisionProgressFresh))
+	runtime.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now().Add(-2 * provisionprogress.ProvisionProgressFresh))
 
 	got := ProvisionStatus(provisioning(runtime))
 	if got != "waiting for the pool agent to become ready" {
@@ -265,13 +266,13 @@ func TestProvisionStatusNamesTheCloneAndHowFarItHasGot(t *testing.T) {
 // grow while the manifest is walked, so a percentage would visibly go
 // backwards.
 func TestPullLineReportsBothRatiosAndNoPercentage(t *testing.T) {
-	line := string(pullLine(apimodel.SandboxPullProgress{
+	line := provisionprogress.ImagePull(apimodel.SandboxPullProgress{
 		Image:          "ghcr.io/discobox-ai/discobox-harness-codex:latest",
 		Current:        apiclientgen.NewOptInt64(150 * 1024 * 1024),
 		Total:          apiclientgen.NewOptInt64(400 * 1024 * 1024),
 		Layers:         apiclientgen.NewOptInt(9),
 		LayersComplete: apiclientgen.NewOptInt(4),
-	}))
+	}, "pulling")
 	want := "pulling discobox-harness-codex:latest — 150.0 MiB of 400.0 MiB, 4/9 layers"
 	if line != want {
 		t.Fatalf("pull line = %q, want %q", line, want)
@@ -281,10 +282,10 @@ func TestPullLineReportsBothRatiosAndNoPercentage(t *testing.T) {
 // A pull that has not been told any layer sizes yet reports what it has rather
 // than a ratio against zero.
 func TestPullLineHandlesAnUnsizedPull(t *testing.T) {
-	line := string(pullLine(apimodel.SandboxPullProgress{
+	line := provisionprogress.ImagePull(apimodel.SandboxPullProgress{
 		Image:   "discobox-shell:latest",
 		Current: apiclientgen.NewOptInt64(2048),
-	}))
+	}, "pulling")
 	if line != "pulling discobox-shell:latest — 2.0 KiB" {
 		t.Fatalf("pull line = %q", line)
 	}

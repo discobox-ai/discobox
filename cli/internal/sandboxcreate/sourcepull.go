@@ -13,6 +13,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 )
 
@@ -73,7 +74,7 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 				return false, nil
 			}
 			if !allowed && d.options.ConfirmCredential == nil {
-				return false, fmt.Errorf("%s needs Git credentials: choose --git-credentials=local or --git-credentials=lend, or set git.credentials in %s; retry with discobox attach --git-credentials=local %s", displaySafe(remote), d.options.ConfigPath, d.sandboxID)
+				return false, fmt.Errorf("%s needs Git credentials: choose --git-credentials=local or --git-credentials=lend, or set git.credentials in %s; retry with discobox attach --git-credentials=local %s", provisionprogress.DisplaySafe(remote), d.options.ConfigPath, d.sandboxID)
 			}
 			if !allowed && d.options.ConfirmCredential != nil {
 				allowed, err = d.options.ConfirmCredential(ctx, state.Host.Or("")+"/"+state.Path.Or(""))
@@ -94,7 +95,7 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 		}
 		step := Status(ctx, d.client, d.projectID, sb)
 		if !strings.HasPrefix(string(step), "pool fetching ") {
-			waiting := Step("waiting for pool to fetch " + displaySafe(strings.TrimPrefix(sourcecache.RemoteKey(remote), "remote/")))
+			waiting := Step("waiting for pool to fetch " + provisionprogress.DisplaySafe(strings.TrimPrefix(sourcecache.RemoteKey(remote), "remote/")))
 			if step != "" {
 				waiting += " — " + step
 			}

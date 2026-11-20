@@ -136,7 +136,14 @@ func (e *Engine) ensureImageRef(ctx context.Context, lease *DockerClientLease, p
 	logger := slog.Default()
 	logger.Info("pulling image", "image", image, "pool", poolID)
 	started := time.Now()
-	pull, err := cli.ImagePull(ctx, image, client.ImagePullOptions{})
+	const phase = sandbox.PoolPhasePullingPoolImage
+	pullCtx, release := e.cfg.ProgressReporter.Hold(ctx, poolID, phase)
+	defer release()
+	e.cfg.ProgressReporter.ReportProgress(pullCtx, poolID, sandbox.PoolProvisionProgress{
+		Phase: phase,
+		Pull:  &sandbox.PoolPullProgress{Image: image},
+	})
+	pull, err := cli.ImagePull(pullCtx, image, client.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", image, err)
 	}
@@ -145,7 +152,7 @@ func (e *Engine) ensureImageRef(ctx context.Context, lease *DockerClientLease, p
 	// runs the pull either way and this is the one phase of bringing a pool up
 	// that can say how far in it is. A sandbox waiting for a pool to take it
 	// spends most of its wait right here on a cold host.
-	if err := e.consumePoolImagePull(ctx, pull, poolID, image, sandbox.PoolPhasePullingPoolImage); err != nil {
+	if err := e.consumePoolImagePull(pullCtx, pull, poolID, image, phase); err != nil {
 		return fmt.Errorf("pull image %q: %w", image, err)
 	}
 	// A pull on the classic image store records no arrival, so the image is

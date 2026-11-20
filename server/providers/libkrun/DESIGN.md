@@ -41,8 +41,8 @@ Everything is ordered off that:
    server's image store (ADR 0113 §5) and extracts `root.ext4` and `vmlinux`,
    one directory per digest. The pool reports this as
    `sandbox.PoolPhaseFetchingVMImage`, with byte counts while anything is
-   downloaded. The CLI stages these ahead of a first run on linux/amd64. A first-start
-   host probe chooses this provider when KVM and the default runtime are usable,
+   downloaded. Concurrent pool starts share the current download progress. A
+   first-start host probe chooses this provider when KVM and the default runtime are usable,
    otherwise Docker, with a warning naming the reason and loss of VM isolation.
 2. The launcher child boots the VM and its Docker daemon comes up.
 3. With development image sync on, the engine converges the watcher's

@@ -192,11 +192,19 @@ func (w *upgradeProgressRecorder) WriteHeader(code int) {
 }
 
 func TestExplicitUpgradeStartNarratesPoolThenUpgradeAndClearsProgress(t *testing.T) {
-	for _, outcome := range []string{"success", "failure", "superseded", "cancel"} {
+	for _, outcome := range []string{"success", "downloading", "failure", "superseded", "cancel"} {
 		t.Run(outcome, func(t *testing.T) {
 			svc, p, db := useFixture(t)
 			if err := db.Model(&model.Sandbox{}).Where("id = ?", "sb-1").Updates(map[string]any{"state": model.SandboxStateReady, "generation": 4, "observed_generation": 3, "upgrade_generation": 4, "last_successful_create": 3, "error_message": nil}).Error; err != nil {
 				t.Fatal(err)
+			}
+			wantPoolPhase := "pool to come online"
+			if outcome == "downloading" {
+				progress := []byte(`{"phase":"fetching_vm_image","pull":{"image":"registry.example/guest:1","current":1024,"total":2048}}`)
+				if err := svc.store.RecordPoolProvisionProgress(t.Context(), "pool-1", progress, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+				wantPoolPhase = "pulling guest:1 — 1.0 KiB of 2.0 KiB"
 			}
 			p.container.Store(true)
 			probes := 0
@@ -233,16 +241,16 @@ func TestExplicitUpgradeStartNarratesPoolThenUpgradeAndClearsProgress(t *testing
 			requestprogress.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				_, result = svc.StartSandbox(r.Context(), "project-1", "sb-1", services.StartSandboxBody{})
 			})).ServeHTTP(recorder, httptest.NewRequestWithContext(ctx, http.MethodPost, "/start", nil))
-			if (result == nil) != (outcome == "success") {
+			if (result == nil) != (outcome == "success" || outcome == "downloading") {
 				t.Fatalf("outcome=%s err=%v", outcome, result)
 			}
-			if len(recorder.phases) != 3 || !strings.Contains(recorder.phases[0], "pool to come online") || !strings.Contains(recorder.phases[1], "sandbox upgrade") || recorder.phases[2] != "" {
+			if len(recorder.phases) != 3 || !strings.Contains(recorder.phases[0], wantPoolPhase) || !strings.Contains(recorder.phases[1], "sandbox upgrade") || recorder.phases[2] != "" {
 				t.Fatalf("phases=%q", recorder.phases)
 			}
 			if p.creates.Load() != 0 || storedSandbox(t, svc).WakeEpoch != 1 {
 				t.Fatal("wait admitted a second operation")
 			}
-			if outcome != "success" && p.starts.Load() != 0 {
+			if result != nil && p.starts.Load() != 0 {
 				t.Fatal("start sent after failed wait")
 			}
 		})

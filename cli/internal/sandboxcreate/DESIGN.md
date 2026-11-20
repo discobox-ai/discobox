@@ -331,7 +331,7 @@ sandbox create requests.
   a phase older than `ProvisionProgressFresh`. `Status`
   is the entry point every narrated wait uses: when the sandbox's answer is only
   `StepWaitingForPool`, it reads the pool (`PoolReader`) and renders what the
-  pool's driver recorded instead (`PoolProvisionStatus`). `awaitSourceRequested`
+  pool's driver recorded instead (`provisionprogress.PoolStatus`). `awaitSourceRequested`
   reports it through the same `Report` as it waits, out of the reads that wait is
   making anyway. It lives here rather than in a frontend for the same reason the
   `Step` constants do, and because `internal/cli`'s other narrated waits — the
