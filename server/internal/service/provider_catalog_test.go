@@ -540,8 +540,8 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	if cfg.AgentPort != providerdocker.DefaultAgentPort() {
 		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, providerdocker.DefaultAgentPort())
 	}
-	if cfg.BindDockerSocket != "" {
-		t.Fatalf("bindDockerSocket = %q, want automatic socket selection", cfg.BindDockerSocket)
+	if cfg.BindDockerSocket != "/var/run/docker.sock" {
+		t.Fatalf("bindDockerSocket = %q, want /var/run/docker.sock", cfg.BindDockerSocket)
 	}
 	expectedHostMounts := existingDefaultHostMounts(t)
 	if len(cfg.HostMounts) != len(expectedHostMounts) {
@@ -775,7 +775,11 @@ func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
 		warnings   int
 	}{{"ready", "libkrun", 0}, {"unavailable", "docker", 1}} {
 		t.Run(tc.host, func(t *testing.T) {
-			useDefaultDockerPing(t)
+			if tc.want == "docker" {
+				useDefaultDockerPing(t)
+			} else {
+				t.Setenv("DOCKER_HOST", "unix://"+filepath.Join(shorttmp.Dir(t), "missing.sock"))
+			}
 			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", tc.host)
 			appStore, projectID := newProviderCatalogTestStore(t)
 			var warnings []string
@@ -802,6 +806,7 @@ func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
 			// A change in host capability must neither reseed nor repeat the warning,
 			// including when the service is recreated as it is on a server restart.
 			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", "unavailable")
+			t.Setenv("DOCKER_HOST", "unix://"+filepath.Join(shorttmp.Dir(t), "missing.sock"))
 			svc = service.New(appStore, nil, service.Options{AssetDir: t.TempDir(), StartupWarning: func(w string) { t.Errorf("repeated warning: %s", w) }})
 			if _, err := svc.InitializeDefaults(t.Context(), service.DefaultUserID); err != nil {
 				t.Fatal(err)

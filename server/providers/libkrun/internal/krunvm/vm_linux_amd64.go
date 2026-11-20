@@ -2,17 +2,13 @@ package krunvm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
-	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,28 +27,7 @@ func checkKVM() error {
 	const path = "/dev/kvm"
 	device, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			return fmt.Errorf("open %s: %w; enable hardware virtualization and load the host KVM modules, or expose /dev/kvm to this environment", path, err)
-		case errors.Is(err, os.ErrPermission):
-			if info, statErr := os.Stat(path); statErr == nil {
-				stat, ok := info.Sys().(*syscall.Stat_t)
-				if !ok {
-					return fmt.Errorf("open %s: %w", path, err)
-				}
-				gid := int(stat.Gid)
-				group, lookupErr := user.LookupGroupId(strconv.Itoa(gid))
-				if lookupErr == nil {
-					groups, _ := os.Getgroups()
-					if gid == os.Getegid() || slices.Contains(groups, gid) {
-						return fmt.Errorf("open %s: %w; this process belongs to the owning group %s; check the device mode and host policy for read/write access", path, err, group.Name)
-					}
-					return fmt.Errorf("open %s: %w; the device is owned by group %s; run `sudo usermod -aG %s $USER` and log out and back in (or run `newgrp %s` for this shell)", path, err, group.Name, group.Name, group.Name)
-				}
-				return fmt.Errorf("open %s: %w; grant your user read/write access to the device owned by group ID %d", path, err, gid)
-			}
-		}
-		return fmt.Errorf("open %s: %w", path, err)
+		return fmt.Errorf("open %s: %w; this host has no KVM, or this user is not in the group that owns it", path, err)
 	}
 	defer func() { _ = device.Close() }()
 	version, _, errno := syscall.Syscall(syscall.SYS_IOCTL, device.Fd(), kvmGetAPIVersion, 0)

@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"runtime"
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/registry"
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/pkg/version"
-	"github.com/discobox-ai/discobox/server/providers"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 
@@ -25,30 +23,6 @@ import (
 // HTTP server.
 func Run(ctx context.Context) error {
 	return internalserver.Run(ctx)
-}
-
-// PrintHostChecks reports the Linux first-run driver checks without starting
-// the server or creating runtime resources.
-func PrintHostChecks(ctx context.Context, w io.Writer) error {
-	type driverCheck struct {
-		Type    string `json:"type"`
-		Outcome string `json:"outcome"`
-		Message string `json:"message,omitempty"`
-	}
-	var checks []driverCheck
-	if runtime.GOOS == "linux" {
-		krunErr, dockerErr := providers.CheckDefaultLinuxHost(ctx)
-		checks = append(checks, driverCheck{Type: "libkrun", Outcome: "ok"})
-		if krunErr != nil {
-			checks[0].Outcome, checks[0].Message = "unavailable", krunErr.Error()
-			docker := driverCheck{Type: "docker", Outcome: "ok", Message: "sandboxes share the host kernel without a VM isolation boundary"}
-			if dockerErr != nil {
-				docker.Outcome, docker.Message = "unavailable", dockerErr.Error()
-			}
-			checks = append(checks, docker)
-		}
-	}
-	return json.NewEncoder(w).Encode(checks)
 }
 
 // PrintImages writes, one per line, the images a first run on this machine will

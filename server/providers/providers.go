@@ -2,10 +2,6 @@ package providers
 
 import (
 	"context"
-	"errors"
-	"time"
-
-	"github.com/discobox-ai/discobox/server/internal/model"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
@@ -71,40 +67,4 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 // rather than making each sandbox create discover it.
 func EnsurePlatformPrerequisites(ctx context.Context, options FactoryOptions) error {
 	return ensurePlatformPrerequisites(ctx, options)
-}
-
-// ErrNoHostCheck indicates that the provider has no local host preflight.
-var ErrNoHostCheck = errors.New("host checks are available for Docker and libkrun providers")
-
-// CheckHostInstance checks the drivers that have a local host preflight
-// without resolving or initializing their pool runtime.
-func CheckHostInstance(ctx context.Context, instance *model.SandboxProviderInstance) error {
-	switch instance.Type {
-	case docker.ProviderType:
-		cfg, err := docker.Decode(instance.Config)
-		if err != nil {
-			return err
-		}
-		return docker.CheckHost(ctx, cfg)
-	case libkrun.ProviderType:
-		cfg, err := libkrun.Decode(instance.Config)
-		if err != nil {
-			return err
-		}
-		return libkrun.CheckHost(ctx, cfg, true)
-	default:
-		return ErrNoHostCheck
-	}
-}
-
-// CheckDefaultLinuxHost checks libkrun first and only probes Docker when the
-// default pool would have to fall back to it.
-func CheckDefaultLinuxHost(ctx context.Context) (libkrunErr, dockerErr error) {
-	libkrunErr = libkrun.CheckHost(ctx, libkrun.Config{}, true)
-	if libkrunErr != nil {
-		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		dockerErr = docker.CheckHost(probeCtx, docker.Config{})
-	}
-	return libkrunErr, dockerErr
 }

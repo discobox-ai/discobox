@@ -46,7 +46,7 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 			return false, err
 		}
 		if sb.Runtime.State == apiclientgen.SandboxRuntimeStateFailed {
-			return false, &SandboxFailedError{Message: sb.Runtime.ErrorMessage.Or("unknown error")}
+			return false, fmt.Errorf("sandbox failed while pulling source: %s", sb.Runtime.ErrorMessage.Or("unknown error"))
 		}
 		if sb.Runtime.SourceDeliveredAt.IsSet() {
 			return true, nil

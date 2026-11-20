@@ -86,11 +86,3 @@ func (h *Handler) CheckSandboxProviderInstance(ctx context.Context, params serve
 	}
 	return check, nil
 }
-
-func (h *Handler) CheckSandboxProviderHost(ctx context.Context, params serverapi.CheckSandboxProviderHostParams) (serverapi.CheckSandboxProviderHostRes, error) {
-	check, err := h.services.Providers.CheckSandboxProviderHost(ctx, params.ProjectId, params.ProviderId)
-	if err != nil {
-		return apiError(err), nil
-	}
-	return check, nil
-}

@@ -132,9 +132,6 @@ func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serve
 		AuditSpoolBudget:    cfg.AuditSpoolBudget,
 		SandboxIdleTimeout:  cfg.SandboxIdleTimeout.Value(),
 	}
-	if engineCfg.DockerSocket == "" {
-		engineCfg.DockerSocket = unixSocketPath(daemonHost)
-	}
 	if engineCfg.ControlPlaneURL == "" {
 		reach, err := resolveControlPlaneReach(listenEndpoints, daemonHost)
 		if err != nil {

@@ -138,7 +138,3 @@ flowchart LR
   check could not run (no such instance). Nothing is stored: there is no
   health field and no background check, since an answer is true only when
   given and each check spends a call of the provider's account.
-
-The doctor calls `POST …/providers/{id}/host-check` for Docker and libkrun instances. This
-runs the same driver check as sandbox admission without building the provider
-or scheduling reconciliation.
