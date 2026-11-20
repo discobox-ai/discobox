@@ -59,9 +59,9 @@ func sandboxPaths(sandbox *apimodel.Sandbox) sandboxpath.Paths {
 // discobox could read pools) refuses a pool the caller named instead: that
 // pool is a choice of platform, and paths placed for a guessed one would name
 // places the discobox does not have.
-func (a *App) newSandboxPlacement(ctx context.Context, client *apiclientgen.Client, projectID, pool string) (string, platform.Platform, error) {
+func (a *App) newSandboxPlacement(ctx context.Context, client *apiclientgen.Client, projectID, pool string, getProject func() (*apimodel.Project, error)) (string, platform.Platform, error) {
 	pool = strings.TrimSpace(pool)
-	poolID, p, err := a.readNewSandboxPlacement(ctx, client, projectID, pool)
+	poolID, p, err := a.readNewSandboxPlacement(ctx, client, projectID, pool, getProject)
 	var refused *plainStatusError
 	if errors.As(err, &refused) && refused.code == http.StatusForbidden {
 		if pool != "" {
@@ -78,14 +78,14 @@ func (a *App) newSandboxPlacement(ctx context.Context, client *apiclientgen.Clie
 // unless it leaves them out. Neither read waits on the other, and both stand
 // between Enter and the create, so they are made at once. A failed placement
 // is the error reported when both fail, as it was when they ran in turn.
-func (a *App) newSandboxSettings(ctx context.Context, client *apiclientgen.Client, projectID, pool string, withProjectSkills bool, opts *sandboxcreate.PromptOptions) error {
+func (a *App) newSandboxSettings(ctx context.Context, client *apiclientgen.Client, projectID, pool string, withProjectSkills bool, getProject func() (*apimodel.Project, error), opts *sandboxcreate.PromptOptions) error {
 	var skills []sandboxcreate.SkillsRepository
 	var skillsErr error
 	var wg sync.WaitGroup
 	if withProjectSkills {
 		wg.Go(func() { skills, skillsErr = projectSkills(ctx, client, projectID) })
 	}
-	poolID, p, err := a.newSandboxPlacement(ctx, client, projectID, pool)
+	poolID, p, err := a.newSandboxPlacement(ctx, client, projectID, pool, getProject)
 	wg.Wait()
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func (a *App) newSandboxSettings(ctx context.Context, client *apiclientgen.Clien
 	return nil
 }
 
-func (a *App) readNewSandboxPlacement(ctx context.Context, client *apiclientgen.Client, projectID, pool string) (string, platform.Platform, error) {
+func (a *App) readNewSandboxPlacement(ctx context.Context, client *apiclientgen.Client, projectID, pool string, getProject func() (*apimodel.Project, error)) (string, platform.Platform, error) {
 	var poolID, lookup string
 	if pool != "" {
 		resolved, err := a.resolvePoolID(ctx, client, projectID, pool)
@@ -106,11 +106,7 @@ func (a *App) readNewSandboxPlacement(ctx context.Context, client *apiclientgen.
 		}
 		poolID, lookup = resolved, resolved
 	} else {
-		res, err := client.GetProject(ctx, apiclientgen.GetProjectParams{ProjectId: projectID})
-		if err != nil {
-			return "", platform.Platform{}, err
-		}
-		project, err := expectResponse[apimodel.Project](res)
+		project, err := getProject()
 		if err != nil {
 			return "", platform.Platform{}, err
 		}

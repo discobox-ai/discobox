@@ -44,9 +44,16 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	var posted map[string]any
+	var projectReads int
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1" {
+			projectReads++
+		}
 		if serveSSHSync(w, r) {
 			return
+		}
+		if projectReads != 1 {
+			t.Errorf("read project %d times before creation, want one", projectReads)
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
