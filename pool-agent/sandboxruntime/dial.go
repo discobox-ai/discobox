@@ -76,6 +76,7 @@ func (t *AgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		dial = resolved
 		transport = transport.Clone()
+		defer transport.CloseIdleConnections()
 		transport.DialContext = dial.dialHTTP
 	}
 	if dial.credential != nil {

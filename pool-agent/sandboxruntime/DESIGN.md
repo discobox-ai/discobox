@@ -23,3 +23,7 @@ on machine lifecycle changes or a failed dial.
 A credentialed endpoint uses verified TLS to the edge with HTTP/1.1. The
 transport sets the URL's authority as the HTTP Host and uses the header named by
 the driver. It leaves the sandbox-agent bearer token in Authorization.
+
+The edge forwards plain HTTP to the guest. A sandbox recorded as serving TLS
+is rejected on this route. Each request waits for the shared endpoint lookup
+with its own context, while the provider lookup has its own timeout.

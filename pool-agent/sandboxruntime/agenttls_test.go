@@ -17,6 +17,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/vm/pkg/machine"
 )
 
 // The document renews the agent's keypair for a sandbox whose bootstrap told
@@ -272,5 +273,16 @@ func TestAContainersKeypairIsPlacedWhereItServesTLS(t *testing.T) {
 	}
 	if _, err := tls.X509KeyPair(cert, key); err != nil {
 		t.Fatalf("the placed keypair does not load: %v", err)
+	}
+}
+
+func TestCredentialedEdgeRejectsAgentTLS(t *testing.T) {
+	r := runtimeConfigTestRuntime(t)
+	if err := r.recordAgentTLS("sbx_1", true); err != nil {
+		t.Fatal(err)
+	}
+	dial := &Dialer{credential: &machine.Credential{}}
+	if _, err := r.agentDialer("sbx_1", dial); err == nil || !strings.Contains(err.Error(), "requires a plain HTTP agent") {
+		t.Fatalf("credentialed edge with agent TLS: %v", err)
 	}
 }

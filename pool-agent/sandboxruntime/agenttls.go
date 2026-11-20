@@ -78,6 +78,9 @@ func (r *sandboxCore) agentDialer(sandboxID string, dial *Dialer) (*Dialer, erro
 	if err != nil || !serves {
 		return dial, err
 	}
+	if dial.credential != nil {
+		return nil, fmt.Errorf("sandbox %s serves TLS behind a credentialed edge that requires a plain HTTP agent", sandboxID)
+	}
 	config, err := proxyagent.SandboxAgentTLSConfig(r.root, r.projectID, r.poolID, sandboxID)
 	if err != nil {
 		return nil, err
