@@ -1829,3 +1829,84 @@ func TestMachineAsksPoolURLAndNoIngressURL(t *testing.T) {
 		}
 	}
 }
+
+func TestCanceledCallerLeavesMachineEndpointRefreshRunning(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	driver := &endpointRefreshDriver{service: func(ctx context.Context) (machine.Service, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		select {
+		case <-ctx.Done():
+			return machine.Service{}, ctx.Err()
+		case <-release:
+			if err := ctx.Err(); err != nil {
+				return machine.Service{}, err
+			}
+			return machine.Service{
+				PoolURL: "https://edge.example.test",
+				Credential: &machine.Credential{
+					Header: "X-Edge-Token", Token: "new-token", Expires: time.Now().Add(time.Hour),
+				},
+			}, nil
+		}
+	}}
+	r := &MachineSandboxRuntime{
+		sandboxCore: sandboxCore{root: layout.ContainerAt(t.TempDir())},
+		engine:      &engine.Engine{Driver: driver},
+	}
+	const sandboxID = "sbx_1"
+	if err := os.MkdirAll(r.sandboxRoot(sandboxID), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cache := &machineEndpointCache{}
+	cache.endpoint.Store(&machine.Endpoint{Credential: &machine.Credential{Expires: time.Now().Add(-time.Minute)}})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.agentEndpoint(ctx, sandboxID, cache)
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("provider lookup did not start")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled caller: %v", err)
+	}
+	close(release)
+	waitCtx, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+	endpoint, err := r.agentEndpoint(waitCtx, sandboxID, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.Credential.Token != "new-token" || calls.Load() != 1 {
+		t.Fatalf("expected one refresh and a fresh credential, saw %d provider calls", calls.Load())
+	}
+	if cached, err := r.agentEndpoint(waitCtx, sandboxID, cache); err != nil || cached != endpoint {
+		t.Fatalf("expected the refreshed endpoint to be cached, got error %v", err)
+	}
+}
+
+type endpointRefreshDriver struct {
+	machine.Driver
+	service func(context.Context) (machine.Service, error)
+}
+
+func (d *endpointRefreshDriver) Instance(_ context.Context, name string) (machine.Instance, error) {
+	return machine.Instance{Name: name}, nil
+}
+
+func (d *endpointRefreshDriver) Capabilities() machine.Capabilities {
+	return machine.Capabilities{URLs: machine.URLCapabilities{Credential: true}}
+}
+
+func (d *endpointRefreshDriver) Service(ctx context.Context, _ machine.Instance) (machine.Service, error) {
+	return d.service(ctx)
+}

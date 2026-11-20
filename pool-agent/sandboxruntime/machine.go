@@ -1403,11 +1403,15 @@ func (r *MachineSandboxRuntime) agentEndpoint(ctx context.Context, sandboxID str
 		if !r.hostsSandbox(sandboxID) {
 			return nil, ErrNotFound
 		}
-		inst, err := r.instance(ctx, sandboxID)
+		// Waiters have independent deadlines. Bound the shared provider lookup
+		// separately so one caller leaving cannot abort the refresh for others.
+		lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		inst, err := r.instance(lookupCtx, sandboxID)
 		if err != nil {
 			return nil, err
 		}
-		endpoint, err := r.engine.URL(ctx, inst, machine.URLPool)
+		endpoint, err := r.engine.URL(lookupCtx, inst, machine.URLPool)
 		if err != nil {
 			return nil, err
 		}
