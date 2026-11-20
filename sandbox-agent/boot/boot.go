@@ -121,7 +121,7 @@ func JoinFeatureGroups(logger *slog.Logger, path string) error {
 	}
 	b := newBooter()
 	b.wireFeatures(logger, bootstrap.Features)
-	return b.ensureAdditionalGroups(id, bootstrap.SandboxGroups())
+	return b.ensureAdditionalGroups(logger, id, bootstrap.SandboxGroups())
 }
 
 // provisionMachine provisions a Linux machine for the bootstrap at path, or,
@@ -322,7 +322,7 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err := b.ensureUser(id); err != nil {
 		return false, fmt.Errorf("ensure user: %w", err)
 	}
-	if err := b.ensureAdditionalGroups(id, bootstrap.SandboxGroups()); err != nil {
+	if err := b.ensureAdditionalGroups(logger, id, bootstrap.SandboxGroups()); err != nil {
 		return false, fmt.Errorf("ensure additional groups: %w", err)
 	}
 	if mode == wireContainer {

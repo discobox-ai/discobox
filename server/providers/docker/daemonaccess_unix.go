@@ -66,7 +66,10 @@ func describeSocketAccess(path string, gid int, member bool) string {
 	if name == "" {
 		name = strconv.Itoa(gid)
 	}
-	return fmt.Sprintf("%s is owned by group %s and this process is not in it: add the user to that group with `sudo usermod -aG %s $USER`, then start a new login session — on WSL, `wsl.exe --shutdown`", path, owner, name)
+	// A new session has the group and a server already running does not: its
+	// groups were fixed when it started, and the CLI reuses it rather than
+	// start another, so the reader is told to stop it too (#1471).
+	return fmt.Sprintf("%s is owned by group %s and this process is not in it: add the user to that group with `sudo usermod -aG %s $USER`, then start a new login session and run `discobox admin server shutdown --wait` from it, so the next command starts the server with the group — on WSL, `wsl.exe --shutdown`", path, owner, name)
 }
 
 // groupName is the name to type into usermod, or "" for a gid that has none.
