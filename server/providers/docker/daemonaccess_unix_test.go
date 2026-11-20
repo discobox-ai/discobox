@@ -73,8 +73,9 @@ func TestProbeSocketAccessReportsPermissionDenial(t *testing.T) {
 	if denied, hint := probeSocketAccess(ctx, path); !denied || !strings.Contains(hint, path) {
 		t.Fatalf("denied = %t, hint = %q, want denial naming %s", denied, hint, path)
 	}
-	if denied, _ := probeSocketAccess(ctx, filepath.Join(filepath.Dir(path), "missing.sock")); denied {
-		t.Fatal("a missing socket was classified as a permission denial")
+	// And a socket that is not there at all is not this explanation either.
+	if denied, hint := probeSocketAccess(ctx, filepath.Join(filepath.Dir(path), "missing.sock")); denied || hint != "" {
+		t.Fatalf("denied = %t, hint = %q for a missing socket", denied, hint)
 	}
 
 	// A parent directory can deny access to the socket and its metadata.
@@ -143,31 +144,5 @@ func TestLocalDriverCheckRefusesInaccessibleSocket(t *testing.T) {
 				t.Fatalf("daemon check error = %v, want refusal without ErrProviderNotReachable", err)
 			}
 		})
-	}
-}
-
-func TestDockerSocketUnavailableHint(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	runtimeDir := shorttmp.Dir(t)
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-	ctx := t.Context()
-
-	if hint := dockerSocketUnavailableHint(ctx, dockerSocketPath, true); !strings.Contains(hint, "install Docker Engine") {
-		t.Fatalf("missing Docker hint = %q", hint)
-	}
-	if err := os.WriteFile(filepath.Join(os.Getenv("PATH"), "dockerd"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if hint := dockerSocketUnavailableHint(ctx, dockerSocketPath, true); !strings.Contains(hint, "sudo systemctl start docker") || strings.Contains(hint, "install Docker Engine") {
-		t.Fatalf("stopped Docker hint = %q", hint)
-	}
-	socket := filepath.Join(runtimeDir, "docker.sock")
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	if hint := dockerSocketUnavailableHint(ctx, dockerSocketPath, true); !strings.Contains(hint, "DOCKER_HOST=unix://"+socket) {
-		t.Fatalf("rootless Docker hint = %q", hint)
 	}
 }

@@ -9,10 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
-	"os/exec"
 	"os/user"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,8 +17,7 @@ import (
 )
 
 // probeSocketAccess reports whether the socket denies access and, when its
-// metadata is readable, explains its group permissions. On Linux it also
-// diagnoses absent sockets and stopped daemons. Moby drops the
+// metadata is readable, explains its group permissions. Moby drops the
 // underlying permission error, so a direct dial recovers that information.
 func probeSocketAccess(ctx context.Context, path string) (denied bool, hint string) {
 	if path == "" {
@@ -32,9 +28,6 @@ func probeSocketAccess(ctx context.Context, path string) (denied bool, hint stri
 	if err == nil {
 		_ = conn.Close()
 		return false, ""
-	}
-	if runtime.GOOS == "linux" && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)) {
-		return false, dockerSocketUnavailableHint(ctx, path, errors.Is(err, fs.ErrNotExist))
 	}
 	if !errors.Is(err, fs.ErrPermission) {
 		return false, ""
@@ -93,28 +86,4 @@ func holdsGroup(gid int) bool {
 		return false
 	}
 	return slices.Contains(groups, gid)
-}
-
-func dockerSocketUnavailableHint(ctx context.Context, path string, missing bool) string {
-	var dialer net.Dialer
-	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	if runtimeDir == "" {
-		runtimeDir = filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
-	}
-	rootless := filepath.Join(runtimeDir, "docker.sock")
-	if path != rootless {
-		if conn, err := dialer.DialContext(ctx, "unix", rootless); err == nil {
-			_ = conn.Close()
-			return fmt.Sprintf("rootless Docker is listening at %s; set DOCKER_HOST=unix://%s in the server environment and restart the server; if the Docker provider sets bindDockerSocket explicitly, update it to the rootless socket too", rootless, rootless)
-		}
-	}
-	_, cliErr := exec.LookPath("docker")
-	_, daemonErr := exec.LookPath("dockerd")
-	if cliErr != nil && daemonErr != nil && missing {
-		return "Docker is not installed; install Docker Engine and start it with `sudo systemctl start docker`"
-	}
-	if path != dockerSocketPath {
-		return fmt.Sprintf("no Docker daemon is listening at %s; start the daemon for that socket or correct DOCKER_HOST (for rootless Docker, use `systemctl --user start docker`)", path)
-	}
-	return "the Docker daemon is stopped or its socket is unavailable; start it with `sudo systemctl start docker`"
 }

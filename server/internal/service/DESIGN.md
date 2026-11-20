@@ -156,8 +156,9 @@ application policy, not engine behavior.
   Windows, and a disabled `unsupported` instance elsewhere. The host probe runs
   before the transaction, and a fallback warning is published only after seeding
   commits. If neither Linux driver passes its host check, initialization fails
-  before writing the provider or pool and reports both failures. The libkrun instance records this server's Unix listener for its VM's
-  control-plane forward. Later boots neither probe nor change existing providers.
+  before writing the provider or pool and reports both failures. The libkrun
+  instance records this server's Unix listener for its VM's control-plane
+  forward. The installed marker skips this preflight on later boots.
   `WithoutDefaultProviderInstallation` skips this step.
 
 `EnsureHarnessAvailable` delegates to `harnessconfigs`; `internal/server` calls

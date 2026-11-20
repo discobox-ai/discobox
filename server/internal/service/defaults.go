@@ -18,7 +18,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/discobox/server/providers"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"
 	"github.com/discobox-ai/x/id"
@@ -227,7 +226,7 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 	}
 	switch runtime.GOOS {
 	case "linux":
-		krunErr, dockerErr := providers.CheckDefaultLinuxHost(ctx)
+		krunErr := libkrun.CheckHost(ctx, libkrun.Config{}, true)
 		if krunErr == nil {
 			provider.Type = libkrun.ProviderType
 			provider.Name = "libkrun"
@@ -242,7 +241,9 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 			}
 			return provider, "", nil
 		}
-		if dockerErr != nil {
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if dockerErr := providerdocker.CheckHost(probeCtx); dockerErr != nil {
 			return nil, "", fmt.Errorf("no usable driver for the default pool: libkrun is unavailable (%w); Docker is unavailable (%w)", krunErr, dockerErr)
 		}
 		provider.Type = "docker"
@@ -273,7 +274,8 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 
 func defaultDockerProviderConfig() model.RawJSON {
 	config := map[string]any{
-		"agentPort": providerdocker.DefaultAgentPort(),
+		"bindDockerSocket": "/var/run/docker.sock",
+		"agentPort":        providerdocker.DefaultAgentPort(),
 	}
 	if hostMounts := defaultDockerHostMounts(); len(hostMounts) > 0 {
 		config["hostMounts"] = hostMounts

@@ -974,7 +974,3 @@ func (s *routerTestServices) AuthorizePoolSandboxStart(context.Context, string, 
 func (s *routerTestServices) CompletePoolSandboxSuspend(context.Context, string, string, string, int64) error {
 	return nil
 }
-
-func (s *routerTestServices) CheckSandboxProviderHost(ctx context.Context, projectID, providerID string) (*services.ProviderCheck, error) {
-	return s.CheckSandboxProviderInstance(ctx, projectID, providerID)
-}

@@ -10020,42 +10020,6 @@ paths:
             summary: Check a sandbox provider instance
             tags:
                 - Providers
-    /projects/{projectId}/providers/{providerId}/host-check:
-        post:
-            description: Checks Docker daemon access or libkrun host prerequisites without initializing the provider runtime or scheduling pool work.
-            operationId: check-sandbox-provider-host
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Provider instance ID
-                  in: path
-                  name: providerId
-                  required: true
-                  schema:
-                    description: Provider instance ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ProviderCheck'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Check a sandbox provider host
-            tags:
-                - Providers
     /projects/{projectId}/pools:
         get:
             operationId: list-pools
