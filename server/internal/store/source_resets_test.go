@@ -35,10 +35,16 @@ func TestWorkSourceResetIsOrderedAndScopedToHostingPool(t *testing.T) {
 	if err != nil || len(foreign) != 0 {
 		t.Fatalf("foreign pool received %+v, %v", foreign, err)
 	}
-	if err := s.ObserveSourceResets(ctx, "sandbox-1", map[string]int64{"primary": 42}); err != nil {
+	if err := s.ObserveSourceResets(ctx, "project-1", "another-pool", "sandbox-1", map[string]int64{"primary": 1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ObserveSourceResets(ctx, "sandbox-1", map[string]int64{"primary": 1}); err != nil {
+	if state, err := s.GetSourceReset(ctx, "sandbox-1", "primary"); err != nil || state.AppliedRevision != 0 {
+		t.Fatalf("foreign pool changed acknowledgement: %+v, %v", state, err)
+	}
+	if err := s.ObserveSourceResets(ctx, "project-1", "pool-1", "sandbox-1", map[string]int64{"primary": 42}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ObserveSourceResets(ctx, "project-1", "pool-1", "sandbox-1", map[string]int64{"primary": 1}); err != nil {
 		t.Fatal(err)
 	}
 	applied, err := s.GetSourceReset(ctx, "sandbox-1", "primary")

@@ -80,7 +80,7 @@ func (s *Store) HostedSourceResets(ctx context.Context, poolID, sandboxID string
 	return resets, nil
 }
 
-func (s *Store) ObserveSourceResets(ctx context.Context, sandboxID string, revisions map[string]int64) error {
+func (s *Store) ObserveSourceResets(ctx context.Context, projectID, poolID, sandboxID string, revisions map[string]int64) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -88,6 +88,8 @@ func (s *Store) ObserveSourceResets(ctx context.Context, sandboxID string, revis
 	for slug, revision := range revisions {
 		if err := write.Model(&model.SandboxSourceReset{}).
 			Where("sandbox_id = ? AND slug = ? AND applied_revision < ? AND revision >= ?", sandboxID, slug, revision, revision).
+			Where("sandbox_id IN (?)", write.Model(&model.Sandbox{}).Select("id").
+				Where("id = ? AND project_id = ? AND pool_id = ?", sandboxID, projectID, poolID)).
 			UpdateColumn("applied_revision", revision).Error; err != nil {
 			return err
 		}

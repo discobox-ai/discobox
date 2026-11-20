@@ -255,7 +255,7 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 		if raw, supported := entry.Status["appliedSourceResets"]; supported {
 			var resets map[string]int64
 			if json.Unmarshal(raw, &resets) == nil {
-				if err := s.store.ObserveSourceResets(ctx, sandboxID, resets); err != nil {
+				if err := s.store.ObserveSourceResets(ctx, pool.ProjectID, poolID, sandboxID, resets); err != nil {
 					return err
 				}
 			}

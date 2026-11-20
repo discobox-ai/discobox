@@ -21,3 +21,7 @@ the latest revision at boot, resume and during convergence. A conditional
 revision read keeps unchanged snapshots out of recurring response bodies.
 The sandbox's applied skills revision drives retries independently of the
 runtime-config revision.
+
+If a capability probe or intent read fails during boot or resume, the pool
+delivers base runtime config and retries intent through status convergence.
+During that outage a session can start with the previously installed skills.
