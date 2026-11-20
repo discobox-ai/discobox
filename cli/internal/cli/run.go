@@ -156,11 +156,13 @@ placed that way too.
 A source directory that is not in a Git repository works too: everything in it
 is carried into the discobox as uncommitted changes on an empty first commit,
 and nothing is written to the directory itself. There is no commit to start
-from instead, so --include-dirty does not decide this one: at a terminal run
-asks first, with the size it would copy counted while the question is on screen,
-and copying is the default answer. Declining still creates the discobox, with
-nothing checked out in it, exactly as --no-source does. Without a terminal the
-directory is copied.
+from instead, so --include-dirty does not decide this one. The console asks
+before copying. Outside the console, including with --detach (-d), run asks
+only when stdin, stdout, and stderr are all connected to terminals and
+--from-json is absent. The question shows the size as it is counted and
+offers copying as the default answer. When run skips the question, it copies
+the directory. Decline the copy or use --no-source to create the discobox
+without copying the directory.
 
 --no-source creates a discobox with nothing checked out in it, for work that
 starts from an empty machine rather than from a repository. It takes SOURCE's
