@@ -1,7 +1,8 @@
 # 26-11-18-127 — Pool artifacts are fetched when a pool needs them
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-18
+- Accepted by the owner by merging #1397, 2026-11-20
 - **Issue**: [#1392](https://github.com/discobox-ai/discobox/issues/1392)
 - **Amends**: [0113](0113-the-cli-stages-the-images-its-server-loads.md) §§1–2 for automatic staging. Its explicit staging, cache and provider rules still apply.
 - **Preserves**: [0069](0069-staging-pool-images-is-a-condition.md)'s pool image condition, [0099](0099-the-cli-downloads-the-server-it-starts.md)'s verified server download, and [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md)'s bounded pool handover, as amended.
