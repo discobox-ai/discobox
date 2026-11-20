@@ -1,6 +1,7 @@
 package vsock
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -81,7 +82,8 @@ func FrameDialed(conn net.Conn, report func(error)) (net.Conn, error) {
 	if report != nil {
 		conn = &firstFrameCheck{Conn: conn, report: report}
 	}
-	session, err := yamux.Client(conn, frameConfig())
+	transport := &frameTransport{Conn: conn}
+	session, err := yamux.Client(transport, frameConfig())
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -91,7 +93,7 @@ func FrameDialed(conn net.Conn, report func(error)) (net.Conn, error) {
 		_ = session.Close()
 		return nil, err
 	}
-	return oneStream(session, stream)
+	return oneStream(session, stream, transport)
 }
 
 // yamuxVersion is the first byte of every yamux frame: the protocol version a
@@ -121,8 +123,8 @@ func (c *firstFrameCheck) Read(b []byte) (int, error) {
 
 // oneStream closes the session to any stream but stream, and returns the two
 // as a connection.
-func oneStream(session *yamux.Session, stream *yamux.Stream) (net.Conn, error) {
-	conn := &framedConn{stream: stream, session: session}
+func oneStream(session *yamux.Session, stream *yamux.Stream, transport *frameTransport) (net.Conn, error) {
+	conn := &framedConn{stream: stream, session: session, transport: transport}
 	if err := session.GoAway(); err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -213,19 +215,20 @@ func (l *frameListener) acceptLoop() {
 			continue
 		}
 		backoff = 0
-		session, err := yamux.Server(conn, frameConfig())
+		transport := &frameTransport{Conn: conn}
+		session, err := yamux.Server(transport, frameConfig())
 		if err != nil {
 			_ = conn.Close()
 			l.fail(err)
 			continue
 		}
-		go l.deliver(session)
+		go l.deliver(session, transport)
 	}
 }
 
 // deliver waits for the session's stream and hands it to Accept. The session
 // is reading its connection all the while.
-func (l *frameListener) deliver(session *yamux.Session) {
+func (l *frameListener) deliver(session *yamux.Session, transport *frameTransport) {
 	timer := time.AfterFunc(frameHandshakeTimeout, func() { _ = session.Close() })
 	stream, err := session.AcceptStream()
 	timer.Stop()
@@ -234,7 +237,7 @@ func (l *frameListener) deliver(session *yamux.Session) {
 		l.fail(errors.Join(errors.New("vsock: peer did not open a framed stream"), err))
 		return
 	}
-	conn, err := oneStream(session, stream)
+	conn, err := oneStream(session, stream, transport)
 	if err != nil {
 		l.fail(err)
 		return
@@ -287,8 +290,12 @@ func (l *frameListener) Addr() net.Addr { return l.inner.Addr() }
 // keeps reading until the peer ends its own. Close ends both directions and
 // the session.
 type framedConn struct {
-	stream  *yamux.Stream
-	session *yamux.Session
+	stream    *yamux.Stream
+	session   *yamux.Session
+	transport *frameTransport
+
+	writeMu       sync.Mutex
+	writeTimedOut bool
 }
 
 // Read returns what the stream holds. After taking bytes, yamux sends the
@@ -304,7 +311,56 @@ func (c *framedConn) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func (c *framedConn) Write(b []byte) (int, error) { return c.stream.Write(b) }
+// Write accounts for a send whose result raced with yamux's session shutdown.
+func (c *framedConn) Write(b []byte) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	before := c.transport.written.Load()
+	n, err := c.stream.Write(b)
+	if errors.Is(err, yamux.ErrConnectionWriteTimeout) {
+		// A timed-out frame can still be queued in yamux, so later raw
+		// writes can include bytes from this call.
+		c.writeTimedOut = true
+	}
+	if err == nil || c.writeTimedOut {
+		return n, err
+	}
+
+	if errors.Is(err, yamux.ErrSessionShutdown) {
+		// yamux publishes shutdown before closing the raw connection. Close
+		// joins that shutdown, including the send loop and its final write.
+		_ = c.session.Close()
+		if c.transport.written.Load()-before == uint64(len(b)) {
+			return len(b), nil
+		}
+	}
+	return max(n, int(c.transport.written.Load()-before)), err
+}
+
+// frameTransport counts payload bytes accepted by the underlying connection.
+// yamux v0.1.2's single send loop writes a 12-byte header and, for nonempty
+// data frames, a separate body. Only our one stream sends data.
+type frameTransport struct {
+	net.Conn
+	inBody  bool
+	written atomic.Uint64
+}
+
+func (c *frameTransport) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if c.inBody {
+		c.written.Add(uint64(n))
+		c.inBody = false
+	} else if err == nil {
+		const (
+			headerSize = 12
+			typeData   = 0
+		)
+		c.inBody = len(b) == headerSize && b[1] == typeData && binary.BigEndian.Uint32(b[8:]) != 0
+	}
+	return n, err
+}
 
 // CloseWrite sends the stream's end, which the peer reads as EOF after
 // everything written before it. Reads go on until the peer ends its side; a

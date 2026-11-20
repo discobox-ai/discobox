@@ -10,3 +10,7 @@
   Both the guest's services and the vz host use this package, so a change to
   the framing here is a guest-image change: it makes the pinned guest stale
   (`internal/cmd/discobox-vm-pins`) until a new one is published and pinned.
+- **When upgrading yamux, check how its send loop writes frames.**
+  `frameTransport` counts payload in a separate body write after a data header.
+  Also check that session Close still joins the send loop. Run the framed
+  write shutdown regressions before relying on those guarantees.

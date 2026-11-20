@@ -117,6 +117,100 @@ func (c *failingWrites) Write(b []byte) (int, error) {
 	return c.Conn.Write(b)
 }
 
+// A write can be sent, read, answered and hung up on before the writer hears
+// that it was sent: the peer's close ends the session first, and yamux reports
+// the delivered write as "session shutdown". The write must still succeed.
+func TestFramedConnWriteSucceedsWhenThePeerAnswersAndHangsUpFirst(t *testing.T) {
+	request := []byte("ping\n")
+	guest, host := net.Pipe()
+	guestSide := &heldWrites{Conn: guest, hold: request, closed: make(chan struct{})}
+	listener := newChanListener()
+	framed := FrameListener(listener, nil)
+	t.Cleanup(func() { _ = framed.Close() })
+	listener.push(host)
+	dialed, err := FrameDialed(guestSide, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dialed.Close() })
+	accepted, err := framed.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer accepted.Close()
+		got := make([]byte, len(request))
+		if _, err := io.ReadFull(accepted, got); err == nil {
+			_, _ = accepted.Write(got)
+		}
+	}()
+
+	if n, err := dialed.Write(request); n != len(request) || err != nil {
+		t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(request))
+	}
+	got, err := io.ReadAll(dialed)
+	if err != nil || !bytes.Equal(got, request) {
+		t.Fatalf("read to EOF = %q, %v; want %q then EOF", got, err, request)
+	}
+}
+
+func TestFramedConnWriteReportsPartialPayloadOnShutdown(t *testing.T) {
+	request := []byte("ping\n")
+	guest, host := net.Pipe()
+	guestSide := &heldWrites{Conn: guest, hold: request, limit: 2, closed: make(chan struct{})}
+	listener := newChanListener()
+	framed := FrameListener(listener, nil)
+	t.Cleanup(func() { _ = framed.Close() })
+	listener.push(host)
+	dialed, err := FrameDialed(guestSide, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dialed.Close() })
+	accepted, err := framed.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = accepted.Close() })
+
+	n, err := dialed.Write(request)
+	// Yamux can select the raw write error or the concurrent shutdown.
+	if n != 2 || (!errors.Is(err, yamux.ErrSessionShutdown) && !errors.Is(err, io.ErrShortWrite)) {
+		t.Fatalf("Write = %d, %v; want 2 with a shutdown or short-write error", n, err)
+	}
+}
+
+// heldWrites passes every write through, but returns from the one that
+// carries hold only once the connection is closed: the bytes are on their
+// way, and the writer hears so after the session has ended.
+type heldWrites struct {
+	net.Conn
+	hold      []byte
+	limit     int // if positive, break the pipe after this many payload bytes
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func (c *heldWrites) Write(b []byte) (int, error) {
+	if !bytes.Equal(b, c.hold) {
+		return c.Conn.Write(b)
+	}
+	if c.limit > 0 {
+		n, err := c.Conn.Write(b[:c.limit])
+		_ = c.Conn.Close()
+		<-c.closed
+		return n, errors.Join(err, io.ErrShortWrite)
+	}
+	n, err := c.Conn.Write(b)
+	<-c.closed
+	return n, err
+}
+
+func (c *heldWrites) Close() error {
+	c.closeOnce.Do(func() { close(c.closed) })
+	return c.Conn.Close()
+}
+
 // CloseWrite is a half-close in both directions: the peer reads everything
 // written before it, then EOF, and can still answer, which this side reads in
 // full until the peer ends its own side.
