@@ -491,3 +491,18 @@ func testAliasCreatesADiscobox(t *testing.T, name string) {
 		t.Fatalf("prompt = %#v, want the words after the command", config["prompt"])
 	}
 }
+
+func TestRunHelpExplainsWhenDetachedDirectoryCopyPrompts(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"run", "--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute run help: %v", err)
+	}
+
+	help := strings.Join(strings.Fields(out.String()), " ")
+	if !strings.Contains(help, "stdin, stdout, and stderr") {
+		t.Fatal("run help omits that detached directory copy prompts require terminal stdin, stdout, and stderr")
+	}
+}
