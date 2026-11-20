@@ -142,39 +142,3 @@ func TestMigrateVMProvidersDropsKeyDeliveryFromAMovedRow(t *testing.T) {
 		t.Fatalf("a docker row was rewritten: %v", got)
 	}
 }
-
-func TestMigrateVMProvidersPreservesArchilsPreviousDefaultRegion(t *testing.T) {
-	ctx := context.Background()
-	st, db := newTestStoreWithDB(t, true)
-	rawProviderRow(t, db, "prov-default", "archil", `{"base":"img","driver":{"baseUrl":"https://edge.example.com"}}`)
-	rawProviderRow(t, db, "prov-explicit", "archil", `{"Driver":{"Region":"aws-eu-west-1"}}`)
-	rawProviderRow(t, db, "prov-cased", "archil", `{"Driver":{"baseUrl":"https://edge.example.com"}}`)
-	rawProviderRow(t, db, "prov-legacy", "vm", `{"driver":"archil","apiKey":"key-k"}`)
-	lookup := func(string) (string, bool) { return "", false }
-
-	for range 2 {
-		if err := st.MigrateVMProviders(ctx, lookup); err != nil {
-			t.Fatal(err)
-		}
-	}
-	config := configFields(t, providerRow(t, db, "prov-default"))
-	driver, _ := config["driver"].(map[string]any)
-	if config["base"] != "img" || driver["baseUrl"] != "https://edge.example.com" || driver["region"] != "aws-us-east-1" {
-		t.Fatalf("config = %v, want old endpoint and other fields preserved", config)
-	}
-	explicit := configFields(t, providerRow(t, db, "prov-explicit"))
-	driver, _ = explicit["Driver"].(map[string]any)
-	if len(explicit) != 1 || driver["Region"] != "aws-eu-west-1" {
-		t.Fatalf("config = %v, want explicit region preserved", explicit)
-	}
-	cased := configFields(t, providerRow(t, db, "prov-cased"))
-	driver, _ = cased["Driver"].(map[string]any)
-	if len(cased) != 1 || driver["baseUrl"] != "https://edge.example.com" || driver["region"] != "aws-us-east-1" {
-		t.Fatalf("config = %v, want region added to the original driver object", cased)
-	}
-	legacy := providerRow(t, db, "prov-legacy")
-	driver, _ = configFields(t, legacy)["driver"].(map[string]any)
-	if legacy.Type != "archil" || driver["region"] != "aws-us-east-1" || openedSecrets(t, st, legacy)["driver.apiKey"] != "key-k" {
-		t.Fatalf("legacy provider was not migrated with its previous default region and sealed key")
-	}
-}

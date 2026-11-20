@@ -120,9 +120,7 @@ A field disco-vm adds shows up with no change here, but for a `Privileged`
 one, which `TestPrivilegedFieldsAreTheCheckedEndpoints` holds back. A field
 disco-vm marks `Required` must be set at creation. A boxd provider stored
 without a region fails to resolve until the owner replaces it and its pools
-(ADR 26-11-15-507). For a stored Archil provider with no region, startup
-preserves the previous default through the
-[provider config backfill](../../internal/store/DESIGN.md#secret-sealing).
+(ADR 26-11-15-507). An Archil provider must specify its region.
 
 The server reads no driver's environment (ADR 26-11-11-080 §2): a variable a
 linked driver names, set in the server's environment, is warned of at start,
