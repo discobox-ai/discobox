@@ -22,6 +22,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
@@ -210,6 +211,8 @@ func (r *sandboxCore) handsOverPower(sandboxID string, recorded sandboxconfig.Ru
 // Advertised is what a sandbox's status says its agent takes, which decides
 // the fields its runtime-config document may carry.
 type Advertised struct {
+	// ManagedSkillsRevision is nil on agents without managed skills support.
+	ManagedSkillsRevision *int64
 	// ControlPlanePower: the pool may hand its power to the control plane
 	// (ADR 26-10-16-337 §8).
 	ControlPlanePower bool
@@ -263,7 +266,34 @@ func (r *sandboxCore) deliverRuntimeConfig(ctx context.Context, sandboxID string
 	lock := r.runtimeConfigLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
-	doc, err := r.decideRuntimeConfig(sandboxID, change)
+	var snapshot *sandboxconfig.PublishedSandboxRuntime
+	// Optional intent must not hold base runtime configuration at boot or
+	// resume. Only attach freshly confirmed intent to a compatible agent.
+	if r.getRuntimeIntent != nil {
+		probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+		dial, err := r.boxes.SandboxDialer(probe, sandboxID, SandboxAgentPort)
+		var health agentlayer.Health
+		if err == nil {
+			health, err = sandboxAgentHealth(probe, dial)
+		}
+		cancel()
+		if err == nil && health.ManagedSkills {
+			snapshot, err = r.refreshRuntimeIntent(ctx, sandboxID, false)
+		}
+		if err != nil {
+			slog.WarnContext(ctx, "defer sandbox runtime intent until convergence", "sandboxId", sandboxID, "error", err)
+		}
+	}
+	doc, err := r.decideRuntimeConfig(sandboxID, func(next *sandboxconfig.RuntimeConfig) {
+		if change != nil {
+			change(next)
+		}
+		if r.getRuntimeIntent != nil && snapshot == nil {
+			next.ManagedSkills = nil
+			next.SourceResets = nil
+		}
+		mergeRuntimeIntent(next, snapshot)
+	})
 	if err != nil {
 		return err
 	}
@@ -295,7 +325,7 @@ func (r *sandboxCore) ConvergeRuntimeConfig(ctx context.Context, sandboxID strin
 	if err != nil || !takes {
 		return err
 	}
-	doc, err := r.convergeDocument(ctx, sandboxID, applied)
+	doc, err := r.convergeDocument(ctx, sandboxID, applied, advertised.ManagedSkillsRevision)
 	if err != nil {
 		return err
 	}
@@ -314,11 +344,25 @@ func (r *sandboxCore) ConvergeRuntimeConfig(ctx context.Context, sandboxID strin
 // convergeDocument decides the sandbox's document again and delivers it when
 // the revision the sandbox reports applying is not the one decided, and
 // returns the document decided.
-func (r *sandboxCore) convergeDocument(ctx context.Context, sandboxID string, applied int64) (sandboxconfig.RuntimeConfig, error) {
+func (r *sandboxCore) convergeDocument(ctx context.Context, sandboxID string, applied int64, skillsApplied *int64) (sandboxconfig.RuntimeConfig, error) {
 	lock := r.runtimeConfigLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
-	doc, err := r.decideRuntimeConfig(sandboxID, nil)
+	var snapshot *sandboxconfig.PublishedSandboxRuntime
+	if skillsApplied != nil {
+		var err error
+		snapshot, err = r.refreshRuntimeIntent(ctx, sandboxID, true)
+		if err != nil {
+			slog.WarnContext(ctx, "refresh managed skills", "sandboxId", sandboxID, "error", err)
+		}
+	}
+	doc, err := r.decideRuntimeConfig(sandboxID, func(next *sandboxconfig.RuntimeConfig) {
+		if skillsApplied == nil {
+			next.ManagedSkills = nil
+			next.SourceResets = nil
+		}
+		mergeRuntimeIntent(next, snapshot)
+	})
 	if err != nil {
 		return sandboxconfig.RuntimeConfig{}, err
 	}
@@ -326,7 +370,7 @@ func (r *sandboxCore) convergeDocument(ctx context.Context, sandboxID string, ap
 	// the record lost, or the sandbox moved here with its kept document — is
 	// delivered to as well, so putRuntimeConfig can learn its revision, move
 	// the record past it, and deliver what the pool decides now.
-	if applied == doc.Revision {
+	if applied == doc.Revision && (doc.ManagedSkills == nil || skillsApplied == nil || *skillsApplied >= doc.ManagedSkills.Revision) {
 		return doc, nil
 	}
 	dial, err := r.boxes.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
@@ -545,4 +589,44 @@ func cloneRuntimeConfig(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeC
 // its bootstrap: standard base64.
 func encodePublicKey(key ed25519.PublicKey) string {
 	return base64.StdEncoding.EncodeToString(key)
+}
+
+func (r *sandboxCore) refreshRuntimeIntent(ctx context.Context, sandboxID string, conditional bool) (*sandboxconfig.PublishedSandboxRuntime, error) {
+	if r.getRuntimeIntent == nil {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var known int64
+	if conditional {
+		recorded, _, err := r.readRuntimeConfig(sandboxID)
+		if err != nil {
+			return nil, err
+		}
+		if recorded.ManagedSkills != nil {
+			known = recorded.ManagedSkills.Revision
+		}
+	}
+	snapshot, err := r.getRuntimeIntent(ctx, sandboxID, known)
+	if err != nil {
+		return nil, fmt.Errorf("read desired skills for sandbox %s: %w", sandboxID, err)
+	}
+	return &snapshot, nil
+}
+
+func mergeRuntimeIntent(next *sandboxconfig.RuntimeConfig, snapshot *sandboxconfig.PublishedSandboxRuntime) {
+	if snapshot == nil {
+		return
+	}
+	if snapshot.Revision > 0 && (next.ManagedSkills == nil || snapshot.Revision > next.ManagedSkills.Revision) {
+		next.ManagedSkills = &snapshot.ManagedSkills
+	}
+	for slug, reset := range snapshot.SourceResets {
+		if reset.Revision > next.SourceResets[slug].Revision {
+			if next.SourceResets == nil {
+				next.SourceResets = make(map[string]sandboxconfig.SourceReset)
+			}
+			next.SourceResets[slug] = reset
+		}
+	}
 }

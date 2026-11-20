@@ -145,6 +145,10 @@ const (
 // behind authorizeDiscoboxAPI, is where a sandbox without DiscoboxAPI is
 // refused.
 var sandboxRole = []sandboxRoleRoute{
+	{method: http.MethodGet, path: "sandboxes/*/sources/*/reset", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/sources/*/reset", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/skills", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/skills", names: withinCaller},
 	{method: http.MethodGet, path: "sandboxes"},
 	{method: http.MethodPost, path: "sandboxes"},
 	// The project's sandbox event stream, whole, as the listing above is:

@@ -233,6 +233,10 @@ type GetPoolRes interface {
 	getPoolRes()
 }
 
+type GetPoolSandboxRuntimeIntentRes interface {
+	getPoolSandboxRuntimeIntentRes()
+}
+
 type GetProjectGatewayRes interface {
 	getProjectGatewayRes()
 }
@@ -275,6 +279,14 @@ type GetSandboxRes interface {
 
 type GetSandboxServiceRes interface {
 	getSandboxServiceRes()
+}
+
+type GetSandboxSkillsRes interface {
+	getSandboxSkillsRes()
+}
+
+type GetSandboxSourceResetRes interface {
+	getSandboxSourceResetRes()
 }
 
 type GetSandboxTrustRequestRes interface {
@@ -475,6 +487,14 @@ type MintSandboxAgentStatusTokensRes interface {
 
 type MoveSandboxFileRes interface {
 	moveSandboxFileRes()
+}
+
+type MutateSandboxSkillsRes interface {
+	mutateSandboxSkillsRes()
+}
+
+type PostSandboxSourceResetRes interface {
+	postSandboxSourceResetRes()
 }
 
 type PullSandboxSourceRes interface {

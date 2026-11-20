@@ -2094,6 +2094,8 @@ components:
             additionalProperties: false
             description: The data of a sandbox event on the project's event stream (ADR 26-10-29-316 §1) - the sandbox's whole state, not what changed, so its latest event is all a client needs to know about it. These fields are the whole contract, and an event is sent only when one of them changes.
             properties:
+                skillChange:
+                    $ref: '#/components/schemas/SandboxSkillChange'
                 projectId:
                     description: Project the sandbox belongs to.
                     type: string
@@ -3991,6 +3993,9 @@ components:
         SandboxCreateConfig:
             additionalProperties: false
             properties:
+                followedSkills:
+                    description: A publisher-resolved skills snapshot for the box to follow.
+                    $ref: '#/components/schemas/SandboxFollowedSkills'
                 egress:
                     $ref: '#/components/schemas/EgressPolicy'
                     description: The new discobox's own egress policy level. A discobox creating another may not make one that can reach anything it cannot.
@@ -5408,6 +5413,155 @@ components:
             required:
                 - source
                 - directory
+            type: object
+        SandboxFollowedSkills:
+            additionalProperties: false
+            properties:
+                origin:
+                    $ref: '#/components/schemas/SandboxSkillOrigin'
+                skills:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkill'
+            required: [origin]
+            type: object
+        SandboxSkillsInventory:
+            additionalProperties: false
+            properties:
+                desiredRevision:
+                    type: integer
+                    format: int64
+                appliedRevision:
+                    type: integer
+                    format: int64
+                installed:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkillVersion'
+                application:
+                    description: Whether the desired revision is applied, pending, or unsupported by the running agent.
+                    type: string
+                desired:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkillVersion'
+                sources:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkillOrigin'
+            required: [desiredRevision, appliedRevision]
+            type: object
+        SandboxSkillVersion:
+            additionalProperties: false
+            properties:
+                sourceId:
+                    type: string
+                commit:
+                    type: string
+                digest:
+                    type: string
+            required: [sourceId, digest]
+            type: object
+        SandboxSkillOrigin:
+            additionalProperties: false
+            properties:
+                sourceId:
+                    type: string
+                commit:
+                    type: string
+            required: [sourceId]
+            type: object
+        SandboxSkillChange:
+            additionalProperties: false
+            properties:
+                actor:
+                    type: string
+                operation:
+                    type: string
+                revision:
+                    type: integer
+                    format: int64
+                skills:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkillVersionDiff'
+            required: [actor, operation, revision]
+            type: object
+        SandboxSkillVersionDiff:
+            additionalProperties: false
+            properties:
+                before:
+                    $ref: '#/components/schemas/SandboxSkillVersion'
+                after:
+                    $ref: '#/components/schemas/SandboxSkillVersion'
+            type: object
+        PoolSandboxRuntimeIntent:
+            additionalProperties: false
+            properties:
+                revision:
+                    type: integer
+                    format: int64
+                skills:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkill'
+                sourceResets:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSourceReset'
+            required: [revision]
+            type: object
+        SandboxSourceReset:
+            additionalProperties: false
+            properties:
+                revision:
+                    type: integer
+                    format: int64
+                commit:
+                    type: string
+            required: [revision, commit]
+            type: object
+        SandboxSourceResetRequest:
+            additionalProperties: false
+            properties:
+                expectedRevision:
+                    type: integer
+                    format: int64
+                commit:
+                    type: string
+            required: [expectedRevision, commit]
+            type: object
+        SandboxSourceResetStatus:
+            additionalProperties: false
+            properties:
+                revision:
+                    type: integer
+                    format: int64
+                appliedRevision:
+                    type: integer
+                    format: int64
+                commit:
+                    type: string
+            required: [revision, appliedRevision]
+            type: object
+        SandboxSkillMutation:
+            additionalProperties: false
+            properties:
+                operation:
+                    type: string
+                    enum: [set, add, rm, follow, sync]
+                expectedRevision:
+                    type: integer
+                    format: int64
+                origin:
+                    $ref: '#/components/schemas/SandboxSkillOrigin'
+                name:
+                    type: string
+                skills:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkill'
+            required: [operation]
             type: object
         SandboxSkill:
             additionalProperties: false
@@ -8269,6 +8423,69 @@ paths:
             summary: Stream the project's sandbox state changes.
             tags:
                 - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/skills:
+        get:
+            operationId: get-sandbox-skills
+            summary: List a sandbox's skills.
+            tags: [Sandboxes]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    description: Skills inventory and revision state.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSkillsInventory'
+                default:
+                    description: Error response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+        post:
+            operationId: mutate-sandbox-skills
+            summary: Publish a change to a sandbox's managed skills.
+            tags: [Sandboxes]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxSkillMutation'
+            responses:
+                200:
+                    description: Skills inventory and revision state.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSkillsInventory'
+                default:
+                    description: Error response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
     /projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes:
         get:
             operationId: get-sandbox-harness-config-changes
@@ -8953,6 +9170,42 @@ paths:
             summary: Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts
             tags:
                 - Pools
+    /pool-agent/{poolId}/runtime-intent:
+        get:
+            operationId: get-pool-sandbox-runtime-intent
+            summary: Read pending runtime changes for a hosted sandbox.
+            tags: [Pools]
+            parameters:
+                - in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: knownRevision
+                  schema:
+                    type: integer
+                    format: int64
+            responses:
+                304:
+                    description: The pool already holds the desired revision.
+                200:
+                    description: Desired skills and work-source resets. Skills revision zero carries no publication.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PoolSandboxRuntimeIntent'
+                default:
+                    description: Error response.
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
     /pool-agent/{poolId}/sandbox-start-authorization:
         get:
             operationId: authorize-pool-sandbox-start
@@ -10713,6 +10966,79 @@ paths:
             summary: Complete a sandbox source push
             tags:
                 - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/reset:
+        get:
+            operationId: get-sandbox-source-reset
+            summary: Read a sandbox source's reset state.
+            tags: [Sandboxes]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: slug
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    description: Desired and applied reset revisions.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceResetStatus'
+                default:
+                    description: Error response.
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+        post:
+            operationId: post-sandbox-source-reset
+            summary: Reset a materialized source to a published commit.
+            tags: [Sandboxes]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: slug
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxSourceResetRequest'
+            responses:
+                200:
+                    description: Desired and applied reset revisions.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceResetStatus'
+                default:
+                    description: Error response.
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
     /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull:
         post:
             operationId: pull-sandbox-source

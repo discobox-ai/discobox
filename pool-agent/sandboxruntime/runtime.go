@@ -399,6 +399,7 @@ type DockerSandboxRuntime struct {
 }
 
 type DockerSandboxRuntimeConfig struct {
+	GetRuntimeIntent      func(context.Context, string, int64) (sandboxconfig.PublishedSandboxRuntime, error)
 	CompleteSuspend       func(context.Context, string, string, int64) error
 	AuthorizeStart        func(context.Context, string, int64) error
 	ProjectID             string
@@ -461,6 +462,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 			poolID:                cfg.PoolID,
 			controlPlanePublicKey: cfg.ControlPlanePublicKey,
 			authorizeStart:        cfg.AuthorizeStart,
+			getRuntimeIntent:      cfg.GetRuntimeIntent,
 			completeSuspend:       cfg.CompleteSuspend,
 			agentTLS:              cfg.AgentTLS,
 			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,

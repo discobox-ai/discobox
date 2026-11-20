@@ -3252,12 +3252,15 @@ func (*ErrorModelStatusCode) getJobRes()                                {}
 func (*ErrorModelStatusCode) getPoolAssetBlobRes()                      {}
 func (*ErrorModelStatusCode) getPoolAssetManifestRes()                  {}
 func (*ErrorModelStatusCode) getPoolRes()                               {}
+func (*ErrorModelStatusCode) getPoolSandboxRuntimeIntentRes()           {}
 func (*ErrorModelStatusCode) getProjectGatewayRes()                     {}
 func (*ErrorModelStatusCode) getProjectRes()                            {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                         {}
 func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()           {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()            {}
 func (*ErrorModelStatusCode) getSandboxRes()                            {}
+func (*ErrorModelStatusCode) getSandboxSkillsRes()                      {}
+func (*ErrorModelStatusCode) getSandboxSourceResetRes()                 {}
 func (*ErrorModelStatusCode) getSandboxTrustRequestRes()                {}
 func (*ErrorModelStatusCode) getSecretBindingRes()                      {}
 func (*ErrorModelStatusCode) getSecretRequestRes()                      {}
@@ -3295,6 +3298,8 @@ func (*ErrorModelStatusCode) listSecretRequestsRes()                    {}
 func (*ErrorModelStatusCode) listSecretsRes()                           {}
 func (*ErrorModelStatusCode) listTrustRequestsRes()                     {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()          {}
+func (*ErrorModelStatusCode) mutateSandboxSkillsRes()                   {}
+func (*ErrorModelStatusCode) postSandboxSourceResetRes()                {}
 func (*ErrorModelStatusCode) pullSandboxSourceRes()                     {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                          {}
 func (*ErrorModelStatusCode) putProjectGatewayRes()                     {}
@@ -3805,6 +3810,11 @@ func (s *GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) SetR
 }
 
 func (*GetPoolAssetManifestOKApplicationVndOciImageManifestV1JSONHeaders) getPoolAssetManifestRes() {}
+
+// GetPoolSandboxRuntimeIntentNotModified is response for GetPoolSandboxRuntimeIntent operation.
+type GetPoolSandboxRuntimeIntentNotModified struct{}
+
+func (*GetPoolSandboxRuntimeIntentNotModified) getPoolSandboxRuntimeIntentRes() {}
 
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
@@ -13275,6 +13285,98 @@ func (o OptPoolSandboxPullProgress) Or(d PoolSandboxPullProgress) PoolSandboxPul
 	return d
 }
 
+// NewOptPoolSandboxRuntimeIntentSkills returns new OptPoolSandboxRuntimeIntentSkills with value set to v.
+func NewOptPoolSandboxRuntimeIntentSkills(v PoolSandboxRuntimeIntentSkills) OptPoolSandboxRuntimeIntentSkills {
+	return OptPoolSandboxRuntimeIntentSkills{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxRuntimeIntentSkills is optional PoolSandboxRuntimeIntentSkills.
+type OptPoolSandboxRuntimeIntentSkills struct {
+	Value PoolSandboxRuntimeIntentSkills
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxRuntimeIntentSkills was set.
+func (o OptPoolSandboxRuntimeIntentSkills) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxRuntimeIntentSkills) Reset() {
+	var v PoolSandboxRuntimeIntentSkills
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxRuntimeIntentSkills) SetTo(v PoolSandboxRuntimeIntentSkills) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxRuntimeIntentSkills) Get() (v PoolSandboxRuntimeIntentSkills, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxRuntimeIntentSkills) Or(d PoolSandboxRuntimeIntentSkills) PoolSandboxRuntimeIntentSkills {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolSandboxRuntimeIntentSourceResets returns new OptPoolSandboxRuntimeIntentSourceResets with value set to v.
+func NewOptPoolSandboxRuntimeIntentSourceResets(v PoolSandboxRuntimeIntentSourceResets) OptPoolSandboxRuntimeIntentSourceResets {
+	return OptPoolSandboxRuntimeIntentSourceResets{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxRuntimeIntentSourceResets is optional PoolSandboxRuntimeIntentSourceResets.
+type OptPoolSandboxRuntimeIntentSourceResets struct {
+	Value PoolSandboxRuntimeIntentSourceResets
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxRuntimeIntentSourceResets was set.
+func (o OptPoolSandboxRuntimeIntentSourceResets) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxRuntimeIntentSourceResets) Reset() {
+	var v PoolSandboxRuntimeIntentSourceResets
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxRuntimeIntentSourceResets) SetTo(v PoolSandboxRuntimeIntentSourceResets) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxRuntimeIntentSourceResets) Get() (v PoolSandboxRuntimeIntentSourceResets, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxRuntimeIntentSourceResets) Or(d PoolSandboxRuntimeIntentSourceResets) PoolSandboxRuntimeIntentSourceResets {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolSandboxStartedFrom returns new OptPoolSandboxStartedFrom with value set to v.
 func NewOptPoolSandboxStartedFrom(v PoolSandboxStartedFrom) OptPoolSandboxStartedFrom {
 	return OptPoolSandboxStartedFrom{
@@ -14747,6 +14849,98 @@ func (o OptSandboxExecWaitProgramStateKind) Or(d SandboxExecWaitProgramStateKind
 	return d
 }
 
+// NewOptSandboxFollowedSkills returns new OptSandboxFollowedSkills with value set to v.
+func NewOptSandboxFollowedSkills(v SandboxFollowedSkills) OptSandboxFollowedSkills {
+	return OptSandboxFollowedSkills{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxFollowedSkills is optional SandboxFollowedSkills.
+type OptSandboxFollowedSkills struct {
+	Value SandboxFollowedSkills
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxFollowedSkills was set.
+func (o OptSandboxFollowedSkills) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxFollowedSkills) Reset() {
+	var v SandboxFollowedSkills
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxFollowedSkills) SetTo(v SandboxFollowedSkills) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxFollowedSkills) Get() (v SandboxFollowedSkills, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxFollowedSkills) Or(d SandboxFollowedSkills) SandboxFollowedSkills {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxFollowedSkillsSkills returns new OptSandboxFollowedSkillsSkills with value set to v.
+func NewOptSandboxFollowedSkillsSkills(v SandboxFollowedSkillsSkills) OptSandboxFollowedSkillsSkills {
+	return OptSandboxFollowedSkillsSkills{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxFollowedSkillsSkills is optional SandboxFollowedSkillsSkills.
+type OptSandboxFollowedSkillsSkills struct {
+	Value SandboxFollowedSkillsSkills
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxFollowedSkillsSkills was set.
+func (o OptSandboxFollowedSkillsSkills) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxFollowedSkillsSkills) Reset() {
+	var v SandboxFollowedSkillsSkills
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxFollowedSkillsSkills) SetTo(v SandboxFollowedSkillsSkills) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxFollowedSkillsSkills) Get() (v SandboxFollowedSkillsSkills, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxFollowedSkillsSkills) Or(d SandboxFollowedSkillsSkills) SandboxFollowedSkillsSkills {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxGitIdentity returns new OptSandboxGitIdentity with value set to v.
 func NewOptSandboxGitIdentity(v SandboxGitIdentity) OptSandboxGitIdentity {
 	return OptSandboxGitIdentity{
@@ -15339,6 +15533,236 @@ func (o OptSandboxRuntimeSourceDeliveries) Get() (v SandboxRuntimeSourceDeliveri
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxRuntimeSourceDeliveries) Or(d SandboxRuntimeSourceDeliveries) SandboxRuntimeSourceDeliveries {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxSkillMutationSkills returns new OptSandboxSkillMutationSkills with value set to v.
+func NewOptSandboxSkillMutationSkills(v SandboxSkillMutationSkills) OptSandboxSkillMutationSkills {
+	return OptSandboxSkillMutationSkills{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSkillMutationSkills is optional SandboxSkillMutationSkills.
+type OptSandboxSkillMutationSkills struct {
+	Value SandboxSkillMutationSkills
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSkillMutationSkills was set.
+func (o OptSandboxSkillMutationSkills) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSkillMutationSkills) Reset() {
+	var v SandboxSkillMutationSkills
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSkillMutationSkills) SetTo(v SandboxSkillMutationSkills) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSkillMutationSkills) Get() (v SandboxSkillMutationSkills, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSkillMutationSkills) Or(d SandboxSkillMutationSkills) SandboxSkillMutationSkills {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxSkillOrigin returns new OptSandboxSkillOrigin with value set to v.
+func NewOptSandboxSkillOrigin(v SandboxSkillOrigin) OptSandboxSkillOrigin {
+	return OptSandboxSkillOrigin{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSkillOrigin is optional SandboxSkillOrigin.
+type OptSandboxSkillOrigin struct {
+	Value SandboxSkillOrigin
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSkillOrigin was set.
+func (o OptSandboxSkillOrigin) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSkillOrigin) Reset() {
+	var v SandboxSkillOrigin
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSkillOrigin) SetTo(v SandboxSkillOrigin) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSkillOrigin) Get() (v SandboxSkillOrigin, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSkillOrigin) Or(d SandboxSkillOrigin) SandboxSkillOrigin {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxSkillsInventoryDesired returns new OptSandboxSkillsInventoryDesired with value set to v.
+func NewOptSandboxSkillsInventoryDesired(v SandboxSkillsInventoryDesired) OptSandboxSkillsInventoryDesired {
+	return OptSandboxSkillsInventoryDesired{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSkillsInventoryDesired is optional SandboxSkillsInventoryDesired.
+type OptSandboxSkillsInventoryDesired struct {
+	Value SandboxSkillsInventoryDesired
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSkillsInventoryDesired was set.
+func (o OptSandboxSkillsInventoryDesired) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSkillsInventoryDesired) Reset() {
+	var v SandboxSkillsInventoryDesired
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSkillsInventoryDesired) SetTo(v SandboxSkillsInventoryDesired) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSkillsInventoryDesired) Get() (v SandboxSkillsInventoryDesired, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSkillsInventoryDesired) Or(d SandboxSkillsInventoryDesired) SandboxSkillsInventoryDesired {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxSkillsInventoryInstalled returns new OptSandboxSkillsInventoryInstalled with value set to v.
+func NewOptSandboxSkillsInventoryInstalled(v SandboxSkillsInventoryInstalled) OptSandboxSkillsInventoryInstalled {
+	return OptSandboxSkillsInventoryInstalled{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSkillsInventoryInstalled is optional SandboxSkillsInventoryInstalled.
+type OptSandboxSkillsInventoryInstalled struct {
+	Value SandboxSkillsInventoryInstalled
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSkillsInventoryInstalled was set.
+func (o OptSandboxSkillsInventoryInstalled) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSkillsInventoryInstalled) Reset() {
+	var v SandboxSkillsInventoryInstalled
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSkillsInventoryInstalled) SetTo(v SandboxSkillsInventoryInstalled) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSkillsInventoryInstalled) Get() (v SandboxSkillsInventoryInstalled, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSkillsInventoryInstalled) Or(d SandboxSkillsInventoryInstalled) SandboxSkillsInventoryInstalled {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxSkillsInventorySources returns new OptSandboxSkillsInventorySources with value set to v.
+func NewOptSandboxSkillsInventorySources(v SandboxSkillsInventorySources) OptSandboxSkillsInventorySources {
+	return OptSandboxSkillsInventorySources{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSkillsInventorySources is optional SandboxSkillsInventorySources.
+type OptSandboxSkillsInventorySources struct {
+	Value SandboxSkillsInventorySources
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSkillsInventorySources was set.
+func (o OptSandboxSkillsInventorySources) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSkillsInventorySources) Reset() {
+	var v SandboxSkillsInventorySources
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSkillsInventorySources) SetTo(v SandboxSkillsInventorySources) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSkillsInventorySources) Get() (v SandboxSkillsInventorySources, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSkillsInventorySources) Or(d SandboxSkillsInventorySources) SandboxSkillsInventorySources {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -19255,6 +19679,67 @@ func (s *PoolSandboxPullProgress) SetLayersComplete(val OptInt) {
 // SetTotal sets the value of Total.
 func (s *PoolSandboxPullProgress) SetTotal(val OptInt64) {
 	s.Total = val
+}
+
+// Ref: #/components/schemas/PoolSandboxRuntimeIntent
+type PoolSandboxRuntimeIntent struct {
+	Revision     int64                                   `json:"revision"`
+	Skills       OptPoolSandboxRuntimeIntentSkills       `json:"skills"`
+	SourceResets OptPoolSandboxRuntimeIntentSourceResets `json:"sourceResets"`
+}
+
+// GetRevision returns the value of Revision.
+func (s *PoolSandboxRuntimeIntent) GetRevision() int64 {
+	return s.Revision
+}
+
+// GetSkills returns the value of Skills.
+func (s *PoolSandboxRuntimeIntent) GetSkills() OptPoolSandboxRuntimeIntentSkills {
+	return s.Skills
+}
+
+// GetSourceResets returns the value of SourceResets.
+func (s *PoolSandboxRuntimeIntent) GetSourceResets() OptPoolSandboxRuntimeIntentSourceResets {
+	return s.SourceResets
+}
+
+// SetRevision sets the value of Revision.
+func (s *PoolSandboxRuntimeIntent) SetRevision(val int64) {
+	s.Revision = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *PoolSandboxRuntimeIntent) SetSkills(val OptPoolSandboxRuntimeIntentSkills) {
+	s.Skills = val
+}
+
+// SetSourceResets sets the value of SourceResets.
+func (s *PoolSandboxRuntimeIntent) SetSourceResets(val OptPoolSandboxRuntimeIntentSourceResets) {
+	s.SourceResets = val
+}
+
+func (*PoolSandboxRuntimeIntent) getPoolSandboxRuntimeIntentRes() {}
+
+type PoolSandboxRuntimeIntentSkills map[string]SandboxSkill
+
+func (s *PoolSandboxRuntimeIntentSkills) init() PoolSandboxRuntimeIntentSkills {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkill{}
+		*s = m
+	}
+	return m
+}
+
+type PoolSandboxRuntimeIntentSourceResets map[string]SandboxSourceReset
+
+func (s *PoolSandboxRuntimeIntentSourceResets) init() PoolSandboxRuntimeIntentSourceResets {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSourceReset{}
+		*s = m
+	}
+	return m
 }
 
 // What the sandbox's current container or machine was made from, as the pool
@@ -24646,6 +25131,8 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxCreateConfig
 type SandboxCreateConfig struct {
+	// A publisher-resolved skills snapshot for the box to follow.
+	FollowedSkills OptSandboxFollowedSkills `json:"followedSkills"`
 	// The new discobox's own egress policy level. A discobox creating another may not make one that can
 	// reach anything it cannot.
 	Egress OptEgressPolicy `json:"egress"`
@@ -24704,6 +25191,11 @@ type SandboxCreateConfig struct {
 	Tags OptSandboxCreateConfigTags `json:"tags"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
+}
+
+// GetFollowedSkills returns the value of FollowedSkills.
+func (s *SandboxCreateConfig) GetFollowedSkills() OptSandboxFollowedSkills {
+	return s.FollowedSkills
 }
 
 // GetEgress returns the value of Egress.
@@ -24799,6 +25291,11 @@ func (s *SandboxCreateConfig) GetTags() OptSandboxCreateConfigTags {
 // GetUser returns the value of User.
 func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
 	return s.User
+}
+
+// SetFollowedSkills sets the value of FollowedSkills.
+func (s *SandboxCreateConfig) SetFollowedSkills(val OptSandboxFollowedSkills) {
+	s.FollowedSkills = val
 }
 
 // SetEgress sets the value of Egress.
@@ -27248,6 +27745,43 @@ func (s *SandboxFileType) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/SandboxFollowedSkills
+type SandboxFollowedSkills struct {
+	Origin SandboxSkillOrigin             `json:"origin"`
+	Skills OptSandboxFollowedSkillsSkills `json:"skills"`
+}
+
+// GetOrigin returns the value of Origin.
+func (s *SandboxFollowedSkills) GetOrigin() SandboxSkillOrigin {
+	return s.Origin
+}
+
+// GetSkills returns the value of Skills.
+func (s *SandboxFollowedSkills) GetSkills() OptSandboxFollowedSkillsSkills {
+	return s.Skills
+}
+
+// SetOrigin sets the value of Origin.
+func (s *SandboxFollowedSkills) SetOrigin(val SandboxSkillOrigin) {
+	s.Origin = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *SandboxFollowedSkills) SetSkills(val OptSandboxFollowedSkillsSkills) {
+	s.Skills = val
+}
+
+type SandboxFollowedSkillsSkills map[string]SandboxSkill
+
+func (s *SandboxFollowedSkillsSkills) init() SandboxFollowedSkillsSkills {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkill{}
+		*s = m
+	}
+	return m
+}
+
 // Git authorship identity for work done inside the sandbox. Both fields are
 // optional; omitting the whole object leaves the sandbox's git identity
 // unconfigured, exactly as an image ships it.
@@ -29283,6 +29817,308 @@ func (s *SandboxSkillFile) SetPath(val string) {
 	s.Path = val
 }
 
+// Ref: #/components/schemas/SandboxSkillMutation
+type SandboxSkillMutation struct {
+	Operation        SandboxSkillMutationOperation `json:"operation"`
+	ExpectedRevision OptInt64                      `json:"expectedRevision"`
+	Origin           OptSandboxSkillOrigin         `json:"origin"`
+	Name             OptString                     `json:"name"`
+	Skills           OptSandboxSkillMutationSkills `json:"skills"`
+}
+
+// GetOperation returns the value of Operation.
+func (s *SandboxSkillMutation) GetOperation() SandboxSkillMutationOperation {
+	return s.Operation
+}
+
+// GetExpectedRevision returns the value of ExpectedRevision.
+func (s *SandboxSkillMutation) GetExpectedRevision() OptInt64 {
+	return s.ExpectedRevision
+}
+
+// GetOrigin returns the value of Origin.
+func (s *SandboxSkillMutation) GetOrigin() OptSandboxSkillOrigin {
+	return s.Origin
+}
+
+// GetName returns the value of Name.
+func (s *SandboxSkillMutation) GetName() OptString {
+	return s.Name
+}
+
+// GetSkills returns the value of Skills.
+func (s *SandboxSkillMutation) GetSkills() OptSandboxSkillMutationSkills {
+	return s.Skills
+}
+
+// SetOperation sets the value of Operation.
+func (s *SandboxSkillMutation) SetOperation(val SandboxSkillMutationOperation) {
+	s.Operation = val
+}
+
+// SetExpectedRevision sets the value of ExpectedRevision.
+func (s *SandboxSkillMutation) SetExpectedRevision(val OptInt64) {
+	s.ExpectedRevision = val
+}
+
+// SetOrigin sets the value of Origin.
+func (s *SandboxSkillMutation) SetOrigin(val OptSandboxSkillOrigin) {
+	s.Origin = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxSkillMutation) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetSkills sets the value of Skills.
+func (s *SandboxSkillMutation) SetSkills(val OptSandboxSkillMutationSkills) {
+	s.Skills = val
+}
+
+type SandboxSkillMutationOperation string
+
+const (
+	SandboxSkillMutationOperationSet    SandboxSkillMutationOperation = "set"
+	SandboxSkillMutationOperationAdd    SandboxSkillMutationOperation = "add"
+	SandboxSkillMutationOperationRm     SandboxSkillMutationOperation = "rm"
+	SandboxSkillMutationOperationFollow SandboxSkillMutationOperation = "follow"
+	SandboxSkillMutationOperationSync   SandboxSkillMutationOperation = "sync"
+)
+
+// AllValues returns all SandboxSkillMutationOperation values.
+func (SandboxSkillMutationOperation) AllValues() []SandboxSkillMutationOperation {
+	return []SandboxSkillMutationOperation{
+		SandboxSkillMutationOperationSet,
+		SandboxSkillMutationOperationAdd,
+		SandboxSkillMutationOperationRm,
+		SandboxSkillMutationOperationFollow,
+		SandboxSkillMutationOperationSync,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxSkillMutationOperation) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxSkillMutationOperationSet:
+		return []byte(s), nil
+	case SandboxSkillMutationOperationAdd:
+		return []byte(s), nil
+	case SandboxSkillMutationOperationRm:
+		return []byte(s), nil
+	case SandboxSkillMutationOperationFollow:
+		return []byte(s), nil
+	case SandboxSkillMutationOperationSync:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxSkillMutationOperation) UnmarshalText(data []byte) error {
+	switch SandboxSkillMutationOperation(data) {
+	case SandboxSkillMutationOperationSet:
+		*s = SandboxSkillMutationOperationSet
+		return nil
+	case SandboxSkillMutationOperationAdd:
+		*s = SandboxSkillMutationOperationAdd
+		return nil
+	case SandboxSkillMutationOperationRm:
+		*s = SandboxSkillMutationOperationRm
+		return nil
+	case SandboxSkillMutationOperationFollow:
+		*s = SandboxSkillMutationOperationFollow
+		return nil
+	case SandboxSkillMutationOperationSync:
+		*s = SandboxSkillMutationOperationSync
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type SandboxSkillMutationSkills map[string]SandboxSkill
+
+func (s *SandboxSkillMutationSkills) init() SandboxSkillMutationSkills {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkill{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/SandboxSkillOrigin
+type SandboxSkillOrigin struct {
+	SourceId string    `json:"sourceId"`
+	Commit   OptString `json:"commit"`
+}
+
+// GetSourceId returns the value of SourceId.
+func (s *SandboxSkillOrigin) GetSourceId() string {
+	return s.SourceId
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxSkillOrigin) GetCommit() OptString {
+	return s.Commit
+}
+
+// SetSourceId sets the value of SourceId.
+func (s *SandboxSkillOrigin) SetSourceId(val string) {
+	s.SourceId = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxSkillOrigin) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+// Ref: #/components/schemas/SandboxSkillVersion
+type SandboxSkillVersion struct {
+	SourceId string    `json:"sourceId"`
+	Commit   OptString `json:"commit"`
+	Digest   string    `json:"digest"`
+}
+
+// GetSourceId returns the value of SourceId.
+func (s *SandboxSkillVersion) GetSourceId() string {
+	return s.SourceId
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxSkillVersion) GetCommit() OptString {
+	return s.Commit
+}
+
+// GetDigest returns the value of Digest.
+func (s *SandboxSkillVersion) GetDigest() string {
+	return s.Digest
+}
+
+// SetSourceId sets the value of SourceId.
+func (s *SandboxSkillVersion) SetSourceId(val string) {
+	s.SourceId = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxSkillVersion) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+// SetDigest sets the value of Digest.
+func (s *SandboxSkillVersion) SetDigest(val string) {
+	s.Digest = val
+}
+
+// Ref: #/components/schemas/SandboxSkillsInventory
+type SandboxSkillsInventory struct {
+	DesiredRevision int64                              `json:"desiredRevision"`
+	AppliedRevision int64                              `json:"appliedRevision"`
+	Installed       OptSandboxSkillsInventoryInstalled `json:"installed"`
+	// Whether the desired revision is applied, pending, or unsupported by the running agent.
+	Application OptString                        `json:"application"`
+	Desired     OptSandboxSkillsInventoryDesired `json:"desired"`
+	Sources     OptSandboxSkillsInventorySources `json:"sources"`
+}
+
+// GetDesiredRevision returns the value of DesiredRevision.
+func (s *SandboxSkillsInventory) GetDesiredRevision() int64 {
+	return s.DesiredRevision
+}
+
+// GetAppliedRevision returns the value of AppliedRevision.
+func (s *SandboxSkillsInventory) GetAppliedRevision() int64 {
+	return s.AppliedRevision
+}
+
+// GetInstalled returns the value of Installed.
+func (s *SandboxSkillsInventory) GetInstalled() OptSandboxSkillsInventoryInstalled {
+	return s.Installed
+}
+
+// GetApplication returns the value of Application.
+func (s *SandboxSkillsInventory) GetApplication() OptString {
+	return s.Application
+}
+
+// GetDesired returns the value of Desired.
+func (s *SandboxSkillsInventory) GetDesired() OptSandboxSkillsInventoryDesired {
+	return s.Desired
+}
+
+// GetSources returns the value of Sources.
+func (s *SandboxSkillsInventory) GetSources() OptSandboxSkillsInventorySources {
+	return s.Sources
+}
+
+// SetDesiredRevision sets the value of DesiredRevision.
+func (s *SandboxSkillsInventory) SetDesiredRevision(val int64) {
+	s.DesiredRevision = val
+}
+
+// SetAppliedRevision sets the value of AppliedRevision.
+func (s *SandboxSkillsInventory) SetAppliedRevision(val int64) {
+	s.AppliedRevision = val
+}
+
+// SetInstalled sets the value of Installed.
+func (s *SandboxSkillsInventory) SetInstalled(val OptSandboxSkillsInventoryInstalled) {
+	s.Installed = val
+}
+
+// SetApplication sets the value of Application.
+func (s *SandboxSkillsInventory) SetApplication(val OptString) {
+	s.Application = val
+}
+
+// SetDesired sets the value of Desired.
+func (s *SandboxSkillsInventory) SetDesired(val OptSandboxSkillsInventoryDesired) {
+	s.Desired = val
+}
+
+// SetSources sets the value of Sources.
+func (s *SandboxSkillsInventory) SetSources(val OptSandboxSkillsInventorySources) {
+	s.Sources = val
+}
+
+func (*SandboxSkillsInventory) getSandboxSkillsRes()    {}
+func (*SandboxSkillsInventory) mutateSandboxSkillsRes() {}
+
+type SandboxSkillsInventoryDesired map[string]SandboxSkillVersion
+
+func (s *SandboxSkillsInventoryDesired) init() SandboxSkillsInventoryDesired {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkillVersion{}
+		*s = m
+	}
+	return m
+}
+
+type SandboxSkillsInventoryInstalled map[string]SandboxSkillVersion
+
+func (s *SandboxSkillsInventoryInstalled) init() SandboxSkillsInventoryInstalled {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkillVersion{}
+		*s = m
+	}
+	return m
+}
+
+type SandboxSkillsInventorySources map[string]SandboxSkillOrigin
+
+func (s *SandboxSkillsInventorySources) init() SandboxSkillsInventorySources {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxSkillOrigin{}
+		*s = m
+	}
+	return m
+}
+
 // One directory of a skills source whose skills are linked into the harness's skill directories.
 // Ref: #/components/schemas/SandboxSkillsSource
 type SandboxSkillsSource struct {
@@ -29312,6 +30148,98 @@ func (s *SandboxSkillsSource) SetDirectory(val string) {
 func (s *SandboxSkillsSource) SetSource(val string) {
 	s.Source = val
 }
+
+// Ref: #/components/schemas/SandboxSourceReset
+type SandboxSourceReset struct {
+	Revision int64  `json:"revision"`
+	Commit   string `json:"commit"`
+}
+
+// GetRevision returns the value of Revision.
+func (s *SandboxSourceReset) GetRevision() int64 {
+	return s.Revision
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxSourceReset) GetCommit() string {
+	return s.Commit
+}
+
+// SetRevision sets the value of Revision.
+func (s *SandboxSourceReset) SetRevision(val int64) {
+	s.Revision = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxSourceReset) SetCommit(val string) {
+	s.Commit = val
+}
+
+// Ref: #/components/schemas/SandboxSourceResetRequest
+type SandboxSourceResetRequest struct {
+	ExpectedRevision int64  `json:"expectedRevision"`
+	Commit           string `json:"commit"`
+}
+
+// GetExpectedRevision returns the value of ExpectedRevision.
+func (s *SandboxSourceResetRequest) GetExpectedRevision() int64 {
+	return s.ExpectedRevision
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxSourceResetRequest) GetCommit() string {
+	return s.Commit
+}
+
+// SetExpectedRevision sets the value of ExpectedRevision.
+func (s *SandboxSourceResetRequest) SetExpectedRevision(val int64) {
+	s.ExpectedRevision = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxSourceResetRequest) SetCommit(val string) {
+	s.Commit = val
+}
+
+// Ref: #/components/schemas/SandboxSourceResetStatus
+type SandboxSourceResetStatus struct {
+	Revision        int64     `json:"revision"`
+	AppliedRevision int64     `json:"appliedRevision"`
+	Commit          OptString `json:"commit"`
+}
+
+// GetRevision returns the value of Revision.
+func (s *SandboxSourceResetStatus) GetRevision() int64 {
+	return s.Revision
+}
+
+// GetAppliedRevision returns the value of AppliedRevision.
+func (s *SandboxSourceResetStatus) GetAppliedRevision() int64 {
+	return s.AppliedRevision
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxSourceResetStatus) GetCommit() OptString {
+	return s.Commit
+}
+
+// SetRevision sets the value of Revision.
+func (s *SandboxSourceResetStatus) SetRevision(val int64) {
+	s.Revision = val
+}
+
+// SetAppliedRevision sets the value of AppliedRevision.
+func (s *SandboxSourceResetStatus) SetAppliedRevision(val int64) {
+	s.AppliedRevision = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxSourceResetStatus) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+func (*SandboxSourceResetStatus) getSandboxSourceResetRes()  {}
+func (*SandboxSourceResetStatus) postSandboxSourceResetRes() {}
 
 // What the sandbox's current container or machine was made from, as its pool
 // recorded when it made it: one of the pool's snapshots, named by the key its

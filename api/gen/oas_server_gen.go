@@ -369,6 +369,12 @@ type Handler interface {
 	//
 	// GET /pool-agent/{poolId}/assets/{name}/manifests/{digest}
 	GetPoolAssetManifest(ctx context.Context, params GetPoolAssetManifestParams) (GetPoolAssetManifestRes, error)
+	// GetPoolSandboxRuntimeIntent implements get-pool-sandbox-runtime-intent operation.
+	//
+	// Read pending runtime changes for a hosted sandbox.
+	//
+	// GET /pool-agent/{poolId}/runtime-intent
+	GetPoolSandboxRuntimeIntent(ctx context.Context, params GetPoolSandboxRuntimeIntentParams) (GetPoolSandboxRuntimeIntentRes, error)
 	// GetProject implements get-project operation.
 	//
 	// Get a project.
@@ -438,6 +444,18 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
+	// GetSandboxSkills implements get-sandbox-skills operation.
+	//
+	// List a sandbox's skills.
+	//
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/skills
+	GetSandboxSkills(ctx context.Context, params GetSandboxSkillsParams) (GetSandboxSkillsRes, error)
+	// GetSandboxSourceReset implements get-sandbox-source-reset operation.
+	//
+	// Read a sandbox source's reset state.
+	//
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/reset
+	GetSandboxSourceReset(ctx context.Context, params GetSandboxSourceResetParams) (GetSandboxSourceResetRes, error)
 	// GetSandboxTrustRequest implements get-sandbox-trust-request operation.
 	//
 	// Poll an agent host trust request.
@@ -756,6 +774,18 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 	MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (MoveSandboxFileRes, error)
+	// MutateSandboxSkills implements mutate-sandbox-skills operation.
+	//
+	// Publish a change to a sandbox's managed skills.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/skills
+	MutateSandboxSkills(ctx context.Context, req *SandboxSkillMutation, params MutateSandboxSkillsParams) (MutateSandboxSkillsRes, error)
+	// PostSandboxSourceReset implements post-sandbox-source-reset operation.
+	//
+	// Reset a materialized source to a published commit.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/reset
+	PostSandboxSourceReset(ctx context.Context, req *SandboxSourceResetRequest, params PostSandboxSourceResetParams) (PostSandboxSourceResetRes, error)
 	// PullSandboxSource implements pull-sandbox-source operation.
 	//
 	// Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this

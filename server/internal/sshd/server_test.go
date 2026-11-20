@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
@@ -417,4 +419,18 @@ func (*fakeSandboxService) GetAPIAccessRequest(context.Context, string, string) 
 }
 func (*fakeSandboxService) DecideAPIAccessRequest(context.Context, string, string, bool) (*model.APIAccessRequest, error) {
 	return nil, nil
+}
+
+func (*fakeSandboxService) GetSandboxSkills(context.Context, string, string) (model.SandboxManagedSkills, error) {
+	panic("unexpected GetSandboxSkills")
+}
+func (*fakeSandboxService) MutateSandboxSkills(context.Context, string, string, sandboxconfig.SkillMutation) (model.SandboxManagedSkills, error) {
+	panic("unexpected MutateSandboxSkills")
+}
+
+func (*fakeSandboxService) GetSandboxSourceReset(context.Context, string, string, string) (model.SandboxSourceReset, error) {
+	return model.SandboxSourceReset{}, nil
+}
+func (*fakeSandboxService) PostSandboxSourceReset(context.Context, string, string, string, int64, string) (model.SandboxSourceReset, error) {
+	return model.SandboxSourceReset{}, nil
 }

@@ -89,6 +89,8 @@ type SourceState struct {
 
 // Config is what a Converger needs from the sandbox around it.
 type Config struct {
+	ResetStatePath string
+	ResetOwner     string
 	// Manifest is sandbox.json's sources: how each slug is checked out — its
 	// branch or tag, its upstream remote, its workspace snapshot.
 	Manifest []sandboxconfig.Source
@@ -299,6 +301,13 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 			return c.failed(state, err)
 		}
 		repo.ensurePoolHeadRef(ctx, pool)
+		resetCommit, err := c.resetSource(ctx, repo, pool, revision, source)
+		if err != nil {
+			return c.failed(state, err)
+		}
+		if resetCommit != "" {
+			commit = resetCommit
+		}
 		state.State, state.Commit = StateMaterialized, commit
 		return c.setState(state)
 	}

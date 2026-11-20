@@ -1115,6 +1115,19 @@ components:
                 metaError:
                     description: Why the meta file could not be read. Present only when meta is absent.
                     type: string
+                appliedSourceResets:
+                    type: object
+                    additionalProperties:
+                        type: integer
+                        format: int64
+                installedSkillNames:
+                    items:
+                        type: string
+                    type: array
+                managedSkillsRevision:
+                    description: The installed managed skills revision. Zero means no installation yet.
+                    format: int64
+                    type: integer
                 runtimeConfigRevision:
                     description: The revision of the runtime-config document the sandbox has applied (ADR 0126 §3). Absent while it has applied none.
                     format: int64
@@ -1235,6 +1248,12 @@ components:
             additionalProperties: false
             description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3) - everything about it that can change while it exists. What cannot is the static bootstrap, sandbox.json (ADR 26-10-08-127). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
             properties:
+                sourceResets:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSourceReset'
+                managedSkills:
+                    $ref: '#/components/schemas/SandboxManagedSkillsSnapshot'
                 rawSecrets:
                     description: "The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent refuses the whole document over a field it does not know."
                     additionalProperties:
@@ -1264,6 +1283,18 @@ components:
             required:
                 - revision
                 - agent
+            type: object
+        SandboxManagedSkillsSnapshot:
+            additionalProperties: false
+            properties:
+                revision:
+                    type: integer
+                    format: int64
+                skills:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkill'
+            required: [revision]
             type: object
         SandboxRuntimeConfigAgent:
             additionalProperties: false

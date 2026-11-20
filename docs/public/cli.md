@@ -4725,8 +4725,9 @@ Examples:
 ~~~~text
 Send this machine's commits to the pool a discobox fetches from.
 
-Commits only ever move local -> the discobox's pool. Nothing in the discobox
-moves: no branch of its own changes, nothing is rebased, nothing is checked out.
+Plain push sends commits to the pool. With --reset and --source, the
+selected work checkout resets to the published commit and discards tracked
+edits. The command reports the recorded and applied reset revisions.
 Inside the discobox the pool is the remote named discobox, and the new commits
 show up as discobox/<branch>, to be picked up whenever the work there is ready
 for them:
@@ -4791,7 +4792,10 @@ discobox push [DISCOBOX] [flags]
 | --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for push Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --reset | bool | false | Reset the selected work checkout to the published commit and discard tracked edits Value when passed without an argument: true. |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --skills | string |  | Publish the skills snapshot from DIR or URL[@REF][//PATH] |
+| --skills-source | string |  | Publish to a followed skills source with this identifier |
 | --source | string |  | Push only the source with this slug, instead of every push-delivered source on the discobox |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
@@ -5177,6 +5181,8 @@ Examples:
 | --detach, -d | bool | false | Create the discobox and print it without attaching to its terminal Value when passed without an argument: true. |
 | --discobox-api | bool | false | Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself Value when passed without an argument: true. |
 | --env, -e | stringArray | [] | Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable |
+| --follow-skills | string |  | Publish an initial skills snapshot from DIR or URL[@REF][//PATH] |
+| --follow-skills-source | string | local | Stable identifier for the followed skills source |
 | --from-json | bool | false | Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON Value when passed without an argument: true. |
 | --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --harness, -H | string |  | Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default |
@@ -5941,6 +5947,152 @@ discobox skill [flags]
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 | --uninstall | bool | false | Remove the installed skill Value when passed without an argument: true. |
+
+## discobox skills
+
+~~~~text
+Manage a discobox's skills
+~~~~
+
+```text
+discobox skills [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for skills Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skills add
+
+~~~~text
+Publish skills from a directory or Git repository
+~~~~
+
+```text
+discobox skills add BOX [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for add Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --skills | string |  | Read skills from DIR or URL[@REF][//PATH] |
+| --source | string | local | Stable identifier for this skills source |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skills follow
+
+~~~~text
+Publish skills from a directory or Git repository
+~~~~
+
+```text
+discobox skills follow BOX [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for follow Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --skills | string |  | Read skills from DIR or URL[@REF][//PATH] |
+| --source | string | local | Stable identifier for this skills source |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skills ls
+
+~~~~text
+List the discobox's skill versions
+~~~~
+
+```text
+discobox skills ls BOX [flags]
+```
+
+Aliases: list.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for ls Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --quiet, -q | bool | false | Only display resource IDs Value when passed without an argument: true. |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skills rm
+
+~~~~text
+Remove a managed skill
+~~~~
+
+```text
+discobox skills rm BOX NAME [flags]
+```
+
+Aliases: delete, remove.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for rm Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skills set
+
+~~~~text
+Publish skills from a directory or Git repository
+~~~~
+
+```text
+discobox skills set BOX [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for set Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --skills | string |  | Read skills from DIR or URL[@REF][//PATH] |
+| --source | string | local | Stable identifier for this skills source |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox skills sync
+
+~~~~text
+Publish skills from a directory or Git repository
+~~~~
+
+```text
+discobox skills sync BOX [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for sync Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --skills | string |  | Read skills from DIR or URL[@REF][//PATH] |
+| --source | string | local | Stable identifier for this skills source |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox start
 

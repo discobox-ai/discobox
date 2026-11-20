@@ -1,7 +1,8 @@
 # 26-11-18-649 — A box's manager publishes versioned skills
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-18
+- Accepted by the owner by merging #1391, 2026-11-19
 - **Issue**: [#1384](https://github.com/discobox-ai/discobox/issues/1384)
 - **Relates to**: [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md),
   [26-10-09-395](26-10-09-395-a-sandbox-may-be-created-with-skills.md),

@@ -11,6 +11,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -184,6 +185,10 @@ type SandboxService interface {
 	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, parent string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
+	GetSandboxSourceReset(context.Context, string, string, string) (model.SandboxSourceReset, error)
+	PostSandboxSourceReset(context.Context, string, string, string, int64, string) (model.SandboxSourceReset, error)
+	GetSandboxSkills(context.Context, string, string) (model.SandboxManagedSkills, error)
+	MutateSandboxSkills(context.Context, string, string, sandboxconfig.SkillMutation) (model.SandboxManagedSkills, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
 	// DeleteSandbox archives; UnarchiveSandbox restores; PurgeSandbox destroys
 	// the data and confirms it before returning (ADR 0022 §§2-3).
@@ -456,6 +461,7 @@ type PoolService interface {
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)
 	ReportPoolSandboxStates(ctx context.Context, poolID string, input ReportPoolSandboxStatesBody) error
 	MintSandboxAgentStatusTokens(ctx context.Context, poolID string, input MintSandboxAgentStatusTokensBody) (*MintSandboxAgentStatusTokensResponseBody, error)
+	GetPoolSandboxRuntimeIntent(context.Context, string, string, int64) (*sandboxconfig.PublishedSandboxRuntime, error)
 	ReportSandboxAgentStatus(ctx context.Context, poolID string, input ReportSandboxAgentStatusBody) error
 	// ReportSandboxInventories records what the pool's sandboxes' list reads
 	// answer, and names the sandboxes it needs in full (ADR 26-10-11-657 §2).

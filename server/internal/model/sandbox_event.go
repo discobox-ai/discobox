@@ -58,8 +58,9 @@ type SandboxEventData struct {
 	Tags map[string]string `json:"tags,omitempty"`
 	// CreatedBySandboxID is the sandbox that created this one, when one did.
 	// It never changes.
-	CreatedBySandboxID string `json:"createdBySandboxId,omitempty"`
-	ParentSandboxID    string `json:"parentSandboxId,omitempty"`
+	CreatedBySandboxID string              `json:"createdBySandboxId,omitempty"`
+	ParentSandboxID    string              `json:"parentSandboxId,omitempty"`
+	SkillChange        *SandboxSkillChange `json:"skillChange,omitempty"`
 }
 
 // SandboxEventProgram is the part of the primary session's OSC 7501 status an

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
@@ -258,10 +259,12 @@ func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 // unchanged; a field added to one and not the other fails here.
 func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 	full := sandboxconfig.RuntimeConfig{
-		Revision:   7,
-		Agent:      sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true, TLS: &sandboxconfig.AgentTLS{Cert: "agent-cert", Key: "agent-key"}},
-		SecretEnv:  map[string]string{"A": "sentinel-a"},
-		RawSecrets: map[string]string{"API_KEY": sandboxconfig.RawDeliveryEnv, "PEM": sandboxconfig.RawDeliveryFile},
+		SourceResets:  map[string]sandboxconfig.SourceReset{"primary": {Revision: 2, Commit: strings.Repeat("a", 40)}},
+		ManagedSkills: &sandboxconfig.ManagedSkills{Revision: 2, Skills: sandboxconfig.Skills{"demo": {Skill: "demo"}}},
+		Revision:      7,
+		Agent:         sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true, TLS: &sandboxconfig.AgentTLS{Cert: "agent-cert", Key: "agent-key"}},
+		SecretEnv:     map[string]string{"A": "sentinel-a"},
+		RawSecrets:    map[string]string{"API_KEY": sandboxconfig.RawDeliveryEnv, "PEM": sandboxconfig.RawDeliveryFile},
 		Proxy: &sandboxconfig.RuntimeProxy{
 			MTLSCA:     "mtls",
 			MITMCA:     "mitm",

@@ -1359,3 +1359,13 @@ A settled pool failure reaches actions before the sandbox's reconcile records
 it. First registration switches back to ordinary readiness and recovery policy.
 Explicit starts (including repair's final start) keep their existing ceiling.
 See ADR 26-11-07-306.
+
+## Managed skills
+
+A sandbox's owner or live direct parent can publish its managed skills.
+Parent writes also require egress coverage. Create can include an initial
+followed snapshot in the same transaction as the sandbox. A hosting pool
+fetches desired revisions at boot and during status convergence. The
+agent reports installation independently of the intake revision. The
+skills inventory combines observed names with managed provenance and
+the current desired state.

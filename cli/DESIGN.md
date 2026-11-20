@@ -3468,3 +3468,18 @@ Only changing the selected harness requires a stopped sandbox; name, egress and
 `--discobox-api` updates keep their existing rules. The command does not stop, start or attach.
 Terminal displays and completion prefer `currentHarnessId`, with `harnessId` as
 the fallback for an older agent; creation metadata remains historical.
+
+## Managed box skills
+
+The root `skills` command publishes and inspects per-box managed skills.
+`run --follow-skills` can include an initial snapshot. The publishing
+client reads directories or fetches Git sources using its own credentials,
+packages bounded skill content with provenance, and discards the temporary
+checkout. `skills sync` and `push --skills-source … --skills …` use the
+box's revision before reading the source to prevent an older publication
+from overwriting a concurrent change.
+
+Explicit `push --source SLUG --reset` publishes a work commit into the
+source's pool origin and pins its object under a dedicated ref. It compares
+the source's reset revision from before the push when recording the intent.
+The output distinguishes recording the instruction from its application.

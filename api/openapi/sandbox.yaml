@@ -995,6 +995,11 @@ components:
         SandboxAgentStatusResponse:
             additionalProperties: false
             properties:
+                appliedSourceResets:
+                    additionalProperties:
+                        format: int64
+                        type: integer
+                    type: object
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
                     description: The sandbox's idle-stop policy. Absent while the policy is not running.
@@ -1002,6 +1007,14 @@ components:
                     type: string
                 harnessConfigState:
                     type: string
+                installedSkillNames:
+                    items:
+                        type: string
+                    type: array
+                managedSkillsRevision:
+                    description: The installed managed skills revision. Zero means no installation yet.
+                    format: int64
+                    type: integer
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
                     description: The sandbox's name, description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record. Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
@@ -1607,6 +1620,19 @@ components:
                 - symlink
                 - other
             type: string
+        SandboxManagedSkillsSnapshot:
+            additionalProperties: false
+            properties:
+                revision:
+                    format: int64
+                    type: integer
+                skills:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSkill'
+                    type: object
+            required:
+                - revision
+            type: object
         SandboxMeta:
             additionalProperties: false
             description: A sandbox's name, description and tags, as the file inside it that holds them says. Each is optional, and an absent one is unset.
@@ -1629,6 +1655,8 @@ components:
             properties:
                 agent:
                     $ref: '#/components/schemas/SandboxRuntimeConfigAgent'
+                managedSkills:
+                    $ref: '#/components/schemas/SandboxManagedSkillsSnapshot'
                 proxy:
                     $ref: '#/components/schemas/SandboxRuntimeConfigProxy'
                     description: Material for the sandbox's hop to its pool. Absent when it has none.
@@ -1648,6 +1676,10 @@ components:
                     additionalProperties:
                         type: string
                     description: The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value never reaches a sandbox.
+                    type: object
+                sourceResets:
+                    additionalProperties:
+                        $ref: '#/components/schemas/SandboxSourceReset'
                     type: object
                 sources:
                     items:
@@ -1813,6 +1845,39 @@ components:
             required:
                 - services
             type: object
+        SandboxSkill:
+            additionalProperties: false
+            description: One skill, by content. Its name is its key, one directory with no slash that does not start with a dot.
+            properties:
+                files:
+                    description: The skill's files other than its SKILL.md.
+                    items:
+                        $ref: '#/components/schemas/SandboxSkillFile'
+                    type: array
+                skill:
+                    description: The skill's SKILL.md.
+                    type: string
+            required:
+                - skill
+            type: object
+        SandboxSkillFile:
+            additionalProperties: false
+            description: One file of a skill.
+            properties:
+                content:
+                    description: The file's bytes.
+                    format: byte
+                    type: string
+                executable:
+                    description: Whether the file is installed executable, as a skill's helper script must be.
+                    type: boolean
+                path:
+                    description: Path inside the skill's directory, slash-separated, clean, and relative; never SKILL.md, which is the skill's own text.
+                    type: string
+            required:
+                - path
+                - content
+            type: object
         SandboxSourceProjectLayer:
             additionalProperties: false
             description: A materialized source's project layer, its settings file in its working tree (.discobox/settings.json, or .discobox/project.json in a repository without one), as the sandbox read it.
@@ -1828,6 +1893,18 @@ components:
                     type: string
             required:
                 - slug
+                - commit
+            type: object
+        SandboxSourceReset:
+            additionalProperties: false
+            properties:
+                commit:
+                    type: string
+                revision:
+                    format: int64
+                    type: integer
+            required:
+                - revision
                 - commit
             type: object
         SandboxSourceStates:

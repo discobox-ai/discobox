@@ -246,6 +246,20 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 		if err := s.store.UpdateSandboxAgentStatus(ctx, pool.ProjectID, sandboxID, status, entry.ObservedAt, lastActive); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		var skillsRevision int64
+		if raw, supported := entry.Status["managedSkillsRevision"]; supported && json.Unmarshal(raw, &skillsRevision) == nil {
+			if err := s.store.ObserveSandboxSkills(ctx, pool.ProjectID, poolID, sandboxID, skillsRevision); err != nil {
+				return err
+			}
+		}
+		if raw, supported := entry.Status["appliedSourceResets"]; supported {
+			var resets map[string]int64
+			if json.Unmarshal(raw, &resets) == nil {
+				if err := s.store.ObserveSourceResets(ctx, pool.ProjectID, poolID, sandboxID, resets); err != nil {
+					return err
+				}
+			}
+		}
 		if meta, ok := reportedMeta(entry.Status); ok {
 			if err := s.store.UpdateSandboxMeta(ctx, pool.ProjectID, sandboxID, meta, entry.ObservedAt); err != nil {
 				return err

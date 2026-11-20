@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
 )
@@ -434,4 +436,34 @@ func (c *HTTPClient) CompleteSuspend(ctx context.Context, projectID, poolID stri
 		return fmt.Errorf("record successful suspend: status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (c *HTTPClient) GetRuntimeIntent(ctx context.Context, projectID, poolID string, key ed25519.PrivateKey, sandboxID string, known int64) (sandboxconfig.PublishedSandboxRuntime, error) {
+	token, err := poolauth.CreateToken(key, poolauth.Claims{ProjectID: projectID, PoolID: poolID})
+	if err != nil {
+		return sandboxconfig.PublishedSandboxRuntime{}, err
+	}
+	query := url.Values{"sandboxId": {sandboxID}, "knownRevision": {strconv.FormatInt(known, 10)}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/pool-agent/"+url.PathEscape(poolID)+"/runtime-intent?"+query.Encode(), nil)
+	if err != nil {
+		return sandboxconfig.PublishedSandboxRuntime{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return sandboxconfig.PublishedSandboxRuntime{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusNotModified {
+		return sandboxconfig.PublishedSandboxRuntime{}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return sandboxconfig.PublishedSandboxRuntime{}, fmt.Errorf("read managed skills: status %d", resp.StatusCode)
+	}
+	var snapshot sandboxconfig.PublishedSandboxRuntime
+	err = json.NewDecoder(io.LimitReader(resp.Body, 8*sandboxconfig.MaxSkillsBytes)).Decode(&snapshot)
+	if err == nil && snapshot.Revision != 0 {
+		err = snapshot.Validate()
+	}
+	return snapshot, err
 }

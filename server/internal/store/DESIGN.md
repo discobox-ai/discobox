@@ -422,3 +422,18 @@ omit evidence. Control-plane bootstrap reads use the primary so stale replica
 observations cannot extend or revive an attempt.
 
 `HasVerifiedBundle` and `RecordVerifiedBundle` persist successful bundle whiteout checks. Inserts are idempotent; failures and partial checks never create a verdict.
+
+## Managed skills
+
+A separate per-sandbox row stores the desired snapshot, its revision and
+the last observed applied revision. Ordinary sandbox rows and bulk reads
+exclude its content. Mutations lock the sandbox, check authority in that
+transaction and append metadata-only audit events through the sandbox
+event batch. Application records use the same transaction and event
+sequence. The pool can check its cached revision with a narrow query
+before the store reads a newer snapshot.
+
+Work-source resets use a separate per-source row with a desired revision,
+the published commit and an applied acknowledgement. The sandbox row lock
+serializes admission and live authorization. The hosting pool reads resets
+with runtime intent and reports the applied revisions with agent status.

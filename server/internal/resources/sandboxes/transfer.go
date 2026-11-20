@@ -414,7 +414,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	}
 	sb.PoolID = landedPool
 
-	created, err := s.createSandboxIntent(ctx, sb, nil, bindings, resourcesecrets.SandboxBindings{})
+	created, err := s.createSandboxIntent(ctx, sb, nil, bindings, resourcesecrets.SandboxBindings{}, nil)
 	if err != nil {
 		return nil, err
 	}

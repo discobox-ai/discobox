@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -973,4 +975,23 @@ func (s *routerTestServices) AuthorizePoolSandboxStart(context.Context, string, 
 
 func (s *routerTestServices) CompletePoolSandboxSuspend(context.Context, string, string, string, int64) error {
 	return nil
+}
+
+func (s *routerTestServices) GetSandboxSkills(context.Context, string, string) (model.SandboxManagedSkills, error) {
+	return model.SandboxManagedSkills{}, nil
+}
+
+func (s *routerTestServices) MutateSandboxSkills(context.Context, string, string, sandboxconfig.SkillMutation) (model.SandboxManagedSkills, error) {
+	return model.SandboxManagedSkills{}, nil
+}
+
+func (s *routerTestServices) GetPoolSandboxRuntimeIntent(context.Context, string, string, int64) (*sandboxconfig.PublishedSandboxRuntime, error) {
+	return &sandboxconfig.PublishedSandboxRuntime{}, nil
+}
+
+func (*routerTestServices) GetSandboxSourceReset(context.Context, string, string, string) (model.SandboxSourceReset, error) {
+	return model.SandboxSourceReset{}, nil
+}
+func (*routerTestServices) PostSandboxSourceReset(context.Context, string, string, string, int64, string) (model.SandboxSourceReset, error) {
+	return model.SandboxSourceReset{}, nil
 }

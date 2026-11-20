@@ -310,3 +310,14 @@ the system resolver. Machine pools set it for direct and edge hops; Docker
 pools leave it false and supply DNS through their runtime. It requires `DNS`.
 The intake carries it to the egress bridge file; the stub owns takeover and
 restoration, as described in [sandbox-agent](../../sandbox-agent/DESIGN.md#machine-system-dns).
+
+## Managed skills
+
+A managed skills snapshot carries a control-plane revision and complete
+skill contents. It uses the create-time size and path validation. The
+control plane also keeps provenance by name and source associations.
+Digests include the skill text, file content, paths and executable bits,
+independent of file order. Following associates an opaque publisher-chosen
+source ID with the latest publication. A sync checks the revision the
+publisher read before retrieving the source and replaces that source's
+contribution, including removals.

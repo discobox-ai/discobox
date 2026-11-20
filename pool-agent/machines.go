@@ -10,6 +10,8 @@ import (
 	"os"
 	"slices"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 
@@ -90,6 +92,9 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 		return nil, err
 	}
 	return sandboxruntime.NewMachineSandboxRuntime(sandboxruntime.MachineSandboxRuntimeConfig{
+		GetRuntimeIntent: func(ctx context.Context, id string, known int64) (sandboxconfig.PublishedSandboxRuntime, error) {
+			return client.GetRuntimeIntent(ctx, bootstrap.ProjectID, bootstrap.PoolID, identityKey, id, known)
+		},
 		CompleteSuspend: func(ctx context.Context, id, requestID string, epoch int64) error {
 			return client.CompleteSuspend(ctx, bootstrap.ProjectID, bootstrap.PoolID, identityKey, id, requestID, epoch)
 		},

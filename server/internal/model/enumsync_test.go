@@ -75,6 +75,7 @@ var yamlEnumAliases = map[string]string{
 //
 //nolint:gosec // G101: these are contract enum names, not credentials.
 var yamlOwnedEnums = map[string]string{
+	"SandboxSkillMutation.operation":         "A request operation classified by the managed skills transition code.",
 	"ProviderCheck.outcome":                  "A check's answer is never stored (ADR 26-11-15-089 §2), so no model holds it; the providers service reads it from the provider's error.",
 	"PoolProxy.mode":                         "Owned by pkg/pooloutbound and validated at the API/configuration boundary; the model stores sealed intent.",
 	"SecretRequestPartDecision.scope":        "approval input excludes legacy-unknown, which only describes older stored decisions",

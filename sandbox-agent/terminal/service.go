@@ -11,12 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
@@ -72,11 +74,13 @@ type ServiceConfig struct {
 	// merged from the image and project layers by pool-agent's Effective() call.
 	// A zero-value Harness (empty ID) means the sandbox has no harness at all,
 	// which resolves to the shell fallback.
-	Harness            config.Harness
-	WorkingRoot        string
-	RuntimeDir         string
-	CaptureStateDir    string
-	CaptureRecoveryDir string
+	Harness               config.Harness
+	WorkingRoot           string
+	RuntimeDir            string
+	CaptureStateDir       string
+	CaptureRecoveryDir    string
+	ManagedSkillsStateDir string
+	ManagedSkillsOwner    string
 	// SecretEnv returns the sandbox's current secret-bound
 	// envName->sentinel map, read live from the secrets file (ADR 0012 §3)
 	// for rendering harness files. Execution environments are owned by Execs.
@@ -121,12 +125,18 @@ type Service struct {
 	primaryState   PrimaryStateStore
 	// homeDirectory is the manifest's explicit home, when it carries one. The
 	// run user's own home stands in for it everywhere else (resolveHomeDir).
-	homeDirectory  string
-	bootPrompt     []string
-	skills         sandboxconfig.Skills
-	skillsSources  []sandboxconfig.SkillsSource
-	awaitSources   func(context.Context) error
-	awaitProvision func(context.Context) error
+	homeDirectory         string
+	bootPrompt            []string
+	skills                sandboxconfig.Skills
+	skillsSources         []sandboxconfig.SkillsSource
+	skillsMu              sync.Mutex
+	managedSkills         *sandboxconfig.ManagedSkills
+	appliedManagedSkills  atomic.Int64
+	managedSkillsStateDir string
+	managedSkillsOwner    string
+	loadBootSkills        func(context.Context) error
+	awaitSources          func(context.Context) error
+	awaitProvision        func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -175,19 +185,21 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 
 	s := &Service{
-		execs:          cfg.Execs,
-		harness:        cloneHarness(cfg.Harness),
-		defaultUser:    defaultUser,
-		installer:      cfg.Installer,
-		primaryState:   cfg.PrimaryState,
-		homeDirectory:  strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
-		bootPrompt:     append([]string(nil), cfg.Prompt...),
-		skills:         cfg.Skills,
-		skillsSources:  append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
-		awaitSources:   cfg.AwaitSources,
-		awaitProvision: cfg.AwaitProvision,
-		installing:     map[string]struct{}{},
-		launches:       map[string]*terminalLaunch{},
+		execs:                 cfg.Execs,
+		harness:               cloneHarness(cfg.Harness),
+		defaultUser:           defaultUser,
+		installer:             cfg.Installer,
+		primaryState:          cfg.PrimaryState,
+		homeDirectory:         strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
+		bootPrompt:            append([]string(nil), cfg.Prompt...),
+		skills:                cfg.Skills,
+		managedSkillsStateDir: cfg.ManagedSkillsStateDir,
+		managedSkillsOwner:    cfg.ManagedSkillsOwner,
+		skillsSources:         append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
+		awaitSources:          cfg.AwaitSources,
+		awaitProvision:        cfg.AwaitProvision,
+		installing:            map[string]struct{}{},
+		launches:              map[string]*terminalLaunch{},
 	}
 	if cfg.Harness.SaveBack == nil {
 		for _, dir := range []string{cfg.CaptureStateDir, cfg.CaptureRecoveryDir} {
@@ -234,6 +246,25 @@ func (s *Service) SetHookSocketPath(path string) {
 func (s *Service) List() []execs.Exec               { return s.execs.List() }
 func (s *Service) Get(id string) (execs.Exec, bool) { return s.execs.Get(id) }
 func (s *Service) Start(ctx context.Context, id string) (execs.Exec, error) {
+	if s.loadBootSkills != nil {
+		if err := s.loadBootSkills(ctx); err != nil && !errors.Is(err, errSkillsRolledBack) {
+			return execs.Exec{}, err
+		}
+	}
+	s.skillsMu.Lock()
+	defer s.skillsMu.Unlock()
+	if err := s.applyManagedSkillsLocked(); err != nil {
+		if !errors.Is(err, errSkillsRolledBack) {
+			return execs.Exec{}, err
+		}
+		if s.primaryState != nil {
+			launched, stateErr := s.primaryState.PrimaryTerminalLaunched(ctx)
+			if stateErr != nil || !launched {
+				return execs.Exec{}, errors.Join(err, stateErr)
+			}
+		}
+		slog.WarnContext(ctx, "start terminal with the restored skills revision", "error", err)
+	}
 	return s.execs.Start(ctx, id)
 }
 func (s *Service) Delete(ctx context.Context, id string) error { return s.execs.Delete(ctx, id) }
@@ -482,7 +513,7 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 		s.returnWake(wake)
 		return execs.Exec{}, err
 	}
-	started, err := s.execs.Start(ctx, revived.ID)
+	started, err := s.Start(ctx, revived.ID)
 	if err != nil {
 		s.returnWake(wake)
 	}

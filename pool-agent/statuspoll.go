@@ -243,7 +243,8 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 		Autostop              struct {
 			ControlPlanePower bool `json:"controlPlanePower"`
 		} `json:"autostop"`
-		RawSecrets bool `json:"rawSecrets"`
+		RawSecrets            bool   `json:"rawSecrets"`
+		ManagedSkillsRevision *int64 `json:"managedSkillsRevision"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return SandboxAgentStatusEntry{}, err
@@ -254,8 +255,9 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 	// It runs beside the report rather than in it, so a slow delivery never
 	// holds the batch.
 	go p.convergeRuntimeConfig(context.WithoutCancel(ctx), sandboxID, decoded.RuntimeConfigRevision, sandboxruntime.Advertised{
-		ControlPlanePower: decoded.Autostop.ControlPlanePower,
-		RawSecrets:        decoded.RawSecrets,
+		ControlPlanePower:     decoded.Autostop.ControlPlanePower,
+		RawSecrets:            decoded.RawSecrets,
+		ManagedSkillsRevision: decoded.ManagedSkillsRevision,
 	})
 	observedAt := decoded.ObservedAt
 	if observedAt.IsZero() {

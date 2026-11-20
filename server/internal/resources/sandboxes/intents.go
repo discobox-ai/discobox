@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -32,7 +35,7 @@ import (
 // sandbox row: the dirty mark wakes the reconciler on commit, and a
 // reconciler that can observe the sandbox without them launches it with no
 // secrets.
-func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, inlineSecrets []*model.Secret, own []*model.SecretBinding, prepared resourcesecrets.SandboxBindings) (*model.Sandbox, error) {
+func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, inlineSecrets []*model.Secret, own []*model.SecretBinding, prepared resourcesecrets.SandboxBindings, followed *sandboxconfig.SkillMutation) (*model.Sandbox, error) {
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
@@ -42,6 +45,11 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 		sandbox.RecordIntent(model.DesiredStatePresent)
 		if err := txStore.CreateSandbox(ctx, sandbox); err != nil {
 			return err
+		}
+		if followed != nil {
+			if _, err := txStore.MutateSandboxSkills(ctx, sandbox.ProjectID, sandbox.ID, auth.ActorFromContext(ctx), *followed, func(*store.Store) error { return nil }); err != nil {
+				return err
+			}
 		}
 		// An inline value is stored with the sandbox it was given to, so a
 		// create that fails leaves none behind.
