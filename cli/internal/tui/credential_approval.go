@@ -176,7 +176,11 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			return
 		}
 		if req.Use != nil {
-			d.sections = append(d.sections, section{lines: []line{{text: "Its own use " + ans.useMode(req) + "."}}})
+			effect := "Approving replaces any existing rules for “" + ans.credential + "” in this box, across all variables."
+			if ans.useAs(req) == bindingplan.Add {
+				effect = "Approving adds these routes alongside the existing rules for “" + ans.credential + "” in this box."
+			}
+			d.sections = append(d.sections, section{lines: []line{{text: effect}}})
 		}
 		if req.Delegate != nil {
 			d.sections = append(d.sections, section{lines: []line{{text: "Approval " + ans.delegateMode() + "."}}})
