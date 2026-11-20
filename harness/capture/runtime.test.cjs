@@ -469,6 +469,53 @@ test("native DB capture and handoff use exports/imports; launch guard preserves 
   }
 });
 
+test("omp native handoff accepts a receipt with no account field", {
+  skip: process.platform !== "linux" &&
+    "Native handoff requires Linux /proc and POSIX executable stubs",
+}, () => {
+  for (const accountId of ["named-account", undefined]) {
+    const f = fixture("omp");
+    const credential = {
+      type: "api_key",
+      key: "local-key",
+      ...(accountId ? { accountId } : {}),
+    };
+    const restore = nativeStub(f, "omp", {
+      version: 1,
+      credentials: [{ provider: "anthropic", credential }],
+    });
+    try {
+      const out = f.run();
+      assert.equal(out.credentials.length, 1);
+      const [captured] = out.credentials;
+      assert.equal(captured.account, accountId ?? "");
+      const sentinels = { [captured.envName]: "accepted-sentinel" };
+      const files = render(out.files, sentinels);
+      for (const file of files) f.write(file.path, file.content);
+      const ack = JSON.parse(JSON.stringify({
+        version: 1,
+        credentials: [{ ...captured, account: captured.account || undefined }],
+        files,
+        sentinels,
+      }));
+      assert.equal(Object.hasOwn(ack.credentials[0], "account"), !!accountId);
+      assert.equal(
+        handoff("omp", ack, f.normalizer).state,
+        "applied",
+        accountId ?? "anonymous account with account omitted from receipt",
+      );
+      const stored = JSON.parse(fs.readFileSync(path.join(f.home, "store.json")));
+      assert.deepEqual(stored.credentials, [{
+        provider: "anthropic",
+        credential: { ...credential, key: "accepted-sentinel" },
+      }]);
+    } finally {
+      restore();
+      f.close();
+    }
+  }
+});
+
 test("Codex captures edits from actual rendered bundle config and retains portable trust", () => {
   const f = fixture("codex");
   try {

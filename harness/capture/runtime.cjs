@@ -889,7 +889,7 @@ function handoff(id, input, normalizer) {
               (e) =>
                 e.provider === c.provider &&
                 (id !== "omp" ||
-                  (e.value.accountId || e.value.email || "") === c.account),
+                  (e.value.accountId || e.value.email || "") === (c.account ?? "")),
             )?.raw;
       if (wanted === undefined) return finish("retryable-failure");
     }
