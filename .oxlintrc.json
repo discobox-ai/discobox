@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // The harness runtime and adapters are this repository's TypeScript
+  // (harness/DESIGN.md); oxlint runs on harness/ alone.
+  "extends": ["./oxlint.repostd.json"],
+  "ignorePatterns": ["build/**", "node_modules/**", "harness/runtime/settings.mjs"],
+  "rules": {}
+}

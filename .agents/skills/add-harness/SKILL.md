@@ -1,6 +1,6 @@
 ---
 name: add-harness
-description: Add a new built-in coding harness (a terminal agent CLI such as Claude Code, Codex, OpenCode or GitHub Copilot) to Discobox — probe the real CLI, decide credential delivery, hooks and trust, build the harness/<id> image folder, wire it into the registry, Taskfile, watcher and docs, test it end to end on the nested dev server, and fold what it taught back into this skill. Use when the user asks to add, support, or package another agent CLI as a harness, or to change how an existing harness's image, save-back export, or launcher works.
+description: Add a new built-in coding harness (a terminal agent CLI such as Claude Code, Codex, OpenCode or GitHub Copilot) to Discobox — probe the real CLI, decide credential delivery, hooks and trust, write its harness/<dir> declaration (harness.json), vendor adapter (adapter.ts), assets and DESIGN.md, add it to the inventory and hook-event table, test it end to end on the nested dev server, and fold what it taught back into this skill. Use when the user asks to add, support, or package another agent CLI as a harness, or to change how an existing harness's declaration, adapter, launcher or save-back export works.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, AskUserQuestion, Skill
 metadata:
   argument-hint: "<cli name or npm package>"
@@ -8,13 +8,18 @@ metadata:
 
 # Add a Harness
 
-A harness is an image, not Go code. A driver only names the image; everything
-the harness *does* is declared in its manifest and done by shell scripts baked
-into it ([`harness/DESIGN.md`](../../../harness/DESIGN.md), ADR 0086). So most
-of the work is finding out, **from the CLI itself**, how it authenticates,
-where it keeps state, how it is told to trust and auto-approve, and where a
-system-owned hook layer lives — and then writing its launcher, its save-back
-export and its hook config against what you found.
+A built-in harness is one declaration and one vendor adapter
+([ADR 26-11-06-596](../../../docs/adr/26-11-06-596-built-in-harnesses-have-one-declaration-and-one-vendor-adapter.md),
+[`harness/DESIGN.md`](../../../harness/DESIGN.md#built-in-harness-shape)):
+`harness/<dir>/harness.json` says what it is, how it installs and launches,
+its environment, settings, local state, credentials, hooks and capture, and
+`adapter.ts` holds the vendor operations those choices select. Its bundle —
+label, provision steps, launcher, capture command — is generated from them, on
+a shared launcher and capture runtime. So most of the work is finding out,
+**from the CLI itself**, how it authenticates, where it keeps state, how it is
+told to trust and auto-approve, and where a system-owned hook layer lives —
+and then declaring what you found, and writing the operations no declaration
+can express.
 
 There is no setup step. A person signs in to the harness inside a box, the way
 they would on their own machine, and the box's save-back offers the login and
@@ -23,10 +28,12 @@ settings as a harness change to save for every box on the harness
 whatever the CLI writes when it signs in has to be something the export can
 read and a sentinel can stand in for.
 
-Read `harness/DESIGN.md` first, and the closest existing harness end to end.
-`harness/copilot` and `harness/opencode` are the most recent and the most
-commented; `codex-cli` is the reference for an OAuth credential the control
-plane refreshes.
+Read `harness/DESIGN.md` first, and the closest existing harness end to end:
+its `harness.json`, `adapter.ts` and `DESIGN.md`. `copilot` is the smallest
+(a token delivered in the environment); `codex-cli` is the reference for an
+OAuth credential the control plane refreshes and for system-layer trust;
+`opencode` and `omp` for a native credential store; `pi` and `omp` for an SDK
+extension's hooks.
 
 ## 0. Ground rules
 
@@ -67,7 +74,7 @@ the techniques.
 
 | Question | Why it matters | How it went before |
 | --- | --- | --- |
-| How does it run a prompt interactively, and non-interactively? | `launch.sh` | claude/codex: positional; opencode: `--prompt`; copilot: `--interactive=` (the `=` keeps a dash-led prompt a prompt) |
+| How does it run a prompt interactively, and non-interactively? | `launch.prompt` | claude/codex: positional; opencode: `--prompt`; copilot: `--interactive=` (the `=` keeps a dash-led prompt a prompt) |
 | How does it resume, and what happens with nothing to resume? | `--resume` in the convention | `--continue`, `resume --last`; copilot opens fresh |
 | Does a browser sign-in call back to a localhost port? Fixed, or a new one each run? | whether sign-in in a box works from the user's browser | the console's workspace forward binds a box's listening port at its own number when that is free, which is where the redirect goes; when it is taken, the CLI's device-code or paste-back sign-in is the way. codex: fixed 1455; opencode: 1455 and 1456; copilot: a new one each run (`listen(0)`) |
 | Does a first launch with no login reach a sign-in, unattended? | every box starts signed out until a login is saved | omp's setup wizard blocked it until `startup.setupWizard: false`; claude's onboarding is merged into local state by the launcher |
@@ -85,8 +92,8 @@ the techniques.
 | Does it keep memories in a directory you can point elsewhere? | source-scoped memory | claude: managed setting; codex: bind mount; opencode/copilot: none |
 | Is the credential store a file at all? Is there an export/import? | delivery | omp: SQLite, but `omp auth export`/`import` is a published document — bind its secret leaves, import at launch |
 | Is there a system layer at all? Do settings layers merge lists or replace them? | where hooks and policy can live | omp: none; its `PI_CONFIG_FILES` overlay outranks the user but *replaces* any list it sets |
-| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`, after `--` too? | `launch.sh` | omp and pi `-p` wait for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--`. pi reads `@x` as a file even after `--`: a prompt that starts with `@` gets a leading space, which pi sends as it is |
-| Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | pi installs undici's `EnvHttpProxyAgent` globally and every provider answered through the proxy; omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` in the image (a `/etc/profile.d` file the scripts also source): a loopback proxy address written into `image.json` is rewritten by a build in a discobox |
+| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`, after `--` too? | `launch.prompt` | omp and pi `-p` wait for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--`. pi reads `@x` as a file even after `--`: a prompt that starts with `@` gets a leading space, which pi sends as it is |
+| Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | pi installs undici's `EnvHttpProxyAgent` globally and every provider answered through the proxy; omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` (`environment.aliases`, with a `profile` script for login shells): a loopback proxy address written into the manifest's env is rewritten by a build in a discobox |
 | What do its dependencies' install scripts fetch? | image build, version store | omp's onnxruntime-node downloads a CUDA build from GitHub on linux-x64 and hung the build: `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` at build time and in the image's env. A scratchpad install that takes minutes is the warning |
 | Does a first interactive run open a wizard? | unattended launch | omp's five-step setup wizard stalls a launch until `startup.setupWizard: false` |
 | Does a provider read anything out of the token itself? | whether a sentinel can stand in for it | a sentinel copies a token's shape, not its contents: pi's ChatGPT provider reads the account from the access token's JWT claims and fails locally on a sentinel, so the export leaves that login out and says why |
@@ -96,8 +103,11 @@ the techniques.
 
 Write these down before writing scripts; most become ADR sections.
 
-1. **Slug, folder, image, hook provider.** Make them one name. `codex` vs
-   `codex-cli` costs a special case in the Taskfile and the watcher forever.
+1. **Directory, ID (the config slug), bundle, hook provider.** Make them one
+   name (`discobox-harness-<id>` for the bundle). They are four declared
+   identities, and renaming one later strands saved configurations and stored
+   hooks: `codex-cli`, `codex` and `discobox-harness-codex` stay as they are
+   for that reason.
 2. **Credential secrets.** Name, `required`, `oneOfGroup` for alternatives,
    `type` (`token`, or `oauth` only when the control plane can run a standard
    refresh), and `host` (one host or none).
@@ -137,35 +147,32 @@ Write these down before writing scripts; most become ADR sections.
    list in an overlay that would replace the user's. Publish every event with
    `discobox-hook-publish --provider <id> --event <name>` (silent on stdout,
    always exits 0, so it is safe in decision hooks).
-## 3. Build `harness/<id>/`
+## 3. Write `harness/<dir>/`
 
-Built-in harness builds use the repository-root context (`docker build -f
-harness/<id>/Dockerfile .`), so COPY sources include `harness/<id>/`. A harness
-using the shared JavaScript exporter also copies `harness/capture/runtime.cjs`,
-`settings.cjs`, and `settings-LICENSE.txt` into its feature and installs all three
-through its own provision steps. Its feature requires Node; the platform does
-not carry these helpers or require an exporter language. Third-party exporters
-may use any executable that implements the JSON command contract.
+The shape is fixed; fill it in. Nothing else in the folder: no Dockerfile,
+`provision.yaml`, launcher, capture script, `agent.conf` or Go driver — the
+generator (`go run ./internal/cmd/discobox-harness-bundle stage <id>`) makes
+them, and validation refuses what does not fit.
 
 | File | Contract |
 | --- | --- |
-| `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `cli` step, `run: install-cli.sh` with `check: check-cli.sh`; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `capture.sh` → `/usr/local/libexec/discobox/<id>-capture` (`0755`) with the exporter helpers, `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`) |
-| `install-cli.sh` | executable; `exec /usr/local/libexec/discobox/npm-global install <pkg>` — never `npm install -g`, which installs with whatever npm PATH finds into its default prefix (on boxd one user's nvm; see `sandbox-agent/provision/DESIGN.md`, "Where a feature installs") |
-| `check-cli.sh` | executable; `exec /usr/local/libexec/discobox/npm-global check <pkg>`, and both scripts copied by the `Dockerfile` |
-| `Dockerfile` | The bundle alone, as every harness's: one `FROM scratch AS bundle` stage that labels `io.discobox.image.v1` from `HARNESS_METADATA` through `${HARNESS_METADATA:?...}` and `COPY`s every file `provision.yaml` names, and it, into `/features/<id>/` (`harness/feature_test.go` checks the copy is whole). No harness is an image: a box applies the bundle |
-| `image.json` | `apiVersion`, `platformAPIVersion` (`discobox.ai/platform/v1`, which registration requires), `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,saveBack}`. No `runCommand` — the convention is the command. No `config`: a configure command or its ports is refused at registration (ADR 26-11-02-152) |
-| `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
-| `driver.go` | `ID()` and `Definition()` naming `Bundle: harness.BundleRef("discobox-harness-<id>")` |
-| `launch.sh` | join prompt words into one prompt, passed so the CLI cannot read it as flags or files (omp: after `--`); `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
-| `capture.sh`, `<id>-normalize.cjs` | the save-back export and handoff (see below) |
-| hook config | in the CLI's own schema, at its system layer. A JavaScript hook (opencode, omp, pi) publishes an allowlist of events, and each payload is an allowlist too, never a list of field names to drop: the transcript travels under many names. Projecting by shape (scalars, a tool's input) holds only while nothing large is a scalar — pi's `before_agent_start.systemPrompt` is a string, so pi's extension names the fields it keeps per event; check every scalar of every published event's type |
+| `harness.json` | The declaration, `schema: 1` (`harness.Declaration`; read a sibling's). Every part configured or declared absent with its reason. `install`: `requires` (`core`, `node`; omp `bun` too), the npm `package` and `executable`, any `osPackages` and install `env`. `launch`: fixed `args`, `resume`, the `prompt` form (`positional`, `separator`, `option`, `option-joined`; `leadingAt: space` for a CLI that reads `@x` as a file after `--`), `home` and `retry` when the CLI needs them. `environment`: `static` (the manifest's env: updater off, policy), launcher `defaults`, `aliases` (with a `profile` script for login shells), `fromSettings`, `volumes`. `settings`: seed `files`, `policy` assets with their vendor `layer`. `localState`: `trust` and `memory` strategies. `credentials`: `secrets` (routes, `delivery`, `rejectionScope`), `egressHosts`, the `store` strategy. `hooks`: the `provider` and a `command` (generated from `events`), `extension` or `plugin` transport. `capture`: the save-back definition without its commands. No `runCommand` — the convention is the command — and no `config` (ADR 26-11-02-152) |
+| `adapter.ts` | TypeScript, `export default { ... } satisfies Adapter` (`harness/runtime/types.ts`), with the vendor operations the declaration selects: `entries`, `files`, `compose` (or `retiresLogin: true`) and `apply` (or `handoffNative`) with a capture definition; `plan` for a store of many providers' logins; `login` for one login the control plane renews; `exportNative` and `importNative` for a native store; `prepareLocalState`, `systemTrust`, `launchEnvironment` for those strategies; `material` and the rest only where the vendor's documents differ from the default. The runtime refuses an adapter missing one (`operations` in `harness/runtime/runtime.ts`), and `go tool task check:ts` typechecks, lints and formats it. Erasable TypeScript only, `import type` for types, `.ts` on relative imports: the generator compiles it file by file. Each operation is a named vendor fact, tested; never a lifecycle of its own or a second launcher |
+| `assets/` | Literal files the declaration names, nothing else: a policy file, an SDK hook entry point. An asset nothing names fails validation. A JavaScript hook (opencode, omp, pi) publishes an allowlist of events, and each payload is an allowlist too, never a list of field names to drop: the transcript travels under many names. Projecting by shape (scalars, a tool's input) holds only while nothing large is a scalar — pi's `before_agent_start.systemPrompt` is a string, so pi's extension names the fields it keeps per event; check every scalar of every published event's type |
+| `DESIGN.md` | The vendor's semantics, the evidence for them, and what is not supported: its identity table, what it declares and why, its adapter operations, its credentials and settings, its hooks and policy layer |
+
+A strategy the shape does not have — a new trust mechanism, a store neither
+`file` nor `native`, a prompt form — is a change to the shape: its validation
+in `harness/declaration.go`, its generation in `internal/harnessbundle`, its
+runtime in `harness/runtime`, and tests of each. It needs the user, and an ADR
+when it changes trust policy, account semantics or a public bundle protocol.
 
 **Save-back** — copy the shape of `codex-cli` (a file credential the control
 plane refreshes) or `opencode` (a store reached through the CLI's own
-export/import). `image.json`'s `saveBack` names what to watch, the credential
-files and their schemas, and the providers; `capture.sh` runs
-`harness-capture/runtime.cjs` with the harness's normalizer. Lessons that each
-cost a bug:
+export/import). The declaration's `capture` names what to watch, the
+credential files and their schemas, and the providers; the generated
+`<id>-capture` runs the shared runtime with the harness's adapter. Lessons
+that each cost a bug:
 
 - The first launch is signed out. The launcher has to reach the CLI's sign-in
   with nothing delivered, and must not treat a missing credential file as an
@@ -189,44 +196,44 @@ cost a bug:
 Moving a harness to a new major of its CLI is this whole skill again, against
 the existing folder: probe, an ADR superseding the old one, and every
 configuration saved under the old CLI keeps working without a new sign-in
-(opencode 2 reads opencode 1's `auth.json` in its launcher). When the npm
-package changes too (`opencode-ai` → `@opencode/cli`), `AGENT_PACKAGE`
+(opencode 2's adapter reads opencode 1's `auth.json` at import). When the npm
+package changes too (`opencode-ai` → `@opencode/cli`), `install.package`
 changes, and the agent store replaces a pin into the old package's directory.
 
 ## 4. Wire it in
 
-Every place the last harness touched (find them: `git grep -il <last-id> -- ':!harness/<last-id>' ':!docs/adr'`):
-
-- `harness/registry/registry.go` and its test's ID list.
+- `harness/builtin.go`: the directory in `builtinDirectories`, in seeding
+  order. The registry, the bundle build, the release and the development
+  watcher all read this one list.
 - `harness/hookevent.go`: a `canonicalHookEvents` entry per event with a true
   Claude Code counterpart, and none for the rest (ADR 0146 §3 — never copy a
   name Claude Code has not chosen; an event that fires on a retried error is
   not `StopFailure`).
-- `internal/cmd/discobox-docker-image-watch/main.go` `harnessImages`, and its
-  test's counts, names, env keys and metadata args.
-- `Taskfile.yml`: `build:harness-bundles`, the `build:harness-bundle` and
-  `release:harness-bundle` descriptions, the Dockerfile COPY-path check list,
-  and `release:images`.
+- `internal/harnessbundle/testdata/labels/<dir>.json`: the label it publishes,
+  copied from what the generator stages, which the golden test holds it to.
 - `.env.example` (`DISCOBOX_HARNESS_<ID>_BUNDLE`).
 - `cli/internal/cli/audit_list.go` `hookPayload`/`hookSummary` if the CLI's
   tool-hook payload has a new shape, with a case in `audit_test.go`.
-- Docs: `harness/DESIGN.md` (driver list, managed layers, updater list,
-  memory, its save-back conversion), `README.md`,
-  `sandbox-agent/DESIGN.md` (watcher's image list),
+- Docs: its own `DESIGN.md`; `harness/DESIGN.md` (the built-in list, managed
+  layers, updater list, memory) where it adds to a comparison; `README.md`;
   `sandbox-agent/features/core/skills/discobox/SKILL.md` (harness row).
 
 ## 5. Test
 
 In `harness/<id>/`, mirroring the siblings:
 
-- **Launcher**: `launchertest.RunLauncher` — split words, quoted prompt, a
-  dash-led prompt, no prompt, resume.
+- **Launcher**: `harnesstest.RunLauncher`, which stages the harness, installs
+  its feature under a test directory and runs the generated launcher with a
+  stubbed CLI — split words, quoted prompt, a dash-led prompt, no prompt,
+  resume. `harnesstest.Stage(t, ".").Install(t, paths)` for anything the
+  launch prepares (trust, memory, an import): assert what landed.
 - **Hooks**: every expected event has exactly one publisher with a 1–3 s
   timeout; every published event has a canonical name or is listed as having
   none.
-- **Manifest**: secrets, delivery, policy env, no command override, the
-  Dockerfile installs each script where the contract says.
-- **The export, behaviorally**, in `harness/capture/runtime.test.cjs` and
+- **Manifest**: secrets, delivery, policy env, no command override, read from
+  the staged label (`Stage(...).Label()`), and the feature installs each file
+  where the contract says (`Installs`, `Installed`).
+- **The export, behaviorally**, in `harness/runtime/runtime.test.ts` and
   against `harnesscapture.Definition.ValidateCandidate`: stub the CLI with the
   storage shape you measured and cover a first sign-in, an unchanged delivered
   sentinel (no candidate), a replaced login, a cleared login, the handoff
@@ -240,8 +247,9 @@ In `harness/<id>/`, mirroring the siblings:
   from a recorded session or the CLI's own types. A stub store mimics the
   CLI's ordering too (omp moves a replaced login to the end).
 
-Then: `go test ./harness/... ./internal/cmd/discobox-docker-image-watch/`,
-the CLI audit test, `go tool task build:harness-bundle HARNESS=<id>`,
+Then: `go test ./harness/... ./internal/harnessbundle/ ./internal/cmd/discobox-docker-image-watch/`,
+`go run ./internal/cmd/discobox-harness-bundle check`, `go tool task check:ts`, the CLI audit test,
+`go tool task build:harness-bundle HARNESS=<id>`,
 `go tool task ci:check`, and `go tool task check-hooks`.
 
 ## 6. Prove it end to end
@@ -271,8 +279,8 @@ passed, is the template:
 
 What this needs, learned the hard way:
 
-- **The running image watcher predates a new harness.** Its list is compiled
-  in, so it builds nothing for one it has never heard of, and the server
+- **The running image watcher predates a new harness.** It reads the
+  inventory when it starts, so it builds nothing for one added since, and the server
   falls back to the definition's `discobox-harness-<id>:local` bundle —
   which, held only by the host's daemon, the asset API cannot serve a pool,
   so a box on it fails to fetch it. Restart `task dev` once the watcher's
@@ -332,9 +340,9 @@ harness among the precedents if it is now the clearest example of something.
 
 ## Save-back changes
 
-- A harness with `saveBack` installs the same `image.json` that labels its bundle.
-  The export reads refresh provider metadata from this document; do not
-  maintain a second client table.
+- A harness with `capture` installs the same generated label that labels its
+  bundle (`<id>-image.json`). The export reads refresh provider metadata from
+  it; do not maintain a second client table.
 - Exercise exporter output against `harnesscapture.Definition.ValidateCandidate`,
   not only JavaScript fixtures. In particular, native exports with a top-level
   array and settings with literal dotted keys exercise different schema paths.

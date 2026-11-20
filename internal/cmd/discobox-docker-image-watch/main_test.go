@@ -72,7 +72,8 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	// alone, and the sandbox agent ships only as the agent bundle (ADR
 	// 26-10-24-953 §2).
 	wantNames := []string{baseSpecName, poolAgentBundleSpecName, agentSpecName, "platform"}
-	for _, name := range []string{"codex", "claude-code", "opencode", "copilot", "omp", "pi", "shell"} {
+	// The harnesses in the inventory's order (harness/builtin.go).
+	for _, name := range []string{"claude-code", "codex", "opencode", "copilot", "omp", "pi", "shell"} {
 		wantNames = append(wantNames, "harness-"+name)
 	}
 	if !reflect.DeepEqual(gotNames, wantNames) {
@@ -168,14 +169,19 @@ func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 	specs, repoRoot := loadDockerImageSpecs(t)
 	sandboxDockerfile := filepath.Join(repoRoot, "sandbox-agent", "Dockerfile")
 	for _, name := range []string{"codex", "claude-code", "shell"} {
-		dockerfile := filepath.Join("harness", harnessDir(name), "Dockerfile")
+		stageDir := filepath.Join(repoRoot, "build", "harness-bundles", harnessDir(name))
+		target := "bundle"
+		if name == "shell" {
+			target = "label"
+		}
 		bundle, ok := specNamed(specs, "harness-"+name)
 		if !ok {
 			t.Fatalf("missing bundle watcher for %s", name)
 		}
 		args := strings.Join(bundle.buildArgs, " ")
-		if !strings.Contains(args, dockerfile) || !strings.Contains(args, "--target bundle") {
-			t.Fatalf("bundle watcher for %s does not build its Dockerfile's bundle stage: %#v", name, bundle)
+		if !strings.Contains(args, "-f "+filepath.Join(stageDir, "Dockerfile")) || !strings.Contains(args, "--target "+target) ||
+			bundle.buildArgs[len(bundle.buildArgs)-1] != stageDir || bundle.contextDir != stageDir || bundle.stage == nil {
+			t.Fatalf("bundle watcher for %s does not build its staged context's %s stage: %#v", name, target, bundle)
 		}
 		// Exported as a layout, never into an image store.
 		layoutDir := filepath.Join(repoRoot, "build", "assets", "discobox-harness-"+name)
@@ -194,10 +200,14 @@ func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 		if _, ok := specNamed(specs, "harness-"+name+"-image"); ok {
 			t.Fatalf("%s still has a runnable image twin; a harness is its bundle alone", name)
 		}
+		// Its declaration is an input; another harness's is not.
+		own := filepath.Join(repoRoot, "harness", harnessDir(name), "harness.json")
+		if !contains(bundle.files, own) {
+			t.Fatalf("%s watcher does not watch its declaration", bundle.name)
+		}
 		for _, file := range bundle.files {
-			if strings.HasSuffix(file, "image.json") && strings.Contains(file, string(filepath.Separator)+"harness"+string(filepath.Separator)) &&
-				!strings.Contains(file, filepath.Join("harness", harnessDir(name), "image.json")) {
-				t.Fatalf("%s watcher includes unrelated metadata %s", bundle.name, file)
+			if strings.HasSuffix(file, "harness.json") && file != own {
+				t.Fatalf("%s watcher includes unrelated declaration %s", bundle.name, file)
 			}
 		}
 	}
@@ -316,6 +326,11 @@ func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
 	labeled := map[string]string{}
 	for _, spec := range specs {
+		if spec.stage != nil {
+			if err := spec.stage(); err != nil {
+				t.Fatal(err)
+			}
+		}
 		data, err := os.ReadFile(filepath.Join(spec.contextDir, spec.dockerfile))
 		if err != nil {
 			t.Fatal(err)
@@ -359,8 +374,12 @@ func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
 	want := map[string]string{
 		platformSpecName: harness.LayerMetadataBuildArg,
 	}
-	for _, harnessImage := range harnessImages {
-		want["harness-"+harnessImage.name] = harness.MetadataBuildArg
+	builtins, err := harness.Builtins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range builtins {
+		want["harness-"+d.ID] = harness.MetadataBuildArg
 	}
 	if !maps.Equal(labeled, want) {
 		t.Fatalf("labeled images = %v, want %v", labeled, want)
@@ -535,14 +554,18 @@ func TestCaptureAssetsBelongToHarnessBundles(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing %s bundle", name)
 		}
-		if spec.contextDir != root || spec.dockerfile != filepath.Join("harness", harnessDir(name), "Dockerfile") || spec.buildArgs[len(spec.buildArgs)-1] != "." {
-			t.Errorf("%s does not build from repository root: %+v", name, spec)
+		stageDir := filepath.Join(root, "build", "harness-bundles", harnessDir(name))
+		if spec.contextDir != stageDir || spec.dockerfile != "Dockerfile" || spec.buildArgs[len(spec.buildArgs)-1] != stageDir {
+			t.Errorf("%s does not build from its staged context: %+v", name, spec)
 		}
-		for _, asset := range []string{"runtime.cjs", "settings.cjs", "settings-LICENSE.txt"} {
-			path := filepath.Join(root, "harness", "capture", asset)
+		for _, asset := range []string{"main.ts", "runtime.ts", "types.ts", "settings.mjs", "settings-LICENSE.txt", "launch.sh"} {
+			path := filepath.Join(root, "harness", "runtime", asset)
 			if got := contains(spec.files, path); got != (name != "shell") {
 				t.Errorf("%s watches %s = %t", name, asset, got)
 			}
+		}
+		if !contains(spec.files, filepath.Join(root, "internal", "harnessbundle", "harnessbundle.go")) {
+			t.Errorf("%s does not rebuild when the generator changes", name)
 		}
 	}
 	platform, ok := specNamed(specs, platformSpecName)
@@ -550,7 +573,7 @@ func TestCaptureAssetsBelongToHarnessBundles(t *testing.T) {
 		t.Fatal("missing platform")
 	}
 	for _, file := range platform.files {
-		if strings.HasPrefix(file, filepath.Join(root, "harness", "capture")+string(filepath.Separator)) {
+		if strings.HasPrefix(file, filepath.Join(root, "harness", "runtime")+string(filepath.Separator)) {
 			t.Errorf("platform still owns harness exporter asset %s", file)
 		}
 	}

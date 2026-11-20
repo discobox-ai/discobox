@@ -1,6 +1,6 @@
 # Built-in credential destinations
 
-Policy for ADR 26-11-04-772 / #576. `image.json` is the executable authority;
+Policy for ADR 26-11-04-772 / #576. Each built-in's declaration (`harness/<dir>/harness.json`), and the label generated from it, is the executable authority;
 this inventory records its evidence and limits. It covers saved/delivered
 credentials, not the initial local login before handoff (#581).
 

@@ -40,9 +40,8 @@ func TestImagesBelowTheRootInheritTheReclaimLabel(t *testing.T) {
 	dockerfiles := []string{
 		filepath.Join("pool-agent", "Dockerfile"),
 		filepath.Join("sandbox-agent", "Dockerfile"),
-	}
-	for _, harnessImage := range harnessImages {
-		dockerfiles = append(dockerfiles, filepath.Join("harness", harnessImage.dir, "Dockerfile"))
+		// Every harness bundle's.
+		filepath.Join("harness", "Dockerfile"),
 	}
 	for _, dockerfile := range dockerfiles {
 		data, err := os.ReadFile(filepath.Join(repoRoot, dockerfile))

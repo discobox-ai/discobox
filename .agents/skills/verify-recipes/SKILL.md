@@ -799,10 +799,11 @@ dev loop's built ones (copy-mode, by ID) and whose `bundles` are build
 descriptions, so its pool's daemon builds them and the server saves them:
 
 ```bash
-PM=$(jq -c . sandbox-agent/image.json); HM=$(jq -c . harness/shell/image.json)
+go run ./internal/cmd/discobox-harness-bundle stage -o build/harness-bundles/shell shell
+PM=$(jq -c . sandbox-agent/image.json); HM=$(jq -c . build/harness-bundles/shell/image.json)
 jq --arg pm "$PM" --arg hm "$HM" --arg root "$PWD" '{version:1, images:.images, bundles:[
  {reference:"discobox-platform:verify-bm1", build:{dockerfile:"sandbox-agent/Dockerfile", context:$root, target:"platform", args:{IMAGE_LAYER_METADATA:$pm}}},
- {reference:"discobox-harness-shell:verify-bm1", build:{dockerfile:"Dockerfile", context:($root+"/harness/shell"), target:"bundle", args:{HARNESS_METADATA:$hm}}}]}' \
+ {reference:"discobox-harness-shell:verify-bm1", build:{dockerfile:"Dockerfile", context:($root+"/build/harness-bundles/shell"), target:"label", args:{HARNESS_METADATA:$hm}}}]}' \
   .tmp/discobox-dev-images.json > $S/bm.json
 # server env: DISCOBOX_DEV_DOCKER_IMAGE_SYNC=true DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST=$S/bm.json
 # DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE, DISCOBOX_AGENT_BUNDLE and DISCOBOX_POOL_AGENT_BUNDLE from .env,

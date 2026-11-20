@@ -8,7 +8,7 @@
 // when it is demonstrably newer, ask the registry twice a day, keep two
 // versions and anything still in use — provable only by running the script,
 // which is what this test does (the same argument as harness/internal/
-// launchertest for the launchers).
+// harnesstest for the launchers).
 package agentstore_test
 
 import (

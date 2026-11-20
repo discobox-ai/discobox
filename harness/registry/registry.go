@@ -1,39 +1,21 @@
+// Package registry is the built-in harnesses the server seeds, derived from
+// their declarations (harness.Builtins) rather than from a package per
+// harness (ADR 26-11-06-596 §1).
 package registry
 
-import (
-	"github.com/discobox-ai/discobox/harness"
-	claudecode "github.com/discobox-ai/discobox/harness/claude-code"
-	codexcli "github.com/discobox-ai/discobox/harness/codex-cli"
-	"github.com/discobox-ai/discobox/harness/copilot"
-	"github.com/discobox-ai/discobox/harness/omp"
-	"github.com/discobox-ai/discobox/harness/opencode"
-	"github.com/discobox-ai/discobox/harness/pi"
-	"github.com/discobox-ai/discobox/harness/shell"
-)
+import "github.com/discobox-ai/discobox/harness"
 
-func DefaultDrivers() []harness.Driver {
-	return []harness.Driver{
-		claudecode.Driver{},
-		codexcli.Driver{},
-		opencode.Driver{},
-		copilot.Driver{},
-		omp.Driver{},
-		pi.Driver{},
-		// Last because nobody picks it for an agent: its reserved slug withholds
-		// a run command. It is otherwise an ordinary registry harness (ADR
-		// 0043), and not a fallback (ADR 0048); the one path that ends at it is
-		// a legacy sandbox upgrading with no harness config.
-		shell.Driver{},
-	}
-}
-
-// Definitions returns the built-in harness-config template for every known
-// harness, in default-driver order.
+// Definitions returns the built-in harness-config template for every
+// built-in, in inventory order. The declarations are embedded and validated by
+// this package's tests, so one that does not load is a build defect.
 func Definitions() []harness.Definition {
-	drivers := DefaultDrivers()
-	out := make([]harness.Definition, 0, len(drivers))
-	for _, driver := range drivers {
-		out = append(out, driver.Definition())
+	builtins, err := harness.Builtins()
+	if err != nil {
+		panic(err)
+	}
+	out := make([]harness.Definition, 0, len(builtins))
+	for _, d := range builtins {
+		out = append(out, d.Definition())
 	}
 	return out
 }

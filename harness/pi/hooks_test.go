@@ -21,7 +21,7 @@ import (
 // `const PUBLISHED_FIELDS = { ... }`.
 func publishedEvents(t *testing.T) []string {
 	t.Helper()
-	text := readFile(t, "hook-extension.js")
+	text := readFile(t, "assets/hook-extension.js")
 	first := strings.Index(text, "const PUBLISHED_FIELDS = {")
 	if first < 0 {
 		t.Fatal("extension declares no PUBLISHED_FIELDS")
@@ -51,7 +51,7 @@ func TestEveryPublishedEventHasACanonicalNameOrIsKnownNotTo(t *testing.T) {
 	noCanonicalName := []string{"session_compact_failed"}
 	published := publishedEvents(t)
 	for _, event := range published {
-		canonical := harness.CanonicalHookEvent(Driver{}.ID(), event)
+		canonical := harness.CanonicalHookEvent(provider(t), event)
 		if slices.Contains(noCanonicalName, event) {
 			if canonical != "" {
 				t.Errorf("event %s now maps to %q; drop it from noCanonicalName", event, canonical)
@@ -84,7 +84,7 @@ func TestMappedEventsAreAllPublished(t *testing.T) {
 		"session_compact":        "PostCompact",
 		"agent_settled":          "Stop",
 	} {
-		if got := harness.CanonicalHookEvent(Driver{}.ID(), event); got != want {
+		if got := harness.CanonicalHookEvent(provider(t), event); got != want {
 			t.Errorf("event %s maps to %q, want %q", event, got, want)
 		}
 		if !slices.Contains(published, event) {
@@ -108,7 +108,7 @@ func TestStreamRateEventsAreNotPublished(t *testing.T) {
 // A publish holds a tool call up while it runs, so it is bounded, as the other
 // images' command hooks are, to between one and three seconds.
 func TestPublishIsBounded(t *testing.T) {
-	match := regexp.MustCompile(`const PUBLISH_TIMEOUT_MS = (\d+);`).FindStringSubmatch(readFile(t, "hook-extension.js"))
+	match := regexp.MustCompile(`const PUBLISH_TIMEOUT_MS = (\d+);`).FindStringSubmatch(readFile(t, "assets/hook-extension.js"))
 	if match == nil {
 		t.Fatal("extension declares no PUBLISH_TIMEOUT_MS")
 	}
@@ -176,8 +176,8 @@ func TestExtensionPublishes(t *testing.T) {
 	var events []string
 	byEvent := map[string]map[string]any{}
 	for _, hook := range published {
-		if hook.Provider != (Driver{}).ID() {
-			t.Errorf("published under provider %q, want %q", hook.Provider, Driver{}.ID())
+		if hook.Provider != provider(t) {
+			t.Errorf("published under provider %q, want %q", hook.Provider, provider(t))
 		}
 		events = append(events, hook.Event)
 		byEvent[hook.Event] = hook.Payload
@@ -228,5 +228,17 @@ func TestExtensionIsSilentWithoutTheHookSocket(t *testing.T) {
 	registered, published, _ := runExtension(t, "")
 	if len(registered) != 0 || len(published) != 0 {
 		t.Fatalf("registered %v and published %v with no hook socket", registered, published)
+	}
+}
+
+// The declaration names the provider hooks are published under, and the
+// extension publishes under its own constant: they are one name.
+func TestTheDeclaredProviderIsTheExtensions(t *testing.T) {
+	match := regexp.MustCompile(`const PROVIDER = "([^"]+)";`).FindStringSubmatch(readFile(t, "assets/hook-extension.js"))
+	if match == nil {
+		t.Fatal("the extension declares no PROVIDER")
+	}
+	if got := provider(t); got != match[1] {
+		t.Fatalf("declared hooks.provider %q, extension publishes as %q", got, match[1])
 	}
 }

@@ -98,7 +98,7 @@ func TestStampBuildModeImagesProducesBuildableManifest(t *testing.T) {
 	wantTargets := map[string]string{
 		"discobox-platform:dev-":            "platform",
 		"discobox-harness-claude-code:dev-": "bundle",
-		"discobox-harness-shell:dev-":       "bundle",
+		"discobox-harness-shell:dev-":       "label",
 	}
 	wantArgs := map[string][]string{
 		"discobox-platform:dev-":            {harness.LayerMetadataBuildArg},

@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "id": "shell",
+  "bundle": "discobox-harness-shell",
+  "name": "Shell",
+  "description": "An interactive login shell, with no coding harness on top.",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "install": {
+    "none": "The harness is the login shell the platform already ships."
+  },
+  "launch": {
+    "none": "The reserved shell slug withholds the harness-run convention: a command typed into this terminal would be a second shell inside the first (ADR 0086 \u00a73)."
+  },
+  "environment": {},
+  "settings": {},
+  "localState": {
+    "trust": {
+      "strategy": "none",
+      "none": "No agent to trust a folder."
+    },
+    "memory": {
+      "strategy": "none",
+      "none": "No agent to remember anything."
+    }
+  },
+  "credentials": {
+    "store": {
+      "strategy": "none",
+      "none": "No agent signs in."
+    }
+  },
+  "hooks": {
+    "none": "No agent lifecycle to publish."
+  },
+  "capture": {
+    "none": "No agent settings or login to save back."
+  }
+}

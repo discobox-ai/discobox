@@ -1,0 +1,211 @@
+{
+  "schema": 1,
+  "id": "copilot",
+  "bundle": "discobox-harness-copilot",
+  "name": "GitHub Copilot",
+  "description": "GitHub Copilot CLI coding harness.",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "install": {
+    "requires": [
+      "core",
+      "node"
+    ],
+    "package": "@github/copilot",
+    "executable": "copilot"
+  },
+  "launch": {
+    "args": [
+      "--allow-all"
+    ],
+    "resume": [
+      "--continue"
+    ],
+    "prompt": {
+      "form": "option-joined",
+      "option": "--interactive"
+    }
+  },
+  "environment": {
+    "static": {
+      "COPILOT_ALLOW_ALL": "true",
+      "COPILOT_AUTO_UPDATE": "false"
+    }
+  },
+  "settings": {},
+  "localState": {
+    "trust": {
+      "strategy": "none",
+      "none": "--allow-all approves every tool, path and URL; COPILOT_ALLOW_ALL trusts the folder it starts in."
+    },
+    "memory": {
+      "strategy": "none",
+      "none": "Copilot keeps no memories in the box."
+    }
+  },
+  "credentials": {
+    "secrets": [
+      {
+        "name": "COPILOT_GITHUB_TOKEN",
+        "required": true,
+        "routes": [
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/swe/internal/memory/**",
+              "/mcp/readonly/**",
+              "/v1/messages/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.api.github.com",
+              "api.github.com"
+            ],
+            "paths": [
+              "/copilot_internal/**",
+              "/repos/github/copilot-cli/releases/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/**",
+              "/mcp/**"
+            ],
+            "blocked": true
+          },
+          {
+            "hosts": [
+              "*.github.com",
+              "github.com"
+            ],
+            "blocked": true
+          }
+        ]
+      }
+    ],
+    "store": {
+      "strategy": "file",
+      "document": ".copilot/config.json"
+    }
+  },
+  "hooks": {
+    "provider": "copilot",
+    "transport": "command",
+    "format": "copilot",
+    "path": "/etc/github-copilot/policy.d/discobox.json",
+    "timeout": 3,
+    "events": [
+      "sessionStart",
+      "sessionEnd",
+      "userPromptSubmitted",
+      "userPromptTransformed",
+      "preToolUse",
+      "preMcpToolCall",
+      "permissionRequest",
+      "postToolUse",
+      "postToolUseFailure",
+      "errorOccurred",
+      "agentStop",
+      "subagentStart",
+      "subagentStop",
+      "preCompact",
+      "notification"
+    ]
+  },
+  "capture": {
+    "version": 1,
+    "watch": [
+      ".copilot/settings.json",
+      ".copilot/config.json"
+    ],
+    "providers": [
+      {
+        "id": "github",
+        "envName": "COPILOT_GITHUB_TOKEN",
+        "types": [
+          "token"
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/swe/internal/memory/**",
+              "/mcp/readonly/**",
+              "/v1/messages/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.api.github.com",
+              "api.github.com"
+            ],
+            "paths": [
+              "/copilot_internal/**",
+              "/repos/github/copilot-cli/releases/**"
+            ]
+          },
+          {
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/**",
+              "/mcp/**"
+            ],
+            "blocked": true
+          },
+          {
+            "hosts": [
+              "*.github.com",
+              "github.com"
+            ],
+            "blocked": true
+          }
+        ]
+      }
+    ],
+    "settings": [
+      {
+        "path": ".copilot/settings.json",
+        "format": "jsonc",
+        "exclude": [
+          "apiKey",
+          "api_key",
+          "authTokens",
+          "lastLoggedInUser",
+          "env",
+          "mcpServers.*.env",
+          "mcpServers.*.headers",
+          "storeTokenPlaintext"
+        ]
+      }
+    ],
+    "credentialFiles": [
+      ".copilot/config.json"
+    ],
+    "credentialSettings": []
+  }
+}

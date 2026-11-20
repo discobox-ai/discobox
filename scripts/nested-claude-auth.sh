@@ -102,15 +102,15 @@ if [ -f "$SETTINGS_FILE" ]; then
 fi
 
 # The secret, settings.json as-is, and for a subscription login with scopes the
-# credentials file the harness's own normalizer writes, its token a binding to
+# credentials file the harness's own adapter writes, its token a binding to
 # the secret's variable.
 CREDENTIALS_FILE_JSON=null
 if [ "$SECRET_ENV" = CLAUDE_CODE_OAUTH_TOKEN ] && [ "$(printf '%s' "$SCOPES" | jq 'length')" -gt 0 ]; then
 	command -v node >/dev/null || die "node is required to write the credentials file"
 	CREDENTIALS_FILE_JSON=$(NESTED_SCOPES="$SCOPES" NESTED_SUBSCRIPTION="$SUBSCRIPTION" \
-		NESTED_HARNESS="$SCRIPT_DIR/../harness/claude-code" node -e '
-const path = require("path");
-const { credentialsFile } = require(path.join(process.env.NESTED_HARNESS, "claude-code-normalize.cjs"));
+		NESTED_HARNESS="$SCRIPT_DIR/../harness/claude-code" node --input-type=module -e '
+import path from "node:path";
+const { credentialsFile } = await import(path.join(process.env.NESTED_HARNESS, "adapter.ts"));
 process.stdout.write(JSON.stringify(credentialsFile({
   scopes: JSON.parse(process.env.NESTED_SCOPES),
   subscriptionType: JSON.parse(process.env.NESTED_SUBSCRIPTION) ?? undefined,

@@ -13,7 +13,7 @@
 // summarizes. pi has no subagents, and a context carries no agent.
 import fs from "node:fs";
 import { mock } from "node:test";
-import extension from "../hook-extension.js";
+import extension from "../assets/hook-extension.js";
 
 // This driver checks publication and payloads, not the production latency bound.
 // Freeze the publish timeout: a loaded builder can take longer than that just

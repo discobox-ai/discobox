@@ -15,8 +15,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/harness/internal/featuretest"
-	"github.com/discobox-ai/discobox/harness/internal/launchertest"
+	"github.com/discobox-ai/discobox/harness/internal/harnesstest"
 )
 
 // TestImageDeclaresNoCredentials pins the half of the contract the image owns.
@@ -24,10 +23,7 @@ import (
 // manifest declares none, and no baseline credentials file: one would land in
 // every sandbox describing credentials with nothing behind them.
 func TestImageDeclaresNoCredentials(t *testing.T) {
-	raw, err := os.ReadFile("image.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	staged := harnesstest.Stage(t, ".")
 	var image struct {
 		Env     map[string]string `json:"env"`
 		Harness struct {
@@ -38,10 +34,10 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 			RelaunchCommand []string       `json:"relaunchCommand"`
 		} `json:"harness"`
 	}
-	if err := json.Unmarshal(raw, &image); err != nil {
+	if err := json.Unmarshal(staged.Label(), &image); err != nil {
 		t.Fatal(err)
 	}
-	if want := (Driver{}).Definition().ID; image.Harness.ID != want {
+	if want := staged.Declaration().ID; image.Harness.ID != want {
 		t.Fatalf("manifest id = %q, want the definition's %q", image.Harness.ID, want)
 	}
 	if len(image.Harness.Secrets) != 0 {
@@ -72,34 +68,23 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	if image.Env["OPENCODE_DISABLE_AUTOUPDATE"] != "1" {
 		t.Fatalf("manifest env = %v, want opencode's updater disabled", image.Env)
 	}
-	feature := featuretest.Load(t, ".")
+	feature := staged
 	if !feature.Runs(t, "/usr/local/libexec/discobox/npm-global install @opencode/cli") {
 		t.Error("the feature does not install opencode's CLI")
 	}
-	for source, want := range map[string]string{
-		"launch.sh":      "/usr/local/bin/" + harness.RunCommand,
-		"credentials.sh": credentialsHelper,
-	} {
-		if got := feature.Installs(source); got != want {
-			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
-		}
+	if got, want := feature.Installs(harness.RunCommand), "/usr/local/bin/"+harness.RunCommand; got != want {
+		t.Errorf("the feature installs the launcher at %q, want %q", got, want)
 	}
-	conf, err := os.ReadFile("agent.conf")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conf := feature.FeatureFile(t, "agent.conf")
 	if !strings.Contains(string(conf), "AGENT_PACKAGE=@opencode/cli\n") {
 		t.Errorf("agent.conf does not name the package the image installs:\n%s", conf)
 	}
 }
 
-// credentialsHelper is where the image installs credentials.sh, and where the
-// launcher runs it from.
-const credentialsHelper = "/usr/local/libexec/discobox/opencode-credentials" //nolint:gosec // A path, not a credential.
-
 // TestLaunchJoinsThePromptWords covers the wrapper's half of the harness-run
 // convention (ADR 0086 §3). opencode's positional argument is the project
-// directory, so the joined prompt goes to --prompt, which opencode 2 submits.
+// directory, so the joined prompt goes to --prompt=<prompt>, which opencode 2
+// submits; the joined form keeps a dash-led prompt from reading as a flag.
 // Every launch is --standalone (ADR 26-10-15-848 §2).
 func TestLaunchJoinsThePromptWords(t *testing.T) {
 	for _, tc := range []struct {
@@ -115,7 +100,8 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--standalone", "--auto", "--continue"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := launchertest.RunLauncher(t, "opencode", map[string]string{credentialsHelper: "true"}, tc.args)
+			harnesstest.RequireNode(t)
+			got := harnesstest.RunLauncher(t, "opencode", nil, tc.args)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("opencode argv = %#v, want %#v", got, tc.want)
 			}
@@ -336,29 +322,23 @@ func TestCredentialsSyncReadsAnOpencode1Configuration(t *testing.T) {
 	}
 }
 
-// syncEnv runs credentials.sh against the store stub, in a home of its own.
+// syncEnv runs the adapter's import of the delivered credentials (what the
+// launcher's preparation runs once its guard has passed) against the store
+// stub, in an installed box of its own.
 type syncEnv struct {
+	box  *harnesstest.Box
 	home string
-	bin  string
 }
 
 func newSyncEnv(t *testing.T) *syncEnv {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the harness image's scripts run on Linux")
+	harnesstest.RequireNode(t)
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq to run the store stub with")
 	}
-	for _, tool := range []string{"sh", "jq"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("no %s to run the credentials helper with", tool)
-		}
-	}
-	dir := t.TempDir()
-	env := &syncEnv{home: filepath.Join(dir, "home"), bin: filepath.Join(dir, "bin")}
-	if err := os.MkdirAll(env.bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeExecutable(t, filepath.Join(env.bin, "opencode"), "#!/bin/sh\n"+storeStub+"exit 1\n")
-	return env
+	box := harnesstest.Stage(t, ".").Install(t, nil)
+	box.Stub(t, "opencode", "#!/bin/sh\n"+storeStub+"exit 1\n")
+	return &syncEnv{box: box, home: box.Home}
 }
 
 func (e *syncEnv) storePath() string {
@@ -379,19 +359,26 @@ func (e *syncEnv) deliver(t *testing.T, entries ...map[string]any) {
 func (e *syncEnv) run(t *testing.T) {
 	t.Helper()
 	if out, err := e.attempt(t); err != nil {
-		t.Fatalf("credentials.sh sync: %v\n%s", err, out)
+		t.Fatalf("credentials import: %v\n%s", err, out)
 	}
 }
 
-// attempt runs sync with extra in its environment and answers how it went.
+// importScript runs the installed adapter's importNative with the installed
+// runtime's helpers, as the runtime's prepare does once its guard passed.
+const importScript = `const [runtime, adapter] = process.argv.slice(1);
+const { helpers } = await import(runtime);
+(await import(adapter)).default.importNative({ ...helpers, cwd: process.cwd() });`
+
+// attempt runs the import with extra in its environment and answers how it went.
 func (e *syncEnv) attempt(t *testing.T, extra ...string) (string, error) {
 	t.Helper()
 	logPath := filepath.Join(e.home, "..", "calls")
 	_ = os.Remove(logPath)
-	helper := filepath.Join(t.TempDir(), "credentials.sh")
-	writeExecutable(t, helper, strings.ReplaceAll(readFile(t, "credentials.sh"), "/usr/local/libexec/discobox/opencode-capture", "true"))
-	cmd := exec.CommandContext(t.Context(), "sh", helper, "sync")
-	cmd.Env = append(os.Environ(), "HOME="+e.home, "PATH="+e.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+	cmd := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", importScript, //nolint:gosec // The installed runtime and adapter under test.
+		e.box.Path("/usr/local/libexec/discobox/harness-runtime/runtime.mjs"),
+		e.box.Path("/usr/local/libexec/discobox/opencode-adapter.mjs"))
+	cmd.Dir = e.home
+	cmd.Env = append(os.Environ(), "HOME="+e.home, "PATH="+e.box.Bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"STUB_LOG="+logPath, "XDG_DATA_HOME=", "XDG_CONFIG_HOME=", "XDG_STATE_HOME=")
 	cmd.Env = append(cmd.Env, extra...)
 	out, err := cmd.CombinedOutput()
@@ -473,7 +460,7 @@ func TestLaunchAppliesTheWebSearchSetting(t *testing.T) {
 		{`{"webSearch": null}`, "config="},
 		{"", "config="},
 	} {
-		got := runWrapper(t, "launch.sh", tc.setting, `printf 'config=%s\n' "${OPENCODE_CONFIG_CONTENT-}"`, nil)
+		got := runWrapper(t, tc.setting, `printf 'config=%s\n' "${OPENCODE_CONFIG_CONTENT-}"`, nil)
 		if got != tc.want {
 			t.Errorf("setting %q: opencode ran with %q, want %q", tc.setting, got, tc.want)
 		}
@@ -488,112 +475,49 @@ func TestLaunchLoadsTheConfiguredCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := runWrapperIn(t, "launch.sh", map[string]string{credentialsPath: string(delivered)}, stub, nil)
+	got := runWrapperIn(t, map[string]string{credentialsPath: string(delivered)}, stub, nil)
 	if got != `started holding ["cred_discobox_zai"]` {
 		t.Fatalf("launch: %s", got)
 	}
 }
 
-// runWrapper runs one of the image's wrappers with the settings file holding
+// runWrapper runs the installed launcher with the settings file holding
 // setting (none when empty), extra in its environment, and a stubbed opencode
 // whose body is stub, and returns what the stub printed.
-func runWrapper(t *testing.T, script, setting, stub string, extra map[string]string, args ...string) string {
+func runWrapper(t *testing.T, setting, stub string, extra map[string]string, args ...string) string {
 	t.Helper()
 	files := map[string]string{}
 	if setting != "" {
 		files[settingsPath] = setting
 	}
-	return runWrapperIn(t, script, files, stub, extra, args...)
+	return runWrapperIn(t, files, stub, extra, args...)
 }
 
 // runWrapperIn is runWrapper with files written into the home beforehand. The
-// stubbed opencode keeps credentials the way opencode does (storeStub), and the
-// wrapper reaches the credentials helper in this checkout rather than where
-// the image installs it.
-func runWrapperIn(t *testing.T, script string, files map[string]string, stub string, extra map[string]string, args ...string) string {
+// stubbed opencode keeps credentials the way opencode does (storeStub).
+func runWrapperIn(t *testing.T, files map[string]string, stub string, extra map[string]string, args ...string) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the harness image's scripts run on Linux")
+	harnesstest.RequireNode(t)
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq to run the store stub with")
 	}
-	for _, tool := range []string{"sh", "jq"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("no %s to run the wrapper with", tool)
-		}
-	}
-	dir := t.TempDir()
-	home, bin := filepath.Join(dir, "home"), filepath.Join(dir, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	box := harnesstest.Stage(t, ".").Install(t, nil)
 	for rel, content := range files {
-		path := filepath.Join(home, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		box.Write(t, rel, content)
 	}
-	writeExecutable(t, filepath.Join(bin, "opencode"), "#!/bin/sh\n"+storeStub+stub+"\n")
-	raw, err := os.ReadFile(script)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scriptPath := filepath.Join(dir, script)
-	if err := os.WriteFile(scriptPath, []byte(withHelpers(t, string(raw))), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.CommandContext(t.Context(), "sh", append([]string{scriptPath}, args...)...) //nolint:gosec // The wrapper under test, with this test's arguments.
-	env := []string{"HOME=" + home, "PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH")}
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "OPENCODE_") && !strings.HasPrefix(kv, "XDG_") && !strings.HasPrefix(kv, "DISCOBOX_") &&
-			!strings.HasPrefix(kv, "HOME=") && !strings.HasPrefix(kv, "PATH=") {
-			env = append(env, kv)
-		}
-	}
+	box.Stub(t, "opencode", "#!/bin/sh\n"+storeStub+stub+"\n")
 	for key, value := range extra {
-		env = append(env, key+"="+value)
+		box.Env(key + "=" + value)
 	}
-	cmd.Env = env
+	cmd := box.Command(t, "/usr/local/bin/"+harness.RunCommand, args...)
 	// What a caller's own stdin holds, which opencode must never read as
 	// more of the message.
 	cmd.Stdin = strings.NewReader("caller's stdin\n")
-	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("%s: %v", script, err)
+		t.Fatalf("launch: %v", err)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// withHelpers points a script at the helpers in this checkout rather than
-// where the image installs them, each behind an executable of its own as the
-// image installs it.
-func withHelpers(t *testing.T, script string) string {
-	t.Helper()
-	dir := t.TempDir()
-	for path, source := range map[string]string{credentialsHelper: "credentials.sh"} {
-		abs, err := filepath.Abs(source)
-		if err != nil {
-			t.Fatal(err)
-		}
-		wrapper := filepath.Join(dir, filepath.Base(path))
-		raw, err := os.ReadFile(abs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeExecutable(t, wrapper, strings.ReplaceAll(string(raw), "/usr/local/libexec/discobox/opencode-capture", "true"))
-		script = strings.ReplaceAll(script, path, wrapper)
-	}
-	script = strings.ReplaceAll(script, "/usr/local/libexec/discobox/opencode-capture", "true")
-	return script
-}
-
-func writeExecutable(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil { //nolint:gosec // A stub the script under test executes.
-		t.Fatal(err)
-	}
 }
 
 // pluginSet reads one `const NAME = new Set([...])` out of the plugin source.
@@ -625,7 +549,7 @@ func pluginSet(t *testing.T, text, name string) []string {
 
 // pluginSource is the plugin's server module, which opencode 2 resolves from
 // the plugin directory the managed config names.
-const pluginSource = "hook-plugin/server.js"
+const pluginSource = "assets/hook-plugin/server.js"
 
 // publishedPluginEvents reads the event names the plugin publishes straight
 // out of its source: the allowlist it declares, plus the two tool hooks it
@@ -667,7 +591,7 @@ func TestEveryPublishedEventHasACanonicalNameOrIsKnownNotTo(t *testing.T) {
 	}
 	published := publishedPluginEvents(t)
 	for _, event := range published {
-		canonical := harness.CanonicalHookEvent(Driver{}.ID(), event)
+		canonical := harness.CanonicalHookEvent(provider(t), event)
 		if slices.Contains(noCanonicalName, event) {
 			if canonical != "" {
 				t.Errorf("event %s now maps to %q; drop it from noCanonicalName", event, canonical)
@@ -695,7 +619,7 @@ func TestMappedEventsAreAllPublished(t *testing.T) {
 		"session.execution.failed", "session.created", "permission.asked",
 		"session.compaction.ended",
 	} {
-		if harness.CanonicalHookEvent(Driver{}.ID(), event) == "" {
+		if harness.CanonicalHookEvent(provider(t), event) == "" {
 			t.Errorf("event %s lost its canonical name", event)
 		}
 		if !slices.Contains(published, event) {
@@ -728,7 +652,7 @@ func TestStreamRateEventsAreNotPublished(t *testing.T) {
 // opencode 2 names plugins under `plugins` and takes a directory, refusing a
 // single file.
 func TestManagedConfigLoadsThePluginByAbsolutePath(t *testing.T) {
-	raw, err := os.ReadFile("managed-config.json")
+	raw, err := os.ReadFile("assets/managed-config.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,11 +669,11 @@ func TestManagedConfigLoadsThePluginByAbsolutePath(t *testing.T) {
 	// The path the config names and the path the image installs are the same
 	// directory, and only the feature says so. Every directory a file step
 	// makes is 0755, so every user's opencode can read the plugin.
-	feature := featuretest.Load(t, ".")
+	feature := harnesstest.Stage(t, ".")
 	for source, path := range map[string]string{
-		"hook-plugin/server.js":    want + "/server.js",
-		"hook-plugin/package.json": want + "/package.json",
-		"managed-config.json":      "/etc/opencode/opencode.json",
+		"assets/hook-plugin/server.js":    want + "/server.js",
+		"assets/hook-plugin/package.json": want + "/package.json",
+		"assets/managed-config.json":      "/etc/opencode/opencode.json",
 	} {
 		if got := feature.Installs(source); got != path {
 			t.Errorf("the feature installs %s at %q, want %q", source, got, path)
@@ -765,8 +689,8 @@ func TestPluginPublishesUnderTheDriverProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `const PROVIDER = "`+Driver{}.ID()+`"`) {
-		t.Errorf("plugin does not publish under the %s provider", Driver{}.ID())
+	if !strings.Contains(string(source), `const PROVIDER = "`+provider(t)+`"`) {
+		t.Errorf("plugin does not publish under the %s provider", provider(t))
 	}
 	if !strings.Contains(string(source), `spawn("discobox-hook-publish", ["--provider", PROVIDER, "--event", event]`) {
 		t.Error("plugin does not publish through the generic publisher")
@@ -847,7 +771,7 @@ func TestEveryCanonicalSessionEventIsFilteredForAChild(t *testing.T) {
 	published := pluginPublishes(t)
 
 	for _, event := range filtered {
-		if harness.CanonicalHookEvent(Driver{}.ID(), event) == "" {
+		if harness.CanonicalHookEvent(provider(t), event) == "" {
 			continue // unmapped, so a child's copy cannot be mistaken for a turn end
 		}
 		want, covered := rootPublishedCounts[event]
@@ -877,11 +801,8 @@ func countOf(all []string, want string) int {
 	return n
 }
 
-func readFile(t *testing.T, path string) string {
+// provider is the name opencode's hooks are published under, as declared.
+func provider(t *testing.T) string {
 	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
+	return harnesstest.Stage(t, ".").Declaration().Hooks.Provider
 }

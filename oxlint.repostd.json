@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // From repostd's node standard (ADR 0002 there), copied rather than synced:
+  // this is a Go repo, whose TypeScript is harness/. The
+  // standard's lint rules, after Remix 3's own (remix-run/remix's
+  // .oxlintrc.json). A repo's .oxlintrc.json extends this file and owns its
+  // ignorePatterns and any rules it adds.
+  //
+  // Only the rules named here run.
+  "categories": {
+    "correctness": "off",
+    "nursery": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "restriction": "off",
+    "style": "off",
+    "suspicious": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  // Type-aware rules run on oxlint-tsgolint, which uses TypeScript 7's
+  // compiler.
+  "options": {
+    "typeAware": true
+  },
+  "overrides": [
+    {
+      "files": ["**/*.{ts,tsx}"],
+      "plugins": ["typescript", "import"],
+      "rules": {
+        "@typescript-eslint/consistent-type-imports": [
+          "error",
+          {
+            "prefer": "type-imports",
+            "fixStyle": "separate-type-imports"
+          }
+        ],
+        "@typescript-eslint/consistent-type-exports": [
+          "error",
+          {
+            "fixMixedExportsWithInlineTypeSpecifier": false
+          }
+        ],
+        "import/extensions": [
+          "error",
+          "always",
+          {
+            "ignorePackages": true
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/*.{ts,tsx,js,jsx}"],
+      "rules": {
+        "no-var": "error",
+        "arrow-body-style": ["error", "as-needed"]
+      }
+    }
+  ]
+}

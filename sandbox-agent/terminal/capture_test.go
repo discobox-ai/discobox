@@ -540,11 +540,8 @@ func testReconsiderUsesRealHarnessCredentialProjection(t *testing.T, inherited b
 	}
 	s, observed, _ := captureFixture(t)
 	ctx := t.Context()
-	root, err := filepath.Abs("../../harness")
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadata, err := os.ReadFile(filepath.Join(root, "pi", "image.json"))
+	root := installHarness(t, "pi")
+	metadata, err := os.ReadFile(filepath.Join(root, "pi-image.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,8 +570,8 @@ func testReconsiderUsesRealHarnessCredentialProjection(t *testing.T, inherited b
 		if err != nil {
 			return err
 		}
-		script := `const fs=require('fs'),p=require('path'),root=process.argv[1]; const runtime=require(p.join(root,'capture/runtime.cjs')),normalizer=require(p.join(root,'pi/pi-normalize.cjs')),definition=require(p.join(root,'pi/image.json')).harness.saveBack; process.stdout.write(JSON.stringify(runtime.capture('pi',definition,normalizer,JSON.parse(fs.readFileSync(0,'utf8')))));`
-		cmd := exec.CommandContext(ctx, node, "-e", script, root)
+		script := `import fs from 'node:fs'; import p from 'node:path'; import { pathToFileURL } from 'node:url'; const root=process.argv[1]; const runtime=await import(pathToFileURL(p.join(root,'harness-runtime/runtime.mjs')).href); const pi=await runtime.installed('pi',p.join(root,'pi-image.json')); process.stdout.write(JSON.stringify(runtime.capture(pi,JSON.parse(fs.readFileSync(0,'utf8')))));`
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script, root)
 		cmd.Stdin = bytes.NewReader(data)
 		cmd.Env = append(os.Environ(), "HOME="+s.capture.home)
 		result, err := cmd.Output()

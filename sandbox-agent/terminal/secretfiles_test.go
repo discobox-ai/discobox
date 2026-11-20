@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/harnessbundle"
 	hc "github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -21,7 +22,7 @@ import (
 //nolint:gosec // A path, not a credential.
 const credentialsPath = ".claude/.credentials.json"
 
-// credentialsTemplate is the shape harness/claude-code/configure.sh emits: the
+// credentialsTemplate is the shape harness/claude-code/adapter.ts delivers: the
 // sentinel in accessToken, a placeholder refresh token, and a far-future expiry.
 //
 //nolint:gosec // A template and a placeholder, not credentials.
@@ -262,10 +263,7 @@ func TestRestoreSecretFilesWithClaudeCapture(t *testing.T) {
 	if err != nil {
 		t.Skip("node required for built-in exporter")
 	}
-	root, err := filepath.Abs("../../harness")
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := installHarness(t, "claude-code")
 	for _, local := range []bool{false, true} {
 		t.Run(fmt.Sprint("local-login=", local), func(t *testing.T) {
 			home := t.TempDir()
@@ -283,7 +281,7 @@ func TestRestoreSecretFilesWithClaudeCapture(t *testing.T) {
 				t.Fatal(err)
 			}
 			//nolint:gosec // Runs the checked-in exporter with fixed fixture paths.
-			cmd := exec.CommandContext(t.Context(), node, filepath.Join(root, "capture/runtime.cjs"), "claude-code", filepath.Join(root, "claude-code/image.json"), "export")
+			cmd := exec.CommandContext(t.Context(), node, filepath.Join(root, "harness-runtime/main.mjs"), "claude-code", filepath.Join(root, "claude-code-image.json"), "export")
 			cmd.Env = append(os.Environ(), "HOME="+home)
 			cmd.Stdin = bytes.NewBufferString(`{"version":1,"baseline":{"files":[]},"sentinels":{}}`)
 			data, err := cmd.Output()
@@ -323,4 +321,24 @@ func TestRestoreSecretFilesWithClaudeCapture(t *testing.T) {
 
 func imageHarnessForCredentials() *hc.Definition {
 	return &hc.Definition{Providers: []hc.Provider{{ID: "anthropic", EnvName: "CLAUDE_CODE_OAUTH_TOKEN", Types: []string{"oauth"}}}, CredentialFiles: []string{credentialsPath}, CredentialSettings: []hc.Setting{{Path: credentialsPath, Fields: map[string]string{"claudeAiOauth.accessToken": "secret", "claudeAiOauth.refreshToken": "placeholder", "claudeAiOauth.expiresAt": "number", "claudeAiOauth.scopes": "string-array", "claudeAiOauth.subscriptionType": "string"}}}}
+}
+
+// installHarness installs the built-in harness's bundle, staged from its
+// declaration, under a test directory, and returns where its libexec files
+// landed.
+func installHarness(t *testing.T, directory string) string {
+	t.Helper()
+	tree, err := filepath.Abs("../../harness")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := harnessbundle.Generate(os.DirFS(tree), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := bundle.Install(root); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(root, "usr", "local", "libexec", "discobox")
 }

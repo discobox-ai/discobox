@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/internal/harnessbundle"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -199,26 +200,36 @@ func TestParseImageMetadataRejectsUnknownVolumeKind(t *testing.T) {
 	}
 }
 
-// Every included image.json must be metadata this server accepts, merged the
+// builtinLabels is every built-in harness's label, as discobox-harness-bundle
+// generates it from the harness's declaration, by directory.
+func builtinLabels(t *testing.T, repoRoot string) map[string]string {
+	t.Helper()
+	tree := os.DirFS(filepath.Join(repoRoot, "harness"))
+	labels := map[string]string{}
+	for _, dir := range harness.BuiltinDirectories() {
+		bundle, err := harnessbundle.Generate(tree, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		labels[dir] = string(bundle.Files[harnessbundle.LabelFile].Content)
+	}
+	if len(labels) == 0 {
+		t.Fatal("no built-in harness labels")
+	}
+	return labels
+}
+
+// Every built-in's label must be metadata this server accepts, merged the
 // way the built image will carry it: the base image's layer, then the harness's
-// own. The build compacts these files straight into their labels, and a
-// rejected label is a harness quietly skipped at seeding rather than an error
-// anybody sees — so the authoring files are checked here, where a mistake fails
-// loudly.
+// own. A rejected label is a harness quietly skipped at seeding rather than an
+// error anybody sees, so the generated labels are checked here, where a mistake
+// fails loudly.
 func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 	// server/ is a nested module; the image folders live in the repo root.
 	repoRoot := filepath.Join("..", "..", "..", "..")
 	baseLayer := compactFile(t, filepath.Join(repoRoot, "sandbox-agent", "image.json"))
 
-	matches, err := filepath.Glob(filepath.Join(repoRoot, "harness", "*", "image.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cases := map[string]string{}
-	for _, match := range matches {
-		cases[match] = compactFile(t, match)
-	}
-	for name, own := range cases {
+	for name, own := range builtinLabels(t, repoRoot) {
 		metadata, err := parseBundleOn(baseLayer, "sha256:test", map[string]string{harness.ImageLabel: own})
 		if err != nil {
 			t.Errorf("%s would be rejected as a label: %v", name, err)
@@ -270,16 +281,9 @@ func TestHarnessManifestsDeclareNoBaseFacts(t *testing.T) {
 		baseGroups[group] = true
 	}
 
-	matches, err := filepath.Glob(filepath.Join(repoRoot, "harness", "*", "image.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) == 0 {
-		t.Fatal("no harness image.json files found")
-	}
-	for _, match := range matches {
+	for match, label := range builtinLabels(t, repoRoot) {
 		var manifest harness.ImageMetadata
-		if err := json.Unmarshal([]byte(compactFile(t, match)), &manifest); err != nil {
+		if err := json.Unmarshal([]byte(label), &manifest); err != nil {
 			t.Fatal(err)
 		}
 		for name, value := range manifest.Env {

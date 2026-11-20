@@ -1,4 +1,5 @@
-// Package harness defines coding-harness contracts and built-in drivers.
+// Package harness defines coding-harness contracts and the built-in harnesses'
+// declarations (builtin.go, declaration.go).
 package harness
 
 import (
@@ -53,8 +54,9 @@ const (
 // Image describes the immutable harness behavior baked into one sandbox
 // image. It is the harness sub-object of the ImageMetadata payload projected
 // into ImageLabel, so the control plane can validate an image without
-// downloading its filesystem layers. There is no separate baked-in file —
-// image.json is only the build-time authoring source for the label.
+// downloading its filesystem layers. A built-in's is generated from its
+// declaration (Declaration); a third party's bundle authors it however it
+// likes.
 type Image struct {
 	SaveBack        *harnesscapture.Definition `json:"saveBack,omitempty"`
 	ID              string                     `json:"id"`
@@ -213,9 +215,3 @@ const (
 	// otherwise. Exporting it would silently defeat the file.
 	SecretDeliveryFile = "file"
 )
-
-type Driver interface {
-	ID() string
-	// Definition returns the harness's built-in harness-config template.
-	Definition() Definition
-}

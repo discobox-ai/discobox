@@ -19,6 +19,8 @@ import tomllib
 import traceback
 
 ROOT, CODEX, VERSION = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+# The staged codex-cli feature (discobox-harness-bundle stage).
+FEATURE = Path(sys.argv[4]) if len(sys.argv) > 4 else None
 ANSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 
 
@@ -135,23 +137,29 @@ def main():
         etc = tmp / "etc"
         libexec = tmp / "libexec"
         etc.mkdir()
-        (libexec / "harness-capture").mkdir(parents=True)
+        (libexec / "harness-runtime").mkdir(parents=True)
         # These mountpoints exist in a discobox; create them on an empty CI host.
         Path("/etc/codex").mkdir(parents=True, exist_ok=True)
         Path("/usr/local/libexec/discobox").mkdir(parents=True, exist_ok=True)
         subprocess.run(["mount", "--bind", str(etc), "/etc/codex"], check=True)
         subprocess.run(["mount", "--bind", str(libexec), "/usr/local/libexec/discobox"], check=True)
-        (libexec / "harness-capture/settings.cjs").write_bytes((ROOT / "harness/capture/settings.cjs").read_bytes())
-        (libexec / "codex-trust.cjs").write_bytes((ROOT / "harness/codex-cli/trust.cjs").read_bytes())
-        baseline = (ROOT / "harness/codex-cli/system-config.toml").read_text()
+        # The files the codex-cli feature installs that a launch runs, where
+        # its steps install them.
+        for name in ("main.mjs", "runtime.mjs", "settings.mjs"):
+            (libexec / "harness-runtime" / name).write_bytes((FEATURE / "harness-runtime" / name).read_bytes())
+        (libexec / "harness-runtime/launch.sh").write_text((FEATURE / "harness-runtime/launch.sh").read_text().replace(
+            "/.discobox/data-per-source/primary", str(tmp / "no-source-data")))
+        (libexec / "codex-capture").write_bytes((FEATURE / "capture.sh").read_bytes())
+        (libexec / "codex-capture").chmod(0o755)
+        for source, target in (("image.json", "codex-image.json"), ("harness.json", "codex-harness.json"), ("adapter.mjs", "codex-adapter.mjs")):
+            (libexec / target).write_bytes((FEATURE / source).read_bytes())
+        baseline = (FEATURE / "assets/system-config.toml").read_text()
         # Explicit approval/sandbox policies can suppress trust onboarding.
         # Remove those defaults in this sensitivity test so only trust can pass.
         baseline = re.sub(r'^(approval_policy|sandbox_mode) = .*\n', "", baseline, flags=re.M)
         (libexec / "codex-system-config.toml").write_text(baseline)
         (etc / "config.toml").write_text(baseline)
-        launcher = tmp / "launch.sh"
-        launcher.write_text((ROOT / "harness/codex-cli/launch.sh").read_text().replace(
-            "/.discobox/data-per-source/primary", str(tmp / "no-source-data")))
+        launcher = FEATURE / "discobox-harness-run"
         for name in ("repo", 'other.cwd with "quotes" $dollars and apostrophe\'', "no-source", "nested-repo/subdir"):
             cwd = tmp / name
             cwd.mkdir(parents=True)

@@ -13,8 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/harness/internal/featuretest"
-	"github.com/discobox-ai/discobox/harness/internal/launchertest"
+	"github.com/discobox-ai/discobox/harness/internal/harnesstest"
 )
 
 // The paths the image's pieces agree on, and only these tests hold them to it.
@@ -38,15 +37,17 @@ type imageManifest struct {
 
 func readImage(t *testing.T) imageManifest {
 	t.Helper()
-	raw, err := os.ReadFile("image.json")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var image imageManifest
-	if err := json.Unmarshal(raw, &image); err != nil {
+	if err := json.Unmarshal(harnesstest.Stage(t, ".").Label(), &image); err != nil {
 		t.Fatal(err)
 	}
 	return image
+}
+
+// provider is the name omp's hooks are published under, as declared.
+func provider(t *testing.T) string {
+	t.Helper()
+	return harnesstest.Stage(t, ".").Declaration().Hooks.Provider
 }
 
 func readFile(t *testing.T, path string) string {
@@ -64,7 +65,7 @@ func readFile(t *testing.T, path string) string {
 // land in every sandbox describing credentials with nothing behind them.
 func TestImageManifest(t *testing.T) {
 	image := readImage(t)
-	if want := (Driver{}).Definition().ID; image.Harness.ID != want {
+	if want := harnesstest.Stage(t, ".").Declaration().ID; image.Harness.ID != want {
 		t.Fatalf("manifest id = %q, want the definition's %q", image.Harness.ID, want)
 	}
 	if len(image.Harness.Secrets) != 0 {
@@ -107,7 +108,7 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if got := featuretest.Load(t, ".").Installs("hook-extension.js"); got != installedHookExt {
+	if got := harnesstest.Stage(t, ".").Installs("assets/hook-extension.js"); got != installedHookExt {
 		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
@@ -128,10 +129,10 @@ func TestImagePolicy(t *testing.T) {
 	// and a build in a sandbox rewrites a loopback proxy address in the build
 	// arguments it passes on — the manifest included — to the build network's.
 	if v, ok := image.Env["PI_PROXY"]; ok {
-		t.Errorf("manifest sets PI_PROXY=%q; it follows HTTPS_PROXY (proxy-env.sh)", v)
+		t.Errorf("manifest sets PI_PROXY=%q; it follows HTTPS_PROXY (environment.aliases)", v)
 	}
 	var overlay map[string]any
-	if err := yaml.Unmarshal([]byte(readFile(t, "discobox.yml")), &overlay); err != nil {
+	if err := yaml.Unmarshal([]byte(readFile(t, "assets/discobox.yml")), &overlay); err != nil {
 		t.Fatal(err)
 	}
 	var walk func(prefix string, v any)
@@ -152,21 +153,21 @@ func TestImagePolicy(t *testing.T) {
 	if scalars["startup.setupWizard"] != false || scalars["startup.checkUpdate"] != false {
 		t.Fatalf("overlay = %v, want the setup wizard and the update check off", scalars)
 	}
-	feature := featuretest.Load(t, ".")
+	feature := harnesstest.Stage(t, ".")
 	for source, want := range map[string]string{
-		"discobox.yml": overlayPath,
-		"proxy-env.sh": "/etc/profile.d/omp-proxy.sh",
-		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
-		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
+		"assets/discobox.yml": overlayPath,
+		"profile.sh":          "/etc/profile.d/omp-proxy.sh",
+		harness.RunCommand:    "/usr/local/bin/" + harness.RunCommand,
+		"agent.conf":          "/usr/local/libexec/discobox/agent.conf",
 	} {
 		if got := feature.Installs(source); got != want {
 			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
 		}
 	}
-	if !feature.Runs(t, "export ONNXRUNTIME_NODE_INSTALL_CUDA=skip\nexec /usr/local/libexec/discobox/npm-global install @oh-my-pi/pi-coding-agent") {
+	if !feature.Runs(t, "export ONNXRUNTIME_NODE_INSTALL_CUDA='skip'\nexec /usr/local/libexec/discobox/npm-global install @oh-my-pi/pi-coding-agent") {
 		t.Error("the feature does not install omp with onnxruntime's CUDA download skipped")
 	}
-	if !strings.Contains(readFile(t, "agent.conf"), "AGENT_BIN=omp\n") {
+	if !strings.Contains(string(feature.FeatureFile(t, "agent.conf")), "AGENT_BIN=omp\n") {
 		t.Error("agent.conf does not name the omp binary")
 	}
 }
@@ -190,7 +191,7 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--continue"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := launchertest.RunLauncher(t, "omp", nil, tc.args)
+			got := harnesstest.RunLauncher(t, "omp", nil, tc.args)
 			if want := append(slices.Clone(policy), tc.want...); !slices.Equal(got, want) {
 				t.Fatalf("omp argv = %#v, want %#v", got, want)
 			}
@@ -203,9 +204,7 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 // before it starts omp, on every launch, and a failed import does not keep omp
 // from starting.
 func TestLaunchImportsTheCredentials(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the harness image's scripts run on Linux")
-	}
+	harnesstest.RequireNode(t)
 	for _, tc := range []struct {
 		name        string
 		credentials string
@@ -219,36 +218,27 @@ func TestLaunchImportsTheCredentials(t *testing.T) {
 			[]string{"auth import HOME/" + credentialsPath, "--auto-approve --allow-home"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			home, bin := filepath.Join(dir, "home"), filepath.Join(dir, "bin")
-			for _, d := range []string{bin, filepath.Join(home, ".config", "discobox")} {
-				if err := os.MkdirAll(d, 0o755); err != nil {
-					t.Fatal(err)
-				}
-			}
+			box := harnesstest.Stage(t, ".").Install(t, nil)
 			if tc.credentials != "" {
-				if err := os.WriteFile(filepath.Join(home, credentialsPath), []byte(tc.credentials), 0o600); err != nil {
-					t.Fatal(err)
-				}
+				box.Write(t, credentialsPath, tc.credentials)
 			}
 			failure := ""
 			if tc.importFails {
 				failure = `if [ "$1" = auth ]; then echo "bad export" >&2; exit 1; fi`
 			}
-			writeExecutable(t, filepath.Join(bin, "omp"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$LOG\"\n"+failure+"\n")
-			launcher := filepath.Join(dir, "launch.sh")
-			writeExecutable(t, launcher, strings.ReplaceAll(readFile(t, "launch.sh"), "/usr/local/libexec/discobox/omp-capture", "true"))
-			cmd := exec.CommandContext(t.Context(), "sh", launcher) //nolint:gosec // The launcher under test.
-			log := filepath.Join(dir, "log")
-			cmd.Env = append(os.Environ(), "HOME="+home, "LOG="+log, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("launch.sh: %v\n%s", err, out)
+			log := filepath.Join(t.TempDir(), "log")
+			box.Stub(t, "omp", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$LOG\"\n"+failure+"\n")
+			box.Env("LOG=" + log)
+			cmd := box.Command(t, "/usr/local/bin/"+harness.RunCommand)
+			var stderr strings.Builder
+			cmd.Stderr = &stderr
+			if out, err := cmd.Output(); err != nil {
+				t.Fatalf("launch: %v\n%s%s", err, out, stderr.String())
 			}
-			if tc.importFails && !strings.Contains(string(out), "could not import") {
-				t.Errorf("a failed import was not reported: %q", out)
+			if tc.importFails && !strings.Contains(stderr.String(), "could not import") {
+				t.Errorf("a failed import was not reported: %q", stderr.String())
 			}
-			got := strings.Split(strings.TrimSpace(strings.ReplaceAll(readFile(t, log), home, "HOME")), "\n")
+			got := strings.Split(strings.TrimSpace(strings.ReplaceAll(readFile(t, log), box.Home, "HOME")), "\n")
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("omp ran %q, want %q", got, tc.want)
 			}
@@ -271,6 +261,7 @@ func TestPIProxyFollowsHTTPSProxy(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the harness image's scripts run on Linux")
 	}
+	staged := harnesstest.Stage(t, ".")
 	for _, tc := range []struct {
 		name string
 		env  []string
@@ -281,20 +272,24 @@ func TestPIProxyFollowsHTTPSProxy(t *testing.T) {
 		{"no proxy, none", nil, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := exec.CommandContext(t.Context(), "sh", "-c", `. ./proxy-env.sh; printf '%s' "${PI_PROXY-}"`)
+			box := staged.Install(t, nil)
+			// A login shell sources the profile script.
+			cmd := exec.CommandContext(t.Context(), "sh", "-c", `. "$1"; printf '%s' "${PI_PROXY-}"`, "sh", box.Path("/etc/profile.d/omp-proxy.sh")) //nolint:gosec // The installed script under test.
 			cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, tc.env...)
 			out, err := cmd.Output()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if string(out) != tc.want {
-				t.Fatalf("PI_PROXY = %q, want %q", out, tc.want)
+				t.Fatalf("login shell PI_PROXY = %q, want %q", out, tc.want)
+			}
+			// The launcher, which does not always run from a login shell,
+			// sets it itself.
+			box.Stub(t, "omp", "#!/bin/sh\nprintf '%s' \"${PI_PROXY-}\"\n")
+			box.Env(tc.env...)
+			if got, status := box.Launch(t); status != 0 || got != tc.want {
+				t.Fatalf("launcher PI_PROXY = %q (exit %d), want %q", got, status, tc.want)
 			}
 		})
-	}
-	for _, script := range []string{"launch.sh"} {
-		if !strings.Contains(readFile(t, script), ". /etc/profile.d/omp-proxy.sh") {
-			t.Errorf("%s does not set PI_PROXY", script)
-		}
 	}
 }

@@ -341,16 +341,20 @@ func waitForProxyAddr(t *testing.T, server *proxy.Server) string {
 func TestClaudeManifestPolicyOnRealProxyTraffic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var manifest harness.ImageMetadata
-	raw, err := os.ReadFile("../../harness/claude-code/image.json")
+	builtins, err := harness.Builtins()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = json.Unmarshal(raw, &manifest); err != nil {
-		t.Fatal(err)
+	var secrets []harness.Secret
+	for _, d := range builtins {
+		if d.ID == "claude-code" {
+			if err = json.Unmarshal(d.Credentials.Secrets, &secrets); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	var routes []secretroute.Route
-	for _, s := range manifest.Harness.Secrets {
+	for _, s := range secrets {
 		if s.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
 			for _, r := range s.Routes {
 				routes = append(routes, secretroute.Route(r))

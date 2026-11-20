@@ -8,8 +8,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/harness/internal/featuretest"
-	"github.com/discobox-ai/discobox/harness/internal/launchertest"
+	"github.com/discobox-ai/discobox/harness/internal/harnesstest"
 )
 
 // The paths the image's pieces agree on, and only these tests hold them to it.
@@ -33,12 +32,8 @@ type imageManifest struct {
 
 func readImage(t *testing.T) imageManifest {
 	t.Helper()
-	raw, err := os.ReadFile("image.json")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var image imageManifest
-	if err := json.Unmarshal(raw, &image); err != nil {
+	if err := json.Unmarshal(harnesstest.Stage(t, ".").Label(), &image); err != nil {
 		t.Fatal(err)
 	}
 	return image
@@ -51,6 +46,12 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(raw)
+}
+
+// provider is the name pi's hooks are published under, as declared.
+func provider(t *testing.T) string {
+	t.Helper()
+	return harnesstest.Stage(t, ".").Declaration().Hooks.Provider
 }
 
 func writeExecutable(t *testing.T, path, content string) {
@@ -66,7 +67,7 @@ func writeExecutable(t *testing.T, path, content string) {
 // every sandbox describing credentials with nothing behind them.
 func TestImageManifest(t *testing.T) {
 	image := readImage(t)
-	if want := (Driver{}).Definition().ID; image.Harness.ID != want {
+	if want := harnesstest.Stage(t, ".").Declaration().ID; image.Harness.ID != want {
 		t.Fatalf("manifest id = %q, want the definition's %q", image.Harness.ID, want)
 	}
 	if len(image.Harness.Secrets) != 0 {
@@ -109,7 +110,7 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if got := featuretest.Load(t, ".").Installs("hook-extension.js"); got != installedHookExt {
+	if got := harnesstest.Stage(t, ".").Installs("assets/hook-extension.js"); got != installedHookExt {
 		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
@@ -131,10 +132,10 @@ func TestImagePolicy(t *testing.T) {
 	if v, ok := image.Env["PI_PROXY"]; ok {
 		t.Errorf("manifest sets PI_PROXY=%q, which pi does not read", v)
 	}
-	feature := featuretest.Load(t, ".")
+	feature := harnesstest.Stage(t, ".")
 	for source, want := range map[string]string{
-		"launch.sh":  "/usr/local/bin/" + harness.RunCommand,
-		"agent.conf": "/usr/local/libexec/discobox/agent.conf",
+		harness.RunCommand: "/usr/local/bin/" + harness.RunCommand,
+		"agent.conf":       "/usr/local/libexec/discobox/agent.conf",
 	} {
 		if got := feature.Installs(source); got != want {
 			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
@@ -146,7 +147,7 @@ func TestImagePolicy(t *testing.T) {
 	if !feature.Runs(t, "/usr/local/libexec/discobox/npm-global install @earendil-works/pi-coding-agent") {
 		t.Error("the feature does not install pi's CLI")
 	}
-	conf := readFile(t, "agent.conf")
+	conf := string(feature.FeatureFile(t, "agent.conf"))
 	if !strings.Contains(conf, "AGENT_PACKAGE=@earendil-works/pi-coding-agent\n") || !strings.Contains(conf, "AGENT_BIN=pi\n") {
 		t.Error("agent.conf does not name pi's package and binary")
 	}
@@ -174,7 +175,7 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--continue"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := launchertest.RunLauncher(t, "pi", nil, tc.args)
+			got := harnesstest.RunLauncher(t, "pi", nil, tc.args)
 			if want := append(slices.Clone(policy), tc.want...); !slices.Equal(got, want) {
 				t.Fatalf("pi argv = %#v, want %#v", got, want)
 			}
