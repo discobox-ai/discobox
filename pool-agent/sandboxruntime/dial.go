@@ -44,24 +44,25 @@ type Dialer struct {
 // keeps, and closes one sent Connection: close with the bytes still unread,
 // which is a reset that can reach this side before the response does and turn
 // a refusal into a transport error (#106).
-func (d *Dialer) Transport() *agentTransport {
+func (d *Dialer) Transport() *AgentTransport {
 	t := internalhttp.Transport()
 	t.DialContext = d.dialHTTP
 	t.ForceAttemptHTTP2 = false
 	t.MaxIdleConnsPerHost = -1
-	return &agentTransport{Transport: t, dial: d}
+	return &AgentTransport{Transport: t, dial: d}
 }
 
 func (d *Dialer) dialHTTP(ctx context.Context, _, _ string) (net.Conn, error) {
 	return d.DialContext(ctx)
 }
 
-type agentTransport struct {
+// AgentTransport carries HTTP requests over the route supplied by a Dialer.
+type AgentTransport struct {
 	*http.Transport
 	dial *Dialer
 }
 
-func (t *agentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *AgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	dial, transport := t.dial, t.Transport
 	if dial.resolve != nil {
 		// Choose the connection and its credential together on each request.
