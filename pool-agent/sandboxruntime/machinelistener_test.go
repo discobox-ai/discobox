@@ -24,7 +24,7 @@ func TestFakeMachineAgentOwnsItsEndpointAcrossBoots(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			address := strings.TrimPrefix(service.Listen, "tcp:")
+			address := strings.TrimPrefix(service.PoolURL, "http://")
 			assertOwned := func() {
 				t.Helper()
 				listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", address)

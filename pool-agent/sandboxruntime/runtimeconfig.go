@@ -386,7 +386,7 @@ func (r *DockerSandboxRuntime) containerTakesRuntimeConfig(ctx context.Context, 
 // with its kept document. A conflict is the same thing seen from the other
 // side, a revision already spent on another document. Either way the record
 // moves past the sandbox's and the document goes again, once.
-func (r *sandboxCore) putRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) error {
+func (r *sandboxCore) putRuntimeConfig(ctx context.Context, dial *Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) error {
 	for attempt := 0; ; attempt++ {
 		held, conflict, err := r.sendRuntimeConfig(ctx, dial, sandboxID, doc)
 		if err != nil {
@@ -407,7 +407,7 @@ func (r *sandboxCore) putRuntimeConfig(ctx context.Context, dial Dialer, sandbox
 
 // sendRuntimeConfig makes one PUT. It returns the document the sandbox holds,
 // or reports a conflict.
-func (r *sandboxCore) sendRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, bool, error) {
+func (r *sandboxCore) sendRuntimeConfig(ctx context.Context, dial *Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
 	token, err := r.poolToken(sandboxID, sandboxconfig.RuntimeConfigScope)

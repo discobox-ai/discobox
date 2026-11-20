@@ -205,7 +205,7 @@ func (f *fakeSourcesAgent) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func newFakeSourcesAgent(t *testing.T, r *DockerSandboxRuntime, layer string, states ...[]sourceState) (*fakeSourcesAgent, Dialer) {
+func newFakeSourcesAgent(t *testing.T, r *DockerSandboxRuntime, layer string, states ...[]sourceState) (*fakeSourcesAgent, *Dialer) {
 	t.Helper()
 	public, _ := r.identityKey.Public().(ed25519.PublicKey)
 	agent := &fakeSourcesAgent{t: t, key: public, layer: layer, states: states}

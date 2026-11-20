@@ -319,7 +319,7 @@ func parsePort(value string) (int, bool) {
 // the sandbox sees. An upgrade — an exec attach, a tunnel — is forwarded on
 // the same connection. A failed dial is answered by unreachable, which is
 // the route's: each route answers in its own contract.
-func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth string, unreachable func(http.ResponseWriter)) *httputil.ReverseProxy {
+func sandboxProxy(dial *sandboxruntime.Dialer, target *url.URL, downstreamAuth string, unreachable func(http.ResponseWriter)) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Transport: dial.Transport(),
 		Rewrite: func(req *httputil.ProxyRequest) {

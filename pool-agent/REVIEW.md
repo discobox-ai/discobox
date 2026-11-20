@@ -636,7 +636,7 @@ not the root ever answered.
   every machine, which it cannot delete, by locking it to port 0, where no
   guest can listen (disco-vm ADR 26-11-14-454). The machine keeps its DNS name
   and certificate at `https://<machine>.<zone>`, which answer boxd's 502, and
-  reports no ingress URL. A driver that cannot withhold one (archil, docker,
+  reports no ingress URL. A driver that cannot withhold one (docker,
   fake) refuses the machine. The
   driver is trusted to keep to a strict request; nothing polls a machine for
   a URL, and a machine made before the request keeps its URL until it is made
@@ -646,10 +646,10 @@ not the root ever answered.
   request, or has a caller fall back from one scope to the other, is judged
   against that: "the agent answers nothing else there" is never a
   control, because the guest's root, not the agent, decides what answers. The
-  edge form (ADR 26-10-29-481 §3) reaches a sandbox at its ingress URL by
-  design, and has no pool until a driver with no isolation settles how
-  (#1053). Why: code in a box could otherwise exfiltrate or take instructions
-  around the proxy while every check inside the guest passes.
+  credentialed edge form (ADR 26-11-16-619 §2) uses the machine's pool URL
+  with ingress off. The pool keeps the edge credential in memory and sends
+  it by the driver's header over HTTPS with HTTP/1.1. The provider's edge
+  must consume the credential and forward the request without its header.
 
 ## The sandbox agent's TLS
 

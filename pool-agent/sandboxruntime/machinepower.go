@@ -222,7 +222,7 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		return err
 	}
 	r.publishSandboxState(ctx, sandboxID, StateStarting)
-	r.urls.Delete(sandboxID)
+	r.endpoints.Delete(sandboxID)
 	boot := r.beginBoot(sandboxID)
 	started := running
 	fail := func(err error) error {
@@ -300,7 +300,7 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			started = r.engine.State(context.WithoutCancel(ctx), inst) == engine.Running
 			return fail(fmt.Errorf("restart sandbox %s's machine: %w", sandboxID, err))
 		}
-		r.urls.Delete(sandboxID)
+		r.endpoints.Delete(sandboxID)
 		if _, pending, err = r.place(ctx, sandboxID, inst, record, after); err != nil {
 			return fail(err)
 		}
@@ -448,7 +448,7 @@ func (r *MachineSandboxRuntime) stopMachine(ctx context.Context, sandboxID strin
 	if err != nil {
 		return err
 	}
-	r.urls.Delete(sandboxID)
+	r.endpoints.Delete(sandboxID)
 	if err := r.engine.Stop(ctx, inst, machineStopTimeout); err != nil && r.engine.State(ctx, inst) != engine.Stopped {
 		return fmt.Errorf("stop sandbox %s's machine: %w", sandboxID, err)
 	}

@@ -118,10 +118,11 @@ archil), sealed in the row as any secret field is. Every driver field is
 the write that sets it and which needs the key in the same write (§§3–4).
 A field disco-vm adds shows up with no change here, but for a `Privileged`
 one, which `TestPrivilegedFieldsAreTheCheckedEndpoints` holds back. A field
-disco-vm makes `Required` (boxd's `region`) is required at create, and a row
-stored before it was required is not migrated: it fails to resolve, each
-reconcile of its pools fails on it, and its owner disables it, deletes its
-pools and it, and makes them again (ADR 26-11-15-507).
+disco-vm marks `Required` must be set at creation. A boxd provider stored
+without a region fails to resolve until the owner replaces it and its pools
+(ADR 26-11-15-507). For a stored Archil provider with no region, startup
+preserves the previous default through the
+[provider config backfill](../../internal/store/DESIGN.md#secret-sealing).
 
 The server reads no driver's environment (ADR 26-11-11-080 §2): a variable a
 linked driver names, set in the server's environment, is warned of at start,
@@ -141,7 +142,7 @@ resolves the name itself and connects to the address it checked. A refused dial 
 `unreachable`: the reconciler would wait on it unseen.
 
 A pool on a driver reached at its URLs that cannot fence its machines
-(`Capabilities.Isolation`; archil today) is refused when it is created, by
+(`Capabilities.Bare` and `Capabilities.Networks`; archil today) is refused when it is created, by
 the type's `PoolOSValidator` (`fences`), saying so (ADR 26-11-11-080 §1).
 
 The type cannot change, and no `driver` field can while the provider has
@@ -204,7 +205,7 @@ as ADR 26-10-09-106 §1 places it:
   machine isolated on that network (ADR 26-10-23-551 §4) with its pool URL
   on and its ingress URL off, both strictly, so boxd gives it no URL beyond
   its pool one (disco-vm ADR 26-11-14-610). A driver that cannot isolate
-  (`Capabilities.Isolation`) makes no pool machine.
+  (`Capabilities.Bare` and `Capabilities.Networks`) makes no pool machine.
 - A remote machine whose service does not answer reads `Unknown`, which is
   neither running nor stopped. The engine reads `Unknown` for any failure to
   ask, so the machine is asked again through `Engine.Guest`, which makes the
@@ -274,7 +275,7 @@ the machine runtime, the driver, the pool's scope as the scope and
 network its sandboxes' machines are made in, the provider's base and its
 driver configuration without the secret (ADR 26-11-11-080 §6), the
 provider's `controlPlaneUrl` or, with none, the channel's socket, and where
-the agent listens: the driver's `Service.Listen` for the machine, which its
+the agent listens: the driver's `Driver.Listen` for the machine, which its
 URLs reach (ADR 26-10-27-345 §2's rule, for the pool agent).
 
 A service's two URLs are named by who reaches them (disco-vm ADR

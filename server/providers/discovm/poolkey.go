@@ -262,7 +262,7 @@ func (k poolKeys) revokeAll(ctx context.Context, pool *model.Pool, recorded *poo
 // 26-10-23-551 §4), and the driver's own token beside it: a machine that is
 // not isolated keeps what isolation strips, and the pool's machine is not.
 func (k poolKeys) hostCredential(record *poolKeyRecord) *model.PoolHostCredential {
-	credential := &model.PoolHostCredential{MachineToken: k.driver.Capabilities().Isolation}
+	credential := &model.PoolHostCredential{MachineToken: k.driver.Capabilities().Bare == machine.BareStrip}
 	if record != nil {
 		credential.Key, credential.Scope, credential.KeyID = model.PoolHostKeyProvider, string(record.Scope), record.ID
 		if record.InMachine {

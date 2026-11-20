@@ -303,7 +303,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	// own network, as create makes it, is taken: anything else is not the
 	// pool's to key (ADR 26-10-23-551 §4).
 	replaced := err == nil && record.Instance != "" && record.Instance != inst.ID
-	if replaced && (inst.Isolated || !slices.Equal(inst.Networks, []string{scope})) {
+	stripped := inst.Bare && h.engine.Driver.Capabilities().Bare == machine.BareStrip
+	if replaced && (stripped || !slices.Equal(inst.Networks, []string{scope})) {
 		return fmt.Errorf("pool %s: the machine %s under its name is not the one it recorded, and is not on the pool's own network %s: nothing is placed on it", pool.ID, inst.ID, scope)
 	}
 	if err != nil || replaced {
@@ -575,12 +576,15 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	// 26-10-29-481 §§1–2, disco-vm ADR 26-11-14-610). Neither stands in for
 	// the other. A driver with no path between its machines has no pool URL,
 	// and carries no pool.
-	if bootstrap.IngressURL, err = h.engine.URL(ctx, inst, machine.URLIngress); err != nil {
+	ingress, err := h.engine.URL(ctx, inst, machine.URLIngress)
+	if err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's ingress URL: %w", pool.ID, notReachable(err))
 	}
-	if bootstrap.PoolURL, err = h.engine.URL(ctx, inst, machine.URLPool); err != nil {
+	peer, err := h.engine.URL(ctx, inst, machine.URLPool)
+	if err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's pool URL: %w", pool.ID, notReachable(err))
 	}
+	bootstrap.IngressURL, bootstrap.PoolURL = ingress.URL, peer.URL
 	if err := bootstrap.Validate(); err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's bootstrap: %w", pool.ID, err)
 	}
@@ -607,18 +611,18 @@ func held(caps machine.Capabilities) bool {
 }
 
 // agentListenURL is where the pool agent listens in its machine: where the
-// driver's service for the machine listens (Service.Listen), which its
+// driver's service for the machine listens (Driver.Listen), which its
 // ingress and pool URLs reach, as a machine sandbox's agent does (ADR
 // 26-10-27-345 §2). Only TCP is taken: no remote driver serves an instance on
 // anything else.
 func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) (string, error) {
-	service, err := h.engine.Driver.Service(ctx, inst)
+	listen, err := h.engine.Driver.Listen(ctx, inst)
 	if err != nil {
 		return "", fmt.Errorf("the %s driver's service of machine %s: %w", h.engine.Driver.Name(), inst.Name, notReachable(err))
 	}
-	address, ok := strings.CutPrefix(service.Listen, "tcp:")
+	address, ok := strings.CutPrefix(listen, "tcp:")
 	if !ok || address == "" {
-		return "", fmt.Errorf("the %s driver gives machine %s's service %q, and the pool agent listens on TCP alone", h.engine.Driver.Name(), inst.Name, service.Listen)
+		return "", fmt.Errorf("the %s driver gives machine %s's service %q, and the pool agent listens on TCP alone", h.engine.Driver.Name(), inst.Name, listen)
 	}
 	return "http://" + address, nil
 }
@@ -646,7 +650,7 @@ func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) 
 	if err != nil {
 		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, notReachable(err))
 	}
-	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url, "/"), nil), nil
+	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url.URL, "/"), nil), nil
 }
 
 // removePoolHost removes the pool's machine, then the pool's keys, then

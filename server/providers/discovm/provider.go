@@ -187,8 +187,8 @@ func validate(name string, data json.RawMessage) error {
 // it (ADR 26-11-11-963 §1), and, on a driver reached at its URLs, fences its
 // machines (ADR 26-11-11-080 §1). Linux on every driver that boots it; hcs
 // boots neither, and its pools are refused until the Windows work 963 §13
-// defers; archil fences nothing, and every pool on it is refused, saying so,
-// when it is created rather than at its machine.
+// defers. Archil cannot place machines on pool networks, so its pools are
+// refused at creation.
 func PoolOSValidator(name string) sandbox.PoolOSValidator {
 	return func(data json.RawMessage, os string) error {
 		s, err := decode(name, data)
@@ -210,10 +210,10 @@ func PoolOSValidator(name string) sandbox.PoolOSValidator {
 
 // fences refuses a driver reached at its URLs that cannot carry a pool: its
 // pool machine is on a network of the pool's own, and its sandboxes'
-// machines isolated on it (ADR 26-10-23-551 §4), which a driver without
-// Isolation cannot do.
+// machines isolated on it (ADR 26-10-23-551 §4).
 func fences(driver machine.Driver) error {
-	if !driver.Capabilities().Isolation {
+	caps := driver.Capabilities()
+	if !caps.Bare.Strips() || !caps.Networks {
 		return fmt.Errorf("the %s driver cannot isolate machines or place them on networks, which a pool's machine and its sandboxes' need: its pools are refused", driver.Name())
 	}
 	return nil

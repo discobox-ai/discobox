@@ -285,14 +285,14 @@ func (f *fakeIntake) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func intakeDialer(t *testing.T, handler http.Handler) Dialer {
+func intakeDialer(t *testing.T, handler http.Handler) *Dialer {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	return func(ctx context.Context) (net.Conn, error) {
+	return &Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, "tcp", server.Listener.Addr().String())
-	}
+	}}
 }
 
 func TestPutRuntimeConfigDeliversAPoolSignedDocument(t *testing.T) {
@@ -380,15 +380,15 @@ func TestPutRuntimeConfigRefusalOfALargeDocument(t *testing.T) {
 	doc.SecretEnv = map[string]string{"LARGE": strings.Repeat("x", 1<<20)}
 	dial := intakeDialer(t, &fakeIntake{t: t, status: http.StatusUnauthorized})
 	var conns []*countingConn
-	counted := Dialer(func(ctx context.Context) (net.Conn, error) {
-		conn, err := dial(ctx)
+	counted := &Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
+		conn, err := dial.DialContext(ctx)
 		if err != nil {
 			return nil, err
 		}
 		c := &countingConn{Conn: conn}
 		conns = append(conns, c)
 		return c, nil
-	})
+	}}
 	refused := r.putRuntimeConfig(context.Background(), counted, "sbx_1", doc)
 	if !errors.Is(refused, ErrRuntimeConfigRefused) {
 		t.Fatalf("refusing a large document: %v, want a refusal", refused)

@@ -164,12 +164,12 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	if err := json.Unmarshal([]byte(readMachineFile(t, guest, "/etc/discobox/sandbox.json")), &bootstrap); err != nil {
 		t.Fatal(err)
 	}
-	service, err := f.driver.Service(ctx, inst)
+	listen, err := f.driver.Listen(ctx, inst)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if "tcp:"+bootstrap.AgentRuntime.ListenAddress != service.Listen || bootstrap.SandboxID != "sbx_1" {
-		t.Fatalf("bootstrap listens on %q for %q, want the service's %q for sbx_1", bootstrap.AgentRuntime.ListenAddress, bootstrap.SandboxID, service.Listen)
+	if "tcp:"+bootstrap.AgentRuntime.ListenAddress != listen || bootstrap.SandboxID != "sbx_1" {
+		t.Fatalf("bootstrap listens on %q for %q, want the service's %q for sbx_1", bootstrap.AgentRuntime.ListenAddress, bootstrap.SandboxID, listen)
 	}
 	if got := readMachineFile(t, guest, agentlayer.AgentPath); got != "agent-v1" {
 		t.Fatalf("agent = %q, want the layer's", got)
@@ -865,7 +865,7 @@ func TestMachineRecordFromAnOlderPoolIsRebuiltInPlace(t *testing.T) {
 	}
 }
 
-func mustDialer(t *testing.T, r *MachineSandboxRuntime, sandboxID string) Dialer {
+func mustDialer(t *testing.T, r *MachineSandboxRuntime, sandboxID string) *Dialer {
 	t.Helper()
 	dial, err := r.SandboxDialer(context.Background(), sandboxID, SandboxAgentPort)
 	if err != nil {
@@ -1075,6 +1075,11 @@ func (d *agentDriver) Service(ctx context.Context, inst machine.Instance) (machi
 		service.IngressURL = ""
 	}
 	return service, serviceErr
+}
+
+func (d *agentDriver) Listen(ctx context.Context, inst machine.Instance) (string, error) {
+	service, err := d.agents.service(ctx, inst.Name)
+	return "tcp:" + strings.TrimPrefix(service.PoolURL, "http://"), err
 }
 
 func (d *agentDriver) Capabilities() machine.Capabilities {
@@ -1323,7 +1328,7 @@ func (a *fakeMachineAgents) service(ctx context.Context, name string) (machine.S
 		}()
 	}
 	address := ep.listener.Addr().String()
-	return machine.Service{Listen: "tcp:" + address, IngressURL: "http://" + address, PoolURL: "http://" + address}, nil
+	return machine.Service{IngressURL: "http://" + address, PoolURL: "http://" + address}, nil
 }
 
 func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config, layer string) error {
@@ -1818,10 +1823,9 @@ func TestMachineAsksPoolURLAndNoIngressURL(t *testing.T) {
 		Ingress: machine.URLRequest{Mode: machine.URLOff, Strict: true},
 		Pool:    machine.URLRequest{Mode: machine.URLOn, Strict: true},
 	}
-	for _, isolate := range []bool{true, false} {
-		r := &MachineSandboxRuntime{isolate: isolate, network: "pool-0123456789abcdef"}
+	for _, r := range []*MachineSandboxRuntime{{bare: true, network: "pool-0123456789abcdef"}, {}} {
 		if opts := r.createOptions("sbx-1"); opts.URLs != want {
-			t.Fatalf("isolated %v: create options ask URLs %+v, want ingress off and pool on, both strictly", isolate, opts.URLs)
+			t.Fatalf("create options ask URLs %+v, want ingress off and pool on, both strictly", opts.URLs)
 		}
 	}
 }

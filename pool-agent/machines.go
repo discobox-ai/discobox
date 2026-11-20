@@ -135,7 +135,7 @@ func machinePoolStatus(driver string, caps machine.Capabilities, hop string, max
 			"status":     "ready",
 			"hop":        hop,
 			"maxRunning": caps.MaxRunning,
-			"isolation":  caps.Isolation,
+			"isolation":  caps.Bare.Strips() && caps.Networks,
 			// Whether it fences a machine to a list of hosts, as the pool
 			// fences its sandboxes' (requireMachineFence).
 			"egress": slices.Contains(caps.Egress, machine.EgressAllow),
