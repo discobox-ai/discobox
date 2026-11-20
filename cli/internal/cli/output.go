@@ -24,6 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
@@ -537,8 +538,8 @@ func poolMessage(pool apimodel.Pool) string {
 		return message
 	}
 	if !pool.Ready && pool.DesiredState == apiclientgen.PoolDesiredStatePresent {
-		if step := sandboxcreate.PoolProvisionStatus(&pool); step != "" {
-			return string(step)
+		if step := provisionprogress.PoolStatus(&pool); step != "" {
+			return step
 		}
 		return string(sandboxcreate.StepWaitingForPool)
 	}

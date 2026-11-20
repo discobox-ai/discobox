@@ -24,7 +24,6 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/health"
-	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/serverstage"
 )
 
@@ -723,11 +722,6 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 			if err != nil {
 				return endpoint.Command{}, err
 			}
-			// Between resolving the server and starting it, so the pools it
-			// brings up load the images from disk rather than pulling them
-			// (ADR 0113) — and, because EnsureRunning resolves before it stops
-			// an older server, while that server is still answering.
-			a.stageServerImages(ctx, progress, path)
 			return endpoint.Command{Path: path}, nil
 		},
 		Env:             localServerEnv(a.serverURL),
@@ -758,24 +752,6 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 
 	}
 	return nil
-}
-
-// stageServerImages stages the images the server about to start runs,
-// narrating on the launch line.
-//
-// A failure costs the head start and nothing else (ADR 0069): the images are
-// pulled when a pool first needs one, which is where they came from before any
-// of this, and a registry that is briefly down must not stop a server from
-// starting. So it is said, once, on a line that stays, and the launch goes on.
-func (a *App) stageServerImages(ctx context.Context, progress *statusLine, server string) {
-	progress.set("Checking images for the local server")
-	resolver := a.serverResolver(nil)
-	resolver.onImageProgress = func(report imagecache.Progress) {
-		progress.set(imagesStageText(report))
-	}
-	if _, err := resolver.stageImages(ctx, server); err != nil && progress != nil {
-		progress.print("could not download the images discobox runs, so each is downloaded when first needed: %v", err)
-	}
 }
 
 // serverStartupLine is where a launch narrates, or nothing when there is
@@ -851,7 +827,7 @@ func localServerEnv(listen string) []string {
 	env := []string{
 		"DISCOBOX_SERVER_LISTEN=" + listen,
 		"DISCOBOX_SERVER=" + listen,
-		// Where the autolaunch staged the server's images, so its pools load
+		// Share the explicit staging cache with the server, so its pools load
 		// them rather than pull them (ADR 0113).
 		ImageCacheEnv + "=" + stagedImagesRoot(),
 	}

@@ -2,11 +2,14 @@ package sandboxes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"github.com/discobox-ai/discobox/pkg/requestprogress"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -273,7 +276,19 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			} else if sandboxWaitNow().Sub(budget.poolSince) >= sandboxPoolHostWaitCeiling {
 				return sandboxModel, waitEnded(err)
 			}
-			report(fmt.Sprintf("%s (pool %s): waiting for the pool to come online", sandboxID, sandboxModel.PoolID))
+			poolStatus := "waiting for the pool to come online"
+			if pool, readErr := s.store.WithPrimaryRead().GetPool(ctx, projectID, sandboxModel.PoolID); readErr == nil {
+				var progress apimodel.PoolProvisionProgress
+				if pool.ProvisionProgressAt != nil && json.Unmarshal(pool.ProvisionProgress, &progress) == nil {
+					view := apimodel.Pool{}
+					view.ProvisionProgress.SetTo(progress)
+					view.ProvisionProgressAt.SetTo(*pool.ProvisionProgressAt)
+					if status := provisionprogress.PoolStatus(&view); status != "" {
+						poolStatus = status
+					}
+				}
+			}
+			report(fmt.Sprintf("%s (pool %s): %s", sandboxID, sandboxModel.PoolID, poolStatus))
 		} else {
 			if wait != waitForStartPool {
 				budget.poolSince = time.Time{}

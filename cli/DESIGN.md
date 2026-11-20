@@ -850,7 +850,8 @@ retrying.
 an image build, on a machine being provisioned. Nothing requires it; a command
 that needs a server stages one.
 
-The server's images are staged beside it (ADR 0113). The server names them:
+Explicit staging also downloads the server's images (ADR 0113, as amended by
+ADR 26-11-18-127). The server names them:
 `serverResolver.stageImages` runs `<staged server> images`, which prints the
 VM guest on macOS and linux/amd64, libkrun's patched kernel on linux/amd64,
 and the default sandbox image. The CLI stages those images through `imagecache`
@@ -862,12 +863,10 @@ fetch through it and its pools load from it. Only a server staged from this
 CLI's own manifest is asked — the same release, so it has the command; an older
 binary named with `--binary`, a sibling, or another version's `--manifest`
 would take the argument as nothing and start serving, so none of those stages
-images. Only two things download them: the autolaunch, between resolving the
-server and starting it, narrated on the launch line (`imagesStageText`, in
-`stageLine`'s grammar), and `stage`. `discobox admin server` in the foreground
-stages the binary alone. A failed image stage in the autolaunch is one warning
-line and the launch goes on — the server fetches what is missing, as it always
-did (ADR 0069) — while `stage` fails, since staging is what it was asked to do.
+images. Autolaunch and foreground startup stage the verified server
+distribution. Providers fetch pool images when needed, through the same
+cache, and report active downloads to launch waits. Explicit image staging
+reports download progress and returns any staging failure.
 
 Local server auto-launch is a release capability. Normal and development builds
 leave it disabled; release CLI binaries opt in at build time by setting

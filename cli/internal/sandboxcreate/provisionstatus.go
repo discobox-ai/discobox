@@ -13,6 +13,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
@@ -27,18 +28,6 @@ import (
 // difference users would read as a difference in behavior — and because both
 // waits that narrate provisioning are reached from here: the wait for a
 // discobox to park ready for its source, and the wait for an attach.
-
-// ProvisionProgressFresh bounds how old a recorded phase may be and still be
-// reported as what is happening now.
-//
-// The record is the last report and is never cleared, so a sandbox that
-// finished provisioning yesterday still carries the phase it finished in. Work
-// that is genuinely underway reports continuously — the pull reports twice a
-// second, the pool restates materializing a source on every read of the
-// sandbox's clone and waiting for the agent every ten seconds of a slow boot,
-// and every other phase is published as it is entered — so a
-// phase that has not been restated in this long is describing the past.
-const ProvisionProgressFresh = 30 * time.Second
 
 // ProvisionStatus is one line saying what a sandbox that is not ready yet is
 // doing, or "" when there is nothing left for a client to wait on.
@@ -102,7 +91,7 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 	if runtime.State == apiclientgen.SandboxRuntimeStatePending {
 		// The truthful answer, and a thin one: the interesting half is what the
 		// pool is busy doing instead, which lives on the pool. A caller holding
-		// one refines this with PoolProvisionStatus.
+		// one refines this with the pool provisioning report.
 		return StepWaitingForPool
 	}
 	switch runtime.RuntimeState.Or("") {
@@ -276,12 +265,12 @@ func recordedPhase(runtime apimodel.SandboxRuntime) Step {
 		return ""
 	}
 	if observed, ok := runtime.ProvisionProgressAt.Get(); ok {
-		if time.Since(observed) > ProvisionProgressFresh {
+		if time.Since(observed) > provisionprogress.ProvisionProgressFresh {
 			return ""
 		}
 	}
 	if pull, ok := progress.Pull.Get(); ok && progress.Phase == apiclientgen.SandboxProvisionPhasePullingImage {
-		return pullLine(pull)
+		return Step(provisionprogress.ImagePull(pull, "pulling"))
 	}
 	if clone, ok := progress.Clone.Get(); ok {
 		switch progress.Phase {
@@ -318,51 +307,6 @@ func recordedPhase(runtime apimodel.SandboxRuntime) Step {
 	return ""
 }
 
-// pullLine renders an image pull with both of its ratios.
-//
-// Neither ratio is progress toward a fixed target — both totals grow while the
-// manifest is walked — so this reports them as the pair of counts they are and
-// never as a percentage, which would visibly go backwards.
-//
-// A layer being fetched again after its transfer ended is named on the line
-// for as long as it is.
-//
-// An image loaded from the image cache is read into the daemon whole before
-// any of it is extracted, so once extraction is reported the line counts that
-// instead: the bytes read are already all of them, and the minutes left are in
-// the layers.
-func pullLine(pull apimodel.SandboxPullProgress) Step {
-	line := "pulling " + imageLabel(pull.Image)
-	current, total, layersComplete := pull.Current.Or(0), pull.Total.Or(0), pull.LayersComplete.Or(0)
-	var extracting string
-	if pull.Extracted.IsSet() || pull.LayersExtracted.IsSet() {
-		extracting = "extracting "
-		current, layersComplete = pull.Extracted.Or(0), pull.LayersExtracted.Or(0)
-	}
-	switch {
-	case total > 0:
-		line += fmt.Sprintf(" — %s%s of %s", extracting, humanBytes(current), humanBytes(total))
-	case current > 0:
-		line += fmt.Sprintf(" — %s%s", extracting, humanBytes(current))
-	}
-	if layers := pull.Layers.Or(0); layers > 0 {
-		line += fmt.Sprintf(", %d/%d layers", layersComplete, layers)
-	}
-	if retry, ok := pull.Retry.Get(); ok {
-		// Said for as long as the layer is being fetched again, in the words
-		// the server's image download uses, so a count that pauses or steps
-		// back reads as the retry it is.
-		line += fmt.Sprintf(", retrying layer %d", retry.Layer)
-		if layers := pull.Layers.Or(0); layers > 0 {
-			line += fmt.Sprintf(" of %d", layers)
-		}
-		if kept := retry.Kept.Or(0); kept > 0 {
-			line += " after its transfer ended at " + humanBytes(kept)
-		}
-	}
-	return Step(line)
-}
-
 // cloneLine renders a pool fetch or sandbox checkout: which source — the remote it
 // comes from, which is where the time goes on a slow clone — and how far in.
 //
@@ -371,7 +315,7 @@ func pullLine(pull apimodel.SandboxPullProgress) Step {
 // The bytes are what git has shown, which it starts showing only once the
 // clone is slow enough to need a throughput.
 func cloneLine(clone apimodel.SandboxCloneProgress, operation string) Step {
-	line := operation + displaySafe(clone.Source)
+	line := operation + provisionprogress.DisplaySafe(clone.Source)
 	objects, total, received := clone.Objects.Or(0), clone.ObjectsTotal.Or(0), clone.Bytes.Or(0)
 	percent := func() string {
 		return fmt.Sprintf("%d%%", objects*100/total)
@@ -382,7 +326,7 @@ func cloneLine(clone apimodel.SandboxCloneProgress, operation string) Step {
 	case apiclientgen.CloneProgressStageReceiving:
 		var parts []string
 		if received > 0 {
-			parts = append(parts, humanBytes(received))
+			parts = append(parts, provisionprogress.Bytes(received))
 		}
 		if total > 0 {
 			parts = append(parts, fmt.Sprintf("%s of %d objects", percent(), total))
@@ -393,7 +337,7 @@ func cloneLine(clone apimodel.SandboxCloneProgress, operation string) Step {
 	case apiclientgen.CloneProgressStageResolving:
 		line += " — "
 		if received > 0 {
-			line += humanBytes(received) + " received, "
+			line += provisionprogress.Bytes(received) + " received, "
 		}
 		line += "resolving deltas"
 		if total > 0 {
@@ -403,139 +347,12 @@ func cloneLine(clone apimodel.SandboxCloneProgress, operation string) Step {
 	return Step(line)
 }
 
-// displaySafe escapes every rune a terminal would act on rather than show,
-// as its Go escape. A source's name can come from a URL that repository
-// content declared (ADR 0056), and printed raw an escape sequence in it is an
-// instruction to the reader's terminal (cli/REVIEW.md).
-func displaySafe(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		if unicode.IsPrint(r) {
-			b.WriteRune(r)
-			continue
-		}
-		quoted := strconv.QuoteRune(r)
-		b.WriteString(quoted[1 : len(quoted)-1])
-	}
-	return b.String()
-}
-
-// imageLabel shortens an image reference to the part that identifies it. A
-// status line has one line, and the registry host and namespace are the same
-// for every image a given deployment pulls.
-//
-// A digest is cut to its first bytes for the same reason. A pinned reference is
-// the intended form for the guest image, and its full digest is 71 characters
-// of a line that also has to carry a byte count — long enough to push the
-// numbers off the end of a terminal. The short form still tells two builds
-// apart, which is all a status line needs it for; the whole digest is in the
-// server's log.
-func imageLabel(image string) string {
-	image = strings.TrimSpace(image)
-	if image == "" {
-		return "the discobox image"
-	}
-	if slash := strings.LastIndex(image, "/"); slash >= 0 && slash+1 < len(image) {
-		image = image[slash+1:]
-	}
-	name, digest, ok := strings.Cut(image, "@")
-	if !ok {
-		return image
-	}
-	if _, hex, ok := strings.Cut(digest, ":"); ok {
-		digest = hex
-	}
-	const shortDigest = 12
-	if len(digest) > shortDigest {
-		digest = digest[:shortDigest]
-	}
-	return name + "@" + digest
-}
-
-// humanBytes renders a byte count the way a download reports one.
-func humanBytes(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	value, exponent := float64(bytes)/unit, 0
-	for value >= unit && exponent < 3 {
-		value /= unit
-		exponent++
-	}
-	return fmt.Sprintf("%.1f %ciB", value, "KMGT"[exponent])
-}
-
 // StepWaitingForPool is what a sandbox says while no pool has taken it yet.
 //
 // A named constant because it is the one status a caller acts on rather than
 // merely prints: it is the cue to go and ask the pool what it is doing, and
 // comparing against a string literal in two packages is how those two drift.
 const StepWaitingForPool Step = "waiting for the pool agent to become ready"
-
-// PoolProvisionStatus is one line saying what a pool host is being brought
-// through, or "" when its driver has nothing current to report.
-//
-// This is the other half of StepWaitingForPool. A sandbox waiting for a pool
-// says only that it is waiting; the pool is where the minutes are actually
-// going — fetching a VM disk image, booting the machine, pulling the pool-agent
-// image — and the driver doing that work records it as it happens.
-func PoolProvisionStatus(pool *apimodel.Pool) Step {
-	if pool == nil {
-		return ""
-	}
-	progress, ok := pool.ProvisionProgress.Get()
-	if !ok {
-		return ""
-	}
-	// The same freshness rule the sandbox's own phase gets, for the same
-	// reason: the record is the last report and is never cleared, so a pool
-	// that came up yesterday still carries the phase it finished in.
-	if observed, ok := pool.ProvisionProgressAt.Get(); ok {
-		if time.Since(observed) > ProvisionProgressFresh {
-			return ""
-		}
-	}
-	if pull, ok := progress.Pull.Get(); ok {
-		switch progress.Phase {
-		case apiclientgen.PoolProvisionPhaseFetchingVMImage, apiclientgen.PoolProvisionPhasePullingPoolImage:
-			return pullLine(pull)
-		}
-	}
-	if progress.Phase == apiclientgen.PoolProvisionPhasePreloadingImages {
-		line := Step("preloading images (one-time setup per image version)")
-		if pull, ok := progress.Pull.Get(); ok {
-			line += Step(": " + strings.TrimPrefix(string(pullLine(pull)), "pulling "))
-		}
-		return line
-	}
-	switch progress.Phase {
-	case apiclientgen.PoolProvisionPhaseFetchingVMImage:
-		return "fetching the VM image"
-	case apiclientgen.PoolProvisionPhaseStartingVM:
-		return "starting the VM"
-	case apiclientgen.PoolProvisionPhaseWaitingForDocker:
-		return "waiting for Docker in the VM"
-	case apiclientgen.PoolProvisionPhaseSyncingDevelopmentImages:
-		// Only a development server ever reports this, and on a VM backend it
-		// is minutes: the images are built from the local checkout on the
-		// pool's own Docker. "preparing" rather than "building" because the
-		// same phase covers copying them from a developer's daemon.
-		return "preparing the development images"
-	case apiclientgen.PoolProvisionPhasePullingPoolImage:
-		return "pulling the pool's image"
-	case apiclientgen.PoolProvisionPhaseStartingPoolAgent:
-		return "starting the pool agent"
-	case apiclientgen.PoolProvisionPhaseWaitingForPoolAgent:
-		return "waiting for the pool agent to come up"
-	}
-	// A phase this build does not know is still worth reporting: the server is
-	// newer than this CLI, and its own word for what it is doing beats a blank.
-	if phase := strings.TrimSpace(string(progress.Phase)); phase != "" {
-		return Step(strings.ReplaceAll(phase, "_", " "))
-	}
-	return ""
-}
 
 // PoolReader is the one call a status needs beyond the sandbox itself.
 type PoolReader interface {
@@ -573,7 +390,7 @@ func Status(ctx context.Context, pools PoolReader, projectID string, sandbox *ap
 	if !ok {
 		return step
 	}
-	if poolStep := PoolProvisionStatus(pool); poolStep != "" {
+	if poolStep := Step(provisionprogress.PoolStatus(pool)); poolStep != "" {
 		return poolStep
 	}
 	return step

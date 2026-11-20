@@ -190,7 +190,7 @@ var poolPhaseHeartbeat = 5 * time.Second
 // a stamp that never moved read as a pool that had stopped, and the sandbox
 // failed with "no sandbox capacity" while its VM was booting normally.
 //
-// The image phases do not need this: a pull restates itself as it moves.
+// A held image pull stays visible when the daemon stops sending events.
 //
 // The held work may refine the phase from inside, as a VM driver reports the
 // guest image fetch from inside the starting_vm the engine holds around it.
@@ -210,8 +210,10 @@ func (r PoolProgressReporter) Hold(ctx context.Context, poolID string, phase Poo
 	interval := poolPhaseHeartbeat
 	held := &heldPhase{poolID: poolID, latest: PoolProvisionProgress{Phase: phase}}
 	done := make(chan struct{})
+	stopped := make(chan struct{})
 	var once sync.Once
 	go func() {
+		defer close(stopped)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -225,7 +227,10 @@ func (r PoolProgressReporter) Hold(ctx context.Context, poolID string, phase Poo
 			}
 		}
 	}()
-	return context.WithValue(ctx, heldPhaseKey{}, held), func() { once.Do(func() { close(done) }) }
+	return context.WithValue(ctx, heldPhaseKey{}, held), func() {
+		once.Do(func() { close(done) })
+		<-stopped
+	}
 }
 
 // ReportProgress is Report with the detail a phase can carry.
