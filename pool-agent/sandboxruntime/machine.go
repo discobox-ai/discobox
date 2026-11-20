@@ -20,11 +20,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 	"github.com/discobox-ai/x/id"
+	"golang.org/x/net/http/httpguts"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/fsdurable"
@@ -111,16 +114,16 @@ type MachineSandboxRuntime struct {
 	sandboxCore
 	engine  *engine.Engine
 	base    string
-	isolate bool
+	bare    bool
 	network string
 	egress  *machine.Egress
 	// observed is each sandbox's power state as the runtime last saw it,
 	// which answers what the driver cannot say for now (an unreachable
 	// service).
 	observed sync.Map
-	// urls is each running sandbox's instance URL, asked of the driver once
-	// per start rather than on every dial.
-	urls sync.Map
+	// endpoints caches each running sandbox's pool endpoint until a dial
+	// fails, the machine changes state, or its edge credential needs renewal.
+	endpoints sync.Map // sandbox ID → *machineEndpointCache
 }
 
 var _ Runtime = (*MachineSandboxRuntime)(nil)
@@ -133,13 +136,18 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 	if cfg.Audit == nil {
 		return nil, errors.New("a machine runtime needs the pool proxy's audit, which a purge takes a sandbox's trail from")
 	}
+	var bare bool
+	var network string
 	if cfg.Isolate {
-		if !cfg.Engine.Driver.Capabilities().Isolation {
+		caps := cfg.Engine.Driver.Capabilities()
+		if !caps.Bare.Strips() || !caps.Networks {
 			return nil, fmt.Errorf("the %s driver cannot isolate a sandbox's machine from the rest of its provider's account (ADR 26-10-23-551 §4)", cfg.Engine.Driver.Name())
 		}
-		if strings.TrimSpace(cfg.Network) == "" {
+		network = strings.TrimSpace(cfg.Network)
+		if network == "" {
 			return nil, errors.New("an isolated sandbox machine needs the pool's network, or it reaches nothing")
 		}
+		bare = caps.Bare == machine.BareStrip
 	}
 	if cfg.Egress != nil && !cfg.Engine.Driver.Capabilities().Fences(cfg.Egress) {
 		return nil, fmt.Errorf("the %s driver cannot fence a sandbox's machine's egress to its pool (ADR 26-10-29-481 §4)", cfg.Engine.Driver.Name())
@@ -163,8 +171,8 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 		},
 		engine:  cfg.Engine,
 		base:    strings.TrimSpace(cfg.Base),
-		isolate: cfg.Isolate,
-		network: strings.TrimSpace(cfg.Network),
+		bare:    bare,
+		network: network,
 		egress:  cfg.Egress,
 	}
 	r.boxes = r
@@ -328,7 +336,7 @@ func (r *MachineSandboxRuntime) status(ctx context.Context, sandboxID string, in
 	case engine.Running:
 		return r.observe(sandboxID, StatusRunning), nil
 	case engine.Stopped:
-		r.urls.Delete(sandboxID)
+		r.endpoints.Delete(sandboxID)
 		if !record.Started {
 			return r.observe(sandboxID, StatusCreated), nil
 		}
@@ -1063,8 +1071,9 @@ func (r *MachineSandboxRuntime) createOptions(name string) engine.CreateOptions 
 	opts := engine.CreateOptions{Name: name, Egress: r.egress}
 	opts.URLs.Ingress = machine.URLRequest{Mode: machine.URLOff, Strict: true}
 	opts.URLs.Pool = machine.URLRequest{Mode: machine.URLOn, Strict: true}
-	if r.isolate {
-		opts.Isolated, opts.Networks = true, []string{r.network}
+	opts.Bare = r.bare
+	if r.network != "" {
+		opts.Networks = []string{r.network}
 	}
 	return opts
 }
@@ -1104,13 +1113,13 @@ func sameEgress(got, want *machine.Egress) bool {
 // The driver picks it, the same for every boot of the instance, so it is
 // placed in the bootstrap once (disco-vm ADR 0005).
 func (r *MachineSandboxRuntime) agentListenAddress(ctx context.Context, inst machine.Instance) (string, error) {
-	service, err := r.engine.Driver.Service(ctx, inst)
-	if err != nil && !errors.Is(err, machine.ErrNotRunning) {
+	listen, err := r.engine.Driver.Listen(ctx, inst)
+	if err != nil {
 		return "", fmt.Errorf("the service address of sandbox machine %s: %w", inst.Name, err)
 	}
-	address, ok := strings.CutPrefix(service.Listen, "tcp:")
+	address, ok := strings.CutPrefix(listen, "tcp:")
 	if !ok || address == "" {
-		return "", fmt.Errorf("the %s driver gives machine %s's service %q, and the sandbox agent listens on TCP alone", r.engine.Driver.Name(), inst.Name, service.Listen)
+		return "", fmt.Errorf("the %s driver gives machine %s's service %q, and the sandbox agent listens on TCP alone", r.engine.Driver.Name(), inst.Name, listen)
 	}
 	return address, nil
 }
@@ -1330,64 +1339,110 @@ func writeTreeFile(tw *tar.Writer, name string, mode int64, data []byte) {
 // 26-11-14-610), over TLS where its
 // bootstrap told it to serve TLS (§3). A machine has one service, which is
 // the agent's, so no other port in it is reached this way.
-func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error) {
+func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (*Dialer, error) {
 	if port != SandboxAgentPort {
 		return nil, fmt.Errorf("%w: a machine sandbox is reached at its agent alone, not at port %d", ErrUnsupported, port)
 	}
-	target, err := r.agentURL(ctx, sandboxID)
-	if err != nil {
-		return nil, err
-	}
-	dial, err := urlDialer(target)
-	if err != nil {
-		return nil, err
-	}
-	if dial, err = r.agentDialer(sandboxID, dial); err != nil {
-		return nil, err
-	}
-	return func(ctx context.Context) (net.Conn, error) {
-		conn, err := dial(ctx)
+	resolve := func(ctx context.Context) (*Dialer, error) {
+		value, ok := r.endpoints.Load(sandboxID)
+		if !ok {
+			if !r.hostsSandbox(sandboxID) {
+				return nil, ErrNotFound
+			}
+			value, _ = r.endpoints.LoadOrStore(sandboxID, &machineEndpointCache{})
+		}
+		cache := value.(*machineEndpointCache)
+		endpoint, err := r.agentEndpoint(ctx, sandboxID, cache)
 		if err != nil {
-			// The URL may be a start old: ask the driver again next time.
-			r.urls.CompareAndDelete(sandboxID, target)
+			return nil, err
 		}
-		return conn, err
-	}, nil
+		dial, err := urlDialer(*endpoint)
+		if err != nil {
+			return nil, err
+		}
+		if dial, err = r.agentDialer(sandboxID, dial); err != nil {
+			return nil, err
+		}
+		connect := dial.DialContext
+		dial.DialContext = func(ctx context.Context) (net.Conn, error) {
+			conn, err := connect(ctx)
+			if err != nil {
+				cache.endpoint.CompareAndSwap(endpoint, nil)
+			}
+			return conn, err
+		}
+		return dial, nil
+	}
+	dial, err := resolve(ctx)
+	if err != nil || dial.credential == nil {
+		return dial, err
+	}
+	return &Dialer{resolve: resolve}, nil
 }
 
-// agentURL is the pool URL of the sandbox's machine while it runs, where the
-// pool, its peer, reaches it: a direct path on the pool's network, or the
-// driver's shared path where it gives its machines no other (fake's loopback
-// port). A sandbox's machine has no ingress URL (createOptions), and the pool
-// never reaches it at one.
-func (r *MachineSandboxRuntime) agentURL(ctx context.Context, sandboxID string) (string, error) {
-	if value, ok := r.urls.Load(sandboxID); ok {
-		if target, ok := value.(string); ok {
-			return target, nil
-		}
-	}
-	if !r.hostsSandbox(sandboxID) {
-		return "", ErrNotFound
-	}
-	inst, err := r.instance(ctx, sandboxID)
-	if err != nil {
-		return "", err
-	}
-	target, err := r.engine.URL(ctx, inst, machine.URLPool)
-	if err != nil {
-		return "", err
-	}
-	r.urls.Store(sandboxID, target)
-	return target, nil
+// A lifecycle change drops this cache entry. Lookups still in flight may
+// finish against it without publishing an endpoint for the next boot.
+type machineEndpointCache struct {
+	endpoint atomic.Pointer[machine.Endpoint]
+	lookup   singleflight.Group
 }
 
-// urlDialer opens a connection to the server at an http or https URL, which
-// carries plain HTTP for the Dialer's transport: TLS, where the URL has it,
-// is this side's to speak.
-func urlDialer(target string) (Dialer, error) {
-	u, err := url.Parse(target)
+// agentEndpoint returns the pool URL of a running sandbox machine and any
+// edge credential, refreshing it in the 30 seconds before it expires.
+func (r *MachineSandboxRuntime) agentEndpoint(ctx context.Context, sandboxID string, cache *machineEndpointCache) (*machine.Endpoint, error) {
+	if endpoint := cache.endpoint.Load(); endpoint != nil &&
+		(endpoint.Credential == nil || time.Until(endpoint.Credential.Expires) > 30*time.Second) {
+		return endpoint, nil
+	}
+	result := cache.lookup.DoChan("", func() (any, error) {
+		if endpoint := cache.endpoint.Load(); endpoint != nil {
+			if endpoint.Credential == nil || time.Until(endpoint.Credential.Expires) > 30*time.Second {
+				return endpoint, nil
+			}
+		}
+		if !r.hostsSandbox(sandboxID) {
+			return nil, ErrNotFound
+		}
+		inst, err := r.instance(ctx, sandboxID)
+		if err != nil {
+			return nil, err
+		}
+		endpoint, err := r.engine.URL(ctx, inst, machine.URLPool)
+		if err != nil {
+			return nil, err
+		}
+		if r.engine.Driver.Capabilities().URLs.Credential && endpoint.Credential == nil {
+			return nil, errors.New("the driver gave the sandbox's pool URL without its edge credential")
+		}
+		cache.endpoint.Store(&endpoint)
+		return &endpoint, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-result:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.(*machine.Endpoint), nil
+	}
+}
+
+// urlDialer opens a connection to a machine's pool URL. The dial negotiates
+// TLS at an HTTPS endpoint, and the transport speaks HTTP/1.1 over it.
+func urlDialer(endpoint machine.Endpoint) (*Dialer, error) {
+	u, err := url.Parse(endpoint.URL)
 	if err != nil {
 		return nil, err
+	}
+	if credential := endpoint.Credential; credential != nil {
+		if u.Scheme != "https" || u.Hostname() == "" {
+			return nil, errors.New("a sandbox's credentialed pool URL must use HTTPS")
+		}
+		if !httpguts.ValidHeaderFieldName(credential.Header) || strings.EqualFold(credential.Header, "Authorization") ||
+			credential.Token == "" || !httpguts.ValidHeaderFieldValue(credential.Token) || !time.Now().Before(credential.Expires) {
+			return nil, errors.New("the sandbox's pool URL has an invalid edge credential")
+		}
 	}
 	host := u.Hostname()
 	port := u.Port()
@@ -1401,15 +1456,23 @@ func urlDialer(target string) (Dialer, error) {
 			port = "443"
 		}
 	default:
-		return nil, fmt.Errorf("a machine's URL %q is neither http nor https", target)
+		return nil, fmt.Errorf("a machine's URL %q is neither http nor https", endpoint.URL)
 	}
 	address := net.JoinHostPort(host, port)
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	if u.Scheme == "http" {
-		return func(ctx context.Context) (net.Conn, error) { return dialer.DialContext(ctx, "tcp", address) }, nil
+		return &Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", address)
+		}}, nil
 	}
 	tlsDialer := &tls.Dialer{NetDialer: dialer, Config: &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}}
-	return func(ctx context.Context) (net.Conn, error) { return tlsDialer.DialContext(ctx, "tcp", address) }, nil
+	return &Dialer{
+		DialContext: func(ctx context.Context) (net.Conn, error) {
+			return tlsDialer.DialContext(ctx, "tcp", address)
+		},
+		edgeHost:   u.Host,
+		credential: endpoint.Credential,
+	}, nil
 }
 
 // machineAgentPollInterval paces that wait: every pass is a request over the
@@ -1555,7 +1618,7 @@ func (r *MachineSandboxRuntime) removeSandbox(ctx context.Context, sandboxID str
 		}
 	}
 	r.observed.Delete(sandboxID)
-	r.urls.Delete(sandboxID)
+	r.endpoints.Delete(sandboxID)
 	if err := proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}

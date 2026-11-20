@@ -323,7 +323,7 @@ func (r *sandboxCore) settleConverged(ctx context.Context, sb *Sandbox) error {
 // — and reports whether the container, built with the layer whose digest is
 // built, has to be rebuilt for it. A layer that calls for a rebuild is
 // recorded, so the rebuild's bootstrap carries it.
-func (r *sandboxCore) settleProjectLayer(ctx context.Context, dial Dialer, sandboxID, primary, built string) (bool, error) {
+func (r *sandboxCore) settleProjectLayer(ctx context.Context, dial *Dialer, sandboxID, primary, built string) (bool, error) {
 	var layer *sandboxconfig.ProjectLayer
 	if primary != "" {
 		var err error
@@ -456,7 +456,7 @@ var ErrSourceStatesUnsupported = errors.New("the sandbox's image predates clonin
 // got. A clone of a large remote is minutes, and the phase published once
 // as the wait began would age out of what a client counts as current long
 // before it ends (#138).
-func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer, sandboxID string, sources []sandboxconfig.RuntimeSource, labels map[string]string) error {
+func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial *Dialer, sandboxID string, sources []sandboxconfig.RuntimeSource, labels map[string]string) error {
 	// The record is the last report and is never cleared, so the wait ends
 	// on the bare phase: a CLI that predates clone progress fails to decode a
 	// record carrying it (ADR 0118), and only a create still waiting should.
@@ -588,7 +588,7 @@ func sourceLabel(source sandboxSource) string {
 }
 
 // readSourceStates asks the sandbox how far each source has converged.
-func (r *sandboxCore) readSourceStates(ctx context.Context, dial Dialer, sandboxID string) (map[string]sourceState, error) {
+func (r *sandboxCore) readSourceStates(ctx context.Context, dial *Dialer, sandboxID string) (map[string]sourceState, error) {
 	var body struct {
 		Sources []sourceState `json:"sources"`
 	}
@@ -604,7 +604,7 @@ func (r *sandboxCore) readSourceStates(ctx context.Context, dial Dialer, sandbox
 
 // readSourceProjectLayer asks the sandbox for a materialized source's project
 // layer, nil when the source has none (ADR 0012 §7).
-func (r *sandboxCore) readSourceProjectLayer(ctx context.Context, dial Dialer, sandboxID, slug string) (*sandboxconfig.ProjectLayer, error) {
+func (r *sandboxCore) readSourceProjectLayer(ctx context.Context, dial *Dialer, sandboxID, slug string) (*sandboxconfig.ProjectLayer, error) {
 	var body struct {
 		ProjectLayer json.RawMessage `json:"projectLayer"`
 	}
@@ -623,7 +623,7 @@ func (r *sandboxCore) readSourceProjectLayer(ctx context.Context, dial Dialer, s
 
 // getFromSandboxAgent reads one of the sandbox agent's runtime-config routes,
 // with the token the pool signs for them (poolToken).
-func (r *sandboxCore) getFromSandboxAgent(ctx context.Context, dial Dialer, sandboxID, route string, out any) error {
+func (r *sandboxCore) getFromSandboxAgent(ctx context.Context, dial *Dialer, sandboxID, route string, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
 	token, err := r.poolToken(sandboxID, sandboxconfig.RuntimeConfigScope)

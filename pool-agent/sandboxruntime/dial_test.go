@@ -2,6 +2,7 @@ package sandboxruntime
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/vm/pkg/machine"
 )
 
 // A request through a Dialer's transport is not sent Connection: close, so a
@@ -61,10 +64,10 @@ func TestDialerTransportKeepsAliveAndHoldsNoIdleConnection(t *testing.T) {
 	}
 	server.Start()
 	t.Cleanup(server.Close)
-	transport := Dialer(func(ctx context.Context) (net.Conn, error) {
+	transport := (&Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, "tcp", server.Listener.Addr().String())
-	}).Transport()
+	}}).Transport()
 
 	for _, tc := range []struct {
 		name   string
@@ -100,5 +103,84 @@ func TestDialerTransportKeepsAliveAndHoldsNoIdleConnection(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("%s: the connection was kept after its response was read", tc.name)
 		}
+	}
+}
+
+// An edge routes on Host and admits only HTTP/1.1 requests with its own
+// credential. The sandbox agent independently checks the pool's bearer token.
+func TestCredentialedSandboxAgentThroughEdge(t *testing.T) {
+	const header = "X-Test-Port-Token"
+	const token = "edge-token"
+	const publicHost = "example.com"
+	const agentToken = "Bearer agent-token"
+	guest := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != agentToken {
+			http.Error(w, "agent authorization", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	edge := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(header) != token {
+			http.Error(w, "edge authorization", http.StatusUnauthorized)
+			return
+		}
+		if r.Proto != "HTTP/1.1" || r.Host != publicHost || r.URL.Path != "/healthz" {
+			http.Error(w, "edge route", http.StatusBadRequest)
+			return
+		}
+		r.Header.Del(header)
+		guest.ServeHTTP(w, r)
+	}))
+	edge.EnableHTTP2 = true
+	edge.StartTLS()
+	t.Cleanup(edge.Close)
+
+	addr := edge.Listener.Addr().String()
+	endpoint := machine.Endpoint{
+		URL: "https://" + publicHost,
+		Credential: &machine.Credential{
+			Header: header, Token: token, Expires: time.Now().Add(time.Hour),
+		},
+	}
+	dial, err := urlDialer(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Trust the test CA and resolve the edge hostname to the local listener.
+	edgeTLS := &tls.Dialer{Config: &tls.Config{
+		RootCAs:    edge.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs,
+		ServerName: publicHost,
+		MinVersion: tls.VersionTLS12,
+	}}
+	dial.DialContext = func(ctx context.Context) (net.Conn, error) {
+		return edgeTLS.DialContext(ctx, "tcp", addr)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, HTTPURL(SandboxAgentPort, "/healthz").String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An incoming value under the driver's header must be overwritten.
+	req.Header.Set(header, "caller-supplied")
+	req.Header.Set("Authorization", agentToken)
+	for _, tc := range []struct {
+		dial *Dialer
+		want int
+	}{
+		{dial: &Dialer{DialContext: dial.DialContext}, want: http.StatusUnauthorized},
+		{dial: dial, want: http.StatusNoContent},
+	} {
+		resp, err := (&http.Client{Transport: tc.dial.Transport()}).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != tc.want {
+			t.Fatalf("status = %d, want %d", resp.StatusCode, tc.want)
+		}
+	}
+	if req.Host != HTTPURL(SandboxAgentPort, "/healthz").Host || req.Header.Get(header) != "caller-supplied" {
+		t.Fatal("edge transport mutated the original request")
 	}
 }

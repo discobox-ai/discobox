@@ -378,9 +378,9 @@ func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
 	if err := PoolOSValidator("boxd")(json.RawMessage(`{"driver":{"region":"fra"}}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
 		t.Fatalf("a darwin pool on boxd = %v, want refused", err)
 	}
-	// archil fences nothing, so its pools are refused when made, saying so
+	// archil cannot place machines on pool networks, so its pools are refused
 	// (ADR 26-11-11-080 §1).
-	if err := PoolOSValidator("archil")(json.RawMessage(`{"driver":{"apiKey":"key-k"}}`), "linux"); err == nil || !strings.Contains(err.Error(), "cannot isolate machines") {
+	if err := PoolOSValidator("archil")(json.RawMessage(`{"driver":{"apiKey":"key-k","region":"aws-us-east-1"}}`), "linux"); err == nil || !strings.Contains(err.Error(), "cannot isolate machines") {
 		t.Fatalf("a linux pool on archil = %v, want refused for its fence", err)
 	}
 	vz := machine.Capabilities{GuestOS: []machine.OS{machine.Darwin, machine.Linux}}
@@ -513,7 +513,7 @@ func TestArchilsUnavailableAnswersAreUnreachable(t *testing.T) {
 		if tc.status == 0 {
 			srv.Close()
 		}
-		config, err := json.Marshal(map[string]string{"baseUrl": srv.URL})
+		config, err := json.Marshal(map[string]string{"baseUrl": srv.URL, "region": "aws-us-east-1"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -577,7 +577,7 @@ func TestHeldIsWhatTheDriverReports(t *testing.T) {
 		held bool
 	}{
 		"libkrun":  {machine.Capabilities{Ports: true, Keys: machine.KeyCapabilities{Mode: machine.KeysNone}}, true},
-		"boxd":     {machine.Capabilities{Isolation: true, Keys: machine.KeyCapabilities{Mode: machine.KeysIssue}}, false},
+		"boxd":     {machine.Capabilities{Bare: machine.BareStrip, Networks: true, Keys: machine.KeyCapabilities{Mode: machine.KeysIssue}}, false},
 		"fake":     {machine.Capabilities{Ports: true, Keys: machine.KeyCapabilities{Mode: machine.KeysIssue}}, false},
 		"no ports": {machine.Capabilities{Keys: machine.KeyCapabilities{Mode: machine.KeysNone}}, false},
 	} {

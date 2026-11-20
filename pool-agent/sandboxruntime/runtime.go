@@ -339,7 +339,7 @@ type Runtime interface {
 	// on SandboxAgentPort, or a port something in it listens on — and returns
 	// the dial for it (ADR 0126 §5). A sandbox that cannot be reached at all
 	// is an error here, so a caller can answer it before sending anything.
-	SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error)
+	SandboxDialer(ctx context.Context, sandboxID string, port int) (*Dialer, error)
 	// ConvergeRuntimeConfig delivers the sandbox's runtime-config document when
 	// the revision its agent reports having applied is older than the one the
 	// pool has decided (ADR 0126 §3). The status poll calls it with what each
@@ -2797,7 +2797,7 @@ func sandboxUserFromEnv(env map[string]string) (uid, gid int) {
 	return uid, gid
 }
 
-func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error) {
+func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (*Dialer, error) {
 	if port < 1 || port > 65535 {
 		return nil, fmt.Errorf("invalid sandbox port %d", port)
 	}
@@ -2824,16 +2824,16 @@ func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID stri
 // containerDialer reaches a port in a sandbox container at its address on the
 // pool's network, the one shape of reachability a Docker pool has: the pool
 // and its sandboxes share that network.
-func containerDialer(sandboxID string, inspect container.InspectResponse, port int) (Dialer, error) {
+func containerDialer(sandboxID string, inspect container.InspectResponse, port int) (*Dialer, error) {
 	ip := containerIPAddress(inspect)
 	if ip == "" {
 		return nil, fmt.Errorf("sandbox %q does not have an inspectable IP address", sandboxID)
 	}
 	address := net.JoinHostPort(ip, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
-	return func(ctx context.Context) (net.Conn, error) {
+	return &Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
 		return dialer.DialContext(ctx, "tcp", address)
-	}, nil
+	}}, nil
 }
 
 // waitForSandboxAgent blocks until the sandbox-agent answers /healthz, and is
@@ -2922,7 +2922,7 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 // is what it answers: an error unless it answers 2xx. A body that does not
 // decode says no more than that it is healthy, as an agent too old to name
 // its layer does (agentlayer.Health).
-func sandboxAgentHealth(ctx context.Context, dial Dialer) (agentlayer.Health, error) {
+func sandboxAgentHealth(ctx context.Context, dial *Dialer) (agentlayer.Health, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, HTTPURL(SandboxAgentPort, "/healthz").String(), nil)
 	if err != nil {
 		return agentlayer.Health{}, err
@@ -3481,7 +3481,7 @@ func (r *MemorySandboxRuntime) AppliedRuntimeConfig(sandboxID string) (int64, bo
 }
 
 // SandboxDialer reaches nothing: a memory sandbox has nothing in it to dial.
-func (r *MemorySandboxRuntime) SandboxDialer(context.Context, string, int) (Dialer, error) {
+func (r *MemorySandboxRuntime) SandboxDialer(context.Context, string, int) (*Dialer, error) {
 	return nil, ErrNotFound
 }
 

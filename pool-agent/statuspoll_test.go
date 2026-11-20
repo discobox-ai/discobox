@@ -29,7 +29,7 @@ type statusPollTestRuntime struct {
 	failSandboxID string
 }
 
-func (r *statusPollTestRuntime) SandboxDialer(_ context.Context, sandboxID string, _ int) (sandboxruntime.Dialer, error) {
+func (r *statusPollTestRuntime) SandboxDialer(_ context.Context, sandboxID string, _ int) (*sandboxruntime.Dialer, error) {
 	if sandboxID == r.failSandboxID {
 		return nil, fmt.Errorf("simulated unreachable sandbox %s", sandboxID)
 	}
@@ -38,10 +38,10 @@ func (r *statusPollTestRuntime) SandboxDialer(_ context.Context, sandboxID strin
 		return nil, fmt.Errorf("no test server for sandbox %s", sandboxID)
 	}
 	address := srv.Listener.Addr().String()
-	return func(ctx context.Context) (net.Conn, error) {
+	return &sandboxruntime.Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "tcp", address)
-	}, nil
+	}}, nil
 }
 
 type fakeSandboxAgentStatusClient struct {

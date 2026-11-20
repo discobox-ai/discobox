@@ -355,6 +355,10 @@ URL, TLS for an `https` one, which reaches the sandbox agent and nothing else:
 any other port of a machine is `ErrUnsupported`, answered 501
 ([Machine Sandboxes](#machine-sandboxes)).
 
+A credentialed machine pool endpoint uses HTTP/1.1 with the provider edge's
+Host and credential header. The sandbox agent still checks its own
+authorization. See [Machine agent endpoints](sandboxruntime/DESIGN.md#machine-agent-endpoints).
+
 ```mermaid
 flowchart LR
     poll["status poll<br/>statuspoll.go"] --> dialer
@@ -1098,7 +1102,8 @@ flowchart LR
 
 - **One machine per sandbox**, named by its ID in disco-vm's spelling
   (`sbx_1` → `sbx-1`), so a create that was lost is found by name. A machine
-  is made `Isolated` on `MachineNetwork` (ADR 26-10-23-551 §4) and fenced to
+  is placed on `MachineNetwork` and asks a stripping driver for `Bare`
+  (ADR 26-10-23-551 §4). It is fenced to
   what the pool's hop reaches (`Egress`; [The Hop](#the-hop)), which the
   driver sets and reads back before the create returns, so the fence holds
   before anything is placed. It asks for its pool URL on and its ingress URL
@@ -1140,13 +1145,13 @@ flowchart LR
   is not current, and its next request places the layer again and restarts
   it onto it. A first placement is one more guest boot in a create.
 - **The agent listens where the driver's service says**
-  (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into
+  (ADR 26-10-27-345 §2): the instance's TCP address from `Driver.Listen` is written into
   sandbox.json as the agent's listen address, since the driver gives an
   instance the same one at every boot, and the
   pool, the machine's peer, reaches the agent at the instance's pool URL
   (`SandboxDialer`, `Engine.URL` with `machine.URLPool`: TLS for an `https`
-  URL), on the pool's network rather than through the provider's edge, and
-  never at an ingress URL. No other port of a machine is reached.
+  URL). The URL can reach the agent on the pool's network or through a
+  credentialed provider edge. Only the pool URL for the agent's port is used.
 - **Power is the engine's.** State is read from the driver; one it cannot be
   asked for keeps the state last seen, since a lost connection is not a stop.
   The state channel polls (no event stream), and a poll that cannot read every

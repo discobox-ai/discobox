@@ -101,7 +101,7 @@ type sandboxCore struct {
 type boxes interface {
 	ListSandboxes(ctx context.Context) ([]*Sandbox, error)
 	GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error)
-	SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error)
+	SandboxDialer(ctx context.Context, sandboxID string, port int) (*Dialer, error)
 	// takesRuntimeConfig reports whether the sandbox's box was made from a
 	// bootstrap that names this pool's key, so its agent takes the pool's
 	// runtime-config documents.

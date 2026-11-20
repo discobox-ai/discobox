@@ -73,7 +73,7 @@ func (r *sandboxCore) agentServesTLS(sandboxID string) (bool, error) {
 // agentDialer is dial as the pool reaches the sandbox's agent: over TLS,
 // verified against this pool's mTLS CA for the sandbox's private name, where
 // its bootstrap told it to serve TLS, and as dial is otherwise.
-func (r *sandboxCore) agentDialer(sandboxID string, dial Dialer) (Dialer, error) {
+func (r *sandboxCore) agentDialer(sandboxID string, dial *Dialer) (*Dialer, error) {
 	serves, err := r.agentServesTLS(sandboxID)
 	if err != nil || !serves {
 		return dial, err
@@ -82,8 +82,9 @@ func (r *sandboxCore) agentDialer(sandboxID string, dial Dialer) (Dialer, error)
 	if err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context) (net.Conn, error) {
-		conn, err := dial(ctx)
+	secured := *dial
+	secured.DialContext = func(ctx context.Context) (net.Conn, error) {
+		conn, err := dial.DialContext(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +94,8 @@ func (r *sandboxCore) agentDialer(sandboxID string, dial Dialer) (Dialer, error)
 			return nil, fmt.Errorf("TLS to sandbox %s's agent: %w", sandboxID, err)
 		}
 		return tlsConn, nil
-	}, nil
+	}
+	return &secured, nil
 }
 
 // agentTLSFile is one file of the agent's keypair as it is placed.

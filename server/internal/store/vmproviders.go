@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -66,7 +67,8 @@ var vmDriverUpgrades = map[string]vmDriverUpgrade{
 // rows still typed vm, so it is idempotent. lookupEnv is read here, and
 // nowhere else the server makes a driver. Each row moves in its own
 // transaction; one that cannot is logged and left, and only a store error
-// fails the start.
+// fails the start. It then makes the old default region explicit in Archil
+// rows whose driver configuration omitted it.
 func (s *Store) MigrateVMProviders(ctx context.Context, lookupEnv func(string) (string, bool)) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -87,7 +89,85 @@ func (s *Store) MigrateVMProviders(ctx context.Context, lookupEnv func(string) (
 			slog.ErrorContext(ctx, "vm provider was not upgraded to its driver's type", "project", row.ProjectID, "provider", row.ID, "error", err)
 		}
 	}
-	return s.dropDeliverProviderKey(ctx)
+	if err := s.dropDeliverProviderKey(ctx); err != nil {
+		return err
+	}
+	return s.backfillArchilRegion(ctx)
+}
+
+// backfillArchilRegion preserves the endpoint used by providers created before
+// disco-vm required an explicit region. New providers must name their region.
+func (s *Store) backfillArchilRegion(ctx context.Context) error {
+	const legacyRegion = `"aws-us-east-1"`
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		var rows []model.SandboxProviderInstance
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "config").Where("type = ?", "archil").Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			config := map[string]json.RawMessage{}
+			if len(row.Config) != 0 && json.Unmarshal(row.Config, &config) != nil {
+				continue
+			}
+			driverField, ok := archilConfigField(config, "driver")
+			if !ok {
+				continue
+			}
+			driver := map[string]json.RawMessage{}
+			if raw := config[driverField]; len(raw) != 0 && json.Unmarshal(raw, &driver) != nil {
+				continue
+			}
+			regionField, ok := archilConfigField(driver, "region")
+			if !ok {
+				continue
+			}
+			var region string
+			if raw := driver[regionField]; len(raw) != 0 && (json.Unmarshal(raw, &region) != nil || region != "") {
+				continue
+			}
+			if driver == nil {
+				driver = map[string]json.RawMessage{}
+			}
+			delete(driver, regionField)
+			driver["region"] = json.RawMessage(legacyRegion)
+			data, err := json.Marshal(driver)
+			if err != nil {
+				return err
+			}
+			if config == nil {
+				config = map[string]json.RawMessage{}
+			}
+			config[driverField] = data
+			data, err = json.Marshal(config)
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&row).UpdateColumn("config", model.RawJSON(data)).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// archilConfigField matches JSON struct field names, whose decoder accepts
+// different casing. Leave ambiguous rows alone rather than reordering their
+// fields on write and changing which value the driver reads.
+func archilConfigField(fields map[string]json.RawMessage, name string) (string, bool) {
+	var found string
+	for key := range fields {
+		if strings.EqualFold(key, name) {
+			if found != "" {
+				return "", false
+			}
+			found = key
+		}
+	}
+	if found == "" {
+		found = name
+	}
+	return found, true
 }
 
 // dropDeliverProviderKey takes deliverProviderKey out of a row already of a

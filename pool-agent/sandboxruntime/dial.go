@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
+	"github.com/discobox-ai/vm/pkg/machine"
 )
 
 // Dialer opens a connection to one port inside one sandbox. It is what a
@@ -19,7 +20,12 @@ import (
 // A connection says nothing about who is asking: the sandbox agent validates
 // its own token on every request whatever carried it, and a failed dial is not
 // evidence that the sandbox stopped. Power state comes from the runtime.
-type Dialer func(ctx context.Context) (net.Conn, error)
+type Dialer struct {
+	DialContext func(context.Context) (net.Conn, error)
+	edgeHost    string
+	credential  *machine.Credential
+	resolve     func(context.Context) (*Dialer, error)
+}
 
 // Transport is an HTTP transport whose every connection is one this dialer
 // opened; the request's URL names no address, so build it with HTTPURL.
@@ -38,14 +44,45 @@ type Dialer func(ctx context.Context) (net.Conn, error)
 // keeps, and closes one sent Connection: close with the bytes still unread,
 // which is a reset that can reach this side before the response does and turn
 // a refusal into a transport error (#106).
-func (d Dialer) Transport() *http.Transport {
+func (d *Dialer) Transport() *agentTransport {
 	t := internalhttp.Transport()
-	t.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return d(ctx)
-	}
+	t.DialContext = d.dialHTTP
 	t.ForceAttemptHTTP2 = false
 	t.MaxIdleConnsPerHost = -1
-	return t
+	return &agentTransport{Transport: t, dial: d}
+}
+
+func (d *Dialer) dialHTTP(ctx context.Context, _, _ string) (net.Conn, error) {
+	return d.DialContext(ctx)
+}
+
+type agentTransport struct {
+	*http.Transport
+	dial *Dialer
+}
+
+func (t *agentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	dial, transport := t.dial, t.Transport
+	if dial.resolve != nil {
+		// Choose the connection and its credential together on each request.
+		// A transport can outlive a credential or a machine boot.
+		resolved, err := dial.resolve(req.Context())
+		if err != nil {
+			if req.Body != nil {
+				_ = req.Body.Close()
+			}
+			return nil, err
+		}
+		dial = resolved
+		transport = transport.Clone()
+		transport.DialContext = dial.dialHTTP
+	}
+	if dial.credential != nil {
+		req = req.Clone(req.Context())
+		req.Host = dial.edgeHost
+		req.Header.Set(dial.credential.Header, dial.credential.Token)
+	}
+	return transport.RoundTrip(req)
 }
 
 // HTTPURL is the URL a request through a Dialer's transport names. The host

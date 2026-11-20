@@ -90,7 +90,7 @@ func (d *poolTestDriver) Name() string {
 
 func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	caps := d.Driver.Capabilities()
-	caps.Isolation = true
+	caps.Bare, caps.Networks = machine.BareStrip, true
 	if d.noIngress {
 		caps.URLs.Ingress = machine.URLNever
 	}
@@ -121,8 +121,8 @@ func (d *poolTestDriver) Create(ctx context.Context, spec machine.InstanceSpec) 
 	d.mu.Lock()
 	d.created = append(d.created, spec)
 	d.mu.Unlock()
-	fence := machine.InstanceSpec{Isolated: spec.Isolated, Networks: spec.Networks}
-	spec.Isolated, spec.Networks = false, nil
+	fence := machine.InstanceSpec{Bare: spec.Bare, Networks: spec.Networks}
+	spec.Bare, spec.Networks = false, nil
 	inst, err := d.Driver.Create(ctx, spec)
 	if err != nil {
 		return inst, err
@@ -142,7 +142,7 @@ func (d *poolTestDriver) fenced(inst machine.Instance) machine.Instance {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if fence, ok := d.fences[inst.ID]; ok {
-		inst.Isolated, inst.Networks = fence.Isolated, fence.Networks
+		inst.Bare, inst.Networks = fence.Bare, fence.Networks
 	}
 	return inst
 }
@@ -475,7 +475,7 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
 	const scope = "pool-0123456789abcdef"
-	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{scope}) || driver.created[0].URLs != (machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}) {
+	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Bare || !slices.Equal(driver.created[0].Networks, []string{scope}) || driver.created[0].URLs != (machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}) {
 		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone, with its ingress URL asked on, strictly", driver.created, scope, scope)
 	}
 	if len(maker.enrolled) != 1 || maker.enrolled[0] != testPoolKey {
@@ -521,8 +521,8 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("AcquirePoolAgentClient() error = %v", err)
 	}
 	inst, _ := r.host.(*poolMachine).instance(ctx, pool)
-	if url, _ := r.engine.URL(ctx, inst, machine.URLIngress); lease.BaseURL != url {
-		t.Fatalf("lease base URL = %q, want the machine's %q", lease.BaseURL, url)
+	if url, _ := r.engine.URL(ctx, inst, machine.URLIngress); lease.BaseURL != url.URL {
+		t.Fatalf("lease base URL = %q, want the machine's %q", lease.BaseURL, url.URL)
 	}
 
 	// Deleting the pool removes its machine and revokes its keys.

@@ -279,18 +279,18 @@ func newProxyTestRuntime(t *testing.T, baseURL *url.URL) proxyTestRuntime {
 	return proxyTestRuntime{MemorySandboxRuntime: runtime, baseURL: baseURL}
 }
 
-func (r proxyTestRuntime) SandboxDialer(_ context.Context, _ string, port int) (sandboxruntime.Dialer, error) {
+func (r proxyTestRuntime) SandboxDialer(_ context.Context, _ string, port int) (*sandboxruntime.Dialer, error) {
 	if r.dialed != nil {
 		r.dialed <- port
 	}
 	return dialAddress(r.baseURL.Host), nil
 }
 
-func dialAddress(address string) sandboxruntime.Dialer {
-	return func(ctx context.Context) (net.Conn, error) {
+func dialAddress(address string) *sandboxruntime.Dialer {
+	return &sandboxruntime.Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "tcp", address)
-	}
+	}}
 }
 
 // testPoolTokenSigner signs control-plane tokens marked as an action, which is

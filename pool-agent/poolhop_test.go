@@ -101,7 +101,7 @@ func TestPoolHopRefusesAPlainEdge(t *testing.T) {
 }
 
 func TestRequireMachineFence(t *testing.T) {
-	if err := requireMachineFence("boxd", machine.Capabilities{Isolation: true, Egress: []machine.EgressFence{machine.EgressAllow}}); err != nil {
+	if err := requireMachineFence("boxd", machine.Capabilities{Bare: machine.BareStrip, Networks: true, Egress: []machine.EgressFence{machine.EgressAllow}}); err != nil {
 		t.Fatalf("a driver that isolates and fences: %v", err)
 	}
 	for _, tc := range []struct {
@@ -110,7 +110,7 @@ func TestRequireMachineFence(t *testing.T) {
 		want []string
 	}{
 		{name: "no isolation", caps: machine.Capabilities{Egress: []machine.EgressFence{machine.EgressAllow}}, want: []string{"cannot isolate"}},
-		{name: "no fence", caps: machine.Capabilities{Isolation: true}, want: []string{"cannot fence"}},
+		{name: "no fence", caps: machine.Capabilities{Bare: machine.BareStrip, Networks: true}, want: []string{"cannot fence"}},
 		{name: "neither", want: []string{"cannot isolate", "cannot fence"}},
 	} {
 		err := requireMachineFence("fake", tc.caps)

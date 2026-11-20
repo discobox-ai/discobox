@@ -87,16 +87,16 @@ func agentServer(t *testing.T, r *DockerSandboxRuntime, sandboxID string) *httpt
 	return server
 }
 
-func plainDial(address string) Dialer {
-	return func(ctx context.Context) (net.Conn, error) {
+func plainDial(address string) *Dialer {
+	return &Dialer{DialContext: func(ctx context.Context) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, "tcp", address)
-	}
+	}}
 }
 
-func getThrough(t *testing.T, dial Dialer) (string, error) {
+func getThrough(t *testing.T, dial *Dialer) (string, error) {
 	t.Helper()
-	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return dial(ctx) }}}
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return dial.DialContext(ctx) }}}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://agent/healthz", nil)
 	if err != nil {
 		return "", err

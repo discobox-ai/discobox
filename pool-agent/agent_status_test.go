@@ -194,7 +194,7 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	client := newRecordingStatusClient()
 	bootstrap, identity, logger := testReporterArgs()
 	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
-	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect, 7)
+	status := machinePoolStatus("boxd", machine.Capabilities{Bare: machine.BareStrip, Networks: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect, 7)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

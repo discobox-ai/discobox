@@ -93,7 +93,7 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 // provider's account, or cannot fence its egress (ADR 26-10-29-481 §4).
 func requireMachineFence(driver string, caps machine.Capabilities) error {
 	var missing []error
-	if !caps.Isolation {
+	if !caps.Bare.Strips() || !caps.Networks {
 		missing = append(missing, errors.New("cannot isolate a sandbox's machine from the rest of its provider's account"))
 	}
 	// The pool fences a machine to a list: the host its hop is reached at.
