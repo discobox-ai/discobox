@@ -76,7 +76,7 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 	// every launch (ADR 0086 §4), are TestLaunchJoinsThePromptWords's; the
 	// memory half is TestLaunchKeysMemoriesByUID's.
 	script := launcher(t)
-	for _, required := range []string{"--executable claude", "--resume '--continue'", "discobox_harness_memory_managed_setting"} {
+	for _, required := range []string{"--executable 'claude'", "--resume '--continue'", "discobox_harness_memory_managed_setting"} {
 		if !strings.Contains(script, required) {
 			t.Errorf("launcher is missing %q:\n%s", required, script)
 		}

@@ -2,7 +2,9 @@ package harnessbundle
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -186,5 +188,71 @@ func TestWriteKeepsToAStagedBundle(t *testing.T) {
 	}
 	if info, err := os.Stat(label); err != nil || !info.ModTime().Equal(old) {
 		t.Fatal("an unchanged file was written again")
+	}
+}
+
+// The launcher quotes every declared value it writes, so it holds no shell
+// even where Validate would let one through: each value reaches the runtime
+// as one literal word, and nothing in it runs.
+func TestTheLauncherQuotesEveryDeclaredValue(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs the launcher with sh")
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	hostile := "a b'\"`touch " + marker + "`$(touch " + marker + ");touch " + marker + "\ntouch " + marker
+	for _, dir := range []string{"claude-code", "codex-cli"} {
+		t.Run(dir, func(t *testing.T) {
+			d, err := harness.LoadDeclaration(os.DirFS(tree(t)), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d.Name, d.Directory = hostile, hostile
+			d.Install.Executable = hostile
+			d.Environment.Defaults = map[string]string{hostile: hostile}
+			d.Environment.Aliases = []harness.Alias{{Name: hostile, From: hostile}}
+			d.LocalState.Memory.Name = hostile
+			d.Launch.Args = []string{hostile}
+			d.Launch.Resume = []string{hostile}
+			d.Launch.Prompt.Form = hostile
+			d.Launch.Prompt.Option = hostile
+			d.Launch.Prompt.LeadingAt = hostile
+			if d.Launch.Home != nil {
+				d.Launch.Home.Env, d.Launch.Home.Default = hostile, hostile
+			}
+			if d.Launch.Retry != nil {
+				d.Launch.Retry.Sessions = hostile
+			}
+			script, err := launcherScript(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The runtime's functions, each printing its words one to a line.
+			source := ". " + shellQuote(RuntimeInstallDir+"/launch.sh") + "\n"
+			if !strings.Contains(string(script), source) {
+				t.Fatalf("launcher sources no runtime:\n%s", script)
+			}
+			var stubs strings.Builder
+			for _, fn := range []string{"env_default", "env_alias", "memory_managed_setting", "memory_bind_mount", "trust_system_layer", "prepare", "run"} {
+				fmt.Fprintf(&stubs, "discobox_harness_%s() { printf '%%s\\n' \"$@\"; }\n", fn)
+			}
+			//nolint:gosec // G204: the generated launcher under test, its runtime stubbed.
+			cmd := exec.CommandContext(t.Context(), "sh", "-c", strings.Replace(string(script), source, stubs.String(), 1))
+			cmd.Dir = t.TempDir()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatalf("a declared value ran:\n%s", script)
+			}
+			// Each value arrives whole: with every whole one taken out, no
+			// part of one is left.
+			if rest := strings.ReplaceAll(string(out), hostile, ""); strings.Contains(rest, "touch") {
+				t.Errorf("a declared value split or changed:\n%s", out)
+			}
+			if !strings.Contains(string(out), "\n"+hostile+"\n") {
+				t.Errorf("no declared value arrived as one word:\n%s", out)
+			}
+		})
 	}
 }

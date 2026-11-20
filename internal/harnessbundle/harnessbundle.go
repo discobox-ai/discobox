@@ -469,8 +469,8 @@ func stepName(asset string) string {
 func (g *generator) provision() ([]byte, error) {
 	d := g.d
 	var b strings.Builder
-	fmt.Fprintf(&b, "# The %s harness's feature, generated from harness/%s/harness.json by\n# discobox-harness-bundle (ADR 26-11-06-596). Change the declaration, not\n# this file.\napiVersion: %s\nrequires: [%s]\nsteps:\n",
-		d.Name, d.Directory, provisionspec.APIVersion, strings.Join(slices.Sorted(slices.Values(d.Install.Requires)), ", "))
+	fmt.Fprintf(&b, "# The %s harness's feature, generated from its harness.json by\n# discobox-harness-bundle (ADR 26-11-06-596). Change the declaration, not\n# this file.\napiVersion: %s\nrequires: [%s]\nsteps:\n",
+		d.ID, provisionspec.APIVersion, strings.Join(slices.Sorted(slices.Values(d.Install.Requires)), ", "))
 	seen := map[string]bool{}
 	for _, s := range g.steps {
 		if seen[s.name] {
@@ -533,13 +533,15 @@ func shellQuote(s string) string {
 // the shared launcher library.
 func launcherScript(d *harness.Declaration) ([]byte, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "#!/bin/sh\n# discobox-harness-run for %s, generated from harness/%s/harness.json by\n# discobox-harness-bundle (ADR 26-11-06-596). Change the declaration, not\n# this file; what each call does is harness/runtime/launch.sh's.\nset -eu\n. %s\n",
-		d.Name, d.Directory, shellQuote(RuntimeInstallDir+"/launch.sh"))
+	// The header names the harness by its id, a slug: nothing declared is
+	// written unquoted, a comment included.
+	fmt.Fprintf(&b, "#!/bin/sh\n# discobox-harness-run for the %s harness, generated from its harness.json\n# by discobox-harness-bundle (ADR 26-11-06-596). Change the declaration, not\n# this file; what each call does is harness/runtime/launch.sh's.\nset -eu\n. %s\n",
+		d.ID, shellQuote(RuntimeInstallDir+"/launch.sh"))
 	for _, name := range slices.Sorted(mapKeys(d.Environment.Defaults)) {
-		fmt.Fprintf(&b, "discobox_harness_env_default %s %s\n", name, shellQuote(d.Environment.Defaults[name]))
+		fmt.Fprintf(&b, "discobox_harness_env_default %s %s\n", shellQuote(name), shellQuote(d.Environment.Defaults[name]))
 	}
 	for _, a := range d.Environment.Aliases {
-		fmt.Fprintf(&b, "discobox_harness_env_alias %s %s\n", a.Name, a.From)
+		fmt.Fprintf(&b, "discobox_harness_env_alias %s %s\n", shellQuote(a.Name), shellQuote(a.From))
 	}
 	home := func() string {
 		h := d.Launch.Home
@@ -547,9 +549,9 @@ func launcherScript(d *harness.Declaration) ([]byte, error) {
 	}
 	switch m := d.LocalState.Memory; m.Strategy {
 	case "managed-setting":
-		fmt.Fprintf(&b, "discobox_harness_memory_managed_setting %s %s %s %s\n", shellQuote(d.Name), m.Name, shellQuote(m.Path), shellQuote(m.Key))
+		fmt.Fprintf(&b, "discobox_harness_memory_managed_setting %s %s %s %s\n", shellQuote(d.Name), shellQuote(m.Name), shellQuote(m.Path), shellQuote(m.Key))
 	case "bind-mount":
-		fmt.Fprintf(&b, "discobox_harness_memory_bind_mount %s %s %s %s\n", shellQuote(d.Name), m.Name, home(), shellQuote(m.Target))
+		fmt.Fprintf(&b, "discobox_harness_memory_bind_mount %s %s %s %s\n", shellQuote(d.Name), shellQuote(m.Name), home(), shellQuote(m.Target))
 	}
 	if t := d.LocalState.Trust; t.Strategy == "system-layer" {
 		fmt.Fprintf(&b, "discobox_harness_trust_system_layer %s %s\n", shellQuote(t.Lock), shellQuote(d.CaptureCommand()))
@@ -557,16 +559,16 @@ func launcherScript(d *harness.Declaration) ([]byte, error) {
 	if NeedsPreparation(d) {
 		fmt.Fprintf(&b, "discobox_harness_prepare %s\n", shellQuote(d.CaptureCommand()))
 	}
-	fmt.Fprintf(&b, "discobox_harness_run --name %s --executable %s", shellQuote(d.Name), d.Install.Executable)
+	fmt.Fprintf(&b, "discobox_harness_run --name %s --executable %s", shellQuote(d.Name), shellQuote(d.Install.Executable))
 	if len(d.Launch.Args) > 0 {
 		fmt.Fprintf(&b, " --args %s", shellQuote(strings.Join(d.Launch.Args, " ")))
 	}
-	fmt.Fprintf(&b, " --resume %s --prompt %s", shellQuote(strings.Join(d.Launch.Resume, " ")), d.Launch.Prompt.Form)
+	fmt.Fprintf(&b, " --resume %s --prompt %s", shellQuote(strings.Join(d.Launch.Resume, " ")), shellQuote(d.Launch.Prompt.Form))
 	if d.Launch.Prompt.Option != "" {
 		fmt.Fprintf(&b, " --prompt-option %s", shellQuote(d.Launch.Prompt.Option))
 	}
 	if d.Launch.Prompt.LeadingAt != "" {
-		fmt.Fprintf(&b, " --leading-at %s", d.Launch.Prompt.LeadingAt)
+		fmt.Fprintf(&b, " --leading-at %s", shellQuote(d.Launch.Prompt.LeadingAt))
 	}
 	if r := d.Launch.Retry; r != nil {
 		delays := make([]string, len(r.Delays))

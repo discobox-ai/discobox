@@ -156,10 +156,10 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		"--resume 'resume --last'",
 		// Codex sends a copy to the user's terminal only in an SSH session;
 		// without it every copy lands on the box's own X clipboard.
-		"discobox_harness_env_default SSH_CONNECTION",
+		"discobox_harness_env_default 'SSH_CONNECTION'",
 		// A bind mount, never a symlink: Codex rejects a symlinked memory
 		// root.
-		"discobox_harness_memory_bind_mount 'Codex' codex 'CODEX_HOME' '.codex' 'memories'",
+		"discobox_harness_memory_bind_mount 'Codex' 'codex' 'CODEX_HOME' '.codex' 'memories'",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("launcher is missing %q:\n%s", required, script)

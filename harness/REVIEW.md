@@ -20,9 +20,10 @@
 - Pass host paths into POSIX test launchers as quoted data, not interpolated
   shell source. Windows backslashes are consumed as shell escapes, and spaces,
   quotes and dollar signs in a checkout path can change the command before the
-  tested program sees it. The generator single-quotes every path it writes
-  into a script, and `internal/harnesstest` refuses a test path a single
-  quote cannot hold; exercise a path with spaces and dollar signs locally.
+  tested program sees it. The generator single-quotes every declared value it
+  writes into a launcher, not only those `Validate` leaves free, and
+  `internal/harnesstest` refuses a test path a single quote cannot hold;
+  exercise a path with spaces and dollar signs locally.
 
 - Prove Codex folder trust with an untrusted control against the pinned
   binary, without explicit approval/sandbox policy masking onboarding.
