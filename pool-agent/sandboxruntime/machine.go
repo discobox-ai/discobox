@@ -1351,7 +1351,7 @@ func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID str
 			}
 			value, _ = r.endpoints.LoadOrStore(sandboxID, &machineEndpointCache{})
 		}
-		cache := value.(*machineEndpointCache)
+		cache, _ := value.(*machineEndpointCache)
 		endpoint, err := r.agentEndpoint(ctx, sandboxID, cache)
 		if err != nil {
 			return nil, err
@@ -1424,7 +1424,8 @@ func (r *MachineSandboxRuntime) agentEndpoint(ctx context.Context, sandboxID str
 		if result.Err != nil {
 			return nil, result.Err
 		}
-		return result.Val.(*machine.Endpoint), nil
+		endpoint, _ := result.Val.(*machine.Endpoint)
+		return endpoint, nil
 	}
 }
 
