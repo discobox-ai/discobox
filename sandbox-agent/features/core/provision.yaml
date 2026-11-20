@@ -50,6 +50,9 @@ steps:
   - name: skill-discobox-monitor
     file: {path: /usr/local/share/discobox/skills/discobox-monitor/SKILL.md, source: skills/discobox-monitor/SKILL.md}
 
+  - name: skill-discobox-review
+    file: {path: /usr/local/share/discobox/skills/discobox-review/SKILL.md, source: skills/discobox-review/SKILL.md}
+
   # The system trust store, built whole so boot only adds the box's CA to it.
   - name: ca-store
     run: prebuild-ca-store.sh

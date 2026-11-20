@@ -58,6 +58,8 @@ that agrees with you.
 
 ## Before the first round
 
+If the command is still being provisioned, run `discobox-provision wait review`.
+
 ```bash
 discobox-review status
 ```
