@@ -3,12 +3,11 @@ package sandboxcreate
 import (
 	"strings"
 	"testing"
-
-	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 )
 
 func poolWith(progress apimodel.PoolProvisionProgress, observed time.Time) *apimodel.Pool {
@@ -54,7 +53,7 @@ func TestPoolProvisionStatusRendersAPullWithItsBytes(t *testing.T) {
 			LayersComplete: apiclientgen.NewOptInt(3),
 		}),
 	}, time.Now())
-	got := string(provisionprogress.PoolStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	for _, want := range []string{"discobox-pool-agent:v1", "500.0 MiB", "1000.0 MiB", "3/40 layers"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("provisionprogress.PoolStatus() = %q, missing %q", got, want)
@@ -80,7 +79,7 @@ func TestPoolProvisionStatusNamesALayerFetchedAgain(t *testing.T) {
 			}),
 		}),
 	}, time.Now())
-	got := string(provisionprogress.PoolStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	if want := "2/9 layers, retrying layer 3 of 9 after its transfer ended at 172.0 MiB"; !strings.Contains(got, want) {
 		t.Fatalf("provisionprogress.PoolStatus() = %q, missing %q", got, want)
 	}
@@ -119,7 +118,7 @@ func TestPoolProvisionStatusShortensADigestPinnedImage(t *testing.T) {
 			Total:   apiclientgen.NewOptInt64(490 << 20),
 		}),
 	}, time.Now())
-	got := string(provisionprogress.PoolStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	if !strings.Contains(got, "discobox-vm@a384499ea85a") {
 		t.Errorf("provisionprogress.PoolStatus() = %q, want the short digest", got)
 	}
@@ -141,7 +140,7 @@ func TestPoolPreloadStatusReportsBytesWithoutClaimingAPull(t *testing.T) {
 			Current: apiclientgen.NewOptInt64(1 << 20), Total: apiclientgen.NewOptInt64(2 << 20),
 		}),
 	}, time.Now())
-	got := string(provisionprogress.PoolStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	for _, want := range []string{"preloading images (one-time setup per image version)", "discobox-harness-shell:v1", "1.0 MiB", "2.0 MiB"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status %q lacks %q", got, want)
@@ -168,7 +167,7 @@ func TestPoolPreloadStatusReportsExtractionOnceItStarts(t *testing.T) {
 			LayersExtracted: apiclientgen.NewOptInt(37),
 		}),
 	}, time.Now())
-	got := string(provisionprogress.PoolStatus(pool))
+	got := provisionprogress.PoolStatus(pool)
 	want := "preloading images (one-time setup per image version): discobox-harness-claude-code:v1 — extracting 1.0 MiB of 4.0 MiB, 37/84 layers"
 	if got != want {
 		t.Fatalf("status = %q, want %q", got, want)

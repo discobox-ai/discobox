@@ -3,12 +3,11 @@ package sandboxcreate
 import (
 	"strings"
 	"testing"
-
-	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 )
 
 // provisioning builds a sandbox whose runtime says what the test is about.

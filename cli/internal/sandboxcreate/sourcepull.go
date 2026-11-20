@@ -3,9 +3,7 @@ package sandboxcreate
 import (
 	"bytes"
 	"context"
-
 	"fmt"
-	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,6 +13,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
+	"github.com/discobox-ai/discobox/pkg/provisionprogress"
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 )
 
