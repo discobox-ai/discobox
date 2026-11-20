@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
@@ -656,11 +657,6 @@ type Harness struct {
 	Default bool
 	// BuiltIn harnesses come with the server rather than being registered by hand.
 	BuiltIn bool
-	// Shell is the reserved `shell` harness: a plain login shell, not a coding
-	// harness. It runs like any other and is chosen like any other, but it is
-	// not offered as a project's default, since defaulting to it is the same as
-	// having no coding harness at all.
-	Shell bool
 	// Bundle is the harness bundle every discobox on it applies (ADR
 	// 26-10-16-423 §2), and Digest its digest.
 	Bundle string
@@ -785,16 +781,7 @@ func (v HarnessVerb) done(name string) string {
 // displayName is what the harness is called on screen: its name, the slug it is
 // run by, or failing both the id, which is the one thing it always has.
 func (h Harness) displayName() string {
-	if name := strings.TrimSpace(h.Name); name != "" {
-		if h.Parent != "" {
-			return name + " (variant of " + h.Parent + ")"
-		}
-		return name
-	}
-	if slug := strings.TrimSpace(h.Slug); slug != "" {
-		return slug
-	}
-	return h.ID
+	return sandboxcreate.HarnessDisplayName(h.ID, h.Name, h.Slug, h.Parent)
 }
 
 // flagName is what `discobox run --harness` takes for this harness.

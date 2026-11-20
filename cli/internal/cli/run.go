@@ -16,7 +16,6 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/spf13/cobra"
@@ -449,15 +448,32 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 			return err
 		}
 	}
+	getProject := func() (*apimodel.Project, error) {
+		return a.getProject(cmd.Context(), client, projectID)
+	}
 	if strings.TrimSpace(parsedOpts.Harness) == "" {
-		parsedOpts.Harness, err = a.runHarness(cmd, client, projectID, status, opts.fromJSON)
-		if err != nil {
-			return err
+		project, lookupErr := getProject()
+		var refused *plainStatusError
+		switch {
+		case errors.As(lookupErr, &refused) && refused.code == http.StatusForbidden:
+			// A sandbox creating another leaves default resolution to the server.
+			getProject = func() (*apimodel.Project, error) { return nil, lookupErr }
+		case lookupErr != nil:
+			return lookupErr
+		case project.DefaultHarnessConfigId.Or("") != "":
+			getProject = func() (*apimodel.Project, error) { return project, nil }
+		default:
+			parsedOpts.Harness, err = a.askRunHarness(cmd, client, projectID, status, opts.fromJSON)
+			if err != nil {
+				return err
+			}
+			// Placement reads the project again because its default pool can
+			// change while the picker is waiting for an answer.
 		}
 	}
 	parsedOpts.Bindings = opts.bindings
 	parsedOpts.DiscoboxAPI = opts.discoboxAPI
-	if err := a.newSandboxSettings(cmd.Context(), client, projectID, opts.pool, !opts.noProjectSkills, &parsedOpts); err != nil {
+	if err := a.newSandboxSettings(cmd.Context(), client, projectID, opts.pool, !opts.noProjectSkills, getProject, &parsedOpts); err != nil {
 		return err
 	}
 	report := func(step sandboxcreate.Step) { status.set(string(step)) }
@@ -563,20 +579,9 @@ func runSourceArgument(arg string) (string, error) {
 // collide with.
 const noSourceChoice = "--no-source"
 
-// runHarness checks the project default before starting an inline create.
-// With a default, the server resolves it when the box is created.
-func (a *App) runHarness(cmd *cobra.Command, client *apiclientgen.Client, projectID string, status *statusLine, fromJSON bool) (string, error) {
+// askRunHarness chooses a harness when the project has no default.
+func (a *App) askRunHarness(cmd *cobra.Command, client *apiclientgen.Client, projectID string, status *statusLine, fromJSON bool) (string, error) {
 	ctx := cmd.Context()
-	defaultID, err := a.defaultHarnessConfigID(ctx, client, projectID)
-	// A sandbox creating another cannot read the project. Its create
-	// request continues to resolve the default on the server.
-	var refused *plainStatusError
-	if errors.As(err, &refused) && refused.code == http.StatusForbidden {
-		return "", nil
-	}
-	if err != nil || defaultID != "" {
-		return "", err
-	}
 	const guidance = "this project has no default harness; pass -H <harness> for this box or run discobox admin harness set-default <harness>"
 	if fromJSON || !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
 		return "", errors.New(guidance)
@@ -586,29 +591,27 @@ func (a *App) runHarness(cmd *cobra.Command, client *apiclientgen.Client, projec
 		return "", err
 	}
 	items := make([]pickerItem, 0, len(configs))
+	choices := make(map[string]sandboxcreate.HarnessChoice, len(configs))
 	for _, cfg := range configs {
-		item := pickerItem{id: cfg.ID, title: terminalSafe(harnessDisplayName(cfg)), detail: "set project default"}
-		if strings.TrimSpace(cfg.Slug) == harness.ShellSlug {
-			item.title, item.detail = "Shell (no agent)", "this box only"
-		}
-		items = append(items, item)
+		choice := sandboxcreate.RunHarnessChoice(cfg.ID, cfg.Name, cfg.Slug, cfg.Extends.Or(""))
+		choices[cfg.ID] = choice
+		items = append(items, pickerItem{id: cfg.ID, title: terminalSafe(choice.Label), detail: choice.Detail})
 	}
 
 	defer status.suspend()()
-	choice, err := pickOne(cmd, "Choose a harness", items, pickerOptions{
-		empty:         "this project has no harness to run; register one with discobox admin harness create",
+	id, err := pickOne(cmd, sandboxcreate.RunHarnessPrompt, items, pickerOptions{
+		empty:         sandboxcreate.NoRunHarness,
 		ambiguous:     guidance,
 		confirmSingle: true,
 	})
 	if err != nil {
 		return "", err
 	}
-	for _, cfg := range configs {
-		if cfg.ID == choice && strings.TrimSpace(cfg.Slug) == harness.ShellSlug {
-			return harness.ShellSlug, nil
-		}
+	choice := choices[id]
+	if choice.Override != "" {
+		return choice.Override, nil
 	}
-	return "", a.setDefaultHarnessConfig(ctx, client, projectID, choice)
+	return "", a.setDefaultHarnessConfig(ctx, client, projectID, choice.DefaultID)
 }
 
 // askRunSource is the create card's question asked inline, for a `run` that

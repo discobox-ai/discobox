@@ -23,10 +23,12 @@ func TestDetachedRunWithoutDefaultHarness(t *testing.T) {
 			const projectPath = "/projects/project-1"
 			const project = `{"id":"project-1","name":"P","ownerUserId":"user-1","default":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 			var setDefault, created bool
+			var projectReads int
 			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == projectPath:
+					projectReads++
 					_, _ = w.Write([]byte(project))
 				case !interactive:
 					t.Errorf("unexpected %s %s after reading the project", r.Method, r.URL.Path)
@@ -37,6 +39,9 @@ func TestDetachedRunWithoutDefaultHarness(t *testing.T) {
 					setDefault = true
 					_, _ = w.Write([]byte(project))
 				case r.Method == http.MethodPost && r.URL.Path == projectPath+"/sandboxes":
+					if projectReads != 2 {
+						t.Errorf("read project %d times before creation, want a fresh read after the picker", projectReads)
+					}
 					if !setDefault {
 						t.Error("created a box before setting the default")
 					}

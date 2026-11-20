@@ -195,7 +195,9 @@ activity or an ETA. The original attach waits independently of these reads.
 ## Harness selection for inline runs
 
 An inline `run` with no explicit harness checks the project's default before
-creating the box. If the project needs a default, the picker runs on stderr
+creating the box. When the project already has a default harness and no pool was
+specified, placement also uses that response. After a picker, placement reads
+the default pool again in case it changed while the picker was open. If the project needs a default, the picker runs on stderr
 before the detached command prints the box on stdout. Selecting an agent sets
 the project default. Selecting Shell uses it for that box only. Without terminal
 input and stderr, or with `--from-json`, a missing default stops the run before
