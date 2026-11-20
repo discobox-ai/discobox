@@ -266,6 +266,7 @@ func bearerToken(authorization string) string {
 // The value is how many path segments after the action its routes take at
 // most: none for most, one for an action addressing a resource by its ID.
 var poolRuntimeActions = map[string]int{
+	"runtime-intent":              0,
 	"sandbox-start-authorization": 0,
 	"sandbox-suspend-completion":  0,
 	"sandbox-states":              0,

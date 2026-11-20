@@ -20,17 +20,18 @@ import (
 // the origin repository a push-delivered sandbox fetches from, so work done here
 // since the sandbox was created can be rebased onto there.
 func (a *App) newPushCommand() *cobra.Command {
-	var sourceSlug string
+	var sourceSlug, skillsSource, skillsValue string
 	var dirOverrides []string
 	var branch string
-	var force bool
+	var force, reset bool
 	cmd := &cobra.Command{
 		Use:   "push [DISCOBOX] [flags]",
 		Short: "Push local commits to a discobox, for it to rebase onto",
 		Long: `Send this machine's commits to the pool a discobox fetches from.
 
-Commits only ever move local -> the discobox's pool. Nothing in the discobox
-moves: no branch of its own changes, nothing is rebased, nothing is checked out.
+Plain push sends commits to the pool. With --reset and --source, the
+selected work checkout resets to the published commit and discards tracked
+edits. The command reports the recorded and applied reset revisions.
 Inside the discobox the pool is the remote named discobox, and the new commits
 show up as discobox/<branch>, to be picked up whenever the work there is ready
 for them:
@@ -86,17 +87,32 @@ holds.`,
 			if len(args) > 0 {
 				sandboxArg = args[0]
 			}
+			if skillsValue != "" || skillsSource != "" {
+				if skillsValue == "" || skillsSource == "" {
+					return errors.New("--skills and --skills-source must be supplied together")
+				}
+				if sourceSlug != "" || len(dirOverrides) > 0 || branch != "" || force || reset {
+					return errors.New("a skills publication takes no work-source push flags")
+				}
+				return a.publishManagedSkills(cmd, sandboxArg, skillsValue, skillsSource, "", "sync")
+			}
 			overrides, err := parseDirOverrides(dirOverrides)
 			if err != nil {
 				return err
 			}
-			return a.runPush(cmd, sandboxArg, sourceSlug, overrides, branch, force)
+			if reset && sourceSlug == "" {
+				return errors.New("--reset requires --source")
+			}
+			return a.runPush(cmd, sandboxArg, sourceSlug, overrides, branch, force, reset)
 		},
 	}
+	cmd.Flags().StringVar(&skillsSource, "skills-source", "", "Publish to a followed skills source with this identifier")
+	cmd.Flags().StringVar(&skillsValue, "skills", "", "Publish the skills snapshot from DIR or URL[@REF][//PATH]")
 	cmd.Flags().StringVar(&sourceSlug, "source", "", "Push only the source with this slug, instead of every push-delivered source on the discobox")
 	cmd.Flags().StringArrayVar(&dirOverrides, "dir", nil, "Local directory to push a source from, as slug=path; required for a source with no known local directory on this machine")
 	cmd.Flags().StringVar(&branch, "branch", "", "Local branch to push, landing under the same name in the discobox's origin; defaults to the branch the source was created from")
 	cmd.Flags().BoolVar(&force, "force", false, "Push even if the origin has moved since this machine last pushed, or holds an unrelated history")
+	cmd.Flags().BoolVar(&reset, "reset", false, "Reset the selected work checkout to the published commit and discard tracked edits")
 	return cmd
 }
 
@@ -116,12 +132,13 @@ type pushSourceReport struct {
 	// Remote is the remote the discobox's checkout sees the pushed branch
 	// under: discobox, or origin in a discobox created before a pool cached
 	// Git.
-	Remote     string `json:"remote,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	Previous   string `json:"previous,omitempty"`
-	Forced     bool   `json:"forced,omitempty"`
-	DirtyFiles int    `json:"dirtyFiles,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Remote     string                                 `json:"remote,omitempty"`
+	Commit     string                                 `json:"commit,omitempty"`
+	Previous   string                                 `json:"previous,omitempty"`
+	Forced     bool                                   `json:"forced,omitempty"`
+	DirtyFiles int                                    `json:"dirtyFiles,omitempty"`
+	Error      string                                 `json:"error,omitempty"`
+	Reset      *apiclientgen.SandboxSourceResetStatus `json:"reset,omitempty"`
 }
 
 const (
@@ -134,17 +151,17 @@ const (
 	pushStatusDelivered = "delivered"
 )
 
-func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, branch string, force bool) error {
+func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, branch string, force, reset bool) error {
 	app, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
 		return err
 	}
-	return app.pushSelected(cmd, projectID, sandboxID, client, onlySlug, dirOverrides, branch, force)
+	return app.pushSelected(cmd, projectID, sandboxID, client, onlySlug, dirOverrides, branch, force, reset)
 }
 
 // pushSelected is push once the discobox is chosen, run by the App aimed at
 // the server it is on (selectSandbox).
-func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, onlySlug string, dirOverrides map[string]string, branch string, force bool) error {
+func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, onlySlug string, dirOverrides map[string]string, branch string, force, reset bool) error {
 	ctx := cmd.Context()
 	sandboxRes, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
@@ -184,6 +201,9 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 	// managed to hand it. There, a push is that delivery, whether it is
 	// parked or the source-await timeout has failed it (ADR 26-11-03-618 §1).
 	if sandboxOwedSource(*sandbox) {
+		if reset {
+			return errors.New("deliver the source before resetting it")
+		}
 		return a.deliverAwaitedSource(ctx, cmd, client, projectID, sandbox, sandboxcreate.PendingSourcePushes(sandbox), host, gitServerURL, dirOverrides, onlySlug, branch, force)
 	}
 
@@ -191,7 +211,40 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 	text := a.output != "json"
 	report := pushReport{SandboxID: sandboxID, SandboxName: sandbox.Config.Name}
 	for _, entry := range sources {
+		resetState := apiclientgen.SandboxSourceResetStatus{}
+		if reset {
+			res, err := client.GetSandboxSourceReset(ctx, apiclientgen.GetSandboxSourceResetParams{
+				ProjectId: projectID, SandboxId: sandboxID, Slug: entry.slug,
+			})
+			if err != nil {
+				return err
+			}
+			state, err := expectResponse[apiclientgen.SandboxSourceResetStatus](res)
+			if err != nil {
+				return err
+			}
+			resetState = *state
+		}
 		source := pushOneSource(ctx, projectID, sandboxID, sandbox, host, gitServerURL, a.token, entry, dirOverrides, branch, force, onlySlug != "")
+		if reset && (source.Status == pushStatusPushed || source.Status == pushStatusUpToDate) {
+			if err := sandboxpush.PublishReset(ctx, source.HostPath, gitServerURL, projectID, sandboxID, a.token, entry.source, source.Commit); err != nil {
+				return fmt.Errorf("pin reset commit: %w", err)
+			}
+			res, err := client.PostSandboxSourceReset(ctx, &apiclientgen.SandboxSourceResetRequest{ExpectedRevision: resetState.Revision, Commit: source.Commit}, apiclientgen.PostSandboxSourceResetParams{
+				ProjectId: projectID, SandboxId: sandboxID, Slug: entry.slug,
+			})
+			if err != nil {
+				return err
+			}
+			state, err := expectResponse[apiclientgen.SandboxSourceResetStatus](res)
+			if err != nil {
+				return err
+			}
+			source.Reset = state
+			if text {
+				fmt.Fprintf(out, "Reset revision %d recorded for %s (applied revision %d)\n", state.Revision, entry.slug, state.AppliedRevision)
+			}
+		}
 		report.Sources = append(report.Sources, source)
 		if text {
 			printPushSource(cmd, source)
@@ -468,7 +521,9 @@ func printPushSource(cmd *cobra.Command, report pushSourceReport) {
 		if remote == "" {
 			remote = "origin"
 		}
-		fmt.Fprintf(out, "  in the discobox: git fetch %s && git rebase %s/%s\n", remote, remote, report.Branch)
+		if report.Reset == nil {
+			fmt.Fprintf(out, "  in the discobox: git fetch %s && git rebase %s/%s\n", remote, remote, report.Branch)
+		}
 		if report.Forced {
 			fmt.Fprintf(out, "  forced\n")
 		}

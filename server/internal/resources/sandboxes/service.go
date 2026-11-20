@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+
 	"golang.org/x/sync/semaphore"
 
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
@@ -432,7 +434,20 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			sandbox.SourceDeliveries[*entry.source.Slug] = sourcecache.Delivery{Status: "pending"}
 		}
 	}
-	return s.createSandboxIntent(ctx, sandbox, inlineSecrets, inline, prepared)
+	var followed *sandboxconfig.SkillMutation
+	if initial, ok := config.FollowedSkills.Get(); ok {
+		converted, err := services.Convert[sandboxconfig.SkillMutation](&initial)
+		if err != nil {
+			return nil, err
+		}
+		zero := int64(0)
+		converted.Operation, converted.ExpectedRevision = "follow", &zero
+		if _, err := (sandboxconfig.ManagedSkillSet{}).Mutate(converted); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusUnprocessableEntity, err.Error())
+		}
+		followed = &converted
+	}
+	return s.createSandboxIntent(ctx, sandbox, inlineSecrets, inline, prepared, followed)
 }
 
 // createHarnessPins is what a sandbox created on config is pinned to: its

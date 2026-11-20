@@ -549,6 +549,15 @@ func (UnimplementedHandler) GetPoolAssetManifest(ctx context.Context, params Get
 	return r, ht.ErrNotImplemented
 }
 
+// GetPoolSandboxRuntimeIntent implements get-pool-sandbox-runtime-intent operation.
+//
+// Read pending runtime changes for a hosted sandbox.
+//
+// GET /pool-agent/{poolId}/runtime-intent
+func (UnimplementedHandler) GetPoolSandboxRuntimeIntent(ctx context.Context, params GetPoolSandboxRuntimeIntentParams) (r GetPoolSandboxRuntimeIntentRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetProject implements get-project operation.
 //
 // Get a project.
@@ -648,6 +657,24 @@ func (UnimplementedHandler) GetSandboxProviderInstance(ctx context.Context, para
 //
 // GET /projects/{projectId}/sandboxes/{sandboxId}/agent/services/{serviceId}
 func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (r GetSandboxServiceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSandboxSkills implements get-sandbox-skills operation.
+//
+// List a sandbox's skills.
+//
+// GET /projects/{projectId}/sandboxes/{sandboxId}/skills
+func (UnimplementedHandler) GetSandboxSkills(ctx context.Context, params GetSandboxSkillsParams) (r GetSandboxSkillsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSandboxSourceReset implements get-sandbox-source-reset operation.
+//
+// Read a sandbox source's reset state.
+//
+// GET /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/reset
+func (UnimplementedHandler) GetSandboxSourceReset(ctx context.Context, params GetSandboxSourceResetParams) (r GetSandboxSourceResetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1118,6 +1145,24 @@ func (UnimplementedHandler) MintSandboxAgentStatusTokens(ctx context.Context, re
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/agent/files/move
 func (UnimplementedHandler) MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (r MoveSandboxFileRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// MutateSandboxSkills implements mutate-sandbox-skills operation.
+//
+// Publish a change to a sandbox's managed skills.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/skills
+func (UnimplementedHandler) MutateSandboxSkills(ctx context.Context, req *SandboxSkillMutation, params MutateSandboxSkillsParams) (r MutateSandboxSkillsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// PostSandboxSourceReset implements post-sandbox-source-reset operation.
+//
+// Reset a materialized source to a published commit.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/reset
+func (UnimplementedHandler) PostSandboxSourceReset(ctx context.Context, req *SandboxSourceResetRequest, params PostSandboxSourceResetParams) (r PostSandboxSourceResetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

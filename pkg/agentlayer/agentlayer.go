@@ -112,7 +112,8 @@ type Health struct {
 	// (RunningLayer), absent for one that runs from none or is too old to
 	// say. A box's maker that placed a layer and then forced the box off
 	// reads it to learn whether the agent now running is that layer's.
-	Layer string `json:"layer,omitempty"`
+	Layer         string `json:"layer,omitempty"`
+	ManagedSkills bool   `json:"managedSkills,omitempty"`
 }
 
 // Pin is one bundle a box is pinned to, as the asset API addresses it.

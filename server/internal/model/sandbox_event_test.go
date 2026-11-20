@@ -45,6 +45,8 @@ func TestSameStateComparesEveryFieldButAt(t *testing.T) {
 			if value.Type().Elem().Kind() == reflect.String {
 				message := "ensure failed"
 				value.Set(reflect.ValueOf(&message))
+			} else if field.Name == "SkillChange" {
+				value.Set(reflect.ValueOf(&model.SandboxSkillChange{Revision: 2}))
 			} else {
 				value.Set(reflect.ValueOf(&model.SandboxEventProgram{State: "working", App: "a"}))
 			}

@@ -56,6 +56,7 @@ import (
 
 // MachineSandboxRuntimeConfig is what a machine pool's runtime is made with.
 type MachineSandboxRuntimeConfig struct {
+	GetRuntimeIntent      func(context.Context, string, int64) (sandboxconfig.PublishedSandboxRuntime, error)
 	CompleteSuspend       func(context.Context, string, string, int64) error
 	AuthorizeStart        func(context.Context, string, int64) error
 	ProjectID             string
@@ -151,6 +152,7 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 			poolID:                cfg.PoolID,
 			controlPlanePublicKey: cfg.ControlPlanePublicKey,
 			authorizeStart:        cfg.AuthorizeStart,
+			getRuntimeIntent:      cfg.GetRuntimeIntent,
 			completeSuspend:       cfg.CompleteSuspend,
 			agentTLS:              cfg.AgentTLS,
 			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,

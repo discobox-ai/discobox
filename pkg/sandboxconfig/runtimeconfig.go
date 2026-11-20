@@ -53,7 +53,9 @@ type RuntimeConfig struct {
 	Proxy *RuntimeProxy `json:"proxy,omitempty"`
 	// Sources says, per source, where its origin is, what is pinned, and
 	// whether delivery has landed.
-	Sources []RuntimeSource `json:"sources,omitempty"`
+	Sources       []RuntimeSource        `json:"sources,omitempty"`
+	ManagedSkills *ManagedSkills         `json:"managedSkills,omitempty"`
+	SourceResets  map[string]SourceReset `json:"sourceResets,omitempty"`
 }
 
 // RuntimeConfigScope is the sandbox-agent token scope that reads and delivers
@@ -217,6 +219,16 @@ func (c RuntimeConfig) SameDocument(other RuntimeConfig) bool {
 // (ADR 0145 §6): `C:\workspace\app` is a target on Windows and not on Linux.
 func (c RuntimeConfig) Validate(paths sandboxpath.Paths) error {
 	var errs []error
+	if c.ManagedSkills != nil {
+		if err := c.ManagedSkills.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("managed skills: %w", err))
+		}
+	}
+	for slug, reset := range c.SourceResets {
+		if err := reset.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("source %s reset: %w", slug, err))
+		}
+	}
 	if c.Revision < 1 {
 		errs = append(errs, fmt.Errorf("revision must be at least 1, got %d", c.Revision))
 	}

@@ -54,7 +54,9 @@ type handler struct {
 	meta *meta.File
 	// runtimeConfig is the pool's runtime-config intake (ADR 0126 §3), nil
 	// when the sandbox was started without one.
-	runtimeConfig *intake.Intake
+	runtimeConfig         *intake.Intake
+	liveRuntimeConfig     chan struct{}
+	liveRuntimeConfigOnce sync.Once
 	// rawSecrets is told the raw secrets each applied document names
 	// (ADR 26-10-27-840 §3).
 	rawSecrets *rawsecrets.Holder
@@ -264,7 +266,7 @@ func (h *handler) oneShotExecHTTP(w http.ResponseWriter, r *http.Request, execID
 		return
 	}
 	defer oneShot.Close()
-	if _, err := h.execs.Start(r.Context(), execID); err != nil {
+	if _, err := h.startExec(r.Context(), execID); err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
 			return
@@ -315,7 +317,7 @@ func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID s
 		writeExecResolveError(w, err)
 		return
 	}
-	exec, err := h.execs.Start(r.Context(), execID)
+	exec, err := h.startExec(r.Context(), execID)
 	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
@@ -426,12 +428,19 @@ func (h *handler) GetSandboxExec(_ context.Context, params sandboxapi.GetSandbox
 	return &out, nil
 }
 
+func (h *handler) startExec(ctx context.Context, id string) (execs.Exec, error) {
+	if existing, ok := h.execs.Get(id); ok && terminal.HarnessID(existing) != "" {
+		return h.terminals.Start(ctx, id)
+	}
+	return h.execs.Start(ctx, id)
+}
+
 func (h *handler) StartSandboxExec(ctx context.Context, params sandboxapi.StartSandboxExecParams) (*sandboxapi.SandboxExec, error) {
 	execID, err := h.resolveExecID(ctx, params.ExecId)
 	if err != nil {
 		return nil, execResolveStatusError(err)
 	}
-	exec, err := h.execs.Start(ctx, execID)
+	exec, err := h.startExec(ctx, execID)
 	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
@@ -650,6 +659,8 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	// The revision rides the poll the pool already runs, which is how it
 	// converges on what was applied rather than on what it sent (ADR 0126 §3).
 	if h.runtimeConfig != nil {
+		response.ManagedSkillsRevision = sandboxapi.NewOptInt64(h.terminals.ManagedSkillsRevision())
+		response.InstalledSkillNames = h.terminals.InstalledSkillNames()
 		if revision := h.runtimeConfig.Revision(); revision > 0 {
 			response.RuntimeConfigRevision = sandboxapi.NewOptInt64(revision)
 		}
@@ -667,6 +678,9 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	// being materialized before it reads its project layer (ADR 0126 §4).
 	if h.sourceConverger != nil {
 		response.SourceStates = sandboxAgentSourceStates(h.sourceConverger.States())
+		if applied := h.sourceConverger.AppliedResets(); len(applied) > 0 {
+			response.AppliedSourceResets.SetTo(sandboxapi.SandboxAgentStatusResponseAppliedSourceResets(applied))
+		}
 	}
 	return &response, nil
 }

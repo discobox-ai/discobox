@@ -296,6 +296,7 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(inGroup("interface", app.newConsoleCommand()))
 	cmd.AddCommand(inGroup("files", app.newCPCommand()))
 	cmd.AddCommand(inGroup("files", app.newPushCommand()))
+	cmd.AddCommand(inGroup("files", app.newManagedSkillsCommand()))
 	cmd.AddCommand(inGroup("files", app.newProxyCommand()))
 	cmd.AddCommand(inGroup("files", app.newToolsCommand(includeUserTools)))
 	cmd.AddCommand(inGroup("resources", app.newSecretCommand()))

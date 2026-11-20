@@ -24,6 +24,8 @@ import (
 // a prompt. Frontends should populate this type and let this package normalize
 // and resolve the request consistently.
 type PromptOptions struct {
+	FollowSkills       string
+	FollowSkillsSource string
 	// PoolID is the pool the discobox is placed on. Empty leaves it to the
 	// server, which places it on the project's default pool.
 	PoolID string
@@ -203,6 +205,24 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		return nil, nil, err
 	}
 	SetCreateSandboxSkills(&body.Config, skills)
+	if opts.FollowSkills != "" {
+		followed, commit, err := ReadManagedSkills(ctx, opts.FollowSkills, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		publish := apiclientgen.SandboxFollowedSkills{
+			Origin: apiclientgen.SandboxSkillOrigin{SourceId: opts.FollowSkillsSource},
+		}
+		if commit != "" {
+			publish.Origin.Commit.SetTo(commit)
+		}
+		var converted apiclientgen.SandboxCreateConfig
+		SetCreateSandboxSkills(&converted, followed)
+		if uploaded, ok := converted.Skills.Get(); ok {
+			publish.Skills.SetTo(apiclientgen.SandboxFollowedSkillsSkills(uploaded))
+		}
+		body.Config.FollowedSkills.SetTo(publish)
+	}
 	if poolID := strings.TrimSpace(opts.PoolID); poolID != "" {
 		body.SetPoolId(apiclientgen.NewOptString(poolID))
 	}

@@ -807,6 +807,15 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxInventory{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxSourceReset{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxSkillRevision{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxManagedSkills{}).Error; err != nil {
+			return err
+		}
 		if err := denySandboxSecretRequestsTx(tx, projectID, sandbox.ID); err != nil {
 			return err
 		}

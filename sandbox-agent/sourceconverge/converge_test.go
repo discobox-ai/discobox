@@ -1094,3 +1094,52 @@ func TestOriginHeadIsUnsetWhenTheDefaultBranchIsNotThere(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishedResetDiscardsTrackedChangesOnlyOnce(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("README.md", "first\n")
+	target := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, sandboxconfig.Source{Slug: "primary", Target: target, RefName: "main", RefType: "branch"})
+	h.c.cfg.ResetStatePath = filepath.Join(t.TempDir(), "source-resets.json")
+	h.c.cfg.ResetOwner = "project/box"
+	source := sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: first}
+	if state := h.pass(t, document(1, source), "primary"); state.State != StateMaterialized {
+		t.Fatalf("materialize: %+v", state)
+	}
+
+	second := o.commit("README.md", "published\n")
+	reset := sandboxconfig.SourceReset{Revision: 1, Commit: second}
+	gitT(t, o.work, "push", o.bare, second+":"+reset.Ref())
+	track := filepath.Join(target, "README.md")
+	untracked := filepath.Join(target, "untracked.txt")
+	for path, data := range map[string]string{track: "tracked edit", untracked: "untracked text"} {
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc := document(2, source)
+	doc.SourceResets = map[string]sandboxconfig.SourceReset{"primary": reset}
+	if state := h.pass(t, doc, "primary"); state.State != StateMaterialized || state.Commit != second {
+		t.Fatalf("reset: %+v", state)
+	}
+	if got := h.c.AppliedResets()["primary"]; got != 1 {
+		t.Fatalf("applied revision = %d", got)
+	}
+	if content, err := os.ReadFile(track); err != nil || string(content) != "published\n" {
+		t.Fatalf("tracked file = %q, %v", content, err)
+	}
+	if content, err := os.ReadFile(untracked); err != nil || string(content) != "untracked text" {
+		t.Fatalf("untracked file = %q, %v", content, err)
+	}
+	if err := os.WriteFile(track, []byte("new edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc.Revision++
+	h.pass(t, doc, "primary")
+	if content, err := os.ReadFile(track); err != nil || string(content) != "new edit" {
+		t.Fatalf("retry affected a later edit: %q, %v", content, err)
+	}
+}

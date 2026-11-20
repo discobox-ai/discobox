@@ -1550,3 +1550,22 @@ lifetime. It keeps recording provider changes after yielding, so DHCP renewals
 still reach every bridge. The stub and proxy keep serving. With the flag off, the `--dns`
 bridge restores the recorded file or symlink and removes the record. A running
 machine takes the pool's changed setting at its next start.
+
+## Managed skills publication
+
+The runtime-config intake supplies complete managed snapshots to the
+terminal service. That service serializes publication with terminal starts
+and puts managed entries above the baseline installed on first launch.
+Replacing or restoring a directory entry moves the entry itself, so an
+existing skills-source symlink can be shadowed and restored. The agent
+keeps a transaction journal beside its database and uses it to recover
+interrupted moves before applying a revision. Status reports the applied
+skills revision and the names currently visible in the harness directories.
+
+A work-source reset is independent of initial materialization. The source
+converger fetches the published ref and verifies its exact commit before
+resetting the tracked index and tree as the checkout owner. It records an
+in-progress revision in agent-owned state before running Git. Success
+replaces that fence with an applied acknowledgement. An interruption with
+ambiguous completion requires a fresh explicit reset, which avoids erasing
+edits made after the first reset.

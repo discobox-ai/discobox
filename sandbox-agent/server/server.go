@@ -271,25 +271,52 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		awaitProvision = cfg.Provision.AwaitReady
 	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
-		CaptureStateDir:    cfg.CaptureStateDir,
-		CaptureRecoveryDir: config.CaptureRecoveryDir(cfg.DatabasePath),
-		Execs:              execManager,
-		Harness:            cfg.Harness,
-		WorkingRoot:        cfg.WorkingRoot,
-		RuntimeDir:         cfg.RuntimeDir,
-		SecretEnv:          cfg.SecretEnv,
-		ExecDefaults:       cfg.ExecDefaults,
-		Units:              cfg.ExecUnitManager,
-		Installer:          cfg.Installer,
-		PrimaryState:       localStore,
-		Prompt:             cfg.Prompt,
-		Skills:             cfg.Skills,
-		SkillsSources:      cfg.SkillsSources,
-		AwaitSources:       awaitSources,
-		AwaitProvision:     awaitProvision,
+		CaptureStateDir:       cfg.CaptureStateDir,
+		CaptureRecoveryDir:    config.CaptureRecoveryDir(cfg.DatabasePath),
+		ManagedSkillsStateDir: filepath.Dir(cfg.DatabasePath),
+		ManagedSkillsOwner:    cfg.Identity.ProjectID + "/" + cfg.Identity.SandboxID,
+		Execs:                 execManager,
+		Harness:               cfg.Harness,
+		WorkingRoot:           cfg.WorkingRoot,
+		RuntimeDir:            cfg.RuntimeDir,
+		SecretEnv:             cfg.SecretEnv,
+		ExecDefaults:          cfg.ExecDefaults,
+		Units:                 cfg.ExecUnitManager,
+		Installer:             cfg.Installer,
+		PrimaryState:          localStore,
+		Prompt:                cfg.Prompt,
+		Skills:                cfg.Skills,
+		SkillsSources:         cfg.SkillsSources,
+		AwaitSources:          awaitSources,
+		AwaitProvision:        awaitProvision,
 	})
 	if err != nil {
 		return agentRuntime{}, err
+	}
+	var liveRuntimeConfig chan struct{}
+	if cfg.RuntimeConfig != nil && cfg.AwaitsRuntimeConfig {
+		liveRuntimeConfig = make(chan struct{})
+	}
+	if cfg.RuntimeConfig != nil {
+		manager.SetBootSkillsLoader(func(ctx context.Context) error {
+			if liveRuntimeConfig != nil {
+				select {
+				case <-liveRuntimeConfig:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			doc, applied := cfg.RuntimeConfig.Applied()
+			if !applied || doc.ManagedSkills == nil {
+				return nil
+			}
+			return manager.SetManagedSkills(ctx, *doc.ManagedSkills)
+		})
+		if doc, ok := cfg.RuntimeConfig.Applied(); ok && doc.ManagedSkills != nil {
+			if err := manager.SetManagedSkills(context.Background(), *doc.ManagedSkills); err != nil {
+				slog.Default().Warn("restore managed skills", "error", err)
+			}
+		}
 	}
 	manager.SetHookSocketPath(harnesshooks.SocketPath(cfg.RuntimeDir))
 	// Services are declared in the primary source's working tree, which is the
@@ -363,6 +390,8 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// off the box a user's fetch does, and as whoever owns each checkout; the
 	// default user is who that normally is.
 	sourceConverger := sourceconverge.New(sourceconverge.Config{
+		ResetStatePath:   filepath.Join(filepath.Dir(cfg.DatabasePath), "source-resets.json"),
+		ResetOwner:       cfg.Identity.ProjectID + "/" + cfg.Identity.SandboxID,
 		Manifest:         cfg.Sources,
 		Env:              cfg.Env,
 		User:             execManager.DefaultUser(),
@@ -390,6 +419,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		autostop:          idleStop,
 		meta:              metaFile,
 		runtimeConfig:     cfg.RuntimeConfig,
+		liveRuntimeConfig: liveRuntimeConfig,
 		rawSecrets:        cfg.RawSecrets,
 		sourceConverger:   sourceConverger,
 		provision:         cfg.Provision,
@@ -403,7 +433,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	}
 
 	router := chi.NewRouter()
-	health := agentlayer.Health{OK: true, Layer: runningLayer()}
+	health := agentlayer.Health{OK: true, Layer: runningLayer(), ManagedSkills: cfg.RuntimeConfig != nil}
 	router.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, health)
 	})

@@ -55,7 +55,7 @@ func TestCreateSandboxIntentPersistsSecretsWithSandbox(t *testing.T) {
 	sec := bearerSecret(t, st, "token", "")
 	created, err := svc.createSandboxIntent(ctx, sandbox, nil, []*model.SecretBinding{
 		{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "TOKEN"},
-	}, resourcesecrets.SandboxBindings{})
+	}, resourcesecrets.SandboxBindings{}, nil)
 	if err != nil {
 		t.Fatalf("create intent: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestCreateSandboxIntentRollsBackSandboxOnSecretFailure(t *testing.T) {
 	_, err = svc.createSandboxIntent(ctx, sandbox, inlineSecrets, append(inline,
 		&model.SecretBinding{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "TOKEN"},
 		&model.SecretBinding{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "TOKEN"},
-	), resourcesecrets.SandboxBindings{})
+	), resourcesecrets.SandboxBindings{}, nil)
 	if err == nil {
 		t.Fatal("create intent succeeded, want a failed secret insert to fail the create")
 	}

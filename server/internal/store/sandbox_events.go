@@ -34,9 +34,10 @@ import (
 // sandboxEventBatch is what one transaction changed: the sandboxes it wrote,
 // and the last state of those it deleted.
 type sandboxEventBatch struct {
-	touched []string
-	seen    map[string]struct{}
-	deleted []model.SandboxEventData
+	touched      []string
+	seen         map[string]struct{}
+	deleted      []model.SandboxEventData
+	skillChanges []model.SandboxEventData
 	// backfill records a sandbox's first event as an update: the sandbox
 	// was created before there were events.
 	backfill bool
@@ -89,7 +90,7 @@ type pendingSandboxEvent struct {
 // record appends an event for every sandbox whose state differs from its
 // latest event, and one for every sandbox deleted.
 func (b *sandboxEventBatch) record(tx *gorm.DB) error {
-	if len(b.touched) == 0 && len(b.deleted) == 0 {
+	if len(b.touched) == 0 && len(b.deleted) == 0 && len(b.skillChanges) == 0 {
 		return nil
 	}
 	now := time.Now().UTC()
@@ -136,6 +137,9 @@ func (b *sandboxEventBatch) record(tx *gorm.DB) error {
 		data.At = now
 		pending = append(pending, pendingSandboxEvent{eventType: model.SandboxEventDeleted, data: data})
 	}
+	for _, data := range b.skillChanges {
+		pending = append(pending, pendingSandboxEvent{eventType: model.SandboxEventUpdated, data: data})
+	}
 	if len(pending) == 0 {
 		return nil
 	}
@@ -149,7 +153,7 @@ func (b *sandboxEventBatch) record(tx *gorm.DB) error {
 		if err := insertSandboxEvent(tx, seq, event.eventType, event.data); err != nil {
 			return err
 		}
-		if event.eventType == model.SandboxEventDeleted {
+		if event.eventType == model.SandboxEventDeleted || event.data.SkillChange != nil {
 			continue
 		}
 		if err := tx.Model(&model.Sandbox{}).Where("id = ?", event.data.SandboxID).

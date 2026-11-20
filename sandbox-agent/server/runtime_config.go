@@ -72,6 +72,17 @@ func (h *handler) PutSandboxRuntimeConfig(ctx context.Context, req *sandboxapi.S
 	if h.sourceConverger != nil {
 		h.sourceConverger.Converge(held)
 	}
+	if h.liveRuntimeConfig != nil {
+		defer h.liveRuntimeConfigOnce.Do(func() { close(h.liveRuntimeConfig) })
+	}
+	if held.ManagedSkills != nil {
+		if err := h.terminals.SetManagedSkills(context.WithoutCancel(ctx), *held.ManagedSkills); err != nil {
+			return nil, err
+		}
+	}
+	// The pool needs the held revision, not a second copy of the snapshot.
+	held.ManagedSkills = nil
+	held.SourceResets = nil
 	return runtimeConfigToWire(held.WithoutPrivateKeys())
 }
 

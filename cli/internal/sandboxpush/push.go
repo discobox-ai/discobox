@@ -19,6 +19,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -290,4 +291,20 @@ func resolveRef(ctx context.Context, repoRoot, ref string) (string, bool) {
 	}
 	commit := strings.TrimSpace(out)
 	return commit, commit != ""
+}
+
+// PublishReset pins a reset's content independently of the moving branch ref.
+func PublishReset(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token string, source apimodel.GitSource, commit string) error {
+	originURL, err := sandboxgit.OriginURL(serverURL, projectID, sandboxID, source)
+	if err != nil {
+		return err
+	}
+	intent := sandboxconfig.SourceReset{Revision: 1, Commit: commit}
+	if err := intent.Validate(); err != nil {
+		return err
+	}
+	ref := intent.Ref()
+	args := sandboxgit.PushArgs(token, []string{"push", "--force-with-lease=" + ref + ":", originURL, commit + ":" + ref})
+	_, err = gitutil.Output(ctx, repoRoot, nil, sandboxgit.NoPromptEnv, args...)
+	return err
 }
