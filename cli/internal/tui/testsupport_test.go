@@ -459,7 +459,7 @@ func testHarnesses() []Harness {
 		{
 			// The reserved built-in: a login shell, never offered as a default.
 			ID: "hc_shell", Name: "Shell", Slug: "shell",
-			BuiltIn: true, Shell: true, Bundle: "ghcr.io/example/shell:latest",
+			BuiltIn: true, Bundle: "ghcr.io/example/shell:latest",
 			Updated: now.Add(-96 * time.Hour),
 		},
 	}
