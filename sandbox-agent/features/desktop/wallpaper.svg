@@ -23,11 +23,6 @@
       <stop offset="0.55" stop-color="#0b090e" stop-opacity="0"/>
       <stop offset="1" stop-color="#000000" stop-opacity="0.42"/>
     </radialGradient>
-    <linearGradient id="hairline" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#fdcc11"/>
-      <stop offset="0.56" stop-color="#9e4aa7"/>
-      <stop offset="1" stop-color="#06eaa7"/>
-    </linearGradient>
   </defs>
 
   <rect width="2560" height="1440" fill="#0b090e"/>
@@ -38,8 +33,4 @@
        dark the white cut reads as the mark and the gradient reads as noise. -->
   <image xlink:href="wordmark-white.svg"
          x="906" y="620" width="748" height="210" opacity="0.92"/>
-
-  <!-- The hairline the viewer draws under its top bar, echoed under the
-       wordmark so the page and the desktop inside it share one detail. -->
-  <rect x="906" y="884" width="748" height="2" fill="url(#hairline)" opacity="0.6"/>
 </svg>
