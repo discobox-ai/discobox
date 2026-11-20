@@ -95,11 +95,12 @@ func readRemoteSettings(ctx context.Context, remote, commit, ref string) (sandbo
 		return sandboxconfig.RepositorySettings{}, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	git := func(args ...string) (string, error) {
-		return gitutil.Output(ctx, dir, nil, nil, args...)
-	}
-	if _, err := git("init", "--quiet", "--bare", "."); err != nil {
+	if _, err := gitutil.Output(ctx, dir, nil, nil, "init", "--quiet", "--bare", "."); err != nil {
 		return sandboxconfig.RepositorySettings{}, fmt.Errorf("read %s: %w", where, err)
+	}
+	// Open the temporary bare repository explicitly for safe.bareRepository=explicit.
+	git := func(args ...string) (string, error) {
+		return gitutil.Output(ctx, dir, nil, nil, append([]string{"--git-dir=."}, args...)...)
 	}
 	// A named remote, so the objects the read needs are fetched from it on
 	// demand.

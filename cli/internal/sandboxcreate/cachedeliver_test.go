@@ -54,8 +54,8 @@ func newFakePool(t *testing.T) *fakePool {
 	}
 	p := &fakePool{t: t, cache: filepath.Join(t.TempDir(), "cache.git"), completed: map[string]map[string]string{}, delivered: map[string]bool{}}
 	deliverGit(t, "", "init", "--quiet", "--bare", p.cache)
-	deliverGit(t, p.cache, "config", "http.receivepack", "true")
-	deliverGit(t, p.cache, "config", "uploadpack.hideRefs", "refs/namespaces")
+	deliverGit(t, p.cache, "--git-dir=.", "config", "http.receivepack", "true")
+	deliverGit(t, p.cache, "--git-dir=.", "config", "uploadpack.hideRefs", "refs/namespaces")
 	gitExec := deliverGit(t, "", "--exec-path")
 	backend := func(namespace string) http.Handler {
 		env := []string{"GIT_PROJECT_ROOT=" + p.cache, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}
@@ -128,7 +128,7 @@ func (p *fakePool) pin(w http.ResponseWriter, r *http.Request, namespace string)
 			result.Missing = append(result.Missing, ref)
 			continue
 		}
-		deliverGit(p.t, p.cache, "update-ref", "refs/namespaces/"+namespace+"/"+ref, request.Refs[ref])
+		deliverGit(p.t, p.cache, "--git-dir=.", "update-ref", "refs/namespaces/"+namespace+"/"+ref, request.Refs[ref])
 		result.Pinned = append(result.Pinned, ref)
 	}
 	p.recordRemote(namespace)
@@ -142,10 +142,10 @@ func (p *fakePool) pin(w http.ResponseWriter, r *http.Request, namespace string)
 // what the cache-remote route serves.
 func (p *fakePool) recordRemote(namespace string) {
 	prefix := "refs/namespaces/" + namespace + "/refs/remotes/origin/"
-	for _, line := range strings.Split(deliverGit(p.t, p.cache, "for-each-ref", "--format=%(objectname) %(refname)", prefix), "\n") {
+	for _, line := range strings.Split(deliverGit(p.t, p.cache, "--git-dir=.", "for-each-ref", "--format=%(objectname) %(refname)", prefix), "\n") {
 		object, ref, ok := strings.Cut(line, " ")
 		if ok {
-			deliverGit(p.t, p.cache, "update-ref", "refs/cache/heads/"+strings.TrimPrefix(ref, prefix), object)
+			deliverGit(p.t, p.cache, "--git-dir=.", "update-ref", "refs/cache/heads/"+strings.TrimPrefix(ref, prefix), object)
 		}
 	}
 }
@@ -155,7 +155,7 @@ func (p *fakePool) refs(sandboxID, slug string) map[string]string {
 	p.t.Helper()
 	prefix := "refs/namespaces/" + sandboxID + "-" + slug + "/"
 	out := map[string]string{}
-	for _, line := range strings.Split(deliverGit(p.t, p.cache, "for-each-ref", "--format=%(objectname) %(refname)", prefix), "\n") {
+	for _, line := range strings.Split(deliverGit(p.t, p.cache, "--git-dir=.", "for-each-ref", "--format=%(objectname) %(refname)", prefix), "\n") {
 		if object, ref, ok := strings.Cut(line, " "); ok {
 			out[strings.TrimPrefix(ref, prefix)] = object
 		}
@@ -325,6 +325,10 @@ func TestADirtyWorkspaceSnapshotIsDeliveredWithItsBranch(t *testing.T) {
 // a pin that needs no fetch and no cache; and when the remote has moved, what
 // the pool holds is fetched first, so the remote is asked only for the rest.
 func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "safe.bareRepository")
+	t.Setenv("GIT_CONFIG_VALUE_0", "explicit")
+
 	pool := newFakePool(t)
 	clientCacheRoot := useClientGitCache(t)
 	remoteWork := t.TempDir()
@@ -395,7 +399,7 @@ func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
 	if len(caches) != 1 {
 		t.Fatalf("client caches = %v, want one for the remote", caches)
 	}
-	if pooled := deliverGit(t, caches[0], "rev-parse", "refs/discobox/pool/heads/main"); pooled != first {
+	if pooled := deliverGit(t, caches[0], "--git-dir=.", "rev-parse", "refs/discobox/pool/heads/main"); pooled != first {
 		t.Fatalf("what the client fetched from the pool = %q, want the pool's main %q", pooled, first)
 	}
 }
@@ -405,6 +409,10 @@ func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
 // when the pool needs nothing sent — and refused when the commit has no such
 // directory (ADR 26-10-15-664 §3).
 func TestARemoteSourcesStartingDirectoryIsCheckedAtDelivery(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "safe.bareRepository")
+	t.Setenv("GIT_CONFIG_VALUE_0", "explicit")
+
 	pool := newFakePool(t)
 	clientCacheRoot := useClientGitCache(t)
 	remoteWork := t.TempDir()

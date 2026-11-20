@@ -210,7 +210,7 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 	if err != nil {
 		return err
 	}
-	tipFromCache, heldErr := gitutil.Output(ctx, cachePath, nil, nil, "rev-parse", "--verify", "--quiet", commit+"^{commit}")
+	tipFromCache, heldErr := gitutil.Output(ctx, cachePath, nil, nil, "--git-dir=.", "rev-parse", "--verify", "--quiet", commit+"^{commit}")
 	held := heldErr == nil && tipFromCache != ""
 	var listed map[string]string
 	var peeled map[string]string
@@ -218,7 +218,7 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 		listed = map[string]string{}
 		peeled = map[string]string{commit: strings.TrimSpace(tipFromCache)}
 		for _, prefix := range []string{remoteTrackingPrefix, "refs/tags/"} {
-			refs, err := refsUnder(ctx, cachePath, prefix)
+			refs, err := refsUnder(ctx, cachePath, prefix, "--git-dir=.")
 			if err != nil {
 				return err
 			}
@@ -268,7 +268,7 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 		// refusal is not a failure.
 		if poolURL, err := sandboxgit.CacheRemoteURL(d.serverURL, d.projectID, d.sandboxID, source); err == nil {
 			_, _ = sandboxgit.Output(ctx, cache, nil, sandboxgit.NoPromptEnv,
-				sandboxgit.AuthArgs(d.token, []string{"fetch", "--quiet", "--no-tags", poolURL, poolTrackingRefspec})...)
+				sandboxgit.AuthArgs(d.token, []string{"--git-dir=.", "fetch", "--quiet", "--no-tags", poolURL, poolTrackingRefspec})...)
 		}
 		if err := fetchRemote(ctx, cache, remote, commit, d.report); err != nil {
 			return fmt.Errorf("fetch source %q from %s: %w", slug, remote, err)
@@ -279,7 +279,7 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 		commit + "^{commit}:refs/heads/" + pushBranch(branch),
 		"+" + remoteTrackingPrefix + "*:" + remoteTrackingPrefix + "*",
 		"+refs/tags/*:refs/tags/*",
-	})
+	}, "--git-dir=.")
 }
 
 // checkRemoteWorkingPath refuses a remote source whose commit has no
@@ -297,7 +297,7 @@ func (d cacheDelivery) checkRemoteWorkingPath(ctx context.Context, source apimod
 	if err != nil {
 		return false, err
 	}
-	if _, err := gitutil.Output(ctx, cache, nil, nil, "cat-file", "-e", commit+"^{commit}"); err != nil {
+	if _, err := gitutil.Output(ctx, cache, nil, nil, "--git-dir=.", "cat-file", "-e", commit+"^{commit}"); err != nil {
 		d.report.step(StepFetchingSource)
 		if err := fetchRemote(ctx, cache, remote, commit, d.report); err != nil {
 			return false, fmt.Errorf("fetch source %q from %s: %w", slug, remote, err)
@@ -306,7 +306,7 @@ func (d cacheDelivery) checkRemoteWorkingPath(ctx context.Context, source apimod
 	}
 	// A directory, or a link the checkout follows as a local DIR//PATH's
 	// would be: a link's target is the sandbox's to resolve.
-	entry, err := gitutil.Output(ctx, cache, nil, nil, "ls-tree", commit+"^{commit}", "--", dir)
+	entry, err := gitutil.Output(ctx, cache, nil, nil, "--git-dir=.", "ls-tree", commit+"^{commit}", "--", dir)
 	if mode, _, _ := strings.Cut(strings.TrimSpace(entry), " "); err != nil || mode != "040000" && mode != "120000" {
 		return fetched, fmt.Errorf("source %q: %s at %s has no directory %s for the harness to start in", slug, remote, commit[:min(len(commit), 12)], dir)
 	}
@@ -339,8 +339,9 @@ func remoteWorkingPath(source apimodel.GitSource) string {
 // the ref update is read against the discobox and made once more: by then
 // either the other delivery has been reported and there is nothing left to
 // do, or the branch holds this commit and the push is a no-op.
-func (d cacheDelivery) push(ctx context.Context, repoRoot, originURL string, refspecs []string) error {
-	args := append([]string{"push", "--atomic", "--progress", originURL}, refspecs...)
+func (d cacheDelivery) push(ctx context.Context, repoRoot, originURL string, refspecs []string, gitOptions ...string) error {
+	args := append(gitOptions, "push", "--atomic", "--progress", originURL)
+	args = append(args, refspecs...)
 	attempt := func() error {
 		return gitTransfer(ctx, repoRoot, sandboxgit.NoPromptEnv, StepPushingSource, d.report, sandboxgit.PushArgs(d.token, args)...)
 	}
@@ -470,8 +471,9 @@ func remoteNamed(ctx context.Context, repoRoot, remoteURL string) string {
 // refsUnder is every ref of repoRoot under prefix and the object it names,
 // by its name past the prefix. A symbolic ref — a remote's HEAD — is listed
 // at the object it resolves to.
-func refsUnder(ctx context.Context, repoRoot, prefix string) (map[string]string, error) {
-	out, err := gitutil.Output(ctx, repoRoot, nil, nil, "for-each-ref", "--format=%(objectname) %(refname)", prefix)
+func refsUnder(ctx context.Context, repoRoot, prefix string, gitOptions ...string) (map[string]string, error) {
+	args := append(gitOptions, "for-each-ref", "--format=%(objectname) %(refname)", prefix)
+	out, err := gitutil.Output(ctx, repoRoot, nil, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list %s in %s: %w", prefix, repoRoot, err)
 	}
@@ -555,7 +557,7 @@ func clientCache(ctx context.Context, remote string) (string, error) {
 // commit. Git never asks: this runs under a status line, where a prompt is a
 // hang with nothing on screen to explain it.
 func fetchRemote(ctx context.Context, cache, remote, commit string, report Report) error {
-	fetch := []string{"fetch", "--progress", "--prune", "--no-tags", remote,
+	fetch := []string{"--git-dir=.", "fetch", "--progress", "--prune", "--no-tags", remote,
 		"+refs/heads/*:" + remoteTrackingPrefix + "*", "+refs/tags/*:refs/tags/*"}
 	var err error
 	for attempt := 0; attempt < clientFetchAttempts; attempt++ {
@@ -566,12 +568,12 @@ func fetchRemote(ctx context.Context, cache, remote, commit string, report Repor
 	if err != nil {
 		return err
 	}
-	if _, err := gitutil.Output(ctx, cache, nil, nil, "cat-file", "-e", commit+"^{commit}"); err == nil {
+	if _, err := gitutil.Output(ctx, cache, nil, nil, "--git-dir=.", "cat-file", "-e", commit+"^{commit}"); err == nil {
 		return nil
 	}
 	// Pinned at a commit no branch or tag reaches now: the remote is asked
 	// for it by name.
-	if _, err := sandboxgit.Output(ctx, cache, nil, sandboxgit.NoPromptEnv, "fetch", "--quiet", "--no-tags", remote, commit); err != nil {
+	if _, err := sandboxgit.Output(ctx, cache, nil, sandboxgit.NoPromptEnv, "--git-dir=.", "fetch", "--quiet", "--no-tags", remote, commit); err != nil {
 		return fmt.Errorf("the remote no longer has commit %s: %w", commit, err)
 	}
 	return nil

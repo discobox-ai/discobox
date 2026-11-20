@@ -671,3 +671,16 @@ func TestARemotePrimaryDeclaringItselfKeepsItsName(t *testing.T) {
 		t.Fatalf("destination = %v, want the primary kept at /workspace/app", destination)
 	}
 }
+
+func TestReadRemoteSettingsWithExplicitBareRepositories(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "safe.bareRepository")
+	t.Setenv("GIT_CONFIG_VALUE_0", "explicit")
+
+	remote := newRunSourceTestRepoIn(t, t.TempDir(), "widget")
+	git := runSourceTestGit(t, remote)
+	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
+	if _, err := readRemoteSettings(context.Background(), "file://"+filepath.ToSlash(remote), commit, "main"); err != nil {
+		t.Fatalf("read remote settings with safe.bareRepository=explicit: %v", err)
+	}
+}
