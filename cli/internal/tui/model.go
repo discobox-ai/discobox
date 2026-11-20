@@ -1569,8 +1569,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case routesEditedMsg:
 		return m.routesEdited(msg)
 
-	case standingReadMsg:
-		return m.standingRead(msg)
+	case approvalBindingsMsg:
+		if m.dialog == msg.wait {
+			return msg.done(msg.bindings, msg.err)
+		}
+		return nil
 
 	case commandRanMsg:
 		return m.commandRan(msg)

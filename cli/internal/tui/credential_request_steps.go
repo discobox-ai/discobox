@@ -17,17 +17,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
-// askWhichCredential is the first step of answering a credential request:
-// what was asked, by whom and why, and which credential answers it.
-//
-// Every saved secret is listed: the one the variable already holds first,
-// then those that can answer, then the rest, marked ✗. Why one cannot answer
-// is said when it is chosen, on a card of its own, rather than beside every
-// row. The first that can answer is highlighted, or a new one when none can.
-func (m *Model) askWhichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
-	return m.whichCredential(req, secrets, held, "", defaultRequestTTL(req))
-}
-
 // Why a secret cannot answer a request (cannotAnswer).
 const (
 	notCovered = "routes" // its routes do not cover what is asked
@@ -55,152 +44,6 @@ func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, pinned, rea
 	return ""
 }
 
-// whichCredential is step 1 with the cursor on at, or on the first secret
-// that can answer when at is empty.
-func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, at string, ttl time.Duration) tea.Cmd {
-	holder, pinned := heldBy(held)
-	readable := func(s Secret) bool {
-		return slices.ContainsFunc(secrets, func(r Secret) bool { return r.ID == s.ID })
-	}
-	why := func(s Secret) string { return cannotAnswer(s, req, holder, pinned, readable(s)) }
-	var ordered []Secret
-	if holder.SecretID != "" {
-		ordered = append(ordered, heldSecret(secrets, holder))
-	}
-	for _, fits := range []bool{true, false} {
-		for _, s := range secretsForRequest(secrets, req) {
-			if s.ID != holder.SecretID && (why(s) == "") == fits {
-				ordered = append(ordered, s)
-			}
-		}
-	}
-	var items []action
-	cursor := -1
-	for i, s := range ordered {
-		label := "  " + s.Name
-		if why(s) != "" {
-			label = "✗ " + s.Name
-		} else if cursor < 0 {
-			cursor = i
-		}
-		items = append(items, action{key: s.ID, label: label, enabled: true})
-	}
-	fresh := action{key: "new", label: "  Enter new credential…", enabled: true}
-	// A variable held by a secret takes only that secret, which a new one
-	// never is.
-	if req.Use != nil && pinned {
-		fresh.enabled, fresh.why = false, variableOf(req)+" holds “"+heldSecret(secrets, holder).Name+"”"
-	}
-	items = append(items, fresh)
-	if cursor < 0 {
-		cursor = len(items) - 1
-	}
-	for i, item := range items {
-		if at != "" && item.key == at {
-			cursor = i
-		}
-	}
-
-	items = append(items, action{key: "ttl", label: "For " + lifetime.Label(ttl) + " · change…", enabled: true})
-	d := actionsDialog("Credential request", m.credentialSentence(req), items, func(key string) tea.Cmd {
-		again := func() tea.Cmd { return m.whichCredential(req, secrets, held, key, ttl) }
-		if key == "ttl" {
-			return m.askHowLong(req, requestAnswer{ttl: ttl}, again, func(chosen time.Duration) tea.Cmd {
-				return m.whichCredential(req, secrets, held, "", chosen)
-			})
-		}
-		if key == "new" {
-			return m.enterNewCredential(req, secrets, held, holder.SecretID, ttl, again)
-		}
-		i := slices.IndexFunc(ordered, func(s Secret) bool { return s.ID == key })
-		if i < 0 {
-			return nil
-		}
-		s := ordered[i]
-		if reason := why(s); reason != "" {
-			return m.whyNotCompatible(req, s, reason, heldSecret(secrets, holder), again)
-		}
-		ans := requestAnswer{credential: s.Name, secret: s, credentialRoutes: s.Routes, maxTTL: s.MaxTTL, ttl: ttl, held: held, holderID: holder.SecretID}
-		proceed := func(chosen time.Duration) tea.Cmd {
-			ttl, ans.ttl = chosen, chosen
-			return m.readStanding(req, ans, again)
-		}
-		if !withinLimit(s, ttl) {
-			return m.askHowLong(req, ans, again, proceed)
-		}
-		return proceed(ttl)
-	})
-	d.titleRight = "credential"
-	d.answerLabel = "Which credential should it get?"
-	// A request on a server other than the one the window opened on is
-	// answered there, and says which (ADR 0131 §1).
-	if req.Server != "" {
-		d.sections = append(d.sections, section{fields: []field{{label: "Server", value: req.Server, tone: toneAccent}}})
-	}
-	if route := singleHTTPRoute(req.routes()); route != "" {
-		d.sections = append(d.sections, section{lines: []line{{text: route, tone: toneAccent}}})
-	}
-	if why := strings.TrimSpace(req.Justification); why != "" {
-		d.sections = append(d.sections, section{label: "for the purpose of", lines: []line{{text: why}}})
-	}
-	d.cursor = d.nextEnabled(cursor, -1)
-	d.keys = []hint{says("↑↓ moves"), pressing("Enter chooses", "enter"), pressing("Esc leaves it waiting", "esc")}
-	m.withRawRequest(d, req)
-	m.dialog = d
-	return nil
-}
-
-// standingReadMsg is what the asking box holds of the secret an answer
-// was chosen with, read before the summary (readStanding).
-type standingReadMsg struct {
-	wait *dialog
-	req  CredentialRequest
-	ans  requestAnswer
-	back func() tea.Cmd
-	err  error
-}
-
-// readStanding reads what the asking box holds of a saved secret before
-// anything is decided, so the approval cards can say what approving replaces:
-// the box's own bindings of it, their parent IDs,
-// and what applies in the variable the use part names. back is step 1.
-func (m *Model) readStanding(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
-	if req.SandboxID == "" {
-		return m.askSummary(req, ans, back)
-	}
-	wait := statusDialog("Credential request", "reading what the discobox holds of "+ans.credential+"…")
-	wait.onCancel = back
-	m.dialog = wait
-	ctx, ds := m.ctx, m.ds
-	return func() tea.Msg {
-		msg := standingReadMsg{wait: wait, req: req, ans: ans, back: back}
-		bindings, err := ds.Bindings(ctx, req.Server, BindingFilter{SecretID: ans.secret.ID})
-		if err == nil && req.Use != nil && req.EnvVar != "" {
-			msg.ans.held, err = ds.HeldGrants(ctx, req.Server, req.SandboxID, req.EnvVar)
-		}
-		msg.err = err
-		for _, b := range bindings {
-			if b.TargetKind == BindingSandbox && b.TargetID == req.SandboxID {
-				msg.ans.standing = append(msg.ans.standing, b)
-			}
-		}
-		return msg
-	}
-}
-
-// standingRead goes on to the summary, unless the read was left or failed.
-func (m *Model) standingRead(msg standingReadMsg) tea.Cmd {
-	if m.dialog != msg.wait {
-		return nil
-	}
-	if msg.err != nil {
-		m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read what the discobox holds of %s: %v\n\nThe request is still waiting.", msg.ans.credential, msg.err))
-		m.dialog.onCancel = msg.back
-		return nil
-	}
-	return m.askSummary(msg.req, msg.ans, msg.back)
-}
-
 // commandRanMsg is a new credential's command come back, run to read the
 // format of what it prints.
 type commandRanMsg struct {
@@ -222,7 +65,7 @@ func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
 // enterNewCredential is step 2 for a credential the project does not hold
 // yet: its name, filled from the request, and its value. back is step 1.
 // Nothing is stored here; the value is held only by this card.
-func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, ttl time.Duration, back func() tea.Cmd) tea.Cmd {
+func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, ttl time.Duration, back func() tea.Cmd, done func(requestAnswer) tea.Cmd) tea.Cmd {
 	name := textRow("name", "Name", "what you'll know it by", freeSecretName(secrets, credentialName(req)))
 	name.required = "give it a name"
 	source := pickRow("source", "Get it by",
@@ -356,7 +199,7 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 			ans.command, ans.value = words, sample(f)
 		}
 		// Back from the part cards is this card as it was left, value and all.
-		return m.askSummary(req, ans, backToForm)
+		return done(ans)
 	})
 	d.titleRight = "new credential"
 	d.body = m.credentialSentence(req)
