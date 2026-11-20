@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,14 +63,31 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 	if len(credentials) == 0 {
 		credentials = append(credentials, choice{label: "No compatible saved credential"})
 	}
-	ttlText := ttl.String()
-	if ttl <= 0 {
-		ttlText = "forever"
-	} else if ttl%time.Hour == 0 {
-		ttlText = fmt.Sprintf("%dh", ttl/time.Hour)
+	durations := lifetimeChoices(req.AskedTTL)
+	if !slices.Contains(durations, ttl) {
+		durations = append(slices.Clone(durations), ttl)
+	}
+	var lifetimes []choice
+	for _, duration := range durations {
+		key := lifetime.Label(duration)
+		label := key
+		if duration > 0 && duration == req.AskedTTL {
+			label += " · requested"
+		}
+		lifetimes = append(lifetimes, choice{key: key, label: label})
+	}
+	lifetimes = append(lifetimes, choice{key: "custom", label: "Custom…"})
+	customTTL := textRow("custom-ttl", "Custom lifetime", "90m, 3d or forever", "")
+	customTTL.when = func(f *form) bool { return f.chosen("ttl") == "custom" }
+	selectedLifetime := func(f *form) (time.Duration, error) {
+		value := f.chosen("ttl")
+		if value == "custom" {
+			value = f.value("custom-ttl")
+		}
+		return lifetime.Parse(value)
 	}
 	var d *dialog
-	rows := []formRow{pickRow("credential", "Credential", credentials...), textRow("ttl", "Lifetime", "1h, 3d or forever", ttlText)}
+	rows := []formRow{pickRow("credential", "Credential", credentials...), pickRow("ttl", "Lifetime", lifetimes...), customTTL}
 	if req.Use != nil {
 		rows = append(rows, pickRow("binding", "Existing bindings",
 			choice{key: string(bindingplan.Replace), label: "Replace existing bindings"},
@@ -81,7 +99,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 	}
 	if req.Use == nil || !pinned {
 		rows = append(rows, formRow{key: "new", label: "New credential", show: func(*form) string { return "Enter a value…" }, open: func() tea.Cmd {
-			selectedTTL, err := lifetime.Parse(d.form.value("ttl"))
+			selectedTTL, err := selectedLifetime(d.form)
 			if err != nil {
 				selectedTTL = ttl
 			}
@@ -91,6 +109,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		}})
 	}
 	f := newForm(rows...)
+	f.choose("ttl", lifetime.Label(ttl))
 	if req.Use != nil && req.Use.Add {
 		f.choose("binding", string(bindingplan.Add))
 	}
@@ -100,7 +119,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		ans.useChoice = partChoice{scope: "routes", as: bindingplan.As(f.chosen("binding"))}
 		ans.delegateChoice.scope = "routes"
 		var err error
-		ans.ttl, err = lifetime.Parse(f.value("ttl"))
+		ans.ttl, err = selectedLifetime(f)
 		switch {
 		case !ok:
 			return ans, "Choose a credential to accept."
@@ -140,11 +159,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			if item.part == nil {
 				continue
 			}
-			if route := singleHTTPRoute(item.part.Routes); route != "" {
-				d.sections = append(d.sections, section{fields: []field{{label: item.label, value: route, tone: toneAccent}}})
-			} else {
-				d.sections = append(d.sections, approvalRouteSection(item.label, item.part))
-			}
+			d.sections = append(d.sections, approvalRouteSection(item.label, item.part))
 			if len(item.part.Roles) > 0 {
 				roles := section{label: "the roles it asked for · the discobox's words"}
 				for _, role := range item.part.Roles {
