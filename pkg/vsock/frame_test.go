@@ -300,27 +300,28 @@ func TestFrameDialedIsQuietForAFramedPeer(t *testing.T) {
 	defer framed.Close()
 	listener.push(peer)
 	var reports atomic.Int32
-	dialed := make(chan net.Conn, 1)
-	go func() {
-		conn, err := FrameDialed(local, func(error) { reports.Add(1) })
-		if err != nil {
-			t.Error(err)
-			close(dialed)
-			return
-		}
-		dialed <- conn
-	}()
+	// Finish the dial's GoAway write before the peer starts its reply.
+	conn, err := FrameDialed(local, func(error) { reports.Add(1) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
 	accepted, err := framed.Accept()
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _, _ = accepted.Write([]byte("framed reply")); _ = accepted.Close() }()
-	conn := <-dialed
-	if conn == nil {
-		return
+	defer accepted.Close()
+
+	if _, err := io.WriteString(accepted, "framed reply"); err != nil {
+		t.Fatal(err)
 	}
-	got, _ := io.ReadAll(conn)
-	_ = conn.Close()
+	if err := accepted.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(got) != "framed reply" || reports.Load() != 0 {
 		t.Fatalf("read %q with %d reports; want the reply and none", got, reports.Load())
 	}
