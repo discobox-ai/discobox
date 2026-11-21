@@ -1543,14 +1543,14 @@ a small fake on loopback and watch what the server asks of it.
   Do not put the real key in the box instead: a real secret in a box
   bypasses the placeholder model — anything the box runs can read it,
   nothing records or revokes its use, and the isolated server's provider
-  config holds it too. The fake driver stays the default. A live boxd run, sentinel or not, is the user's
-  call alone: it takes a key of a throwaway boxd org, which the user
+  config holds it too. The fake driver stays the default. An ad hoc live boxd run needs the user's
+  approval: it takes a key of a throwaway boxd org, which the user
   revokes, with that org's machines, when the run ends, and say so in the
   report.
 - The live run's recipe is `scripts/live-run.sh`: `go tool task
-  live-run:build`, then `go tool task live-run DRIVER=boxd`, run once in a
-  one-off box under `docs/tasks/947-remote-drivers-boxd-and-archil.md`'s
-  Credentials rules, never in a worker's box. The script takes the key from
+  live-run:build`, then `go tool task live-run DRIVER=boxd -- --egress-narrowed no`
+  in a manager-launched validation box with a pinned commit, dedicated test
+  keys and a local server. The script takes the provider key from
   the raw binding's variable (`BOXD_API_KEY`) through jq's environment,
   never on a command line. In a box, verify a change to it with
   `go tool task live-run DRIVER=boxd DRY_RUN=1`, which calls nothing and
