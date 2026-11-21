@@ -14,8 +14,8 @@ import (
 )
 
 // sandboxLifecycle is one of the root commands that change whether a discobox
-// runs: `discobox start`, `stop`, and `restart`. They are the everyday
-// counterparts to `admin box start|stop|restart`, which stay the raw forms
+// runs: `discobox start`, `stop`, `restart` and `pause`. They are the everyday
+// counterparts to `admin box start|stop|restart|pause`, which stay the raw forms
 // taking IDs and printing the record the API answered with. Each posts the same
 // call as its admin form.
 type sandboxLifecycle struct {
@@ -57,6 +57,20 @@ its workspace, and the work in it, is kept.`,
 			return client.RestartSandbox(ctx, &apimodel.RestartSandboxBody{}, apiclientgen.RestartSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 		},
 	},
+	{
+		// The CLI's word for the API's suspend (ADR 26-10-20-317 §1); there is
+		// no root `suspend`, and no verb to unpause: start, or any use, thaws.
+		verb:  "pause",
+		done:  "paused",
+		short: "Pause discoboxes",
+		long: `Pause discoboxes: freeze everything in each, its memory kept, until it is
+started again or used, which resumes it where it left off. A discobox that is
+not running is refused, and so is one on a pool that cannot freeze it, which
+keeps running. Like a stop, a pause cancels the wake its agent asked for.`,
+		post: func(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string) (any, error) {
+			return client.SuspendSandbox(ctx, &apimodel.SuspendSandboxBody{}, apiclientgen.SuspendSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+		},
+	},
 }
 
 // newLifecycleCommand builds one of sandboxLifecycles. An argument is resolved
@@ -64,9 +78,10 @@ its workspace, and the work in it, is kept.`,
 // NAME `discobox ls` prints, or an ID. Its candidates are that whole listing, so a stopped
 // discobox answers to the name it is listed under.
 //
-// A discobox can run these: the sandbox role allows start, stop, and restart
-// on the discoboxes it leads, and the listing (ADR 26-10-02-478 §1, ADR
-// 26-10-27-880 §9). A command given only full IDs — which name a discobox
+// A discobox can run start, stop, and restart: the sandbox role allows them on
+// the discoboxes it leads, and the listing (ADR 26-10-02-478 §1, ADR
+// 26-10-27-880 §9). It cannot pause one: the server refuses the sandbox role
+// suspend (ADR 26-10-16-420 §3), and that refusal is printed for each argument. A command given only full IDs — which name a discobox
 // outright — makes no listing call at all: `discobox stop sbx_…` is the one
 // call it needs, as `admin box stop` was.
 func (a *App) newLifecycleCommand(action sandboxLifecycle) *cobra.Command {

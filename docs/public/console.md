@@ -28,6 +28,7 @@ server and source for a new task. Filters and unfinished prompts are remembered.
 | v / z | Open VS Code / Zed |
 | e / E | Rename / settings |
 | t / T | Stop / start |
+| Z | Pause: freeze the box, its memory kept; start or open it to resume |
 | x or Delete | Archive |
 | U / P | Unarchive / purge |
 | A | Show or hide archived boxes |
@@ -67,6 +68,7 @@ Alt plus a letter is also supported. Ctrl-C cannot be the leader.
 | z | Zoom the focused column and restore it |
 | m | Toggle mouse capture for selecting and copying |
 | t / T | Stop / start the box |
+| Z | Pause the box |
 | x / U | Archive / unarchive |
 | u / R | Upgrade / repair |
 

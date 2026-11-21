@@ -741,7 +741,7 @@ func (a *App) sandboxStoppedAttachDone(ctx context.Context, projectID, sandboxID
 	}
 	switch sandbox.Runtime.RuntimeState.Or("") {
 	case sandboxRuntimeStateStopped, sandboxRuntimeStateStopping, sandboxRuntimeStateSuspended:
-		return true, fmt.Errorf("discobox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.RuntimeState.Or(""))
+		return true, fmt.Errorf("discobox %s is %s; detaching terminal", sandboxID, stateWord(sandbox.Runtime.RuntimeState.Or("")))
 	}
 	if sandbox.Runtime.State == sandboxStateFailed {
 		return true, fmt.Errorf("discobox failed: %s", sandboxFailureReason(sandbox))

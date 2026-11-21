@@ -208,8 +208,9 @@ func TestConsoleCommandEligibility(t *testing.T) {
 		command string
 		enabled bool
 	}{
-		{StateRunning, "stop", true}, {StateSuspended, "stop", true}, {StateStopped, "stop", false},
-		{StateStopped, "start", true}, {StateSuspended, "start", true}, {StateArchived, "start", false},
+		{StateRunning, "stop", true}, {StatePaused, "stop", true}, {StateStopped, "stop", false},
+		{StateStopped, "start", true}, {StatePaused, "start", true}, {StateArchived, "start", false},
+		{StateRunning, "pause", true}, {StatePaused, "pause", false}, {StateStopped, "pause", false}, {StateStarting, "pause", false},
 		{StateArchived, "rename", false}, {StateArchived, "settings", false}, {StateArchived, "purge", true},
 		{StateRunning, "purge", false}, {StateError, "repair", true},
 	}

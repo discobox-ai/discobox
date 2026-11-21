@@ -2576,13 +2576,14 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 // than disappearing and leaving you wondering where upgrade went.
 func (m *Model) actions(targets []Sandbox) []action {
 	one := len(targets) == 1
-	anyUpgrade, anyRepair, anyRunning, anyStopped := false, false, false, false
+	anyUpgrade, anyRepair, anyRunning, anyStopped, anyPausable := false, false, false, false, false
 	anyArchived, allArchived := false, len(targets) > 0
 	for _, s := range targets {
 		anyUpgrade = anyUpgrade || s.Upgrade
 		anyRepair = anyRepair || s.repairable()
-		// A suspended box takes both: stop powers it off, start thaws it.
-		anyRunning = anyRunning || s.State == StateRunning || s.State == StateSuspended
+		// A paused box takes both: stop powers it off, start resumes it.
+		anyRunning = anyRunning || s.State == StateRunning || s.State == StatePaused
+		anyPausable = anyPausable || s.pausable()
 		anyStopped = anyStopped || s.startable()
 		anyArchived = anyArchived || s.State == StateArchived
 		allArchived = allArchived && s.State == StateArchived
@@ -2614,8 +2615,10 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: "an archived box is unarchived, not repaired"},
 		{key: "t", press: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
 			why: "not running"},
-		{key: "T", press: "T", label: "start", detail: "power a stopped box back on, or thaw a suspended one", enabled: anyStopped,
+		{key: "T", press: "T", label: "start", detail: "power a stopped box back on, or resume a paused one", enabled: anyStopped,
 			why: "already on, or archived"},
+		{key: pauseKey, press: pauseKey, label: "pause", detail: "freeze the box, keeping its memory, until it is started or used", enabled: anyPausable,
+			why: "not running"},
 		{key: "x", press: "x", label: "archive", detail: "put it away, disk and all, reversibly", enabled: !allArchived,
 			why: "already archived"},
 		{key: "U", press: "U", label: "unarchive", detail: "bring an archived box back", enabled: anyArchived,
@@ -2775,6 +2778,11 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		m.dialog = d
 		return nil
 	}
+	if verb == VerbPause {
+		// Only a running box can be paused: the rest of a selection is left
+		// as it is, rather than sent a pause the server would refuse.
+		targets = slices.DeleteFunc(slices.Clone(targets), func(s Sandbox) bool { return !s.pausable() })
+	}
 	if verb == VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.paneBox) {
 		// From the workspace the one target is the discobox it shows.
 		return m.archiveWorkspace(targets[0])
@@ -2794,11 +2802,18 @@ type runVerbMsg struct {
 // container, next to one that redraws a table.
 const repairKey = "R"
 
+// pauseKey is the letter pause answers to (ADR 26-10-20-317 §3). The
+// lowercase letters a pause would reach for are taken in the list, p by the
+// pull request and z by Zed; Z is free on the list and after the leader, and
+// reads as the box going to sleep.
+const pauseKey = "Z"
+
 var verbs = map[string]Verb{
 	"u":       VerbUpgrade,
 	repairKey: VerbRepair,
 	"t":       VerbStop,
 	"T":       VerbStart,
+	pauseKey:  VerbPause,
 	"x":       VerbArchive,
 	"U":       VerbUnarchive,
 	"P":       VerbPurge,
@@ -4966,7 +4981,7 @@ func (m *Model) helpText() string {
 		"    " + credentialsKey + "      answer the credential request waiting on it",
 		"    H      review and save harness settings and logins",
 		"    e      rename          E  settings",
-		"    t      stop",
+		"    t      stop            " + pauseKey + "  pause",
 		"    T      start           x  archive (Del too)",
 		"    U      unarchive       P  purge",
 		"    A      show or hide archived discoboxes",
@@ -4991,7 +5006,7 @@ func (m *Model) helpText() string {
 		"  A row is: state, name, harness, git position, age, cpu, memory and",
 		"  disk use, and lines changed.",
 		"",
-		"      ● running    ◐ starting    ○ stopped    ▪ archived",
+		"      ● running    ◐ starting    ‖ paused    ○ stopped    ▪ archived",
 		"      ✗ error — the message shows under the cursor",
 		"      ↑ an upgrade to the current harness image is available",
 		"      ! an agent is waiting on a credential; " + credentialsKey + " answers it",
@@ -5171,7 +5186,7 @@ func (m *Model) helpText() string {
 		"                   select and copy; press again to give it back",
 		"    " + leader + " u       upgrade      " + leader + " t / T   stop / start",
 		"    " + leader + " x / U   archive / unarchive",
-		"    " + leader + " R       repair",
+		"    " + leader + " R       repair       " + leader + " " + pauseKey + "       pause",
 		"",
 		"  Every other key goes to the focused pane, Ctrl-C included: there it",
 		"  belongs to the program, in a harness as much as in a shell.",

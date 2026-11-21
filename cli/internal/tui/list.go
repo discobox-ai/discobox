@@ -854,7 +854,7 @@ func (l *sandboxList) stateStyle(st *styles, s Sandbox) lipgloss.Style {
 	switch s.State {
 	case StateRunning:
 		return st.stateRun
-	case StateStarting, StateRepairing, StateSuspended:
+	case StateStarting, StateRepairing, StatePaused:
 		return st.stateBusy
 	case StateError:
 		return st.stateErr
@@ -922,7 +922,7 @@ func stateDot(s Sandbox) string {
 		return "●"
 	case StateStarting, StateRepairing:
 		return "◐"
-	case StateSuspended:
+	case StatePaused:
 		return "‖"
 	case StateError:
 		return "✗"

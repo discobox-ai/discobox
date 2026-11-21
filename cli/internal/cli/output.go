@@ -249,11 +249,26 @@ func sandboxMessage(sandbox apimodel.Sandbox) string {
 	return sandboxcreate.AutomaticRepairCause(&sandbox)
 }
 
+// sandboxDisplayState is a sandbox's displayState in the CLI's words, for a
+// person to read: tables, the picker, completion and the console. -o json and
+// events print the API's record instead, which keeps the API's word.
 func sandboxDisplayState(sandbox apimodel.Sandbox) string {
 	if state, ok := sandbox.Runtime.DisplayState.Get(); ok {
-		return string(state)
+		return stateWord(state)
 	}
 	return "-"
+}
+
+// stateWord turns a state the API names into the word the CLI shows a person.
+// They differ in one place: the API's `suspended` is what `discobox pause`
+// leaves, and the CLI calls it `paused`, so that the command and the state it
+// lists read as one word (ADR 26-10-20-317 §4). Every other state reads as
+// the API names it.
+func stateWord[S ~string](state S) string {
+	if state == "suspended" {
+		return "paused"
+	}
+	return string(state)
 }
 
 // sandboxUpgradeState marks sandboxes running an older image than their harness

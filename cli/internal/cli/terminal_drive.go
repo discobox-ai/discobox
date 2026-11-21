@@ -509,7 +509,7 @@ func (a *App) awaitTerminalBox(ctx context.Context, stderr io.Writer, api *apicl
 		return false, fmt.Errorf("discobox failed: %s", sandboxFailureReason(sandbox))
 	case "starting", "repairing":
 	default:
-		return false, fmt.Errorf("discobox %s is %s; wait does not start it", params.SandboxId, state)
+		return false, fmt.Errorf("discobox %s is %s; wait does not start it", params.SandboxId, stateWord(state))
 	}
 	var limit time.Duration
 	if !deadline.IsZero() {
@@ -528,7 +528,7 @@ func (a *App) awaitTerminalBox(ctx context.Context, stderr io.Writer, api *apicl
 // started: said on stderr, since there is no resume point to print, and exit
 // 124 as for any wait that ran out.
 func stillStarting(stderr io.Writer, sandbox *apimodel.Sandbox) error {
-	fmt.Fprintf(stderr, "discobox %s is still %s\n", sandbox.ID, sandbox.Runtime.DisplayState.Or("starting"))
+	fmt.Fprintf(stderr, "discobox %s is still %s\n", sandbox.ID, stateWord(sandbox.Runtime.DisplayState.Or("starting")))
 	return client.ExitError{Code: 124}
 }
 

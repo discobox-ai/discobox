@@ -944,6 +944,28 @@ Aliases: list.
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
+## discobox admin box pause
+
+~~~~text
+Pause a running discobox: freeze everything in it, its memory kept, until it
+is started again or used, which resumes it where it left off. A pool that
+cannot freeze it refuses, and the discobox keeps running. Like a stop, a pause
+cancels the wake its agent asked for.
+~~~~
+
+```text
+discobox admin box pause DISCOBOX_ID [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for pause Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
 ## discobox admin box purge
 
 ~~~~text
@@ -1165,28 +1187,6 @@ discobox admin box stop DISCOBOX_ID [flags]
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --force | bool | false | Force stop if supported Value when passed without an argument: true. |
 | --help, -h | bool | false | help for stop Value when passed without an argument: true. |
-| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
-| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
-| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
-
-## discobox admin box suspend
-
-~~~~text
-Suspend a running discobox: freeze everything in it, its memory kept, until it
-is started again or used, which thaws it where it left off. A pool that cannot
-freeze it refuses, and the discobox keeps running. Like a stop, a suspend
-cancels the wake its agent asked for.
-~~~~
-
-```text
-discobox admin box suspend DISCOBOX_ID [flags]
-```
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
-| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
-| --help, -h | bool | false | help for suspend Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
@@ -4717,6 +4717,40 @@ Examples:
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --source | string |  | Only list the discoboxes whose SOURCE column is exactly this; - for the ones with no source |
 | --tag | stringArray | [] | Only list discoboxes with this tag: KEY, or KEY=VALUE for that value; repeat to require several |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox pause
+
+~~~~text
+Pause discoboxes: freeze everything in each, its memory kept, until it is
+started again or used, which resumes it where it left off. A discobox that is
+not running is refused, and so is one on a pool that cannot freeze it, which
+keeps running. Like a stop, a pause cancels the wake its agent asked for.
+
+Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
+listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
+IDs to choose between. Every argument is acted on independently, so one that
+fails does not hide the rest.
+~~~~
+
+```text
+discobox pause DISCOBOX... [flags]
+```
+
+Examples:
+
+```text
+  discobox pause mybox
+  discobox pause sbx_9qk5 sbx_2f7p
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for pause Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox proxy

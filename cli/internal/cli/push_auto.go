@@ -79,7 +79,7 @@ func pushableNow(sb apimodel.Sandbox) bool {
 	if sandboxOwedSource(sb) || sandboxAwaitingSource(sb) {
 		return false
 	}
-	switch sandboxDisplayState(sb) {
+	switch sb.Runtime.DisplayState.Or("") {
 	case "archived", "archiving":
 		// No container for the git route to start, so the push would fail in
 		// the proxy with nothing useful to say.

@@ -1034,14 +1034,23 @@ archiving needs no runtime, and a name the listing still shows must not come
 back as no such discobox. Purging has no root spelling: destroying data now is
 not an everyday verb, and stays `admin box purge`.
 
-`discobox start|stop|restart DISCOBOX...` (`internal/cli/lifecycle.go`) are the
-everyday power commands, and `admin box start|stop|restart` stay the raw forms
-that take an ID, accept `--force`, and print the record the API answered with.
+`discobox start|stop|restart|pause DISCOBOX...` (`internal/cli/lifecycle.go`) are the
+everyday power commands, and `admin box start|stop|restart|pause` stay the raw forms
+that take an ID, accept `--force` (all but pause), and print the record the API answered with.
 They resolve arguments by `rm`'s rule over the same listing, and report through
 `runActionMany`. A discobox driving the ones it created runs them under the
 sandbox role (ADR 26-10-02-478 §1, ADR 26-10-27-880 §9); when every argument
 is a full ID the listing is not fetched, and the command makes only the call
-it needs. The in-box skills teach these forms.
+it needs. The in-box skills teach these forms, all but pause, which the sandbox
+role is refused.
+
+**Pause is the CLI's word for the API's suspend** (ADR 26-10-20-317). `pause`
+posts `.../suspend`, `admin box suspend` stays as a hidden second registration of `admin box pause`,
+and the console's pause action (`Z`) posts the same. Everywhere the CLI writes a
+state for a person — tables, the picker, completion, the console — the API's
+`suspended` reads `paused` (`stateWord`, `internal/cli/output.go`; the console's
+`tui.StatePaused`). `-o json` and `discobox events` print the API's
+record and keep `suspended`.
 
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
@@ -1343,7 +1352,8 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **Aliases are shown.** Help lists every spelling a command answers to, as
   `run`'s does (`new`, `create`, `r`, `n`). A spelling kept working but not
   taught is a hidden second registration instead (`hiddenSpelling`): `tui`
-  for `console`, `ps` for `ls`, `shell` for `exec`, `id` for `admin id`.
+  for `console`, `ps` for `ls`, `shell` for `exec`, `id` for `admin id`,
+  `admin box suspend` for `admin box pause`.
 - **A group is named in the singular** (`harness`, `service`, `pool`), and the
   plural is an alias. `tools` is still plural, the in-box skills teaching it.
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,

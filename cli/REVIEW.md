@@ -184,6 +184,15 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   - format strings, as `%d new keys` became `%d run keys` in a test's failure
     message.
 
+- **A state the CLI writes for a person goes through `stateWord`.** The API
+  says `suspended` and the CLI says `paused` (ADR 26-10-20-317 §4): tables, the
+  picker, completion, and every error or note that names a box's state in
+  prose (`discobox %s is %s`). `-o json` and `events` print the API's
+  record and keep its word. Code that *decides* on a state compares the API's
+  value, never `stateWord`'s output: the console's `toTUIState` matches
+  `suspended`. The first pass of the rename missed one prose message
+  (`reprovision.go`), so grep for `is %s` after adding a state word.
+
 - **Changing where flag parsing stops requires auditing argv producers.**
   Scripts and console launchers must put CLI flags before DISCOBOX; otherwise
   those flags become the remote command. Check callers outside Go tests too.

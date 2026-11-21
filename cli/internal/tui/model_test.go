@@ -575,6 +575,21 @@ func TestSelectionIsWhatCommandsActOn(t *testing.T) {
 	}
 }
 
+// Pause (Z) freezes each running box in the range and leaves the rest of it
+// alone: a stopped box has nothing to freeze, and the server would refuse it.
+func TestPausePausesTheRunningBoxesOfARange(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	showAllFolders(t, m)
+	send(t, m, keyPress("V"), keyPress("down"), keyPress("down"))
+
+	send(t, m, keyPress(pauseKey))
+	if got, want := strings.Join(ds.did, ","), "pause sbx_one,pause sbx_two"; got != want {
+		t.Fatalf("did = %q, want %q", got, want)
+	}
+}
+
 // V draws a range discobox-review-style, and a command acts on the whole of it.
 func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
 	t.Parallel()

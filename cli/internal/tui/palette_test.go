@@ -55,7 +55,7 @@ func TestPaletteChipOrdersAndEscape(t *testing.T) {
 			t.Fatalf("pasted completion: %+v", m.palette)
 		}
 		for _, r := range m.palette.rows {
-			if r.box == nil || r.box.State != StateRunning && r.box.State != StateSuspended {
+			if r.box == nil || r.box.State != StateRunning && r.box.State != StatePaused {
 				t.Fatalf("stop offers %+v", r)
 			}
 		}
@@ -371,6 +371,21 @@ func TestPaletteCountsShortcutUseAtFlowEntry(t *testing.T) {
 		if m.paletteUsage["stop"] != 1 {
 			t.Fatalf("stop counted %d times", m.paletteUsage["stop"])
 		}
+	})
+}
+
+// From the workspace, the leader then Z pauses the box on screen, the way the
+// leader then t stops it.
+func TestLeaderPausesTheWorkspacesBox(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, _, _ := openWorkspace(t, ds, "enter")
+		d.leader(pauseKey)
+		d.wait("pause sent", func() bool {
+			ds.mu.Lock()
+			defer ds.mu.Unlock()
+			return slices.Contains(ds.did, "pause sbx_one")
+		})
 	})
 }
 

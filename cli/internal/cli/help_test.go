@@ -40,7 +40,7 @@ func TestRootHelpListsCommandsByGroup(t *testing.T) {
 		title    string
 		commands []string
 	}{
-		{"Basic commands:", []string{"run", "ls", "attach", "exec", "start", "stop", "restart", "rm", "rename", "tag"}},
+		{"Basic commands:", []string{"run", "ls", "attach", "exec", "start", "stop", "restart", "pause", "rm", "rename", "tag"}},
 		{"Automation:", []string{"send", "send-key", "capture", "wait", "events", "adopt", "api-access", "release"}},
 		{"Interface:", []string{"console"}},
 		{"Files & ports:", []string{"cp", "push", "proxy", "tools"}},

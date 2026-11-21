@@ -869,7 +869,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// server trims it before falling back, so blank and unset are the
 		// same answer on both ends.
 		ConfigName: strings.TrimSpace(sb.Config.Name),
-		State:      toTUIState(sandboxDisplayState(sb)),
+		State:      toTUIState(string(sb.Runtime.DisplayState.Or(""))),
 		// The presence of runtimeState is the signal, not its value: the API
 		// omits the field entirely until the pool agent has reported on this
 		// sandbox, and empty is not `stopped` (ADR 0034 §2). displayState folds
@@ -1023,7 +1023,8 @@ func toTUIState(state string) tui.State {
 	case "repairing":
 		return tui.StateRepairing
 	case "suspended":
-		return tui.StateSuspended
+		// The console's paused, as the CLI's tables say it (stateWord).
+		return tui.StatePaused
 	case "archived", "archiving":
 		return tui.StateArchived
 	case "error":
@@ -1393,6 +1394,15 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 	case tui.VerbStop:
 		res, err := d.client.StopSandbox(ctx, &apimodel.StopSandboxBody{},
 			apiclientgen.StopSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
+		if err != nil {
+			return "", err
+		}
+		_, err = expectResponse[apimodel.Sandbox](res)
+		return "", err
+
+	case tui.VerbPause:
+		res, err := d.client.SuspendSandbox(ctx, &apimodel.SuspendSandboxBody{},
+			apiclientgen.SuspendSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
 			return "", err
 		}
