@@ -83,7 +83,10 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxStartCommand())
 	cmd.AddCommand(a.newSandboxStopCommand())
 	cmd.AddCommand(a.newSandboxRestartCommand())
-	cmd.AddCommand(a.newSandboxSuspendCommand())
+	cmd.AddCommand(a.newSandboxPauseCommand())
+	// The name pause shipped under, kept working and not taught (ADR
+	// 26-10-20-317 §2).
+	cmd.AddCommand(hiddenSpelling("suspend", a.newSandboxPauseCommand()))
 	cmd.AddCommand(a.newSandboxRepairCommand())
 	cmd.AddCommand(a.newSandboxReprovisionCommand())
 	cmd.AddCommand(a.newSandboxUpgradeCommand())
@@ -478,15 +481,16 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 	return cmd
 }
 
-// newSandboxSuspendCommand freezes a running discobox whole (ADR 26-10-16-420
-// §3). It is here and nowhere else: `discobox start`, or any use, thaws it.
-func (a *App) newSandboxSuspendCommand() *cobra.Command {
+// newSandboxPauseCommand freezes a running discobox whole (ADR 26-10-16-420
+// §3), the raw form of `discobox pause` (ADR 26-10-20-317 §2). It posts the
+// API's suspend. `discobox start`, or any use, thaws it.
+func (a *App) newSandboxPauseCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "suspend DISCOBOX_ID",
-		Short: "Suspend a discobox, keeping its memory",
-		Long: `Suspend a running discobox: freeze everything in it, its memory kept, until it
-is started again or used, which thaws it where it left off. A pool that cannot
-freeze it refuses, and the discobox keeps running. Like a stop, a suspend
+		Use:   "pause DISCOBOX_ID",
+		Short: "Pause a discobox, keeping its memory",
+		Long: `Pause a running discobox: freeze everything in it, its memory kept, until it
+is started again or used, which resumes it where it left off. A pool that
+cannot freeze it refuses, and the discobox keeps running. Like a stop, a pause
 cancels the wake its agent asked for.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,

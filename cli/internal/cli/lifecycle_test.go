@@ -10,9 +10,9 @@ import (
 )
 
 // lifecycleTestServer serves rmTestServer's listing and records each call it
-// is sent: "list" for the listing, and "verb sandboxID" for each start, stop,
-// and restart, answering with the
-// sandbox and 202 Accepted the way the API does.
+// is sent: "list" for the listing, and "route sandboxID" for each start, stop,
+// restart and suspend, answering with the sandbox and 202 Accepted the way the
+// API does.
 func lifecycleTestServer(t *testing.T, posted *[]string) *httptest.Server {
 	t.Helper()
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
@@ -51,10 +51,12 @@ func lifecycleTestServer(t *testing.T, posted *[]string) *httptest.Server {
 // Each root command posts its own call for every argument, resolving a NAME
 // the listing prints, a full ID, or a short one.
 func TestLifecycleCommandsPostEveryArgument(t *testing.T) {
-	for _, tc := range []struct{ verb, done string }{
-		{"start", "started"},
-		{"stop", "stopped"},
-		{"restart", "restarted"},
+	for _, tc := range []struct{ verb, done, route string }{
+		{"start", "started", "start"},
+		{"stop", "stopped", "stop"},
+		{"restart", "restarted", "restart"},
+		// The CLI's word for the API's suspend.
+		{"pause", "paused", "suspend"},
 	} {
 		t.Run(tc.verb, func(t *testing.T) {
 			var posted []string
@@ -64,7 +66,7 @@ func TestLifecycleCommandsPostEveryArgument(t *testing.T) {
 			if err != nil {
 				t.Fatalf("execute %s: %v\n%s", tc.verb, err, errOut)
 			}
-			if got, want := strings.Join(posted, ","), "list,"+tc.verb+" "+rmDocsID+","+tc.verb+" "+rmAPIID; got != want {
+			if got, want := strings.Join(posted, ","), "list,"+tc.route+" "+rmDocsID+","+tc.route+" "+rmAPIID; got != want {
 				t.Fatalf("posted = %q, want %q", got, want)
 			}
 			if got, want := out, rmDocsID+" "+tc.done+"\n"+rmAPIID+" "+tc.done+"\n"; got != want {
@@ -128,5 +130,92 @@ func TestLifecycleCommandSkipsTheListingForFullIDs(t *testing.T) {
 	}
 	if got, want := out, rmDocsID+" started\n"+rmAPIID+" started\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
+// A discobox running `discobox pause` is refused by the server (the sandbox
+// role has no suspend), and the refusal is printed for each argument the way
+// any failed power command's is.
+func TestPauseReportsTheServersRefusal(t *testing.T) {
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+	t.Chdir(t.TempDir())
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/suspend") {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"status":403,"title":"Forbidden","detail":"sandbox role permission required for POST ` + r.URL.Path + `"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	_, errOut, err := runRM(t, server.URL, "pause", rmDocsID, rmAPIID)
+	if err == nil {
+		t.Fatal("execute pause error = nil, want the refusal reported")
+	}
+	if got, want := err.Error(), "failed to pause 2 discoboxes"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	for _, id := range []string{rmDocsID, rmAPIID} {
+		if want := `failed to pause discobox "` + id + `": `; !strings.Contains(errOut, want) || !strings.Contains(errOut, "sandbox role permission required") {
+			t.Fatalf("stderr = %q, want %q and the server's refusal", errOut, want)
+		}
+	}
+}
+
+// A box the API reports suspended reads paused in the table a person reads, and
+// suspended in -o json, which prints the API's record (ADR 26-10-20-317 §4).
+func TestPausedBoxListsAsPausedAndItsRecordSaysSuspended(t *testing.T) {
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+	t.Chdir(t.TempDir())
+	record := strings.ReplaceAll(namedSandboxJSON(rmDocsID, "docs", "docs", "present"), `"running"`, `"suspended"`)
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(record))
+	}))
+	t.Cleanup(server.Close)
+
+	out, errOut, err := runRM(t, server.URL, "admin", "box", "get", rmDocsID)
+	if err != nil {
+		t.Fatalf("admin box get: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(out, " paused ") || strings.Contains(out, "suspended") {
+		t.Fatalf("table = %q, want the state as paused", out)
+	}
+	out, errOut, err = runRM(t, server.URL, "-o", "json", "admin", "box", "get", rmDocsID)
+	if err != nil {
+		t.Fatalf("admin box get -o json: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(out, `"displayState": "suspended"`) || strings.Contains(out, "paused") {
+		t.Fatalf("json = %q, want the API's suspended", out)
+	}
+}
+
+// `admin box pause` is the raw form, and `admin box suspend`, the name it
+// shipped under, still works without being taught: both post the API's
+// suspend and print the record it answered with.
+func TestAdminBoxPauseAndItsOldSpellingPostSuspend(t *testing.T) {
+	for _, verb := range []string{"pause", "suspend"} {
+		t.Run(verb, func(t *testing.T) {
+			var posted []string
+			server := lifecycleTestServer(t, &posted)
+			out, errOut, err := runRM(t, server.URL, "admin", "box", verb, rmDocsID)
+			if err != nil {
+				t.Fatalf("admin box %s: %v\n%s", verb, err, errOut)
+			}
+			if got, want := strings.Join(posted, ","), "suspend "+rmDocsID; got != want {
+				t.Fatalf("posted = %q, want %q", got, want)
+			}
+			if !strings.Contains(out, rmDocsID) {
+				t.Fatalf("stdout = %q, want the record", out)
+			}
+		})
+	}
+	help, _, err := runRM(t, "http://127.0.0.1:1", "admin", "box", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(help, "pause") || strings.Contains(help, "suspend") {
+		t.Fatalf("admin box help = %q, want pause taught and suspend not", help)
 	}
 }

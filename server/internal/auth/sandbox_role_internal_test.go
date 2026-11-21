@@ -182,6 +182,15 @@ func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 	})
 }
 
+// A discobox cannot pause one, not even one it created: suspend is a person's
+// (ADR 26-10-16-420 §3, ADR 26-10-20-317 §5).
+func TestSandboxRoleCannotSuspend(t *testing.T) {
+	checkRole(t, []roleCase{
+		{"suspend its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/suspend", http.StatusForbidden},
+		{"suspend itself", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-worker/suspend", http.StatusForbidden},
+	})
+}
+
 // A discobox archives the discoboxes it created, and only those within its
 // egress; purge and unarchive stay a person's, for every discobox
 // (ADR 26-11-03-724).

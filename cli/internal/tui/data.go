@@ -33,12 +33,14 @@ const (
 	StateStarting  State = "starting"
 	StateRepairing State = "repairing"
 	StateStopped   State = "stopped"
-	// StateSuspended is a box frozen whole, its memory kept (ADR 26-10-16-420):
+	// StatePaused is a box frozen whole, its memory kept (ADR 26-10-16-420):
 	// up as far as acting on it goes — stop takes it — and off as far as
-	// anything inside it answering, which a start or a use brings back.
-	StateSuspended State = "suspended"
-	StateArchived  State = "archived"
-	StateError     State = "error"
+	// anything inside it answering, which a start or a use brings back. The
+	// API calls it suspended; the console, like the CLI, says paused (ADR
+	// 26-10-20-317 §4).
+	StatePaused   State = "paused"
+	StateArchived State = "archived"
+	StateError    State = "error"
 )
 
 // AutomaticRepair is the last repair of a discobox that nobody typed: something
@@ -840,13 +842,19 @@ func (s Sandbox) attachable() bool {
 // startable reports whether start is offered for this box: powered off, or
 // frozen whole. Attaching to one starts it too (attachable).
 func (s Sandbox) startable() bool {
-	return s.State == StateStopped || s.State == StateSuspended
+	return s.State == StateStopped || s.State == StatePaused
+}
+
+// pausable reports whether pause is offered for this box: only a running one
+// can be frozen. A starting box is not yet, and a paused one already is.
+func (s Sandbox) pausable() bool {
+	return s.State == StateRunning
 }
 
 // live reports whether the box is running, or being brought up, so attaching
 // to it starts nothing: a starting or repairing box is already being brought up,
 // and the attach waits for it. Every other state either starts the box on an
-// attach — stopped, suspended, and an error whose container may be off, since
+// attach — stopped, paused, and an error whose container may be off, since
 // the state does not say (attachable) — or refuses one.
 func (s Sandbox) live() bool {
 	return s.State == StateRunning || s.State == StateStarting || s.State == StateRepairing
@@ -1351,8 +1359,11 @@ type DirectoryTotal struct {
 type Verb string
 
 const (
-	VerbStart     Verb = "start"
-	VerbStop      Verb = "stop"
+	VerbStart Verb = "start"
+	VerbStop  Verb = "stop"
+	// VerbPause freezes a running box whole: the API's suspend (ADR
+	// 26-10-20-317 §3).
+	VerbPause     Verb = "pause"
 	VerbUpgrade   Verb = "upgrade"
 	VerbRepair    Verb = "repair"
 	VerbArchive   Verb = "archive"

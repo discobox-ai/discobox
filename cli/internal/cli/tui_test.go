@@ -40,6 +40,8 @@ func TestToTUISandboxNarrowsDisplayState(t *testing.T) {
 		{"archiving", tui.StateArchived},
 		{"archived", tui.StateArchived},
 		{"error", tui.StateError},
+		// The API's suspended is the console's paused.
+		{"suspended", tui.StatePaused},
 	} {
 		sandbox := toTUISandbox(apimodel.Sandbox{
 			Runtime: apimodel.SandboxRuntime{

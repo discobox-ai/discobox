@@ -160,7 +160,7 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 	}
 	// An archived sandbox has no container for the git route to start, so the
 	// push would fail in the proxy with nothing useful to say.
-	if state := sandboxDisplayState(*sandbox); state == "archived" || state == "archiving" {
+	if state := sandbox.Runtime.DisplayState.Or(""); state == "archived" || state == "archiving" {
 		return fmt.Errorf("the discobox is %s; unarchive it before pushing to its origin", state)
 	}
 	host, err := hostid.Get()

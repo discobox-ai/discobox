@@ -167,7 +167,7 @@ func (f *reprovisionFollower) follow(ctx context.Context, client *apiclientgen.C
 			return err
 		}
 		if state, ok := sb.Runtime.RuntimeState.Get(); ok && state != apiclientgen.SandboxRuntimeRuntimeStateRunning {
-			return fmt.Errorf("discobox %s is %s: it stopped before its provisioning was done", sandboxID, state)
+			return fmt.Errorf("discobox %s is %s: it went down before its provisioning was done", sandboxID, stateWord(state))
 		}
 		status, ok := sandboxcreate.RecordedProvision(sb.Runtime)
 		if !ok || status.UpdatedAt.Before(since) {

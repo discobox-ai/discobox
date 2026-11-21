@@ -116,7 +116,7 @@ func TestRepairableIsAnythingButArchived(t *testing.T) {
 		{"never reported on", Sandbox{State: StateStopped}, true},
 		{"running", Sandbox{State: StateRunning, HasRuntime: true}, true},
 		{"stopped, with a container", Sandbox{State: StateStopped, HasRuntime: true}, true},
-		{"suspended", Sandbox{State: StateSuspended, HasRuntime: true}, true},
+		{"paused", Sandbox{State: StatePaused, HasRuntime: true}, true},
 		{"starting", Sandbox{State: StateStarting}, true},
 		{"repairing", Sandbox{State: StateRepairing}, true},
 		{"archived is unarchived instead", Sandbox{State: StateArchived}, false},

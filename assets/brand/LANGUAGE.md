@@ -24,7 +24,7 @@ spacious setting without pretending to be a terminal.
    nothing is.
 2. **Gold marks the one title of a view.** The gold band heads a list or a table,
    once per view. Gold's only other job is an in-between state, as the console
-   gives it: starting, suspended, partly done. It is never a button, a border
+   gives it: starting, paused, partly done. It is never a button, a border
    around something important, or a warning.
 3. **Monospace is the voice.** JetBrains Mono sets headings, interface text, keys,
    identifiers and data everywhere. Only long-form prose on the web uses the
@@ -168,7 +168,7 @@ row's leading mark.
 | --- | --- | --- |
 | running | ● | `--ok` |
 | starting, repairing | ◐ | `--gold` |
-| suspended | ‖ | `--gold` |
+| paused | ‖ | `--gold` |
 | stopped | ○ | `--text-faint` |
 | archived | ▪ | `--text-faint` |
 | error | ✗ | `--err` |

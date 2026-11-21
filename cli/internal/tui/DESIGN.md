@@ -22,7 +22,7 @@ flowchart LR
     M --> D["dialog (menu, confirm, input, form, help, wait)"]
     P -->|Enter| Card["create card (source, harness, server, skills, sources)"]
     Card -->|Enter| Run["DataSource.Run → accepted: workspace opening → attach"]
-    L -->|u R t T x U P| Verb["DataSource.Do"]
+    L -->|u R t T Z x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|E| Settings["settings form → BoxSettings / UpdateBox"]
     L -->|Enter a s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
@@ -126,7 +126,7 @@ flowchart LR
   menu: the box on screen's (below), or any other's list menu.
 - **A walk never starts a box** (`switchBox`, `landOn`). The leader's ↑↓ switch to
   each box they land on, but attaching to one that is not `live` — stopped,
-  suspended, or errored with a container that may be off — is what starts
+  paused, or errored with a container that may be off — is what starts
   it, and passing over a row is not asking for that. So the walk stops
   there with only the tree's cursor — the list takes the keys, the workspace
   stays on screen, and Enter starts it as from the list. The leader's ↑↓
