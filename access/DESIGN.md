@@ -105,6 +105,9 @@ stderr, and exit status 3, so it is never taken for approval (0) or failure
 (1). A poll that fails without saying anything about the request — it timed
 out, the relay dropped it, the service answered 5xx — is polled through; only
 not found, denied or invalid end a wait early (`agentcreds.waitFor`).
+A resumed wait whose deadline interrupts the first poll reports the original
+ID as pending, with the service status still unconfirmed. If the wait had a
+separate poll failure and never read a status, it reports that failure.
 Resuming a trust
 request returns the status available from the service; only the original
 `trust --wait` can preserve certificate-chain metadata from its creation call.

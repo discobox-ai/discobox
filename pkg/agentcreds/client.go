@@ -125,7 +125,11 @@ func (c *Client) AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchan
 // WaitForTrustRequest is WaitForRequest for a trust request.
 func (c *Client) WaitForTrustRequest(ctx context.Context, known TrustRequestStatus, interval time.Duration) (TrustRequestStatus, error) {
 	requestID := known.RequestID
-	return waitFor(ctx, known, known.Status != "", interval, func() (TrustRequestStatus, bool, error) {
+	read := known.Status != ""
+	if !read {
+		known.Status = StatusPending
+	}
+	return waitFor(ctx, known, read, interval, func() (TrustRequestStatus, bool, error) {
 		status, err := c.TrustRequestStatus(ctx, requestID)
 		return status, status.Settled(), err
 	})
@@ -140,7 +144,11 @@ func (c *Client) WaitForTrustRequest(ctx context.Context, known TrustRequestStat
 // waits through.
 func (c *Client) WaitForRequest(ctx context.Context, known RequestStatus, interval time.Duration) (RequestStatus, error) {
 	requestID := known.RequestID
-	return waitFor(ctx, known, known.Status != "", interval, func() (RequestStatus, bool, error) {
+	read := known.Status != ""
+	if !read {
+		known.Status = StatusPending
+	}
+	return waitFor(ctx, known, read, interval, func() (RequestStatus, bool, error) {
 		status, err := c.RequestStatus(ctx, requestID)
 		return status, status.Settled(), err
 	})
@@ -155,8 +163,9 @@ func (c *Client) WaitForRequest(ctx context.Context, known RequestStatus, interv
 // wait, so a wait that ends before the answer comes is not a failure either:
 // it answers with the last status it knew, still pending, for the caller to
 // report as such and resume later — the one it started with (known, when
-// read) if no poll answered. Only a wait that never knew a status answers
-// with an error.
+// read) if no poll answered. A resumed wait with no known status returns
+// pending if the wait deadline interrupted polling without a separate poll
+// failure. Otherwise it returns the last poll failure or context error.
 func waitFor[T any](ctx context.Context, known T, read bool, interval time.Duration, poll func() (T, bool, error)) (T, error) {
 	if interval <= 0 {
 		interval = 2 * time.Second
@@ -172,6 +181,8 @@ func waitFor[T any](ctx context.Context, known T, read bool, interval time.Durat
 			last, read = status, true
 		case permanent(err):
 			return status, err
+		case ctx.Err() == context.DeadlineExceeded && isContextDeadline(err):
+			// This poll ended with the approval wait. Keep any earlier poll failure.
 		default:
 			lastErr = err
 		}
@@ -183,10 +194,25 @@ func waitFor[T any](ctx context.Context, known T, read bool, interval time.Durat
 			if lastErr != nil {
 				return last, lastErr
 			}
+			if ctx.Err() == context.DeadlineExceeded {
+				return last, nil
+			}
 			return last, ctx.Err()
 		case <-time.After(interval):
 		}
 	}
+}
+
+// isContextDeadline follows wrappers such as *url.Error to the context
+// sentinel. An independent HTTP client timeout can match the same sentinel
+// through errors.Is even though it did not come from the wait context.
+func isContextDeadline(err error) bool {
+	for ; err != nil; err = errors.Unwrap(err) {
+		if err == context.DeadlineExceeded { //nolint:errorlint // Match the sentinel itself, not other timeouts.
+			return true
+		}
+	}
+	return false
 }
 
 // permanent reports whether a poll failure would only be repeated by polling
