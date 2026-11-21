@@ -16,7 +16,7 @@ require (
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/discobox-ai/envelope v0.0.0-20261102232903-985c222e7477
-	github.com/discobox-ai/vm v0.0.0-20261118232809-a1fd6c39f632
+	github.com/discobox-ai/vm v0.0.0-20261121035136-48f8fa5a3e35
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/distribution/reference v0.6.0
 	github.com/ebitengine/purego v0.11.1
