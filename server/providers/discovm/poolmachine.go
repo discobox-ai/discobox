@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -79,6 +78,10 @@ type poolMachine struct {
 	// progress records what bringing the pool's machine up is doing, for a
 	// client whose sandbox waits on the pool; nil says nothing.
 	progress sandbox.PoolProgressReporter
+	// endpoints is the server's own view of each pool machine's URLs, with
+	// the credential each answers, on a driver whose URLs answer only one
+	// (pooledge.go).
+	endpoints serviceEndpoints
 }
 
 // machineLimitInterval bounds how often a running pool's pass runs the
@@ -150,6 +153,10 @@ type poolRuntimeState struct {
 	// MaxMachines, whether or not it answered: the next is due
 	// limitInterval after it.
 	LimitCheckedAt time.Time `json:"limitCheckedAt,omitzero"`
+	// SandboxEdge is the credential placed for the pool's sandboxes to reach
+	// its listener with, without its token, on a driver whose URLs answer
+	// only one (ADR 26-11-16-619 §2). Absent is none placed.
+	SandboxEdge *sandboxEdgeRecord `json:"sandboxEdge,omitempty"`
 }
 
 func decodeRuntimeState(pool *model.Pool) poolRuntimeState {
@@ -327,6 +334,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		if err := h.keys.revokeAll(ctx, pool, record.Key); err != nil {
 			return err
 		}
+		// What the server held of the machine the record named goes with it.
+		h.endpoints.forget(record.Instance)
 		record = poolRuntimeState{}
 		if !replaced {
 			// No machine is made that no key could reach.
@@ -411,6 +420,15 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 			sandbox.ReportBoxKept(ctx, fmt.Errorf("what its machine is made of does not resolve: %w", err))
 			return nil
 		}
+		return err
+	}
+	// The sandboxes' credential is no part of the placement: the agent reads
+	// it as it decides each sandbox's document, so a renewal restarts nothing.
+	err = h.ensureSandboxEdge(ctx, pool, inst, guest, &record)
+	if werr := h.writeState(pool, record); werr != nil && err == nil {
+		err = werr
+	}
+	if err != nil {
 		return err
 	}
 	current, err := record.Box.Current(placement)
@@ -584,7 +602,9 @@ func poolNetworks(fencing sandboxruntime.Fencing, scope string) []string {
 // placement is what the pool's machine is made the pool's box with: its
 // bootstrap, naming its own engine, the network its sandboxes' machines are
 // made on, where its agent listens, and its driver's machine limit; and the
-// agent and bundles for the machine's platform.
+// agent and bundles for the machine's platform. Its URLs are the server's
+// own view of them (serviceEndpoints), so a pass on a driver whose URLs mint
+// a credential mints none while those held are in their first half-life.
 func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, scope string, networks []string, maxMachines map[machine.OS]int) (poolruntime.BoxPlacement, error) {
 	bootstrap, err := maker.Bootstrap(ctx)
 	if err != nil {
@@ -630,11 +650,11 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	// 26-10-29-481 §§1–2, disco-vm ADR 26-11-14-610). Neither stands in for
 	// the other. A driver with no path between its machines has no pool URL,
 	// and carries no pool.
-	ingress, err := h.engine.URL(ctx, inst, machine.URLIngress)
+	ingress, _, err := h.endpoints.endpoint(ctx, h.engine, inst, machine.URLIngress)
 	if err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's ingress URL: %w", pool.ID, notReachable(err))
 	}
-	peer, err := h.engine.URL(ctx, inst, machine.URLPool)
+	peer, _, err := h.endpoints.endpoint(ctx, h.engine, inst, machine.URLPool)
 	if err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's pool URL: %w", pool.ID, notReachable(err))
 	}
@@ -684,9 +704,11 @@ func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) 
 // acquireAgentClient reaches the pool agent at its machine's ingress URL
 // alone (ADR 26-10-09-106 §3, disco-vm ADR 26-11-14-610): where the pool's
 // controller reaches it, boxd's HTTPS URL, the same across stop and start.
-// It never falls back to the pool URL, which only the pool's peers reach. The
-// URL needs no credential of the driver's; the agent authenticates every
-// caller but its health and metadata.
+// It never falls back to the pool URL, which only the pool's peers reach. On
+// boxd the URL needs no credential of the driver's; the agent authenticates
+// every caller but its health and metadata. Through an edge that answers only
+// a credential (archil), every request carries the server's own, over
+// HTTP/1.1, the control-plane channel's included (ADR 26-11-16-619 §2).
 //
 // A pool whose machine is gone is one its reconcile creates again, so on this
 // path that is the pool not reachable yet, which an explicit start waits out
@@ -700,11 +722,11 @@ func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) 
 	if err != nil {
 		return nil, err
 	}
-	url, err := h.engine.URL(ctx, inst, machine.URLIngress)
+	url, client, err := h.endpoints.endpoint(ctx, h.engine, inst, machine.URLIngress)
 	if err != nil {
 		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, notReachable(err))
 	}
-	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url.URL, "/"), nil), nil
+	return transport.NewHTTPClientLeaseWithBaseURL(client, strings.TrimRight(url.URL, "/"), nil), nil
 }
 
 // removePoolHost removes the pool's machine, then the pool's keys, then
@@ -721,6 +743,7 @@ func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) erro
 		if err := h.engine.Remove(ctx, inst, true); err != nil {
 			return err
 		}
+		h.endpoints.forget(inst.ID)
 	}
 	// Every key of the pool is revoked once the machine that held them is
 	// gone (ADR 26-10-23-551 §4).

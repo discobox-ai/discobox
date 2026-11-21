@@ -85,7 +85,9 @@ type poolTestDriver struct {
 	// reports itself: no networks, nothing of the account in a machine, a
 	// fence that closes DNS, and URLs that answer only a credential (ADR
 	// 26-11-16-619 §1). Without it, the driver fences on networks, as boxd.
-	edge bool
+	// Each of its Service calls mints a credential, counted in minted.
+	edge   bool
+	minted int
 	// startDelay is how long Start takes before the machine boots, and
 	// startBegan and startEnded when the last one did: a boot that outlasts a
 	// progress heartbeat.
@@ -122,6 +124,26 @@ func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	caps.MaxMachines = maps.Clone(d.read)
 	d.mu.Unlock()
 	return caps
+}
+
+// Service is the fake's, with a credential minted for it on an edge driver.
+func (d *poolTestDriver) Service(ctx context.Context, inst machine.Instance) (machine.Service, error) {
+	service, err := d.Driver.Service(ctx, inst)
+	if err != nil || !d.edge {
+		return service, err
+	}
+	d.mu.Lock()
+	d.minted++
+	token := fmt.Sprintf("edge-token-%d", d.minted)
+	d.mu.Unlock()
+	service.Credential = &machine.Credential{Header: testEdgeHeader, Token: token, Expires: time.Now().Add(24 * time.Hour)}
+	return service, nil
+}
+
+func (d *poolTestDriver) mints() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.minted
 }
 
 func (d *poolTestDriver) Check(ctx context.Context) error {

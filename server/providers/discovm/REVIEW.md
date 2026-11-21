@@ -151,3 +151,11 @@
   on the premise that passes run only on intent and drift, which would have
   been several boxd API calls per pool per minute, and a home endpoint that
   hung would have stalled every pool's pass.
+- On a driver whose URLs answer only a credential (`URLCapabilities.Credential`,
+  archil), `Engine.URL` is not a lookup: each call mints a port token the
+  driver neither keeps nor revokes until it expires. Read a pool machine's
+  URLs through `serviceEndpoints`, which holds each until half its
+  credential's life, and mint the sandboxes' credential only when its record
+  is due (`ensureSandboxEdge`). A bare `Engine.URL` in `converge`, `placement`
+  or a lease is a finding. Why: `placement` first called it twice a pass,
+  minting two live 24-hour tokens a minute per pool and throwing both away.

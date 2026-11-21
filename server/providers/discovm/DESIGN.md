@@ -298,6 +298,33 @@ A service's two URLs are named by who reaches them (disco-vm ADR
 | ingress | the pool's controller, this server | server → pool agent (`acquireAgentClient`, `Engine.URL` with `machine.URLIngress`): boxd's HTTPS URL, the same across stop and start; asked on, strictly |
 | pool | the pool's machines, as peers on its network | sandbox ↔ pool (the agent's hop, [../../../pool-agent/DESIGN.md](../../../pool-agent/DESIGN.md#the-hop)); a sandbox's machine asks for it on and for ingress off, both strictly |
 
+On a driver whose URLs answer only a credential the driver mints
+(`URLCapabilities.Credential`; archil), the pool machine's listener takes one
+too, and the server holds two (`pooledge.go`, ADR 26-11-16-619 §2):
+
+- **Its own**, for every call to the pool's agent at the ingress URL, the
+  control-plane channel's included (`acquireAgentClient`): sent in the header
+  the driver names on every request, over HTTP/1.1 alone, by one client per
+  credential that every lease shares. It is never placed in the machine.
+- **The sandboxes'**, one token they all share: minted for them from the
+  pool URL (`ensureSandboxEdge`), placed beside the bootstrap
+  (`bundle.SandboxEdgeCredentialFile`) and recorded on the pool's row without
+  its token (`sandboxEdge`); replaced by half its life, kept over a renewal
+  that fails while it still works. It is no part of the placement or its
+  fingerprint: the agent reads it as it decides each sandbox's runtime-config
+  document, so a renewal restarts nothing
+  ([pool-agent](../../../pool-agent/DESIGN.md#the-hop)). This is how the
+  ADR's "placed in the pool's bootstrap" is carried, under its open item on a
+  token's life and renewal (owner, 2026-11-21): the bootstrap is read once at
+  start and is in the placement's fingerprint, so a token renewed in it would
+  restart the agent and proxy at every renewal.
+
+On such a driver each URL lookup mints a token, so the server reads a pool
+machine's URLs, the placement's included, through `serviceEndpoints`: held in
+memory per machine and scope, with its own lock, until half the credential's
+life has passed. A reconcile mints nothing while those it holds are current;
+a server restart mints them again.
+
 "Ingress" says nothing of how public the network under it is: on boxd it is
 an internet HTTPS URL, in an enterprise install it may be a VLAN address.
 The server never dials a pool URL, which only peers reach and which is plain
