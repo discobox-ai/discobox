@@ -48,6 +48,13 @@ func TestRequestPathsResolveDotSegments(t *testing.T) {
 		// as a server routing on the path as sent would keep it.
 		"https://x.test/mcp/x%2F..%2Freadonly":            {"/mcp/readonly", "/mcp/x%2F..%2Freadonly"},
 		"https://x.test/mcp/readonly/a%2F..%2F..%2Fwrite": {"/mcp/write", "/mcp/readonly/a%2F..%2F..%2Fwrite"},
+		// A path parameter is read both ways too: kept, and stripped from its
+		// segment as a servlet container strips it, ..; then resolving.
+		"https://x.test/admin;x/users":           {"/admin;x/users", "/admin/users"},
+		"https://x.test/admin%3Bx/users":         {"/admin;x/users", "/admin/users"},
+		"https://x.test/public/..;/admin/users":  {"/public/..;/admin/users", "/admin/users"},
+		"https://x.test/public/%2e%2e;/admin":    {"/public/..;/admin", "/admin"},
+		"https://x.test/api/v1;jsessionid=a/b?q": {"/api/v1;jsessionid=a/b", "/api/v1/b"},
 	} {
 		if got := RequestPaths(raw); !slices.Equal(got, want) {
 			t.Fatalf("RequestPaths(%q) = %q, want %q", raw, got, want)
@@ -711,6 +718,45 @@ func TestDecideMethodOverrides(t *testing.T) {
 	req.Body = func() ([]byte, bool) { read = true; return nil, false }
 	if allowed, _ := Decide([][]Route{routes(t, "api.example.com")}, req); !allowed || read {
 		t.Fatalf("allowed %v, body read %v, for a route without methods", allowed, read)
+	}
+}
+
+// A path parameter must not carry a request around a route: a servlet
+// container strips it before routing, so /admin;x/... is /admin/... there and
+// /public/..;/admin is /admin. Each must be decided as the path it reaches.
+func TestDecideHoldsAPathParameterToThePathItReaches(t *testing.T) {
+	blocked := [][]Route{routes(t, "x.test", "x.test/admin/**=blocked")}
+	for _, raw := range []string{
+		"https://x.test/admin/who.jsp",
+		"https://x.test/admin;x/who.jsp",
+		"https://x.test/admin%3Bx/who.jsp",
+		"https://x.test/public/..;/admin/who.jsp",
+	} {
+		if allowed, _ := Decide(blocked, get("GET", raw)); allowed {
+			t.Errorf("%s reached a blocked path", raw)
+		}
+	}
+	limited := [][]Route{routes(t, "x.test/public/**")}
+	if allowed, reason := Decide(limited, get("GET", "https://x.test/public/who.jsp")); !allowed {
+		t.Fatalf("the open path was refused: %s", reason)
+	}
+	if allowed, reason := Decide(limited, get("GET", "https://x.test/public/who.jsp;jsessionid=a")); !allowed {
+		t.Fatalf("a path parameter inside the open path was refused: %s", reason)
+	}
+	for _, raw := range []string{
+		"https://x.test/public/..;/admin/who.jsp",
+		"https://x.test/public/%2e%2e;/admin/who.jsp",
+	} {
+		if allowed, _ := Decide(limited, get("GET", raw)); allowed {
+			t.Errorf("%s left the open path", raw)
+		}
+	}
+	// A route naming a parameter matches the path as sent but not the path a
+	// servlet container routes, so it refuses, as one naming an encoded "/"
+	// does: no upstream's reading of the path is left unchecked.
+	named := [][]Route{routes(t, "x.test/a;b")}
+	if allowed, _ := Decide(named, get("GET", "https://x.test/a;b")); allowed {
+		t.Error("a route naming a parameter allowed a path it does not hold to every reading")
 	}
 }
 
