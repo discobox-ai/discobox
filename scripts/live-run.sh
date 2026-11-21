@@ -1135,3 +1135,79 @@ if dcout out 0 'control-plane channel open' admin pool logs "$pool_id" --tail 0;
 else
 	check channel "could not read the pool journal: $err"
 fi
+
+if [ "$driver" = archil ]; then
+	echo "--- Archil edge strips the port token (requires Archil rollout)" >&2
+	step=archil-edge-strips-port-token
+	scope_id=$(scope "$pool_id")
+	# Ask for the same credentialed endpoint the pool uses. Never record the
+	# credential or pass it in argv. A failed request cannot prove stripping.
+	if service=$(dvm 0 $'https://live-run.archil.app\nX-Archil-Token: dry-run\n2099-01-01T00:00:00Z' "$scope_id" url --scope pool --credential "$machine" 2>/dev/null); then
+		{
+			IFS= read -r endpoint
+			IFS= read -r header || true
+		} <<<"$service"
+		if [[ $endpoint =~ ^https://[a-zA-Z0-9.-]+\.archil\.app$ && $header =~ ^X-Archil-Token:\ [^[:space:]]+$ ]]; then
+			# This disposable sandbox is finished with its normal agent. Run
+			# the probe out of band so stopping the agent cannot cut off exec.
+			# The listener returns only a nonce and a presence bit.
+			probe=$(cat <<'PY'
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import sys
+
+class Listener(BaseHTTPRequestHandler):
+    handled = False
+
+    def log_message(self, *_):
+        pass
+
+    def do_GET(self):
+        if self.path != "/" + sys.argv[1]:
+            self.send_error(404)
+            return
+        seen = "present" if "X-Archil-Token" in self.headers else "absent"
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(f"{sys.argv[1]} {seen}\n".encode())
+        Listener.handled = True
+
+with HTTPServer(("0.0.0.0", 7302), Listener) as server:
+    print("ready", flush=True)
+    while not Listener.handled:
+        server.handle_request()
+PY
+)
+			# shellcheck disable=SC2016 # Positional arguments expand in the guest.
+			dvm 0 ready "$scope_id" exec --user root "$machine" sh -c '
+				set -e
+				trap "systemctl start discobox-sandbox-agent.service" EXIT
+				systemctl stop discobox-sandbox-agent.service
+				timeout -k 2s 60s python3 -u -c "$1" "$2"
+			' probe "$probe" "$nonce" </dev/null >"$work/archil-listener.out" 2>"$work/archil-listener.err" &
+			listener=$!
+			for ((attempt = 0; attempt < 30; attempt++)); do
+				if grep -qx ready "$work/archil-listener.out"; then break; fi
+				kill -0 "$listener" 2>/dev/null || break
+				pause 1
+			done
+			if [ "$dry" = 1 ] || grep -qx ready "$work/archil-listener.out"; then
+				answer=$(printf '%s\n' "$header" | ext 0 "$nonce absent" curl -q --http1.1 --fail --silent --max-time 20 --max-filesize 256 --header @- "$endpoint/$nonce") || answer=
+				case $answer in
+				"$nonce absent") pass "$step" "authenticated request reached the guest without X-Archil-Token" ;;
+				"$nonce present") fail "$step" "the guest received X-Archil-Token; this check requires Archil's header-stripping rollout" ;;
+				*) check "$step" "no authenticated response from the guest listener; header stripping was not observed" ;;
+				esac
+			else
+				check "$step" "the guest listener did not start"
+			fi
+			# The guest exits after its nonce request or the guest timeout.
+			# Wait for its trap to restore the agent before teardown.
+			wait "$listener" 2>/dev/null || true
+		else
+			check "$step" "disco-vm did not return an Archil HTTPS endpoint and port credential"
+		fi
+	else
+		check "$step" "could not obtain the Archil port credential; disco-vm must support url --credential"
+	fi
+	unset service header
+fi

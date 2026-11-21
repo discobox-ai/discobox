@@ -108,12 +108,12 @@ set -eu
 printf '%s\n' "disco-vm $*" >>"$STUB/calls"
 [ "$2" != boxd ] || [[ "${BOXD_REGION:-}" = fra || "${BOXD_REGION:-}" = nyc ]] || { echo 'disco-vm: boxd: configuration: region is required' >&2; exit 1; }
 [ "$1 $3" = "--driver --pool" ] || { echo "stub disco-vm: no driver and scope: $*" >&2; exit 3; }
-scope=$4; shift 4
+driver=$2 scope=$4; shift 4
 case "$1 ${2:-}" in
 "ls -a")
 	[ ! -e "$STUB/ls-fails-$scope" ] || { echo 'disco-vm: boxd: exchange API key: 401 Unauthorized: invalid API key' >&2; exit 1; }
 	echo 'ID  NAME  FROM  OS  STATE  CREATED'
-	if [ "$BOXD_REGION" != "$(cat "$STUB/provider-region")" ]; then exit 0; fi
+	if [ "$driver" = boxd ] && [ "$BOXD_REGION" != "$(cat "$STUB/provider-region")" ]; then exit 0; fi
 	if [ "$scope" = pool-t1 ] && [ ! -e "$STUB/pool.deleted" ]; then
 		echo "abc sbx-t1 - linux running 1m"
 	fi
@@ -121,6 +121,8 @@ case "$1 ${2:-}" in
 		while read -r n; do echo "abc  $n  -  linux  running  1m"; done <"$STUB/left-$scope"
 	fi ;;
 "exec pool-t1") echo true ;;
+"exec --user") echo ready; sleep 2 ;;
+"url --scope") printf 'https://live-run.archil.app\nX-Archil-Token: fixture-port-credential\n2099-01-01T00:00:00Z\n' ;;
 "cache ls") echo '[]' ;;
 "key ls")
 	# boxd refuses key management, the listing included, to an API key,
@@ -150,6 +152,14 @@ esac
 // what the guest would send.
 const stubCurl = `#!/usr/bin/env bash
 printf '%s\n' "curl $*" >>"$STUB/calls"
+if [[ "${*: -1}" == https://live-run.archil.app/* ]]; then
+	IFS= read -r header
+	[ "$header" = 'X-Archil-Token: fixture-port-credential' ] || exit 22
+	read -r result <"$STUB/archil-edge"
+	[ "$result" != unreachable ] || exit 22
+	printf '%s %s\n' "${!#}" "$result" | sed 's|https://live-run.archil.app/||'
+	exit 0
+fi
 out=
 headers=
 while [ "$#" -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; -D) headers=$2; shift 2 ;; *) shift ;; esac; done
@@ -208,7 +218,7 @@ func liveRun(t *testing.T, setup func(stub string)) run {
 	cmd := exec.CommandContext(t.Context(), "bash", args...) //nolint:gosec // G204: the repository's own script, with the test's own arguments
 	cmd.Env = append(os.Environ(),
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"STUB="+stub, "BOXD_API_KEY="+key, "DISCOBOX=", "DISCO_VM=")
+		"STUB="+stub, "BOXD_API_KEY="+key, "ARCHIL_API_KEY=fixture-archil-key", "DISCOBOX=", "DISCO_VM=")
 	out, err := cmd.CombinedOutput()
 	r := run{stub: stub, out: string(out)}
 	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) {
@@ -221,6 +231,34 @@ func liveRun(t *testing.T, setup func(stub string)) run {
 	rep, _ := os.ReadFile(report)
 	r.report = string(rep)
 	return r
+}
+
+func TestLiveRunArchilEdgeStripsPortToken(t *testing.T) {
+	for _, tc := range []struct {
+		response, verdict string
+	}{
+		{"absent", "PASS"},
+		{"present", "FAIL"},
+		{"unreachable", "CHECK"},
+	} {
+		t.Run(tc.response, func(t *testing.T) {
+			r := liveRun(t, func(stub string) {
+				write(t, filepath.Join(stub, "args"), "--driver archil", 0o644)
+				write(t, filepath.Join(stub, "archil-edge"), tc.response+"\n", 0o644)
+			})
+			if !strings.Contains(r.report, "| "+tc.verdict+" | archil-edge-strips-port-token |") {
+				t.Fatalf("expected %s for %s:\n%s", tc.verdict, tc.response, r.report)
+			}
+			if (r.exit == 0) != (tc.verdict == "PASS") {
+				t.Fatalf("unexpected exit %d for %s:\n%s", r.exit, tc.response, r.report)
+			}
+			for _, output := range []string{r.report, r.out, strings.Join(r.calls, "\n")} {
+				if strings.Contains(output, "fixture-port-credential") {
+					t.Fatal("port credential appeared in output or command arguments")
+				}
+			}
+		})
+	}
 }
 
 func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
