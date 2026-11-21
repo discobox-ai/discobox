@@ -231,11 +231,11 @@ as ADR 26-10-09-106 §1 places it:
   `/lib/systemd/systemd` where not, and its `Start` waits (up to two
   minutes) for systemd to settle, stopping a machine whose systemd does not.
   So the units are unchanged and nothing here knows Archil (ADR 26-11-16-619
-  §4). discobox sets no base on an archil provider that names none: the
-  driver's own default, Archil's image, stands. The driver installs systemd
-  in the pool's machine, which is not fenced, but a sandbox's machine is
-  fenced from the mirror, so its create fails naming `/lib/systemd/systemd`
-  on such a provider. `TestArchilGuestRunsThePoolsAndSandboxsUnits` (`go tool
+  §4). An archil provider that names no base runs `DefaultOCIBase`
+  (above), which carries systemd, so neither path is taken. One that names
+  a base without systemd takes them: the driver installs systemd in the
+  pool's machine, which is not fenced, but a sandbox's machine is fenced
+  from the mirror, so its create fails naming `/lib/systemd/systemd`. `TestArchilGuestRunsThePoolsAndSandboxsUnits` (`go tool
   task test:e2e:archil-systemd`) provisions a pool's box and
   places a sandbox's machine from the real bundles in containers whose PID 1
   is not systemd, entered by copies of the driver's lines, and reboots each.

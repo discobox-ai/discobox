@@ -68,6 +68,12 @@
   26-11-03-606). Its description says it is trusted with the pool: a base a
   name can be repointed under boots whatever it is repointed to, with the
   pool's keys in it, so an operator names one only their account controls.
+- `DESIGN.md` states an archil provider's default base in more than one
+  place (the pool machine's base, and the archil guest's systemd). Change
+  every one together, and grep for them on a rebase. Why: #1530 and #1516
+  each wrote the default from their own side of the merge, and the rebase
+  left one bullet saying Archil's image stands while another said
+  `DefaultOCIBase` replaced it.
 - When the disco-vm pin moves, compare each linked driver's definition
   (`machine.DefinitionOf`: fields, secrets and their sends, base) with the
   old pin's, and say in the change what a provider now offers and runs
