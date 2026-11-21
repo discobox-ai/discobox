@@ -1,7 +1,8 @@
 # 26-10-20-317 — A person pauses a discobox from the root CLI and the console, and the CLI calls the state `paused`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-21
+  Accepted by the owner by merging #1521, 2026-11-21.
 - **Amends**: [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)
   §3, where the CLI offered suspend as `discobox admin box suspend` only.
   Everything else in 26-10-16-420 stands, the API's `suspended` included.
