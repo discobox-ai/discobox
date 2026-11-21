@@ -110,7 +110,7 @@ secret `driver.apiKey`. The catalog reads them from the driver, so
 | Type | Driver fields | Pools |
 | --- | --- | --- |
 | `boxd` | `driver.apiKey` (secret, required), `driver.region` (required), `driver.addr` and `driver.tokenUrl` (advanced endpoints) | Linux |
-| `archil` | `driver.apiKey` (secret, required), `driver.region`, `driver.baseUrl` (advanced endpoint) | refused for now: Archil has no machine isolation |
+| `archil` | `driver.apiKey` (secret, required), `driver.region`, `driver.baseUrl` (advanced endpoint) | Linux, accepted but not yet working: a pool is blocked before its machine is made, since Archil cannot key one |
 | `hcs` (Windows) | none | refused until Windows pools |
 
 `boxd` and `archil` also take `controlPlaneUrl`, `base` and the pool policy.

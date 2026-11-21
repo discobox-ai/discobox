@@ -964,9 +964,78 @@ func TestMachineRuntimeRefusesADriverThatCannotIsolate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, Isolate: true, Network: "pool-net", Root: layout.ContainerAt(t.TempDir())})
-	if err == nil || !strings.Contains(err.Error(), "cannot isolate") {
+	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, HoldToPool: true, Network: "pool-net", Root: layout.ContainerAt(t.TempDir())})
+	if err == nil || !strings.Contains(err.Error(), "cannot carry a machine pool") {
 		t.Fatalf("runtime on the fake driver, isolated = %v, want refused", err)
+	}
+}
+
+// edgeDriver is the fencing fake as a driver that fences at its provider's
+// edge, as archil reports itself: no networks, nothing of the account in a
+// machine, an egress fence that can close DNS, and URLs that answer only a
+// credential (ADR 26-11-16-619 §1).
+type edgeDriver struct {
+	*fencingDriver
+}
+
+func (d edgeDriver) Capabilities() machine.Capabilities {
+	caps := d.fencingDriver.Capabilities()
+	caps.Bare, caps.Networks = machine.BareAlways, false
+	caps.Egress = append(caps.Egress, machine.EgressCloseDNS)
+	caps.URLs.Credential = true
+	return caps
+}
+
+// On a driver that fences at its provider's edge, an isolated runtime makes
+// each sandbox's machine on no network, asks nothing stripped of a driver
+// that gives nothing, and fences it to the pool's host with DNS closed; a
+// machine found by name whose fence leaves DNS open is refused. The runtime
+// refuses a network, which such a driver has none of, and a fence that
+// leaves DNS open (ADR 26-11-16-619 §1).
+func TestMachineRuntimeFencesASandboxAtTheEdge(t *testing.T) {
+	ctx := context.Background()
+	driver := edgeDriver{&fencingDriver{Driver: vmtest.IngressOptional(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil, nil)), fences: map[string]*machine.Egress{}}}
+	e, err := engine.Open(driver, machineTestPool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		instances, _ := driver.Instances(context.Background())
+		for _, inst := range instances {
+			_ = e.Remove(context.Background(), inst, true)
+		}
+	})
+	fence := &machine.Egress{Allow: []string{"7302-pool.zone.archil.app"}, CloseDNS: true}
+	config := func(network string, egress *machine.Egress) MachineSandboxRuntimeConfig {
+		return MachineSandboxRuntimeConfig{Audit: &fakeAuditPurger{}, Engine: e, HoldToPool: true, Network: network, Egress: egress, Root: layout.ContainerAt(t.TempDir())}
+	}
+	if _, err := NewMachineSandboxRuntime(config("pool-net", fence)); err == nil || !strings.Contains(err.Error(), "on no network") {
+		t.Fatalf("an edge runtime given a network = %v, want refused", err)
+	}
+	for _, open := range []*machine.Egress{nil, {}, {Allow: fence.Allow}} {
+		if _, err := NewMachineSandboxRuntime(config("", open)); err == nil || !strings.Contains(err.Error(), "DNS closed") {
+			t.Fatalf("an edge runtime fenced %+v = %v, want refused", open, err)
+		}
+	}
+	r, err := NewMachineSandboxRuntime(config("", fence))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts := r.createOptions("sbx-1"); len(opts.Networks) != 0 || opts.Bare || opts.Egress != fence {
+		t.Fatalf("an edge sandbox's create = %+v, want no network, nothing stripped and the pool's fence", opts)
+	}
+	inst, _, err := r.ensureInstance(ctx, "sbx_edge", nil)
+	if err != nil {
+		t.Fatalf("ensure a machine at the edge: %v", err)
+	}
+	if got := driver.fences[inst.Name]; got == nil || !got.CloseDNS || len(got.Allow) != 1 || got.Allow[0] != fence.Allow[0] {
+		t.Fatalf("the machine was made with fence %+v, want the pool's host alone with DNS closed", got)
+	}
+	if _, err := driver.Create(ctx, machine.InstanceSpec{Name: "sbx-dns", Egress: &machine.Egress{Allow: fence.Allow}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.ensureInstance(ctx, "sbx_dns", nil); err == nil || !strings.Contains(err.Error(), "not fenced") {
+		t.Fatalf("ensure a machine made with DNS open = %v, want it refused", err)
 	}
 }
 
@@ -1703,6 +1772,10 @@ func TestSameEgressComparesAllowedHostsAsASet(t *testing.T) {
 		{name: "in any order and case", got: &machine.Egress{Allow: []string{"B.example", "a.example"}}, want: &machine.Egress{Allow: []string{"a.example", "b.example"}}, same: true},
 		{name: "a host more", got: &machine.Egress{Allow: []string{"a.example", "b.example"}}, want: &machine.Egress{Allow: []string{"a.example"}}},
 		{name: "a host fewer", got: &machine.Egress{Allow: []string{"a.example"}}, want: &machine.Egress{Allow: []string{"a.example", "b.example"}}},
+		{name: "DNS open where it is closed", got: &machine.Egress{Allow: []string{"a.example"}}, want: &machine.Egress{Allow: []string{"a.example"}, CloseDNS: true}},
+		{name: "DNS closed where it is open", got: &machine.Egress{Allow: []string{"a.example"}, CloseDNS: true}, want: &machine.Egress{Allow: []string{"a.example"}}},
+		{name: "an empty list closes DNS whatever it says", got: &machine.Egress{CloseDNS: true}, want: &machine.Egress{}, same: true},
+		{name: "DNS closed in both", got: &machine.Egress{Allow: []string{"a.example"}, CloseDNS: true}, want: &machine.Egress{Allow: []string{"a.example"}, CloseDNS: true}, same: true},
 	} {
 		if got := sameEgress(tc.got, tc.want); got != tc.same {
 			t.Errorf("%s: sameEgress = %t, want %t", tc.name, got, tc.same)

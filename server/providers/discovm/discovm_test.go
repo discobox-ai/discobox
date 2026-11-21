@@ -378,10 +378,10 @@ func TestValidatePoolOSIsWhatTheDriverBoots(t *testing.T) {
 	if err := PoolOSValidator("boxd")(json.RawMessage(`{"driver":{"region":"fra"}}`), "darwin"); err == nil || !strings.Contains(err.Error(), "does not boot darwin") {
 		t.Fatalf("a darwin pool on boxd = %v, want refused", err)
 	}
-	// archil cannot place machines on pool networks, so its pools are refused
-	// (ADR 26-11-11-080 §1).
-	if err := PoolOSValidator("archil")(json.RawMessage(`{"driver":{"apiKey":"key-k","region":"aws-us-east-1"}}`), "linux"); err == nil || !strings.Contains(err.Error(), "cannot isolate machines") {
-		t.Fatalf("a linux pool on archil = %v, want refused for its fence", err)
+	// archil has no networks, but fences each machine at its provider's
+	// edge, so its pools are carried (ADR 26-11-16-619 §1).
+	if err := PoolOSValidator("archil")(json.RawMessage(`{"driver":{"apiKey":"key-k","region":"aws-us-east-1"}}`), "linux"); err != nil {
+		t.Fatalf("a linux pool on archil = %v, want it carried at its edge", err)
 	}
 	vz := machine.Capabilities{GuestOS: []machine.OS{machine.Darwin, machine.Linux}}
 	for _, os := range []string{"linux", "darwin"} {

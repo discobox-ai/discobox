@@ -4,9 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/vm/pkg/machine"
-
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 func machineBootstrap(ingress, pool string) Bootstrap {
@@ -100,24 +99,36 @@ func TestPoolHopRefusesAPlainEdge(t *testing.T) {
 	}
 }
 
-func TestRequireMachineFence(t *testing.T) {
-	if err := requireMachineFence("boxd", machine.Capabilities{Bare: machine.BareStrip, Networks: true, Egress: []machine.EgressFence{machine.EgressAllow}}); err != nil {
-		t.Fatalf("a driver that isolates and fences: %v", err)
+// A driver that fences on networks keeps the hop it resolved. One that
+// fences at its provider's edge needs the edge's hop, and closes DNS in the
+// sandboxes' fence, leaving the hop's own fence as it was (ADR 26-11-16-619
+// §§1, 3).
+func TestPoolHopFencedByTheDriver(t *testing.T) {
+	direct, err := resolvePoolHop(machineBootstrap("https://pool-1.boxd.sh", "http://pool-1.boxd:7302"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range []struct {
-		name string
-		caps machine.Capabilities
-		want []string
-	}{
-		{name: "no isolation", caps: machine.Capabilities{Egress: []machine.EgressFence{machine.EgressAllow}}, want: []string{"cannot isolate"}},
-		{name: "no fence", caps: machine.Capabilities{Bare: machine.BareStrip, Networks: true}, want: []string{"cannot fence"}},
-		{name: "neither", want: []string{"cannot isolate", "cannot fence"}},
-	} {
-		err := requireMachineFence("fake", tc.caps)
-		for _, want := range tc.want {
-			if err == nil || !strings.Contains(err.Error(), want) {
-				t.Errorf("%s: requireMachineFence = %v, want it to say %q", tc.name, err, want)
-			}
-		}
+	if hop, err := direct.fencedBy("boxd", sandboxruntime.FencedOnNetwork); err != nil || hop.egress != direct.egress || hop.form != hopDirect {
+		t.Fatalf("a direct hop on networks = %+v, %v; want it as resolved", hop, err)
+	}
+	if _, err := direct.fencedBy("archil", sandboxruntime.FencedAtEdge); err == nil || !strings.Contains(err.Error(), "not reached through one") {
+		t.Fatalf("a direct hop at an edge = %v, want it refused", err)
+	}
+	edge, err := resolvePoolHop(machineBootstrap("https://7302-r.z.archil.app", "https://7302-r.z.archil.app"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hop, err := edge.fencedBy("archil", sandboxruntime.FencedAtEdge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hop.form != hopEdge || hop.egress == nil || !hop.egress.CloseDNS || len(hop.egress.Allow) != 1 || hop.egress.Allow[0] != "7302-r.z.archil.app" {
+		t.Fatalf("an edge hop at an edge = %+v, want the edge's host alone with DNS closed", hop)
+	}
+	if edge.egress.CloseDNS {
+		t.Fatal("fencing the hop changed the fence it was fenced from")
+	}
+	if hop, err := edge.fencedBy("boxd", sandboxruntime.FencedOnNetwork); err != nil || hop.egress.CloseDNS {
+		t.Fatalf("an edge hop on networks = %+v, %v; want it as resolved", hop, err)
 	}
 }

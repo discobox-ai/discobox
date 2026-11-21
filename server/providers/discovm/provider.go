@@ -28,6 +28,7 @@ import (
 	"github.com/discobox-ai/vm/pkg/machine"
 
 	"github.com/discobox-ai/discobox/pkg/wire"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
@@ -187,8 +188,8 @@ func validate(name string, data json.RawMessage) error {
 // it (ADR 26-11-11-963 §1), and, on a driver reached at its URLs, fences its
 // machines (ADR 26-11-11-080 §1). Linux on every driver that boots it; hcs
 // boots neither, and its pools are refused until the Windows work 963 §13
-// defers. Archil cannot place machines on pool networks, so its pools are
-// refused at creation.
+// defers. Archil has no networks but fences its machines at its provider's
+// edge, so its pools are accepted (fences).
 func PoolOSValidator(name string) sandbox.PoolOSValidator {
 	return func(data json.RawMessage, os string) error {
 		s, err := decode(name, data)
@@ -200,7 +201,7 @@ func PoolOSValidator(name string) sandbox.PoolOSValidator {
 			return err
 		}
 		if !isLocal(driver) {
-			if err := fences(driver); err != nil {
+			if _, err := fences(driver); err != nil {
 				return err
 			}
 		}
@@ -208,15 +209,18 @@ func PoolOSValidator(name string) sandbox.PoolOSValidator {
 	}
 }
 
-// fences refuses a driver reached at its URLs that cannot carry a pool: its
-// pool machine is on a network of the pool's own, and its sandboxes'
-// machines isolated on it (ADR 26-10-23-551 §4).
-func fences(driver machine.Driver) error {
-	caps := driver.Capabilities()
-	if !caps.Bare.Strips() || !caps.Networks {
-		return fmt.Errorf("the %s driver cannot isolate machines or place them on networks, which a pool's machine and its sandboxes' need: its pools are refused", driver.Name())
+// fences is how a driver reached at its URLs fences a pool's sandboxes, and
+// refuses one that carries no pool (sandboxruntime.PoolFencing, ADR
+// 26-11-11-963 §5, ADR 26-11-16-619 §1): on networks, the pool machine is on
+// a network of the pool's own and its sandboxes' machines isolated on it; at
+// the provider's edge, every machine is on none, and each sandbox reaches its
+// pool only through the edge.
+func fences(driver machine.Driver) (sandboxruntime.Fencing, error) {
+	fencing, err := sandboxruntime.PoolFencing(driver.Name(), driver.Capabilities())
+	if err != nil {
+		return "", fmt.Errorf("%w: its pools are refused", err)
 	}
-	return nil
+	return fencing, nil
 }
 
 // bootsOS is whether a driver whose capabilities are caps boots os.

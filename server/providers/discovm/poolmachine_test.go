@@ -76,9 +76,16 @@ type poolTestDriver struct {
 	// fences is each machine's isolation and networks, by ID, as Create was
 	// asked for them: the fake driver under this one keeps neither.
 	fences map[string]machine.InstanceSpec
+	// keysNone is a driver that issues no keys at all, as archil.
+	keysNone bool
 	// noIngress is a driver that gives no instance an ingress URL, so its
 	// caller cannot reach the machine.
 	noIngress bool
+	// edge is a driver that fences at its provider's edge, as archil
+	// reports itself: no networks, nothing of the account in a machine, a
+	// fence that closes DNS, and URLs that answer only a credential (ADR
+	// 26-11-16-619 §1). Without it, the driver fences on networks, as boxd.
+	edge bool
 }
 
 func (d *poolTestDriver) Name() string {
@@ -91,8 +98,17 @@ func (d *poolTestDriver) Name() string {
 func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	caps := d.Driver.Capabilities()
 	caps.Bare, caps.Networks = machine.BareStrip, true
+	caps.Egress = []machine.EgressFence{machine.EgressNone, machine.EgressAllow}
+	if d.edge {
+		caps.Bare, caps.Networks = machine.BareAlways, false
+		caps.Egress = append(caps.Egress, machine.EgressCloseDNS)
+		caps.URLs.Credential = true
+	}
 	if d.noIngress {
 		caps.URLs.Ingress = machine.URLNever
+	}
+	if d.keysNone {
+		caps.Keys.Mode = machine.KeysNone
 	}
 	d.mu.Lock()
 	caps.MaxMachines = maps.Clone(d.read)
@@ -537,6 +553,50 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 	}
 }
 
+// On a driver that fences at its provider's edge, the pool is carried (ADR
+// 26-11-16-619 §1): its machine is made on no network, since such a driver
+// has none, and its bootstrap names none for its sandboxes'; it carries no
+// machine token, since the driver gives a machine nothing of the account. A
+// machine under its name on a network is not the pool's.
+func TestFakePoolMachineAtAnEdgeIsOnNoNetwork(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	driver.edge = true
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-edge", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() on a driver fenced at its edge = %v", err)
+	}
+	if len(driver.created) != 1 || len(driver.created[0].Networks) != 0 || driver.created[0].Bare {
+		t.Fatalf("created %+v, want one machine on no network, not stripped", driver.created)
+	}
+	if driver.applies() != 1 || driver.applied[0].MachineNetwork != "" || driver.applied[0].MachinePool != "pool-edge" {
+		t.Fatalf("bootstrap = %+v, want the pool's scope and no network", driver.applied)
+	}
+	if credential := pool.HostCredential; credential == nil || credential.MachineToken {
+		t.Fatalf("host credential = %+v, want no machine token on a driver that gives a machine none", credential)
+	}
+
+	host := r.host.(*poolMachine)
+	inst, err := host.instance(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.engine.Remove(ctx, inst, true); err != nil {
+		t.Fatal(err)
+	}
+	// Made by someone else on a driver with networks, then read as the edge
+	// driver reads it.
+	driver.edge = false
+	if _, err := r.engine.Create(ctx, engine.CreateOptions{Name: "pool-edge", Networks: []string{"someone-else"}}); err != nil {
+		t.Fatal(err)
+	}
+	driver.edge = true
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err == nil || !strings.Contains(err.Error(), "nothing is placed on it") {
+		t.Fatalf("EnsurePool() over a machine on a network = %v, want it refused", err)
+	}
+}
+
 // On every reconcile the provider compares its own record with what it wants
 // (ADR 26-10-23-551 §1): nothing moved runs nothing, moved bundles are applied
 // again in the running machine, a stopped machine is started on the disk it
@@ -802,7 +862,7 @@ func TestFakePoolMachineReplacedOffThePoolsNetworkIsRefused(t *testing.T) {
 	applies := driver.applies()
 
 	err = r.EnsurePool(ctx, nil, nil, pool, maker, nil)
-	if err == nil || !strings.Contains(err.Error(), "not on the pool's own network") {
+	if err == nil || !strings.Contains(err.Error(), "not on the networks its pool's machine is made on") {
 		t.Fatalf("ensure = %v, want the stranger refused", err)
 	}
 	if driver.applies() != applies || !slices.Equal(issuedKeys(t, r, pool), keys) {
@@ -855,6 +915,20 @@ func TestFakePoolMachineRenewsItsKey(t *testing.T) {
 	}
 	if ids := issuedKeys(t, r, pool); slices.Contains(ids, first.ID) {
 		t.Fatalf("keys = %v, want the expired one swept", ids)
+	}
+}
+
+// A driver that issues no keys at all, and does not authenticate a machine
+// as itself, makes no pool machine: it would be billed and never keyed. The
+// pool is blocked, saying so, before anything is made.
+func TestFakePoolMachineIsNotMadeWhereNoKeyCouldReachIt(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	driver.keysNone = true
+	pool := &model.Pool{ID: "pool-keyless", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	err := r.EnsurePool(context.Background(), nil, nil, pool, newTestMaker(), nil)
+	if err == nil || !strings.Contains(err.Error(), "blocked") || !errors.Is(err, machine.ErrNoKey) || len(driver.created) != 0 {
+		t.Fatalf("EnsurePool() on a driver that issues no keys = %v, created %d; want it blocked before any machine", err, len(driver.created))
 	}
 }
 
@@ -967,13 +1041,14 @@ func TestFakePoolMachineApplyThatFails(t *testing.T) {
 	}
 }
 
-// A driver that cannot isolate machines makes no pool machine.
+// A driver that cannot fence a pool's sandboxes, on networks or at its
+// provider's edge, makes no pool machine.
 func TestFakePoolMachineNeedsIsolation(t *testing.T) {
 	r, _ := newFakePool(t, "")
 	r.engine.Driver = r.engine.Driver.(*poolTestDriver).Driver
 	r.host = fakePoolMachine(r.engine, "")
 	err := r.EnsurePool(context.Background(), nil, nil, &model.Pool{ID: "pool-14"}, newTestMaker(), nil)
-	if err == nil || !strings.Contains(err.Error(), "cannot isolate") {
+	if err == nil || !strings.Contains(err.Error(), "cannot carry a machine pool") || !strings.Contains(err.Error(), "its pools are refused") {
 		t.Fatalf("EnsurePool() on a driver that cannot isolate = %v", err)
 	}
 }

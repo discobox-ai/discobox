@@ -623,6 +623,18 @@ not the root ever answered.
   client certificate, so whoever answers it is handed that sandbox's egress.
   The registry is not named that way: buildkitd pushes to it on loopback.
 
+## How a driver carries a pool
+
+- **Whether a driver carries a pool, and how, is `sandboxruntime.PoolFencing`
+  alone**, decided from disco-vm's capabilities, never a driver's name (ADR
+  26-11-11-963 §5, ADR 26-11-16-619 §1). The server's pool create and pool
+  machine, the agent's hop and the machine runtime all ask it. A check that
+  reads `Bare`, `Networks`, `Egress` or `URLs.Credential` on its own to
+  accept or refuse a driver is a second rule that will drift from it. On a
+  driver fenced at its edge, nothing is placed on a network and the
+  sandboxes' fence closes DNS; a change that drops either loosens a fence the
+  guest's root cannot.
+
 ## A machine's ingress port
 
 - **A sandbox machine's ingress service port belongs to the guest's root, not

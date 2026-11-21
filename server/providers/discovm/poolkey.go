@@ -53,6 +53,24 @@ func newPoolKeys(driver machine.Driver) poolKeys {
 // inMachine reports whether the driver's pools authenticate in-machine.
 func (k poolKeys) inMachine() bool { return k.inMachineField != "" }
 
+// keyable refuses, before any machine is made for it, a pool whose machine
+// no key could ever reach: the driver authenticates no machine in-machine and
+// issues no keys at all (machine.KeysNone). Such a machine would be made and
+// billed, then blocked at its first key (ensure), and started again at every
+// pass. A driver that issues keys but refuses one is found by ensure.
+func (k poolKeys) keyable(pool *model.Pool) error {
+	if k.inMachine() || k.driver.Capabilities().Keys.Mode != machine.KeysNone {
+		return nil
+	}
+	return k.blocked(pool, machine.ErrNoKey)
+}
+
+// blocked is the error of a pool whose machine its driver gives no key: the
+// provider's own key is never placed there (ADR 26-11-11-080 §9).
+func (k poolKeys) blocked(pool *model.Pool, err error) error {
+	return fmt.Errorf("pool %s is blocked: the %s driver neither authenticates its machines in-machine nor can issue one a key (%w), and the provider's own key is never placed on a pool's machine", pool.ID, k.driver.Name(), err)
+}
+
 // poolKeyRecord is how a pool's machine authenticates, as the provider's
 // record keeps it: never a secret.
 type poolKeyRecord struct {
@@ -147,7 +165,7 @@ func (k poolKeys) ensureIssued(ctx context.Context, pool *model.Pool, guest mach
 	switch {
 	case err == nil:
 	case errors.Is(err, machine.ErrCannotIssue) || errors.Is(err, machine.ErrNoKey):
-		blocked := fmt.Errorf("pool %s is blocked: the %s driver neither authenticates its machines in-machine nor can issue one a key (%w), and the provider's own key is never placed on a pool's machine (ADR 26-11-11-080 §9)", pool.ID, k.driver.Name(), err)
+		blocked := k.blocked(pool, err)
 		if current != nil && !current.Issued {
 			// The provider's key an older server placed leaves the
 			// machine, whatever else follows.

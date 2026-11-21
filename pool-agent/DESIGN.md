@@ -108,8 +108,10 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    the token by its wall-clock age. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
    loop. A machine pool opens its own disco-vm engine before its first report,
-   refuses a driver that cannot isolate and fence a sandbox's machine
-   (`requireMachineFence`), and builds the machine runtime on it
+   refuses a driver that cannot fence a sandbox's machine to its pool, on
+   networks or at its provider's edge (`sandboxruntime.PoolFencing`), fences
+   the hop as the driver does (`poolHop.fencedBy`), and builds the machine
+   runtime on it
    ([Machine Sandboxes](#machine-sandboxes)).
 8. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
    progress, tree-reaper, status-poll and resource loops and the proxy-material
@@ -158,8 +160,9 @@ pool from before platforms hosts. Beside it, it declares the kind of image the p
 runs (`poolStatus.imageKind`, ADR 26-10-09-106 §4): `oci` for a Docker pool,
 whose sandboxes are containers, and `vm/<driver>` for a machine pool, which
 reports none of its own machine's CPU and memory as capacity — its sandboxes
-run on its driver — and names the driver's limits (`maxRunning`, `isolation`,
-`egress`) and its hop (`direct` or `edge`) in its `runtime` condition instead
+run on its driver — and names the driver's limits (`maxRunning`, `egress`),
+how it fences its sandboxes (`fencing`: `network` or `edge`) and its hop
+(`direct` or `edge`) in its `runtime` condition instead
 ([Machine Sandboxes](#machine-sandboxes)). Beside them, `maxMachines` is the
 provider's cap on the machines of the pool's sandbox OS that may exist,
 stopped ones counted: the provider's count, not the pool's (boxd's is every
@@ -1087,7 +1090,7 @@ cost.
 
 ```mermaid
 flowchart LR
-    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool,\npool URL on, no ingress URL)"]
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network\nor at its edge on none,\nfenced to the pool,\npool URL on, no ingress URL)"]
     inst --> newroot{"machine.json asks\na new root?"}
     newroot -->|yes| upgrade["upgradeMachine:\nengine.Upgrade, keeping\nits data and cache volumes"]
     newroot -->|no| start["startLocked: engine.Start"]
@@ -1101,9 +1104,14 @@ flowchart LR
 ```
 
 - **One machine per sandbox**, named by its ID in disco-vm's spelling
-  (`sbx_1` → `sbx-1`), so a create that was lost is found by name. A machine
-  is placed on `MachineNetwork` and asks a stripping driver for `Bare`
-  (ADR 26-10-23-551 §4). It is fenced to
+  (`sbx_1` → `sbx-1`), so a create that was lost is found by name. How it is
+  held to the pool is its driver's, by `sandboxruntime.PoolFencing`, the rule
+  the server asks too (ADR 26-11-11-963 §5, ADR 26-11-16-619 §1): on a driver
+  that fences on networks (boxd) it is placed on `MachineNetwork`; on one
+  that fences at its provider's edge (archil) it is placed on no network and
+  its fence closes DNS. Only a stripping driver is asked for `Bare` (ADR
+  26-10-23-551 §4); one whose machines hold nothing of the account is not.
+  It is fenced to
   what the pool's hop reaches (`Egress`; [The Hop](#the-hop)), which the
   driver sets and reads back before the create returns, so the fence holds
   before anything is placed. It asks for its pool URL on and its ingress URL
@@ -1111,8 +1119,8 @@ flowchart LR
   `http://<machine>.boxd:7302`, and a driver that cannot give the one or
   withhold the other refuses it (disco-vm ADR 26-11-14-610;
   [REVIEW.md](REVIEW.md#a-machines-ingress-port)). The driver is trusted to
-  keep to that: nothing re-checks a machine for a URL. A driver that cannot
-  isolate or fence is refused, and a machine found by name whose fence its
+  keep to that: nothing re-checks a machine for a URL. A driver that carries
+  no pool is refused, and a machine found by name whose fence its
   driver reports otherwise — made before the fence, or by hand — is refused
   rather than run (`fenced`).
 - **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
@@ -1255,7 +1263,11 @@ sandboxes reach the pool at its pool URL.
 | the pool's pool URL | its sandboxes' endpoints | a sandbox machine's fence |
 | --- | --- | --- |
 | not its ingress URL: a direct path | `https://discobox-pool-proxy:<port>`, as on a Docker pool, with the pool URL's host as discobox's answer for the name (`PoolEndpoints.Address`), which the sandbox's bridges dial in its place and resolve through the provider at each dial | nothing beyond the pool's network |
-| its ingress URL: an edge (no driver reaches it: it would reach each sandbox at its machine's ingress URL, which a sandbox's machine asks off, strictly; #1053) | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone |
+| its ingress URL: an edge (archil's, whose URLs are one hostname behind its credentialed edge) | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone, and on a driver that fences at its edge with DNS closed (`fencedBy`) |
+
+A driver that fences at its provider's edge has no network for a direct
+path, so its pool must be reached through an edge: `fencedBy` refuses it
+otherwise.
 
 The names are discobox's own, as a private DNS would answer them: the
 provider's name for the pool's machine, and its address, are never in an
@@ -2873,3 +2885,7 @@ in each sandbox's bootstrap. A Docker hop leaves it unset, since Docker configur
 DNS at create. The sandbox's stub owns best-effort resolver takeover and a durable
 provider resolver record so its bridges can still resolve the pool independently
 (ADR 26-11-12-355); see [sandbox-agent](../sandbox-agent/DESIGN.md#machine-system-dns).
+On a driver fenced at its provider's edge the sandbox's fence closes DNS
+(`fencedBy`, ADR 26-11-16-619 §1), so no resolver answers a bridge: the pool
+gives such a sandbox no address to dial in place of the pool's host, and its
+bridges do not reach the pool.

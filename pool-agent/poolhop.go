@@ -1,15 +1,14 @@
 package poolagent
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
-	"slices"
 
 	"github.com/discobox-ai/vm/pkg/machine"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 // Hop forms, as a machine pool's runtime condition names them.
@@ -88,20 +87,22 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 	}, nil
 }
 
-// requireMachineFence refuses a driver that cannot hold a sandbox's machine
-// to its pool: one that cannot isolate a machine from the rest of its
-// provider's account, or cannot fence its egress (ADR 26-10-29-481 §4).
-func requireMachineFence(driver string, caps machine.Capabilities) error {
-	var missing []error
-	if !caps.Bare.Strips() || !caps.Networks {
-		missing = append(missing, errors.New("cannot isolate a sandbox's machine from the rest of its provider's account"))
+// fencedBy is the hop as a driver that fences its pool's sandboxes so
+// holds them (sandboxruntime.PoolFencing). On its networks, the hop is as
+// resolved. At its provider's edge, the sandboxes have no network to reach
+// the pool on, so the hop must be the edge's, and their fence closes DNS
+// too, so no resolver answers them (ADR 26-11-16-619 §1). Nothing yet gives
+// them the address 619 §3 has them dial in place of the pool's host: the hop
+// still names the host, which their bridges cannot resolve.
+func (h poolHop) fencedBy(driver string, fencing sandboxruntime.Fencing) (poolHop, error) {
+	if fencing != sandboxruntime.FencedAtEdge {
+		return h, nil
 	}
-	// The pool fences a machine to a list: the host its hop is reached at.
-	if !slices.Contains(caps.Egress, machine.EgressAllow) {
-		missing = append(missing, errors.New("cannot fence a sandbox's machine's egress to its pool"))
+	if h.form != hopEdge {
+		return poolHop{}, fmt.Errorf("the %s driver fences a sandbox's machine at its provider's edge, but the pool's machine is not reached through one (its pool URL is not its ingress URL), so its sandboxes could not reach it", driver)
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("the %s driver cannot carry a machine pool: %w", driver, errors.Join(missing...))
-	}
-	return nil
+	egress := *h.egress
+	egress.CloseDNS = true
+	h.egress = &egress
+	return h, nil
 }

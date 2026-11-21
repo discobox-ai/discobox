@@ -1,12 +1,15 @@
 # disco-vm Provider Types Review Notes
 
 - Nothing is placed on a remote driver's pool machine — the agent, the
-  bootstrap, the provisioning key — that was not created on the pool's own
-  network, off the account's default one (ADR 26-10-23-551 §4). A machine is
-  adopted by its name in the provider's scope alone, and machines an older
-  provider made (named otherwise, on no network of the pool's) are never
-  adopted. Why: an unfenced boxd machine is reachable, exec and copy
-  included, by the org's other machines.
+  bootstrap, the provisioning key — that was not created on the networks
+  `poolNetworks` makes it on, and not stripped: on a driver fenced on
+  networks, the pool's own network, off the account's default one (ADR
+  26-10-23-551 §4); on one fenced at its provider's edge, no network at all
+  (ADR 26-11-16-619 §1). A machine is adopted by its name in the provider's
+  scope alone, and machines an older provider made (named otherwise, or on
+  another network) are never adopted. Why: an unfenced boxd machine is
+  reachable, exec and copy included, by the org's other machines; at an edge
+  what keeps them out is the edge's credential, not a network.
 - A key's secret is never in the pool's record, its `HostCredential`, a log
   or an error: the record keeps its ID, name, scope, expiry, and for the
   provider's own key a fingerprint. Why: the pool's row is read back by the

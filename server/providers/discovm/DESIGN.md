@@ -139,9 +139,21 @@ refuses only a literal non-public address there. Without a proxy the dial
 resolves the name itself and connects to the address it checked. A refused dial is the pool's error, never
 `unreachable`: the reconciler would wait on it unseen.
 
-A pool on a driver reached at its URLs that cannot fence its machines
-(`Capabilities.Bare` and `Capabilities.Networks`; archil today) is refused when it is created, by
-the type's `PoolOSValidator` (`fences`), saying so (ADR 26-11-11-080 §1).
+A pool on a driver reached at its URLs is carried only if the driver fences
+its sandboxes one of two ways, decided from its capabilities alone by
+`sandboxruntime.PoolFencing`, the one rule the pool agent asks too (ADR
+26-11-11-963 §5, ADR 26-11-16-619 §1):
+
+| fencing | the driver reports | pool and sandbox machines |
+| --- | --- | --- |
+| on networks (boxd) | `Bare` strips, `Networks`, an `EgressAllow` fence | on the pool's own network |
+| at its provider's edge (archil) | `Bare` strips or always, no `Networks` needed, `EgressAllow` and `EgressCloseDNS`, `URLs.Credential` | on no network; a sandbox reaches the pool only at its URL, through the edge |
+
+A driver that does both is taken on its networks. One that does neither is
+refused when the pool is created, by the type's `PoolOSValidator` (`fences`),
+saying what it lacks, and again by `converge` for a pool made before. A held
+driver's way, a sandbox with no network device and the server's peer forward
+(963 §5), is not in the rule: no pool reaches a held driver yet.
 
 The type cannot change, and no `driver` field can while the provider has
 pools: they decide where a pool's machines are, and only the driver that
@@ -202,8 +214,10 @@ as ADR 26-10-09-106 §1 places it:
   pool URL is the driver's default. The pool agent makes every sandbox's
   machine isolated on that network (ADR 26-10-23-551 §4) with its pool URL
   on and its ingress URL off, both strictly, so boxd gives it no URL beyond
-  its pool one (disco-vm ADR 26-11-14-610). A driver that cannot isolate
-  (`Capabilities.Bare` and `Capabilities.Networks`) makes no pool machine.
+  its pool one (disco-vm ADR 26-11-14-610). On a driver fenced at its edge
+  the pool's machine is made on no network, and its bootstrap names none
+  (`poolNetworks`). A driver that carries no pool (`fences`) makes no pool
+  machine.
 - A remote machine whose service does not answer reads `Unknown`, which is
   neither running nor stopped. The engine reads `Unknown` for any failure to
   ask, so the machine is asked again through `Engine.Guest`, which makes the
@@ -258,7 +272,7 @@ key; ADR 26-11-11-963 §1): such a machine's network device is shared with the
 host and the driver's other guests, and every way into it is vsock (963 §6).
 No pool reaches it today: a held driver that is linked (vz, hcs) is a
 `*local.Driver`, hosted by `hostAgent` (above), and `converge` refuses a
-driver without `Isolation`; libkrun is not linked in the server. Only
+driver that carries no pool (`fences`); libkrun is not linked in the server. Only
 `TestFenceBoxOnALibkrunPoolMachine`, and the unit tests, run the fence. boxd's
 machine is not fenced so: its fence is the pool's network (963 Deferred), and
 its placement fingerprint is unchanged.
@@ -315,8 +329,9 @@ driver's machine limit), never against anything the machine reports (551 §1):
 - a machine under the pool's name that is not the one the record names (a
   pass made it and stopped before its record was saved): it is taken as made —
   the pool's keys revoked, the record reset, the agent placed and keyed — but
-  only when it is on the pool's own network and not isolated, as create makes
-  it; any other is refused, and nothing is placed on it (551 §4);
+  only when it is on the networks create makes it on (the pool's own, or
+  none on a driver fenced at its edge) and not stripped; any other is
+  refused, and nothing is placed on it (551 §4);
 - a stopped machine is started on the disk it kept; the agent starts from the
   units `apply` enabled, on the key it holds;
 - a key due for renewal is replaced (below);
@@ -394,7 +409,9 @@ the machine.
   leaves the pool on its key until it expires, so a working pool is never
   failed, and repaired, over a key it does not need yet.
 - **Neither**: the pool is blocked, saying why, until §9's sentinel is built
-  for such a driver (none is linked with pools today: archil's are refused);
+  for such a driver. One that issues no keys at all (`KeysNone`: archil) is
+  blocked before its machine is made (`keyable`), so no machine is billed
+  that no key could reach;
   the provider's key an older server placed (`deliverProviderKey`, gone) is
   taken off the machine.
 - **Revoked**: every issued key of the pool, by name, when the pool is
@@ -402,8 +419,9 @@ the machine.
   a refused listing an error to retry rather than a key left behind.
 - **Shown**: the pool's `HostCredential` says how its host authenticates
   (`in-machine` or `issued`), an issued key's scope, ID and expiry, and that
-  the machine carries the driver's own token (`MachineToken`: a driver that
-  isolates gives a machine that is not isolated what isolation strips). On
+  the machine carries the driver's own token (`MachineToken`: a driver whose
+  `Bare` is strip gives a machine it does not strip what stripping takes; one
+  that gives a machine nothing of the account, archil, gives none). On
   boxd that token is the owner's member credential for the whole org, which
   can delete the owner's other machines, other pools' included (ADR
   26-11-11-080 §9, #1090). `admin pool get` prints it. Neither the record
