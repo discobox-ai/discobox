@@ -46,6 +46,13 @@ type poolEdge struct {
 	mu         sync.Mutex
 	address    string
 	resolvedAt time.Time
+	// resolving is a lookup under way, outside mu, closed when it ends.
+	resolving chan struct{}
+	warnedAt  time.Time
+	// credential is the last one read whole from credentialFile, handed out
+	// while unexpired when a read fails: the server replaces the file in
+	// place, so a read can catch it missing or half written.
+	credential *machine.Credential
 }
 
 func newPoolEdge(host, credentialFile string) *poolEdge {
@@ -63,51 +70,126 @@ func newPoolEdge(host, credentialFile string) *poolEdge {
 // address resolved again once poolEdgeResolveEvery has passed. A lookup that
 // fails keeps the address last resolved, which still reaches the pool, since
 // the edge routes by name; with none yet the sandbox's bridges resolve the
-// name. A credential that is not placed, or has expired, is an error: a
-// sandbox could not reach its pool with it.
-func (e *poolEdge) edge() (*sandboxconfig.RuntimeEdge, error) {
+// name. A credential that does not read is the last one that did, while that
+// is unexpired; one never read, or expired, is left out and warned of, at
+// most once a poolEdgeResolveEvery: the rest of each sandbox's document (its
+// renewed certificate, its sources) is still delivered, and the credential
+// follows in a newer revision once the server places one.
+func (e *poolEdge) edge() *sandboxconfig.RuntimeEdge {
 	out := &sandboxconfig.RuntimeEdge{Address: e.resolve()}
 	if e.credentialFile == "" {
-		return out, nil
+		return out
 	}
-	credential, err := readEdgeCredential(e.credentialFile)
+	credential, err := e.currentCredential()
 	if err != nil {
-		return nil, err
-	}
-	if !e.now().Before(credential.Expires) {
-		return nil, fmt.Errorf("the credential for the pool's listener at %s expired at %s, and the server has not renewed it", e.credentialFile, credential.Expires.Format(time.RFC3339))
+		e.warnCredential(err)
+		return out
 	}
 	out.Header, out.Token, out.Expires = credential.Header, credential.Token, credential.Expires
-	return out, nil
+	return out
 }
 
-func (e *poolEdge) resolve() string {
+// currentCredential is the credential file's, or the last one read whole
+// while the file does not read, as long as it is unexpired.
+func (e *poolEdge) currentCredential() (machine.Credential, error) {
+	read, err := readEdgeCredential(e.credentialFile)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	now := e.now()
-	if !e.resolvedAt.IsZero() && now.Sub(e.resolvedAt) < poolEdgeResolveEvery && !now.Before(e.resolvedAt) {
+	if err == nil && now.Before(read.Expires) {
+		e.credential = &read
+		return read, nil
+	}
+	if held := e.credential; held != nil && now.Before(held.Expires) {
+		return *held, nil
+	}
+	if err == nil {
+		err = fmt.Errorf("the credential for the pool's listener at %s expired at %s, and the server has not renewed it", e.credentialFile, read.Expires.Format(time.RFC3339))
+	}
+	return machine.Credential{}, err
+}
+
+// warnCredential says why the pool's sandboxes are handed no credential, once
+// a poolEdgeResolveEvery rather than once a sandbox a poll.
+func (e *poolEdge) warnCredential(err error) {
+	e.mu.Lock()
+	now := e.now()
+	due := e.warnedAt.IsZero() || now.Sub(e.warnedAt) >= poolEdgeResolveEvery || now.Before(e.warnedAt)
+	if due {
+		e.warnedAt = now
+	}
+	e.mu.Unlock()
+	if due {
+		slog.Warn("the pool's sandboxes are handed no credential for its listener, so their tunnels through its edge are refused until the server places one", "error", err)
+	}
+}
+
+// resolve is the address held, looked up again once poolEdgeResolveEvery has
+// passed. The lookup runs outside the lock, by one caller at a time: while one
+// is under way the others are answered with the address held, so a slow
+// resolver holds up no sandbox's document but the one that asked; only with
+// none held yet (the agent just started) do they wait for it, since an empty
+// address has the sandbox resolve a name its fence may not let it. A lookup
+// that finds nothing with none held is tried again by the next caller.
+func (e *poolEdge) resolve() string {
+	e.mu.Lock()
+	now := e.now()
+	held := e.address
+	if inflight := e.resolving; inflight != nil {
+		e.mu.Unlock()
+		if held != "" {
+			return held
+		}
+		<-inflight
+		e.mu.Lock()
+		defer e.mu.Unlock()
 		return e.address
 	}
-	e.resolvedAt = now
+	if !e.resolvedAt.IsZero() && now.Sub(e.resolvedAt) < poolEdgeResolveEvery && !now.Before(e.resolvedAt) {
+		e.mu.Unlock()
+		return held
+	}
+	done := make(chan struct{})
+	e.resolving = done
+	e.mu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), poolEdgeResolveTimeout)
-	defer cancel()
 	addresses, err := e.lookup(ctx, e.host)
-	if err == nil && len(addresses) == 0 {
+	cancel()
+	next := pickAddress(addresses, held)
+	if err == nil && next == "" {
 		err = errors.New("no address")
 	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.resolving = nil
+	close(done)
 	if err != nil {
+		if e.address != "" {
+			e.resolvedAt = now
+		}
 		slog.Warn("the pool's host did not resolve for its sandboxes; keeping the address last resolved", "host", e.host, "address", e.address, "error", err)
 		return e.address
 	}
-	// The address held while the host still answers it: a name that rotates
-	// among several would otherwise make every sandbox a new document at each
-	// lookup, for nothing.
+	e.address, e.resolvedAt = next, now
+	return e.address
+}
+
+// pickAddress is held while the host's answer still holds it: a name that
+// rotates among several would otherwise make every sandbox a new document at
+// each lookup, for nothing. Otherwise the first IPv4 address, since a
+// sandbox's machine may have no IPv6 route, or else the first; empty for no
+// answer.
+func pickAddress(addresses []netip.Addr, held string) string {
+	if len(addresses) == 0 {
+		return ""
+	}
 	for _, address := range addresses {
-		if address.Unmap().String() == e.address {
-			return e.address
+		if address.Unmap().String() == held {
+			return held
 		}
 	}
-	// IPv4 first: a sandbox's machine may have no IPv6 route.
+	addresses = slices.Clone(addresses)
 	slices.SortStableFunc(addresses, func(a, b netip.Addr) int {
 		switch {
 		case a.Unmap().Is4() == b.Unmap().Is4():
@@ -118,8 +200,7 @@ func (e *poolEdge) resolve() string {
 			return 1
 		}
 	})
-	e.address = addresses[0].Unmap().String()
-	return e.address
+	return addresses[0].Unmap().String()
 }
 
 // readEdgeCredential is the credential the server placed for the pool's

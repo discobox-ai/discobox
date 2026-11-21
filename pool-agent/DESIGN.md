@@ -1274,7 +1274,9 @@ Through an edge, each sandbox's runtime-config document also carries
 poll, so a change is a new revision:
 
 - **The address** of the pool's host as the pool's machine last resolved it,
-  looked up at most once a minute and kept over a failed lookup. The
+  looked up at most once a minute, outside the lock (others are answered with
+  the address held, and wait only when none is held yet, as after a
+  restart), and kept over a failed lookup. The
   sandbox's tunnels dial it in place of the name and resolve nothing, since
   the fence may close DNS; the edge routes by name, so a stale address still
   reaches the pool.
@@ -1282,7 +1284,11 @@ poll, so a change is a new revision:
   (`URLCapabilities.Credential`, archil): the one the server minted for the
   pool's sandboxes, shared by all of them, and placed beside the bootstrap
   (`bundle.SandboxEdgeCredentialFile`), read as each document is decided. A
-  credential that is missing or expired holds the document back. A sandbox
+  file that does not read (the server replaces it in place) hands out the
+  last credential read whole while it is unexpired; with none, or that one
+  expired, the credential is left out and warned of while the rest of the
+  document (a renewed certificate, sources) is still delivered, and it
+  follows in a newer revision once the server places one. A sandbox
   holds the pool listener's credential, never its own machine's.
 
 The names are discobox's own, as a private DNS would answer them: the

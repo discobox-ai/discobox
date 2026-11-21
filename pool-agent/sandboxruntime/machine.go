@@ -103,8 +103,8 @@ type MachineSandboxRuntimeConfig struct {
 	// it is when a sandbox's runtime-config document is decided: the
 	// address it dials in place of the edge's name and the pool listener's
 	// credential (ADR 26-11-16-619 §§2–3). Nil for a pool its sandboxes reach
-	// directly. An error holds the document back.
-	PoolEdge func() (*sandboxconfig.RuntimeEdge, error)
+	// directly.
+	PoolEdge func() *sandboxconfig.RuntimeEdge
 	// IdentityKey is the pool's identity key, which signs the runtime-config
 	// documents the pool delivers its sandboxes (ADR 26-10-08-127 §3).
 	IdentityKey ed25519.PrivateKey

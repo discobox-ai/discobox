@@ -172,8 +172,13 @@ func (r *sandboxCore) decideRuntimeConfig(sandboxID string, change func(*sandbox
 	if r.poolEdge != nil {
 		// Read as it is now: a renewed credential, or an address the pool's
 		// host moved to, is a new revision, which the next poll delivers.
-		if proxy.Edge, err = r.poolEdge(); err != nil {
-			return sandboxconfig.RuntimeConfig{}, fmt.Errorf("the pool's edge: %w", err)
+		proxy.Edge = r.poolEdge()
+		// No address yet (the agent just started and its first lookup
+		// failed): the one the sandbox holds still reaches the pool, since
+		// the edge routes by name, and an empty one has it resolve a name
+		// its fence may not let it.
+		if held := recorded.Proxy; proxy.Edge.Address == "" && held != nil && held.Edge != nil {
+			proxy.Edge.Address = held.Edge.Address
 		}
 	}
 	next.Proxy = &proxy

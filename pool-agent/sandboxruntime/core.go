@@ -83,7 +83,7 @@ type sandboxCore struct {
 	// it is now, delivered in each one's runtime-config document (ADR
 	// 26-11-16-619 §§2–3); nil on a pool its sandboxes reach directly, or
 	// through an edge they dial by name with no credential.
-	poolEdge func() (*sandboxconfig.RuntimeEdge, error)
+	poolEdge func() *sandboxconfig.RuntimeEdge
 	// identityKey is the pool's identity key. It signs runtime-config
 	// deliveries, and its public half is in every sandbox's bootstrap
 	// (ADR 26-10-08-127 §3).

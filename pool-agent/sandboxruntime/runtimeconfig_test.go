@@ -146,16 +146,14 @@ func TestDecideRuntimeConfigRevisesOnlyOnChange(t *testing.T) {
 
 // Behind an edge, each sandbox's document carries the edge as the pool holds
 // it now (ADR 26-11-16-619 §§2–3): a renewed credential or a moved address is
-// a new revision, which the next poll delivers, and an edge the pool cannot
-// give holds the document back rather than delivering one without it.
+// a new revision, which the next poll delivers.
 func TestDecideRuntimeConfigCarriesThePoolsEdge(t *testing.T) {
 	r := runtimeConfigTestRuntime(t)
 	expires := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
 	edge := sandboxconfig.RuntimeEdge{Address: "192.0.2.7", Header: "X-Archil-Token", Token: "first", Expires: expires}
-	var edgeErr error
-	r.poolEdge = func() (*sandboxconfig.RuntimeEdge, error) {
+	r.poolEdge = func() *sandboxconfig.RuntimeEdge {
 		held := edge
-		return &held, edgeErr
+		return &held
 	}
 	first, err := r.decideRuntimeConfig("sbx_1", nil)
 	if err != nil {
@@ -180,9 +178,12 @@ func TestDecideRuntimeConfigCarriesThePoolsEdge(t *testing.T) {
 	if err != nil || moved.Revision != renewed.Revision+1 || moved.Proxy.Edge.Address != "192.0.2.8" {
 		t.Fatalf("a moved address = rev %d %+v, %v, want a new revision carrying it", moved.Revision, moved.Proxy.Edge, err)
 	}
-	edgeErr = errors.New("the credential expired")
-	if _, err := r.decideRuntimeConfig("sbx_1", nil); err == nil || !strings.Contains(err.Error(), "expired") {
-		t.Fatalf("deciding with an edge the pool cannot give = %v, want it refused", err)
+	// A pool with no address yet (its first lookup after a restart failed)
+	// keeps the one the sandbox holds.
+	edge.Address = ""
+	kept, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil || kept.Revision != moved.Revision || kept.Proxy.Edge.Address != "192.0.2.8" {
+		t.Fatalf("no address = rev %d %+v, %v, want the recorded address kept, no new revision", kept.Revision, kept.Proxy.Edge, err)
 	}
 }
 
