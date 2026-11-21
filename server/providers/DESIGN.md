@@ -747,7 +747,9 @@ them with pool rows, and uses the engine's config revision
 exist it marks the pool dirty; the only direct side effect allowed is deleting
 an orphan managed runtime with no pool row (`Engine.RemovePoolRuntime`: its
 container, console, network and legacy volume, never its state trees, which a
-row restored from a backup still needs). VM-per-pool
+row restored from a backup still needs). It lists the containers before the
+rows: a pool's row is committed before its container exists, so a pool created
+mid-scan is never taken for an orphan. VM-per-pool
 backends get drift detection through `InspectVM` during normal reconciliation.
 
 The server-created runtime (pool container, console, network, legacy volume)

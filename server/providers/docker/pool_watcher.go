@@ -105,11 +105,15 @@ type dockerPoolWatcher struct {
 }
 
 func (w dockerPoolWatcher) scan(ctx context.Context) (bool, error) {
-	pools, err := w.manager.ListPoolsForProviderInstance(ctx, w.projectID, w.providerID)
+	// Containers before rows. A pool's row is committed before its container
+	// exists, so every container listed here that has a row finds it in the
+	// read below. Read the other way round, a pool created between the two
+	// reads had a container and no row, and was removed as an orphan (#1473).
+	containers, err := w.listPoolContainers(ctx)
 	if err != nil {
 		return false, err
 	}
-	containers, err := w.listPoolContainers(ctx)
+	pools, err := w.manager.ListPoolsForProviderInstance(ctx, w.projectID, w.providerID)
 	if err != nil {
 		return false, err
 	}
