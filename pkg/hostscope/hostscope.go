@@ -29,12 +29,19 @@ func Normalize(host string) string {
 	if trimmed, _, err := net.SplitHostPort(host); err == nil {
 		host = trimmed
 	}
-	// Only a name loses its dot. "." and ".." are no host, and "." reduced to
-	// "" would read as the wildcard every scope check treats it as.
-	if name := strings.TrimSuffix(host, "."); name != "" && !strings.HasSuffix(name, ".") {
+	// Only a name loses its dot: one whose last label ends as a DNS label does.
+	// "." and ".." are no host, and "." reduced to "" would read as the
+	// wildcard every scope check treats it as; "a ." would end in a space.
+	if name, ok := strings.CutSuffix(host, "."); ok && name != "" && endsLabel(name[len(name)-1]) {
 		host = name
 	}
 	return host
+}
+
+// endsLabel reports whether c may end a DNS label: a letter, a digit, or the
+// "-" and "_" names are written with.
+func endsLabel(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_'
 }
 
 // Covers reports whether scope authorizes traffic to host.

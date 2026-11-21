@@ -46,9 +46,13 @@ func TestNormalizeDropsPortCaseAndTrailingDot(t *testing.T) {
 		{"..", ".."},
 		{".:443", "."},
 		{"a..", "a.."},
+		{"a .", "a ."},
 	} {
 		if got := hostscope.Normalize(tc.in); got != tc.want {
 			t.Errorf("Normalize(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+		if got := hostscope.Normalize(tc.want); got != tc.want {
+			t.Errorf("Normalize(%q) = %q, want it unchanged: one reading, read again, is itself", tc.want, got)
 		}
 	}
 }
