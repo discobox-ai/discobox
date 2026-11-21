@@ -104,7 +104,7 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 		if host, _, err := net.SplitHostPort(endpoint.Host); err == nil {
 			transportHost = host
 		}
-		tunnel = wstunnel.NewClient(endpoint.Raw, edgeHTTPClient(cfg.EdgePath))
+		tunnel = wstunnel.NewClient(endpoint.Raw, edgeHTTPClient(endpoint.Host, cfg.EdgePath))
 	case "vsock", "unix":
 		if cfg.Address != "" {
 			return nil, fmt.Errorf("pool URL %q names no host; an address answers an https URL's name alone", cfg.URL)

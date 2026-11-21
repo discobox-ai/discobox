@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -52,7 +53,7 @@ func LoadEdge(path string) (Edge, error) {
 // the credential the edge file at edgePath names, dialed at its address. With
 // no edge file named it resolves the edge's name through the provider's
 // resolver (ADR 26-11-12-355 §3) and sends no credential.
-func edgeHTTPClient(edgePath string) *http.Client {
+func edgeHTTPClient(edgeHost, edgePath string) *http.Client {
 	resolve := providerDialContext(ProviderResolverPath)
 	transport := &http.Transport{
 		DialContext:         resolve,
@@ -82,17 +83,24 @@ func edgeHTTPClient(edgePath string) *http.Client {
 		direct := net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 		return direct.DialContext(ctx, network, net.JoinHostPort(edge.Address, port))
 	}
-	return &http.Client{Transport: edgeCredential{path: edgePath, next: transport}}
+	return &http.Client{Transport: edgeCredential{host: edgeHost, path: edgePath, next: transport}}
 }
 
-// edgeCredential sends the edge file's credential on each request, read as
-// the file is then.
+// edgeCredential sends the edge file's credential on each request to the
+// edge's host, read as the file is then, and on no request elsewhere, such as
+// a redirect's.
 type edgeCredential struct {
+	host string
 	path string
 	next http.RoundTripper
 }
 
 func (c edgeCredential) RoundTrip(req *http.Request) (*http.Response, error) {
+	// The tunnel's opening request is https to the edge's host; anything
+	// else (a redirect elsewhere, or to plain http) goes without it.
+	if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Host, c.host) {
+		return c.next.RoundTrip(req)
+	}
 	edge, err := LoadEdge(c.path)
 	if err != nil {
 		if req.Body != nil {
