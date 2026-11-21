@@ -46,11 +46,11 @@ type poolHost interface {
 // machines belong to a service (boxd's API), not to the process that booted
 // them, so the pool agent runs in a Linux machine of its own there, booted
 // from the driver's base (ADR 26-10-23-551 §1).
-func newPoolHost(e *engine.Engine, s settings, scopeEngine func(scope string) (*engine.Engine, error)) poolHost {
+func newPoolHost(e *engine.Engine, s settings, scopeEngine func(scope string) (*engine.Engine, error), progress sandbox.PoolProgressReporter) poolHost {
 	if d, ok := e.Driver.(*local.Driver); ok {
 		return &hostAgent{root: d.Dir()}
 	}
-	return newPoolMachine(e, s, scopeEngine)
+	return newPoolMachine(e, s, scopeEngine, progress)
 }
 
 // isLocal reports whether driver's provider is this host's disk: a disco-vm
@@ -74,7 +74,7 @@ var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 
 // newRuntime opens the engine for the provider instance providerID, every
 // connection its driver makes to its service through dial.
-func newRuntime(s settings, providerID string, dial machine.DialFunc) (*Runtime, error) {
+func newRuntime(s settings, providerID string, dial machine.DialFunc, progress sandbox.PoolProgressReporter) (*Runtime, error) {
 	keys := providerKeys(s)
 	driver, scope, err := openDriver(s, providerID, keys, dial)
 	if err != nil {
@@ -84,7 +84,7 @@ func newRuntime(s settings, providerID string, dial machine.DialFunc) (*Runtime,
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{engine: e, host: newPoolHost(e, s, engineIn(s, keys, dial))}, nil
+	return &Runtime{engine: e, host: newPoolHost(e, s, engineIn(s, keys, dial), progress)}, nil
 }
 
 // engineIn opens an engine on the configured driver in a given disco-vm

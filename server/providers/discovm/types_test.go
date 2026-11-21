@@ -204,7 +204,7 @@ func TestTheEnginesDialIsChecked(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := newRuntime(s, instance.ID, sandbox.EndpointPolicy{}.Dial(carriedValues(instance), nil))
+		r, err := newRuntime(s, instance.ID, sandbox.EndpointPolicy{}.Dial(carriedValues(instance), nil), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

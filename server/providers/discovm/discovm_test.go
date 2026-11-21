@@ -62,7 +62,7 @@ var boxdSettings = settings{name: "boxd", driverConfig: json.RawMessage(`{"regio
 
 func openRuntime(t *testing.T, cfg settings) *Runtime {
 	t.Helper()
-	r, err := newRuntime(cfg, "prov_test", nil)
+	r, err := newRuntime(cfg, "prov_test", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,8 +432,8 @@ func TestPoolHostFollowsTheDriversKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host, ok := newPoolHost(remote, settings{}, nil).(*poolMachine); !ok {
-		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, settings{}, nil))
+	if host, ok := newPoolHost(remote, settings{}, nil, nil).(*poolMachine); !ok {
+		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, settings{}, nil, nil))
 	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
 		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
 	}

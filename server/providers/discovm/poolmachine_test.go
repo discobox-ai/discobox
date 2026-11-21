@@ -86,6 +86,14 @@ type poolTestDriver struct {
 	// fence that closes DNS, and URLs that answer only a credential (ADR
 	// 26-11-16-619 §1). Without it, the driver fences on networks, as boxd.
 	edge bool
+	// startDelay is how long Start takes before the machine boots, and
+	// startBegan and startEnded when the last one did: a boot that outlasts a
+	// progress heartbeat.
+	startDelay             time.Duration
+	startBegan, startEnded time.Time
+	// startReport, when set, is called with Start's context as it begins:
+	// a driver reporting from inside the phase held around it.
+	startReport func(context.Context)
 }
 
 func (d *poolTestDriver) Name() string {
@@ -202,7 +210,24 @@ func (d *poolTestDriver) IssueKey(ctx context.Context, req machine.IssueRequest)
 }
 
 func (d *poolTestDriver) Start(ctx context.Context, inst machine.Instance, opts machine.BootOptions) (machine.Machine, error) {
+	d.mu.Lock()
+	delay, report := d.startDelay, d.startReport
+	d.startBegan = time.Now()
+	d.mu.Unlock()
+	if report != nil {
+		report(ctx)
+	}
+	if delay > 0 {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
 	m, err := d.Driver.Start(ctx, inst, opts)
+	d.mu.Lock()
+	d.startEnded = time.Now()
+	d.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -1611,5 +1636,197 @@ func TestFakePoolMachineRemovalEmptiesThePoolsScope(t *testing.T) {
 	}
 	if len(names) > 0 {
 		t.Fatalf("after RemovePool the pool's scope %s still holds %v, want nothing", scope, names)
+	}
+}
+
+// progressPoolManager is the pool manager a pool's maker and progress
+// reporter are made from, recording every provisioning phase reported.
+type progressPoolManager struct {
+	sandbox.PoolManager
+	maker   *testMaker
+	mu      sync.Mutex
+	reports []progressReport
+}
+
+type progressReport struct {
+	phase sandbox.PoolProvisionPhase
+	at    time.Time
+}
+
+func (m *progressPoolManager) ReportPoolProvisionProgress(_ context.Context, _ string, progress sandbox.PoolProvisionProgress) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reports = append(m.reports, progressReport{phase: progress.Phase, at: time.Now()})
+	return nil
+}
+
+// take answers the reports made since the last take, and forgets them.
+func (m *progressPoolManager) take() []progressReport {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	reports := m.reports
+	m.reports = nil
+	return reports
+}
+
+func phasesOf(reports []progressReport) []sandbox.PoolProvisionPhase {
+	phases := make([]sandbox.PoolProvisionPhase, 0, len(reports))
+	for _, report := range reports {
+		phases = append(phases, report.phase)
+	}
+	return slices.Compact(phases)
+}
+
+func (m *progressPoolManager) PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
+	return m.maker.Box(ctx, platform)
+}
+
+func (m *progressPoolManager) EnsureAgentTrustKey(context.Context) (string, error) {
+	return "control-plane-key", nil
+}
+
+func (m *progressPoolManager) EnrollPool(ctx context.Context, _, publicKey string) error {
+	return m.maker.Enroll(ctx, publicKey)
+}
+
+func (m *progressPoolManager) ListPools(context.Context, string) ([]model.Pool, error) {
+	return nil, errors.New("pool sync is outside this test")
+}
+
+// newProgressPool is a fake pool machine whose provider reports its progress
+// to the manager it returns, as FactoryWithPoolManager's does.
+func newProgressPool(t *testing.T) (*Runtime, *poolTestDriver, *progressPoolManager) {
+	t.Helper()
+	r, driver := newFakePool(t, "")
+	manager := &progressPoolManager{maker: newTestMaker()}
+	r.host.(*poolMachine).progress = sandbox.PoolProgressReporterFor(manager)
+	return r, driver, manager
+}
+
+// A pool machine reports the phases the engine's do where its steps mean
+// the same: making and starting the machine, then provisioning its box, whose
+// apply returns once the agent it starts has reported. A pass on a running
+// pool, its bundles moved or not, brings nothing up and says nothing.
+func TestFakePoolMachineReportsProvisionProgress(t *testing.T) {
+	r, _, manager := newProgressPool(t)
+	ctx := context.Background()
+	project := &model.Project{ID: "project-1"}
+	pool := &model.Pool{ID: "pool-progress", ProjectID: project.ID}
+	t.Cleanup(func() { _ = r.RemovePool(ctx, nil, nil, pool) })
+	provider := poolruntime.New(r, Definition("fake"), manager, nil)
+	instance := fakeInstance(t)
+	reconcile := func() error { return provider.ReconcilePool(ctx, manager, project, instance, pool, nil) }
+	bringUp := []sandbox.PoolProvisionPhase{sandbox.PoolPhaseStartingVM, sandbox.PoolPhaseStartingPoolAgent}
+	for _, pass := range []struct {
+		name string
+		run  func() error
+		want []sandbox.PoolProvisionPhase
+	}{
+		{"bring-up", reconcile, bringUp},
+		{"repair", func() error {
+			pool.SetState(model.PoolStateActive)
+			return provider.RepairPool(ctx, manager, project, instance, pool, "test", nil)
+		}, bringUp},
+		{"current", reconcile, nil},
+		{"moved bundles", func() error {
+			manager.maker.digest = "sha256:" + strings.Repeat("2", 64)
+			return reconcile()
+		}, nil},
+		// The fake driver's URLs move at every start, and the bootstrap
+		// names them, so its started machine is placed again: a bring-up.
+		// A driver whose URLs stay put (boxd's) finds the box current, and
+		// reports waiting_for_pool_agent for the agent its boot started.
+		{"stopped", func() error {
+			inst, err := r.host.(*poolMachine).instance(ctx, pool)
+			if err != nil {
+				return err
+			}
+			if err := r.engine.Stop(ctx, inst, time.Minute); err != nil {
+				return err
+			}
+			return reconcile()
+		}, bringUp},
+	} {
+		if err := pass.run(); err != nil {
+			t.Fatalf("%s: %v", pass.name, err)
+		}
+		if phases := phasesOf(manager.take()); !slices.Equal(phases, pass.want) {
+			t.Errorf("%s: reported provisioning phases %v, want %v", pass.name, phases, pass.want)
+		}
+	}
+}
+
+// A machine still booting when the pass that made it reaches for its guest
+// fails that pass as not reachable; the next finds it running with no box,
+// and placing the pool's first agent there is still bringing it up.
+func TestFakePoolMachineReportsTheFirstProvisionAfterABoot(t *testing.T) {
+	r, driver, manager := newProgressPool(t)
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-booting", ProjectID: "project-1"}
+	t.Cleanup(func() {
+		driver.mu.Lock()
+		driver.attachErrs = nil
+		driver.mu.Unlock()
+		_ = r.RemovePool(ctx, nil, nil, pool)
+	})
+	driver.mu.Lock()
+	// The pass's state check and its start attach; its reach for the guest
+	// is refused.
+	driver.attachErrs = []error{nil, nil, status.Error(codes.Unavailable, "the machine is still booting")}
+	driver.mu.Unlock()
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("EnsurePool() while the machine boots = %v, want ErrPoolNotReachable", err)
+	}
+	if phases := phasesOf(manager.take()); !slices.Equal(phases, []sandbox.PoolProvisionPhase{sandbox.PoolPhaseStartingVM}) {
+		t.Fatalf("the pass that made the machine reported %v, want [starting_vm]", phases)
+	}
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if phases := phasesOf(manager.take()); !slices.Equal(phases, []sandbox.PoolProvisionPhase{sandbox.PoolPhaseStartingPoolAgent}) {
+		t.Errorf("the pass that placed its first agent reported %v, want [starting_pool_agent]", phases)
+	}
+}
+
+// A machine whose start outlasts a heartbeat keeps its line fresh while it
+// boots, rather than leaving a stamp that reads as a pool that stopped, and
+// the start runs under the context starting_vm's hold returns: what the
+// driver reports from inside it, as a guest image fetch is, is what the
+// heartbeat restates.
+func TestFakePoolMachineHoldsStartingVMThroughALongBoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("boots past a progress heartbeat")
+	}
+	r, driver, manager := newProgressPool(t)
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-long-boot", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(ctx, nil, nil, pool) })
+	// Past the reporter's five-second heartbeat.
+	driver.mu.Lock()
+	driver.startDelay = 6 * time.Second
+	driver.startReport = func(ctx context.Context) {
+		r.host.(*poolMachine).progress.Report(ctx, pool.ID, sandbox.PoolPhaseFetchingVMImage)
+	}
+	driver.mu.Unlock()
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatal(err)
+	}
+	driver.mu.Lock()
+	began, ended := driver.startBegan, driver.startEnded
+	driver.mu.Unlock()
+	var during []progressReport
+	for _, report := range manager.take() {
+		if report.at.After(began) && !report.at.After(ended) {
+			during = append(during, report)
+		}
+	}
+	// The driver's own report, then at least one restatement of it.
+	if len(during) < 2 {
+		t.Fatalf("reported %v during a %s boot, want the driver's report restated", during, ended.Sub(began).Round(time.Second))
+	}
+	for _, report := range during {
+		if report.phase != sandbox.PoolPhaseFetchingVMImage {
+			t.Fatalf("reported %q while the machine booted, want the driver's %q restated: the start did not run under the hold's context", report.phase, sandbox.PoolPhaseFetchingVMImage)
+		}
 	}
 }

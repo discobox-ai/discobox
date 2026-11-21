@@ -76,6 +76,9 @@ type poolMachine struct {
 	// limitInterval is how long a pool goes between its driver's Checks for
 	// its machine limit (checkMachineLimit).
 	limitInterval time.Duration
+	// progress records what bringing the pool's machine up is doing, for a
+	// client whose sandbox waits on the pool; nil says nothing.
+	progress sandbox.PoolProgressReporter
 }
 
 // machineLimitInterval bounds how often a running pool's pass runs the
@@ -90,7 +93,7 @@ const machineLimitInterval = 10 * time.Minute
 // does not answer holds up the pass no longer than this.
 const machineLimitCheckTimeout = 30 * time.Second
 
-func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope string) (*engine.Engine, error)) *poolMachine {
+func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope string) (*engine.Engine, error), progress sandbox.PoolProgressReporter) *poolMachine {
 	return &poolMachine{
 		engine:          e,
 		scopeEngine:     scopeEngine,
@@ -103,6 +106,7 @@ func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope strin
 		logs:            journalCommand,
 		logSource:       "pool machine journal",
 		limitInterval:   machineLimitInterval,
+		progress:        progress,
 	}
 }
 
@@ -330,7 +334,10 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 				return err
 			}
 			startedAt = time.Now()
-			if inst, err = h.create(ctx, pool, scope, networks); err != nil {
+			vmCtx, releaseVM := h.progress.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
+			inst, err = h.create(vmCtx, pool, scope, networks)
+			releaseVM()
+			if err != nil {
 				return err
 			}
 			created = true
@@ -356,7 +363,10 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		if startedAt.IsZero() {
 			startedAt = time.Now()
 		}
-		if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {
+		vmCtx, releaseVM := h.progress.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
+		err := h.engine.Start(vmCtx, inst, engine.StartOptions{Timeout: poolStartTimeout})
+		releaseVM()
+		if err != nil {
 			return fmt.Errorf("start pool %s's machine: %w", pool.ID, err)
 		}
 		started = true
@@ -409,6 +419,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	if !force && current {
 		steps.Step(ctx, "the pool's box is current")
+		if started {
+			// The machine's boot started the agent its box already holds,
+			// which comes up on its own: no call of this pass spans it, so
+			// the phase is reported, not held.
+			h.progress.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
+		}
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 		// A pass that applied the in-machine placement and stopped before
 		// its old key was retired retires it now.
@@ -420,13 +436,27 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err := gate(ctx); err != nil {
 		return err
 	}
+	// Provisioning a box this pass made, started or repairs, or one never
+	// provisioned (its machine was still booting when the pass that made it
+	// failed as not reachable), is bringing the pool up; re-applying moved
+	// bundles in a running one is not, and reports nothing, as the engine's
+	// in-place apply does. The apply's
+	// start of the agent returns only once the agent's first report has
+	// landed (ADR 26-11-15-602), so the held phase covers its coming up and
+	// nothing waits on it afterwards.
+	agentCtx := ctx
+	if made || started || force || !provisioned {
+		var releaseAgent func()
+		agentCtx, releaseAgent = h.progress.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+		defer releaseAgent()
+	}
 	if replacesAgent(created, started, provisioned, !current) {
 		// Recorded before the apply, and a moved placement's restart after
 		// it: the new agent's first report lands before they return (ADR
 		// 26-11-15-602 §1).
 		sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartInPlace)
 	}
-	box, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
+	box, err := poolruntime.ProvisionBox(agentCtx, guest, maker, placement)
 	if err != nil {
 		if provisioned && !force && !made && !started {
 			// A running pool is never taken down over its bundles (ADR
@@ -443,7 +473,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	steps.Step(ctx, "provisioned the pool's box")
 	if provisioned && record.Box.Placement != box.Placement {
-		if err := poolruntime.RestartPoolUnits(ctx, guest, false); err != nil {
+		if err := poolruntime.RestartPoolUnits(agentCtx, guest, false); err != nil {
 			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
 		steps.Step(ctx, "restarted the pool's agent on its new placement")

@@ -284,7 +284,7 @@ func FactoryWithPoolManager(name string, poolManager poolruntime.PoolManager, hu
 		if err != nil {
 			return nil, err
 		}
-		runtime, err := newRuntime(s, instance.ID, endpoints().Dial(carriedValues(instance), nil))
+		runtime, err := newRuntime(s, instance.ID, endpoints().Dial(carriedValues(instance), nil), sandbox.PoolProgressReporterFor(poolManager))
 		if err != nil {
 			return nil, err
 		}

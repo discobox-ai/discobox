@@ -24,7 +24,7 @@ const testControlPlaneURL = "http://127.0.0.1:8080"
 // is asked for.
 func fakePoolMachine(e *engine.Engine, base string) *poolMachine {
 	cfg := settings{Config: Config{Base: base, ControlPlaneURL: testControlPlaneURL}, name: e.Driver.Name()}
-	h := newPoolMachine(e, cfg, engineIn(cfg, nil, nil))
+	h := newPoolMachine(e, cfg, engineIn(cfg, nil, nil), nil)
 	h.shell = []string{"/bin/sh"}
 	h.logs = func(opts sandbox.PoolLogOptions) []string {
 		return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}
