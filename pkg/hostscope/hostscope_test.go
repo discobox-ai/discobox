@@ -30,6 +30,35 @@ func TestCoversIsOneWay(t *testing.T) {
 	}
 }
 
+func TestNormalizeDropsPortCaseAndTrailingDot(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		{"github.com", "github.com"},
+		{"GitHub.com", "github.com"},
+		{" github.com ", "github.com"},
+		{"github.com:443", "github.com"},
+		{"github.com.", "github.com"},
+		{"GitHub.com.:443", "github.com"},
+		{"localhost.", "localhost"},
+	} {
+		if got := hostscope.Normalize(tc.in); got != tc.want {
+			t.Errorf("Normalize(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// A trailing dot names the same host, so it is covered the same way: without
+// this, github.com. fell outside every github.com scope.
+func TestCoversIgnoresATrailingDot(t *testing.T) {
+	if !hostscope.Covers("github.com", "api.github.com.") {
+		t.Error("a scope does not cover a trailing-dot spelling of what is beneath it")
+	}
+	if !hostscope.Covers("github.com.", "api.github.com") {
+		t.Error("a trailing-dot scope does not cover what is beneath it")
+	}
+}
+
 func TestSpecificityPrefersTheNarrowerScope(t *testing.T) {
 	exact := hostscope.Specificity("api.github.com", "api.github.com")
 	parent := hostscope.Specificity("github.com", "api.github.com")

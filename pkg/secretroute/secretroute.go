@@ -212,8 +212,14 @@ func Normalize(r Route) (Route, error) {
 
 // normalizeHost reads one host pattern: an exact name, `*.suffix`, or `*`.
 func normalizeHost(host string) (string, error) {
+	raw := strings.ToLower(strings.TrimSpace(host))
 	host = hostscope.Normalize(host)
 	if host == AnyHost {
+		// hostscope.Normalize drops a trailing dot, so "*." (which names no
+		// host) reduces to "*"; only a bare "*" is the wildcard.
+		if raw != AnyHost {
+			return "", fmt.Errorf("a route must name a host")
+		}
 		return host, nil
 	}
 	name := strings.TrimPrefix(host, "*.")

@@ -16,15 +16,19 @@ import (
 	"strings"
 )
 
-// Normalize is the one reading of a host string: lowercased, trimmed, and
-// without a port. The proxy reports the destination this way, so anything
-// stored differently is a scope that can never match.
+// Normalize is the one reading of a host string: lowercased, trimmed, without
+// a port, and without a trailing dot. The proxy reports the destination this
+// way, so anything stored differently is a scope that can never match. The
+// trailing dot is dropped because `host` and `host.` are the same destination
+// (RFC 3986), the proxy's own policy compares them so (proxy.authorityHostname),
+// and a route must not be matched against a spelling the proxy does not use —
+// otherwise `host.` falls past a block on `host` to a broader open route.
 func Normalize(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if trimmed, _, err := net.SplitHostPort(host); err == nil {
-		return trimmed
+		host = trimmed
 	}
-	return host
+	return strings.TrimSuffix(host, ".")
 }
 
 // Covers reports whether scope authorizes traffic to host.
