@@ -1220,6 +1220,13 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	if err != nil {
 		return false, nil, err
 	}
+	// A machine first placed on is refused when its base carries no systemd,
+	// which every unit placed below runs under (ADR 26-11-16-619 §4).
+	if !had {
+		if err := provisioner.RequireSystemd(ctx, guest); err != nil {
+			return false, nil, fmt.Errorf("sandbox %s's machine: %w", sandboxID, err)
+		}
+	}
 	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair)); err != nil {
 		return false, nil, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
 	}

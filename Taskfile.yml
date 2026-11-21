@@ -791,6 +791,18 @@ tasks:
     cmds:
       - cd server && DISCOBOX_E2E=1 go test ./providers/poolruntime -count=1 -v
 
+  test:e2e:archil-systemd:
+    desc: "Run the archil guest's systemd test: a pool's box and a sandbox's machine in containers whose PID 1 is not systemd, from the pool and agent bundles it builds. Requires: dockerd"
+    platforms: [linux]
+    cmds:
+      - task: build:pool-agent-bundle
+      - task: build:agent-bundle
+      - >-
+        cd server && DISCOBOX_ARCHIL_SYSTEMD_E2E=1
+        DISCOBOX_POOL_AGENT_BUNDLE=discobox-pool-agent-bundle:local
+        DISCOBOX_AGENT_BUNDLE=discobox-agent:local
+        go test ./providers/discovm -run TestArchilGuestRunsThePoolsAndSandboxsUnits -count=1 -timeout 30m -v
+
   test:e2e:libkrun:
     desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM, libkrun and passt on the path, plus the DISCOBOX_LIBKRUN_E2E_* variables"
     cmds:

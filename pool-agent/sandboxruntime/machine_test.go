@@ -30,6 +30,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/vmtest"
 
@@ -938,6 +939,21 @@ func TestMachineArchiveWithoutItsTreeStopsTheMachine(t *testing.T) {
 	}
 }
 
+// A sandbox's machine whose base carries no systemd is refused before its
+// agent or bootstrap is placed, naming what the base lacks (ADR 26-11-16-619
+// §4).
+func TestMachineSandboxWhoseBaseHasNoSystemd(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	f.driver.noSystemd = true
+	_, err := f.runtime.CreateSandbox(context.Background(), machineCreate("sbx_1"))
+	if !errors.Is(err, provisioner.ErrNoSystemd) || !strings.Contains(err.Error(), provisioner.SystemdPath) {
+		t.Fatalf("a base without systemd = %v, want it refused naming %s", err, provisioner.SystemdPath)
+	}
+	if events := f.driver.events["sbx-1"]; slices.Contains(events, "apply") {
+		t.Fatalf("a machine without systemd was applied: %v", events)
+	}
+}
+
 // A machine cannot be frozen, so a suspend is refused, and a machine's tree is
 // its disk, so an export is.
 func TestMachineRefusesWhatItCannotDo(t *testing.T) {
@@ -1083,6 +1099,8 @@ type agentDriver struct {
 	// noVolumes is a driver that attaches no volume, and so upgrades no
 	// machine, as boxd is.
 	noVolumes bool
+	// noSystemd is a driver whose base carries no systemd.
+	noSystemd bool
 	// rootData is an agent that keeps the sandbox's data on the machine's
 	// root, as one that predates wiring a data volume does: it records
 	// nothing on the volume (sandboxconfig.MachineDataWiredFile).
@@ -1240,6 +1258,14 @@ type agentMachine struct {
 func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machine.Process, error) {
 	if slices.Equal(req.Argv, snapshotCommand) {
 		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", m.driver.agents.snapshotScript()}})
+	}
+	if slices.Equal(req.Argv, provisioner.SystemdCheck) {
+		// A fake guest's command runs on the host, whose systemd is not the
+		// machine's: the base has it unless the test says otherwise.
+		if m.driver.noSystemd {
+			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"false"}})
+		}
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
 	}
 	if !slices.Equal(req.Argv, []string{agentlayer.AgentPath, "provision", "apply"}) {
 		return m.Machine.Exec(ctx, req)

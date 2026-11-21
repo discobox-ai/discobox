@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -257,5 +258,54 @@ func TestTailBufferKeepsTheEnd(t *testing.T) {
 	_, _ = b.Write([]byte(big + "end"))
 	if got := b.Bytes(); len(got) != outputLimit || !strings.HasSuffix(string(got), "end") {
 		t.Fatalf("kept %d bytes after a write longer than the limit", len(got))
+	}
+}
+
+// exitGuest is a guest whose every command exits with code, writing stderr.
+type exitGuest struct {
+	machine.Guest
+	code   int
+	stderr string
+	argv   [][]string
+}
+
+func (g *exitGuest) Exec(_ context.Context, req machine.ExecRequest) (machine.Process, error) {
+	g.argv = append(g.argv, req.Argv)
+	return &exitProcess{code: g.code, stderr: g.stderr}, nil
+}
+
+type exitProcess struct {
+	code   int
+	stderr string
+}
+
+func (p *exitProcess) Write(b []byte) (int, error) { return len(b), nil }
+func (p *exitProcess) CloseStdin() error           { return nil }
+func (p *exitProcess) Resize(uint16, uint16) error { return nil }
+func (p *exitProcess) Close() error                { return nil }
+func (p *exitProcess) Wait(_, stderr io.Writer) (int, error) {
+	_, _ = io.WriteString(stderr, p.stderr)
+	return p.code, nil
+}
+
+// A base without systemd is refused naming what it lacks, before anything
+// is placed; one with it is not; a guest that cannot answer says so, rather
+// than being taken for one without (ADR 26-11-16-619 §4).
+func TestRequireSystemd(t *testing.T) {
+	ctx := context.Background()
+	if err := RequireSystemd(ctx, &exitGuest{code: 0}); err != nil {
+		t.Fatalf("a guest with systemd: %v", err)
+	}
+	missing := &exitGuest{code: 1}
+	err := RequireSystemd(ctx, missing)
+	if !errors.Is(err, ErrNoSystemd) || !strings.Contains(err.Error(), SystemdPath) {
+		t.Fatalf("a base without systemd: %v, want ErrNoSystemd naming %s", err, SystemdPath)
+	}
+	if len(missing.argv) != 1 || !slices.Contains(missing.argv[0], SystemdPath) || !slices.Contains(missing.argv[0], UsrSystemdPath) {
+		t.Fatalf("asked %v, want one look for %s or %s", missing.argv, SystemdPath, UsrSystemdPath)
+	}
+	err = RequireSystemd(ctx, &exitGuest{code: 125, stderr: "systemd is not running in the guest\n"})
+	if err == nil || errors.Is(err, ErrNoSystemd) || !strings.Contains(err.Error(), "systemd is not running") {
+		t.Fatalf("a guest that cannot answer: %v, want its own error", err)
 	}
 }

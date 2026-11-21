@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
@@ -67,6 +68,8 @@ type poolTestDriver struct {
 	name string
 	// applyFails makes apply exit non-zero.
 	applyFails bool
+	// noSystemd makes the machines' base one without systemd.
+	noSystemd bool
 	// lookupErr, when set, is what Instance and Instances answer: the
 	// driver's service not answering.
 	lookupErr error
@@ -306,6 +309,15 @@ func (m *poolTestMachine) Exec(ctx context.Context, req machine.ExecRequest) (ma
 		m.driver.restarts = append(m.driver.restarts, req.Argv)
 		m.driver.mu.Unlock()
 		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
+	}
+	if slices.Equal(req.Argv, provisioner.SystemdCheck) {
+		// The host's systemd is not the machine's, either: the base has it
+		// unless the test says otherwise.
+		code := "0"
+		if m.driver.noSystemd {
+			code = "1"
+		}
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "exit " + code}})
 	}
 	if len(req.Argv) == 3 && req.Argv[0] == "rm" && req.Argv[1] == "-f" {
 		// A fake guest's command runs on the host: the path is its root's.
@@ -1085,6 +1097,24 @@ func TestFakePoolMachineApplyThatFails(t *testing.T) {
 	}
 	if recordOf(t, pool).Box.Bundles[0] == "discobox-pool@"+maker.digest {
 		t.Fatal("a failed apply was recorded as placed")
+	}
+}
+
+// A pool machine whose base carries no systemd is refused before anything of
+// the pool is placed in it, naming what the base lacks (ADR 26-11-16-619 §4):
+// the provider's base is its operator's to fix.
+func TestFakePoolMachineWhoseBaseHasNoSystemd(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-11", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	driver.noSystemd = true
+	err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
+	if !errors.Is(err, provisioner.ErrNoSystemd) || !strings.Contains(err.Error(), provisioner.SystemdPath) {
+		t.Fatalf("a base without systemd = %v, want it refused naming %s", err, provisioner.SystemdPath)
+	}
+	if len(driver.applied) != 0 {
+		t.Fatal("a machine without systemd was applied")
 	}
 }
 
