@@ -29,7 +29,12 @@ func Normalize(host string) string {
 	if trimmed, _, err := net.SplitHostPort(host); err == nil {
 		host = trimmed
 	}
-	return strings.TrimSuffix(host, ".")
+	// Only a name loses its dot. "." and ".." are no host, and "." reduced to
+	// "" would read as the wildcard every scope check treats it as.
+	if name := strings.TrimSuffix(host, "."); name != "" && !strings.HasSuffix(name, ".") {
+		host = name
+	}
+	return host
 }
 
 // Covers reports whether scope authorizes traffic to host.

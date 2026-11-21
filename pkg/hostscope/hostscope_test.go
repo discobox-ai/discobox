@@ -41,9 +41,24 @@ func TestNormalizeDropsPortCaseAndTrailingDot(t *testing.T) {
 		{"github.com.", "github.com"},
 		{"GitHub.com.:443", "github.com"},
 		{"localhost.", "localhost"},
+		// No name, so nothing to drop: "." must never become "", the wildcard.
+		{".", "."},
+		{"..", ".."},
+		{".:443", "."},
+		{"a..", "a.."},
 	} {
 		if got := hostscope.Normalize(tc.in); got != tc.want {
 			t.Errorf("Normalize(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// A scope that is only a dot names no host; it must not cover every host the
+// way the empty wildcard scope does.
+func TestADotScopeCoversNothing(t *testing.T) {
+	for _, scope := range []string{".", " . ", ".:443"} {
+		if hostscope.Covers(scope, "evil.com") {
+			t.Errorf("Covers(%q, evil.com) = true, want false", scope)
 		}
 	}
 }
