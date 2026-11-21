@@ -77,27 +77,46 @@ const methodOverrideParam = "_method"
 // separator to one that decodes it first, and the proxy cannot tell which the
 // upstream is, so a path holding one has a second reading that keeps it
 // inside its segment: /mcp/x%2F..%2Freadonly is /mcp/readonly decoded and
-// /mcp/x%2F..%2Freadonly as sent. A request is held to every reading. A URL
-// that does not parse has the root path.
+// /mcp/x%2F..%2Freadonly as sent. A path parameter (";" and what follows it in
+// a segment, encoded or not) is likewise data to some servers and stripped
+// before routing by others — servlet containers such as Tomcat, which also
+// resolve "..;" as a dot segment — so a path holding one has a reading with
+// each segment's parameter removed: /admin;x/y is /admin/y there, and
+// /public/..;/admin is /admin. A request is held to every reading. A URL that
+// does not parse has the root path.
 func RequestPaths(rawURL string) []string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Path == "" {
 		return []string{"/"}
 	}
-	decoded := path.Clean("/" + u.Path)
-	segments := strings.Split(u.EscapedPath(), "/")
-	for i, segment := range segments {
+	decoded := strings.Split(u.Path, "/")
+	sent := strings.Split(u.EscapedPath(), "/")
+	for i, segment := range sent {
 		// Every escape but a "/" is read as the server would, so an encoded
 		// dot segment (%2e%2e) still resolves.
 		if unescaped, err := url.PathUnescape(segment); err == nil && !strings.Contains(unescaped, "/") {
-			segments[i] = unescaped
+			sent[i] = unescaped
 		}
 	}
-	asSent := path.Clean("/" + strings.Join(segments, "/"))
-	if asSent == decoded {
-		return []string{decoded}
+	var readings []string
+	add := func(segments []string, stripParameters bool) {
+		if stripParameters {
+			segments = slices.Clone(segments)
+			for i, segment := range segments {
+				if j := strings.IndexByte(segment, ';'); j >= 0 {
+					segments[i] = segment[:j]
+				}
+			}
+		}
+		if reading := path.Clean("/" + strings.Join(segments, "/")); !slices.Contains(readings, reading) {
+			readings = append(readings, reading)
+		}
 	}
-	return []string{decoded, asSent}
+	add(decoded, false)
+	add(sent, false)
+	add(decoded, true)
+	add(sent, true)
+	return readings
 }
 
 // Decide says whether a request may carry a secret, held to every route list
