@@ -55,6 +55,10 @@
   stops or is replaced. Never build an `http.Transport` per lease there: every
   pool-agent call takes its own lease, so a per-lease transport dials the guest
   for every proxied request and every poll of an attached console (#1335).
+  The same holds for a remote driver reached through a credentialed edge
+  (archil): its client is built once per credential (`discovm`'s
+  `serviceEndpoints`) and shared by every lease, or each call opens a new TLS
+  connection to the edge and leaves another idle one behind.
   wslc is the exception: its dials are streams on one multiplexed relay
   session, so a per-lease transport opens no new guest connection.
 - An error a pool-agent dial returns, including one the keep-alive client
