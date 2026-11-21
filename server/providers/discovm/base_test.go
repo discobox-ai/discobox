@@ -20,7 +20,9 @@ func TestDefaultOCIBaseIsPinnedByDigest(t *testing.T) {
 
 // The image DefaultOCIBase pins is built from the sandbox base image's
 // Dockerfile, and an archil machine needs systemd, systemd-sysv, dbus and
-// nftables in it (ADR 26-11-16-619 §4). Each is named in its apt install, not
+// nftables in it (ADR 26-11-16-619 §4), and sudo, which a sandbox machine's
+// wiring runs (discobox-base v0.18.1, which had none, could not wire one).
+// Each is named in its apt install, not
 // left to another package's dependencies, so a later edit there cannot drop
 // one unseen.
 func TestTheOCIBaseInstallsWhatAnArchilMachineNeeds(t *testing.T) {
@@ -34,7 +36,7 @@ func TestTheOCIBaseInstallsWhatAnArchilMachineNeeds(t *testing.T) {
 			installed = append(installed, name)
 		}
 	}
-	for _, pkg := range []string{"systemd", "systemd-sysv", "dbus", "nftables"} {
+	for _, pkg := range []string{"systemd", "systemd-sysv", "dbus", "nftables", "sudo"} {
 		if !slices.Contains(installed, pkg) {
 			t.Errorf("the sandbox base image's Dockerfile installs no %s, which an archil machine booted from DefaultOCIBase needs", pkg)
 		}
