@@ -1467,6 +1467,31 @@ agent's published port, or the pool never registers.
 - Restart the server: the agent logs `control-plane channel closed`, then
   `open` again within seconds, the same pid.
 
+# Verifying an archil pool's server side without Archil (a fake API)
+
+No Archil key needed: the archil driver takes `driver.baseUrl`, so point it at
+a small fake on loopback and watch what the server asks of it.
+
+- Run an isolated server (above) on a copy of the loop's database with its
+  pools, providers and `reconcile_dirty` deleted, so it touches no Docker.
+  Add `DISCOBOX_PROVIDER_ENDPOINTS=127.0.0.1:<port>` and
+  `SSL_CERT_FILE=<system bundle + your cert>` to its env. The endpoint must
+  be **https**: the server refuses `http://127.0.0.1:…` whatever the
+  operator lists, though the driver's `--driver-base-url` help says http to
+  loopback is allowed. Serve the fake with a throwaway self-signed cert for
+  `IP:127.0.0.1` (Python `http.server` wrapped in `ssl`).
+- The fake answers `GET /api/sandboxes` with `{"sandboxes":[]}` and
+  `GET /api/disks` with `[]` (a bare array); a lookup by name lists both, and
+  any other answer fails the pool's reconcile as "cannot be looked up". Log
+  every request: the absence of `POST /api/sandboxes` is the evidence that no
+  machine was made.
+- Never make an archil provider with a dummy key on the dev loop itself: its
+  pool's lookup and removal both list Archil's real API, which refuses the
+  key, so the pool can never be deleted (removal retries forever), and
+  `driver.baseUrl` cannot be changed while the provider has pools.
+- Kill the servers and the fake by pid: `pkill -f <pattern>` kills your own
+  tool shell when the pattern is in its command line.
+
 # Verifying a machine pool (`MachineSandboxRuntime`, a disco-vm driver's provider type)
 
 - A machine pool needs a remote driver: boxd and a key in the `vm`
