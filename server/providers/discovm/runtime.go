@@ -152,7 +152,7 @@ func newDriver(s settings, scope string, keys machine.KeySource, dial machine.Di
 	if err != nil {
 		return nil, err
 	}
-	cfg.Base = strings.TrimSpace(s.Base)
+	cfg.Base = s.base()
 	cfg.Dial = dial
 	// disco-vm's error names the driver, the field and never its value.
 	return machine.New(s.name, cfg)

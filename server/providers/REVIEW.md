@@ -264,6 +264,14 @@
   change to either moves both. Why: the keyring is served beside the packages
   it signs, and the feature still fetched it unchecked after the image's copy
   was pinned (#1168).
+- A change to the sandbox base image (`dockerworker/sandbox-image`) is also
+  a change to every archil machine's base, once `oci-base:pin` moves
+  `discovm.DefaultOCIBase` to the release that ships it. Check it still boots
+  as a VM guest under Archil: systemd started in its own PID and mount
+  namespace, not as PID 1 of the guest, with `systemd`, `systemd-sysv`,
+  `dbus` and `nftables` kept (ADR 26-11-16-619 §4), and no unit it masks for
+  a container needed there. Why: the image is tuned for a container, and the
+  Docker tests that build it never boot it as an Archil guest.
 - Do not mark an error a provider's build (its factory, its driver's
   constructor) returns with `sandbox.ErrPoolNotReachable`: a build error
   reaches every resolver, and the sandbox paths read that sentinel as a pool

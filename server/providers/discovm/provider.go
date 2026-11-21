@@ -70,8 +70,12 @@ type Config struct {
 	// Base is the driver's base a pool machine, and its sandboxes' machines,
 	// are made fresh from: disco-vm's machine.Config.Base, in the driver's
 	// own terms, passed to it as it is. A machine is a driver base the agent
-	// is placed on, never an image of discobox's (ADR 26-10-23-551 §§1, 3).
-	// Empty is the driver's default. A driver that takes none refuses it.
+	// is placed on (ADR 26-10-23-551 §§1, 3), which on a driver whose base is
+	// an OCI image is discobox's sandbox base image unless this names
+	// another (DefaultOCIBase, ADR 26-11-16-619 §4).
+	// Empty is DefaultOCIBase on a driver whose base is an OCI image, and the
+	// driver's default on any other (settings.base). A driver that takes none
+	// refuses it.
 	Base string `json:"base,omitempty"`
 	// ControlPlaneURL is where a driver reached at its URLs has its pool
 	// machine reach this server, when it dials it. Empty, the server opens a
@@ -373,7 +377,16 @@ func Definition(name string) sandbox.ProviderDefinition {
 			sandbox.ProviderConfigField{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where this provider's pool machines reach this server. Leave it empty and this server opens a channel to each pool machine instead, so it needs no public URL."},
 		)
 		if def.TakesBase() {
-			fields = append(fields, sandbox.ProviderConfigField{Key: "base", Label: def.Base.Label, Type: "string", Placeholder: def.Base.Placeholder, Default: def.Base.Default, Advanced: true, Description: def.Base.Description + " A pool's machine and its sandboxes' machines are made from it, and the pool's keys run on it: name one only your account controls."})
+			// A driver whose base is an OCI image is given discobox's
+			// (DefaultOCIBase) when the provider names none, which the field
+			// says in place of the driver's own default.
+			base := sandbox.ProviderConfigField{Key: "base", Label: def.Base.Label, Type: "string", Placeholder: def.Base.Placeholder, Default: def.Base.Default, Advanced: true, Description: def.Base.Description}
+			if takesOCIBase(name) {
+				base.Default = DefaultOCIBase
+				base.Description = "The public OCI image a fresh machine runs; empty is discobox's sandbox base image, pinned by digest."
+			}
+			base.Description += " A pool's machine and its sandboxes' machines are made from it, and the pool's keys run on it: name one only your account controls."
+			fields = append(fields, base)
 		}
 	}
 	return sandbox.ProviderDefinition{

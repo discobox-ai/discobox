@@ -997,6 +997,14 @@ tasks:
     cmds:
       - scripts/ubuntu-pin.sh bump "{{.TAG}}"
 
+  oci-base:pin:
+    desc: "Move the base every linked VM driver whose base is an OCI image (archil) runs, discovm.DefaultOCIBase, to the sandbox base image a release published, by digest: VERSION=<vX.Y.Z>, by default the newest dot release whose image is published"
+    # A release publishes the image (release:images) and cannot link its own
+    # digest, so the pin moves in a change after it, as the pool VM guest's
+    # does (vm:publish).
+    cmds:
+      - scripts/oci-base-pin.sh "{{.VERSION}}"
+
   docker:bump:
     desc: "Move Docker CE's pin, in the sandbox base and the pool VM guest, to VERSION=<docker-ce, e.g. 29.9.3-1> and CONTAINERD=<containerd.io, e.g. 2.4.2-4>, each defaulting to the newest Docker publishes for amd64 and arm64"
     # It moves the guest's daemon, so like an Ubuntu bump it is a guest
