@@ -1269,9 +1269,11 @@ A driver that fences at its provider's edge has no network for a direct
 path, so its pool must be reached through an edge: `fencedBy` refuses it
 otherwise.
 
-Through an edge, each sandbox's runtime-config document also carries
-`proxy.edge` (`poolEdge`, ADR 26-11-16-619 §§2–3), decided again at every
-poll, so a change is a new revision:
+Through an edge that answers only a credential (`URLCapabilities.Credential`,
+archil), each sandbox's runtime-config document also carries `proxy.edge`
+(`poolEdge`, ADR 26-11-16-619 §§2–3), decided again at every poll, so a change
+is a new revision; through any other edge its sandboxes dial it by name, as
+before:
 
 - **The address** of the pool's host as the pool's machine last resolved it,
   looked up at most once a minute, outside the lock (others are answered with
@@ -1280,8 +1282,7 @@ poll, so a change is a new revision:
   sandbox's tunnels dial it in place of the name and resolve nothing, since
   the fence may close DNS; the edge routes by name, so a stale address still
   reaches the pool.
-- **The credential**, on a driver whose URLs answer only one
-  (`URLCapabilities.Credential`, archil): the one the server minted for the
+- **The credential**: the one the server minted for the
   pool's sandboxes, shared by all of them, and placed beside the bootstrap
   (`bundle.SandboxEdgeCredentialFile`), read as each document is decided. A
   file that does not read (the server replaces it in place) hands out the
@@ -2086,9 +2087,10 @@ flowchart LR
   `end`/`end-ack` so the sandbox reuses the tunnel for its next stream.
 - The edge's host must resolve without the pool: the sandbox's own DNS goes
   through the tunnel, and the stub refuses the edge's name rather than loop.
-  A machine pool gives its sandboxes the address instead, with the edge's
-  credential, in `proxy.edge` ([The Hop](#the-hop)): its bridges dial it and
-  resolve nothing.
+  A machine pool behind an edge that answers only a credential (archil)
+  gives its sandboxes the address instead, with that credential, in
+  `proxy.edge` ([The Hop](#the-hop)): its bridges dial it and resolve
+  nothing.
 
 ## Worker Proxy Integration
 
