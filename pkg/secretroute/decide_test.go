@@ -751,6 +751,13 @@ func TestDecideHoldsAPathParameterToThePathItReaches(t *testing.T) {
 			t.Errorf("%s left the open path", raw)
 		}
 	}
+	// A route naming a parameter matches the path as sent but not the path a
+	// servlet container routes, so it refuses, as one naming an encoded "/"
+	// does: no upstream's reading of the path is left unchecked.
+	named := [][]Route{routes(t, "x.test/a;b")}
+	if allowed, _ := Decide(named, get("GET", "https://x.test/a;b")); allowed {
+		t.Error("a route naming a parameter allowed a path it does not hold to every reading")
+	}
 }
 
 func ExampleFormat() {

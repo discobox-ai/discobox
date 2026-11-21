@@ -82,8 +82,9 @@ const methodOverrideParam = "_method"
 // before routing by others — servlet containers such as Tomcat, which also
 // resolve "..;" as a dot segment — so a path holding one has a reading with
 // each segment's parameter removed: /admin;x/y is /admin/y there, and
-// /public/..;/admin is /admin. A request is held to every reading. A URL that
-// does not parse has the root path.
+// /public/..;/admin is /admin. A request is held to every reading, so a route
+// that names a parameter or an encoded "/" in its path matches only one of
+// them and refuses. A URL that does not parse has the root path.
 func RequestPaths(rawURL string) []string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Path == "" {
