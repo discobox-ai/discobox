@@ -2906,5 +2906,6 @@ provider resolver record so its bridges can still resolve the pool independently
 (ADR 26-11-12-355); see [sandbox-agent](../sandbox-agent/DESIGN.md#machine-system-dns).
 On a driver fenced at its provider's edge the sandbox's fence closes DNS
 (`fencedBy`, ADR 26-11-16-619 §1), so no resolver answers a bridge: the pool
-gives such a sandbox no address to dial in place of the pool's host, and its
-bridges do not reach the pool.
+gives such a sandbox the address its host last resolved to, with the edge's
+credential, in `proxy.edge` ([The Hop](#the-hop)), and its bridges dial that
+and resolve nothing (§3).
