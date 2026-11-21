@@ -662,6 +662,18 @@ not the root ever answered.
   with ingress off. The pool keeps the edge credential in memory and sends
   it by the driver's header over HTTPS with HTTP/1.1. The provider's edge
   must consume the credential and forward the request without its header.
+- **The pool machine's own listener, behind such an edge, takes a credential
+  too** (ADR 26-11-16-619 §2). The server's is its own, held in memory and
+  never placed in the machine. The sandboxes' is one token they share, read
+  from `bundle.SandboxEdgeCredentialFile` and handed to each in its
+  runtime-config document. Neither goes in the bootstrap, the server's
+  record on the pool's row (`poolRuntimeState`, which keeps only the
+  expiry), or a log, and a sandbox is never given its own machine's
+  credential: that would let the guest's root reach its own URL past the
+  fence. The sandboxes' token does stay in the pool agent's per-sandbox
+  runtime-config record and the sandbox's kept document, as an origin token
+  does: `WithoutPrivateKeys` must not strip it, since a renewal is a new
+  revision only by what the record holds.
 
 ## The sandbox agent's TLS
 

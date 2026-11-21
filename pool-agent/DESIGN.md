@@ -1269,6 +1269,22 @@ A driver that fences at its provider's edge has no network for a direct
 path, so its pool must be reached through an edge: `fencedBy` refuses it
 otherwise.
 
+Through an edge, each sandbox's runtime-config document also carries
+`proxy.edge` (`poolEdge`, ADR 26-11-16-619 §§2–3), decided again at every
+poll, so a change is a new revision:
+
+- **The address** of the pool's host as the pool's machine last resolved it,
+  looked up at most once a minute and kept over a failed lookup. The
+  sandbox's tunnels dial it in place of the name and resolve nothing, since
+  the fence may close DNS; the edge routes by name, so a stale address still
+  reaches the pool.
+- **The credential**, on a driver whose URLs answer only one
+  (`URLCapabilities.Credential`, archil): the one the server minted for the
+  pool's sandboxes, shared by all of them, and placed beside the bootstrap
+  (`bundle.SandboxEdgeCredentialFile`), read as each document is decided. A
+  credential that is missing or expired holds the document back. A sandbox
+  holds the pool listener's credential, never its own machine's.
+
 The names are discobox's own, as a private DNS would answer them: the
 provider's name for the pool's machine, and its address, are never in an
 endpoint or a certificate. The pool's own machine keeps its internet: its
@@ -2064,6 +2080,9 @@ flowchart LR
   `end`/`end-ack` so the sandbox reuses the tunnel for its next stream.
 - The edge's host must resolve without the pool: the sandbox's own DNS goes
   through the tunnel, and the stub refuses the edge's name rather than loop.
+  A machine pool gives its sandboxes the address instead, with the edge's
+  credential, in `proxy.edge` ([The Hop](#the-hop)): its bridges dial it and
+  resolve nothing.
 
 ## Worker Proxy Integration
 

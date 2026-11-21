@@ -21,6 +21,13 @@ const (
 	// the pool's engine reads on every call to its driver, so a renewed key
 	// is a new file and nothing more.
 	ProvisioningKeyFile = "/etc/discobox/pool-agent/provisioning-key.json"
+	// SandboxEdgeCredentialFile is the credential a machine pool's sandboxes
+	// open its listener with, through the provider's edge (ADR 26-11-16-619
+	// §2): a disco-vm machine.Credential as JSON, root's alone, which the
+	// server mints and renews before it expires, and the agent reads as it
+	// decides each sandbox's runtime-config document, so a renewal is a new
+	// file and nothing more. Placed only on a driver whose URLs answer one.
+	SandboxEdgeCredentialFile = "/etc/discobox/pool-agent/sandbox-edge-credential.json" //nolint:gosec // G101: a path, not a credential
 )
 
 // AgentUnit is the pool agent's own unit. It is Type=notify: active once the

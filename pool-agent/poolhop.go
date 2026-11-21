@@ -38,6 +38,10 @@ type poolHop struct {
 	// form is hopDirect or hopEdge on a machine pool, and empty on a Docker
 	// pool.
 	form string
+	// edgeHost is the pool's host at the edge, on hopEdge: what its
+	// sandboxes' tunnels reach, and the name the pool resolves for them
+	// (ADR 26-11-16-619 §3).
+	edgeHost string
 }
 
 // resolvePoolHop is the hop bootstrap describes. A Docker pool's sandboxes
@@ -84,6 +88,7 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 		tunnelURL: tunnelURL,
 		egress:    &machine.Egress{Allow: []string{pool.Hostname()}},
 		form:      hopEdge,
+		edgeHost:  pool.Hostname(),
 	}, nil
 }
 
