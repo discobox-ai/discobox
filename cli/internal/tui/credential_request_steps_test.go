@@ -79,6 +79,46 @@ func selectApprovalCredential(t *testing.T, m *Model, id string) {
 	}
 }
 
+func toggleApprovalAdvanced(t *testing.T, m *Model) {
+	t.Helper()
+	readRequestEnd(t, m, "pgdown")
+	for i, row := range m.dialog.form.rows {
+		if row.key == "advanced" {
+			m.dialog.formActionAt = -1
+			m.dialog.form.moveTo(i)
+			send(t, m, keyPress("enter"))
+			if m.dialog.form.listing {
+				t.Fatal("Advanced Options opened a picker")
+			}
+			return
+		}
+	}
+	t.Fatal("Advanced Options row missing")
+}
+
+func TestAdvancedOptionsToggleKeepsTheDecision(t *testing.T) {
+	m, ds := sourceWithRequest(t)
+	openApproval(t, m, "sec_gh")
+	readRequestEnd(t, m, "pgdown")
+	x, y := at(t, m, "Advanced Options")
+	tap(t, m, x+1, y)
+	if !strings.Contains(plainFrame(m), "Hide") || m.dialog.form.listing {
+		t.Fatal("click did not expand Advanced Options in place")
+	}
+	m.dialog.form.choose("use-scope", "hosts")
+	toggleApprovalAdvanced(t, m)
+	if m.dialog.form.chosen("use-scope") != "hosts" {
+		t.Fatal("hiding Advanced Options cleared the selected scope")
+	}
+	text := plainFrame(m)
+	if !strings.Contains(text, "Show") || strings.Contains(text, "Route scope") {
+		t.Fatalf("advanced rows did not collapse: %s", text)
+	}
+	if len(ds.approvals) != 0 {
+		t.Fatal("toggling options sent an approval")
+	}
+}
+
 // fakeGitHubToken has a classic GitHub token's shape, ghp_ and 36 of alnum,
 // and is assembled so no literal in the tree looks like a credential.
 var fakeGitHubToken = "ghp_" + strings.Repeat("A1b2", 9)
@@ -287,7 +327,7 @@ func TestAdvancedAnswersEachPartWithItsOwnScope(t *testing.T) {
 			send(t, m, tickMsg{})
 			openApproval(t, m, "sec_gh")
 			f := m.dialog.form
-			f.choose("advanced", "show")
+			toggleApprovalAdvanced(t, m)
 			if tc.modify != "" {
 				f.choose("use-scope", tc.modify)
 			}
@@ -334,7 +374,7 @@ func TestAPartCardShowsItsRolesAndWhenTheyNoLongerApply(t *testing.T) {
 	if strings.Contains(text, "not the routes above") {
 		t.Fatal("roles disowned while the routes are the ones asked for")
 	}
-	m.dialog.form.choose("advanced", "show")
+	toggleApprovalAdvanced(t, m)
 	m.dialog.form.choose("use-scope", "anywhere")
 	plainFrame(m)
 	if !strings.Contains(strings.Join(m.dialog.sectionLines(newStyles(false), 120), "\n"), "These roles describe the request.") {
@@ -641,7 +681,7 @@ func TestAnywhereShowsEveryCeilingOfTheCredential(t *testing.T) {
 	req.Use.Routes = []secretroute.Route{ghRoute("/repos/o/pulls")}
 	s.ID = "sec"
 	m.credentialApproval(req, []Secret{s}, nil, nil, time.Hour)
-	m.dialog.form.choose("advanced", "show")
+	toggleApprovalAdvanced(t, m)
 	m.dialog.form.choose("use-scope", "anywhere")
 	text := plainFrame(m)
 	for _, want := range []string{"anywhere the “github” credential may be sent", "and only within its constraint 1", "/repos/o/**"} {

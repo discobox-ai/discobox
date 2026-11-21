@@ -116,9 +116,20 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		key, label string
 		part       *RequestPart
 	}{{"use", "Access for this box", req.Use}, {"delegate", "Access for its workers", req.Delegate}}
-	rows = append(rows, pickRow("advanced", "Advanced",
-		choice{key: "hide", label: "Show part decisions and route scope…"},
-		choice{key: "show", label: "Hide part decisions and route scope"}))
+	advanced := false
+	rows = append(rows, formRow{
+		key: "advanced", label: "Advanced Options", openOnClick: true,
+		show: func(*form) string {
+			if advanced {
+				return "Hide"
+			}
+			return "Show"
+		},
+		open: func() tea.Cmd {
+			advanced = !advanced
+			return nil
+		},
+	})
 	editedRoutes := map[string][]secretroute.Route{}
 	for _, part := range parts {
 		if part.part == nil {
@@ -126,7 +137,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		}
 		decision := pickRow(part.key+"-decision", part.label,
 			choice{key: PartApprove, label: "Approve"}, choice{key: PartDeny, label: "Deny"})
-		decision.when = func(f *form) bool { return f.chosen("advanced") == "show" }
+		decision.when = func(*form) bool { return advanced }
 		scopes := []choice{{key: "routes", label: "Requested routes"}}
 		if len(secretroute.OpenRouteHosts(part.part.Routes)) > 0 {
 			scopes = append(scopes, choice{key: "hosts", label: "Requested hosts · any method and path"})
@@ -135,7 +146,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			choice{key: "edited", label: "Edited routes"})
 		scope := pickRow(part.key+"-scope", "Route scope", scopes...)
 		scope.when = func(f *form) bool {
-			return f.chosen("advanced") == "show" && f.chosen(part.key+"-decision") == PartApprove
+			return advanced && f.chosen(part.key+"-decision") == PartApprove
 		}
 		edit := formRow{key: part.key + "-edit", label: "Edited routes", show: func(*form) string { return "Open route editor…" }}
 		edit.when = func(f *form) bool { return scope.when(f) && f.chosen(part.key+"-scope") == "edited" }

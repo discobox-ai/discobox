@@ -75,6 +75,8 @@ type formRow struct {
 	// read from the form each time it is drawn.
 	open func() tea.Cmd
 	show func(f *form) string
+	// Inline actions respond to a click as well as Enter.
+	openOnClick bool
 	// dim draws show's value quietly, for a value worked out rather than
 	// given.
 	dim func(f *form) bool
