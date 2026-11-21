@@ -545,10 +545,11 @@ secrets the retired configure flow created.
 A route's host is a pattern read by [`secretroute`](../../../../pkg/secretroute)
 (ADR 26-10-27-880 §4, ADR 26-10-27-939): an exact name covers itself alone,
 `*.suffix` the hosts strictly beneath the suffix, and `*` everything. Hosts are
-stored lowercased with no port (`hostscope.Normalize`), the form the proxy
-reports. A route stored before patterns, whose host covered the hosts beneath
-it, was converted by the upgrade without widening (`database`'s
-`upgradeRouteShapes`).
+stored lowercased with no port, the form the proxy reports; a request's host is
+read the same way and also loses a trailing dot (`hostscope.Normalize`), while a
+pattern with one is refused. A route stored before patterns, whose host covered
+the hosts beneath it, was converted by the upgrade without widening
+(`database`'s `upgradeRouteShapes`).
 
 ## A refused credential is recorded, and only the unfixable kind
 

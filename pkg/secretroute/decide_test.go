@@ -732,3 +732,16 @@ func TestReasonsCutLongNamesShort(t *testing.T) {
 		t.Fatalf("Safe(short) = %q, want it unchanged", got)
 	}
 }
+
+// A trailing dot on the request host names the same host, so a block on that
+// host must still decide it: without normalizing the dot away, host. fell past
+// a block on host to a broader open route and carried the credential.
+func TestDecideHoldsATrailingDotHostToTheHostBlock(t *testing.T) {
+	lists := [][]Route{routes(t, "*", "localhost/admin/**=blocked")}
+	if allowed, _ := Decide(lists, get("GET", "http://localhost:1234/admin/x")); allowed {
+		t.Fatal("the plain host reached a blocked path")
+	}
+	if allowed, reason := Decide(lists, get("GET", "http://localhost.:1234/admin/x")); allowed {
+		t.Fatalf("a trailing-dot host reached the blocked path; reason was %q", reason)
+	}
+}

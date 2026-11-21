@@ -16,15 +16,32 @@ import (
 	"strings"
 )
 
-// Normalize is the one reading of a host string: lowercased, trimmed, and
-// without a port. The proxy reports the destination this way, so anything
-// stored differently is a scope that can never match.
+// Normalize is the one reading of a host string: lowercased, trimmed, without
+// a port, and without a trailing dot. The proxy reports the destination this
+// way, so anything stored differently is a scope that can never match. The
+// trailing dot is dropped because `host.` is the fully qualified spelling of
+// `host` (an absolute DNS name), the proxy's own policy compares them so
+// (authorityHostname in package proxy), and a route must not be matched
+// against a spelling the proxy does not use: otherwise `host.` falls past a
+// block on `host` to a broader open route.
 func Normalize(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if trimmed, _, err := net.SplitHostPort(host); err == nil {
-		return trimmed
+		host = trimmed
+	}
+	// Only a name loses its dot: one whose last label ends as a DNS label does.
+	// "." and ".." are no host, and "." reduced to "" would read as the
+	// wildcard every scope check treats it as; "a ." would end in a space.
+	if name, ok := strings.CutSuffix(host, "."); ok && name != "" && endsLabel(name[len(name)-1]) {
+		host = name
 	}
 	return host
+}
+
+// endsLabel reports whether c may end a DNS label: a letter, a digit, or the
+// "-" and "_" names are written with.
+func endsLabel(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_'
 }
 
 // Covers reports whether scope authorizes traffic to host.

@@ -214,6 +214,27 @@ func TestPoolHostsRefuseAnUpstreamThatIsNoTransport(t *testing.T) {
 	}
 }
 
+// A pool host answers its name fully qualified too: host. is the same host,
+// read the one way hostscope reads a destination, so a request to it reaches
+// the pool's listener rather than going out as some other destination.
+func TestAPoolHostAnswersItsNameFullyQualified(t *testing.T) {
+	hosts, err := newPoolHosts([]PoolHostConfig{{Host: testOriginsHost, Upstream: "http://127.0.0.1:1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{testOriginsHost, testOriginsHost + ".", testOriginsHost + ".:443", strings.ToUpper(testOriginsHost) + "."} {
+		if hosts.answering(host) == nil {
+			t.Errorf("answering(%q) = nil, want the pool host", host)
+		}
+	}
+	if hosts.answering(".") != nil {
+		t.Error(`answering(".") found a pool host`)
+	}
+	if _, err := newPoolHosts([]PoolHostConfig{{Host: testOriginsHost, Upstream: "http://127.0.0.1:1"}, {Host: testOriginsHost + ".", Upstream: "http://127.0.0.1:2"}}); err == nil {
+		t.Error("a host named twice, once fully qualified, was accepted")
+	}
+}
+
 // A pool host's response is never cached, even on a path the cache would
 // admit — the registry's blobs are already on the pool's disk — and a host
 // whose bodies are unspooled, the build registry, spools neither its request

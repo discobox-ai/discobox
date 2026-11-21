@@ -30,6 +30,54 @@ func TestCoversIsOneWay(t *testing.T) {
 	}
 }
 
+func TestNormalizeDropsPortCaseAndTrailingDot(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		{"github.com", "github.com"},
+		{"GitHub.com", "github.com"},
+		{" github.com ", "github.com"},
+		{"github.com:443", "github.com"},
+		{"github.com.", "github.com"},
+		{"GitHub.com.:443", "github.com"},
+		{"localhost.", "localhost"},
+		// No name, so nothing to drop: "." must never become "", the wildcard.
+		{".", "."},
+		{"..", ".."},
+		{".:443", "."},
+		{"a..", "a.."},
+		{"a .", "a ."},
+	} {
+		if got := hostscope.Normalize(tc.in); got != tc.want {
+			t.Errorf("Normalize(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+		if got := hostscope.Normalize(tc.want); got != tc.want {
+			t.Errorf("Normalize(%q) = %q, want it unchanged: one reading, read again, is itself", tc.want, got)
+		}
+	}
+}
+
+// A scope that is only a dot names no host; it must not cover every host the
+// way the empty wildcard scope does.
+func TestADotScopeCoversNothing(t *testing.T) {
+	for _, scope := range []string{".", " . ", ".:443"} {
+		if hostscope.Covers(scope, "evil.com") {
+			t.Errorf("Covers(%q, evil.com) = true, want false", scope)
+		}
+	}
+}
+
+// A trailing dot names the same host, so it is covered the same way: without
+// this, github.com. fell outside every github.com scope.
+func TestCoversIgnoresATrailingDot(t *testing.T) {
+	if !hostscope.Covers("github.com", "api.github.com.") {
+		t.Error("a scope does not cover a trailing-dot spelling of what is beneath it")
+	}
+	if !hostscope.Covers("github.com.", "api.github.com") {
+		t.Error("a trailing-dot scope does not cover what is beneath it")
+	}
+}
+
 func TestSpecificityPrefersTheNarrowerScope(t *testing.T) {
 	exact := hostscope.Specificity("api.github.com", "api.github.com")
 	parent := hostscope.Specificity("github.com", "api.github.com")

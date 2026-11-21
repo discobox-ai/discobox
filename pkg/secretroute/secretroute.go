@@ -38,6 +38,7 @@ package secretroute
 
 import (
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -211,8 +212,15 @@ func Normalize(r Route) (Route, error) {
 }
 
 // normalizeHost reads one host pattern: an exact name, `*.suffix`, or `*`.
+// It is lowercased, trimmed and loses a port, as hostscope.Normalize reads a
+// destination, but keeps a trailing dot, which Normalize drops: a destination
+// may be spelled with one, a pattern never is, so `*.` still names no host
+// and `h.` still has an empty label.
 func normalizeHost(host string) (string, error) {
-	host = hostscope.Normalize(host)
+	host = strings.ToLower(strings.TrimSpace(host))
+	if trimmed, _, err := net.SplitHostPort(host); err == nil {
+		host = trimmed
+	}
 	if host == AnyHost {
 		return host, nil
 	}
