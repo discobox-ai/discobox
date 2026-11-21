@@ -37,8 +37,7 @@ const poolEdgeResolveTimeout = 5 * time.Second
 type poolEdge struct {
 	// host is the pool's host at the edge, its pool URL's.
 	host string
-	// credentialFile is where the server places the credential, and empty on
-	// a driver whose URLs answer without one.
+	// credentialFile is where the server places the credential.
 	credentialFile string
 	lookup         func(ctx context.Context, host string) ([]netip.Addr, error)
 	now            func() time.Time
@@ -77,9 +76,6 @@ func newPoolEdge(host, credentialFile string) *poolEdge {
 // follows in a newer revision once the server places one.
 func (e *poolEdge) edge() *sandboxconfig.RuntimeEdge {
 	out := &sandboxconfig.RuntimeEdge{Address: e.resolve()}
-	if e.credentialFile == "" {
-		return out
-	}
 	credential, err := e.currentCredential()
 	if err != nil {
 		e.warnCredential(err)

@@ -129,12 +129,6 @@ func TestPoolEdgeLeavesOutACredentialItCannotHand(t *testing.T) {
 		t.Fatalf("edge once the last credential read has expired = %+v, want none", got)
 	}
 
-	// A driver whose URLs answer without one is given the address alone.
-	bare := newPoolEdge("7302-pool.edge.example", "")
-	bare.lookup = edge.lookup
-	if got := bare.edge(); *got != addressOnly {
-		t.Fatalf("edge with no credential to hand = %+v, want the address alone", got)
-	}
 }
 
 // A lookup the resolver is slow to answer holds up only the caller that made
@@ -142,7 +136,7 @@ func TestPoolEdgeLeavesOutACredentialItCannotHand(t *testing.T) {
 // yet, as just after the agent starts, they wait for it rather than hand a
 // sandbox no address.
 func TestPoolEdgeLooksUpOutsideItsLock(t *testing.T) {
-	edge := newPoolEdge("7302-pool.edge.example", "")
+	edge := newPoolEdge("7302-pool.edge.example", filepath.Join(t.TempDir(), "none.json"))
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	edge.now = func() time.Time { return now }
 	answer := "192.0.2.7"

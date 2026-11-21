@@ -93,16 +93,13 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 		return nil, err
 	}
 	var edge func() *sandboxconfig.RuntimeEdge
-	if hop.form == hopEdge {
-		// Through an edge, each sandbox is given the pool's host's address
-		// to dial, and, on a driver whose URLs answer only a credential, the
-		// one the server placed for the pool's sandboxes (ADR 26-11-16-619
-		// §§2–3).
-		credentialFile := ""
-		if e.Driver.Capabilities().URLs.Credential {
-			credentialFile = bundle.SandboxEdgeCredentialFile
-		}
-		edge = newPoolEdge(hop.edgeHost, credentialFile).edge
+	if hop.form == hopEdge && e.Driver.Capabilities().URLs.Credential {
+		// Through an edge that answers only a credential (archil), each
+		// sandbox is given the one the server placed for the pool's
+		// sandboxes, and the pool's host's address to dial, since its fence
+		// closes DNS (ADR 26-11-16-619 §§2–3). An edge without one keeps
+		// its sandboxes dialing it by name.
+		edge = newPoolEdge(hop.edgeHost, bundle.SandboxEdgeCredentialFile).edge
 	}
 	return sandboxruntime.NewMachineSandboxRuntime(sandboxruntime.MachineSandboxRuntimeConfig{
 		CompleteSuspend: func(ctx context.Context, id, requestID string, epoch int64) error {
