@@ -46,6 +46,11 @@ func TestNormalize(t *testing.T) {
 		{name: "wildcard twice", in: Route{Hosts: []string{"*.*.com"}}, wantErr: "may hold *"},
 		{name: "wildcard suffix", in: Route{Hosts: []string{"github.*"}}, wantErr: "may hold *"},
 		{name: "bare *.", in: Route{Hosts: []string{"*."}}, wantErr: "must name a host"},
+		{name: "any host with a port", in: Route{Hosts: []string{"*:443"}}, want: Route{Hosts: []string{"*"}}},
+		// A destination's trailing dot is dropped (hostscope.Normalize); a
+		// pattern's is still an empty label, as it always was.
+		{name: "trailing dot", in: Route{Hosts: []string{"github.com."}}, wantErr: "empty label"},
+		{name: "wildcard with a trailing dot", in: Route{Hosts: []string{"*.github.com."}}, wantErr: "empty label"},
 		{name: "host with path", in: Route{Hosts: []string{"github.com/x"}}, wantErr: "not a host name"},
 		{name: "host with comma", in: Route{Hosts: []string{"a.com,b.com"}}, wantErr: "not a host name"},
 		{name: "empty label", in: Route{Hosts: []string{"a..com"}}, wantErr: "empty label"},
