@@ -14,13 +14,11 @@ import (
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
-// A credential request is answered by a guided dialog (issue #1017): which
-// credential, a new one if none fits, a summary answering every part at
-// once or a review answering each, using the lifetime selected up front.
+// The approval card shows routes, binding effects, and all consent controls.
 
-// onRequestCard is whether the first step, which credential, is up.
+// onRequestCard reports whether the credential approval card is open.
 func onRequestCard(m *Model) bool {
-	return m.dialog != nil && m.dialog.title == "Credential request" && m.dialog.titleRight == "credential"
+	return m.dialog != nil && m.dialog.title == "Credential request" && m.dialog.titleRight == "approval"
 }
 
 // onStep is whether the step whose corner reads name is up.
@@ -47,40 +45,37 @@ func pickItem(t *testing.T, m *Model, key string) {
 	t.Fatalf("no row %q on %s", key, describe(d))
 }
 
-// grantFor revises the first step when needed, then consents on the summary.
 func grantFor(t *testing.T, m *Model, ttl time.Duration) {
 	t.Helper()
-	if ttl != time.Hour {
-		send(t, m, keyPress("esc"))
-		if !onRequestCard(m) {
-			t.Fatal("not on credential selection")
-		}
-		key := m.dialog.items[m.dialog.cursor].key
-		pickItem(t, m, "ttl")
-		pickItem(t, m, strconv.FormatInt(lifetime.Seconds(ttl), 10))
-		pickItem(t, m, key)
-	}
+	m.dialog.form.choose("ttl", lifetime.Label(ttl))
 	answerApproval(t, m, "accept")
 }
 
-// toSummary opens the request and answers step 1 with the secret keyed id.
-func toSummary(t *testing.T, m *Model, id string) {
+func openApproval(t *testing.T, m *Model, id string) {
 	t.Helper()
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the approval card", describe(m.dialog))
 	}
-	pickItem(t, m, id)
+	selectApprovalCredential(t, m, id)
 }
 
-// toUseCard answers the request with the saved secret id and opens Review…
-// on the use part's card, which says what approving it replaces.
-func toUseCard(t *testing.T, m *Model, id string) {
+func selectApprovalCredential(t *testing.T, m *Model, id string) {
 	t.Helper()
-	toSummary(t, m, id)
-	answerApproval(t, m, "review")
-	if !onStep(m, "its own use") {
-		t.Fatalf("dialog = %s, want the use part", describe(m.dialog))
+	if id == "new" {
+		readRequestEnd(t, m, "pgdown")
+		for i, row := range m.dialog.form.rows {
+			if row.key == "new" {
+				m.dialog.form.moveTo(i)
+				send(t, m, keyPress("enter"))
+				return
+			}
+		}
+		t.Fatal("new credential row missing")
+	}
+	m.dialog.form.choose("credential", id)
+	if m.dialog.form.chosen("credential") != id {
+		t.Fatalf("credential %q is unavailable", id)
 	}
 }
 
@@ -92,56 +87,28 @@ func ghRoute(paths ...string) secretroute.Route {
 	return secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: paths}
 }
 
-// Step 1 lists every secret, the ones that can answer first and highlighted,
-// the rest marked ✗; choosing one of those says why rather than answer.
-func TestStepOneMarksWhatCannotAnswerAndSaysWhy(t *testing.T) {
+// Only credentials that cover the request can be selected.
+func TestApprovalListsCompatibleCredentials(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_none", Name: "unrouted"})
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want step 1", describe(m.dialog))
-	}
-	var labels []string
-	for _, item := range m.dialog.items {
-		labels = append(labels, item.label)
-	}
-	want := []string{"  GitHub token", "✗ OpenAI key", "✗ unrouted", "  Enter new credential…", "For 1 hour · change…"}
-	if strings.Join(labels, "|") != strings.Join(want, "|") {
-		t.Fatalf("rows = %q, want %q", labels, want)
-	}
-	if m.dialog.items[m.dialog.cursor].key != "sec_gh" {
-		t.Fatalf("cursor on %q, want the secret that can answer", m.dialog.items[m.dialog.cursor].key)
-	}
-	pickItem(t, m, "sec_openai")
-	text := plainFrame(m)
-	for _, want := range []string{"“OpenAI key” can't be used here", "requested, but not covered", "api.github.com"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("card = %q, want %q", text, want)
+	openApproval(t, m, "sec_gh")
+	for _, id := range []string{"sec_openai", "sec_none"} {
+		m.dialog.form.choose("credential", id)
+		if got := m.dialog.form.chosen("credential"); got != "sec_gh" {
+			t.Fatalf("incompatible credential %q selected", got)
 		}
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatal("an incompatible secret answered the request")
-	}
-	send(t, m, keyPress("esc"))
-	if !onRequestCard(m) || m.dialog.items[m.dialog.cursor].key != "sec_openai" {
-		t.Fatalf("dialog = %s, want step 1 back, on the row chosen", describe(m.dialog))
-	}
-	pickItem(t, m, "sec_none")
-	if !strings.Contains(plainFrame(m), "has no routes, so discobox never sends it anywhere") {
-		t.Fatalf("card = %q, want it to say a secret with no routes is sent nowhere", plainFrame(m))
 	}
 }
 
-// With nothing that can answer, a new credential is where step 1 opens.
-func TestStepOneOpensOnANewCredentialWhenNothingFits(t *testing.T) {
+// The card offers new credential entry even when no saved credential fits.
+func TestApprovalOffersNewCredentialWhenNothingFits(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.projectSecrets = ds.projectSecrets[1:]
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if got := m.dialog.items[m.dialog.cursor].key; got != "new" {
-		t.Fatalf("cursor on %q, want a new credential", got)
+	openApproval(t, m, "new")
+	if !onStep(m, "new credential") || len(ds.approvals) != 0 {
+		t.Fatal("new credential entry did not open")
 	}
 }
 
@@ -175,9 +142,9 @@ func TestTheSummaryAcceptsEveryPart(t *testing.T) {
 	ds.requests = []CredentialRequest{req}
 	send(t, m, tickMsg{})
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	text := plainFrame(m)
-	for _, want := range []string{"used by this box", "delegated to its workers", "[ Accept ]", "[ Deny ]", "[ Review… ]"} {
+	for _, want := range []string{"Access for this box", "Access for its workers", "[ Accept ]", "[ Deny ]"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary = %q, want %q", text, want)
 		}
@@ -198,16 +165,15 @@ func TestTheSummaryAcceptsEveryPart(t *testing.T) {
 func TestTheSummaryDeniesEveryPart(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	answerApproval(t, m, "deny")
 	if len(ds.denials) != 1 || len(ds.approvals) != 0 {
 		t.Fatalf("denials = %v approvals = %v, want the request denied", ds.denials, ds.approvals)
 	}
 }
 
-// The summary is each part in a line and lists no routes: each route, with
-// its paths, is behind Review…, on its part's card (issue #1172).
-func TestTheSummaryListsNoRoutes(t *testing.T) {
+// Both parts' formatted route tables are visible before consent.
+func TestApprovalShowsBothPartsRoutes(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	req := waitingRequest()
@@ -217,21 +183,13 @@ func TestTheSummaryListsNoRoutes(t *testing.T) {
 	ds.requests = []CredentialRequest{req}
 	send(t, m, tickMsg{})
 
-	toSummary(t, m, "sec_gh")
-	text := plainFrame(m)
-	for _, want := range []string{"api.github.com, github.com · 2 operations · GET, POST", "api.github.com · 1 operation · GET"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("summary = %q, want %q", text, want)
+	openApproval(t, m, "sec_gh")
+	readRequestEnd(t, m, "pgdown")
+	text := strings.Join(m.dialog.sectionLines(newStyles(false), 120), "\n")
+	for _, route := range []string{"/user/repos", "git-receive-pack", "/repos/o/r/pulls"} {
+		if !strings.Contains(text, route) {
+			t.Fatalf("approval card omits %q: %s", route, text)
 		}
-	}
-	for _, route := range []string{"/user/repos", "git-receive-pack", "/repos/o/r/pulls", "── its own use", "── its workers"} {
-		if strings.Contains(text, route) {
-			t.Fatalf("summary = %q, lists %q: routes are Review…'s", text, route)
-		}
-	}
-	answerApproval(t, m, "review")
-	if text := plainFrame(m); !onStep(m, "its own use") || !strings.Contains(text, "/user/repos") || !strings.Contains(text, "git-receive-pack") {
-		t.Fatalf("review = %q, want the use part's routes", text)
 	}
 }
 
@@ -246,8 +204,8 @@ func TestTheSummarySaysWhetherEachPartAddsOrReplaces(t *testing.T) {
 		add  bool
 		want []string
 	}{
-		{"replace", false, []string{"replaces its rules for GitHub token, in every variable", "replaces its workers' rules for GitHub token"}},
-		{"add", true, []string{"adds to its rules for GitHub token · replaces nothing", "replaces its workers' rules for GitHub token"}},
+		{"replace", false, []string{"replaces any existing rules for “GitHub token”", "replaces its workers' rules for GitHub token"}},
+		{"add", true, []string{"adds these routes alongside the existing rules", "replaces its workers' rules for GitHub token"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -257,7 +215,7 @@ func TestTheSummarySaysWhetherEachPartAddsOrReplaces(t *testing.T) {
 			req.Delegate = &RequestPart{Routes: []secretroute.Route{ghRoute("/repos/**")}}
 			ds.requests = []CredentialRequest{req}
 			send(t, m, tickMsg{})
-			toSummary(t, m, "sec_gh")
+			openApproval(t, m, "sec_gh")
 			text := plainFrame(m)
 			for _, want := range tc.want {
 				if !strings.Contains(text, want) {
@@ -271,10 +229,8 @@ func TestTheSummarySaysWhetherEachPartAddsOrReplaces(t *testing.T) {
 	}
 }
 
-// A part that replaces something the box holds says so on the summary and
-// points at Review… for what; one that replaces nothing has no pointer. The
-// summary itself names no binding.
-func TestTheSummaryPointsAtReviewForWhatAPartReplaces(t *testing.T) {
+// The approval previews the binding consequences for both parts.
+func TestApprovalShowsWhatEachPartReplaces(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name     string
@@ -293,64 +249,24 @@ func TestTheSummaryPointsAtReviewForWhatAPartReplaces(t *testing.T) {
 			ds.requests = []CredentialRequest{req}
 			ds.projectBindings = tc.held
 			send(t, m, tickMsg{})
-			toSummary(t, m, "sec_gh")
-			text := plainFrame(m)
-			for want, pointed := range map[string]bool{
-				"in every variable · Review… lists them":                 tc.use,
-				"replaces its workers' rules for GitHub token · Review…": tc.del,
+			openApproval(t, m, "sec_gh")
+			plainFrame(m)
+			text := strings.Join(m.dialog.sectionLines(newStyles(false), 120), "\n")
+			for want, present := range map[string]bool{
+				"this replaces":  tc.use || tc.del,
+				"the delegation": tc.del,
+				"GITHUB_TOKEN":   tc.use,
 			} {
-				if strings.Contains(text, want) != pointed {
-					t.Fatalf("summary = %q, has %q = %v, want %v", text, want, !pointed, pointed)
-				}
-			}
-			for _, detail := range []string{"this replaces", "the delegation —", "the one in"} {
-				if strings.Contains(text, detail) {
-					t.Fatalf("summary = %q, shows Review…'s detail %q", text, detail)
+				if strings.Contains(text, want) != present {
+					t.Fatalf("approval has %q = %v: %s", want, !present, text)
 				}
 			}
 		})
 	}
 }
 
-// With no table beside it, a part's line never reads narrower than what
-// Accept sends: a blocked host is not one it reaches, every method is named,
-// and any path is what secretroute matches as one, however it is written;
-// any method, path or operation is a warning (issue #1172).
-func TestAPartsLineSaysWhatItBlocksAndHowBroadItIs(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name   string
-		routes []secretroute.Route
-		want   string
-		broad  bool
-	}{
-		{"narrow", []secretroute.Route{ghRoute("/user")}, "api.github.com · 1 operation · GET", false},
-		{"a blocked host is not reached", []secretroute.Route{ghRoute("/user"), {Hosts: []string{"*"}, Blocked: true}},
-			"api.github.com · 1 operation · GET · 1 blocked", false},
-		{"any method and path", []secretroute.Route{{Hosts: []string{"github.com"}}}, "github.com · 1 operation · any method · any path", true},
-		{"any path under a method", []secretroute.Route{{Hosts: []string{"github.com"}, Methods: []string{"POST"}, Paths: []string{"/**"}}},
-			"github.com · 1 operation · POST · any path", true},
-		{"any path however written, every method named", []secretroute.Route{{Hosts: []string{"github.com"}, Methods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"}, Paths: []string{"/*/**"}}},
-			"github.com · 1 operation · GET, POST, PUT, PATCH, DELETE · any path", true},
-		{"one segment is not any path", []secretroute.Route{{Hosts: []string{"github.com"}, Methods: []string{"GET"}, Paths: []string{"/*"}}},
-			"github.com · 1 operation · GET · paths with wildcards", false},
-		{"a wildcard deeper in", []secretroute.Route{ghRoute("/repos/**")}, "api.github.com · 1 operation · GET · paths with wildcards", false},
-		{"any GraphQL operation", []secretroute.Route{{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/graphql"}, GraphQL: &secretroute.GraphQL{}}},
-			"api.github.com · 1 operation · POST · any operation", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			text, broad := partSummary(&RequestPart{Routes: tc.routes})
-			if text != tc.want || broad != tc.broad {
-				t.Fatalf("partSummary = %q, %v; want %q, %v", text, broad, tc.want, tc.broad)
-			}
-		})
-	}
-}
-
-// Review answers each part on a card of its own, with its routes and the
-// roles it asked for; Modify approves one on its hosts, anywhere, or routes
-// typed in, and the answer carries each part's own.
-func TestReviewAnswersEachPartWithItsOwnScope(t *testing.T) {
+// Advanced lets each part keep its own decision and scope.
+func TestAdvancedAnswersEachPartWithItsOwnScope(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		use, delegate      string
@@ -369,23 +285,19 @@ func TestReviewAnswersEachPartWithItsOwnScope(t *testing.T) {
 			req.Delegate = &RequestPart{Routes: []secretroute.Route{ghRoute("/repos/**")}}
 			ds.requests = []CredentialRequest{req}
 			send(t, m, tickMsg{})
-			toSummary(t, m, "sec_gh")
-			answerApproval(t, m, "review")
-			if !onStep(m, "its own use") {
-				t.Fatalf("dialog = %s, want the use part", describe(m.dialog))
-			}
+			openApproval(t, m, "sec_gh")
+			f := m.dialog.form
+			f.choose("advanced", "show")
 			if tc.modify != "" {
-				answerApproval(t, m, "modify")
-				pickItem(t, m, tc.modify)
-				if !strings.Contains(plainFrame(m), "·") || !onStep(m, "its own use") {
-					t.Fatalf("dialog = %s, want the use part redrawn with the change", describe(m.dialog))
-				}
+				f.choose("use-scope", tc.modify)
 			}
-			answerApproval(t, m, tc.use)
-			if !onStep(m, "its workers") || !strings.Contains(m.dialog.body, "could not use it itself") {
-				t.Fatalf("dialog = %s, want the delegate part", describe(m.dialog))
+			if tc.use == "deny" {
+				f.choose("use-decision", PartDeny)
 			}
-			answerApproval(t, m, tc.delegate)
+			if tc.delegate == "deny" {
+				f.choose("delegate-decision", PartDeny)
+			}
+			answerApproval(t, m, "accept")
 			if len(ds.approvals) != 1 {
 				t.Fatalf("approvals = %#v, want one answer for both parts", ds.approvals)
 			}
@@ -404,14 +316,15 @@ func TestReviewAnswersEachPartWithItsOwnScope(t *testing.T) {
 // says they no longer describe the routes once those are changed.
 func TestAPartCardShowsItsRolesAndWhenTheyNoLongerApply(t *testing.T) {
 	t.Parallel()
-	m, _ := sourceWithRequest(t)
+	m, ds := sourceWithRequest(t)
 	r := waitingRequest()
 	r.Use.Roles = append(r.Use.Roles, requestrole.Role{
 		Name: "github-triage", Description: "Triage worker: read and comment.",
 		Args: []map[string]string{{"owner": "o", "repo": "r"}}, Routes: r.Use.Routes,
 	})
-	choice := &partChoice{scope: "routes"}
-	m.askPart(r, requestAnswer{credential: "GitHub token"}, false, choice, nil, nil)
+	ds.requests = []CredentialRequest{r}
+	send(t, m, tickMsg{})
+	openApproval(t, m, "sec_gh")
 	text := plainFrame(m)
 	for _, want := range []string{"the roles it asked for · the discobox's words", "github-triage", "Triage worker: read and comment."} {
 		if !strings.Contains(text, want) {
@@ -421,9 +334,10 @@ func TestAPartCardShowsItsRolesAndWhenTheyNoLongerApply(t *testing.T) {
 	if strings.Contains(text, "not the routes above") {
 		t.Fatal("roles disowned while the routes are the ones asked for")
 	}
-	choice.scope = "anywhere"
-	m.askPart(r, requestAnswer{credential: "GitHub token"}, false, choice, nil, nil)
-	if !strings.Contains(plainFrame(m), "They describe what it asked for, not the routes above.") {
+	m.dialog.form.choose("advanced", "show")
+	m.dialog.form.choose("use-scope", "anywhere")
+	plainFrame(m)
+	if !strings.Contains(strings.Join(m.dialog.sectionLines(newStyles(false), 120), "\n"), "These roles describe the request.") {
 		t.Fatalf("card = %q, want the roles disowned once the routes change", plainFrame(m))
 	}
 }
@@ -471,12 +385,10 @@ func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
 		req.AskedTTL = asked
 		ds.requests = []CredentialRequest{req}
 		send(t, m, tickMsg{})
-		send(t, m, keyPress("tab"), keyPress(credentialsKey))
-		want := lifetime.Label(defaultRequestTTL(req))
-		if !strings.Contains(plainFrame(m), "For "+want+" · change") {
-			t.Fatalf("default missing: %s", plainFrame(m))
+		openApproval(t, m, "sec_gh")
+		if got := m.dialog.form.chosen("ttl"); got != lifetime.Label(defaultRequestTTL(req)) {
+			t.Fatalf("default lifetime %q, asked %v", got, asked)
 		}
-		pickItem(t, m, "sec_gh")
 		answerApproval(t, m, "accept")
 		if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != lifetime.Seconds(defaultRequestTTL(req)) {
 			t.Fatalf("approvals: %+v", ds.approvals)
@@ -484,31 +396,22 @@ func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
 	}
 	m, ds := sourceWithRequest(t)
 	ds.projectSecrets[0].MaxTTL = lifetime.Day
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	pickItem(t, m, "ttl")
-	pickItem(t, m, "604800")
-	pickItem(t, m, "sec_gh")
-	if !onStep(m, "how long") || !strings.Contains(m.dialog.body, "exceeds the limit") {
-		t.Fatal("over-limit lifetime was accepted")
+	openApproval(t, m, "sec_gh")
+	f := m.dialog.form
+	f.choose("ttl", "1 week")
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 0 || m.dialog.formActions[0].enabled {
+		t.Fatal("over-limit preset accepted")
 	}
-	for _, item := range m.dialog.items {
-		if item.key == "604800" && item.enabled {
-			t.Fatal("over-limit preset enabled")
-		}
-	}
-	pickItem(t, m, "custom")
+	f.choose("ttl", "custom")
 	for _, typed := range []string{"fortnight", "2d"} {
-		m.dialog.form.set("ttl", typed)
-		send(t, m, keyPress("enter"))
-		if m.dialog.form.err == "" || len(ds.approvals) != 0 {
-			t.Fatal("invalid custom accepted")
+		f.set("custom-ttl", typed)
+		answerApproval(t, m, "accept")
+		if len(ds.approvals) != 0 || m.dialog.formActions[0].enabled {
+			t.Fatal("invalid custom lifetime accepted")
 		}
 	}
-	m.dialog.form.set("ttl", "12h")
-	send(t, m, keyPress("enter"))
-	if !onStep(m, "summary") || len(ds.approvals) != 0 {
-		t.Fatal("lifetime choice sent without consent")
-	}
+	f.set("custom-ttl", "12h")
 	answerApproval(t, m, "accept")
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 12*3600 {
 		t.Fatalf("approvals: %+v", ds.approvals)
@@ -518,25 +421,27 @@ func TestHowLongDefaultsLimitsAndRefusals(t *testing.T) {
 // Esc on how long goes back to the card that decided, and nothing is sent.
 func TestEscOnHowLongGoesBackToTheDecision(t *testing.T) {
 	m, ds := sourceWithRequest(t)
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	pickItem(t, m, "ttl")
-	send(t, m, keyPress("esc"))
-	if !onRequestCard(m) || len(ds.approvals) != 0 {
-		t.Fatal("lifetime cancellation did not return to selection")
+	openApproval(t, m, "sec_gh")
+	f := m.dialog.form
+	readRequestEnd(t, m, "pgdown")
+	f.moveTo(1)
+	send(t, m, keyPress("enter"))
+	if !f.listing {
+		t.Fatal("lifetime picker did not open")
+	}
+	send(t, m, keyPress("down"), keyPress("esc"))
+	if !onRequestCard(m) || f.listing || f.chosen("ttl") != "1 hour" || len(ds.approvals) != 0 {
+		t.Fatal("cancelling the picker changed the pending approval")
 	}
 }
 
-// Consent says what the approval replaces at the selected lifetime: the use
-// part's card in full, the summary only that there is something.
+// The consent preview shows what the approval replaces at the selected lifetime.
 func TestHowLongSaysWhatTheApprovalReplaces(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_old", SecretName: "old token", From: BindingProject}}
-	toSummary(t, m, "sec_gh")
-	if text := plainFrame(m); !strings.Contains(text, "in every variable · Review… lists them") {
-		t.Fatalf("summary = %q, want it to point at Review… for what it replaces", text)
-	}
-	answerApproval(t, m, "review")
+	openApproval(t, m, "sec_gh")
+	readRequestEnd(t, m, "pgdown")
 	text := plainFrame(m)
 	for _, want := range []string{"this replaces", "“old token” in GH_TOKEN, from its project — is set aside for 1 hour", "api.github.com"} {
 		if !strings.Contains(text, want) {
@@ -552,22 +457,15 @@ func TestAVariableHeldInTheBoxTakesOnlyItsSecret(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
 	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_gh2", Name: "another github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	for _, item := range m.dialog.items {
-		switch item.key {
-		case "sec_gh2":
-			if !strings.HasPrefix(item.label, "✗") {
-				t.Fatalf("%q is offered though the variable holds another", item.label)
-			}
-		case "new":
-			if item.enabled {
-				t.Fatal("a new credential is offered though the variable holds another")
-			}
-		}
+	openApproval(t, m, "sec_gh")
+	m.dialog.form.choose("credential", "sec_gh2")
+	if m.dialog.form.chosen("credential") != "sec_gh" {
+		t.Fatal("a different credential was selectable")
 	}
-	pickItem(t, m, "sec_gh2")
-	if !strings.Contains(plainFrame(m), "GH_TOKEN already holds “GitHub token” in this discobox") {
-		t.Fatalf("card = %q, want it to name what the variable holds", plainFrame(m))
+	for _, row := range m.dialog.form.rows {
+		if row.key == "new" {
+			t.Fatal("a new credential was offered for a pinned variable")
+		}
 	}
 }
 
@@ -582,8 +480,8 @@ func TestAnAdditionWithAnotherSecretIsGrantedAsAReplacement(t *testing.T) {
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_base", SecretName: "base token", From: BindingProject}}
 	m := newTestModel(t, ds)
-	toSummary(t, m, "sec_gh")
-	if !strings.Contains(plainFrame(m), "replaces its rules for GitHub token, in every variable · edited from the ask") {
+	openApproval(t, m, "sec_gh")
+	if !strings.Contains(plainFrame(m), "replaces any existing rules for “GitHub token”") {
 		t.Fatalf("summary = %q, want it to say the addition is granted as a replacement", plainFrame(m))
 	}
 	grantFor(t, m, time.Hour)
@@ -596,7 +494,7 @@ func TestAnAdditionWithAnotherSecretIsGrantedAsAReplacement(t *testing.T) {
 	ds2.projectSecrets = ds.projectSecrets
 	ds2.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingProject}}
 	m2 := newTestModel(t, ds2)
-	toSummary(t, m2, "sec_gh")
+	openApproval(t, m2, "sec_gh")
 	grantFor(t, m2, time.Hour)
 	if len(ds2.approvals) != 1 || ds2.approvals[0].UseAs != "add" {
 		t.Fatalf("approvals = %#v, want the addition asked for", ds2.approvals)
@@ -608,7 +506,7 @@ func TestAnAdditionWithAnotherSecretIsGrantedAsAReplacement(t *testing.T) {
 func TestANewCredentialIsStoredOnItsHostsAndApproved(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	toSummary(t, m, "new")
+	openApproval(t, m, "new")
 	if !onStep(m, "new credential") {
 		t.Fatalf("dialog = %s, want the new credential", describe(m.dialog))
 	}
@@ -643,7 +541,7 @@ func TestAChosenSentinelFormatIsSentOnlyWhenChanged(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ typed, want string }{{"ghp_{alnum:36}", ""}, {"ghp_{base62:36}", "ghp_{base62:36}"}} {
 		m, ds := sourceWithRequest(t)
-		toSummary(t, m, "new")
+		openApproval(t, m, "new")
 		f := m.dialog.form
 		f.set("value", fakeGitHubToken)
 		f.moveTo(4)
@@ -695,7 +593,7 @@ func TestAChosenFormatIsChecked(t *testing.T) {
 func TestANewCredentialFromACommandIsStoredWithIt(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	toSummary(t, m, "new")
+	openApproval(t, m, "new")
 	f := m.dialog.form
 	f.choose("source", "command")
 	f.set("command", "gh auth token")
@@ -719,7 +617,7 @@ func TestTheRawRequestOpensFromAStepAndComesBack(t *testing.T) {
 	req.Raw = `{"id":"sreq_1"}`
 	ds.requests = []CredentialRequest{req}
 	send(t, m, tickMsg{})
-	toSummary(t, m, "new")
+	openApproval(t, m, "new")
 	m.dialog.form.set("value", "typed-so-far")
 	step := m.dialog
 	send(t, m, keyPress("ctrl+r"))
@@ -739,8 +637,12 @@ func TestAnywhereShowsEveryCeilingOfTheCredential(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	s := Secret{Name: "github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}},
 		RouteConstraints: [][]secretroute.Route{{ghRoute("/repos/o/**")}}}
-	ans := requestAnswer{credential: s.Name, secret: s, credentialRoutes: s.Routes}
-	m.askPart(waitingRequest(), ans, false, &partChoice{scope: "anywhere"}, nil, nil)
+	req := waitingRequest()
+	req.Use.Routes = []secretroute.Route{ghRoute("/repos/o/pulls")}
+	s.ID = "sec"
+	m.credentialApproval(req, []Secret{s}, nil, nil, time.Hour)
+	m.dialog.form.choose("advanced", "show")
+	m.dialog.form.choose("use-scope", "anywhere")
 	text := plainFrame(m)
 	for _, want := range []string{"anywhere the “github” credential may be sent", "and only within its constraint 1", "/repos/o/**"} {
 		if !strings.Contains(text, want) {
@@ -756,7 +658,7 @@ func TestApprovalConsequencesAreReadToTheEndBeforeSending(t *testing.T) {
 	for i := range 20 {
 		ds.heldGrants = append(ds.heldGrants, HeldGrant{BindingID: "sbd_" + strconv.Itoa(i), SecretID: "old", SecretName: "old token " + strconv.Itoa(i), From: BindingProject})
 	}
-	toUseCard(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	if !m.dialog.decisionsBlocked || !strings.Contains(plainFrame(m), "more below") {
 		t.Fatal("long approval not gated")
 	}
@@ -765,7 +667,7 @@ func TestApprovalConsequencesAreReadToTheEndBeforeSending(t *testing.T) {
 		t.Fatal("unread approval sent")
 	}
 	readRequestEnd(t, m, "j")
-	send(t, m, keyPress("enter"))
+	answerApproval(t, m, "accept")
 	if len(ds.approvals) != 1 {
 		t.Fatal("read approval did not send")
 	}
@@ -791,7 +693,7 @@ func TestANewCredentialIsHeldToTheOpenHostsAndNeverAnywhere(t *testing.T) {
 	only.Use.Routes = []secretroute.Route{{Hosts: []string{"*"}}}
 	ds.requests = []CredentialRequest{only}
 	send(t, m, tickMsg{})
-	toSummary(t, m, "new")
+	openApproval(t, m, "new")
 	m.dialog.form.set("value", fakeGitHubToken)
 	m.dialog.form.moveTo(2)
 	send(t, m, keyPress("enter"))
@@ -838,12 +740,10 @@ func TestAHeldSecretThisWindowCannotReadStillAnswers(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_hidden", SecretName: "hidden token", From: BindingSandbox}}
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if first := m.dialog.items[0]; first.key != "sec_hidden" || strings.HasPrefix(first.label, "✗") {
-		t.Fatalf("first row = %+v, want the held secret, answerable", first)
-	}
-	if m.dialog.items[m.dialog.cursor].key != "sec_hidden" {
-		t.Fatal("the held secret is not the one highlighted")
+	openApproval(t, m, "sec_hidden")
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_hidden" {
+		t.Fatalf("approvals: %+v", ds.approvals)
 	}
 }
 
@@ -867,16 +767,10 @@ func TestAStaleCommandResultIsDropped(t *testing.T) {
 func TestACustomLifetimeShowsWhatItReplaces(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	ds.heldGrants = []HeldGrant{{BindingID: "base", SecretID: "old", SecretName: "old token", From: BindingProject}}
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	pickItem(t, m, "ttl")
-	pickItem(t, m, "custom")
-	if strings.Contains(plainFrame(m), "this approval") {
-		t.Fatal("lifetime repeats approval")
-	}
-	m.dialog.form.set("ttl", "90m")
-	send(t, m, keyPress("enter"))
-	pickItem(t, m, "sec_gh")
-	answerApproval(t, m, "review")
+	openApproval(t, m, "sec_gh")
+	m.dialog.form.choose("ttl", "custom")
+	m.dialog.form.set("custom-ttl", "90m")
+	readRequestEnd(t, m, "pgdown")
 	if !strings.Contains(plainFrame(m), "is set aside for 90 minutes") {
 		t.Fatal("use card omitted selected lifetime's consequences")
 	}
@@ -891,7 +785,7 @@ func TestACustomLifetimeShowsWhatItReplaces(t *testing.T) {
 func TestAChosenFormatIsCheckedAgainstTheValueOnContinue(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	toSummary(t, m, "new")
+	openApproval(t, m, "new")
 	f := m.dialog.form
 	f.moveTo(4)
 	send(t, m, keyPress("enter"))
@@ -914,11 +808,12 @@ func TestANewCredentialSaysWhatItWillNotBeSentOn(t *testing.T) {
 	req.Use.Routes = append(req.Use.Routes, secretroute.Route{Hosts: []string{"*.githubusercontent.com"}, Methods: []string{"GET"}, Paths: []string{"/o/r/**"}})
 	ds.requests = []CredentialRequest{req}
 	send(t, m, tickMsg{})
-	toSummary(t, m, "new")
+	openApproval(t, m, "new")
 	m.dialog.form.set("value", fakeGitHubToken)
 	m.dialog.form.moveTo(2)
 	send(t, m, keyPress("enter"))
-	text := plainFrame(m)
+	plainFrame(m)
+	text := strings.Join(m.dialog.sectionLines(newStyles(false), 120), "\n")
 	for _, want := range []string{"api.github.com", "requested, but this credential will not be sent on", "*.githubusercontent.com"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("how long = %q, want %q", text, want)
@@ -938,11 +833,11 @@ func TestANewCredentialsGapIsOfWhatIsApproved(t *testing.T) {
 		d := &dialog{sections: sections}
 		return strings.Join(d.sectionLines(newStyles(false), 120), "\n")
 	}
-	if got := text(approvalConsequences(req, ans, false)); strings.Contains(got, "will not be sent on") {
+	if got := text(approvalConsequences(req, ans)); strings.Contains(got, "will not be sent on") {
 		t.Fatalf("a denied part's routes are listed as a gap:\n%s", got)
 	}
 	ans.useChoice = partChoice{scope: "edited", routes: []secretroute.Route{{Hosts: []string{"uploads.github.com"}}}}
-	if got := text(approvalConsequences(req, ans, false)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
+	if got := text(approvalConsequences(req, ans)); !strings.Contains(got, "will not be sent on") || !strings.Contains(got, "uploads.github.com") {
 		t.Fatalf("a host added by an edit is not listed as a gap:\n%s", got)
 	}
 }
@@ -966,23 +861,16 @@ func TestRequestAdditionBesideDelegatedBase(t *testing.T) {
 	base := SecretBinding{ID: "bind_base", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: req.SandboxID, Use: true, EnvVar: req.EnvVar, ParentID: "bind_lead"}
 	ds.projectBindings = []SecretBinding{base}
 	ds.heldGrants = []HeldGrant{{BindingID: base.ID, SecretID: base.SecretID, SecretName: "GitHub token", From: BindingSandbox}}
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	text := plainFrame(m)
-	for _, want := range []string{"asked for", "Answering with", "adds to its rules for GitHub token", "edited from the ask"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("missing %q: %s", want, text)
+	if !strings.Contains(text, "adds these routes alongside the existing rules") {
+		t.Fatalf("missing addition preview: %s", text)
+	}
+	for i, row := range m.dialog.form.rows {
+		if row.key == "binding" && m.dialog.form.answerable(i) {
+			t.Fatal("replacement offered for a delegated binding")
 		}
 	}
-	answerApproval(t, m, "use-as")
-	if !strings.Contains(m.dialog.body, "a person's approval cannot replace it") {
-		t.Fatal("full replacement explanation missing")
-	}
-	for _, item := range m.dialog.items {
-		if item.key == "replace" && (item.enabled || !strings.Contains(item.why, base.ID) || !strings.Contains(item.why, base.ParentID)) {
-			t.Fatalf("replacement offered: %+v", item)
-		}
-	}
-	pickItem(t, m, "add")
 	readRequestEnd(t, m, "j")
 	text = plainFrame(m)
 	if strings.Contains(text, "this replaces") || strings.Contains(text, "held within") {
@@ -997,53 +885,39 @@ func TestRequestAdditionBesideDelegatedBase(t *testing.T) {
 	}
 }
 
-func TestRequestUseModeCanBeChangedOnSummaryAndPart(t *testing.T) {
-	for _, review := range []bool{false, true} {
-		t.Run(strconv.FormatBool(review), func(t *testing.T) {
-			m, ds := sourceWithRequest(t)
-			toSummary(t, m, "sec_gh")
-			if review {
-				answerApproval(t, m, "review")
-			}
-			answerApproval(t, m, "use-as")
-			pickItem(t, m, "add")
-			if !strings.Contains(plainFrame(m), "edited from the ask") {
-				t.Fatal("changed mode not marked edited")
-			}
-			answerApproval(t, m, "accept")
-			if len(ds.approvals) != 1 || ds.approvals[0].UseAs != "add" {
-				t.Fatalf("approvals: %+v", ds.approvals)
-			}
-		})
+func TestBindingModeChangesInPlace(t *testing.T) {
+	m, ds := sourceWithRequest(t)
+	openApproval(t, m, "sec_gh")
+	m.dialog.form.choose("binding", "add")
+	if !strings.Contains(plainFrame(m), "adds these routes alongside") {
+		t.Fatal("changed mode not reflected in the preview")
+	}
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 1 || ds.approvals[0].UseAs != "add" {
+		t.Fatalf("approvals: %+v", ds.approvals)
 	}
 }
 
-func TestCancellingUseModeReturnsToFirstDecision(t *testing.T) {
-	for _, review := range []bool{false, true} {
-		t.Run(strconv.FormatBool(review), func(t *testing.T) {
-			m, ds := sourceWithRequest(t)
-			toSummary(t, m, "sec_gh")
-			if review {
-				answerApproval(t, m, "review")
-			}
-			answerApproval(t, m, "use-as")
-			send(t, m, keyPress("esc"))
-			if m.dialog.formActionAt != 0 {
-				t.Fatal("mode chooser retained focus")
-			}
-			answerApproval(t, m, "accept")
-			if len(ds.approvals) != 1 {
-				t.Fatal("Enter reopened mode chooser")
-			}
-		})
+func TestCancellingBindingModeLeavesTheDecisionIntact(t *testing.T) {
+	m, ds := sourceWithRequest(t)
+	openApproval(t, m, "sec_gh")
+	f := m.dialog.form
+	for i, row := range f.rows {
+		if row.key == "binding" {
+			f.moveTo(i)
+			break
+		}
+	}
+	send(t, m, keyPress("enter"), keyPress("down"), keyPress("esc"))
+	if f.listing || f.chosen("binding") != "replace" || len(ds.approvals) != 0 {
+		t.Fatal("cancelling binding selection changed the pending decision")
 	}
 }
 
 // Approving a use part to replace takes the box's use-only bindings of the
 // secret in every variable (bindingplan.Use), so what the use card says it
 // replaces names the one in another variable that goes, not only the asked
-// variable's. The summary names none of them: it says the part replaces, and
-// that Review… lists what.
+// variable's.
 func TestReplacingSaysTheBindingInAnotherVariableGoes(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
@@ -1059,18 +933,9 @@ func TestReplacingSaysTheBindingInAnotherVariableGoes(t *testing.T) {
 		"the one in GITHUB_TOKEN — goes",
 		"the one in GH_TOKEN — kept, takes this approval",
 	}
-	toSummary(t, m, "sec_gh")
-	text := plainFrame(m)
-	if !strings.Contains(text, "replaces its rules for GitHub token, in every variable · Review… lists them") {
-		t.Fatalf("summary = %q, want the use part to say it replaces and point at Review…", text)
-	}
-	for _, d := range append(detail, "GITHUB_TOKEN", "api.github.com/") {
-		if strings.Contains(text, d) {
-			t.Fatalf("summary = %q, shows Review…'s detail %q", text, d)
-		}
-	}
-	answerApproval(t, m, "review")
-	text = plainFrame(m)
+	openApproval(t, m, "sec_gh")
+	readRequestEnd(t, m, "pgdown")
+	text := strings.Join(m.dialog.sectionLines(newStyles(false), 120), "\n")
 	for _, want := range detail {
 		if !strings.Contains(text, want) {
 			t.Fatalf("use card = %q, want %q", text, want)
@@ -1092,7 +957,7 @@ func TestTheUseCardSaysWhatReplacingDoesInEveryVariable(t *testing.T) {
 		{ID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: created.Add(time.Hour)},
 	}
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
-	toUseCard(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	text := plainFrame(m)
 	for _, w := range []string{
 		"the one in GITHUB_TOKEN — kept, moves to GH_TOKEN and takes this approval",
@@ -1118,7 +983,7 @@ func TestReplacingNeverShortensTheDelegationThatLosesItsUse(t *testing.T) {
 		{ID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)},
 	}
 	ds.heldGrants = []HeldGrant{{BindingID: "sbd_both", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
-	toUseCard(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	text := plainFrame(m)
 	for _, want := range []string{"the one in GH_TOKEN — loses its use; its delegation stays", "and a new binding is made"} {
 		if !strings.Contains(text, want) {
@@ -1146,7 +1011,7 @@ func TestNewCredentialRequiresConsentToSavePlacements(t *testing.T) {
 			req.Use.Routes = routes
 			ds.requests = []CredentialRequest{req}
 			send(t, m, tickMsg{})
-			toSummary(t, m, "new")
+			openApproval(t, m, "new")
 			m.dialog.form.set("value", fakeGitHubToken)
 			m.dialog.form.moveTo(2)
 			send(t, m, keyPress("enter"))
@@ -1155,7 +1020,7 @@ func TestNewCredentialRequiresConsentToSavePlacements(t *testing.T) {
 				t.Fatalf("accept should open review without writing, got %s", describe(m.dialog))
 			}
 			answerApproval(t, m, "back")
-			if !onStep(m, "summary") || len(ds.createdSecrets)+len(ds.approvals) != 0 {
+			if !onRequestCard(m) || len(ds.createdSecrets)+len(ds.approvals) != 0 {
 				t.Fatal("returning to the summary wrote an answer")
 			}
 			answerApproval(t, m, "accept")
@@ -1259,16 +1124,11 @@ func TestApprovalSummaryShowsSingleHTTPRoute(t *testing.T) {
 		}
 	}
 
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !onRequestCard(m) || !strings.Contains(plainFrame(m), preview) {
-		t.Fatalf("credential selection does not show %q", preview)
-	}
-	pickItem(t, m, "sec_gh")
-	if !onStep(m, "summary") || !strings.Contains(plainFrame(m), preview) {
-		t.Fatalf("approval summary does not show %q", preview)
-	}
-	answerApproval(t, m, "review")
-	if !onStep(m, "its own use") || !strings.Contains(plainFrame(m), "/demo") {
-		t.Fatal("Review does not show the demo path")
+	openApproval(t, m, "sec_gh")
+	text := plainFrame(m)
+	for _, want := range []string{"HTTP tour.discobox.invalid", "METHOD", "GET", "/demo"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formatted approval route omits %q: %s", want, text)
+		}
 	}
 }

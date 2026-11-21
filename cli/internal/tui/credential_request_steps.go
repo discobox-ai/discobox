@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -63,9 +62,9 @@ func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
 }
 
 // enterNewCredential is step 2 for a credential the project does not hold
-// yet: its name, filled from the request, and its value. back is step 1.
+// yet: its name, filled from the request, and its value. back returns to approval.
 // Nothing is stored here; the value is held only by this card.
-func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, ttl time.Duration, back func() tea.Cmd, done func(requestAnswer) tea.Cmd) tea.Cmd {
+func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, back func() tea.Cmd, done func(requestAnswer) tea.Cmd) tea.Cmd {
 	name := textRow("name", "Name", "what you'll know it by", freeSecretName(secrets, credentialName(req)))
 	name.required = "give it a name"
 	source := pickRow("source", "Get it by",
@@ -176,7 +175,7 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 			f.cursor, f.err = 0, "it names no exact host a new credential can be held to — only patterns, or hosts it blocks — so store it on the secrets screen (F4) with the routes it should have"
 			return nil
 		}
-		ans := requestAnswer{credential: n, fresh: true, value: f.value("value"), credentialRoutes: []secretroute.Route{{Hosts: hosts}}, held: held, holderID: holderID, ttl: ttl}
+		ans := requestAnswer{credential: n, fresh: true, value: f.value("value"), credentialRoutes: []secretroute.Route{{Hosts: hosts}}, held: held, holderID: holderID}
 		if chosen != auto(f) {
 			ans.format = chosen
 		}
@@ -361,37 +360,6 @@ func (ans requestAnswer) delegateMode() string {
 	return "replaces its workers' rules for " + ans.credential
 }
 
-// additionNote is the use part's mode as a sentence, for the cards that say
-// it beside their own body.
-func (ans requestAnswer) additionNote(req CredentialRequest) string {
-	if req.Use == nil {
-		return ""
-	}
-	return "Its own use " + ans.useMode(req) + "."
-}
-
-// chooseUseAs restores the independent add/replace choice on the summary
-// and use-part card. Changing routes does not reset it.
-func (m *Model) chooseUseAs(req CredentialRequest, ans requestAnswer, done func(bindingplan.As) tea.Cmd, back func() tea.Cmd) tea.Cmd {
-	why := ans.replaceUnavailable()
-	items := []action{
-		{key: "add", label: "Add beside what it holds · replaces nothing", enabled: ans.canAdd(), why: variableOf(req) + " holds another credential; additions only apply to the same credential"},
-		{key: "replace", label: "Replace its own use bindings", enabled: why == "", why: why},
-	}
-	d := actionsDialog("Approve its own use as", ans.additionNote(req), items, func(key string) tea.Cmd { return done(bindingplan.As(key)) })
-	for i, item := range items {
-		if item.key == string(ans.useAs(req)) {
-			d.cursor = i
-		}
-	}
-	if why != "" {
-		d.body += "\n\nReplace unavailable: " + why + "."
-	}
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
 // approval is the answer as the server takes it. SecretID is filled in by
 // whoever stores a new credential.
 func (ans requestAnswer) approval(req CredentialRequest) Approval {
@@ -411,81 +379,6 @@ func (ans requestAnswer) approval(req CredentialRequest) Approval {
 		sent.DelegateScope, sent.DelegateRoutes = scope(ans.delegateChoice)
 	}
 	return sent
-}
-
-// askSummary is the request in a line per part: the hosts each would reach
-// and how many operations. Accept and Deny answer every part at once; Review
-// walks the parts' routes, answering each on its own. back is the step
-// before.
-func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
-	var d *dialog
-	d = approvalDialog("Credential request", newForm(), func(*form) tea.Cmd {
-		switch d.formActions[d.formActionAt].key {
-		case "use-as":
-			return m.chooseUseAs(req, ans, func(as bindingplan.As) tea.Cmd {
-				ans.useChoice.as = as
-				return m.askSummary(req, ans, back)
-			}, func() tea.Cmd { d.formActionAt = 0; m.dialog = d; return nil })
-		case "review":
-			return m.askParts(req, ans, func() tea.Cmd { m.dialog = d; return nil })
-		case "deny":
-			ans.use, ans.delegate = partAnswer(req.Use, PartDeny), partAnswer(req.Delegate, PartDeny)
-		default:
-			ans.use, ans.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
-			ans.useChoice.scope, ans.delegateChoice.scope = "routes", "routes"
-		}
-		return m.partsAnswered(req, ans)
-	})
-	d.formActions = []action{
-		{key: "accept", label: "Accept", enabled: true},
-		{key: "deny", label: "Deny", enabled: true},
-		{key: "review", label: "Review…", enabled: true},
-	}
-	if req.Use != nil {
-		d.formActions = append(d.formActions, action{key: "use-as", label: "Add or replace…", enabled: true})
-	}
-	d.titleRight = "summary"
-	d.body = m.credentialSentence(req) + " Answering with “" + ans.credential + "” for " + lifetime.Label(ans.ttl) + "."
-	what := section{label: ans.credential + " would be"}
-	// Each part's line, then what approving it does to the rules the box
-	// holds: added beside them or replacing them.
-	route := singleHTTPRoute(req.routes())
-	summarize := func(label string, part *RequestPart, mode string) {
-		text, broad := partSummary(part)
-		if route != "" && len(part.Routes) == 1 {
-			text, broad = route, false
-		}
-		tone := toneAccent
-		if broad {
-			tone = toneAlert
-		}
-		what.fields = append(what.fields, field{label: label, value: text, tone: tone}, field{value: mode})
-	}
-	preview := ans
-	preview.use, preview.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
-	// What a replacement takes, binding by binding and route by route, is
-	// Review…'s to say; the summary says only that there is something.
-	lists := func(mode string, lines []line) string {
-		if len(lines) > 0 {
-			mode += " · Review… lists them"
-		}
-		return mode
-	}
-	if req.Use != nil {
-		summarize("used by this box", req.Use, lists(ans.useMode(req), useReplaces(req, preview, preview.ttl, true)))
-	}
-	if req.Delegate != nil {
-		summarize("delegated to its workers", req.Delegate, lists(ans.delegateMode(), delegateReplaces(req, preview)))
-	}
-	// Show a single exact route inline. Review… shows full route tables and
-	// replacement details. Before Accept, show a new credential's hosts and
-	// gaps and whether each part adds or replaces.
-	d.sections = append([]section{what}, approvalConsequences(req, preview, true)...)
-	d.keys = []hint{says("←→ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
-	m.withRawRequest(d, req)
-	d.onCancel = back
-	m.dialog = d
-	return nil
 }
 
 // partAnswer is the decision for a part, or none for a part the request
@@ -515,89 +408,6 @@ func singleHTTPRoute(routes []secretroute.Route) string {
 	return secretroute.Format(r)
 }
 
-// partSummary is a part in a line: the hosts its open routes reach, how many
-// operations (a row of its route table each), the methods they take, what
-// their paths leave open, and how many rows it blocks. With no table beside
-// it on the summary, it never reads narrower than what Accept sends: a host
-// blocked is not one reached, every method is named (a write among them),
-// and any path is what secretroute matches as one (`AnyPath`), however it is
-// written. broad is whether any method, path or
-// GraphQL or MCP operation is open, for the line to be drawn as a warning.
-func partSummary(part *RequestPart) (text string, broad bool) {
-	var hosts, methods []string
-	var open, blocked int
-	var anyMethod, anyPath, wildPath, anyOperation bool
-	for _, r := range approvalRouteCells(part.Routes) {
-		if r.blocked {
-			blocked++
-			continue
-		}
-		open++
-		if !slices.Contains(hosts, r.host) {
-			hosts = append(hosts, r.host)
-		}
-		for _, method := range strings.Split(r.method, ",") {
-			anyMethod = anyMethod || method == "*"
-			if method != "*" && !slices.Contains(methods, method) {
-				methods = append(methods, method)
-			}
-		}
-		// A body route's names are the places it is swapped at, never a wildcard.
-		anyOperation = anyOperation || r.operation == "*" || (r.protocol != 3 && r.names == "*")
-	}
-	for _, r := range part.Routes {
-		if !r.Blocked {
-			anyPath = anyPath || secretroute.AnyPath(r.Paths)
-			wildPath = wildPath || slices.ContainsFunc(r.Paths, func(p string) bool { return strings.Contains(p, "*") })
-		}
-	}
-	parts := []string{strings.Join(hosts, ", "), plural(open, "operation", "operations")}
-	switch {
-	case anyMethod:
-		parts = append(parts, "any method")
-	case len(methods) > 0:
-		parts = append(parts, strings.Join(methods, ", "))
-	}
-	switch {
-	case anyPath:
-		parts = append(parts, "any path")
-	case wildPath:
-		parts = append(parts, "paths with wildcards")
-	}
-	if anyOperation {
-		parts = append(parts, "any operation")
-	}
-	if blocked > 0 {
-		parts = append(parts, itoa(blocked)+" blocked")
-	}
-	return strings.Join(parts, " · "), anyMethod || anyPath || anyOperation
-}
-
-// askParts asks about each part the request has, use then delegation, on a
-// card of its own; a part the request does not have has no card. back is
-// the step before. Each part keeps what it was changed to, so going back to
-// it shows the change.
-func (m *Model) askParts(req CredentialRequest, ans requestAnswer, back func() tea.Cmd) tea.Cmd {
-	useChoice, delegateChoice := &ans.useChoice, &ans.delegateChoice
-	delegate := func(back func() tea.Cmd) tea.Cmd {
-		if req.Delegate == nil {
-			return m.partsAnswered(req, ans)
-		}
-		return m.askPart(req, ans, true, delegateChoice, back, func(decision string) tea.Cmd {
-			ans.delegate, ans.delegateChoice = decision, *delegateChoice
-			return m.partsAnswered(req, ans)
-		})
-	}
-	if req.Use == nil {
-		return delegate(back)
-	}
-	return m.askPart(req, ans, false, useChoice, back, func(decision string) tea.Cmd {
-		ans.use, ans.useChoice = decision, *useChoice
-		use := m.dialog
-		return delegate(func() tea.Cmd { m.dialog = use; return nil })
-	})
-}
-
 // partChoice is what a part is approved for: the routes it asked for
 // ("routes"), any method and path on its hosts ("hosts"), anywhere the
 // credential may go ("anywhere"), or routes typed in an editor ("edited",
@@ -607,77 +417,6 @@ type partChoice struct {
 	as     bindingplan.As
 	scope  string
 	routes []secretroute.Route
-}
-
-// askPart is one part's card: what it would let the box do, as asked or as
-// changed, and approve, deny or modify. next takes the decision.
-func (m *Model) askPart(req CredentialRequest, ans requestAnswer, delegate bool, choice *partChoice, back func() tea.Cmd, next func(decision string) tea.Cmd) tea.Cmd {
-	if !delegate {
-		ans.useChoice = *choice
-	}
-	part, step, label := req.Use, "its own use", "it may use "+ans.credential+" on"
-	body := "Discobox “" + boxLabel(m, req) + "” would use " + ans.credential + " itself, in " + variableOf(req) + "."
-	if delegate {
-		part, step, label = req.Delegate, "its workers", "its workers may be given it on"
-		body = "Discobox “" + boxLabel(m, req) + "” would be able to give " + ans.credential + " to the discoboxes it starts. It could not use it itself."
-	}
-	again := func() tea.Cmd { return m.askPart(req, ans, delegate, choice, back, next) }
-	var d *dialog
-	d = approvalDialog("Credential request", newForm(), func(*form) tea.Cmd {
-		switch d.formActions[d.formActionAt].key {
-		case "deny":
-			return next(PartDeny)
-		case "use-as":
-			return m.chooseUseAs(req, ans, func(as bindingplan.As) tea.Cmd {
-				choice.as = as
-				return again()
-			}, func() tea.Cmd { d.formActionAt = 0; m.dialog = d; return nil })
-		case "modify":
-			// Back to the card as it was, focus on Approve rather than on the
-			// Modify that left it.
-			return m.modifyPart(req, ans, part, step, choice, func() tea.Cmd { d.formActionAt = 0; m.dialog = d; return nil }, again)
-		}
-		return next(PartApprove)
-	})
-	d.formActions = []action{
-		{key: "accept", label: "Approve", enabled: true},
-		{key: "deny", label: "Deny", enabled: true},
-		{key: "modify", label: "Modify…", enabled: true},
-	}
-	if !delegate {
-		d.formActions = append(d.formActions, action{key: "use-as", label: "Add or replace…", enabled: true})
-		body += " " + ans.additionNote(req)
-	} else {
-		body += " Approving it " + ans.delegateMode() + "."
-	}
-	d.titleRight = step
-	d.body = body
-	d.sections = []section{choiceSection(label, part, *choice, ans)}
-	d.body += " For " + lifetime.Label(ans.ttl) + "."
-	preview := ans
-	if delegate {
-		preview.delegate, preview.delegateChoice = PartApprove, *choice
-	} else {
-		preview.use, preview.useChoice = PartApprove, *choice
-	}
-	d.sections = append(d.sections, approvalConsequences(req, preview, false)...)
-	if len(part.Roles) > 0 {
-		roles := section{label: "the roles it asked for · the discobox's words"}
-		for _, role := range part.Roles {
-			roles.lines = append(roles.lines, roleLines(role)...)
-		}
-		// A role names what was asked; it never stands over routes approved
-		// in its place (ADR 26-11-04-616 §4).
-		if choice.scope != "routes" && choice.scope != "" {
-			roles.lines = append(roles.lines, line{}, line{text: "They describe what it asked for, not the routes above.", tone: toneAlert})
-		}
-		d.sections = append(d.sections, roles)
-	}
-	d.keys = []hint{says("←→ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
-	m.withRawRequest(d, req)
-	d.onCancel = back
-	m.dialog = d
-	return nil
 }
 
 // choiceSection is a part's routes as the card shows them: as asked, or as
@@ -704,41 +443,6 @@ func choiceSection(label string, part *RequestPart, choice partChoice, ans reque
 		return sec
 	}
 	return approvalRouteSection(label, part)
-}
-
-// modifyPart offers the other things a part may be approved for. back is the
-// part's card unchanged; done is the part's card redrawn with the change.
-func (m *Model) modifyPart(req CredentialRequest, ans requestAnswer, part *RequestPart, step string, choice *partChoice, back, done func() tea.Cmd) tea.Cmd {
-	hosts := secretroute.OpenRouteHosts(part.Routes)
-	items := []action{
-		{key: "routes", label: "As requested", enabled: true},
-		{key: "hosts", label: "Any path on " + strings.Join(hosts, ", "), enabled: len(hosts) > 0, why: "it asks for no host as a whole"},
-		{key: "anywhere", label: "Anywhere the “" + ans.credential + "” credential may be sent", enabled: true},
-		{key: "edit", label: "Edit the routes…", enabled: true},
-	}
-	d := actionsDialog("Modify "+step, "", items, func(key string) tea.Cmd {
-		if key == "edit" {
-			routes := part.Routes
-			if choice.scope == "edited" {
-				routes = choice.routes
-			}
-			return m.editRoutes(req, step, routesForEditor(routes, step, ans.credential), back, func(edited []secretroute.Route) tea.Cmd {
-				choice.scope, choice.routes = "edited", edited
-				return done()
-			})
-		}
-		choice.scope, choice.routes = key, nil
-		return done()
-	})
-	for i, item := range items {
-		if item.key == choice.scope || (choice.scope == "edited" && item.key == "edit") {
-			d.cursor = i
-		}
-	}
-	d.keys = []hint{says("↑↓ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
-	d.onCancel = back
-	m.dialog = d
-	return nil
 }
 
 // routesEditedMsg is the editor coming back with a part's routes.
@@ -966,81 +670,9 @@ func defaultRequestTTL(req CredentialRequest) time.Duration {
 	return req.AskedTTL
 }
 
-// askHowLong edits the one-line lifetime option on credential selection.
-// It grants nothing: the following approval cards show the consequences at
-// the selected lifetime and keep the read-to-end gate before sending.
-func (m *Model) askHowLong(req CredentialRequest, ans requestAnswer, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
-	limit := "“" + ans.credential + "” credential allows at most " + lifetime.Label(ans.maxTTL)
-	var items []action
-	cursor := 0
-	choices := lifetimeChoices(req.AskedTTL)
-	if !slices.Contains(choices, ans.ttl) {
-		choices = append(choices, ans.ttl)
-	}
-	for i, d := range choices {
-		item := action{key: strconv.FormatInt(lifetime.Seconds(d), 10), label: lifetime.Label(d), enabled: true}
-		if d == req.AskedTTL && req.AskedTTL > 0 {
-			item.label += " · what it asked for"
-		}
-		if !withinLimit(Secret{MaxTTL: ans.maxTTL}, d) {
-			item.enabled, item.why = false, limit
-		}
-		if d == ans.ttl {
-			cursor = i
-		}
-		items = append(items, item)
-	}
-	items = append(items, action{key: "custom", label: "Custom…", enabled: true})
-	var d *dialog
-	d = actionsDialog("Credential request", "How long should the credential be available?", items, func(key string) tea.Cmd {
-		if key == "custom" {
-			return m.customHowLong(ans.maxTTL, limit, func() tea.Cmd { m.dialog = d; return nil }, done)
-		}
-		seconds, _ := strconv.ParseInt(key, 10, 64)
-		return done(time.Duration(seconds) * time.Second)
-	})
-	d.titleRight = "how long"
-	d.cursor = d.nextEnabled(cursor, -1)
-	if ans.credential != "" && !withinLimit(Secret{MaxTTL: ans.maxTTL}, ans.ttl) {
-		d.body = "The selected lifetime exceeds the limit. " + limit + ". Choose a shorter lifetime."
-	}
-	d.keys = []hint{says("↑↓ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
-	m.withRawRequest(d, req)
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
-// customHowLong edits the lifetime before approval; it never sends a grant.
-func (m *Model) customHowLong(maxTTL time.Duration, limit string, back func() tea.Cmd, done func(time.Duration) tea.Cmd) tea.Cmd {
-	input := textRow("ttl", "For", "90m, 3d, 6mo or forever", "")
-	input.required = "say how long, such as 90m, 3d, 6mo or forever"
-	f := newForm(input)
-	d := formDialog("How long", f, func(f *form) tea.Cmd {
-		ttl, err := lifetime.Parse(f.value("ttl"))
-		switch {
-		case err != nil:
-			f.err = err.Error()
-			return nil
-		case !withinLimit(Secret{MaxTTL: maxTTL}, ttl):
-			f.err = limit
-			return nil
-		}
-		return done(ttl)
-	})
-	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
 // approvalConsequences shows only information needed at consent: a new
 // credential's own ceiling and gaps, and what approving replaces or shortens.
-// brief is the summary's form: a new credential's gap in a line, its hosts
-// and how many operations, as partSummary says a part, rather than its
-// route table, and nothing of what approving replaces, which the summary's
-// add/replace lines point at Review… for.
-func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) []section {
+func approvalConsequences(req CredentialRequest, ans requestAnswer) []section {
 	var out []section
 	if ans.fresh {
 		out = append(out, routesSection("new credential stored for", ans.credentialRoutes))
@@ -1058,19 +690,9 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer, brief bool) 
 				}
 			}
 			gap := approvalRouteSection(label, &RequestPart{Routes: missing})
-			if brief {
-				text, _ := partSummary(&RequestPart{Routes: missing})
-				gap = section{label: label, lines: []line{{text: text + " · Review… lists them", tone: toneAccent}}}
-			}
 			gap.labelTone = toneAlert
 			out = append(out, gap)
 		}
-	}
-	// The summary says only whether each part adds or replaces, and points at
-	// Review… when it replaces something (askSummary): which bindings, in
-	// which variables, their route diffs and lifetimes are the cards' to say.
-	if brief {
-		return out
 	}
 	if lines := replaces(req, ans, ans.ttl, true); len(lines) > 0 {
 		out = append(out, section{label: "this replaces", labelTone: toneAlert, lines: lines})
@@ -1252,35 +874,6 @@ func (m *Model) sendAnswer(req CredentialRequest, ans requestAnswer) tea.Cmd {
 		err := ds.ApproveCredentialRequest(ctx, req.Server, sent)
 		return credentialAnsweredMsg{request: req, approved: true, ttl: ans.ttl, err: err}
 	}
-}
-
-// whyNotCompatible says why a secret cannot answer the request (cannotAnswer):
-// the variable holds another in this box, or where it may be sent does not
-// cover what is asked. holding is the secret the variable holds. back is
-// step 1.
-func (m *Model) whyNotCompatible(req CredentialRequest, s Secret, why string, holding Secret, back func() tea.Cmd) tea.Cmd {
-	d := actionsDialog("“"+s.Name+"” can't be used here", "", []action{{key: "back", label: "Choose another credential", enabled: true}},
-		func(string) tea.Cmd { return back() })
-	switch {
-	case why == notHeld:
-		d.body = variableOf(req) + " already holds “" + holding.Name + "” in this discobox, and a variable it holds takes no other credential. Answer with “" + holding.Name + "”, or take it back from the discobox on the secrets screen (F4) first."
-	case len(s.Routes) == 0:
-		d.body = "“" + s.Name + "” has no routes, so discobox never sends it anywhere. This request needs it sent to " + strings.Join(secretroute.OpenRouteHosts(req.routes()), ", ") + "."
-	default:
-		d.body = "Discobox sends “" + s.Name + "” only where its routes allow, and they don't cover everything this request asks for. Approving with it would give the box a credential that is refused on those requests."
-		d.sections = append(d.sections, routesSection(s.Name+" may be sent to", s.Routes))
-		for i, list := range s.RouteConstraints {
-			d.sections = append(d.sections, routesSection("and only within its constraint "+itoa(i+1), list))
-		}
-		missing := approvalRouteSection("requested, but not covered", &RequestPart{Routes: uncovered(s, req)})
-		missing.labelTone = toneAlert
-		d.sections = append(d.sections, missing)
-	}
-	d.keys = []hint{pressing("Enter or Esc goes back", "esc")}
-	m.withRawRequest(d, req)
-	d.onCancel = back
-	m.dialog = d
-	return nil
 }
 
 // uncovered is the routes the request asks for that the secret may not be

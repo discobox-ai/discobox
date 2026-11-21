@@ -218,7 +218,7 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
 	}
-	return m.askWhichCredential(req, secrets, held)
+	return m.askCredentialApproval(req, secrets, held)
 }
 
 // heldBy is the secret the discobox's own bindings deliver in the use part's

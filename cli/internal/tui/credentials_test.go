@@ -103,17 +103,8 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 			t.Fatalf("dialog body = %q, want it to carry %q", body, want)
 		}
 	}
-	// Every secret is listed and can be chosen: one that cannot answer is
-	// marked, and choosing it says why rather than leaving it unpickable.
-	var keys []string
-	for _, item := range m.dialog.items {
-		if !item.enabled {
-			t.Fatalf("%q cannot be chosen", item.label)
-		}
-		keys = append(keys, item.key)
-	}
-	if strings.Join(keys, ",") != "sec_gh,sec_openai,new,ttl" {
-		t.Fatalf("rows = %v, want every secret and a new credential", keys)
+	if got := m.dialog.form.chosen("credential"); got != "sec_gh" {
+		t.Fatalf("credential = %q, want sec_gh", got)
 	}
 }
 
@@ -128,17 +119,14 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Routes: req.routes()}}
 	m := newTestModel(t, ds)
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	text := plainFrame(m)
-	if !strings.Contains(text, "delegated to its workers") || strings.Contains(text, "used by this box") {
-		t.Fatalf("summary = %q, want the delegation alone", text)
+	if !strings.Contains(text, "Access for its workers") || strings.Contains(text, "Access for this box") {
+		t.Fatalf("approval = %q, want the delegation alone", text)
 	}
-	answerApproval(t, m, "review")
-	if !strings.Contains(m.dialog.body, "could not use it itself") {
-		t.Fatalf("card = %q, want it to say the box cannot use it", plainFrame(m))
-	}
-	if !onStep(m, "its workers") {
-		t.Fatalf("dialog = %s, want the delegate part with no use part before it", describe(m.dialog))
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 1 || ds.approvals[0].Use != "" || ds.approvals[0].Delegate != PartApprove {
+		t.Fatalf("approvals = %+v, want delegation alone", ds.approvals)
 	}
 }
 
@@ -158,10 +146,10 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	var order []string
-	for _, item := range m.dialog.items {
-		order = append(order, item.key)
+	for _, option := range m.dialog.form.rows[0].choices {
+		order = append(order, option.key)
 	}
-	if strings.Join(order, ",") != "sec_gh,sec_loose,sec_openai,new,ttl" {
+	if strings.Join(order, ",") != "sec_gh,sec_loose" {
 		t.Fatalf("order = %v, want those that can answer first, the one named github first among them", order)
 	}
 }
@@ -172,7 +160,7 @@ func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
@@ -184,7 +172,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
@@ -210,7 +198,7 @@ func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	grantFor(t, m, lifetime.Forever)
 	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 0 {
 		t.Fatalf("approvals = %#v, want the zero that means it never expires", ds.approvals)
@@ -222,7 +210,7 @@ func TestTheApprovalSaysHowLongItGrantedFor(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	grantFor(t, m, lifetime.Day)
 
 	if !strings.Contains(strings.Join(frame(m), "\n"), "approved github for 1 day") {
@@ -234,7 +222,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	answerApproval(t, m, "deny")
 
 	if len(ds.denials) != 1 || ds.denials[0] != "sreq_1" {
@@ -454,7 +442,7 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	ds.approveErr = errTestRefused
 	ds.mu.Unlock()
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if m.dialog == nil {
@@ -484,7 +472,7 @@ func TestAFailedApprovalThatChangedNothingSaysNothingOfChanges(t *testing.T) {
 	ds.approveErr = errTestRefused
 	ds.mu.Unlock()
 
-	toSummary(t, m, "sec_gh")
+	openApproval(t, m, "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if strings.Contains(dialogText(m), "already done") {
@@ -514,7 +502,7 @@ func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 		t.Errorf("the card is %d rows in a window of %d", len(lines), m.height)
 	}
 	onScreen := strings.Join(lines[:min(len(lines), m.height)], "\n")
-	for _, answer := range []string{"Enter new credential…"} {
+	for _, answer := range []string{"New credential"} {
 		if !strings.Contains(onScreen, answer) {
 			t.Errorf("%s is not on screen", answer)
 		}
@@ -549,7 +537,7 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	if !seenLast {
 		t.Errorf("the wheel did not reach the end of the card:\n%s", text)
 	}
-	if !strings.Contains(text, "Enter new credential…") {
+	if !strings.Contains(text, "New credential") {
 		t.Errorf("the answers left the card as it scrolled:\n%s", text)
 	}
 }

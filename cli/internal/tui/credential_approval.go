@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 type approvalBindingsMsg struct {
@@ -18,14 +19,14 @@ type approvalBindingsMsg struct {
 	done     func([]SecretBinding, error) tea.Cmd
 }
 
-func (m *Model) askWhichCredential(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
+func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
 	ttl := defaultRequestTTL(req)
 	done := func(bindings []SecretBinding, err error) tea.Cmd {
 		if err != nil {
 			m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read the box's bindings: %v", err))
 			return nil
 		}
-		return m.credentialApproval(req, secrets, held, bindings, requestAnswer{}, ttl)
+		return m.credentialApproval(req, secrets, held, bindings, ttl)
 	}
 	if req.SandboxID == "" {
 		return done(nil, nil)
@@ -39,12 +40,17 @@ func (m *Model) askWhichCredential(req CredentialRequest, secrets []Secret, held
 	}
 }
 
-func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, bindings []SecretBinding, fresh requestAnswer, ttl time.Duration) tea.Cmd {
+func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, bindings []SecretBinding, ttl time.Duration) tea.Cmd {
 	holder, pinned := heldBy(held)
 	answers := map[string]requestAnswer{}
 	var credentials []choice
-	for _, secret := range secretsForRequest(secrets, req) {
-		if cannotAnswer(secret, req, holder, pinned, true) != "" {
+	ordered := secretsForRequest(secrets, req)
+	if holder.SecretID != "" && !slices.ContainsFunc(ordered, func(s Secret) bool { return s.ID == holder.SecretID }) {
+		ordered = append([]Secret{heldSecret(secrets, holder)}, ordered...)
+	}
+	for _, secret := range ordered {
+		readable := slices.ContainsFunc(secrets, func(s Secret) bool { return s.ID == secret.ID })
+		if cannotAnswer(secret, req, holder, pinned, readable) != "" {
 			continue
 		}
 		ans := requestAnswer{credential: secret.Name, secret: secret, credentialRoutes: secret.Routes, maxTTL: secret.MaxTTL, held: held, holderID: holder.SecretID}
@@ -55,10 +61,6 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		}
 		answers[secret.ID] = ans
 		credentials = append(credentials, choice{key: secret.ID, label: secret.Name})
-	}
-	if fresh.fresh {
-		answers["new"] = fresh
-		credentials = append([]choice{{key: "new", label: fresh.credential + " (new)"}}, credentials...)
 	}
 	if len(credentials) == 0 {
 		credentials = append(credentials, choice{label: "No compatible saved credential"})
@@ -94,19 +96,62 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			choice{key: string(bindingplan.Add), label: "Append to existing bindings"}))
 		rows[len(rows)-1].when = func(f *form) bool {
 			ans, ok := answers[f.chosen("credential")]
-			return ok && ans.canAdd() && ans.replaceUnavailable() == ""
+			return ok && f.chosen("use-decision") == PartApprove && ans.canAdd() && ans.replaceUnavailable() == ""
 		}
 	}
 	if req.Use == nil || !pinned {
 		rows = append(rows, formRow{key: "new", label: "New credential", show: func(*form) string { return "Enter a value…" }, open: func() tea.Cmd {
-			selectedTTL, err := selectedLifetime(d.form)
-			if err != nil {
-				selectedTTL = ttl
-			}
-			return m.enterNewCredential(req, secrets, held, holder.SecretID, selectedTTL, func() tea.Cmd { m.dialog = d; return nil }, func(ans requestAnswer) tea.Cmd {
-				return m.credentialApproval(req, secrets, held, bindings, ans, selectedTTL)
+			back := func() tea.Cmd { m.dialog = d; return nil }
+			return m.enterNewCredential(req, secrets, held, holder.SecretID, back, func(ans requestAnswer) tea.Cmd {
+				answers["new"] = ans
+				options := slices.DeleteFunc(slices.Clone(credentials), func(c choice) bool { return c.key == "" })
+				d.form.rows[0].choices = append(options, choice{key: "new", label: ans.credential + " (new)"})
+				d.form.choose("credential", "new")
+				d.reviewState = ""
+				return back()
 			})
 		}})
+	}
+	parts := []struct {
+		key, label string
+		part       *RequestPart
+	}{{"use", "Access for this box", req.Use}, {"delegate", "Access for its workers", req.Delegate}}
+	rows = append(rows, pickRow("advanced", "Advanced",
+		choice{key: "hide", label: "Show part decisions and route scope…"},
+		choice{key: "show", label: "Hide part decisions and route scope"}))
+	editedRoutes := map[string][]secretroute.Route{}
+	for _, part := range parts {
+		if part.part == nil {
+			continue
+		}
+		decision := pickRow(part.key+"-decision", part.label,
+			choice{key: PartApprove, label: "Approve"}, choice{key: PartDeny, label: "Deny"})
+		decision.when = func(f *form) bool { return f.chosen("advanced") == "show" }
+		scopes := []choice{{key: "routes", label: "Requested routes"}}
+		if len(secretroute.OpenRouteHosts(part.part.Routes)) > 0 {
+			scopes = append(scopes, choice{key: "hosts", label: "Requested hosts · any method and path"})
+		}
+		scopes = append(scopes, choice{key: "anywhere", label: "Anywhere · limited by credential scope"},
+			choice{key: "edited", label: "Edited routes"})
+		scope := pickRow(part.key+"-scope", "Route scope", scopes...)
+		scope.when = func(f *form) bool {
+			return f.chosen("advanced") == "show" && f.chosen(part.key+"-decision") == PartApprove
+		}
+		edit := formRow{key: part.key + "-edit", label: "Edited routes", show: func(*form) string { return "Open route editor…" }}
+		edit.when = func(f *form) bool { return scope.when(f) && f.chosen(part.key+"-scope") == "edited" }
+		edit.open = func() tea.Cmd {
+			routes := editedRoutes[part.key]
+			if len(routes) == 0 {
+				routes = part.part.Routes
+			}
+			back := func() tea.Cmd { m.dialog = d; return nil }
+			return m.editRoutes(req, part.label, routesForEditor(routes, part.label, d.form.chosenLabel("credential")), back, func(routes []secretroute.Route) tea.Cmd {
+				editedRoutes[part.key] = routes
+				d.reviewState = ""
+				return back()
+			})
+		}
+		rows = append(rows, decision, scope, edit)
 	}
 	f := newForm(rows...)
 	f.choose("ttl", lifetime.Label(ttl))
@@ -115,9 +160,9 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 	}
 	answer := func(f *form) (requestAnswer, string) {
 		ans, ok := answers[f.chosen("credential")]
-		ans.use, ans.delegate = partAnswer(req.Use, PartApprove), partAnswer(req.Delegate, PartApprove)
-		ans.useChoice = partChoice{scope: "routes", as: bindingplan.As(f.chosen("binding"))}
-		ans.delegateChoice.scope = "routes"
+		ans.use, ans.delegate = partAnswer(req.Use, f.chosen("use-decision")), partAnswer(req.Delegate, f.chosen("delegate-decision"))
+		ans.useChoice = partChoice{scope: f.chosen("use-scope"), routes: editedRoutes["use"], as: bindingplan.As(f.chosen("binding"))}
+		ans.delegateChoice = partChoice{scope: f.chosen("delegate-scope"), routes: editedRoutes["delegate"]}
 		var err error
 		ans.ttl, err = selectedLifetime(f)
 		switch {
@@ -127,7 +172,10 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			return ans, err.Error()
 		case !withinLimit(ans.secret, ans.ttl):
 			return ans, "This credential allows at most " + lifetime.Label(ans.maxTTL) + "."
-		case req.Use != nil && ans.useAs(req) == bindingplan.Replace && ans.replaceUnavailable() != "":
+		case (ans.use == PartApprove && ans.useChoice.scope == "edited" && len(ans.useChoice.routes) == 0) ||
+			(ans.delegate == PartApprove && ans.delegateChoice.scope == "edited" && len(ans.delegateChoice.routes) == 0):
+			return ans, "Enter the edited routes before approving."
+		case ans.use == PartApprove && ans.useAs(req) == bindingplan.Replace && ans.replaceUnavailable() != "":
 			return ans, ans.replaceUnavailable()
 		}
 		return ans, ""
@@ -152,18 +200,26 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		if req.Server != "" {
 			d.sections = append(d.sections, section{fields: []field{{label: "Server", value: req.Server, tone: toneAccent}}})
 		}
-		for _, item := range []struct {
-			label string
-			part  *RequestPart
-		}{{"Its own use", req.Use}, {"Its workers", req.Delegate}} {
+		for _, item := range parts {
 			if item.part == nil {
 				continue
 			}
-			d.sections = append(d.sections, approvalRouteSection(item.label, item.part))
+			decision, selected := ans.use, ans.useChoice
+			if item.key == "delegate" {
+				decision, selected = ans.delegate, ans.delegateChoice
+			}
+			if decision == PartDeny {
+				d.sections = append(d.sections, section{label: item.label, lines: []line{{text: "Deny this part"}}})
+			} else {
+				d.sections = append(d.sections, choiceSection(item.label, item.part, selected, ans))
+			}
 			if len(item.part.Roles) > 0 {
 				roles := section{label: "the roles it asked for · the discobox's words"}
 				for _, role := range item.part.Roles {
 					roles.lines = append(roles.lines, roleLines(role)...)
+				}
+				if decision == PartDeny || selected.scope != "routes" {
+					roles.lines = append(roles.lines, line{text: "These roles describe the request.", tone: toneDim})
 				}
 				d.sections = append(d.sections, roles)
 			}
@@ -175,17 +231,17 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			d.sections = append(d.sections, section{lines: []line{{text: why, tone: toneAlert}}})
 			return
 		}
-		if req.Use != nil {
+		if ans.use == PartApprove {
 			effect := "Approving replaces any existing rules for “" + ans.credential + "” in this box, across all variables."
 			if ans.useAs(req) == bindingplan.Add {
 				effect = "Approving adds these routes alongside the existing rules for “" + ans.credential + "” in this box."
 			}
 			d.sections = append(d.sections, section{lines: []line{{text: effect}}})
 		}
-		if req.Delegate != nil {
+		if ans.delegate == PartApprove {
 			d.sections = append(d.sections, section{lines: []line{{text: "Approval " + ans.delegateMode() + "."}}})
 		}
-		d.sections = append(d.sections, approvalConsequences(req, ans, false)...)
+		d.sections = append(d.sections, approvalConsequences(req, ans)...)
 	}
 	d.refreshSections()
 	m.withRawRequest(d, req)
