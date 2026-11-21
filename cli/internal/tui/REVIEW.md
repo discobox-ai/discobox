@@ -485,8 +485,8 @@
   lifetime, and the summary and part cards keep the read-to-end gate. Repeating the whole approval
   on a final lifetime screen made a simple time choice unnecessarily long.
 
-- A credential request's summary card is lines, never route tables: each
-  part's routes, a new credential's uncovered routes, and what a part
+- A credential request's summary can preview one exact HTTP operation on a
+  single line. Full route tables, a new credential's uncovered routes, and what a part
   replaces (the bindings, variables, route diffs and lifetimes of "this
   replaces") are drawn on the part cards behind Review…. The summary says
   only whether each part adds or replaces, and "Review… lists them" when it

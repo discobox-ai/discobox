@@ -137,6 +137,9 @@ func (m *Model) whichCredential(req CredentialRequest, secrets []Secret, held []
 	if req.Server != "" {
 		d.sections = append(d.sections, section{fields: []field{{label: "Server", value: req.Server, tone: toneAccent}}})
 	}
+	if route := singleHTTPRoute(req.routes()); route != "" {
+		d.sections = append(d.sections, section{lines: []line{{text: route, tone: toneAccent}}})
+	}
 	if why := strings.TrimSpace(req.Justification); why != "" {
 		d.sections = append(d.sections, section{label: "for the purpose of", lines: []line{{text: why}}})
 	}
@@ -603,8 +606,12 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	what := section{label: ans.credential + " would be"}
 	// Each part's line, then what approving it does to the rules the box
 	// holds: added beside them or replacing them.
+	route := singleHTTPRoute(req.routes())
 	summarize := func(label string, part *RequestPart, mode string) {
 		text, broad := partSummary(part)
+		if route != "" && len(part.Routes) == 1 {
+			text, broad = route, false
+		}
 		tone := toneAccent
 		if broad {
 			tone = toneAlert
@@ -627,10 +634,9 @@ func (m *Model) askSummary(req CredentialRequest, ans requestAnswer, back func()
 	if req.Delegate != nil {
 		summarize("delegated to its workers", req.Delegate, lists(ans.delegateMode(), delegateReplaces(req, preview)))
 	}
-	// The summary is lines, never route tables: each part's routes, and what
-	// it replaces, are Review…'s to show (issue #1172). What Accept sends from
-	// here is still said before it can: a new credential's hosts and gaps,
-	// each in a line, and whether each part adds or replaces.
+	// Show a single exact route inline. Review… shows full route tables and
+	// replacement details. Before Accept, show a new credential's hosts and
+	// gaps and whether each part adds or replaces.
 	d.sections = append([]section{what}, approvalConsequences(req, preview, true)...)
 	d.keys = []hint{says("←→ moves"), pressing("Enter chooses", "enter"), pressing("Esc goes back", "esc")}
 	m.withRawRequest(d, req)
@@ -646,6 +652,24 @@ func partAnswer(part *RequestPart, decision string) string {
 		return ""
 	}
 	return decision
+}
+
+// singleHTTPRoute gives the compact preview of one exact HTTP operation.
+func singleHTTPRoute(routes []secretroute.Route) string {
+	if len(routes) != 1 {
+		return ""
+	}
+	r := routes[0]
+	if r.Blocked || r.GraphQL != nil || r.MCP != nil || r.Body != nil || r.WebSocket != nil ||
+		len(r.Hosts) != 1 || len(r.Methods) != 1 || len(r.Paths) != 1 {
+		return ""
+	}
+	for _, value := range []string{r.Hosts[0], r.Methods[0], r.Paths[0]} {
+		if value == "" || strings.Contains(value, "*") {
+			return ""
+		}
+	}
+	return secretroute.Format(r)
 }
 
 // partSummary is a part in a line: the hosts its open routes reach, how many

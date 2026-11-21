@@ -163,7 +163,7 @@ func (m *Model) viewRejectedBanner(width int) string {
 		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
 	}
 	call := bannerChip(st, rejectionCall(rejection), colAlertChip)
-	return bannerRow(st, alertPalette, width, subject, call, m.leader()+" "+rejectedKey)
+	return bannerRow(st, alertPalette, width, subject, call, m.leader()+" "+rejectedKey, 0)
 }
 
 // rejectionHeadline is the bar's sentence: what was refused, and by whom.
