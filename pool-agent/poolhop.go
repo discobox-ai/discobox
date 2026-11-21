@@ -96,9 +96,9 @@ func resolvePoolHop(bootstrap Bootstrap) (poolHop, error) {
 // holds them (sandboxruntime.PoolFencing). On its networks, the hop is as
 // resolved. At its provider's edge, the sandboxes have no network to reach
 // the pool on, so the hop must be the edge's, and their fence closes DNS
-// too, so no resolver answers them (ADR 26-11-16-619 §1). Nothing yet gives
-// them the address 619 §3 has them dial in place of the pool's host: the hop
-// still names the host, which their bridges cannot resolve.
+// too, so no resolver answers them (ADR 26-11-16-619 §1). Their bridges dial
+// the address the pool resolved its host to instead, which each sandbox's
+// runtime-config document carries (proxy.edge, poolEdge; §3).
 func (h poolHop) fencedBy(driver string, fencing sandboxruntime.Fencing) (poolHop, error) {
 	if fencing != sandboxruntime.FencedAtEdge {
 		return h, nil
