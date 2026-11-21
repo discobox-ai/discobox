@@ -815,6 +815,17 @@ func TestUnitActionsFollowTheFilesEachUnitReads(t *testing.T) {
 			},
 		},
 		{
+			// A renewed edge credential or address: every tunnel reads the
+			// edge file as it opens, so a running bridge is left alone.
+			name:    "renewed edge",
+			changed: []string{bridge.EdgeFile},
+			want: map[string]unitVerb{
+				"discobox-proxy-bridge.service":        verbStart,
+				"discobox-buildkit-bridge.service":     verbStop,
+				"discobox-proxy-bridge-docker.service": verbStop,
+			},
+		},
+		{
 			// A bridge reads its config only when it starts.
 			name:    "bridge config and keypair",
 			changed: []string{egressBridgeFile, clientKeyFile},
@@ -833,6 +844,83 @@ func TestUnitActionsFollowTheFilesEachUnitReads(t *testing.T) {
 	}
 	if got := unitActions(dir, []string{filepath.Join(t.TempDir(), mitmCAFile)}); len(got) != 0 {
 		t.Fatalf("a file outside the proxy directory touched units %+v", got)
+	}
+}
+
+// A pool behind an edge gives each sandbox the address to dial and the
+// credential to carry (ADR 26-11-16-619 §§2–3): the intake writes them to the
+// edge file, root's alone, and every bridge of a tunnel names it. A document
+// without one leaves no edge file, and a bridge names none.
+func TestAnEdgeIsWrittenForEveryTunnel(t *testing.T) {
+	layout := testLayout(t)
+	cfg := testConfig(layout, testOwner)
+	cfg.Pool = &sandboxconfig.PoolEndpoints{ //nolint:gosec // G101: tunnel URLs, not credentials
+		DNSSystemResolver: true,
+		Proxy:             "wss://7302-pool.edge.example/tunnel/proxy",
+		Credentials:       "wss://7302-pool.edge.example/tunnel/credentials",
+		DNS:               "wss://7302-pool.edge.example/tunnel/dns",
+		BuildKit:          "wss://7302-pool.edge.example/tunnel/buildkit",
+		ServerName:        "discobox-pool",
+	}
+	in, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := testDocument(t, 1)
+	doc.Proxy.Edge = &sandboxconfig.RuntimeEdge{Address: "192.0.2.7", Header: "X-Edge-Token", Token: "edge-token", Expires: time.Now().Add(time.Hour)}
+	if _, err := in.Apply(context.Background(), doc); err != nil {
+		t.Fatal(err)
+	}
+	edgePath := filepath.Join(layout.ProxyDir, bridge.EdgeFile)
+	edge, err := bridge.LoadEdge(edgePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edge != (bridge.Edge{Address: "192.0.2.7", Header: "X-Edge-Token", Token: "edge-token"}) {
+		t.Fatalf("edge file = %+v, want the document's address and credential", edge)
+	}
+	assertMode(t, edgePath, 0o600)
+	for _, name := range []string{egressBridgeFile, nestedDockerBridgeFile, buildKitBridgeFile} {
+		file, err := bridge.LoadFile(filepath.Join(layout.ProxyDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if file.EdgePath != edgePath {
+			t.Fatalf("%s names edge file %q, want %q", name, file.EdgePath, edgePath)
+		}
+	}
+
+	doc = testDocument(t, 2)
+	if _, err := in.Apply(context.Background(), doc); err != nil {
+		t.Fatal(err)
+	}
+	if exists(edgePath) {
+		t.Fatal("a document without an edge left the edge file")
+	}
+	file, err := bridge.LoadFile(filepath.Join(layout.ProxyDir, egressBridgeFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.EdgePath != "" {
+		t.Fatalf("egress bridge names edge file %q with no edge", file.EdgePath)
+	}
+}
+
+// A pool its sandboxes reach directly names no edge file, whatever the
+// document says of an edge: an edge answers a tunnel alone.
+func TestNoEdgeForAPoolReachedDirectly(t *testing.T) {
+	layout := testLayout(t)
+	in, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := testDocument(t, 1)
+	doc.Proxy.Edge = &sandboxconfig.RuntimeEdge{Address: "192.0.2.7"}
+	if _, err := in.Apply(context.Background(), doc); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(layout.ProxyDir, bridge.EdgeFile)) {
+		t.Fatal("an edge file was written for a pool reached directly")
 	}
 }
 

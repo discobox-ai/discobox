@@ -88,6 +88,16 @@ minutes, inside what edges allow. A reused tunnel the edge cut while idle fails
 the inner handshake, before the caller's bytes are sent, and that dial is
 retried once on a new tunnel.
 
+A tunnel through an edge that admits only a holder of its credential (a
+machine pool on archil, ADR 26-11-16-619 §§2–3) reads the edge file
+(`bridge.Edge`, `edgePath` in `bridge.json`) at each tunnel it opens: it
+dials the file's `address` in place of the edge's name, resolving nothing,
+since the sandbox's fence may close DNS, and sends the credential in the
+header the file names. The TLS server name and the `Host` stay the edge's
+name, which the edge routes by, so a stale address still reaches the pool.
+The opening request is HTTP/1.1 alone. A renewed credential or a moved
+address is the next tunnel's, with no restart; an open tunnel is not cut.
+
 A connection whose first request is an HTTP proxy request (`CONNECT`, or an
 absolute-form `http://` request) for an IP address in one of the sandbox's own
 subnets (`nestedbridge.LocalSubnets`, read per request) is connected directly,

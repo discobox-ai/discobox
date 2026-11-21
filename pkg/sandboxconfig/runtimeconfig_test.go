@@ -49,6 +49,21 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		"proxy CA that is not PEM": {func(c *RuntimeConfig) {
 			c.Proxy = &RuntimeProxy{MTLSCA: "not a certificate"}
 		}, "proxy.mtlsCa"},
+		"edge address that is a name": {func(c *RuntimeConfig) {
+			c.Proxy = &RuntimeProxy{Edge: &RuntimeEdge{Address: "pool.example.com"}}
+		}, "proxy.edge.address"},
+		"edge token without a header": {func(c *RuntimeConfig) {
+			c.Proxy = &RuntimeProxy{Edge: &RuntimeEdge{Token: "t"}}
+		}, "proxy.edge: header"},
+		"edge credential in Authorization": {func(c *RuntimeConfig) {
+			c.Proxy = &RuntimeProxy{Edge: &RuntimeEdge{Header: "authorization", Token: "t"}}
+		}, "proxy.edge: header"},
+		"edge header without a token": {func(c *RuntimeConfig) {
+			c.Proxy = &RuntimeProxy{Edge: &RuntimeEdge{Header: "X-Edge-Token"}}
+		}, "proxy.edge: the token"},
+		"edge token over two lines": {func(c *RuntimeConfig) {
+			c.Proxy = &RuntimeProxy{Edge: &RuntimeEdge{Header: "X-Edge-Token", Token: "a\nb"}}
+		}, "proxy.edge: the token"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := valid
@@ -58,6 +73,22 @@ func TestRuntimeConfigValidate(t *testing.T) {
 				t.Fatalf("Validate() = %v, want an error naming %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// An edge that gives an address and a whole credential, or either alone, is
+// one the bridges can dial.
+func TestRuntimeEdgeValidates(t *testing.T) {
+	for _, edge := range []RuntimeEdge{
+		{},
+		{Address: "192.0.2.7"},
+		{Address: "2001:db8::7"},
+		{Header: "X-Archil-Token", Token: "secret"},
+		{Address: "192.0.2.7", Header: "X-Archil-Token", Token: "secret"},
+	} {
+		if err := edge.validate(); err != nil {
+			t.Errorf("validate(%+v) = %v, want it taken", edge, err)
+		}
 	}
 }
 

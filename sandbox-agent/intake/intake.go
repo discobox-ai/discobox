@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -421,7 +422,7 @@ const (
 // proxyFileNames is every file the proxy directory may hold, so that what a
 // document leaves out is removed rather than left over from an older one.
 var proxyFileNames = []string{
-	mtlsCAFile, mitmCAFile, clientCertFile, clientKeyFile,
+	mtlsCAFile, mitmCAFile, clientCertFile, clientKeyFile, bridge.EdgeFile,
 	egressBridgeFile, nestedDockerBridgeFile, buildKitBridgeFile, registryNamespaceFile,
 }
 
@@ -441,6 +442,18 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 		//nolint:gosec // as above.
 		files[clientCertFile] = op{data: []byte(proxy.ClientCert), mode: 0o644}
 		files[clientKeyFile] = op{data: []byte(proxy.ClientKey), mode: 0o600}
+		// Through an edge, every bridge's tunnel reads the edge file at each
+		// tunnel it opens: the address it dials and the credential it sends
+		// (ADR 26-11-16-619 §§2–3). An edge's renewal restarts nothing.
+		edgePath := ""
+		if proxy.Edge != nil && pool != nil && strings.HasPrefix(pool.Proxy, "wss://") {
+			data, err := json.MarshalIndent(bridge.Edge{Address: proxy.Edge.Address, Header: proxy.Edge.Header, Token: proxy.Edge.Token}, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			files[bridge.EdgeFile] = op{data: data, mode: 0o600}
+			edgePath = filepath.Join(dir, bridge.EdgeFile)
+		}
 		if pool != nil && pool.Proxy != "" {
 			egress := bridge.File{
 				ListenAddress:  sandboxconfig.SandboxEgressListenAddress,
@@ -465,6 +478,7 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 			for name, bridge := range bridges {
 				bridge.ServerName = pool.ServerName
 				bridge.Address = pool.Address
+				bridge.EdgePath = edgePath
 				bridge.MTLSCAPath = filepath.Join(dir, mtlsCAFile)
 				bridge.ClientCertPath = filepath.Join(dir, clientCertFile)
 				bridge.ClientKeyPath = filepath.Join(dir, clientKeyFile)

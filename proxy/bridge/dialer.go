@@ -5,9 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pkg/wstunnel"
@@ -31,6 +29,11 @@ type DialConfig struct {
 	// discobox's own answer for the private name the URL names, a provider's
 	// host resolved at each dial (ADR 26-10-29-481 §2). Empty dials the host.
 	Address string
+	// EdgePath is the edge file (Edge) a wss tunnel reads at each tunnel it
+	// opens: the address it dials in place of the edge's name, and the
+	// credential it sends the edge (ADR 26-11-16-619 §§2–3). Empty resolves
+	// the edge's name and sends none. Only a wss URL takes one.
+	EdgePath string
 
 	MTLSCAPath     string
 	ClientCertPath string
@@ -101,10 +104,7 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 		if host, _, err := net.SplitHostPort(endpoint.Host); err == nil {
 			transportHost = host
 		}
-		tunnel = wstunnel.NewClient(endpoint.Raw, &http.Client{Transport: &http.Transport{
-			DialContext:         providerDialContext(ProviderResolverPath),
-			TLSHandshakeTimeout: 10 * time.Second,
-		}})
+		tunnel = wstunnel.NewClient(endpoint.Raw, edgeHTTPClient(cfg.EdgePath))
 	case "vsock", "unix":
 		if cfg.Address != "" {
 			return nil, fmt.Errorf("pool URL %q names no host; an address answers an https URL's name alone", cfg.URL)
@@ -117,6 +117,9 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 		serverURL = "https://" + serverName
 	default:
 		return nil, fmt.Errorf("pool URL %q must be https, vsock, unix, or wss: the pool is reached over mTLS", cfg.URL)
+	}
+	if cfg.EdgePath != "" && endpoint.Scheme != "wss" {
+		return nil, fmt.Errorf("pool URL %q is not a tunnel through an edge; an edge file answers a wss URL alone", cfg.URL)
 	}
 	if endpoint.Scheme == "https" {
 		dial = providerDialContext(ProviderResolverPath)

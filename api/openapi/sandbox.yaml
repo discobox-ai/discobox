@@ -1705,6 +1705,24 @@ components:
             required:
                 - cert
             type: object
+        SandboxRuntimeConfigEdge:
+            additionalProperties: false
+            description: How the sandbox reaches its pool's edge - the address to dial in place of the edge's name, which the sandbox then does not resolve, and the credential the edge admits the pool's listener with. The pool renews both in a newer document. The edge routes by name, so its name stays the TLS server name and the Host.
+            properties:
+                address:
+                    description: The IP address the edge's name resolved to, as the pool last resolved it, dialed in its place with the URL's port. Empty resolves the name.
+                    type: string
+                expires:
+                    description: When the edge stops opening connections with the token. A tunnel already open is not cut.
+                    format: date-time
+                    type: string
+                header:
+                    description: The HTTP header the token is sent in, as the provider names it.
+                    type: string
+                token:
+                    description: The pool listener's credential, shared by the pool's sandboxes.
+                    type: string
+            type: object
         SandboxRuntimeConfigProxy:
             additionalProperties: false
             description: The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the sandbox's bootstrap and where it listens is its own; the sandbox renders its bridge configs from the three and starts the units that read them.
@@ -1715,6 +1733,9 @@ components:
                 clientKey:
                     description: This sandbox's PEM client private key. Required on delivery; never returned, so a document read back omits it.
                     type: string
+                edge:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigEdge'
+                    description: What the sandbox's tunnels through its pool's edge dial and carry, on a pool reached through an edge that gives one. Absent dials the edge by its name with no credential.
                 mitmCa:
                     description: PEM CA the egress proxy signs intercepted connections with.
                     type: string

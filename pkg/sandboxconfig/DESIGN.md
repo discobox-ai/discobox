@@ -268,7 +268,11 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   sandbox's kept and answered documents all go through. `SecretEnv` —
   env name to sentinel, never a resolved value (the Secrets rule above is
   unchanged). `Proxy` — the CAs and the sandbox's client keypair (the key is
-  delivered, never read back): the credential only.
+  delivered, never read back): the credential only; and, through an edge,
+  `Edge` (`RuntimeEdge`): the address the sandbox dials in place of the
+  edge's name and the pool listener's credential, both renewed in a newer
+  document (ADR 26-11-16-619 §§2–3). Its token, like an origin token, is kept
+  with the document: it reaches the pool's listener alone and expires.
   Where the pool is comes from the bootstrap and where the sandbox listens is
   its own, so the document carries no bridge; the sandbox renders its bridge
   configs from the three. `Sources` — per source, its in-sandbox `Target`
