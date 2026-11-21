@@ -26,25 +26,6 @@ func onStep(m *Model, name string) bool {
 	return m.dialog != nil && m.dialog.titleRight == name
 }
 
-// pickItem chooses the menu row keyed key on the card up, as a person would:
-// the card drawn, the cursor on the row, Enter.
-func pickItem(t *testing.T, m *Model, key string) {
-	t.Helper()
-	d := m.dialog
-	if d == nil {
-		t.Fatal("no card up")
-	}
-	plainFrame(m)
-	for i, item := range d.items {
-		if item.key == key {
-			d.cursor = i
-			send(t, m, keyPress("enter"))
-			return
-		}
-	}
-	t.Fatalf("no row %q on %s", key, describe(d))
-}
-
 func grantFor(t *testing.T, m *Model, ttl time.Duration) {
 	t.Helper()
 	m.dialog.form.choose("ttl", lifetime.Label(ttl))
@@ -471,7 +452,7 @@ func TestEscOnHowLongGoesBackToTheDecision(t *testing.T) {
 	}
 	send(t, m, keyPress("down"), keyPress("esc"))
 	if !onRequestCard(m) || f.listing || f.chosen("ttl") != "1 hour" || len(ds.approvals) != 0 {
-		t.Fatal("cancelling the picker changed the pending approval")
+		t.Fatal("canceling the picker changed the pending approval")
 	}
 }
 
@@ -950,7 +931,7 @@ func TestCancellingBindingModeLeavesTheDecisionIntact(t *testing.T) {
 	}
 	send(t, m, keyPress("enter"), keyPress("down"), keyPress("esc"))
 	if f.listing || f.chosen("binding") != "replace" || len(ds.approvals) != 0 {
-		t.Fatal("cancelling binding selection changed the pending decision")
+		t.Fatal("canceling binding selection changed the pending decision")
 	}
 }
 
