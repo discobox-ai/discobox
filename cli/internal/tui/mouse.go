@@ -347,6 +347,9 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 			}
 			d.formActionAt = -1
 			d.form.moveTo(what.idx)
+			if d.form.answerable(what.idx) && d.form.rows[what.idx].openOnClick {
+				return m.updateKey(keyPress("enter")), true
+			}
 		}
 		return nil, true
 
