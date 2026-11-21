@@ -92,7 +92,7 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 	if err != nil {
 		return nil, err
 	}
-	var edge func() (*sandboxconfig.RuntimeEdge, error)
+	var edge func() *sandboxconfig.RuntimeEdge
 	if hop.form == hopEdge {
 		// Through an edge, each sandbox is given the pool's host's address
 		// to dial, and, on a driver whose URLs answer only a credential, the
