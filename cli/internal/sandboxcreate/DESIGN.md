@@ -14,6 +14,9 @@ sandbox create requests.
   `policy=FILE` within one binding to merge independently parameterized files;
   inline `@ROUTE` values are mutually exclusive), builds the API
   body, and submits prompt sandbox creates.
+- The console and inline harness pickers use the same choice labels and
+  selection rules. An agent choice sets the project default, and Shell
+  supplies an override for the current box.
 - Every path placed in the sandbox is judged by the sandbox's platform
   (`PromptOptions.Platform`, through `sandboxpath`; ADR 0145 §6), never by this
   machine's: where a source lands and the working root it lands under. This

@@ -29,6 +29,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
 )
@@ -3305,7 +3306,7 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 // askForRunHarness stops a run with no explicit harness or project default.
 // The picker can set a default or run this box with the built-in Shell.
 func (m *Model) askForRunHarness(req RunRequest) (tea.Cmd, bool) {
-	if req.Harness != "" || m.projectDefaultHarness() != nil {
+	if strings.TrimSpace(req.Harness) != "" || m.projectDefaultHarness() != nil {
 		return nil, false
 	}
 	if !m.harnesses.loaded {
@@ -3316,30 +3317,27 @@ func (m *Model) askForRunHarness(req RunRequest) (tea.Cmd, bool) {
 	}
 	candidates := m.harnesses.all
 	if len(candidates) == 0 {
-		return m.runFailed(errors.New("this project has no harness to run; register one with `discobox admin harness create`")), true
+		return m.runFailed(errors.New(sandboxcreate.NoRunHarness)), true
 	}
 
 	items := make([]action, 0, len(candidates))
+	choices := make([]sandboxcreate.HarnessChoice, 0, len(candidates))
 	for i, harness := range candidates {
-		detail := "set project default"
-		label := harness.displayName()
-		if harness.Shell {
-			label = "Shell (no agent)"
-			detail = "this box only"
-		}
+		choice := sandboxcreate.RunHarnessChoice(harness.ID, harness.Name, harness.Slug, harness.Parent)
+		choices = append(choices, choice)
 		n := itoa(i + 1)
 		items = append(items, action{
-			key: n, press: n, label: label, detail: detail, enabled: true,
+			key: n, press: n, label: choice.Label, detail: choice.Detail, enabled: true,
 		})
 	}
-	menu := actionsDialog("Choose a harness",
+	menu := actionsDialog(sandboxcreate.RunHarnessPrompt,
 		"This project has no default harness. Use discobox run -H <harness> for one box. "+
 			"Change the default in discobox configure.",
 		items, func(key string) tea.Cmd {
 			for i, harness := range candidates {
 				if itoa(i+1) == key {
-					if harness.Shell {
-						req.Harness = harness.Slug
+					if override := choices[i].Override; override != "" {
+						req.Harness = override
 						return func() tea.Msg { return resumeRunMsg{req: req} }
 					}
 					return func() tea.Msg { return harnessDefaultMsg{harness: harness, resume: &req} }

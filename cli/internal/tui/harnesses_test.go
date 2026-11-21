@@ -542,7 +542,7 @@ func TestAProjectWithOnlyShellOffersItForThisBox(t *testing.T) {
 	ds := noDefaultSource(t)
 	ds.harnesses = []Harness{{
 		ID: "hc_shell", Name: "Shell", Slug: "shell",
-		BuiltIn: true, Shell: true,
+		BuiltIn: true,
 	}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))

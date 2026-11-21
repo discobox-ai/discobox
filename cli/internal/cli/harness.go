@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -467,7 +468,10 @@ func (a *App) listHarnessConfigs(ctx context.Context, client *apiclientgen.Clien
 	if err != nil {
 		return nil, err
 	}
-	return body.GetHarnessConfigs(), nil
+	configs := body.GetHarnessConfigs()
+	// Present harness choices in registration order, with built-ins first.
+	sort.SliceStable(configs, func(i, j int) bool { return configs[i].CreatedAt.Before(configs[j].CreatedAt) })
+	return configs, nil
 }
 
 func (a *App) defaultHarnessConfigID(ctx context.Context, client *apiclientgen.Client, projectID string) (string, error) {

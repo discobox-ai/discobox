@@ -1288,7 +1288,9 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		return tui.Sandbox{}, err
 	}
 	opts.DiscoboxAPI = req.DiscoboxAPI
-	if err := d.app.newSandboxSettings(ctx, d.client, d.projectID, req.Pool, !req.NoProjectSkills, &opts); err != nil {
+	if err := d.app.newSandboxSettings(ctx, d.client, d.projectID, req.Pool, !req.NoProjectSkills, func() (*apimodel.Project, error) {
+		return d.app.getProject(ctx, d.client, d.projectID)
+	}, &opts); err != nil {
 		return tui.Sandbox{}, err
 	}
 

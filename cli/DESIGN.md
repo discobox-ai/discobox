@@ -135,13 +135,14 @@ transport helpers where OpenAPI does not model the stream.
   flag given; turning it down ends the command with an error, since nothing
   was made. With nobody to ask, SOURCE is required (`errRunNeedsSource`), and
   a `--from-json` request names it as `"source"`.
-- **`run` asks wherever a person is, and nowhere else** (`canAskInline`, which
+- **Source and directory-copy questions require a terminal** (`canAskInline`, which
   is `canOpenWindow` plus a terminal stderr for the picker to draw on). One
   test decides it for both questions — the source, and copying a directory in
   no repository — so a run either asks both or neither: in the window, or
   inline for `-d` and `--raw` (`askRunSource`, offering what the card offers,
-  via `projectSources`). `run | cat` asks nothing, however much of a terminal
-  its stdin and stderr are. Uncommitted work is never a question for `run`:
+  via `projectSources`). Piping stdout disables those questions. The
+  [inline harness picker](internal/cli/DESIGN.md#harness-selection-for-inline-runs)
+  uses stdin and stderr. Uncommitted work is never a question for `run`:
   `--include-dirty` is off unless given (see "Uncommitted Work at Create").
 - Such a window *is* the attach on what it opened or made, so leaving it leaves
   the window: the leader's `d`, and the primary session ending, close it

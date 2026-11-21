@@ -23,3 +23,7 @@
   `TestIndentedSizeIsAnUpperBound` holds it; add a case for any change to the
   scan. Its first fix counted a pretty-printed document twice, and the next
   under-counted a trailing run of spaces.
+
+- **Sanitize harness names before using them as inline picker labels.** A name
+  can come from a bundle or a project configuration and contain terminal
+  control sequences. Apply `terminalSafe` before handing it to the picker.

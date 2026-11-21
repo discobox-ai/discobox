@@ -206,3 +206,16 @@ Attach and command preparation narration includes blocking feature/step reports
 during blocking preparation. The watcher adds elapsed waiting time every ten
 seconds; the terminal spinner remains a liveness cue, not proof of installer
 activity or an ETA. The original attach waits independently of these reads.
+
+## Harness selection for inline runs
+
+An inline `run` with no explicit harness checks the project's default before
+creating the box. When the project already has a default harness and no pool was
+specified, placement also uses that response. After a picker, placement reads
+the default pool again in case it changed while the picker was open. If the project needs a default, the picker runs on stderr
+before the detached command prints the box on stdout. Selecting an agent sets
+the project default. Selecting Shell uses it for that box only. Without terminal
+input and stderr, or with `--from-json`, a missing default stops the run before
+creation and points to the one-box override and project default commands. A
+sandbox creating another can receive a 403 for the project read. Its create
+request leaves default resolution and any missing-default error to the server.

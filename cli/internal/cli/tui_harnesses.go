@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/harness"
 )
 
 // The launcher's harnesses screen, on this side of the seam. What the window
@@ -36,11 +34,8 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 	if err != nil {
 		return nil, err
 	}
-	sorted := append([]apimodel.HarnessConfig(nil), configs...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.Before(sorted[j].CreatedAt) })
-
-	harnesses := make([]tui.Harness, 0, len(sorted))
-	for _, cfg := range sorted {
+	harnesses := make([]tui.Harness, 0, len(configs))
+	for _, cfg := range configs {
 		harnesses = append(harnesses, toTUIHarness(cfg, defaultID))
 	}
 	return harnesses, nil
@@ -75,7 +70,6 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		Slug:     strings.TrimSpace(cfg.Slug),
 		Default:  cfg.ID == defaultID,
 		BuiltIn:  cfg.BuiltIn,
-		Shell:    strings.TrimSpace(cfg.Slug) == harness.ShellSlug,
 		Bundle:   cfg.Bundle.Or(""),
 		Digest:   cfg.BundleDigest.Or(""),
 		Run:      cfg.RunCommand,
