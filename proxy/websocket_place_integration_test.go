@@ -341,6 +341,20 @@ func (c *wsClient) send(t *testing.T, frames ...[]byte) {
 	}
 }
 
+// sendRefused sends frames the proxy refuses partway through. The proxy
+// closes the connection once it has seen enough to refuse them, so a write
+// still in progress then may fail, the connection broken or reset (EPIPE or
+// ECONNRESET here, WSAECONNRESET on Windows). That is the refusal arriving,
+// not a fault: the rest is left unsent, and the close frame read after it is
+// what the test judges. A connection that went without one fails there.
+func (c *wsClient) sendRefused(frames ...[]byte) {
+	for _, frame := range frames {
+		if _, err := c.conn.Write(frame); err != nil {
+			return
+		}
+	}
+}
+
 // next is the client's next frame from the proxy.
 func (c *wsClient) next(t *testing.T) wsFrame {
 	t.Helper()
@@ -649,7 +663,7 @@ func TestHTTPProxyBoundsAnInspectedConnection(t *testing.T) {
 			t.Cleanup(origin.Close)
 			proxy := startWSProxy(ctx, t, origin, &wsResolver{grants: []secretroute.Grant{wsGrant(t, wsGateway)}}, 0)
 			client := proxy.dial(ctx, t, "gateway.discord.gg", "")
-			client.send(t, tc.frames...)
+			client.sendRefused(tc.frames...)
 			closedWith(t, client, origin, tc.code)
 		})
 	}
