@@ -391,6 +391,15 @@ curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
 Every step is a Taskfile target that also runs locally (ADR 0066 §1):
 `release:build`, `release:images`, `release:publish`.
 
+Once a dot release's images are up, move the OCI base pin to the sandbox base
+image it published, in a PR of its own: every VM driver whose base is an OCI
+image (archil) boots it, by digest, and the release cannot link a digest it
+builds in parallel.
+
+```bash
+go tool task oci-base:pin VERSION=vX.Y.Z
+```
+
 ## 5. The Homebrew tap
 
 **For a dot release this is automatic, and it feeds the beta formula only.** The

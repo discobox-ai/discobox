@@ -114,6 +114,12 @@ secret `driver.apiKey`. The catalog reads them from the driver, so
 | `hcs` (Windows) | none | refused until Windows pools |
 
 `boxd` and `archil` also take `controlPlaneUrl`, `base` and the pool policy.
+An `archil` provider with no `base` makes its machines from discobox's sandbox
+base image (`ghcr.io/discobox-ai/discobox-sandbox-base`) of an earlier
+discobox release, pinned by digest, rather than Archil's default image, which
+has no systemd. A
+`base` you set replaces it. A `boxd` provider with no `base` uses boxd's
+default image.
 Every `driver` field is fixed while the provider has pools. An endpoint field
 is where the driver sends your key, so the server checks it: it must be a
 public host over https, or a public `HOST:PORT`, and a write that sets or

@@ -475,7 +475,9 @@ cannot create a symlink, so `release:windows-zip` repackages the same binary as
 There is one container image, the Docker driver's sandbox base image, and
 everything else is a bundle, `FROM scratch`, applied to a box
 ([ADR 26-10-24-953](docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
-§2). Every sandbox container and every Docker pool's runs the base; whoever
+§2). Every sandbox container and every Docker pool's runs the base, and an
+archil machine boots an earlier release's of it by digest
+([`server/providers`](server/providers/DESIGN.md#sandbox-base-image)); whoever
 makes the box places the agent bundle in it, and the agent applies the box's
 ordered list of bundles: the platform's and a harness's for a sandbox
 ([`harness/DESIGN.md`](harness/DESIGN.md), ADR 26-10-16-423 §§2, 7), the pool

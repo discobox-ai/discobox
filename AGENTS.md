@@ -28,7 +28,8 @@
   `server/providers/dockerworker/sandbox-image` is the Docker driver's Ubuntu
   sandbox base image every sandbox container runs, with its platform and
   harness bundles applied, and every Docker pool's container, with the pool
-  bundle applied.
+  bundle applied; an earlier release's copy is every archil machine's
+  default base.
 - `pool-agent`: nested Go module for the pool agent implementation.
 - `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
 - `sandbox-agent`: nested Go module for the sandbox agent runtime environment, and the platform bundle's build context.

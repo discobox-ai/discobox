@@ -10,7 +10,10 @@
 #
 # A Docker pool's container runs it too, provisioned from the pool bundle (ADR
 # 26-10-24-953 §2), so a pool host pulls one image for itself and its
-# sandboxes.
+# sandboxes. An archil machine boots a release's copy of it as a VM guest
+# (discovm.DefaultOCIBase, ADR 26-11-16-619 §4): keep systemd, dbus and
+# nftables (named below, not left to docker-ce's dependency on it), and see
+# server/providers/REVIEW.md before masking a unit.
 
 # The repository's one Ubuntu pin: resolute's image by digest, and the mirror
 # apt reads first on each architecture. `go tool task ubuntu:bump` moves the
@@ -86,6 +89,7 @@ RUN set -eux \
         iptables \
         jq \
         less \
+        nftables \
         openssh-client \
         openssh-sftp-server \
         passwd \

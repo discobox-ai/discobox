@@ -325,7 +325,16 @@ from Docker's resolute suite. Every sandbox container runs it,
 with the platform's and its harness's features provisioned on top, and a
 Docker pool's own container runs it too, provisioned as a pool
 ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
-§2), so a pool host pulls one image. The pool's container has the host's
+§2), so a pool host pulls one image. It is also every archil machine's
+default base, an earlier release's by digest
+([`discovm`](discovm/DESIGN.md#drivers), `DefaultOCIBase`, ADR
+26-11-16-619 §4), which boots it with systemd started in a PID and mount
+namespace of its own, not as a container. That pin is in code and moved after
+a release (`go tool task oci-base:pin`), where this driver's is linked at
+release by tag: a release cannot link the digest of an image it builds
+alongside its binaries, and a VM driver's provider pulls the image from its
+own cloud, so a tag would leave what every pool's machines boot to whoever
+pushes it. The pool's container has the host's
 Docker socket bound where the image's `docker.socket` listens, so the engine
 masks that unit there (`/dev/null` bound over its file) and the container boots
 with no failed unit; sandboxes keep it. No harness is an image (ADR 26-10-16-423

@@ -182,9 +182,24 @@ as ADR 26-10-09-106 §1 places it:
 - A pool machine is created fresh from the driver's base (ADR 26-10-23-551
   §1), which is the driver's own configuration (`machine.Config.Base`,
   disco-vm ADR 26-11-03-606): the provider's `base`, in the driver's terms
-  (boxd's image), or else the driver's default (boxd's default image). The
+  (boxd's image), or else, on a driver whose base disco-vm declares an OCI
+  image (`Definition.Base.Format`, `machine.OCIImage`: archil), discobox's
+  `DefaultOCIBase`, or else the driver's default (boxd's default image)
+  (`settings.base`, disco-vm ADR 26-11-20-547 §2). `DefaultOCIBase` is
+  archil's default base (ADR 26-11-16-619 §4, settling its Open item on where
+  it is built and pinned): the sandbox base image a release publishes
+  (`discobox-sandbox-base`, with systemd, systemd-sysv, dbus and nftables,
+  where Archil's default image has no systemd), pinned by tag and digest in
+  `base.go` and moved after a release by `go tool task oci-base:pin`, since a
+  release cannot link the digest of an image it builds in parallel. The pin
+  trails the release it ships in, and nothing refuses a release whose pin was
+  not moved: the release skill moves it. It is
+  read from the declared format, never the driver's name, and the catalog
+  shows it as the base field's default. The
   driver is made with it (`openDriver`), and the pool agent makes its own
-  with the same base, which its bootstrap names. It was once an ID matched
+  with the same base, which its bootstrap names, so moving the pin is a moved
+  placement: a running pool's agent is placed again, and its next machines
+  are made from the new image. It was once an ID matched
   against the bases the driver listed, which disco-vm no longer has: a value
   stored then is handed to the driver as its base, which on boxd works for
   an image's ID and not for a snapshot's, since a snapshot is no longer a

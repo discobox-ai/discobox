@@ -54,8 +54,9 @@ type poolMachine struct {
 	// (engineIn): removal opens the pool's own, to empty it.
 	scopeEngine func(scope string) (*engine.Engine, error)
 	// base is the driver's base the machine, and its sandboxes' machines, are
-	// created fresh from (Config.Base), which the driver is made with and the
-	// pool's agent makes its own with; empty is the driver's default.
+	// created fresh from (Config.Base, settings.base), which the driver is
+	// made with and the pool's agent makes its own with; empty is the
+	// driver's default.
 	base string
 	// driverConfig is the provider's driver configuration, without its
 	// secret, which the pool's agent makes its engine with.
@@ -100,7 +101,7 @@ func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope strin
 	return &poolMachine{
 		engine:          e,
 		scopeEngine:     scopeEngine,
-		base:            strings.TrimSpace(cfg.Base),
+		base:            cfg.base(),
 		driverConfig:    cfg.driverConfig,
 		controlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
 		policy:          cfg.Env(),

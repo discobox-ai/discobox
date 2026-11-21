@@ -60,7 +60,9 @@
   is the guest's.
 - The provider's `base` is disco-vm's (`machine.Config.Base`), passed to the
   driver as it is, never resolved, listed or matched here: what it names is
-  the driver's to say. Do not grow per-driver handling of it in this package.
+  the driver's to say. Do not grow per-driver handling of it in this package:
+  the one default discobox fills in (`DefaultOCIBase`) is keyed on the format
+  disco-vm declares (`Definition.Base.Format`), never a driver's name.
   Why: a lookup of the driver's bases here was a second owner of what disco-vm
   owns, and went when disco-vm stopped listing bases (disco-vm ADR
   26-11-03-606). Its description says it is trusted with the pool: a base a
