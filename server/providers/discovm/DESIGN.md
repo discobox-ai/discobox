@@ -203,6 +203,27 @@ as ADR 26-10-09-106 §1 places it:
   build's machine takes its commit's snapshot with it while that is still
   pending, and a failed snapshot with no machine is listed, so it is
   removed too (disco-vm `docs/drivers/boxd.md`, Destroy).
+- Every machine runs discobox's units under systemd, so a base with
+  `systemd` at neither `/lib/systemd/systemd` nor `/usr/lib/systemd/systemd`
+  is refused before anything is placed in it, naming the requirement
+  (`provisioner.RequireSystemd`, in `poolruntime.ProvisionBox` for every
+  pool's box, [../DESIGN.md](../DESIGN.md), and at a sandbox machine's first
+  placement, [pool-agent](../../../pool-agent/DESIGN.md#machine-sandboxes)).
+  An archil guest's init is Archil's: disco-vm's driver starts systemd as
+  PID 1 of namespaces of its own and runs every guest operation in them
+  (disco-vm ADR 26-11-20-447). It installs systemd in a base that has none
+  where the machine's fence lets it, and refuses the create naming
+  `/lib/systemd/systemd` where not, and its `Start` waits (up to two
+  minutes) for systemd to settle, stopping a machine whose systemd does not.
+  So the units are unchanged and nothing here knows Archil (ADR 26-11-16-619
+  §4). discobox sets no base on an archil provider that names none: the
+  driver's own default, Archil's image, stands. The driver installs systemd
+  in the pool's machine, which is not fenced, but a sandbox's machine is
+  fenced from the mirror, so its create fails naming `/lib/systemd/systemd`
+  on such a provider. `TestArchilGuestRunsThePoolsAndSandboxsUnits` (`go tool
+  task test:e2e:archil-systemd`) provisions a pool's box and
+  places a sandbox's machine from the real bundles in containers whose PID 1
+  is not systemd, entered by copies of the driver's lines, and reboots each.
 - The pool's machine is created on a network of the pool's own (its scope's
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated

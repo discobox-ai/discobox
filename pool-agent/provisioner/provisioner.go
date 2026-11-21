@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/discobox-ai/vm/pkg/machine"
@@ -113,3 +114,40 @@ func (b *tailBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *tailBuffer) Bytes() []byte { return bytes.Clone(b.buf.Bytes()) }
+
+// SystemdPath is where a machine's base carries systemd, which runs every
+// unit discobox places in a pool's box and a sandbox's machine. A base that
+// has not merged /usr may carry it at UsrSystemdPath alone, which is as good.
+const (
+	SystemdPath    = "/lib/systemd/systemd"
+	UsrSystemdPath = "/usr/lib/systemd/systemd"
+)
+
+// SystemdCheck is the command RequireSystemd runs: it exits 1 where the
+// base carries systemd at neither path.
+var SystemdCheck = []string{"/bin/sh", "-c", `[ -x "$1" ] || [ -x "$2" ]`, "sh", SystemdPath, UsrSystemdPath}
+
+// ErrNoSystemd is a machine whose base carries no systemd.
+var ErrNoSystemd = errors.New("the base has no systemd (" + SystemdPath + " or " + UsrSystemdPath + "): discobox runs a pool's and a sandbox's services under systemd, so a machine's base must carry it")
+
+// RequireSystemd refuses a guest whose base carries no systemd, before
+// anything is placed in it, naming the requirement (ADR 26-11-16-619 §4): a
+// unit placed there would never run, and the box or machine would wait for an
+// agent that never starts. It runs for every pool's box, a Docker pool's
+// container included, and every machine sandbox, on every driver: each runs
+// discobox's units under systemd. A base a provider names is its operator's,
+// and a driver that starts systemd itself (archil) may have installed it
+// there. Only the exit code is read, and a bounded tail of stderr.
+func RequireSystemd(ctx context.Context, guest machine.Guest) error {
+	var stderr tailBuffer
+	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: slices.Clone(SystemdCheck)}, nil, io.Discard, &stderr)
+	switch {
+	case err != nil:
+		return fmt.Errorf("look for systemd in the machine: %w", err)
+	case code == 1:
+		return ErrNoSystemd
+	case code != 0:
+		return fmt.Errorf("look for systemd in the machine: exit %d: %s", code, bytes.TrimSpace(stderr.Bytes()))
+	}
+	return nil
+}

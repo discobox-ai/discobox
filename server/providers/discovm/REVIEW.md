@@ -82,6 +82,13 @@
   stop converge on the first pass (done for #1238). The pool agent's side
   is in `pool-agent/REVIEW.md`. Why: the fake driver boots instantly, so CI
   cannot show it.
+- When the disco-vm pin moves, diff `archilSystemdService` and
+  `archilEnter` in `archil_systemd_test.go` against `systemdScript` and
+  `enterScript` in disco-vm's `pkg/machine/archil/systemd.go` at the new pin,
+  and the fake init and client against its `container_test.go`, and carry
+  any change over. Why: disco-vm exports none of them, so the test runs
+  copies; it is gated on Docker, and its copies would keep passing after
+  the driver's lines moved.
 - Map a disco-vm sentinel in `unreachable` only when a call that goes
   through `notReachable` can return it. `machine.ErrUnreachable` is a guest
   operation's, which `engine.Start` retries itself and this package keeps

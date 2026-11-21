@@ -235,6 +235,12 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	if err := agentlayer.Archive(&agentTree, agent, false, pins, nil); err != nil {
 		return BoxRecord{}, err
 	}
+	// Every unit the pool bundle lays is systemd's: a base without it is
+	// refused before anything is placed, naming why, rather than provisioned into a box whose
+	// agent never starts (ADR 26-11-16-619 §4).
+	if err := provisioner.RequireSystemd(ctx, guest); err != nil {
+		return BoxRecord{}, fmt.Errorf("the pool's box: %w", err)
+	}
 	keyPath := layout.Container().PoolIdentityKey(bootstrap.ProjectID, bootstrap.PoolID)
 	identity, err := provisioner.Provision(ctx, guest, provisioner.Plan{
 		Dir:     "/",

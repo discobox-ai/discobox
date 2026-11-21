@@ -380,7 +380,13 @@ as written. A fence that does not read back, or a base without `nft` or the
 enabled unit, fails the box with nothing else placed. Only a disco-vm
 driver's provider asks, for a held driver's pool machine, and no pool reaches that
 today ([discovm](discovm/DESIGN.md#the-pools-box)); Docker and boxd pools
-are not fenced this way (963 Deferred). Then it places the agent, runs
+are not fenced this way (963 Deferred). Then it looks for systemd in the box
+(`provisioner.RequireSystemd`: `/lib/systemd/systemd` or
+`/usr/lib/systemd/systemd`), which runs every unit the pool bundle lays, and
+refuses a base without it, naming the requirement, with nothing of the pool
+placed (ADR 26-11-16-619 §4). It does so on every box, a Docker pool's
+container and every re-apply included: a box running its units has it. Then
+it places the agent, runs
 `discobox-provision identity` and enrolls the public key it prints
 (`PoolMaker.Enroll`), places the bootstrap and the agent's environment
 (`bundle.BootstrapFile`, `bundle.EnvironmentFile`) together with every manifest
