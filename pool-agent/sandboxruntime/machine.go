@@ -26,7 +26,6 @@ import (
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 	"github.com/discobox-ai/x/id"
-	"golang.org/x/net/http/httpguts"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
@@ -100,6 +99,12 @@ type MachineSandboxRuntimeConfig struct {
 	// PoolEndpoints is where the pool serves its sandboxes, as their
 	// bootstraps name it (proxyagent.PoolEndpoints).
 	PoolEndpoints sandboxconfig.PoolEndpoints
+	// PoolEdge is how each sandbox reaches the edge the pool sits behind, as
+	// it is when a sandbox's runtime-config document is decided: the
+	// address it dials in place of the edge's name and the pool listener's
+	// credential (ADR 26-11-16-619 §§2–3). Nil for a pool its sandboxes reach
+	// directly. An error holds the document back.
+	PoolEdge func() (*sandboxconfig.RuntimeEdge, error)
 	// IdentityKey is the pool's identity key, which signs the runtime-config
 	// documents the pool delivers its sandboxes (ADR 26-10-08-127 §3).
 	IdentityKey ed25519.PrivateKey
@@ -176,6 +181,7 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 			agentTLS:              cfg.AgentTLS,
 			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
 			poolEndpoints:         cfg.PoolEndpoints,
+			poolEdge:              cfg.PoolEdge,
 			identityKey:           cfg.IdentityKey,
 			root:                  cfg.Root,
 			gitCache:              gitcache.New(cfg.Root.PoolGitCache(cfg.ProjectID, cfg.PoolID)),
@@ -1464,9 +1470,11 @@ func urlDialer(endpoint machine.Endpoint) (*Dialer, error) {
 		if u.Scheme != "https" || u.Hostname() == "" {
 			return nil, errors.New("a sandbox's credentialed pool URL must use HTTPS")
 		}
-		if !httpguts.ValidHeaderFieldName(credential.Header) || strings.EqualFold(credential.Header, "Authorization") ||
-			credential.Token == "" || !httpguts.ValidHeaderFieldValue(credential.Token) || !time.Now().Before(credential.Expires) {
-			return nil, errors.New("the sandbox's pool URL has an invalid edge credential")
+		if err := sandboxconfig.ValidateEdgeCredential(credential.Header, credential.Token); err != nil {
+			return nil, fmt.Errorf("the sandbox's pool URL has an invalid edge credential: %w", err)
+		}
+		if !time.Now().Before(credential.Expires) {
+			return nil, errors.New("the sandbox's pool URL has an expired edge credential")
 		}
 	}
 	host := u.Hostname()

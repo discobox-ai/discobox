@@ -169,6 +169,13 @@ func (r *sandboxCore) decideRuntimeConfig(sandboxID string, change func(*sandbox
 		return sandboxconfig.RuntimeConfig{}, err
 	}
 	proxy := material.Proxy
+	if r.poolEdge != nil {
+		// Read as it is now: a renewed credential, or an address the pool's
+		// host moved to, is a new revision, which the next poll delivers.
+		if proxy.Edge, err = r.poolEdge(); err != nil {
+			return sandboxconfig.RuntimeConfig{}, fmt.Errorf("the pool's edge: %w", err)
+		}
+	}
 	next.Proxy = &proxy
 	// Renewed for an agent its bootstrap told to serve TLS, which is new
 	// enough to know the field (ADR 26-10-29-481 §3).

@@ -15,7 +15,9 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
+	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -90,6 +92,18 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 	if err != nil {
 		return nil, err
 	}
+	var edge func() (*sandboxconfig.RuntimeEdge, error)
+	if hop.form == hopEdge {
+		// Through an edge, each sandbox is given the pool's host's address
+		// to dial, and, on a driver whose URLs answer only a credential, the
+		// one the server placed for the pool's sandboxes (ADR 26-11-16-619
+		// §§2–3).
+		credentialFile := ""
+		if e.Driver.Capabilities().URLs.Credential {
+			credentialFile = bundle.SandboxEdgeCredentialFile
+		}
+		edge = newPoolEdge(hop.edgeHost, credentialFile).edge
+	}
 	return sandboxruntime.NewMachineSandboxRuntime(sandboxruntime.MachineSandboxRuntimeConfig{
 		CompleteSuspend: func(ctx context.Context, id, requestID string, epoch int64) error {
 			return client.CompleteSuspend(ctx, bootstrap.ProjectID, bootstrap.PoolID, identityKey, id, requestID, epoch)
@@ -108,6 +122,7 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 		Egress:                hop.egress,
 		SandboxIdleTimeout:    idleTimeout,
 		PoolEndpoints:         hop.endpoints,
+		PoolEdge:              edge,
 		AgentTLS:              hop.agentTLS,
 		IdentityKey:           identityKey,
 		Platform:              bootstrap.HostedPlatform(),

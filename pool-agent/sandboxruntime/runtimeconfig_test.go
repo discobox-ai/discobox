@@ -144,6 +144,48 @@ func TestDecideRuntimeConfigRevisesOnlyOnChange(t *testing.T) {
 	}
 }
 
+// Behind an edge, each sandbox's document carries the edge as the pool holds
+// it now (ADR 26-11-16-619 §§2–3): a renewed credential or a moved address is
+// a new revision, which the next poll delivers, and an edge the pool cannot
+// give holds the document back rather than delivering one without it.
+func TestDecideRuntimeConfigCarriesThePoolsEdge(t *testing.T) {
+	r := runtimeConfigTestRuntime(t)
+	expires := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	edge := sandboxconfig.RuntimeEdge{Address: "192.0.2.7", Header: "X-Archil-Token", Token: "first", Expires: expires}
+	var edgeErr error
+	r.poolEdge = func() (*sandboxconfig.RuntimeEdge, error) {
+		held := edge
+		return &held, edgeErr
+	}
+	first, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Proxy == nil || first.Proxy.Edge == nil || *first.Proxy.Edge != edge {
+		t.Fatalf("decided proxy edge = %+v, want the pool's", first.Proxy)
+	}
+	if err := first.Validate(linuxPaths); err != nil {
+		t.Fatalf("the decided document is not one the sandbox would apply: %v", err)
+	}
+	if again, err := r.decideRuntimeConfig("sbx_1", nil); err != nil || again.Revision != first.Revision {
+		t.Fatalf("deciding again = rev %d, %v, want %d", again.Revision, err, first.Revision)
+	}
+	edge.Token, edge.Expires = "second", expires.Add(12*time.Hour)
+	renewed, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil || renewed.Revision != first.Revision+1 || renewed.Proxy.Edge.Token != "second" {
+		t.Fatalf("a renewed credential = rev %d %+v, %v, want a new revision carrying it", renewed.Revision, renewed.Proxy.Edge, err)
+	}
+	edge.Address = "192.0.2.8"
+	moved, err := r.decideRuntimeConfig("sbx_1", nil)
+	if err != nil || moved.Revision != renewed.Revision+1 || moved.Proxy.Edge.Address != "192.0.2.8" {
+		t.Fatalf("a moved address = rev %d %+v, %v, want a new revision carrying it", moved.Revision, moved.Proxy.Edge, err)
+	}
+	edgeErr = errors.New("the credential expired")
+	if _, err := r.decideRuntimeConfig("sbx_1", nil); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("deciding with an edge the pool cannot give = %v, want it refused", err)
+	}
+}
+
 // A running sandbox's certificate is renewed before it expires (ADR 0126 §7):
 // every status poll decides the document again, and a certificate inside its
 // renewal window is reissued there, which makes a new revision the poll then
