@@ -204,10 +204,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		// reach around its proxy must never be scheduled (ADR 26-10-29-481
 		// §4).
 		capabilities := machines.Driver.Capabilities()
-		if err := requireMachineFence(bootstrap.Driver, capabilities); err != nil {
+		var fencing sandboxruntime.Fencing
+		if fencing, err = sandboxruntime.PoolFencing(bootstrap.Driver, capabilities); err != nil {
 			return err
 		}
-		status = machinePoolStatus(bootstrap.Driver, capabilities, hop.form, bootstrap.HostedMaxMachines())
+		if hop, err = hop.fencedBy(bootstrap.Driver, fencing); err != nil {
+			return err
+		}
+		status = machinePoolStatus(bootstrap.Driver, capabilities, fencing, hop.form, bootstrap.HostedMaxMachines())
 	}
 
 	// A first report the control plane refuses is a pool whose key it does

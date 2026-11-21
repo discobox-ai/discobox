@@ -216,12 +216,16 @@ Global review expectations:
   the provider's CLI and a token that acts on the account or org, credential
   helpers, and network peers it can exec or copy into, and some of it can be
   set only at create. On boxd a machine that is not `isolated` has all of
-  these. A sandbox machine — created by the pool agent — is always isolated,
-  on a network shared only with its pool's machine, and its forks and
-  restores keep that; the pool's machine is the one exception, because boxd
-  peers isolated machines only with non-isolated ones, and it is on that
-  network alone. A sandbox machine that kept them could reach its pool's
-  machine and the provisioning key there (ADR 26-10-23-551 §4).
+  these. A sandbox machine — created by the pool agent — is always isolated
+  as its driver carries a pool (`sandboxruntime.PoolFencing`): on a driver
+  that fences on networks, stripped and on a network shared only with its
+  pool's machine; on one that fences at its provider's edge, holding nothing
+  of the account, on no network, its fence closing DNS and its URL answering
+  only the edge's credential (ADR 26-11-16-619 §1). Its forks and restores
+  keep that. The pool's machine is the one exception, because boxd peers
+  isolated machines only with non-isolated ones, and it is on that network
+  alone. A sandbox machine that kept them could reach its pool's machine and
+  the provisioning key there (ADR 26-10-23-551 §4).
 - An index row in `docs/adr/README.md` that gains a later ADR's note gets it
   inside its Status parenthesis, before the `)` that closes `Accepted (`:
   appending after that `)` leaves the note outside it and a stray `)` at the

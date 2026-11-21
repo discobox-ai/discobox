@@ -77,12 +77,17 @@ type MachineSandboxRuntimeConfig struct {
 	// driver is made with. The runtime only keys snapshots by it, so a base
 	// moved is a snapshot built again.
 	Base string
-	// Isolate creates every sandbox's machine stripped of what its provider
-	// gives a machine by default, on Network alone (ADR 26-10-23-551 §4). A
-	// driver that cannot isolate a machine is refused for it.
-	Isolate bool
+	// HoldToPool holds every sandbox's machine to its pool the way its
+	// driver carries a pool (PoolFencing; ADR 26-10-23-551 §4, ADR
+	// 26-11-16-619 §1): on Network alone on a driver that fences on
+	// networks; on no network, with Egress closing DNS, on one that fences at
+	// its edge. Only a driver that is not Bare already, a stripping one, is
+	// asked to strip a machine (619 §1's Isolate, kept as the runtime's
+	// bare). A driver that carries no pool is refused for it.
+	HoldToPool bool
 	// Network is the provider's network the pool's machine and its sandboxes'
-	// machines share, and no other machine of the provider's.
+	// machines share, and no other machine of the provider's. It is empty on
+	// a driver that fences at its edge, which has none.
 	Network string
 	// Egress fences what every sandbox's machine reaches beyond Network, set
 	// and read back by the driver before a create returns (ADR 26-10-29-481
@@ -138,15 +143,23 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 	}
 	var bare bool
 	var network string
-	if cfg.Isolate {
+	if cfg.HoldToPool {
 		caps := cfg.Engine.Driver.Capabilities()
-		if !caps.Bare.Strips() || !caps.Networks {
-			return nil, fmt.Errorf("the %s driver cannot isolate a sandbox's machine from the rest of its provider's account (ADR 26-10-23-551 §4)", cfg.Engine.Driver.Name())
+		fencing, err := PoolFencing(cfg.Engine.Driver.Name(), caps)
+		if err != nil {
+			return nil, err
 		}
 		network = strings.TrimSpace(cfg.Network)
-		if network == "" {
+		switch {
+		case fencing == FencedOnNetwork && network == "":
 			return nil, errors.New("an isolated sandbox machine needs the pool's network, or it reaches nothing")
+		case fencing == FencedAtEdge && network != "":
+			return nil, fmt.Errorf("the %s driver fences a sandbox's machine at its provider's edge, on no network, and was given the network %s", cfg.Engine.Driver.Name(), network)
+		case fencing == FencedAtEdge && (cfg.Egress == nil || len(cfg.Egress.Allow) == 0 || !cfg.Egress.CloseDNS):
+			return nil, fmt.Errorf("the %s driver fences a sandbox's machine at its provider's edge, which needs its egress fenced to the pool's host with DNS closed", cfg.Engine.Driver.Name())
 		}
+		// Only a driver that gives a machine something of the account is
+		// asked to strip it: one that gives nothing is Bare already.
 		bare = caps.Bare == machine.BareStrip
 	}
 	if cfg.Egress != nil && !cfg.Engine.Driver.Capabilities().Fences(cfg.Egress) {
@@ -1060,7 +1073,8 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 }
 
 // createOptions is how every machine of the pool is made, a sandbox's or a
-// snapshot build's: isolated on the pool's network, fenced to its hop, with
+// snapshot build's: isolated as its driver fences a pool (on the pool's
+// network, or on none at an edge; PoolFencing), fenced to its hop, with
 // its pool URL on and its ingress URL off, both asked strictly, so a driver
 // that cannot give the one or withhold the other refuses the machine (ADR
 // 26-10-23-551 §4, ADR 26-10-29-481 §4, disco-vm ADR 26-11-14-610). The pool,
@@ -1091,10 +1105,16 @@ func (r *MachineSandboxRuntime) fenced(inst machine.Instance) error {
 }
 
 // sameEgress reports whether a machine's fence, as its driver reports it, is
-// want: nil is no fence, and the allowed hosts compare as a set.
+// want: nil is no fence, DNS is closed in both or neither (an empty list
+// closes it whatever CloseDNS says, as machine.Egress does), and the allowed
+// hosts compare as a set.
 func sameEgress(got, want *machine.Egress) bool {
 	if got == nil || want == nil {
 		return got == want
+	}
+	closesDNS := func(e *machine.Egress) bool { return e.CloseDNS || len(e.Allow) == 0 }
+	if closesDNS(got) != closesDNS(want) {
+		return false
 	}
 	allowed := make(map[string]bool, len(got.Allow))
 	for _, host := range got.Allow {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 type recordingStatusClient struct {
@@ -194,7 +195,7 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	client := newRecordingStatusClient()
 	bootstrap, identity, logger := testReporterArgs()
 	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
-	status := machinePoolStatus("boxd", machine.Capabilities{Bare: machine.BareStrip, Networks: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect, 7)
+	status := machinePoolStatus("boxd", machine.Capabilities{Bare: machine.BareStrip, Networks: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, sandboxruntime.FencedOnNetwork, hopDirect, 7)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -220,8 +221,8 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 		t.Fatalf("conditions = %#v, want a map", call.Conditions)
 	}
 	runtime, ok := conditions["runtime"].(map[string]any)
-	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "ready" || runtime["isolation"] != true || runtime["egress"] != true || runtime["commit"] != true || runtime["hop"] != hopDirect {
-		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, ready, isolating, fencing and committing, reached directly", conditions["runtime"])
+	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "ready" || runtime["fencing"] != "network" || runtime["egress"] != true || runtime["commit"] != true || runtime["hop"] != hopDirect {
+		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, ready, fencing on networks and to a list, committing, reached directly", conditions["runtime"])
 	}
 	if runtime["maxMachines"] != 7 {
 		t.Fatalf("runtime condition's maxMachines = %#v, want the driver's limit, 7", runtime["maxMachines"])
@@ -231,7 +232,7 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 // A driver that reports no machine limit, or a server that could not read
 // one, leaves maxMachines out of the runtime condition, not zero.
 func TestMachinePoolStatusOmitsAnUnreportedMachineLimit(t *testing.T) {
-	status := machinePoolStatus("boxd", machine.Capabilities{}, hopDirect, 0)
+	status := machinePoolStatus("boxd", machine.Capabilities{}, sandboxruntime.FencedOnNetwork, hopDirect, 0)
 	if value, ok := status.runtime["maxMachines"]; ok {
 		t.Fatalf("runtime condition's maxMachines = %#v, want none", value)
 	}

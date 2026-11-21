@@ -82,8 +82,9 @@ func provisioningKeys(path, driver string) machine.KeySource {
 }
 
 // newMachineSandboxRuntime is a machine pool's runtime: sandboxes as machines
-// of its own engine, each made isolated on the pool's network and fenced to
-// what its hop reaches (ADR 26-10-29-481 §4).
+// of its own engine, each made isolated as its driver fences a pool, on the
+// pool's network or at its provider's edge on none, and fenced to what its hop
+// reaches (ADR 26-10-29-481 §4, ADR 26-11-16-619 §1).
 func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, e *engine.Engine, identityKey ed25519.PrivateKey, assets *assetcache.Cache, client *HTTPClient, audit sandboxruntime.AuditPurger) (*sandboxruntime.MachineSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
@@ -102,7 +103,7 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 		Root:                  root,
 		Engine:                e,
 		Base:                  bootstrap.MachineBase,
-		Isolate:               true,
+		HoldToPool:            true,
 		Network:               bootstrap.MachineNetwork,
 		Egress:                hop.egress,
 		SandboxIdleTimeout:    idleTimeout,
@@ -120,12 +121,12 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop
 // driver's, which runs its sandboxes, not the pool's own machine's. Its
 // runtime condition names the driver, its limits, and how its sandboxes reach
 // it. It schedules: an agent whose driver cannot fence a sandbox's machine to
-// its pool refused to start (requireMachineFence). maxMachines is the
+// its pool refused to start (sandboxruntime.PoolFencing). maxMachines is the
 // provider's cap on the machines of the pool's sandbox OS that may exist, as
 // the server read it at the driver's Check (ADR 26-11-15-831 §3): the agent's
 // own driver does not run Check, and its credential may not read the cap.
 // Zero is none, and the condition then has no maxMachines.
-func machinePoolStatus(driver string, caps machine.Capabilities, hop string, maxMachines int) poolStatus {
+func machinePoolStatus(driver string, caps machine.Capabilities, fencing sandboxruntime.Fencing, hop string, maxMachines int) poolStatus {
 	status := poolStatus{
 		schedulable: true,
 		imageKind:   platform.VM(driver),
@@ -135,9 +136,12 @@ func machinePoolStatus(driver string, caps machine.Capabilities, hop string, max
 			"status":     "ready",
 			"hop":        hop,
 			"maxRunning": caps.MaxRunning,
-			"isolation":  caps.Bare.Strips() && caps.Networks,
+			// How the driver holds a sandbox's machine to the pool: on a
+			// network of the pool's, or at its provider's edge
+			// (sandboxruntime.PoolFencing).
+			"fencing": string(fencing),
 			// Whether it fences a machine to a list of hosts, as the pool
-			// fences its sandboxes' (requireMachineFence).
+			// fences its sandboxes'.
 			"egress": slices.Contains(caps.Egress, machine.EgressAllow),
 			// Whether it commits, so the pool snapshots its plans (ADR
 			// 26-11-03-986 §2).

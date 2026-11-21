@@ -22,6 +22,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -277,10 +278,14 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err != nil {
 		return err
 	}
-	// A pool made before its create refused the driver (fences).
-	if err := fences(h.engine.Driver); err != nil {
+	// A pool made before its create refused the driver (fences). On a
+	// driver that fences on networks, the pool's machine and its sandboxes'
+	// share the pool's own network; at its provider's edge, there is none.
+	fencing, err := fences(h.engine.Driver)
+	if err != nil {
 		return err
 	}
+	networks := poolNetworks(fencing, scope)
 	record := decodeRuntimeState(pool)
 	inst, err := h.instance(ctx, pool)
 	if err != nil && !errors.Is(err, errNoPoolMachine) {
@@ -299,13 +304,13 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	// anyone else under the pool machine's name — so nothing the record says
 	// was placed is on it. It is taken as made: its name, URLs and bundles
 	// are the same, so the record would otherwise call it provisioned and no
-	// pass would ever place the pool's agent on it. Only one on the pool's
-	// own network, as create makes it, is taken: anything else is not the
-	// pool's to key (ADR 26-10-23-551 §4).
+	// pass would ever place the pool's agent on it. Only one on the networks
+	// create makes it on (the pool's own, or none at an edge), not stripped,
+	// is taken: anything else is not the pool's to key (ADR 26-10-23-551 §4).
 	replaced := err == nil && record.Instance != "" && record.Instance != inst.ID
 	stripped := inst.Bare && h.engine.Driver.Capabilities().Bare == machine.BareStrip
-	if replaced && (stripped || !slices.Equal(inst.Networks, []string{scope})) {
-		return fmt.Errorf("pool %s: the machine %s under its name is not the one it recorded, and is not on the pool's own network %s: nothing is placed on it", pool.ID, inst.ID, scope)
+	if replaced && (stripped || !slices.Equal(inst.Networks, networks)) {
+		return fmt.Errorf("pool %s: the machine %s under its name is not the one it recorded, and is not on the networks its pool's machine is made on (%v): nothing is placed on it", pool.ID, inst.ID, networks)
 	}
 	if err != nil || replaced {
 		if err := gate(ctx); err != nil {
@@ -320,8 +325,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		record = poolRuntimeState{}
 		if !replaced {
+			// No machine is made that no key could reach.
+			if err := h.keys.keyable(pool); err != nil {
+				return err
+			}
 			startedAt = time.Now()
-			if inst, err = h.create(ctx, pool, scope); err != nil {
+			if inst, err = h.create(ctx, pool, scope, networks); err != nil {
 				return err
 			}
 			created = true
@@ -385,7 +394,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 	}
 	provisioned := record.Box.Agent != ""
-	placement, err := h.placement(ctx, pool, inst, guest, maker, scope, record.MaxMachines)
+	placement, err := h.placement(ctx, pool, inst, guest, maker, scope, networks, record.MaxMachines)
 	if err != nil {
 		if provisioned && !force {
 			slog.WarnContext(ctx, "keeping the pool's machine as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
@@ -504,9 +513,11 @@ func machineLimit(caps machine.Capabilities) map[machine.OS]int {
 	return limit
 }
 
-// create makes the pool's machine from the base, on the pool's network alone,
-// off the org's default one, so no other machine of the provider's reaches it
-// (ADR 26-10-23-551 §4). It is not isolated: boxd peers an isolated machine
+// create makes the pool's machine from the base, on networks: the pool's
+// network alone, off the org's default one, so no other machine of the
+// provider's reaches it (ADR 26-10-23-551 §4), or none on a driver that
+// fences at its provider's edge, whose machines reach each other only at
+// their URLs (ADR 26-11-16-619 §1). It is not isolated: boxd peers an isolated machine
 // only with machines that are not, so the pool's machine keeps what the
 // driver gives a machine (the pool's HostCredential says so). It asks for its
 // ingress URL, where the server, the pool's controller, reaches its agent,
@@ -515,7 +526,7 @@ func machineLimit(caps machine.Capabilities) map[machine.OS]int {
 // which every driver that carries a pool gives. A sandbox's machine asks for
 // its pool URL on and its ingress URL off, both strictly (disco-vm ADR
 // 26-11-14-610).
-func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string) (engine.Instance, error) {
+func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string, networks []string) (engine.Instance, error) {
 	// The driver checks its account through its provider's API first (boxd's
 	// Check: that the key is accepted, and the region enabled), so an
 	// account it refuses fails here, saying why, rather than at the machine.
@@ -523,18 +534,28 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string
 	if err := checkDriver(ctx, h.engine, sandbox.ErrPoolNotReachable); err != nil {
 		return engine.Instance{}, fmt.Errorf("pool %s: %w", pool.ID, err)
 	}
-	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}, URLs: machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}})
+	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: networks, URLs: machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}})
 	if err != nil {
 		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))
 	}
 	return inst, nil
 }
 
+// poolNetworks is the networks a pool's machine and its sandboxes' are made
+// on, as its driver fences them: the pool's own scope on networks, and none
+// at its provider's edge.
+func poolNetworks(fencing sandboxruntime.Fencing, scope string) []string {
+	if fencing == sandboxruntime.FencedOnNetwork {
+		return []string{scope}
+	}
+	return nil
+}
+
 // placement is what the pool's machine is made the pool's box with: its
 // bootstrap, naming its own engine, the network its sandboxes' machines are
 // made on, where its agent listens, and its driver's machine limit; and the
 // agent and bundles for the machine's platform.
-func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, scope string, maxMachines map[machine.OS]int) (poolruntime.BoxPlacement, error) {
+func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, scope string, networks []string, maxMachines map[machine.OS]int) (poolruntime.BoxPlacement, error) {
 	bootstrap, err := maker.Bootstrap(ctx)
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
@@ -565,7 +586,10 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 		}
 		bootstrap.DriverConfig = config
 	}
-	bootstrap.MachineNetwork = scope
+	// The network its sandboxes' machines are made on, and none at an edge.
+	if len(networks) > 0 {
+		bootstrap.MachineNetwork = networks[0]
+	}
 	// The driver's machine limit, which only the provider's key may read, so
 	// the agent reports it (ADR 26-11-15-831 §3). It is in the placement's
 	// fingerprint: a pool on a driver that reports none keeps the one it had.
