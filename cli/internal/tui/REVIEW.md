@@ -480,30 +480,14 @@
   servers can share an ID, and a newer listing can arrive before the UI sees
   it. Workspace, selection and tool-cache identities include the server too.
 
-- Choose lifetime alongside the credential, before consent. A lifetime picker
-  never sends a grant; the part cards show replacement consequences at that
-  lifetime, and the summary and part cards keep the read-to-end gate. Repeating the whole approval
-  on a final lifetime screen made a simple time choice unnecessarily long.
-
-- A credential request's summary can preview one exact HTTP operation on a
-  single line. Full route tables, a new credential's uncovered routes, and what a part
-  replaces (the bindings, variables, route diffs and lifetimes of "this
-  replaces") are drawn on the part cards behind Review…. The summary says
-  only whether each part adds or replaces, and "Review… lists them" when it
-  replaces something. Repeating them on the summary made the first screen as
-  long as Review and left Review nothing to add. That short note is all ADR
-  26-11-02-022 §5 and 26-11-04-616 §4 ask of the summary, though Accept sends
-  from it: their intent is to say whether a request adds to or replaces what
-  the box holds; the details are Review…'s (owner, 2026-11-15). Do not ask
-  for a loss list on the summary, or for Accept to be withheld there.
-- **A summary line never reads narrower than what Accept sends from it**
-  (`partSummary`). With no table beside it, a blocked host counted among the
-  hosts reached, or an any-method, any-path row counted as one operation like
-  a single `GET`, was the approver's whole picture of a grant the box wrote.
-  Open hosts only, blocked rows counted apart, every method named, and
-  breadth taken from `secretroute`'s own reading of a pattern
-  (`secretroute.AnyPath`), never from how it is spelled or drawn: the box
-  writes the routes, and `/*/**` is any path as much as `/**` is.
+- Choose lifetime alongside the credential before consent. Show the
+  formatted route tables and binding consequences for the current selection
+  on the same card. The read-to-end gate must account for edited routes and
+  changes to credential, lifetime, scope and part decisions.
+- Keep the two approval decisions independent in Advanced. A denied part
+  sends neither scope nor override routes. A scope wider than the request
+  requires a deliberate selection, and requested roles only describe the
+  original ask.
 - **An add/replace line names the scope `bindingplan` replaces, never just
   the asked variable** (`useMode`, `delegateMode`). A use part's replacement
   is the box's whole use of the credential, in every variable

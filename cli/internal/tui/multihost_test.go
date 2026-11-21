@@ -49,7 +49,7 @@ func TestACardListsEachRouteOnItsOwnRow(t *testing.T) {
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/**"}, Methods: []string{"GET"}},
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/pulls"}, Methods: []string{"POST"}},
 	}}}
-	m.askPart(req, requestAnswer{credential: "github"}, false, &partChoice{scope: "routes"}, nil, nil)
+	m.askAboutCredential(req, []Secret{{ID: "sec", Name: "github", Routes: req.routes()}}, nil)
 	rows := strings.Split(plainFrame(m), "\n")
 	for _, want := range [][2]string{{"GET", "/repos/discobox-ai/discobox/**"}, {"POST", "/repos/discobox-ai/discobox/pulls"}} {
 		found := false

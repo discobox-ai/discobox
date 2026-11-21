@@ -572,40 +572,40 @@ and reached for in a hurry, on a screen whose banner is asking you to hurry.
 There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
-**A request is answered by a guided dialog, a step to a card; the server
-enforces it** (`credential_request_steps.go`, issue #1017). Every step names
-the box and the credential in one sentence, ctrl+r on any step shows the
-request as the server sent it (`c` there copies it), and Esc goes back one
-step with what was entered kept; from the first, Esc leaves it waiting.
+**A credential request is answered on one approval card**
+(`credential_approval.go`). The card names the requesting box, its reason,
+and the routes each part would grant. Ctrl+R opens the request as sent.
+Escape leaves it waiting.
 
 ```mermaid
 flowchart LR
-  C[which credential] -->|saved| S[summary]
-  C -->|Enter new credential…| N[new credential] --> S
-  C -->|For…| T[lifetime] -->|chosen| C
-  S -->|Accept| D{placement consent needed?}
-  S -->|Review…| U[its own use] --> W[its workers] -->|Approve a part| D
-  S -->|Deny| X((denied))
-  W -->|Deny all parts| X
+  C[Credential approval] -->|New credential| N[Enter new credential] --> C
+  C -->|Accept| D{Placement consent needed?}
+  C -->|Deny| X((denied))
   D -->|No| A((approved))
-  D -->|Yes| P[review new credential]
+  D -->|Yes| P[Review new credential]
   P -->|Save routes and approve| A
-  P -->|Placement gaps| F[return to decisions or open Secrets]
+  P -->|Back to decisions| C
 ```
 
-- **Which credential.** Every saved secret is listed: the one the variable
-  already holds first, then those that can answer, then the rest marked ✗,
-  and "Enter new credential…" after them. A single "For <lifetime>" option
-  edits the lifetime, defaulting to what was requested or one hour. A secret can answer when each of its
-  route lists — its routes and every constraint — covers each requested route
-  (`uncovered`, `secretroute.ProveContained`, which fails closed: a working
-  secret may be marked ✗, never the reverse); one with no routes is sent
-  nowhere and covers nothing. A variable this box's own bindings deliver takes
-  only that secret (`heldBy`), so the others and a new one cannot answer
-  there. Why one cannot is a card of its own when it is chosen, the
-  uncovered routes in the route table under an error-coloured rule — never a
-  description beside every row. The first that can answer is highlighted, or
-  a new credential when none can.
+- **Credential and lifetime.** The credential picker lists compatible saved
+  credentials. Each route list must cover the request (`uncovered`,
+  `secretroute.ProveContained`). A variable delivered by the box's own
+  binding takes its current credential, even if the console can only name
+  it from the held grant. Lifetime defaults to the requested duration or
+  one hour. Presets and Custom edit it in place. A lifetime above the
+  selected credential's limit disables Accept and explains the limit.
+- **Existing bindings.** The card shows whether approving appends routes
+  or replaces the box's rules for the credential across all variables.
+  Binding losses, route diffs, and shortened lifetimes are shown before
+  Accept. Replacement under a lead's delegation remains unavailable.
+- **Advanced.** Expand the controls on the card to answer the box's own
+  access and its workers' access independently. Each approved part can keep
+  the requested routes, allow any method and path on requested hosts, use
+  the credential's own scope, or take explicit edited routes. The formatted
+  route table follows that choice. Edits use the configured editor and
+  return to the same card. Roles always describe the box's request.
+
 - **New credential.** Name (the one asked for, or the first free one), then
   "Paste a value" or "Output of a command" (`gh auth token` its example).
   The sentinel row shows, dimmed, the format the value would be read as
@@ -624,58 +624,9 @@ flowchart LR
   request routes (`newCredentialHosts`, ADR 26-11-11-857). A later review can
   add eligible placement routes with consent. The grant keeps its own scope
   and the saved credential stays reusable on those hosts.
-- **Summary.** Each part in a line. For a request with one exact HTTP
-  operation, its part shows the method, host and path together. The
-  credential selection card and the banner for a single waiting request
-  show the same preview. When space runs short, the banner gives the route
-  priority over the credential name and the click prompt. For other route sets, the summary
-  shows the hosts its open routes reach, how many operations (a row of its
-  route table each), the methods they take,
-  whether their paths are any path or hold wildcards, and how many rows it
-  blocks; any method, path or operation left open is a warning
-  (`partSummary`) — and under it whether approving it adds to the rules the
-  box holds of the credential or replaces them (`useMode`: a replacement is
-  its whole use of the credential, in every variable; a delegate part always
-  replaces the box's delegation of it, `delegateMode`), with Accept and Deny answering
-  every part at once at the selected lifetime, and Review… walking them.
-  Each part's Review… card shows its full route table with methods, paths and
-  constraints. It also shows which bindings and variables the part replaces,
-  their route diffs and shortened lifetimes. A part that replaces something says only "Review…
-  lists them" after its add/replace line. That line is the replacement
-  notice ADR 26-11-02-022 §5 and 26-11-04-616 §4 ask of the screen Accept
-  sends from: whether the part adds to or replaces what the box holds, not
-  the details (owner, 2026-11-15). What Accept sends is still said
-  before it can, each consequence summary-level (`approvalConsequences`,
-  brief): a new credential's bare host routes and the requested routes they
-  leave uncovered. Approving placement routes with a new credential opens
-  the final placement review.
-- **Review.** One card per part the request has, use then delegation, each
-  with its routes (`approvalRouteSection`) and the roles it asked for as the
-  discobox's words (ADR 26-11-02-022 §3). Approve, Deny or Modify…: as
-  requested, any path on its hosts, anywhere the credential may be sent (drawn
-  against every list the credential is held to), or the routes edited in
-  `$EDITOR`, one `secretroute` route a line; an edit that does not parse names
-  the line and offers the editor again on what was saved, or abandoning it.
-  Changed routes are marked, and the roles then say they describe the ask.
-- **Lifetime.** Edited from credential selection, never asked after consent.
-  Presets and custom input select a value without granting anything. When a
-  chosen secret's limit is shorter than the selected lifetime, the picker
-  explains the limit and requires a permitted value before showing approval.
-  A cancelled edit returns to credential selection. Accept on the summary,
-  or the last part decision, sends directly unless a new credential needs
-  explicit placement consent. Every part denied denies the request.
-
-A use part asked as an addition stacks only on the secret delivering its
-variable (ADR 26-11-03-329 §4); answered with another, it is granted as a
-replacement shadowing that one, and the approval cards say so.
-The summary and use-part card offer an independent add/replace choice, marked
-edited when it differs from the ask. A person's approval has no parent; any
-standing use binding under a lead's delegation disables replacement and
-defaults to addition. Add is unavailable for a different secret in the
-variable. A replacement is the box's whole use of the secret in every
-variable (`bindingplan.Use`), so the part cards' "this replaces" says what that
-plan does to each of its bindings of it, in any variable: kept (moved into
-the asked variable when it was elsewhere), gone, or losing its use. Placeholder delivery is the guided dialog's only one; raw delivery
+The workspace banner keeps the compact method, host and path preview for
+one exact HTTP route. For other requests it displays the existing request
+description. Placeholder delivery is the approval card's only one; raw delivery
 is `discobox secret request approve --raw` (ADR 26-11-11-857). A new credential is held to
 the request's open exact hosts. When approved routes name HTTP body or
 WebSocket message places, the final review offers to save eligible placement
@@ -3579,7 +3530,8 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, the raw request, and an answer's outcome |
-| `credential_request_steps.go` | the guided dialog that answers a credential request: credential and lifetime selection, a new credential, summary, per-part review, and sending |
+| `credential_approval.go` | single credential approval card, with inline decisions, lifetime, route scopes and binding preview |
+| `credential_request_steps.go` | credential value entry, route editing, placement consent and sending the decision |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |

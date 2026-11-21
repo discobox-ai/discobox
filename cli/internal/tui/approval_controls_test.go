@@ -88,8 +88,7 @@ func TestApprovalCardsFitCompactWindow(t *testing.T) {
 				if kind == "delegate" {
 					req.Delegate, req.Use = req.Use, nil
 				}
-				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub", Routes: req.routes()}}, nil)
-				pickItem(t, m, "sec")
+				send(t, m, m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub", Routes: req.routes()}}, nil)())
 			case "adoption":
 				req.Adoption = &AdoptionAsk{ChildID: "child", RequesterID: "requester", CurrentParentID: "parent"}
 				m.askAboutAdoption(req)
@@ -130,7 +129,7 @@ func TestApprovalCardsOnlyNameAServerWhenKnown(t *testing.T) {
 				req.Server = server
 				switch kind {
 				case "use":
-					m.askAboutCredential(req, nil, nil)
+					send(t, m, m.askAboutCredential(req, nil, nil)())
 				case "api":
 					m.askAboutAPIAccess(req)
 				case "trust":
@@ -259,43 +258,42 @@ func TestScrolledFormHoverMatchesVisibleMouseRegion(t *testing.T) {
 	}
 }
 
-// Step 1 with more secrets than the window has rows still fits it, and the
-// pointer reaches the last row, a new credential.
+// A long credential list must fit without hiding new credential entry.
 func TestStepOneFitsACompactWindowAndTheMouseReachesItsLastRow(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, sizeMsg(80, 24))
 	var secrets []Secret
 	for i := range 50 {
-		secrets = append(secrets, Secret{ID: fmt.Sprintf("sec_%d", i), Name: fmt.Sprintf("Credential %d", i)})
+		secrets = append(secrets, Secret{ID: fmt.Sprintf("sec_%d", i), Name: fmt.Sprintf("Credential %d", i), Routes: waitingRequest().Use.Routes})
 	}
-	m.askAboutCredential(waitingRequest(), secrets, nil)
+	send(t, m, m.askAboutCredential(waitingRequest(), secrets, nil)())
 	text := plainFrame(m)
 	if strings.Count(text, "\n")+1 > 24 {
 		t.Fatalf("step 1 overflows: %s", text)
 	}
-	m.dialog.update(keyPress("end"))
-	plainFrame(m)
-	x, y := at(t, m, "Enter new credential…")
+	readRequestEnd(t, m, "pgdown")
+	x, y := at(t, m, "Enter a value…")
 	tap(t, m, x+2, y)
+	send(t, m, keyPress("enter"))
 	if !onStep(m, "new credential") {
 		t.Fatalf("dialog = %s, want the new credential", describe(m.dialog))
 	}
 }
 
 // The new credential's form fits a compact window, and Enter on its value
-// goes on to the summary.
+// returns to the approval card.
 func TestTheNewCredentialFormFitsACompactWindow(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	send(t, m, sizeMsg(80, 24))
-	m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil)
-	pickItem(t, m, "new")
+	send(t, m, m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil)())
+	selectApprovalCredential(t, m, "new")
 	text := plainFrame(m)
 	if strings.Count(text, "\n")+1 > 24 || !strings.Contains(text, "Sentinel") || !strings.Contains(text, "Enter continues") {
 		t.Fatalf("form overflows: %s", text)
 	}
 	send(t, m, typeString("dummy-new-635")...)
 	send(t, m, keyPress("enter"))
-	if !onStep(m, "summary") {
+	if !onRequestCard(m) {
 		t.Fatalf("dialog = %s, want the summary", describe(m.dialog))
 	}
 }
