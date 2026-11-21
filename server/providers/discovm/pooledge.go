@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,19 +54,21 @@ func halfLife(from, expires time.Time) time.Time {
 
 // ensureSandboxEdge mints the credential the pool's sandboxes reach its
 // listener with, a pool URL of its own, and places it, unless the one
-// recorded is still in its first half-life; and records it. A driver whose
+// recorded is still in its first half-life, or force (a repair, which places
+// everything again, so a file lost from the machine's disk is put back); and
+// records it. A driver whose
 // URLs need none places nothing and keeps no record. A renewal that fails
 // keeps the pool on the credential it holds while that still works, and is
 // tried again on the next reconcile: a pool that works is never failed over a
 // credential it does not need yet.
-func (h *poolMachine) ensureSandboxEdge(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, record *poolRuntimeState) error {
+func (h *poolMachine) ensureSandboxEdge(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, record *poolRuntimeState, force bool) error {
 	if !h.engine.Driver.Capabilities().URLs.Credential {
 		record.SandboxEdge = nil
 		return nil
 	}
 	now := time.Now()
 	current := record.SandboxEdge
-	if current != nil && now.Before(current.renewAt()) {
+	if current != nil && now.Before(current.renewAt()) && !force {
 		return nil
 	}
 	endpoint, err := h.engine.URL(ctx, inst, machine.URLPool)
@@ -162,14 +167,17 @@ func (c *serviceEndpoints) endpoint(ctx context.Context, e *engine.Engine, inst 
 	if err := heldCredential(endpoint, now); err != nil {
 		return machine.Endpoint{}, nil, fmt.Errorf("machine %s's %s URL: %w", inst.Name, scope, err)
 	}
-	base, _ := http.DefaultTransport.(*http.Transport)
 	if held.client != nil {
 		// The renewed credential's client replaces it: connections already
 		// open on the old one stay until their leases end, and none is kept
 		// idle.
 		held.client.CloseIdleConnections()
 	}
-	held.endpoint, held.asked, held.client = endpoint, now, edgeHTTPClient(base, *endpoint.Credential)
+	client, err := edgeHTTPClient(defaultTransport(), endpoint)
+	if err != nil {
+		return machine.Endpoint{}, nil, fmt.Errorf("machine %s's %s URL: %w", inst.Name, scope, err)
+	}
+	held.endpoint, held.asked, held.client = endpoint, now, client
 	return held.endpoint, held.client, nil
 }
 
@@ -199,7 +207,15 @@ func (c *serviceEndpoints) forget(instanceID string) {
 // port credential is checked on HTTP/1.1 and the control-plane channel opens
 // with an HTTP/1.1 Upgrade, sending credential on every request (ADR
 // 26-11-16-619 §2).
-func edgeHTTPClient(base *http.Transport, credential machine.Credential) *http.Client {
+//
+// The credential is sent only to the endpoint's own scheme and host: a
+// redirect, which the client follows, or any request the transport carries
+// elsewhere, goes without it.
+func edgeHTTPClient(base *http.Transport, endpoint machine.Endpoint) (*http.Client, error) {
+	u, err := url.Parse(endpoint.URL)
+	if err != nil || u.Host == "" {
+		return nil, errors.New("the driver gave a URL with no host to send its credential to")
+	}
 	transport := base.Clone()
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
@@ -208,11 +224,31 @@ func edgeHTTPClient(base *http.Transport, credential machine.Credential) *http.C
 	if transport.TLSClientConfig != nil {
 		transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	}
-	return &http.Client{Transport: edgeCredential{credential: credential, next: transport}}
+	return &http.Client{Transport: edgeCredential{scheme: u.Scheme, host: u.Host, credential: *endpoint.Credential, next: transport}}, nil
 }
 
-// edgeCredential sends the edge's credential on every request.
+// defaultTransport is the process's default transport, the one every other
+// call to a pool's agent uses, or one of its settings where something has
+// replaced it with a transport of another kind.
+func defaultTransport() *http.Transport {
+	if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+		return transport
+	}
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}
+}
+
+// edgeCredential sends the edge's credential on every request to scheme and
+// host, and on no other: not to another host, and not in the clear to the
+// same one.
 type edgeCredential struct {
+	scheme     string
+	host       string
 	credential machine.Credential
 	next       http.RoundTripper
 }
@@ -226,6 +262,9 @@ func (c edgeCredential) CloseIdleConnections() {
 }
 
 func (c edgeCredential) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !strings.EqualFold(req.URL.Scheme, c.scheme) || !strings.EqualFold(req.URL.Host, c.host) {
+		return c.next.RoundTrip(req)
+	}
 	req = req.Clone(req.Context())
 	req.Header.Set(c.credential.Header, c.credential.Token)
 	return c.next.RoundTrip(req)

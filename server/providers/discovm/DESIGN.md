@@ -304,12 +304,14 @@ too, and the server holds two (`pooledge.go`, ADR 26-11-16-619 §2):
 
 - **Its own**, for every call to the pool's agent at the ingress URL, the
   control-plane channel's included (`acquireAgentClient`): sent in the header
-  the driver names on every request, over HTTP/1.1 alone, by one client per
-  credential that every lease shares. It is never placed in the machine.
+  the driver names on every request to the machine's own host, never on a
+  redirect elsewhere, over HTTP/1.1 alone, by one client per credential that
+  every lease shares. It is never placed in the machine.
 - **The sandboxes'**, one token they all share: minted for them from the
   pool URL (`ensureSandboxEdge`), placed beside the bootstrap
   (`bundle.SandboxEdgeCredentialFile`) and recorded on the pool's row without
-  its token (`sandboxEdge`); replaced by half its life, kept over a renewal
+  its token (`sandboxEdge`); replaced by half its life, or by a repair,
+  which places everything again; kept over a renewal
   that fails while it still works. It is no part of the placement or its
   fingerprint: the agent reads it as it decides each sandbox's runtime-config
   document, so a renewal restarts nothing

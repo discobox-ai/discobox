@@ -94,6 +94,28 @@ func TestFakePoolMachinePlacesItsSandboxesEdgeCredential(t *testing.T) {
 	}
 }
 
+// A repair places everything again, the sandboxes' credential included, so
+// one lost from the machine's disk is put back without waiting for its
+// renewal.
+func TestFakePoolMachineRepairPlacesTheSandboxesEdgeCredentialAgain(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	driver.edge = true
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool_0123456789abcdef", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	maker := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatalf("EnsurePool() error = %v", err)
+	}
+	first := guestEdgeCredential(t, r, pool)
+	if err := r.RepairPool(ctx, nil, nil, pool, maker, "test", nil); err != nil {
+		t.Fatalf("RepairPool() error = %v", err)
+	}
+	if again := guestEdgeCredential(t, r, pool); again.Token == first.Token {
+		t.Fatal("a repair left the sandboxes' credential as it was, in its first half-life")
+	}
+}
+
 // A driver whose URLs need no credential places none, and records none.
 func TestFakePoolMachinePlacesNoEdgeCredentialWithoutAnEdge(t *testing.T) {
 	r, _ := newFakePool(t, "")
@@ -177,7 +199,7 @@ func TestAgentClientCarriesTheServersOwnEdgeCredential(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp, err := edgeHTTPClient(base, held.credential).Do(req)
+		resp, err := mustEdgeClient(t, base, front.URL, held.credential).Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +271,7 @@ func TestTheChannelOpensThroughACredentialedEdge(t *testing.T) {
 		t.Fatalf("Dial without the edge's credential = %v, want the edge's 401", err)
 	}
 
-	client := edgeHTTPClient(base, machine.Credential{Header: testEdgeHeader, Token: "server-token", Expires: time.Now().Add(time.Hour)})
+	client := mustEdgeClient(t, base, front.URL, machine.Credential{Header: testEdgeHeader, Token: "server-token", Expires: time.Now().Add(time.Hour)})
 	conn, err := cpchannel.Dial(ctx, client.Transport, front.URL, "proj", "pool", "token", serverKey, poolPublic)
 	if err != nil {
 		t.Fatalf("Dial with the edge's credential: %v", err)
@@ -289,7 +311,7 @@ func TestEdgeClientClosesItsIdleConnections(t *testing.T) {
 	front.StartTLS()
 	t.Cleanup(front.Close)
 	base, _ := front.Client().Transport.(*http.Transport)
-	client := edgeHTTPClient(base, machine.Credential{Header: testEdgeHeader, Token: "t", Expires: time.Now().Add(time.Hour)})
+	client := mustEdgeClient(t, base, front.URL, machine.Credential{Header: testEdgeHeader, Token: "t", Expires: time.Now().Add(time.Hour)})
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, front.URL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -306,3 +328,66 @@ func TestEdgeClientClosesItsIdleConnections(t *testing.T) {
 		t.Fatal("the edge's idle connection was left open")
 	}
 }
+
+func mustEdgeClient(t *testing.T, base *http.Transport, url string, credential machine.Credential) *http.Client {
+	t.Helper()
+	client, err := edgeHTTPClient(base, machine.Endpoint{URL: url, Credential: &credential})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
+// The server's credential goes to the edge's own host alone: a redirect to
+// another host, which the client follows, arrives without it.
+func TestEdgeClientSendsItsCredentialToItsHostAlone(t *testing.T) {
+	elsewhere := make(chan string, 1)
+	other := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		elsewhere <- r.Header.Get(testEdgeHeader)
+	}))
+	t.Cleanup(other.Close)
+	edge := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(testEdgeHeader) != "server-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// Another port is another host.
+		http.Redirect(w, r, other.URL, http.StatusFound)
+	}))
+	t.Cleanup(edge.Close)
+	base, _ := edge.Client().Transport.(*http.Transport)
+	client := mustEdgeClient(t, base, edge.URL, machine.Credential{Header: testEdgeHeader, Token: "server-token", Expires: time.Now().Add(time.Hour)})
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, edge.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got := <-elsewhere; got != "" {
+		t.Fatalf("a redirect to another host carried the edge's credential %q", got)
+	}
+
+	// Nor in the clear to the same host.
+	plain := edgeCredential{scheme: "https", host: "edge.example", credential: machine.Credential{Header: testEdgeHeader, Token: "server-token"}, next: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if got := r.Header.Get(testEdgeHeader); got != "" {
+			t.Errorf("a plain http request to the edge's host carried the credential %q", got)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: r}, nil
+	})}
+	plainReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://edge.example/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainResp, err := plain.RoundTrip(plainReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = plainResp.Body.Close()
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

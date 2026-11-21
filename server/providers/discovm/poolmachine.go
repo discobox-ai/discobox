@@ -424,7 +424,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	// The sandboxes' credential is no part of the placement: the agent reads
 	// it as it decides each sandbox's document, so a renewal restarts nothing.
-	err = h.ensureSandboxEdge(ctx, pool, inst, guest, &record)
+	err = h.ensureSandboxEdge(ctx, pool, inst, guest, &record, force)
 	if werr := h.writeState(pool, record); werr != nil && err == nil {
 		err = werr
 	}
