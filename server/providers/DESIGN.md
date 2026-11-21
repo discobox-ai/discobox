@@ -192,7 +192,9 @@ and extracted, a machine boots, Docker comes up inside it, and the pool-agent
 image is pulled — none of which the sandbox knows anything about.
 
 So the driver doing the work records it. `sandbox.PoolProgressReporter` is a
-nil-safe sink on the engine's config and on the vz and libkrun drivers'; every
+nil-safe sink on the engine's config, on the vz and libkrun drivers', and on
+disco-vm's pool machine, which reports the same phases where its steps mean
+the same ([discovm](discovm/DESIGN.md#what-bringing-it-up-reports)); every
 provider builds one from its pool manager (`sandbox.PoolProgressReporterFor`).
 Reports land on the pool row's `provisionProgress`, and a client reading a
 pending sandbox asks its pool what it is doing instead.
@@ -203,7 +205,9 @@ and starting and waiting for the agent — around the
 calls that perform them. A driver refines that from inside: `vz` and `libkrun` report
 fetching the VM image, which the engine can only see as part of starting a VM.
 
-A phase with a denominator reports it, and a phase without one is held. A pull
+A phase with a denominator reports it, and a phase without one is held
+around the call that does it. A wait no call of the server's spans (a pool
+machine's agent coming up with its boot, in discovm) is reported once. A pull
 is its own heartbeat — the Docker pulls report as their stream advances, and
 the guest image fetch reports on a ticker so a stalled download keeps the phase
 fresh rather than aging out mid-fetch — so a pull is never held.

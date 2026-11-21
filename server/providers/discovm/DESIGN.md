@@ -373,6 +373,30 @@ journald drop-in (`journald.conf`): persistent and bounded at 256M, since
 boxd's image keeps no journal and the journal is what says why an agent did
 not come up, across a stop and start as often as not.
 
+### What Bringing It Up Reports
+
+`converge` reports the shared provisioning phases where its steps mean what
+the engine's do, through the `sandbox.PoolProgressReporter`
+`FactoryWithPoolManager` builds from its pool manager, under the rules in
+[../DESIGN.md](../DESIGN.md#reporting-what-bringing-a-pool-up-is-doing),
+each held call under the context its hold returns:
+
+- `starting_vm`, held around making the machine and around starting it;
+- `starting_pool_agent`, held around `ProvisionBox` (and a moved placement's
+  `RestartPoolUnits`) on a pass that made, started or repairs the machine,
+  or finds its box never provisioned (the pass that made it failed while it
+  booted).
+  The apply's start of the agent returns only once the agent's first report
+  has landed (ADR 26-11-15-602), so this phase covers the agent coming up;
+- `waiting_for_pool_agent`, reported once, not held, when a pass starts a
+  machine whose box is current: the boot started the agent the box holds,
+  and no call of the pass spans its coming up.
+
+Re-applying moved bundles in a running machine is not bringing the pool up
+and reports nothing, as the engine's in-place apply does; nor does a pass
+that finds the machine running and its box current. `hostAgent` reports
+nothing yet (#64).
+
 ## How a Pool's Machine Authenticates
 
 A pool's engine authenticates in the first of these ways its driver offers
