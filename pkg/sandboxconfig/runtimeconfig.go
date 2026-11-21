@@ -8,9 +8,12 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http/httpguts"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
@@ -137,6 +140,36 @@ type RuntimeProxy struct {
 	// back: a document the sandbox keeps or answers with leaves it out.
 	ClientCert string `json:"clientCert"`
 	ClientKey  string `json:"clientKey,omitempty"`
+	// Edge is what the sandbox's tunnels through its pool's edge carry and
+	// dial, on a pool reached through an edge (a wss Provider.Pool) that
+	// gives one; absent dials the edge by its name and sends no credential
+	// (ADR 26-11-16-619 §§2–3).
+	Edge *RuntimeEdge `json:"edge,omitempty"`
+}
+
+// RuntimeEdge is how a sandbox reaches its pool's edge: the address to dial
+// in place of the edge's name, which the sandbox does not resolve, and the
+// credential the edge admits the pool's listener with (ADR 26-11-16-619
+// §§2–3). The pool renews both in a newer document: the address as the
+// pool's machine last resolved its own host, and the credential before it
+// expires. The edge routes by name, so a stale address still reaches the
+// pool; the TLS server name and the Host are the edge's name, never the
+// address.
+type RuntimeEdge struct {
+	// Address is the IP address the edge's name resolved to, dialed in its
+	// place with the URL's port. Empty resolves the name, as without an edge
+	// credential.
+	Address string `json:"address,omitempty"`
+	// Header names the HTTP header that carries Token, as the driver names
+	// it: discobox hard-codes none.
+	Header string `json:"header,omitempty"`
+	// Token is the pool's listener credential, shared by the pool's
+	// sandboxes. It reaches the pool's listener and nothing else; a sandbox
+	// never holds its own machine's.
+	Token string `json:"token,omitempty"`
+	// Expires is when the edge stops opening connections with Token. A
+	// tunnel already open is not cut.
+	Expires time.Time `json:"expires,omitzero"`
 }
 
 // RuntimeSource is one of the sandbox's sources as the pool sees it: where its
@@ -313,7 +346,46 @@ func (p RuntimeProxy) validate() error {
 	if _, err := tls.X509KeyPair([]byte(p.ClientCert), []byte(p.ClientKey)); err != nil {
 		errs = append(errs, fmt.Errorf("proxy client keypair: %w", err))
 	}
+	if p.Edge != nil {
+		errs = append(errs, p.Edge.validate())
+	}
 	return errors.Join(errs...)
+}
+
+// validate refuses an edge the bridges could not dial: an address that is
+// not an IP, or a credential that is half given or would not survive being
+// sent as a header.
+func (e RuntimeEdge) validate() error {
+	var errs []error
+	if e.Address != "" {
+		if _, err := netip.ParseAddr(e.Address); err != nil {
+			errs = append(errs, fmt.Errorf("proxy.edge.address %q is not an IP address", e.Address))
+		}
+	}
+	if e.Header != "" || e.Token != "" {
+		if err := ValidateEdgeCredential(e.Header, e.Token); err != nil {
+			errs = append(errs, fmt.Errorf("proxy.edge: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateEdgeCredential refuses a provider edge's credential that no request
+// could carry: a header that is not a header name, or one a request already
+// uses for something else (Authorization carries discobox's own token, Host
+// the edge's name), or a token that is not one header value. It is the one
+// check every holder of an edge credential makes — the server of its own and
+// of the one it places for a pool's sandboxes, the pool of its sandboxes'
+// machines' and of what it delivers, and the sandbox of what it is
+// delivered. Nothing of the token is put in its error.
+func ValidateEdgeCredential(header, token string) error {
+	switch {
+	case !httpguts.ValidHeaderFieldName(header) || strings.EqualFold(header, "Authorization") || strings.EqualFold(header, "Host"):
+		return fmt.Errorf("header %q is not one an edge credential can be sent in", header)
+	case token == "" || !httpguts.ValidHeaderFieldValue(token):
+		return errors.New("the token is not a single header value")
+	}
+	return nil
 }
 
 // validateCertificates checks that text is one or more PEM certificates and

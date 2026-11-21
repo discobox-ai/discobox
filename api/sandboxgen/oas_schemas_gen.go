@@ -2916,6 +2916,52 @@ func (o OptSandboxRuntimeConfigAgentTLS) Or(d SandboxRuntimeConfigAgentTLS) Sand
 	return d
 }
 
+// NewOptSandboxRuntimeConfigEdge returns new OptSandboxRuntimeConfigEdge with value set to v.
+func NewOptSandboxRuntimeConfigEdge(v SandboxRuntimeConfigEdge) OptSandboxRuntimeConfigEdge {
+	return OptSandboxRuntimeConfigEdge{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigEdge is optional SandboxRuntimeConfigEdge.
+type OptSandboxRuntimeConfigEdge struct {
+	Value SandboxRuntimeConfigEdge
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigEdge was set.
+func (o OptSandboxRuntimeConfigEdge) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigEdge) Reset() {
+	var v SandboxRuntimeConfigEdge
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigEdge) SetTo(v SandboxRuntimeConfigEdge) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigEdge) Get() (v SandboxRuntimeConfigEdge, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigEdge) Or(d SandboxRuntimeConfigEdge) SandboxRuntimeConfigEdge {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeConfigProxy returns new OptSandboxRuntimeConfigProxy with value set to v.
 func NewOptSandboxRuntimeConfigProxy(v SandboxRuntimeConfigProxy) OptSandboxRuntimeConfigProxy {
 	return OptSandboxRuntimeConfigProxy{
@@ -7538,6 +7584,63 @@ func (s *SandboxRuntimeConfigAgentTLS) SetKey(val OptString) {
 	s.Key = val
 }
 
+// How the sandbox reaches its pool's edge - the address to dial in place of the edge's name, which
+// the sandbox then does not resolve, and the credential the edge admits the pool's listener with.
+// The pool renews both in a newer document. The edge routes by name, so its name stays the TLS
+// server name and the Host.
+// Ref: #/components/schemas/SandboxRuntimeConfigEdge
+type SandboxRuntimeConfigEdge struct {
+	// The IP address the edge's name resolved to, as the pool last resolved it, dialed in its place with
+	// the URL's port. Empty resolves the name.
+	Address OptString `json:"address"`
+	// When the edge stops opening connections with the token. A tunnel already open is not cut.
+	Expires OptDateTime `json:"expires"`
+	// The HTTP header the token is sent in, as the provider names it.
+	Header OptString `json:"header"`
+	// The pool listener's credential, shared by the pool's sandboxes.
+	Token OptString `json:"token"`
+}
+
+// GetAddress returns the value of Address.
+func (s *SandboxRuntimeConfigEdge) GetAddress() OptString {
+	return s.Address
+}
+
+// GetExpires returns the value of Expires.
+func (s *SandboxRuntimeConfigEdge) GetExpires() OptDateTime {
+	return s.Expires
+}
+
+// GetHeader returns the value of Header.
+func (s *SandboxRuntimeConfigEdge) GetHeader() OptString {
+	return s.Header
+}
+
+// GetToken returns the value of Token.
+func (s *SandboxRuntimeConfigEdge) GetToken() OptString {
+	return s.Token
+}
+
+// SetAddress sets the value of Address.
+func (s *SandboxRuntimeConfigEdge) SetAddress(val OptString) {
+	s.Address = val
+}
+
+// SetExpires sets the value of Expires.
+func (s *SandboxRuntimeConfigEdge) SetExpires(val OptDateTime) {
+	s.Expires = val
+}
+
+// SetHeader sets the value of Header.
+func (s *SandboxRuntimeConfigEdge) SetHeader(val OptString) {
+	s.Header = val
+}
+
+// SetToken sets the value of Token.
+func (s *SandboxRuntimeConfigEdge) SetToken(val OptString) {
+	s.Token = val
+}
+
 // The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the
 // sandbox's bootstrap and where it listens is its own; the sandbox renders its bridge configs from
 // the three and starts the units that read them.
@@ -7548,6 +7651,9 @@ type SandboxRuntimeConfigProxy struct {
 	// This sandbox's PEM client private key. Required on delivery; never returned, so a document read
 	// back omits it.
 	ClientKey OptString `json:"clientKey"`
+	// What the sandbox's tunnels through its pool's edge dial and carry, on a pool reached through an
+	// edge that gives one. Absent dials the edge by its name with no credential.
+	Edge OptSandboxRuntimeConfigEdge `json:"edge"`
 	// PEM CA the egress proxy signs intercepted connections with.
 	MitmCa string `json:"mitmCa"`
 	// PEM CA the pool's mTLS endpoints present certificates from.
@@ -7562,6 +7668,11 @@ func (s *SandboxRuntimeConfigProxy) GetClientCert() string {
 // GetClientKey returns the value of ClientKey.
 func (s *SandboxRuntimeConfigProxy) GetClientKey() OptString {
 	return s.ClientKey
+}
+
+// GetEdge returns the value of Edge.
+func (s *SandboxRuntimeConfigProxy) GetEdge() OptSandboxRuntimeConfigEdge {
+	return s.Edge
 }
 
 // GetMitmCa returns the value of MitmCa.
@@ -7582,6 +7693,11 @@ func (s *SandboxRuntimeConfigProxy) SetClientCert(val string) {
 // SetClientKey sets the value of ClientKey.
 func (s *SandboxRuntimeConfigProxy) SetClientKey(val OptString) {
 	s.ClientKey = val
+}
+
+// SetEdge sets the value of Edge.
+func (s *SandboxRuntimeConfigProxy) SetEdge(val OptSandboxRuntimeConfigEdge) {
+	s.Edge = val
 }
 
 // SetMitmCa sets the value of MitmCa.

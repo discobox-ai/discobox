@@ -23,6 +23,9 @@ type File struct {
 	ServerName string `json:"serverName,omitempty"`
 	// Address is discobox's own answer for that name; see DialConfig.Address.
 	Address string `json:"address,omitempty"`
+	// EdgePath is the edge file a tunnel through the pool's edge reads; see
+	// DialConfig.EdgePath.
+	EdgePath string `json:"edgePath,omitempty"`
 	// CredentialsURL is the pool's agent-credentials endpoint (ADR 0031),
 	// which only the egress bridge names.
 	CredentialsURL string `json:"credentialsUrl,omitempty"`
@@ -56,6 +59,7 @@ func (f File) Dial(url string) DialConfig {
 		URL:            url,
 		ServerName:     f.ServerName,
 		Address:        f.Address,
+		EdgePath:       f.EdgePath,
 		MTLSCAPath:     f.MTLSCAPath,
 		ClientCertPath: f.ClientCertPath,
 		ClientKeyPath:  f.ClientKeyPath,

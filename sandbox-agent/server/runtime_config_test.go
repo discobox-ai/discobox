@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -267,6 +268,7 @@ func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 			MITMCA:     "mitm",
 			ClientCert: "cert",
 			ClientKey:  "key",
+			Edge:       &sandboxconfig.RuntimeEdge{Address: "192.0.2.7", Header: "X-Edge-Token", Token: "edge-token", Expires: time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)},
 		},
 		Sources: []sandboxconfig.RuntimeSource{{Slug: "primary", Target: "/workspace", OriginURL: "https://pool/o", OriginToken: "token", Commit: "abc", Delivered: true}},
 	}
@@ -297,6 +299,13 @@ func assertEveryFieldSet(t *testing.T, v reflect.Value, path string) {
 		}
 		assertEveryFieldSet(t, v.Elem(), path)
 	case reflect.Struct:
+		// A time is one value, whose fields are its own.
+		if v.Type() == reflect.TypeFor[time.Time]() {
+			if v.IsZero() {
+				t.Errorf("%s is unset in the round-trip fixture", path)
+			}
+			return
+		}
 		for i := range v.NumField() {
 			assertEveryFieldSet(t, v.Field(i), path+"."+v.Type().Field(i).Name)
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 // proxyUnit is a unit that reads the proxy material, and what it reads.
@@ -47,9 +48,10 @@ var proxyUnits = []proxyUnit{
 	{name: "discobox-proxy-bridge-docker.service", config: nestedDockerBridgeFile, inputs: bridgeInputs(nestedDockerBridgeFile), reloads: bridgeMaterial, withDocker: true},
 }
 
-// bridgeMaterial is the mTLS material every bridge reads, and reads again
-// whenever it changes.
-var bridgeMaterial = []string{mtlsCAFile, clientCertFile, clientKeyFile}
+// bridgeMaterial is the material every bridge reads, and reads again
+// whenever it changes: the mTLS material, and the edge file a tunnel through
+// the pool's edge reads at each tunnel it opens.
+var bridgeMaterial = []string{mtlsCAFile, clientCertFile, clientKeyFile, bridge.EdgeFile}
 
 func bridgeInputs(config string) []string {
 	return append([]string{config}, bridgeMaterial...)
