@@ -269,7 +269,8 @@
   `discovm.DefaultOCIBase` to the release that ships it. Check it still boots
   as a VM guest under Archil: systemd started in its own PID and mount
   namespace, not as PID 1 of the guest, with `systemd`, `systemd-sysv`,
-  `dbus` and `nftables` kept (ADR 26-11-16-619 §4), and no unit it masks for
+  `dbus` and `nftables` kept (ADR 26-11-16-619 §4), `sudo` too (a sandbox
+  machine's wiring runs it), and no unit it masks for
   a container needed there. Why: the image is tuned for a container, and the
   Docker tests that build it never boot it as an Archil guest.
 - Do not mark an error a provider's build (its factory, its driver's
