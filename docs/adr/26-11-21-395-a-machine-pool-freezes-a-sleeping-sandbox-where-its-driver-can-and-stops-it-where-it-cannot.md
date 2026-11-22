@@ -7,6 +7,12 @@
   leaves a suspended machine with its cache, as a stopped one (the owner's
   choice, on #1274's implementation), where it had said a cache clear acts
   on it as on a running one.
+- Amended again before anything shipped against it, 2026-11-22: a suspend of
+  a machine its provider paused records the pool's freeze (§§3–4; the
+  owner's choice, on #1274's implementation), where §3 refused it as not
+  running and §4 had the next reconcile resume it. Since #1523 such a
+  machine reads `suspended` too, so the refusal answered "not running" for a
+  box shown paused, and the resume then undid what was asked.
 - **Issue**: #1274
 - **Extends** [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)
   §§1–5 (as amended by
@@ -150,7 +156,9 @@ ADR changes.
   refused today. A freeze that fails returns an error, and nothing changes.
   A suspend never turns into a stop (420 §3).
 - **Shared preconditions.** A sandbox that is still booting, or not running,
-  is refused. One already suspended is a no-op. An explicit suspend stages
+  is refused. One already suspended is a no-op. A suspend of one its
+  provider paused (§4) is taken as asked: the pool records the freeze, and
+  the machine, already paused, stays so. An explicit suspend stages
   its completion receipt before the freeze, as the Docker runtime does
   (`suspendWithCompletion`, shared through `sandboxCore`).
 
@@ -164,7 +172,7 @@ what the state means:
 | Engine state | Pool froze it | The sandbox is |
 |---|---|---|
 | paused | yes | `suspended` (420 §1) |
-| paused | no | a pause by the provider: resumed at the next reconcile, never reported as a sleep or counted as idle (619 §5, unchanged) |
+| paused | no | a pause by the provider: resumed at the next reconcile, never reported as a sleep or counted as idle (619 §5, unchanged), unless a suspend asks for it first, which records the pool's freeze (§3) |
 | running | yes | thawed by something other than the pool. Example: Archil resumes a paused sandbox when a request with its port token arrives. The pool runs 420 §4's after-thaw steps (§5), then clears the field |
 | stopped | yes | `stopped`. The field is cleared |
 
