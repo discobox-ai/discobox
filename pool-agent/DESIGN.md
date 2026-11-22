@@ -1248,15 +1248,19 @@ flowchart LR
     pause its provider made, above. Running and frozen was thawed outside the
     pool (Archil, for a request with its port token): the state poll runs its
     after-thaw steps (`settleFrozen`). Stopped clears the record.
-  - **Every start thaws it** (`startLocked` → `thawLocked`): `engine.Start`,
-    which resumes and boots nothing, detached from the caller since disco-vm
-    stops a machine whose resume it cannot finish. Then `afterThaw`, shared
-    with the Docker runtime: the runtime-config document and
-    `autostop/resumed`. The thawed machine is then a running machine, placed
-    again only if its placement moved (`placementCurrent`). A refused thaw
+  - **Every start thaws it** through the one resume a provider's pause has
+    (`resumeLocked`: `engine.Start`, detached). It is then a running machine:
+    one that holds what it boots on now gets `afterThaw`, shared with the
+    Docker runtime (the runtime-config document and `autostop/resumed`), where
+    a provider's pause gets its document alone; one whose placement moved is
+    restarted onto it, and its boot hands over the wakes due. A refused thaw
     leaves it suspended. Stop, restart, archive, delete and a rebuild act on a
     frozen machine as on a running one; the engine resumes it to shut it down.
     A cache clear leaves it, as it leaves a stopped one, with its cache.
+  - **A suspend of a machine its provider paused** freezes it: it reads
+    `suspended` on the wire already, so the freeze is recorded (`engine.Pause`
+    leaves a paused machine as it is), and the state poll no longer resumes
+    it.
 - **Volumes.** A sandbox's machine, made from its plan's snapshot or fresh
   from the driver's base, has a data volume at `/.discobox/data` and a cache
   volume at `/.discobox/cache` where the driver attaches them (a snapshot's
