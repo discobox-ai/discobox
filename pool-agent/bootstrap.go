@@ -117,6 +117,13 @@ type Bootstrap struct {
 	// authenticates as its machine and is given no key (§9): it is the one
 	// place the bootstrap says so.
 	DriverConfig json.RawMessage `json:"driverConfig,omitempty"`
+	// KeySentinel says the provisioning key file holds a sentinel for the
+	// driver's key, not a key: a driver that neither authenticates as its
+	// machine nor issues keys (archil). The engine then calls the hosts its
+	// driver sends the key to through the pool's proxy, as its own client,
+	// which swaps the provider's key in at the place the driver declares
+	// (ADR 26-11-11-080 §9; proxyagent.EngineSentinel).
+	KeySentinel bool `json:"keySentinel,omitempty"`
 	// MachineNetwork is the provider's network the pool's machine is on,
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551
 	// §4). A driver that isolates machines needs one.
@@ -214,8 +221,8 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
-		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.MachineNetwork != "" || len(b.MaxMachines) > 0 || b.IngressURL != "" || b.PoolURL != "" {
-			return fmt.Errorf("a machine pool, base, network, machine limit and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
+		if b.MachinePool != "" || b.MachineBase != "" || len(b.DriverConfig) > 0 || b.KeySentinel || b.MachineNetwork != "" || len(b.MaxMachines) > 0 || b.IngressURL != "" || b.PoolURL != "" {
+			return fmt.Errorf("a machine pool, base, network, key sentinel, machine limit and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
 		}
 	case RuntimeMachine:
 		if strings.TrimSpace(b.Driver) == "" {

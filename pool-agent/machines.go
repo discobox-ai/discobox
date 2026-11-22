@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -25,8 +26,10 @@ import (
 // §3): its driver, configured as its provider's (ADR 26-11-11-080 §6), in the
 // pool's disco-vm scope, calling as its machine where its configuration turns
 // the driver's in-machine auth on, or else with the provisioning key its
-// maker placed, read again on every call.
-func openMachineEngine(root layout.Root, bootstrap Bootstrap, keyFile string) (*engine.Engine, error) {
+// maker placed, read again on every call: a key, or a sentinel for one, which
+// the pool's proxy swaps (Bootstrap.KeySentinel), through sentinel, which is
+// nil for a key.
+func openMachineEngine(root layout.Root, bootstrap Bootstrap, keyFile string, sentinel *proxyagent.EngineSentinel) (*engine.Engine, error) {
 	auth, inMachine, err := inMachineAuth(bootstrap)
 	if err != nil {
 		return nil, err
@@ -48,6 +51,16 @@ func openMachineEngine(root layout.Root, bootstrap Bootstrap, keyFile string) (*
 		// The one way past the rule set that keeps the credential's
 		// endpoints from the rest of the pool (fenceInMachine).
 		config.Dial = engineDial()
+	}
+	if sentinel != nil {
+		if inMachine {
+			return nil, fmt.Errorf("the %s driver of this machine pool authenticates as its machine, and its bootstrap also names a key sentinel", bootstrap.Driver)
+		}
+		// The key file holds a sentinel: the engine calls where its driver
+		// sends the key through the pool's proxy, which swaps it (ADR
+		// 26-11-11-080 §9).
+		config.Dial, config.RootCAs = sentinel.Dial, sentinel.RootCAs
+		config.Keys = sentinel.Keys(config.Keys)
 	}
 	driver, err := machine.New(bootstrap.Driver, config)
 	if err != nil {
