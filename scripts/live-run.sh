@@ -12,7 +12,9 @@
 #                       whether this box's egress was narrowed to the plan's
 #                       hosts before the key came in; the report says which
 #                       (required, except on a dry run)
-#   --region REGION    boxd region to exercise (fra or nyc, default: fra)
+#   --region REGION    the region to exercise: on boxd fra or nyc (default:
+#                       fra), on archil aws-us-east-1, aws-us-west-2 or
+#                       aws-eu-west-1 (default: aws-us-east-1)
 #   --harness SLUG      the harness the discobox runs (default: claude-code;
 #                       a fresh server's project has no default harness)
 #   --allow HOST        the one host the discobox's own egress allows, which
@@ -116,8 +118,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 # The variable is disco-vm's own name for the driver's key, so the binding
-# serves the provider's config and disco-vm's listing alike. boxd requires a
-# region both in the provider's config and in disco-vm's environment.
+# serves the provider's config and disco-vm's listing alike. Both drivers
+# require a region, in the provider's config and in disco-vm's environment.
 case $driver in
 boxd)
 	key_var=BOXD_API_KEY
@@ -129,7 +131,15 @@ boxd)
 	esac ;;
 archil)
 	key_var=ARCHIL_API_KEY
-	[ -z "$region" ] || { echo "--region is supported for boxd" >&2; exit 2; } ;;
+	region=${region:-aws-us-east-1}
+	# An Archil key is refused (401) at another region's control plane
+	# (observed 2026-11-22 in both other regions), so no other region is
+	# read: what the key cannot reach it cannot have made machines in either.
+	other_region=
+	case $region in
+	aws-us-east-1|aws-us-west-2|aws-eu-west-1) ;;
+	*) echo "--region takes aws-us-east-1, aws-us-west-2 or aws-eu-west-1 on archil" >&2; exit 2 ;;
+	esac ;;
 '') echo "--driver is required: boxd or archil" >&2; exit 2 ;;
 *) echo "--driver $driver: the live run takes boxd or archil" >&2; exit 2 ;;
 esac
@@ -253,7 +263,7 @@ dcout() {
 }
 # dvm STATUS CANNED SCOPE ... calls disco-vm in a scope of the driver: the
 # pool's (its sandboxes' machines) or the provider's (the pool's machine).
-dvm() { local status=$1 canned=$2 scope=$3; shift 3; BOXD_REGION=$region ext "$status" "$canned" "$discovm" --driver "$driver" --pool "$scope" "$@"; }
+dvm() { local status=$1 canned=$2 scope=$3; shift 3; BOXD_REGION=$region ARCHIL_REGION=$region ext "$status" "$canned" "$discovm" --driver "$driver" --pool "$scope" "$@"; }
 # pause SECONDS waits between polls; a dry run does not.
 pause() { [ "$dry" = 1 ] || sleep "$1"; }
 
@@ -432,7 +442,9 @@ cleanup() {
 	# the provider's scope, named for the pool's.
 	if [ -n "$pool_id" ]; then leftovers left-pool-scope "$(scope "$pool_id")" "$(scope "$pool_id")-"; fi
 	if [ -n "$provider_id" ]; then leftovers left-provider-scope "$(scope "$provider_id")" "${pool_id:+$(scope "$pool_id")-}"; fi
-	if [ "$driver" = boxd ]; then
+	# Each region is its own endpoint, so a machine made in the wrong one is
+	# found only there, on a driver whose key reaches another region.
+	if [ -n "$other_region" ]; then
 		if [ -n "$pool_id" ]; then region=$other_region leftovers "left-pool-scope-$other_region" "$(scope "$pool_id")" ""; fi
 		if [ -n "$provider_id" ]; then region=$other_region leftovers "left-provider-scope-$other_region" "$(scope "$provider_id")" ""; fi
 	fi
@@ -1051,13 +1063,15 @@ listening 8080 8000 3000 5000 5173" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} 
 	esac
 fi
 
-if [ "$driver" = boxd ]; then
+{
 	machine_scope=$(scope "$pool_id")
 	if ! listed=$(dvm 0 "ID NAME FROM OS STATE CREATED
 dry-id $machine - linux running now" "$machine_scope" ls -a); then
 		fail region "could not list the sandbox scope in $region"
 	elif ! names "$listed" | grep -Fxq "$machine"; then
 		fail region "$machine was not listed in $region"
+	elif [ -z "$other_region" ]; then
+		pass region "$machine is listed in $region; no other region is read, since the $driver key reaches its own region alone"
 	elif ! listed=$(region=$other_region dvm 0 'ID NAME FROM OS STATE CREATED' "$machine_scope" ls -a); then
 		check region "could not list the sandbox scope in $other_region"
 	elif names "$listed" | grep -Fxq "$machine"; then
@@ -1065,7 +1079,7 @@ dry-id $machine - linux running now" "$machine_scope" ls -a); then
 	else
 		pass region "$machine is listed in $region and absent from $other_region"
 	fi
-fi
+}
 
 echo "--- snapshot" >&2
 # Creating the first box schedules its plan's snapshot on the pool. Wait
