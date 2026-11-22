@@ -397,3 +397,48 @@ func TestAFreezeThatFailsLateIsJudgedByTheMachine(t *testing.T) {
 		}
 	})
 }
+
+// A resume that leaves the machine stopped (a host restart, a provider that
+// expired the pause) boots it fresh in the same start, as a slept machine did
+// before a sleep froze one, rather than failing every start until someone
+// stops it. A resume that leaves it paused fails, and keeps it suspended
+// (TestARefusedThawStaysSuspended).
+func TestAResumeThatLosesTheMachineBootsItFresh(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		pause  func(*machineFixture, machine.Instance) error
+		frozen bool
+	}{
+		{name: "the pool's freeze", pause: func(f *machineFixture, _ machine.Instance) error {
+			return f.runtime.SuspendSandbox(context.Background(), "sbx_32", nil)
+		}, frozen: true},
+		{name: "a provider's pause", pause: func(f *machineFixture, inst machine.Instance) error {
+			return fake.Pause(context.Background(), f.owner, inst)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, inst := freezeFixture(t, nil, "sbx_32")
+			ctx := context.Background()
+			r := f.runtime
+			if err := tc.pause(f, inst); err != nil {
+				t.Fatal(err)
+			}
+			requireFrozenRecord(t, r, "sbx_32", tc.frozen, "paused")
+			want := StatusPaused
+			if tc.frozen {
+				want = StatusSuspended
+			}
+			requireStatus(t, r, "sbx_32", want, "paused")
+			f.driver.takeEvents(inst.Name)
+			f.driver.resumeLost.Store(true)
+			if err := r.EnsureSandboxRunning(ctx, "sbx_32"); err != nil {
+				t.Fatalf("use a box whose resume lost its machine: %v", err)
+			}
+			requireStatus(t, r, "sbx_32", StatusRunning, "booted fresh")
+			requireFrozenRecord(t, r, "sbx_32", false, "booted fresh")
+			if events := f.driver.takeEvents(inst.Name); !slices.Contains(events, "boot") {
+				t.Fatalf("what the use did = %v, want a fresh boot", events)
+			}
+		})
+	}
+}

@@ -1131,7 +1131,11 @@ type agentDriver struct {
 	// stateUnknown has every power-state read fail, as a provider that
 	// cannot be asked does.
 	stateUnknown atomic.Bool
-	mu           sync.Mutex
+	// resumeLost has a resume of a paused machine end with the machine
+	// stopped, as a host restart or a provider that expired the pause, or
+	// the engine stopping a resume it could not finish, leaves it.
+	resumeLost atomic.Bool
+	mu         sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
 	// forcedOff, when set, is a machine whose orderly shutdown times out, so
@@ -1213,6 +1217,13 @@ func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts mac
 	m, err := d.Driver.Start(ctx, inst, opts)
 	if err != nil {
 		return nil, err
+	}
+	if state == machine.StatePaused && d.resumeLost.Load() {
+		d.agents.stop(inst.Name)
+		if err := m.Kill(ctx); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("resume %s: lost, and stopped: %w", inst.Name, machine.ErrUnavailable)
 	}
 	if state == machine.StatePaused {
 		d.record(inst.Name, "resume")

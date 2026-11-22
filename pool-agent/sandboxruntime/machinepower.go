@@ -402,9 +402,27 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	resumed := false
 	if (sb.Status == StatusPaused || sb.Status == StatusSuspended) && !record.NewRoot {
 		if err := r.resumeLocked(ctx, sandboxID, record); err != nil {
-			return err
+			// A resume that left the machine stopped (its host restarted,
+			// its provider expired the pause, or the engine stopped what it
+			// could not finish resuming) has lost what the pause kept: it
+			// boots fresh, as a slept machine did before a sleep froze one.
+			// One still paused stays so, its memory kept for a start that
+			// resumes it: disco-vm cannot stop a paused machine it cannot
+			// resume (disco-vm ADR 26-11-21-438 §6).
+			inst, instErr := r.instance(ctx, sandboxID)
+			if instErr != nil || r.engine.State(context.WithoutCancel(ctx), inst) != engine.Stopped {
+				return err
+			}
+			slog.WarnContext(ctx, "a paused sandbox machine did not resume and is stopped; booting it fresh", "sandboxId", sandboxID, "error", err)
+			if record.Frozen {
+				record.Frozen = false
+				if err := r.writeMachineRecord(sandboxID, record); err != nil {
+					return err
+				}
+			}
+		} else {
+			running, resumed = true, true
 		}
-		running, resumed = true, true
 	}
 	if running && !record.NewRoot {
 		current, err := r.placementCurrent(context.WithoutCancel(ctx), sandboxID, sb.ID)
