@@ -8,7 +8,7 @@ beside `dockerworker.Engine` rather than under it: such a pool has no
 pool-agent container, Docker daemon or sandbox network of the engine's
 (ADR 26-10-09-106 §1). This package holds the provider kind, the embedded
 engine and its shim, and pool hosting: a remote driver's pool machine, made
-the pool's box and authenticated (in-machine, or with an issued key), with its console and log. The
+the pool's box and authenticated (in-machine, with an issued key, or with a sentinel its proxy swaps), with its console and log. The
 type is the driver; how a pool is hosted follows from the driver's kind:
 whether it is disco-vm's local driver, whose provider is this host's disk. A local driver's host pool agent is not staged yet
 (#64): its `EnsurePool` and `AcquirePoolAgentClient` answer so.
@@ -19,7 +19,7 @@ flowchart TD
     runtime["discovm.Runtime\nengine"]
     engine["disco-vm pkg/engine\non machine.New(type, driver config, key, checked dial)"]
     host{"driver is a *local.Driver?"}
-    machine["poolMachine\na Linux machine from a driver base\nmade the pool's box · in-machine or issued key"]
+    machine["poolMachine\na Linux machine from a driver base\nmade the pool's box · in-machine, issued key or sentinel"]
     agent["hostAgent\npool agent on this host"]
 
     pool --> runtime
@@ -500,17 +500,41 @@ the machine.
   renewal that fails in any way — not issued, not issuable, not placed —
   leaves the pool on its key until it expires, so a working pool is never
   failed, and repaired, over a key it does not need yet.
-- **Neither**: the pool is blocked, saying why, until §9's sentinel is built
-  for such a driver. One that issues no keys at all (`KeysNone`: archil) is
-  blocked before its machine is made (`keyable`), so no machine is billed
-  that no key could reach;
-  the provider's key an older server placed (`deliverProviderKey`, gone) is
-  taken off the machine.
+- **Sentinel** (`poolKeys.sends`): a driver that neither authenticates
+  in-machine nor issues keys (`KeysNone`: archil), and declares where it
+  sends its one key (disco-vm's `SecretSends`, under the provider's
+  configuration: a host, path and header or JSON field, none `Listed`), has
+  its pool's key file hold a sentinel shaped as its key (its placeholder's
+  prefix, where that survives the driver's own rewriting of the key at every
+  place it sends it), in a key file named `discobox-sentinel`, recorded on the pool (`poolKeyRecord.Sentinel`, no
+  secret) and kept for the pool's life. It replaces whatever the file held,
+  an older server's provider key included. The bootstrap says so
+  (`KeySentinel`): the agent's engine calls those hosts through the pool's
+  proxy, which swaps the sentinel for the provider's key at those places
+  alone ([pool-agent](../../../pool-agent/DESIGN.md#machine-sandboxes)). The
+  proxy asks the server (`resolve-driver-key`, `poolKeys.resolve`), which
+  answers only the asking pool, while it is present, for its recorded
+  sentinel and a host the driver sends its key to, with the key as the
+  driver would put it there in the sentinel's place (`inPlaceOf`: archil's
+  `Bearer key-` holds whether or not the key was typed with `key-`). The
+  method, path and place are held by the pool agent's grant, from the same
+  declaration (`proxyagent.DriverKeySends`), checked by the proxy on every
+  request before anything is resolved, as a sandbox's routes are. A record
+  lost takes the sentinel the key file already holds (`heldSentinel`), only
+  one this server placed (named `discobox-sentinel`, of its exact shape);
+  any other key there is replaced. The
+  key's reach is the provider's: the sentinel keeps it off the machine's
+  disk, not narrower (ADR 26-11-11-080 §9, "The sentinel's cost").
+- **None of these**: the pool is blocked, saying why. A driver that issues
+  no keys at all and declares no place its key could be swapped is blocked
+  before its machine is made (`keyable`), so no machine is billed that no
+  key could reach; the provider's key an older server placed
+  (`deliverProviderKey`, gone) is taken off the machine.
 - **Revoked**: every issued key of the pool, by name, when the pool is
   deleted or its machine replaced. A record that says a key was issued makes
   a refused listing an error to retry rather than a key left behind.
 - **Shown**: the pool's `HostCredential` says how its host authenticates
-  (`in-machine` or `issued`), an issued key's scope, ID and expiry, and that
+  (`in-machine`, `issued` or `sentinel`), an issued key's scope, ID and expiry, and that
   the machine carries the driver's own token (`MachineToken`: a driver whose
   `Bare` is strip gives a machine it does not strip what stripping takes; one
   that gives a machine nothing of the account, archil, gives none). On

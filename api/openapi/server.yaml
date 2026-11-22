@@ -6873,8 +6873,8 @@ components:
             description: A credential of its provider's that the pool's host holds (ADR 26-10-23-551 §4), shown so a pool whose host can reach the provider's account says how far. Never its secret.
             properties:
                 key:
-                    description: "How the host authenticates its engine: in-machine, as its own machine, with the credential its driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's driver issued for this pool, which expires and is renewed and revoked by discobox; or provider, the provider's own key an older server delivered, which the pool's next reconcile takes off. Absent when it holds none."
-                    enum: [issued, in-machine, provider]
+                    description: "How the host authenticates its engine: in-machine, as its own machine, with the credential its driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's driver issued for this pool, which expires and is renewed and revoked by discobox; sentinel, a stand-in for the provider's key, which the pool's proxy swaps for the key only where the provider's driver sends it, so the key is never on the host's disk (archil); or provider, the provider's own key an older server delivered, which the pool's next reconcile takes off. Absent when it holds none."
+                    enum: [issued, in-machine, sentinel, provider]
                     type: string
                 scope:
                     description: What the key reaches, as the driver says (account, org, project). Absent where it cannot tell.
@@ -7494,6 +7494,46 @@ components:
                     type: array
             required:
                 - gateways
+            type: object
+        ResolveDriverKeyBody:
+            additionalProperties: false
+            description: Worker request for its provider's key, which its host holds a sentinel for, as the provider's driver sends it to one host. Answered only for the asking pool's own provider, its recorded sentinel, and a host the driver sends its key to.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveDriverKeyBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sentinel:
+                    description: The sentinel the pool's host holds in place of the key
+                    type: string
+                host:
+                    description: The host the request carrying the sentinel goes to, without its port
+                    type: string
+            required:
+                - sentinel
+                - host
+            type: object
+        ResolveDriverKeyResponse:
+            additionalProperties: false
+            description: What the pool's proxy puts in the sentinel's place.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveDriverKeyResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                value:
+                    description: The value that replaces the sentinel where the driver sends its key
+                    type: string
+                expiresAt:
+                    description: When the pool's proxy stops using the value and asks again
+                    format: date-time
+                    type: string
+            required:
+                - value
             type: object
         ResolveGatewayHeadersBody:
             additionalProperties: false
@@ -9245,6 +9285,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Report what an upstream made of a swapped credential
+            tags:
+                - Pools
+    /pool-agent/{poolId}/resolve-driver-key:
+        post:
+            operationId: resolve-driver-key
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer worker assertion with the secret:resolve scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer worker assertion with the secret:resolve scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ResolveDriverKeyBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResolveDriverKeyResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Resolve the provider key a pool's host holds a sentinel for
             tags:
                 - Pools
     /pool-agent/{poolId}/resolve-gateway-headers:

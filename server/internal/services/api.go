@@ -466,6 +466,12 @@ type PoolService interface {
 	// (ADR 26-10-01-876).
 	ListPoolHeldSandboxes(ctx context.Context, poolID string) ([]string, error)
 	AuthorizePoolSandboxStart(ctx context.Context, poolID, sandboxID string, epoch int64) error
+	// ResolveDriverKey answers a pool's proxy, for the pool's own engine,
+	// with what it puts in place of the sentinel the pool's host holds for
+	// its provider's key, where the driver sends it to host (ADR
+	// 26-11-11-080 §9): only the asking pool's own provider's key, for its
+	// recorded sentinel, while the pool is present.
+	ResolveDriverKey(ctx context.Context, poolID, sentinel, host string) (string, error)
 	CompletePoolSandboxSuspend(ctx context.Context, poolID, sandboxID, requestID string, epoch int64) error
 }
 

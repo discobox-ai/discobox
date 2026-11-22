@@ -867,3 +867,41 @@ func (s *Service) OpenPoolLogs(ctx context.Context, projectID, poolID string, op
 	}
 	return stream, nil
 }
+
+// ResolveDriverKey answers a pool's proxy with what replaces the sentinel the
+// pool's host holds for its provider's key, where the provider's driver sends
+// it to host (ADR 26-11-11-080 §9). It is the pool's own: poolID is the
+// asking pool's, from its assertion, so the provider is the one that pool is
+// bound to, and never another's. A pool being deleted is given nothing, nor
+// one whose host holds no sentinel, not that one, or whose driver never sends
+// its key to host: each is a 403, which the proxy leaves the sentinel in
+// place on.
+func (s *Service) ResolveDriverKey(ctx context.Context, poolID, sentinel, host string) (string, error) {
+	pool, err := s.store.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return "", apperrors.NotFound(err, "pool not found")
+	}
+	if pool.DesiredState != model.DesiredStatePresent {
+		return "", apperrors.NewStatusError(http.StatusForbidden, fmt.Sprintf("pool %s is being deleted, and is given no key", poolID))
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, pool.ProjectID, pool.ProviderInstanceID)
+	if err != nil {
+		return "", apperrors.NotFound(err, "pool provider instance not found")
+	}
+	if s.providers == nil {
+		return "", apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return "", err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return "", apperrors.NewStatusError(http.StatusForbidden, fmt.Sprintf("provider %q hosts no pool, and its key is given to none", provider.Type))
+	}
+	value, err := runtime.ResolveDriverKey(ctx, provider, pool, sentinel, host)
+	if errors.Is(err, sandbox.ErrDriverKeyRefused) {
+		return "", apperrors.NewStatusError(http.StatusForbidden, err.Error())
+	}
+	return value, err
+}

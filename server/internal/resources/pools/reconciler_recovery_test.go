@@ -437,6 +437,10 @@ func (stubPoolProvider) BuildGuestImage(context.Context, *model.SandboxProviderI
 	return nil, sandbox.ErrGuestImageBuildUnsupported
 }
 
+func (stubPoolProvider) ResolveDriverKey(context.Context, *model.SandboxProviderInstance, *model.Pool, string, string) (string, error) {
+	return "", sandbox.ErrDriverKeyRefused
+}
+
 func (stubPoolProvider) Initialize(context.Context, *model.SandboxProviderInstance) error { return nil }
 func (stubPoolProvider) Close() error                                                     { return nil }
 func (stubPoolProvider) Definition() sandbox.ProviderDefinition {

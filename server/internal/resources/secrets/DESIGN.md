@@ -13,7 +13,11 @@ binding's handle and no host ([below](#a-raw-binding-hands-over-the-value)). An
 approved answer names the secret beside its value, which the proxy records on
 the request it swaps the value into
 ([ADR 26-10-01-240](../../../../docs/adr/26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md)).
-Every other surface here deals in sentinels, bindings and requests.
+Every other surface here deals in sentinels, bindings and requests. A third
+door is not here: a pool's own engine is handed its provider's key in place
+of a sentinel by the pools service (`ResolveDriverKey`,
+[pools](../pools/DESIGN.md)), since the key is the provider's, not a secret
+of this service's.
 
 Nothing here judges. What a credential may do is static: the route lists its
 binding holds it to, which the pool checks on every request

@@ -721,6 +721,10 @@ func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID 
 	return s.GetPool(context.Background(), projectID, poolID)
 }
 
+func (s *routerTestServices) ResolveDriverKey(context.Context, string, string, string) (string, error) {
+	return "", apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
+}
+
 func (s *routerTestServices) ListDNSAudit(context.Context, string, services.DNSAuditFilter) (*services.DNSAuditResult, error) {
 	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
 }

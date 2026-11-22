@@ -144,6 +144,7 @@ const (
 	ReportSandboxSecretRejectionOperation          OperationName = "ReportSandboxSecretRejection"
 	ReprovisionSandboxOperation                    OperationName = "ReprovisionSandbox"
 	ResetHarnessConfigOperation                    OperationName = "ResetHarnessConfig"
+	ResolveDriverKeyOperation                      OperationName = "ResolveDriverKey"
 	ResolveGatewayHeadersOperation                 OperationName = "ResolveGatewayHeaders"
 	ResolvePoolAssetOperation                      OperationName = "ResolvePoolAsset"
 	ResolveSandboxRawSecretOperation               OperationName = "ResolveSandboxRawSecret"

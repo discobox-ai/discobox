@@ -487,7 +487,8 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 // formatPoolHostCredential says which provider credential a pool's host
 // holds and how far it reaches (ADR 26-10-23-551 §4, ADR 26-11-11-080 §9):
 // the machine's own in-machine credential, for which nothing is placed; an
-// issued key, which expires and discobox renews; or the provider's own, which
+// issued key, which expires and discobox renews; a sentinel, which the pool's
+// proxy swaps for the provider's key; or the provider's own, which
 // an older server placed and the next reconcile takes off; and the driver's
 // machine token beside a key.
 func formatPoolHostCredential(credential apimodel.PoolHostCredential, now time.Time) string {
@@ -509,6 +510,8 @@ func formatPoolHostCredential(credential apimodel.PoolHostCredential, now time.T
 			}
 		}
 		parts = append(parts, what)
+	case apiclientgen.PoolHostCredentialKeySentinel:
+		parts = append(parts, "a sentinel for the provider's key, which the pool's proxy swaps for the key only where the provider's driver sends it; the key is never on the host's disk")
 	case apiclientgen.PoolHostCredentialKeyProvider:
 		parts = append(parts, "the provider's own key, which an older server placed and the pool's next reconcile takes off")
 	}

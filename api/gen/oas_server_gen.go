@@ -906,6 +906,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/reset
 	ResetHarnessConfig(ctx context.Context, params ResetHarnessConfigParams) (ResetHarnessConfigRes, error)
+	// ResolveDriverKey implements resolve-driver-key operation.
+	//
+	// Resolve the provider key a pool's host holds a sentinel for.
+	//
+	// POST /pool-agent/{poolId}/resolve-driver-key
+	ResolveDriverKey(ctx context.Context, req *ResolveDriverKeyBody, params ResolveDriverKeyParams) (ResolveDriverKeyRes, error)
 	// ResolveGatewayHeaders implements resolve-gateway-headers operation.
 	//
 	// Resolve the server environment values a sandbox's gateway sets headers from.

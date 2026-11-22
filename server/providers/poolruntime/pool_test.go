@@ -235,6 +235,10 @@ func (p *testRuntimeProvider) BuildGuestImage(context.Context, *model.SandboxPro
 	return nil, sandbox.ErrGuestImageBuildUnsupported
 }
 
+func (p *testRuntimeProvider) ResolveDriverKey(context.Context, *model.SandboxProviderInstance, *model.Pool, string, string) (string, error) {
+	return "", sandbox.ErrDriverKeyRefused
+}
+
 func (p *testRuntimeProvider) OpenLogs(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
 	p.logCalls++
 	return nil, errors.New("no host log in unit tests")

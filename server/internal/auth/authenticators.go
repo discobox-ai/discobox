@@ -276,6 +276,9 @@ var poolRuntimeActions = map[string]int{
 	// A gateway's header values from the server's environment (ADR
 	// 26-10-16-470 §4). One call names its gateway in the body.
 	"resolve-gateway-headers": 0,
+	// The pool's provider's key in place of the sentinel its host holds
+	// (ADR 26-11-11-080 §9). One call names one sentinel and host.
+	"resolve-driver-key": 0,
 	// What an upstream made of a swapped credential (ADR 0132). One call
 	// reports one verdict, so it takes no trailing ID.
 	"sandbox-secret-rejections":   0,

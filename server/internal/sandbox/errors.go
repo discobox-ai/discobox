@@ -114,6 +114,13 @@ var (
 	// user's own machine (a vm pool on vz) has no separate host for a root
 	// shell to be on.
 	ErrPoolConsoleUnsupported = errors.New("this backend has no pool host console to open")
+
+	// ErrDriverKeyRefused is a pool asking for its provider's key in the
+	// place of a sentinel when it is not given it (ADR 26-11-11-080 §9):
+	// its host holds no sentinel for the key, not that one, or the driver
+	// never sends its key to the host named. It is a settled answer, which a
+	// pool's proxy leaves the sentinel in place on.
+	ErrDriverKeyRefused = errors.New("this pool is not given its provider's key there")
 )
 
 // PoolFailure reports a failed pool startup or an expired readiness wait.

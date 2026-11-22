@@ -119,6 +119,11 @@ type RuntimeProvider interface {
 	// host that is already running one, and publishes the artifacts where the
 	// backend looks for a local build.
 	BuildGuestImage(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error)
+	// ResolveDriverKey is sandbox.PoolRuntime's: what replaces the sentinel
+	// the pool's host holds for its provider's key, where the driver sends it
+	// to host. A runtime whose hosts hold none answers
+	// sandbox.ErrDriverKeyRefused.
+	ResolveDriverKey(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, sentinel, host string) (string, error)
 }
 
 // Provider is a sandbox provider backed by pool hosts.
@@ -459,6 +464,15 @@ func (p *Provider) BuildGuestImage(ctx context.Context, provider *model.SandboxP
 		return nil, fmt.Errorf("pool is required")
 	}
 	return p.runtimeProvider.BuildGuestImage(ctx, provider, pool, opts)
+}
+
+// ResolveDriverKey is the runtime's answer for the sentinel the pool's host
+// holds for its provider's key (ADR 26-11-11-080 §9).
+func (p *Provider) ResolveDriverKey(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, sentinel, host string) (string, error) {
+	if pool == nil {
+		return "", fmt.Errorf("pool is required")
+	}
+	return p.runtimeProvider.ResolveDriverKey(ctx, provider, pool, sentinel, host)
 }
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {

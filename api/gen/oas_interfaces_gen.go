@@ -553,6 +553,10 @@ type ResetHarnessConfigRes interface {
 	resetHarnessConfigRes()
 }
 
+type ResolveDriverKeyRes interface {
+	resolveDriverKeyRes()
+}
+
 type ResolveGatewayHeadersRes interface {
 	resolveGatewayHeadersRes()
 }
