@@ -3,6 +3,7 @@ package proxyagent
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"slices"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
@@ -77,15 +79,14 @@ func newEngineSentinel(root layout.Root, projectID, poolID, driver string, drive
 	// The proxy's MITM CA, restated to vouch for the hosts the key goes to
 	// alone (ADR 26-11-11-080 §9: the engine trusts the proxy's CA for those
 	// hosts alone).
-	mitm, err := bundle.ConstrainedMITMCA(hosts)
+	system, err := x509.SystemCertPool()
+	if err != nil {
+		system = x509.NewCertPool()
+	}
+	roots, err := engineRoots(system, bundle, hosts)
 	if err != nil {
 		return nil, err
 	}
-	roots, err := x509.SystemCertPool()
-	if err != nil {
-		roots = x509.NewCertPool()
-	}
-	roots.AddCert(mitm)
 	dialer, err := bridge.NewDialer(bridge.DialConfig{
 		URL:            proxyURL,
 		ServerName:     ServerName,
@@ -215,6 +216,50 @@ func (k *EngineSentinel) Dial(ctx context.Context, network, address string) (net
 	return tunneled, nil
 }
 
+// engineRoots are what the engine trusts: system, the machine's own roots,
+// and the proxy's MITM CA restated for hosts alone (ConstrainedMITMCA). A
+// system store that already trusts the MITM CA itself would undo that
+// restriction, so it is refused, by asking whether it believes a certificate
+// the MITM CA signs for a host no driver sends its key to: nothing of the
+// pool's puts the CA there, but the machine's base is the provider's.
+func engineRoots(system *x509.CertPool, bundle *proxy.CertificateBundle, hosts []string) (*x509.CertPool, error) {
+	const probe = "engine-trust-probe.discobox.invalid"
+	leaf, err := bundle.SignHost(probe)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := x509.ParseCertificate(leaf.Certificate[0])
+	if err != nil {
+		return nil, err
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: system, DNSName: probe}); err == nil {
+		return nil, errors.New("this machine's system trust store trusts the pool proxy's MITM CA, which would let the engine believe the proxy for any host: take it out of the machine's base")
+	}
+	mitm, err := bundle.ConstrainedMITMCA(hosts)
+	if err != nil {
+		return nil, err
+	}
+	roots := system.Clone()
+	roots.AddCert(mitm)
+	return roots, nil
+}
+
+// EngineSentinelKeyName names the provisioning key file the server places a
+// sentinel in (machine.Key.Name): what tells a sentinel from a key. The
+// engine registers only such a file's secret with the proxy, and calls with
+// nothing else: a real key there would be written to SecretsFile, and sent
+// through the proxy as it is.
+const EngineSentinelKeyName = "discobox-sentinel"
+
+// sentinelOf is the sentinel key holds, or an error for a key that is not
+// one the server placed.
+func sentinelOf(key machine.Key) (string, error) {
+	if key.Name != EngineSentinelKeyName || key.Secret == "" {
+		return "", fmt.Errorf("the provisioning key file holds no sentinel (it is not named %s), and this pool's engine calls with a sentinel alone", EngineSentinelKeyName)
+	}
+	return key.Secret, nil
+}
+
 // Register registers the sentinel source reads now with the pool's proxy.
 // The agent calls it before the proxy unit starts, which reads SecretsFile
 // as it starts, so the engine's first call through the proxy finds its
@@ -225,7 +270,11 @@ func (k *EngineSentinel) Register(ctx context.Context, source machine.KeySource)
 	if err != nil {
 		return err
 	}
-	return k.register(key.Secret)
+	sentinel, err := sentinelOf(key)
+	if err != nil {
+		return err
+	}
+	return k.register(sentinel)
 }
 
 // Keys is source, with any sentinel it reads that is not the one registered
@@ -237,7 +286,11 @@ func (k *EngineSentinel) Keys(source machine.KeySource) machine.KeySource {
 		if err != nil {
 			return key, err
 		}
-		if err := k.register(key.Secret); err != nil {
+		sentinel, err := sentinelOf(key)
+		if err != nil {
+			return machine.Key{}, err
+		}
+		if err := k.register(sentinel); err != nil {
 			return machine.Key{}, fmt.Errorf("register the provisioning key's sentinel with the pool's proxy: %w", err)
 		}
 		return key, nil

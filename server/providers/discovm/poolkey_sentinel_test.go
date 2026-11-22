@@ -98,7 +98,7 @@ func TestFakePoolMachineHoldsASentinelForTheDriversKey(t *testing.T) {
 		if err != nil || record == nil || record.Sentinel == "" || strings.Contains(file, record.Sentinel) {
 			t.Fatalf("ensure() over %s = %+v, %v; want a new sentinel placed", file, record, err)
 		}
-		if placed := guestKey(t, r, pool); placed.Secret != record.Sentinel || placed.Name != sentinelKeyName {
+		if placed := guestKey(t, r, pool); placed.Secret != record.Sentinel || placed.Name != proxyagent.EngineSentinelKeyName {
 			t.Fatalf("the key file holds %+v, want the new sentinel, named as one", placed)
 		}
 	}

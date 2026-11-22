@@ -110,7 +110,7 @@ func TestEngineSentinelCallsTheDriversServiceThroughThePoolsProxy(t *testing.T) 
 	keyFile := filepath.Join(t.TempDir(), "key.json")
 	writeKey := func(secret string) {
 		t.Helper()
-		data, err := json.Marshal(machine.Key{Driver: "archil", Secret: secret}) //nolint:gosec // G117: a sentinel, the key file the engine reads
+		data, err := json.Marshal(machine.Key{Driver: "archil", Name: EngineSentinelKeyName, Secret: secret}) //nolint:gosec // G117: a sentinel, the key file the engine reads
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1106,7 +1106,13 @@ pool's proxy (`proxyagent.EngineSentinel`, ADR 26-11-11-080 §9):
   any other is direct (Archil's process WebSocket, whose URL carries a token
   the audit must not keep). The engine trusts, beside the system's roots,
   the proxy's MITM CA restated with name constraints for those hosts alone
-  (`proxy.CertificateBundle.ConstrainedMITMCA`).
+  (`proxy.CertificateBundle.ConstrainedMITMCA`). A machine whose system store
+  already trusts the MITM CA itself, which would undo that, is refused
+  (`engineRoots`, by a certificate the CA signs for an unrelated name).
+- **A sentinel alone.** Only a key file named
+  `proxyagent.EngineSentinelKeyName` (`discobox-sentinel`), which the server
+  writes, is registered or called with; any other key there is refused, so a
+  real key is never written to `SecretsFile` nor sent through the proxy.
 - **Held to those places.** The sentinel the key file holds is registered in
   `SecretsFile` under that client before the proxy unit starts (it reads the
   file as it starts, so the engine's first call finds it) and whenever the
