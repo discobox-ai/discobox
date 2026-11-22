@@ -33,7 +33,7 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 	if err := appStore.CreateSandboxProviderInstance(context.Background(), provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	controlPlane := NewControlPlane(appStore, nil)
+	controlPlane := NewControlPlane(appStore, manager, nil)
 	watch := controlPlane.Upgrades()
 	clock := time.Now()
 	watch.now = func() time.Time {
@@ -152,8 +152,9 @@ func TestUpgradeWatchNamesAFailedReconcile(t *testing.T) {
 }
 
 // Only pools registered before the start are waited on: a new pool has no
-// older agent. A watched pool that is deleted, or whose provider is disabled,
-// drops out.
+// older agent. A watched pool that is deleted, or whose provider's type this
+// server cannot build, drops out. One on a disabled provider is still waited
+// on: its pools keep working, upgrades included.
 func TestUpgradeWatchWaitsOnlyOnPoolsItCanUpgrade(t *testing.T) {
 	f := newUpgradeFixture(t)
 	f.addPool("new", false)
@@ -172,8 +173,14 @@ func TestUpgradeWatchWaitsOnlyOnPoolsItCanUpgrade(t *testing.T) {
 	if err := f.db.Model(&model.SandboxProviderInstance{}).Where("id = ?", "provider-1").Update("disabled", true).Error; err != nil {
 		t.Fatal(err)
 	}
+	if got := f.pending(); len(got) != 1 || got["kept"] == "" {
+		t.Fatalf("pending = %v, want the kept pool still waited on with its provider disabled", got)
+	}
+	if err := f.db.Model(&model.SandboxProviderInstance{}).Where("id = ?", "provider-1").Update("type", "unsupported").Error; err != nil {
+		t.Fatal(err)
+	}
 	if got := f.pending(); len(got) != 0 {
-		t.Fatalf("pending = %v, want none on a disabled provider", got)
+		t.Fatalf("pending = %v, want none on a provider this server cannot build", got)
 	}
 }
 

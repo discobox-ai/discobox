@@ -4,7 +4,11 @@
   §7's "once it is in, the pin moves and nothing else changes", and, for a
   boxd row, §8's "with neither set, no `driver` object is written, and boxd
   takes the defaults it took before" and its "a boxd pool runs on with the
-  machine it has"; the rest of §§7–8 stands)
+  machine it has"; the rest of §§7–8 stands; §2's "disables the provider,
+  so its pools delete without calling boxd" superseded by
+  [26-11-22-507](26-11-22-507-a-disabled-provider-takes-no-new-pools-and-its-existing-pools-keep-working.md):
+  a disabled provider's pools delete through it, and a row without a region
+  fails to build, so its pools' deletes retry)
 - **Date**: 2026-11-15
 - **Accepted**: by the owner's decision on #1225, 2026-11-15, in the PR that
   implements it.

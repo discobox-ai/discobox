@@ -142,6 +142,9 @@ func (s *Store) migrateVMProvider(ctx context.Context, tx *gorm.DB, provider *mo
 	if !linked {
 		// vz, docker, libkrun, fake, empty or unknown: its pools never ran.
 		// The row stays for its owner to delete, and so do its pools.
+		// Disabled closes it to new pools; its pools' deletes drop their rows
+		// alone because type `vm` cannot be built, not because it is
+		// disabled (ADR 26-11-22-507 §2).
 		if provider.Disabled {
 			return nil
 		}

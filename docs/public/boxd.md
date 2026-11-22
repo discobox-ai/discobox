@@ -198,20 +198,11 @@ provider is gone.
 A boxd provider made before the region was required has none, and it stops
 working: `admin provider check` answers `refused`, `region is required`, and
 its pools stay `pending`. The region cannot be added while the provider has
-pools, and the server cannot reach boxd to delete them, so disable the
-provider first, then delete its pools and the provider, and create them
-again with `--driver-region`, as above:
-
-```sh
-discobox admin provider update boxd --disabled
-discobox admin pool rm boxd
-discobox admin provider rm boxd
-```
-
-A disabled provider's pools are deleted without calling boxd, so their
-machines and snapshots are left there. Delete them in boxd: their names
-start with `dvm-prov-` and `dvm-pool-`, followed by the provider's or the
-pool's ID in lower case, with `-` for `_`.
+pools, and its pools cannot be deleted either: deleting a pool removes its
+machines through boxd, which this provider cannot reach, so the delete keeps
+retrying. Disabling the provider does not change that, since a disabled
+provider's pools are deleted the same way. Create a new provider with
+`--driver-region`, as above, and new pools on it.
 
 ## Upgrading a `vm` provider
 

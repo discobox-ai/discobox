@@ -73,6 +73,9 @@ for what is copied and why.
   resource packages) so create-time behavior still runs: provider config
   validation and instance resolution, pool reconcile scheduling. Built-in
   seeding goes through `HarnessConfigs.SeedBuiltIns`.
+- A disabled provider instance is copied disabled, and its pools are left
+  behind: it takes no new pools, and the pool service would refuse them
+  (ADR 26-11-22-507 §1).
 - Harness config copies, their secrets, and the bindings on them and on the
   project are written through the store, each recorded as the system's copy. A seeded built-in takes only the
   source's saved overlay and egress level, never its bundle; a user-created config is copied

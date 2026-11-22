@@ -9,6 +9,16 @@
   §1: a pool on a disabled provider no longer drops out of the upgrade wait.
   Only one on a removed provider, or on one that cannot be built here (§2),
   does.
+- **Supersedes in part**
+  [26-11-15-089](26-11-15-089-a-provider-instance-is-checked-on-request-without-making-anything.md)
+  §3's check of a disabled instance on a provider built for the check alone:
+  a disabled instance is checked on its cached provider like any other (§1);
+  and
+  [26-11-15-507](26-11-15-507-a-boxd-provider-names-its-region-and-one-without-is-made-again.md)
+  §2's "disables the provider, so its pools delete without calling boxd": a
+  disabled provider's pools delete through it, so the pools of a boxd row
+  without a region, which fails to build, cannot be deleted. Amended while
+  nothing had shipped against it; boxd has no deployments (owner, 2026-11-22).
 - **Settles**
   [26-11-11-080](26-11-11-080-each-disco-vm-driver-is-a-provider-type-of-its-own-name-configured-by-its-own-fields.md)
   §8's "how a pool of an unregistered type is deleted is implementation's".

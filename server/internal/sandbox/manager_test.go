@@ -118,6 +118,54 @@ func TestProviderManagerFactoryCachesProviderInstances(t *testing.T) {
 	}
 }
 
+// A write that changes nothing a build reads — a rename, or turning Disabled
+// on or off — keeps the cached provider: rebuilding closes the old one, and a
+// VM-backed provider's Close powers off its pools' VMs, which disabling must
+// not touch (ADR 26-11-22-507 §1). A change of what it is built from (type,
+// config, sealed fields, carried endpoints) rebuilds it.
+func TestProviderManagerKeepsTheProviderAcrossAWriteItsBuildDoesNotRead(t *testing.T) {
+	ctx := context.Background()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
+	var built []*fakeProvider
+	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		provider := &fakeProvider{image: "remote:latest"}
+		built = append(built, provider)
+		return provider, nil
+	})
+	instance := &model.SandboxProviderInstance{ID: "provider-1", Type: "remote", Name: "remote", Config: model.RawJSON(`{"region":"fra"}`), UpdatedAt: time.Now().UTC()}
+	first, err := manager.ResolveInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	renamed := *instance
+	renamed.Name = "renamed"
+	renamed.Disabled = true
+	renamed.UpdatedAt = instance.UpdatedAt.Add(time.Second)
+	again, err := manager.ResolveInstance(ctx, &renamed)
+	if err != nil {
+		t.Fatalf("resolve renamed and disabled: %v", err)
+	}
+	if again != first || first.(*fakeProvider).closed || len(built) != 1 {
+		t.Fatalf("built %d providers, first closed %v; want the first kept across a rename and a disable", len(built), built[0].closed)
+	}
+	for name, change := range map[string]func(*model.SandboxProviderInstance){
+		"config":            func(i *model.SandboxProviderInstance) { i.Config = model.RawJSON(`{"region":"ord"}`) },
+		"sealed fields":     func(i *model.SandboxProviderInstance) { i.EncryptedConfig = []byte("sealed-2") },
+		"carried endpoints": func(i *model.SandboxProviderInstance) { i.CarriedEndpoints = []string{"driver.addr"} },
+	} {
+		before := len(built)
+		changed := renamed
+		change(&changed)
+		if _, err := manager.ResolveInstance(ctx, &changed); err != nil {
+			t.Fatalf("resolve with its %s changed: %v", name, err)
+		}
+		if len(built) != before+1 {
+			t.Fatalf("a change of its %s did not rebuild the provider", name)
+		}
+		renamed = changed
+	}
+}
+
 // A changed instance row rebuilds its provider, and the previous one is closed
 // before the new one is handed to anyone. A VM-backed provider's Close powers
 // its VMs off in order, which takes seconds, and the new provider starts VMs on
@@ -137,6 +185,7 @@ func TestProviderManagerClosesThePreviousProviderBeforePublishingItsReplacement(
 		t.Fatalf("resolve: %v", err)
 	}
 	changed := *instance
+	changed.Config = model.RawJSON(`{"region":"fra"}`)
 	changed.UpdatedAt = instance.UpdatedAt.Add(time.Second)
 
 	var resolvedDuringClose atomic.Bool

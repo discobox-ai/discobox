@@ -157,7 +157,7 @@ Examples:
 	cmd.Flags().Lookup("help").NoOptDefVal = "true"
 	cmd.Flags().String("name", "", "Provider instance name")
 	cmd.Flags().String("config", "", "Provider config JSON or @path")
-	cmd.Flags().Bool("disabled", false, "Disable or enable the provider instance")
+	cmd.Flags().Bool("disabled", false, "Close the provider instance to new pools; its existing pools keep running until deleted")
 	cmd.Flags().StringArray("secret", nil, secretFlagUsage)
 	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
 		if provider := strings.TrimSpace(helpFlag.Provider()); provider != "" {

@@ -58,7 +58,10 @@ type PendingPool struct {
 // describes does.
 type UpgradeWatch struct {
 	store *store.Store
-	now   func() time.Time
+	// manager says which provider types this server can build: a pool on one
+	// it cannot is not waited on (ADR 26-11-22-507 §2).
+	manager *sandbox.ProviderManager
+	now     func() time.Time
 
 	mu      sync.Mutex
 	watched map[string]bool
@@ -93,9 +96,9 @@ type agentStart struct {
 }
 
 // NewUpgradeWatch watches nothing until Begin.
-func NewUpgradeWatch(appStore *store.Store) *UpgradeWatch {
+func NewUpgradeWatch(appStore *store.Store, manager *sandbox.ProviderManager) *UpgradeWatch {
 	return &UpgradeWatch{
-		store: appStore, now: time.Now, kept: map[string]keptBox{},
+		store: appStore, manager: manager, now: time.Now, kept: map[string]keptBox{},
 		started: map[string]agentStart{}, firstReport: map[string]time.Time{},
 	}
 }
@@ -278,7 +281,7 @@ func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, s
 	if pool.DesiredState == model.DesiredStateDeleted {
 		return nil, nil
 	}
-	provider, err := convergedProvider(ctx, w.store, pool)
+	provider, err := convergedProvider(ctx, w.store, w.manager, pool)
 	if err != nil {
 		return nil, err
 	}

@@ -189,12 +189,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
-	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
-	if err != nil {
+	if _, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID); err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
-	}
-	if provider.Disabled {
-		return nil, fmt.Errorf("provider instance disabled")
 	}
 	harnessConfigID, err := s.resolveHarnessConfigID(ctx, project, config.HarnessConfigId, input.HarnessName)
 	if err != nil {

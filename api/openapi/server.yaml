@@ -5535,7 +5535,7 @@ components:
                     format: date-time
                     type: string
                 disabled:
-                    description: Whether this provider is disabled
+                    description: Whether this provider is closed to new pools. Creating a pool on a disabled provider is refused. Its existing pools keep working, and deleting one removes what it runs, so disabling alone does not stop what they cost.
                     type: boolean
                 id:
                     description: Stable provider instance ID
@@ -6650,7 +6650,7 @@ components:
                 config:
                     description: Provider configuration, replacing the stored one. A secret field left out keeps its value, a value replaces it, and null clears it.
                 disabled:
-                    description: Whether this provider is disabled
+                    description: Whether this provider is closed to new pools. Creating a pool on a disabled provider is refused. Its existing pools keep working, and deleting one removes what it runs, so disabling alone does not stop what they cost.
                     type: boolean
                 name:
                     description: Provider display name
@@ -10086,7 +10086,7 @@ paths:
                 - Providers
     /projects/{projectId}/providers/{providerId}/check:
         post:
-            description: Asks the provider instance whether the server reaches what its pools need (its service's account, a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret to its service and is answered from what the provider says then; nothing is stored. A disabled instance is checked too. A failed check is answered 200 with its outcome; an error response means the check could not be run.
+            description: Asks the provider instance whether the server reaches what its pools need (its service's account, a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret to its service and is answered from what the provider says then; nothing is stored. A disabled instance is checked like any other. A failed check is answered 200 with its outcome; an error response means the check could not be run.
             operationId: check-sandbox-provider-instance
             parameters:
                 - description: Project ID

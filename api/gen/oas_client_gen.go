@@ -87,8 +87,8 @@ type Invoker interface {
 	// Asks the provider instance whether the server reaches what its pools need (its service's account,
 	// a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret
 	// to its service and is answered from what the provider says then; nothing is stored. A disabled
-	// instance is checked too. A failed check is answered 200 with its outcome; an error response means
-	// the check could not be run.
+	// instance is checked like any other. A failed check is answered 200 with its outcome; an error
+	// response means the check could not be run.
 	//
 	// POST /projects/{projectId}/providers/{providerId}/check
 	CheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (CheckSandboxProviderInstanceRes, error)
@@ -2208,8 +2208,8 @@ func (c *Client) sendAuthorizePoolSandboxStart(ctx context.Context, params Autho
 // Asks the provider instance whether the server reaches what its pools need (its service's account,
 // a Docker daemon, the host's hypervisor), and makes nothing. Each call sends the instance's secret
 // to its service and is answered from what the provider says then; nothing is stored. A disabled
-// instance is checked too. A failed check is answered 200 with its outcome; an error response means
-// the check could not be run.
+// instance is checked like any other. A failed check is answered 200 with its outcome; an error
+// response means the check could not be run.
 //
 // POST /projects/{projectId}/providers/{providerId}/check
 func (c *Client) CheckSandboxProviderInstance(ctx context.Context, params CheckSandboxProviderInstanceParams) (CheckSandboxProviderInstanceRes, error) {

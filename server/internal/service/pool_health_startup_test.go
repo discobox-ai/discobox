@@ -15,8 +15,9 @@ func TestStartRequiresNewPoolHealthReports(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st, db := newProviderInstanceTestStore(ctx, t)
-	// Disabled providers are still invalidated, without booting a real host.
-	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Name: "test", Type: "docker", Disabled: true}
+	// A pool on a provider this server cannot build is still invalidated; the
+	// type keeps the test from booting a real host.
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Name: "test", Type: "unsupported", Disabled: true}
 	if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,9 @@ flowchart LR
 
 ## Responsibilities
 
-- `service.go` — pool CRUD, the project default pool, and intent submission.
+- `service.go` — pool CRUD, the project default pool, and intent submission; a create on a
+  disabled provider instance is refused (409), the one place disabled is
+  checked.
   Create validates the backing provider instance and schedules the first
   reconcile; update never touches `ProviderInstanceID` (immutable) and
   re-schedules the reconcile so size changes converge. Both refuse a non-zero
@@ -160,8 +162,13 @@ flowchart LR
 - `reconciler.go` — `PoolReconciler` (resource type `pool`, dirty ID
   `projectID/poolID`): converges the pool's single runtime host
   (container/VM/pod) toward its desired state through the provider's
-  `PoolRuntime`. A missing or disabled provider instance, or one with no pool
-  runtime, converges trivially. A `ReconcilePool` that reports
+  `PoolRuntime`. A missing provider instance, one whose type this server
+  cannot build (`ProviderManager.Buildable`: `unsupported`, a migrated `vm`
+  row, a `vz` or `wslc` row on another OS), or one with no pool runtime,
+  converges trivially, and a delete of its pool drops the row alone. A
+  disabled instance converges like an enabled one, and its pool's delete
+  calls `RemovePool` (ADR 26-11-22-507); a buildable type whose build fails
+  is a failure that retries, never a row-only delete. A `ReconcilePool` that reports
   `sandbox.ErrPoolNotReachable` — a host that is up but not yet taking traffic,
   such as a container whose healthcheck has not passed — is not a failure at
   all: the pass writes nothing and asks again (`poolHostComingUpRequeue`),
@@ -260,8 +267,9 @@ it says so with `sandbox.ReportBoxKept`; the reconciler hands that to the
 watch with the settle's time, and a later settle supersedes it. These records
 are in memory only, as the run they describe is.
 
-A pool deleted, or on a removed or disabled provider instance
-(`convergedProvider`, which the reconciler decides the same by), drops out.
+A pool deleted, or on a removed provider instance or one whose type this
+server cannot build (`convergedProvider`, which the reconciler decides the
+same by), drops out. One on a disabled instance is still waited on.
 Once none is left the watch has cleared for the run. It reads rows and writes
 nothing, resolves no provider, and runs one pass at a time under its own
 bounded context, at most once a second; a probe that cannot wait, or a pass

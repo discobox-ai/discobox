@@ -53,7 +53,7 @@ func newAgentServiceTestFixture(t *testing.T) (*Service, *poolagentauth.Manager)
 	}
 	agentAuth := poolagentauth.NewManager(appStore, keyring)
 
-	controlPlane := NewControlPlane(appStore, nil)
+	controlPlane := NewControlPlane(appStore, nil, nil)
 	controlPlane.SetAgentAuthManager(agentAuth)
 
 	if err := appStore.UpsertProject(ctx, &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "project-1"}); err != nil {

@@ -120,11 +120,10 @@ func providerStatusToService(status sandboxesvc.ProviderStatus) services.Provide
 	return out
 }
 
-// HasSandboxProviderType reports whether this server registers the provider
-// type.
+// HasSandboxProviderType reports whether this server can build an instance of
+// the provider type (sandbox.ProviderManager.Buildable).
 func (s *Service) HasSandboxProviderType(providerType string) bool {
-	_, ok := s.sandboxes.SandboxProviderManager().GetProviderDefinition(providerType)
-	return ok
+	return s.sandboxes.SandboxProviderManager().Buildable(providerType)
 }
 
 func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
@@ -500,7 +499,11 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 		}
 		for i := range providers {
 			provider := &providers[i]
-			if provider.Disabled {
+			// A disabled instance is resolved like an enabled one: its pools
+			// keep working (ADR 26-11-22-507 §1). One whose type this server
+			// cannot build has nothing to resolve, and its pools are not
+			// converged (§2).
+			if !s.sandboxes.SandboxProviderManager().Buildable(provider.Type) {
 				continue
 			}
 			if _, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider); err != nil {

@@ -1513,7 +1513,7 @@ type SandboxProviderInstance struct {
 	// it; no request can, a write that changes such a field drops its key,
 	// and a project copy does not carry it.
 	CarriedEndpoints []string  `gorm:"column:carried_endpoints;type:text;serializer:json" json:"-"`
-	Disabled         bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
+	Disabled         bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is closed to new pools. Creating a pool on a disabled provider is refused. Its existing pools keep working, and deleting one removes what it runs, so disabling alone does not stop what they cost."`
 	CreatedAt        time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt        time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 

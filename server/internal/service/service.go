@@ -121,7 +121,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	}
 	manager := sandbox.NewProviderManager(store)
 	manager.SetEndpointPolicy(options.ProviderEndpoints)
-	poolControlPlane := pools.NewControlPlane(store, engine)
+	poolControlPlane := pools.NewControlPlane(store, manager, engine)
 	poolControlPlane.OutboundDefaults = options.PoolOutbound
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
 		DevelopmentImageSync: options.DevelopmentImageSync,

@@ -64,3 +64,10 @@
   draft trusted loopback alone, which handed a sandbox the server's command
   line, every goroutine's stack, and profiles and traces long enough to stall
   it.
+- A provider factory or `Initialize` that reads a field of the instance row
+  (`model.SandboxProviderInstance`) adds it to `sandbox.buildKey`, the
+  provider cache's key. Why: the cache keeps a provider across any write that
+  leaves the key unchanged, so a field read but not keyed is served stale
+  after an update; the key left out `Name` and `Disabled` on purpose so a
+  rename or a disable does not rebuild the provider and power its pools' VMs
+  off (#1556).

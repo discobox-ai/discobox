@@ -116,11 +116,9 @@ func TestCheckSandboxProviderInstanceUsesTheResolvedProvider(t *testing.T) {
 	}
 }
 
-// A disabled instance is checked too, so an operator checks it before
-// enabling it, but on a provider built for the check alone: never
-// initialized (which would mark its pools), never cached, and closed after
-// (a build may start the provider's own loops).
-func TestCheckSandboxProviderInstanceChecksADisabledInstanceOnAProviderOfItsOwn(t *testing.T) {
+// A disabled instance is checked like an enabled one, on the provider its
+// existing pools resolve: disabled closes it to new pools and nothing else.
+func TestCheckSandboxProviderInstanceChecksADisabledInstanceOnTheResolvedProvider(t *testing.T) {
 	checked := 0
 	svc, _, providers := newCheckFixture(t, true, func(context.Context) error { checked++; return nil })
 	for range 2 {
@@ -129,13 +127,8 @@ func TestCheckSandboxProviderInstanceChecksADisabledInstanceOnAProviderOfItsOwn(
 			t.Fatalf("check = %+v, err %v; want the disabled instance checked", check, err)
 		}
 	}
-	if checked != 2 || len(*providers) != 2 {
-		t.Fatalf("checked %d times on %d providers; want each check on a provider of its own", checked, len(*providers))
-	}
-	for i, provider := range *providers {
-		if provider.initialized || !provider.closed {
-			t.Fatalf("provider %d: initialized %v, closed %v; want built for the check alone and closed", i, provider.initialized, provider.closed)
-		}
+	if checked != 2 || len(*providers) != 1 || !(*providers)[0].initialized || (*providers)[0].closed {
+		t.Fatalf("checked %d times on %d providers; want both on one provider, initialized and kept for the instance's pools", checked, len(*providers))
 	}
 }
 

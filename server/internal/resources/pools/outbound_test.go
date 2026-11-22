@@ -12,7 +12,7 @@ import (
 
 func TestPoolOverrideUsesOneObjectAndNullRevealsYAML(t *testing.T) {
 	s := newSizeFixture(t)
-	s.pools = NewControlPlane(s.store, nil)
+	s.pools = NewControlPlane(s.store, nil, nil)
 	s.pools.OutboundDefaults = pooloutbound.Defaults{Configured: true, Global: pooloutbound.Resolved{HTTP: "http://global:1", HTTPS: "http://global:2"}, GlobalMode: "explicit", ByPool: map[string]pooloutbound.Resolved{}}
 	ctx := context.Background()
 	proxy := apigen.PoolProxy{Mode: apigen.NewOptPoolProxyMode(apigen.PoolProxyModeExplicit), HTTP: apigen.NewOptString("http://api:1")}
