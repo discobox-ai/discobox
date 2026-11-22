@@ -22,7 +22,7 @@ import (
 type resolvedOnly struct{ *poolruntime.Provider }
 
 func (resolvedOnly) Initialize(context.Context, *model.SandboxProviderInstance) error { return nil }
-func (resolvedOnly) Close() error                                                    { return nil }
+func (resolvedOnly) Close() error                                                     { return nil }
 
 // Deleting a pool on a disabled provider removes what it ran, as on an
 // enabled one (ADR 26-11-22-507 §1): the pool reconciler resolves the
