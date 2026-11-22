@@ -338,6 +338,12 @@ func sandboxOutput(sb *sandboxruntime.Sandbox, err error, config *workerapimodel
 
 func sandboxInstanceFromRuntime(sb *sandboxruntime.Sandbox, config *workerapimodel.SandboxConfig) workerapimodel.PoolSandboxInstance {
 	normalizeSandboxResponse(sb)
+	status := sb.Status
+	if status == sandboxruntime.StatusPaused {
+		// A provider's pause is no sleep: running, as the state channel
+		// reports it (StatusPaused).
+		status = sandboxruntime.StatusRunning
+	}
 	if config == nil {
 		config = &workerapimodel.SandboxConfig{
 			Env: workerapi.NewOptSandboxConfigEnv(workerapi.SandboxConfigEnv(sb.Env)),
@@ -348,7 +354,7 @@ func sandboxInstanceFromRuntime(sb *sandboxruntime.Sandbox, config *workerapimod
 		Config:    *config,
 		Runtime: workerapimodel.PoolSandboxRuntime{
 			InstanceId: sb.ID,
-			Status:     string(sb.Status),
+			Status:     string(status),
 			Image:      sb.Image,
 			CreatedAt:  sb.CreatedAt,
 			StartedAt:  nilDateTime(sb.StartedAt),

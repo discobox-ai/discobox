@@ -227,9 +227,17 @@ const (
 	// holds its memory and every process, and nothing in it runs or answers.
 	// Docker calls it running; nothing that reaches into a sandbox may.
 	StatusSuspended Status = "suspended"
-	StatusStopped   Status = "stopped"
-	StatusFailed    Status = "failed"
-	StatusRemoved   Status = "removed"
+	// StatusPaused is a machine its provider paused, which the pool did not
+	// freeze (Archil at a session's limit; ADR 26-11-16-619 §5): not
+	// running, so a start resumes it (engine.Start), and never reported as a
+	// sleep, since nothing here put it to sleep: the state channel
+	// (stateFromStatus) and the pool API's runtime status say `running`, and
+	// a read refused for it says `starting` (pool-agent/server). The machine
+	// state poll resumes it (resumePaused).
+	StatusPaused  Status = "paused"
+	StatusStopped Status = "stopped"
+	StatusFailed  Status = "failed"
+	StatusRemoved Status = "removed"
 )
 
 // Runtime performs local sandbox operations for one pool agent.

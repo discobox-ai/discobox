@@ -211,7 +211,9 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		}
 		slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
 	}
-	if running && record.NewRoot {
+	// A paused one too: it is not stopped, and only a stopped machine is
+	// given a root (engine.Upgrade). The stop resumes it to shut it down.
+	if record.NewRoot && (running || sb.Status == StatusPaused) {
 		if err := r.stopLocked(ctx, sandboxID); err != nil {
 			return err
 		}
@@ -240,7 +242,13 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			}
 			cancel()
 		}
-		r.publishSandboxState(ctx, sandboxID, StateStopped)
+		// A paused machine whose resume failed is still paused: no stop,
+		// and no sleep (StatusPaused).
+		state := StateStopped
+		if r.engine.State(context.WithoutCancel(ctx), inst) == engine.Paused {
+			state = stateFromStatus(StatusPaused)
+		}
+		r.publishSandboxState(ctx, sandboxID, state)
 		r.endBoot(sandboxID, boot, err)
 		return err
 	}

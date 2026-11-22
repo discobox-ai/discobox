@@ -528,6 +528,20 @@ changed. A step added that lays a binary needs it there too.
   (done for #1238). Why: the fake driver boots instantly, so CI cannot show
   a step that needs a settled system.
 
+## A provider's pause is not a sleep
+
+A machine `engine.State` reads `Paused` is one its provider paused
+(`StatusPaused`), never `StatusSuspended`, while the pool freezes no machine:
+`suspended` is how a sleep is reported, and nothing would wake it
+(ADR 26-11-16-619 §5). It is reported running and resumed by a start. Once the
+pool can freeze a machine, only the freeze it recorded reads `suspended`
+(ADR 26-11-21-395 §4).
+
+Every "is it running" branch in `machinepower.go` has this third state: a
+paused machine is not running and not stopped. A branch that stops a running
+machine before something only a stopped one gets (a new root,
+`engine.Upgrade`) stops a paused one too; the stop resumes it first.
+
 ## A machine's new root
 
 - **What the pool placed is the old root's.** A new root (`upgradeMachine`)
