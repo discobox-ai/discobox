@@ -107,11 +107,24 @@ const stubDiscoVM = `#!/usr/bin/env bash
 set -eu
 printf '%s\n' "disco-vm $*" >>"$STUB/calls"
 [ "$2" != boxd ] || [[ "${BOXD_REGION:-}" = fra || "${BOXD_REGION:-}" = nyc ]] || { echo 'disco-vm: boxd: configuration: region is required' >&2; exit 1; }
+if [ "$2" = archil ]; then
+	case ${ARCHIL_REGION:-} in
+	aws-us-east-1|aws-us-west-2|aws-eu-west-1) ;;
+	'') echo 'disco-vm: archil: configuration: region is required' >&2; exit 1 ;;
+	*) echo "disco-vm: archil: region \"$ARCHIL_REGION\" runs no sandboxes (one of aws-us-east-1, aws-us-west-2, aws-eu-west-1)" >&2; exit 1 ;;
+	esac
+fi
 [ "$1 $3" = "--driver --pool" ] || { echo "stub disco-vm: no driver and scope: $*" >&2; exit 3; }
 driver=$2 scope=$4; shift 4
 case "$1 ${2:-}" in
 "ls -a")
 	[ ! -e "$STUB/ls-fails-$scope" ] || { echo 'disco-vm: boxd: exchange API key: 401 Unauthorized: invalid API key' >&2; exit 1; }
+	# A region other than the provider's is another endpoint: archil's refuses
+	# the key (live, 2026-11-22), and boxd's lists none of the provider's
+	# machines.
+	if [ "$driver" = archil ] && [ "$ARCHIL_REGION" != "$(cat "$STUB/provider-region")" ]; then
+		echo 'disco-vm: archil: list sandboxes: machine: the key was refused: archil: Unauthorized (401)' >&2; exit 1
+	fi
 	echo 'ID  NAME  FROM  OS  STATE  CREATED'
 	if [ "$driver" = boxd ] && [ "$BOXD_REGION" != "$(cat "$STUB/provider-region")" ]; then exit 0; fi
 	if [ "$scope" = pool-t1 ] && [ ! -e "$STUB/pool.deleted" ]; then
@@ -290,6 +303,49 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 			t.Fatalf("%q is not called in order %v:\n%s", want, order, strings.Join(r.calls, "\n"))
 		}
 		last += i + 1
+	}
+}
+
+// An Archil provider must name its region, and its machine is listed there.
+// Its key reaches no other region, so none is read.
+func TestLiveRunArchilRegion(t *testing.T) {
+	for _, tc := range []struct{ args, region string }{
+		{"--driver archil", "aws-us-east-1"},
+		{"--driver archil --region aws-eu-west-1", "aws-eu-west-1"},
+	} {
+		t.Run(tc.region, func(t *testing.T) {
+			r := liveRun(t, func(stub string) {
+				write(t, filepath.Join(stub, "args"), tc.args, 0o644)
+				write(t, filepath.Join(stub, "archil-edge"), "absent\n", 0o644)
+			})
+			config, err := os.ReadFile(filepath.Join(r.stub, "provider.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(config), `"region": "`+tc.region+`"`) {
+				t.Fatalf("provider config %s does not name region %s", config, tc.region)
+			}
+			if !strings.Contains(r.report, "| PASS | region | sbx-t1 is listed in "+tc.region+"; no other region is read") {
+				t.Fatalf("archil run checks no region placement in %s:\n%s", tc.region, r.report)
+			}
+			// An Archil key is refused at another region's control plane, so
+			// none is read.
+			if strings.Contains(r.report, "left-pool-scope-aws-") || strings.Contains(r.report, "left-provider-scope-aws-") {
+				t.Fatalf("archil run reads another region, which its key cannot reach:\n%s", r.report)
+			}
+			if r.exit != 0 {
+				t.Fatalf("archil run in %s failed:\n%s\n%s", tc.region, r.report, r.out)
+			}
+		})
+	}
+}
+
+func TestLiveRunRefusesUnknownArchilRegion(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "args"), "--driver archil --region fra", 0o644)
+	})
+	if r.exit != 2 || !strings.Contains(r.out, "aws-us-east-1, aws-us-west-2 or aws-eu-west-1") {
+		t.Fatalf("expected the region to be refused, exit %d:\n%s", r.exit, r.out)
 	}
 }
 
