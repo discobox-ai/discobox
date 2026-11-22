@@ -827,9 +827,11 @@ func firstNonEmpty(values ...string) string {
 //
 // The engine reads Unknown for every failure to ask, a missing, refused or
 // too narrow credential among them, and waiting would hide that forever. So
-// Unknown asks the machine once more, through Engine.Guest, which makes the
-// same call to the service and returns its error, and only a service that
-// cannot be reached is waited on; any other error is the pool's.
+// Unknown asks the machine once more, through Engine.Guest, which asks the
+// same service by another call (an attach) and returns its error: a machine
+// its provider paused answers ErrPaused, which converge resumes, and only a
+// service that cannot be reached is waited on; any other error is the
+// pool's.
 func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst engine.Instance) (engine.State, error) {
 	state := h.engine.State(ctx, inst)
 	if state != engine.Unknown {
