@@ -343,3 +343,57 @@ func TestASuspendOfAProviderPauseIsAFreeze(t *testing.T) {
 		t.Fatalf("agent told of %d thaws, want 1", resumes)
 	}
 }
+
+// A freeze whose pause takes effect and then reports a failure, as one that
+// timed out does, is a freeze: the record is kept, the box is suspended, and a
+// sleep does not stop it. One whose machine cannot then be read keeps the
+// record too, and fails; the state poll settles it once the machine reads
+// running again.
+func TestAFreezeThatFailsLateIsJudgedByTheMachine(t *testing.T) {
+	t.Run("paused after all", func(t *testing.T) {
+		f, inst := freezeFixture(t, nil, "sbx_30")
+		ctx := context.Background()
+		r := f.runtime
+		f.driver.pauseLate.Store(true)
+		if _, err := r.PowerDownSandbox(ctx, "sbx_30", PowerDownSleep); err != nil {
+			t.Fatalf("sleep: %v", err)
+		}
+		if state := r.engine.State(ctx, inst); state != engine.Paused {
+			t.Fatalf("machine is %s, want paused: a freeze that took effect is no reason to stop it", state)
+		}
+		requireStatus(t, r, "sbx_30", StatusSuspended, "slept")
+		requireFrozenRecord(t, r, "sbx_30", true, "slept")
+		if err := r.resumePaused(ctx, "sbx_30"); err != nil {
+			t.Fatal(err)
+		}
+		requireStatus(t, r, "sbx_30", StatusSuspended, "after the state poll")
+	})
+	t.Run("state unknown", func(t *testing.T) {
+		f, _ := freezeFixture(t, nil, "sbx_31")
+		ctx := context.Background()
+		r := f.runtime
+		agent := f.agents.get(t, "sbx_31")
+		f.driver.pauseRefused.Store(true)
+		f.driver.stateUnknown.Store(true)
+		if err := r.SuspendSandbox(ctx, "sbx_31", nil); err == nil {
+			t.Fatal("a freeze whose machine cannot be read succeeded")
+		}
+		requireFrozenRecord(t, r, "sbx_31", true, "with the machine unread")
+		// While the driver cannot be asked, the box is seen suspended, and
+		// a settle leaves the record: it acts on no state last seen.
+		requireStatus(t, r, "sbx_31", StatusSuspended, "with the machine unread")
+		if err := r.settleFrozen(ctx, "sbx_31"); err != nil {
+			t.Fatal(err)
+		}
+		requireFrozenRecord(t, r, "sbx_31", true, "settled with the machine unread")
+		f.driver.stateUnknown.Store(false)
+		if err := r.settleFrozen(ctx, "sbx_31"); err != nil {
+			t.Fatal(err)
+		}
+		requireStatus(t, r, "sbx_31", StatusRunning, "settled")
+		requireFrozenRecord(t, r, "sbx_31", false, "settled")
+		if _, resumes := agent.autostopCalls(); resumes != 1 {
+			t.Fatalf("agent told of %d thaws, want 1", resumes)
+		}
+	})
+}

@@ -567,7 +567,18 @@ was meant to show (#1523).
 - `Frozen` is written under the power lock before `engine.Pause` and cleared
   when the freeze fails, when a stop or a start finds the machine stopped, and
   after a thaw's after-thaw steps. A path that leaves it set on a machine that
-  is not paused turns the next provider pause into a sleep nothing wakes.
+  is not paused turns the next provider pause into a sleep nothing wakes. The
+  one exception is a freeze whose machine cannot be read afterwards (below),
+  where it is kept until the driver answers.
+- A freeze has failed only if the machine is then running or stopped: judge
+  an error from `engine.Pause` by `engine.State`, not by the error. Why: a
+  pause that times out may have taken effect, and clearing `Frozen` on a
+  paused machine makes it a provider's pause, which the state poll resumes.
+  A state that cannot be read keeps `Frozen` and is seen `suspended`, and
+  `settleFrozen` acts only on what the driver answers now, never on the state
+  last seen: kept on a running machine, `Frozen` is settled once the driver
+  answers; cleared on a paused one, nothing would put it back (#1274's merge
+  score).
 - Every "is it running" branch in `machinepower.go` has two more states: a
   paused or frozen machine is not running and not stopped. A branch that stops
   a running machine before something only a stopped one gets (a new root,

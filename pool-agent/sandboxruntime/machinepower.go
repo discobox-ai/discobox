@@ -140,9 +140,14 @@ const machineFreezeTimeout = machineStopTimeout
 
 // freezeLocked pauses the sandbox's machine whole (engine.Pause), recording
 // first that the pool froze it, so its paused state reads suspended rather
-// than as a pause its provider made (ADR 26-11-21-395 §4). A freeze that fails
-// clears the record and leaves the machine running. The caller holds the
-// sandbox's power lock.
+// than as a pause its provider made (ADR 26-11-21-395 §4). A freeze the driver
+// reports failed is judged by what the machine is then, since a pause that
+// timed out may have taken effect: paused is frozen, and succeeds; running or
+// stopped is a failure, and clears the record; a state that cannot be read
+// keeps the record, and fails. Kept on a machine that runs, the record is
+// settled (settleFrozen: the after-thaw steps, then cleared); cleared on one
+// that paused, it would read as its provider's pause, which the state poll
+// resumes, undoing the freeze. The caller holds the sandbox's power lock.
 func (r *MachineSandboxRuntime) freezeLocked(ctx context.Context, sandboxID string) error {
 	record, ok, err := r.readMachineRecord(sandboxID)
 	if err != nil {
@@ -162,8 +167,23 @@ func (r *MachineSandboxRuntime) freezeLocked(ctx context.Context, sandboxID stri
 	pauseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineFreezeTimeout)
 	defer cancel()
 	if err := r.engine.Pause(pauseCtx, inst); err != nil {
-		record.Frozen = false
-		return errors.Join(fmt.Errorf("freeze sandbox %s's machine: %w", sandboxID, err), r.writeMachineRecord(sandboxID, record))
+		err = fmt.Errorf("freeze sandbox %s's machine: %w", sandboxID, err)
+		stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineFreezeTimeout)
+		defer cancel()
+		switch r.engine.State(stateCtx, inst) {
+		case engine.Paused:
+			slog.WarnContext(ctx, "a sandbox machine's freeze reported a failure, but the machine is paused; it is frozen", "sandboxId", sandboxID, "error", err)
+		case engine.Running, engine.Stopped:
+			record.Frozen = false
+			return errors.Join(err, r.writeMachineRecord(sandboxID, record))
+		default:
+			// Seen suspended until the driver answers: what status falls
+			// back to while it cannot be asked, so nothing acts on the
+			// running it was seen before the freeze.
+			r.endpoints.Delete(sandboxID)
+			r.observe(sandboxID, StatusSuspended)
+			return err
+		}
 	}
 	slog.InfoContext(ctx, "froze sandbox machine", "sandboxId", sandboxID)
 	r.endpoints.Delete(sandboxID)
@@ -208,7 +228,11 @@ func (r *MachineSandboxRuntime) settleFrozenInBackground(ctx context.Context, lo
 // something else changed (ADR 26-11-21-395 §4): one running again was thawed
 // outside the pool (Archil resumes a paused sandbox for a request carrying its
 // port token), and gets the after-thaw steps; one stopped is no longer
-// frozen. One still paused is left suspended.
+// frozen. One still paused is left suspended. It acts only on what the
+// driver answers now, never on the state last seen, which is what a driver
+// that cannot be asked leaves: settling a machine whose pause took effect
+// while the driver did not answer would make it its provider's pause, which
+// the state poll resumes.
 func (r *MachineSandboxRuntime) settleFrozen(ctx context.Context, sandboxID string) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
@@ -217,15 +241,15 @@ func (r *MachineSandboxRuntime) settleFrozen(ctx context.Context, sandboxID stri
 	if err != nil || !ok || !record.Frozen {
 		return err
 	}
-	sb, err := r.powerTarget(ctx, sandboxID)
+	inst, err := r.instance(ctx, sandboxID)
 	if err != nil {
 		return err
 	}
-	switch sb.Status {
-	case StatusRunning:
+	switch r.engine.State(ctx, inst) {
+	case engine.Running:
 		slog.InfoContext(ctx, "a sandbox machine the pool froze runs again; running its after-thaw steps", "sandboxId", sandboxID)
 		return r.thawedLocked(ctx, sandboxID, &record)
-	case StatusStopped, StatusCreated:
+	case engine.Stopped:
 		record.Frozen = false
 		return r.writeMachineRecord(sandboxID, record)
 	}

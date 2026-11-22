@@ -1207,7 +1207,9 @@ flowchart LR
   failure, never a stop. libkrun reports no pause, so a sleep there stays a
   stop.
   - **The pool records its freeze** (`machineRecord.Frozen`), written under
-    the power lock before the driver is asked and cleared if it fails, because
+    the power lock before the driver is asked and cleared if it fails (a
+    pause that reports an error is judged by the machine's state after it:
+    paused is frozen, an unreadable state keeps the record), because
     disco-vm does not say who paused a machine. Paused and frozen is
     `StatusSuspended`, reported `suspended`, and read like a frozen container
     (no status poll, no document, reads refused). Paused and not frozen is a
