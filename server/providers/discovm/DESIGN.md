@@ -398,7 +398,10 @@ driver's machine limit), never against anything the machine reports (551 §1):
   none on a driver fenced at its edge) and not stripped; any other is
   refused, and nothing is placed on it (551 §4);
 - a stopped machine is started on the disk it kept; the agent starts from the
-  units `apply` enabled, on the key it holds;
+  units `apply` enabled, on the key it holds. A machine its provider paused
+  (Archil at its session limit) is resumed the same way, by the engine's
+  `Start`, which boots nothing, so the pool's machine is never left paused
+  past a scan (ADR 26-11-16-619 §5);
 - a key due for renewal is replaced (below);
 - the driver's machine limit (`Capabilities.MaxMachines`) is read at its
   `Check`, with the provider's key, and recorded as `maxMachines` with when

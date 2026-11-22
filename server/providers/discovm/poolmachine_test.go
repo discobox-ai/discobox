@@ -18,6 +18,7 @@ import (
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
+	"github.com/discobox-ai/vm/pkg/machine/fake"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -667,6 +668,42 @@ func TestFakePoolMachineAtAnEdgeIsOnNoNetwork(t *testing.T) {
 	driver.edge = true
 	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err == nil || !strings.Contains(err.Error(), "nothing is placed on it") {
 		t.Fatalf("EnsurePool() over a machine on a network = %v, want it refused", err)
+	}
+}
+
+// A pool machine its provider paused (Archil at a sandbox's session limit,
+// here the fake driver's hook) is resumed at the pool's next reconcile, by
+// the engine's Start, on the machine and disk it had (ADR 26-11-16-619 §5):
+// the pool's own machine is never left paused.
+func TestFakePoolMachinePausedByItsProviderIsResumed(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-paused", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	maker := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := r.host.(*poolMachine).instance(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fake.Pause(ctx, driver.Driver, inst); err != nil {
+		t.Fatal(err)
+	}
+	if state := r.engine.State(ctx, inst); state != engine.Paused {
+		t.Fatalf("pool machine after the provider's pause = %s, want paused", state)
+	}
+	// The pass's state read fails once, so the attach that asks again is
+	// what finds it paused.
+	driver.mu.Lock()
+	driver.serviceErrs = []error{status.Error(codes.Unavailable, "the service dropped the call")}
+	driver.mu.Unlock()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	if state := r.engine.State(ctx, inst); state != engine.Running || len(driver.created) != 1 {
+		t.Fatalf("pool machine after a reconcile = %s, %d made; want the one machine running", state, len(driver.created))
 	}
 }
 
