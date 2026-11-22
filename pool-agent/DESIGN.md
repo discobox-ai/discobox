@@ -719,8 +719,9 @@ operation rather than something the runtime can observe. For the same reason a
 report carries no error message: what this channel feeds is the control plane's
 runtime state field, and the field that records why something failed belongs to
 the reconciler (ADR 0034 §7). `suspended` is the one state beyond the four: a
-paused container, which Docker itself calls running, or a machine its provider
-paused ([Machine Sandboxes](#machine-sandboxes)).
+paused container, which Docker itself calls running, or a paused machine:
+one the pool froze (ADR 26-11-21-395) or one its provider paused
+([Machine Sandboxes](#machine-sandboxes)).
 
 The sandbox-agent proxy names every path it forwards
 (`server/sandbox_proxy.go`), rather than forwarding a prefix, so that the scope
@@ -1230,6 +1231,32 @@ flowchart LR
   paused is placed as a running machine and restarted onto it; one still to
   be given a new root is stopped for it. Stop, archive and delete act on it as
   on a running one, the engine resuming it before its orderly shutdown.
+- **A sleep and a suspend freeze the machine where its driver can**
+  ([ADR 26-11-21-395](../docs/adr/26-11-21-395-a-machine-pool-freezes-a-sleeping-sandbox-where-its-driver-can-and-stops-it-where-it-cannot.md)),
+  as a container is paused: on a driver that reports `Capabilities.Pause`
+  (disco-vm ADR 26-11-21-438: boxd, archil, vz, hcs, disco-vm's docker,
+  fake), a confirmed sleep and a `suspend` call `engine.Pause`
+  (`freezeLocked`). A sleep stops where the driver cannot or the freeze
+  fails; a suspend is refused there (`ErrUnsupported`, 501) or returns the
+  failure, never a stop. libkrun reports no pause, so a sleep there stays a
+  stop.
+  - **The pool records its freeze** (`machineRecord.Frozen`), written under
+    the power lock before the driver is asked and cleared if it fails, because
+    disco-vm does not say who paused a machine. Paused and frozen is
+    `StatusSuspended`, reported `suspended`, and read like a frozen container
+    (no status poll, no document, reads refused). Paused and not frozen is a
+    pause its provider made, above. Running and frozen was thawed outside the
+    pool (Archil, for a request with its port token): the state poll runs its
+    after-thaw steps (`settleFrozen`). Stopped clears the record.
+  - **Every start thaws it** (`startLocked` → `thawLocked`): `engine.Start`,
+    which resumes and boots nothing, detached from the caller since disco-vm
+    stops a machine whose resume it cannot finish. Then `afterThaw`, shared
+    with the Docker runtime: the runtime-config document and
+    `autostop/resumed`. The thawed machine is then a running machine, placed
+    again only if its placement moved (`placementCurrent`). A refused thaw
+    leaves it suspended. Stop, restart, archive, delete and a rebuild act on a
+    frozen machine as on a running one; the engine resumes it to shut it down.
+    A cache clear leaves it, as it leaves a stopped one, with its cache.
 - **Volumes.** A sandbox's machine, made from its plan's snapshot or fresh
   from the driver's base, has a data volume at `/.discobox/data` and a cache
   volume at `/.discobox/cache` where the driver attaches them (a snapshot's
@@ -1303,9 +1330,9 @@ flowchart LR
   the proxy's response cache, asks each running sandbox's agent to empty
   its own (`cache/clear`, the pool-only `cache-clear` scope), and drops the
   pool's snapshots ([On a machine pool](#on-a-machine-pool)). A stopped
-  sandbox keeps its cache.
-- **Refused**: suspend (the pool freezes no machine whole; a sleep is a stop),
-  tree export and import, both `sandboxruntime.ErrUnsupported`, answered 501.
+  or frozen sandbox keeps its cache (ADR 26-11-21-395 §5).
+- **Refused**: suspend on a driver that cannot freeze a machine (above),
+  tree export and import, all `sandboxruntime.ErrUnsupported`, answered 501.
 - **The reaper** deletes an unheld sandbox, its machine with its tree, and a
   machine of the pool's disco-vm scope named as a generated sandbox ID's
   (`sbx-` and its whole random part: `id.Canonical`, `id.IsGenerated`) that neither a
@@ -2925,7 +2952,8 @@ request delayed across a stop or an agent restart cannot start afterwards.
 Scheduled wakes and actions omit the epoch and retain their existing policy.
 
 An explicit suspend carries `suspendId`. Under the power lock, the Docker
-runtime stages `.discobox-suspend-completion.json`, freezes, and calls the
+runtime, and the machine runtime alike (`suspendWithCompletion` on
+`sandboxCore`), stages `.discobox-suspend-completion.json`, freezes, and calls the
 control plane to complete that receipt before releasing the lock. An answered
 freeze refusal removes the staged receipt. A lost response or process death
 leaves it pending; the next explicit start finishes it before authorization.

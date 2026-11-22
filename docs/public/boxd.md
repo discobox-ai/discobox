@@ -97,6 +97,12 @@ Behind it, the pool builds a snapshot of that kind on a machine of its own;
 boxes of that kind made once the snapshot is ready start from it. Make the
 pool the project's default with `discobox admin pool set-default boxd`.
 
+A box that sleeps (`discobox-power sleep`) or is paused (`discobox admin box
+pause`) on a boxd pool is frozen whole: boxd suspends its machine, keeping its
+memory and every process, and the box carries on where it was when it next
+starts. boxd may bill a suspended machine's memory until it is resumed or
+stopped.
+
 Before it makes a pool's machine, the server checks the account through
 boxd's API: that the key is accepted, that the org has the provider's region
 enabled, and that no host-bound secret is in the org or the key owner's

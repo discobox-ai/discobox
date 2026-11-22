@@ -223,9 +223,10 @@ type Status string
 const (
 	StatusCreated Status = "created"
 	StatusRunning Status = "running"
-	// StatusSuspended is a container frozen whole (ADR 26-10-16-420 §1): it
-	// holds its memory and every process, and nothing in it runs or answers.
-	// Docker calls it running; nothing that reaches into a sandbox may.
+	// StatusSuspended is a container frozen whole (ADR 26-10-16-420 §1), or
+	// a machine the pool froze (ADR 26-11-21-395 §4): it holds its memory and
+	// every process, and nothing in it runs or answers. Docker calls it
+	// running; nothing that reaches into a sandbox may.
 	StatusSuspended Status = "suspended"
 	// StatusPaused is a machine its provider paused, which the pool did not
 	// freeze (Archil at a session's limit; ADR 26-11-16-619 §5): not

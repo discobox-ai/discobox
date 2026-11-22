@@ -956,10 +956,10 @@ func TestMachineSandboxWhoseBaseHasNoSystemd(t *testing.T) {
 	}
 }
 
-// A machine cannot be frozen, so a suspend is refused, and a machine's tree is
-// its disk, so an export is.
+// A machine on a driver that cannot freeze one is refused a suspend (ADR
+// 26-11-21-395 §3), and a machine's tree is its disk, so an export is refused.
 func TestMachineRefusesWhatItCannotDo(t *testing.T) {
-	f := newMachineFixture(t, nil)
+	f := newMachineFixture(t, json.RawMessage(`{"noPause":true}`))
 	ctx := context.Background()
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_5")); err != nil {
 		t.Fatal(err)
@@ -1122,6 +1122,9 @@ type agentDriver struct {
 	// startRefused has every start refused, as a provider that will not
 	// resume a paused machine refuses it.
 	startRefused atomic.Bool
+	// pauseRefused has every pause refused, as a provider that fails one
+	// refuses it, leaving the machine running.
+	pauseRefused atomic.Bool
 	mu           sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
@@ -1294,6 +1297,13 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 		return nil, err
 	}
 	return &applyProcess{Process: process, machine: m}, nil
+}
+
+func (m *agentMachine) Pause(ctx context.Context) error {
+	if m.driver.pauseRefused.Load() {
+		return fmt.Errorf("pause %s: refused: %w", m.inst.Name, machine.ErrUnavailable)
+	}
+	return m.Machine.Pause(ctx)
 }
 
 func (m *agentMachine) Shutdown(ctx context.Context, reboot bool) error {
@@ -1531,15 +1541,18 @@ type fakeMachineAgent struct {
 	mu        sync.Mutex
 	delivered []int64
 	clears    int
-	// unanswered is every path it had no route for, in order.
-	unanswered []string
+	// confirms and resumes are the power-downs it confirmed and the thaws
+	// it was told of (autostop/confirm, autostop/resumed).
+	confirms int
+	resumes  int
 }
 
-// unansweredPaths is every path the agent was asked that it has no route for.
-func (a *fakeMachineAgent) unansweredPaths() []string {
+// autostopCalls is how many power-downs the agent confirmed and how many
+// thaws it was told of.
+func (a *fakeMachineAgent) autostopCalls() (confirms, resumes int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return slices.Clone(a.unanswered)
+	return a.confirms, a.resumes
 }
 
 func (a *fakeMachineAgent) revisions() []int64 {
@@ -1586,12 +1599,22 @@ func (a *fakeMachineAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.clears++
 		a.mu.Unlock()
 		_, _ = io.WriteString(w, `{"paths":[]}`)
+	case r.Method == http.MethodPost && (r.URL.Path == prefix+"/autostop/confirm" || r.URL.Path == prefix+"/autostop/resumed"):
+		if !a.authorized(r, sandboxconfig.AutostopConfirmScope) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		a.mu.Lock()
+		if strings.HasSuffix(r.URL.Path, "/confirm") {
+			a.confirms++
+		} else {
+			a.resumes++
+		}
+		a.mu.Unlock()
+		_, _ = io.WriteString(w, `{}`)
 	case r.Method == http.MethodGet && r.URL.Path == prefix+"/sources":
 		_, _ = io.WriteString(w, `{"sources":[]}`)
 	default:
-		a.mu.Lock()
-		a.unanswered = append(a.unanswered, r.URL.Path)
-		a.mu.Unlock()
 		http.NotFound(w, r)
 	}
 }

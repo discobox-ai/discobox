@@ -27,3 +27,14 @@ the driver. It leaves the sandbox-agent bearer token in Authorization.
 The edge forwards plain HTTP to the guest. A sandbox recorded as serving TLS
 is rejected on this route. Each request waits for the shared endpoint lookup
 with its own context, while the provider lookup has its own timeout.
+
+## Machine freeze
+
+A machine's sleep and suspend freeze it with `engine.Pause` where the driver
+reports `Capabilities.Pause`. The machine record's `Frozen` field, written before
+the pause, is what makes a paused machine `StatusSuspended` instead of a pause
+its provider made (`StatusPaused`). Every start thaws it with `engine.Start`,
+detached, then runs `afterThaw`, which it shares with the Docker runtime's
+unpause. The state poll settles a frozen machine that something else resumed or
+stopped (`settleFrozen`). See `pool-agent/DESIGN.md`, machine runtime, and ADR
+26-11-21-395.

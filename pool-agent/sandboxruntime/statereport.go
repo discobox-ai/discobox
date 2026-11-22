@@ -47,7 +47,8 @@ const (
 	StateRunning  = "running"
 	StateStopping = "stopping"
 	StateStopped  = "stopped"
-	// StateSuspended is a container frozen whole (ADR 26-10-16-420 §1).
+	// StateSuspended is a container frozen whole (ADR 26-10-16-420 §1), or a
+	// machine the pool froze (ADR 26-11-21-395 §4).
 	StateSuspended = "suspended"
 )
 
