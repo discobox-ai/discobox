@@ -1483,8 +1483,19 @@ a small fake on loopback and watch what the server asks of it.
 - The fake answers `GET /api/sandboxes` with `{"sandboxes":[]}` and
   `GET /api/disks` with `[]` (a bare array); a lookup by name lists both, and
   any other answer fails the pool's reconcile as "cannot be looked up". Log
-  every request: the absence of `POST /api/sandboxes` is the evidence that no
-  machine was made.
+  every request, with the first characters of `Authorization`: an archil
+  pool's machine is made (`POST /api/sandboxes`, its key file a sentinel,
+  ADR 26-11-11-080 §9), so a fake that answers it 503 keeps the pool
+  "starting the VM" without Archil; a server from before #1562 sends none
+  (the pool is blocked).
+- `resolve-driver-key` (what the pool's proxy asks for its engine's
+  sentinel) with no pool machine: stop the server, give a pool row a
+  `public_key` of your own (the mint recipe under
+  [a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-pool-agentpoolid))
+  and `runtime_state` `{"key":{"sentinel":"key-<32 of [a-z2-7]>"}}`, start it
+  and POST `{"sentinel","host"}` as that pool at once (the next reconcile
+  may rewrite the record). The host is the provider's `driver.baseUrl` host
+  when it has one (127.0.0.1 here), else the region's control plane.
 - Never make an archil provider with a dummy key on the dev loop itself: its
   pool's lookup and removal both list Archil's real API, which refuses the
   key, so the pool can never be deleted (removal retries forever), and
