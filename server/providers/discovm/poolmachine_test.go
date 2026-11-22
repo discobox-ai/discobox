@@ -73,9 +73,11 @@ type poolTestDriver struct {
 	// lookupErr, when set, is what Instance and Instances answer: the
 	// driver's service not answering.
 	lookupErr error
-	// attachErrs, while any are left, is what each Attach answers in turn,
-	// a nil passing it on: the driver's service failing one call of several.
-	attachErrs []error
+	// serviceErrs, while any are left, is what each State and Attach
+	// answers in turn, a nil passing it on: the driver's service failing one
+	// call of several. Both are calls to it: the engine's state check is
+	// State, and its guest is an Attach.
+	serviceErrs []error
 	// fences is each machine's isolation and networks, by ID, as Create was
 	// asked for them: the fake driver under this one keeps neither.
 	fences map[string]machine.InstanceSpec
@@ -259,15 +261,27 @@ func (d *poolTestDriver) Start(ctx context.Context, inst machine.Instance, opts 
 	return &poolTestMachine{Machine: m, driver: d}, nil
 }
 
-func (d *poolTestDriver) Attach(ctx context.Context, inst machine.Instance) (machine.Machine, error) {
+// nextServiceErr is the next of serviceErrs, nil once none are left.
+func (d *poolTestDriver) nextServiceErr() error {
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	var next error
-	if len(d.attachErrs) > 0 {
-		next, d.attachErrs = d.attachErrs[0], d.attachErrs[1:]
+	if len(d.serviceErrs) > 0 {
+		next, d.serviceErrs = d.serviceErrs[0], d.serviceErrs[1:]
 	}
-	d.mu.Unlock()
-	if next != nil {
-		return nil, next
+	return next
+}
+
+func (d *poolTestDriver) State(ctx context.Context, inst machine.Instance) (machine.State, error) {
+	if err := d.nextServiceErr(); err != nil {
+		return "", err
+	}
+	return d.Driver.State(ctx, inst)
+}
+
+func (d *poolTestDriver) Attach(ctx context.Context, inst machine.Instance) (machine.Machine, error) {
+	if err := d.nextServiceErr(); err != nil {
+		return nil, err
 	}
 	m, err := d.Driver.Attach(ctx, inst)
 	if err != nil {
@@ -1609,7 +1623,7 @@ func TestFakePoolMachineGuestWhileTheServiceDrops(t *testing.T) {
 	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
 	t.Cleanup(func() {
 		driver.mu.Lock()
-		driver.attachErrs = nil
+		driver.serviceErrs = nil
 		driver.mu.Unlock()
 		_ = r.RemovePool(context.Background(), nil, nil, pool)
 	})
@@ -1618,7 +1632,7 @@ func TestFakePoolMachineGuestWhileTheServiceDrops(t *testing.T) {
 	}
 
 	driver.mu.Lock()
-	driver.attachErrs = []error{nil, status.Error(codes.Unavailable, "connection error: desc = \"error reading from server: unexpected EOF\"")}
+	driver.serviceErrs = []error{nil, status.Error(codes.Unavailable, "connection error: desc = \"error reading from server: unexpected EOF\"")}
 	driver.mu.Unlock()
 
 	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); !errors.Is(err, sandbox.ErrPoolNotReachable) {
@@ -1817,14 +1831,14 @@ func TestFakePoolMachineReportsTheFirstProvisionAfterABoot(t *testing.T) {
 	pool := &model.Pool{ID: "pool-booting", ProjectID: "project-1"}
 	t.Cleanup(func() {
 		driver.mu.Lock()
-		driver.attachErrs = nil
+		driver.serviceErrs = nil
 		driver.mu.Unlock()
 		_ = r.RemovePool(ctx, nil, nil, pool)
 	})
 	driver.mu.Lock()
-	// The pass's state check and its start attach; its reach for the guest
-	// is refused.
-	driver.attachErrs = []error{nil, nil, status.Error(codes.Unavailable, "the machine is still booting")}
+	// The pass's state check (State) and its start's attach pass; its reach
+	// for the guest is refused.
+	driver.serviceErrs = []error{nil, nil, status.Error(codes.Unavailable, "the machine is still booting")}
 	driver.mu.Unlock()
 	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); !errors.Is(err, sandbox.ErrPoolNotReachable) {
 		t.Fatalf("EnsurePool() while the machine boots = %v, want ErrPoolNotReachable", err)
