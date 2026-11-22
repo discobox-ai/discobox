@@ -340,9 +340,9 @@ func sandboxInstanceFromRuntime(sb *sandboxruntime.Sandbox, config *workerapimod
 	normalizeSandboxResponse(sb)
 	status := sb.Status
 	if status == sandboxruntime.StatusPaused {
-		// A provider's pause is no sleep: running, as the state channel
-		// reports it (StatusPaused).
-		status = sandboxruntime.StatusRunning
+		// A provider's pause is reported as the pause it is, as the state
+		// channel reports it (StatusPaused).
+		status = sandboxruntime.StatusSuspended
 	}
 	if config == nil {
 		config = &workerapimodel.SandboxConfig{

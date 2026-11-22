@@ -25,8 +25,8 @@ const ErrorTypeSandboxImageUnavailable = "https://discobox.ai/errors/sandbox-ima
 
 // SandboxNotRunningHeader marks the 409 a pool agent answers a read of a
 // sandbox that is not running with, and names the state it found: `stopped`,
-// `suspended`, or `starting` for one whose boot outlasted the request or whose
-// machine its provider paused, which the pool is resuming.
+// `suspended` (a frozen container, or a machine its provider paused), or
+// `starting` for one whose boot outlasted the request.
 //
 // It is this API's `type` for the routes that have no problem document to
 // put one in. The sandbox-directed routes are proxied onward, and what they

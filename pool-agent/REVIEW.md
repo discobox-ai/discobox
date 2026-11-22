@@ -255,6 +255,12 @@ only for a sandbox it last saw running, on no boot under way, whose
 placement record is current (`answersRunning`): being seen running is a power
 state, which any poll sets, and never enough alone.
 
+Resume a paused machine detached from the caller, bounded by the start's own
+timeout (`resumeLocked`). Why: the engine stops a machine whose resume it
+could not finish (disco-vm's fail-closed `Start`), so a request that goes
+away mid-resume, as an on-use start's does, would throw away the memory the
+pause kept and cold-boot the box at its next use.
+
 Run a thaw's follow-up calls detached from the caller and under the power
 lock. What `resumeLocked` does after `ContainerUnpause` — the runtime-config
 delivery and the sandbox agent's `autostop/resumed` — is the thaw's equivalent
@@ -532,10 +538,20 @@ changed. A step added that lays a binary needs it there too.
 
 A machine `engine.State` reads `Paused` is one its provider paused
 (`StatusPaused`), never `StatusSuspended`, while the pool freezes no machine:
-`suspended` is how a sleep is reported, and nothing would wake it
-(ADR 26-11-16-619 §5). It is reported running and resumed by a start. Once the
-pool can freeze a machine, only the freeze it recorded reads `suspended`
-(ADR 26-11-21-395 §4).
+`StatusSuspended` is a freeze the pool made, and the code that acts on one
+(a suspend's completion, a sleep's wake) must not act on a provider's pause
+(ADR 26-11-16-619 §5). It is reported as the pause it is (`suspended` on the
+wire, through `stateFromStatus`, the pool API and a refused read's header,
+never `running`; owner, #1523) and resumed by a start, the state poll's
+included. Once the pool can freeze a machine, only the freeze it recorded is
+`StatusSuspended` (ADR 26-11-21-395 §4).
+
+Never tell a sandbox agent it resumed (`autostop/resumed`) after a provider's
+pause; deliver its runtime-config document alone (`deliverAfterResume`). Why:
+`autostop/resumed` sets aside every wake now due and hands the next start's
+notes over, which is right only after the pool's own freeze, whose sleep the
+wake was set for; after a provider's pause it would drop a wake that fell due
+across it, and the box would sleep with nothing to bring it back.
 
 Every "is it running" branch in `machinepower.go` has this third state: a
 paused machine is not running and not stopped. A branch that stops a running

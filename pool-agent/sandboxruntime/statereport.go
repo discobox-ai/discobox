@@ -344,11 +344,12 @@ func observationFromEvent(message events.Message) (SandboxStateObservation, bool
 // component that asked for it, not to the one watching containers.
 func stateFromStatus(status Status) string {
 	switch status {
-	case StatusRunning, StatusPaused:
-		// A provider's pause is no sleep (StatusPaused): the sandbox is
-		// still wanted running, and the pool resumes it.
+	case StatusRunning:
 		return StateRunning
-	case StatusSuspended:
+	case StatusSuspended, StatusPaused:
+		// A machine its provider paused (StatusPaused) is held as a frozen
+		// container is, running nothing, and is reported as the same pause,
+		// though the pool froze nothing and resumes it.
 		return StateSuspended
 	}
 	return StateStopped
