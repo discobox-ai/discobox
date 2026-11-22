@@ -30,7 +30,7 @@
   malformed, and any other host is one the key was never meant for.
 - A lost record takes the sentinel the machine's key file already holds
   (`heldSentinel`) before placing a new one, and only one this server
-  placed: named `sentinelKeyName` and of `newSentinel`'s exact shape. Any
+  placed: named `proxyagent.EngineSentinelKeyName` and of `newSentinel`'s exact shape. Any
   other key there is replaced. Why: the running agent registered the one it
   read with its proxy, so placing another under it fails its calls; but a
   real key taken as a sentinel would stay on the disk, be written to the

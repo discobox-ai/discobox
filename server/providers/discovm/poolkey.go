@@ -199,7 +199,7 @@ func (k poolKeys) ensureSentinel(ctx context.Context, pool *model.Pool, guest ma
 	if err != nil {
 		return current, err
 	}
-	data, err := json.Marshal(machine.Key{Driver: k.driver.Name(), Name: sentinelKeyName, Secret: sentinel}) //nolint:gosec // G117: a sentinel, no secret, in the key file the pool's engine reads
+	data, err := json.Marshal(machine.Key{Driver: k.driver.Name(), Name: proxyagent.EngineSentinelKeyName, Secret: sentinel}) //nolint:gosec // G117: a sentinel, no secret, in the key file the pool's engine reads
 	if err != nil {
 		return current, err
 	}
@@ -208,11 +208,6 @@ func (k poolKeys) ensureSentinel(ctx context.Context, pool *model.Pool, guest ma
 	}
 	return &poolKeyRecord{Sentinel: sentinel}, nil
 }
-
-// sentinelKeyName names the key file a sentinel is placed in: what tells
-// one this server placed from any other key a file holds, a real one an
-// older server or a person put there included.
-const sentinelKeyName = "discobox-sentinel"
 
 // heldSentinel is the sentinel the machine's key file holds: one this server
 // placed, by its name and its exact shape (newSentinel's). Anything else —
@@ -224,7 +219,7 @@ func (k poolKeys) heldSentinel(ctx context.Context, guest machine.Guest) (string
 		return "", false
 	}
 	var key machine.Key
-	if json.Unmarshal(data, &key) != nil || key.Driver != k.driver.Name() || key.Name != sentinelKeyName || !k.sentinelShaped(key.Secret) {
+	if json.Unmarshal(data, &key) != nil || key.Driver != k.driver.Name() || key.Name != proxyagent.EngineSentinelKeyName || !k.sentinelShaped(key.Secret) {
 		return "", false
 	}
 	return key.Secret, true
