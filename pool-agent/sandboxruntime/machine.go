@@ -1991,9 +1991,10 @@ func (r *MachineSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *
 			complete := now.Sub(synced) >= sandboxStateSyncInterval
 			batch := SandboxStateBatch{Complete: complete, ReportedAt: now.UTC()}
 			seen := make(map[string]string, len(sandboxes))
+			var paused []string
 			for _, sb := range sandboxes {
 				if sb.Status == StatusPaused {
-					r.resumeInBackground(ctx, logger, sb.SandboxID)
+					paused = append(paused, sb.SandboxID)
 				}
 				state := stateFromStatus(sb.Status)
 				seen[sb.SandboxID] = state
@@ -2017,6 +2018,13 @@ func (r *MachineSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *
 						synced = now
 					}
 				}
+			}
+			// Resumed only once the batch that reports the pause is out: a
+			// resume publishes its own states, reported after this batch's
+			// time, and the control plane drops a report older than one it
+			// holds, so a pause published after them would never be seen.
+			for _, sandboxID := range paused {
+				r.resumeInBackground(ctx, logger, sandboxID)
 			}
 		}
 		select {

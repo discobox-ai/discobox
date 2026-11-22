@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -272,5 +273,83 @@ func TestMachinePausedSinceThePollIsResumedAfterADialFails(t *testing.T) {
 	}
 	if _, err := sandboxAgentHealth(ctx, mustDialer(t, r, "sbx_t")); err != nil {
 		t.Fatalf("reach the resumed sandbox: %v", err)
+	}
+}
+
+// The state poll publishes the pause it finds before it resumes the machine:
+// a resume publishes its own states, reported later, and the control plane
+// drops a report older than one it holds, so a pause published after them
+// would never be seen (as on a live boxd pool, where the server went from
+// running to starting and never showed the pause).
+func TestThePollReportsAPauseBeforeItResumesIt(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_u")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fake.Pause(ctx, f.owner, inst); err != nil {
+		t.Fatal(err)
+	}
+	type report struct {
+		at    time.Time
+		state string
+	}
+	var (
+		mu      sync.Mutex
+		reports []report
+	)
+	watchCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.WatchSandboxStates(watchCtx, slog.Default(), func(_ context.Context, batch SandboxStateBatch) error {
+			// A publish is a call to the control plane, which takes time:
+			// the batch that carries the pause is slowed, so a resume begun
+			// before it is out would publish first.
+			for _, o := range batch.States {
+				if o.SandboxID == "sbx_u" && o.State == StateSuspended {
+					time.Sleep(time.Second)
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, o := range batch.States {
+				if o.SandboxID == "sbx_u" {
+					reports = append(reports, report{at: batch.ReportedAt, state: o.State})
+					if o.State == StateRunning && len(reports) > 1 {
+						cancel()
+					}
+				}
+			}
+			return nil
+		})
+	}()
+	<-done
+	waitForNoResume(t, r, "sbx_u")
+	mu.Lock()
+	defer mu.Unlock()
+	pause := -1
+	for i, rep := range reports {
+		if rep.state == StateSuspended {
+			pause = i
+			break
+		}
+	}
+	if pause < 0 {
+		t.Fatalf("reports %v: the pause was never published", reports)
+	}
+	for _, rep := range reports[:pause] {
+		if rep.at.After(reports[pause].at) {
+			t.Fatalf("reports %v: a report newer than the pause went out before it, so the control plane would drop the pause", reports)
+		}
+	}
+	if last := reports[len(reports)-1].state; last != StateRunning {
+		t.Fatalf("reports %v: want the poll's resume to end running", reports)
 	}
 }

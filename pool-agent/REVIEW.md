@@ -553,6 +553,14 @@ notes over, which is right only after the pool's own freeze, whose sleep the
 wake was set for; after a provider's pause it would drop a wake that fell due
 across it, and the box would sleep with nothing to bring it back.
 
+Begin what the state poll itself starts for a sandbox (its resume of a
+provider's pause, `resumeInBackground`) only after the poll's batch is
+published; a use's or an explicit start does not wait for the poll. Why: the
+batch is stamped when the poll has listed the machines, the control plane
+drops a report older than one it holds, and a resume the poll began before
+publishing reported `starting` first, so on a live boxd pool the server never
+saw the pause it was meant to show (#1523).
+
 Every "is it running" branch in `machinepower.go` has this third state: a
 paused machine is not running and not stopped. A branch that stops a running
 machine before something only a stopped one gets (a new root,

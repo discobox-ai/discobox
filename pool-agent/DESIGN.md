@@ -1185,7 +1185,9 @@ flowchart LR
   short is stopped and loses the memory the pause kept (`resumeLocked`):
   a use's (`EnsureSandboxRunning`), an explicit start, or the state poll's
   (`resumePaused`, under the power lock, only while it is still paused,
-  backed off after a failure). A pause since the last poll is found by the
+  backed off after a failure, and begun only once the poll's batch that
+  reports the pause is published, so the control plane sees the pause before
+  the resume's newer reports). A pause since the last poll is found by the
   dial that fails: it drops the running the runtime last saw, so that request
   fails and the next resumes the box. One that holds what it boots on now is
   then delivered its runtime-config document (`deliverAfterResume`), but its
