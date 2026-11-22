@@ -284,3 +284,9 @@ func (r *followReader) Close() error {
 	r.file = nil
 	return file.Close()
 }
+
+// ResolveDriverKey refuses: a Docker pool's host holds no sentinel for a
+// provider's key, since it calls no provider's service (ADR 26-11-11-080 §9).
+func (e *Engine) ResolveDriverKey(context.Context, *model.SandboxProviderInstance, *model.Pool, string, string) (string, error) {
+	return "", fmt.Errorf("%w: a Docker pool's host holds no sentinel for a provider's key", sandbox.ErrDriverKeyRefused)
+}

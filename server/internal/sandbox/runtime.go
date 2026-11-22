@@ -617,6 +617,13 @@ type PoolRuntime interface {
 	//
 	// A backend that boots no guest image returns ErrGuestImageBuildUnsupported.
 	BuildGuestImage(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts GuestImageBuildOptions) (*GuestImageBuild, error)
+	// ResolveDriverKey answers the pool's proxy, for the pool's own engine,
+	// with what it puts in place of the sentinel the pool's host holds for
+	// its provider's key, where the provider's driver sends the key to host
+	// (ADR 26-11-11-080 §9). A pool whose host holds no such sentinel, not
+	// that one, or whose driver never sends its key to host, is
+	// ErrDriverKeyRefused.
+	ResolveDriverKey(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, sentinel, host string) (string, error)
 }
 
 // GuestImageBuildOptions configures one rebuild of a backend's guest image.

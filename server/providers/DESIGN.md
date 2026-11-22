@@ -83,9 +83,12 @@ contract downward is the `poolruntime.RuntimeProvider` interface, and the
 runtime contract for sandboxes is the pool-agent HTTP API reached through
 `transport.HTTPClientLease`.
 
-`poolruntime.RuntimeProvider` is an eight-method interface: `Close`,
-`EnsurePool`, `RepairPool`, `RemovePool`,
-`AcquirePoolAgentClient`, `OpenConsole`, `OpenLogs`, and `BuildGuestImage`.
+`poolruntime.RuntimeProvider` is the interface `Close`, `Check`,
+`EnsurePool`, `RepairPool`, `RemovePool`, `AcquirePoolAgentClient`,
+`OpenConsole`, `OpenLogs`, `BuildGuestImage`, and `ResolveDriverKey` (what a
+pool's proxy puts in place of the sentinel its host holds for the
+provider's key; every runtime but a disco-vm pool machine's refuses,
+[discovm](discovm/DESIGN.md)).
 `dockerworker.Engine` implements it for every Docker backend, and
 `discovm.Runtime` for disco-vm. The engine owns everything
 Docker: launching the pool's container and making it the pool's box (see

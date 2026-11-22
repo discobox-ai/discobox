@@ -84,6 +84,10 @@ type poolTestDriver struct {
 	fences map[string]machine.InstanceSpec
 	// keysNone is a driver that issues no keys at all, as archil.
 	keysNone bool
+	// noPorts is a driver whose guests' ports are not reached through a
+	// shim on this host, as a remote driver's (archil's): with keysNone, it
+	// is not a held driver, whose pool machine is fenced (held).
+	noPorts bool
 	// noIngress is a driver that gives no instance an ingress URL, so its
 	// caller cannot reach the machine.
 	noIngress bool
@@ -125,6 +129,9 @@ func (d *poolTestDriver) Capabilities() machine.Capabilities {
 	}
 	if d.keysNone {
 		caps.Keys.Mode = machine.KeysNone
+	}
+	if d.noPorts {
+		caps.Ports = false
 	}
 	d.mu.Lock()
 	caps.MaxMachines = maps.Clone(d.read)

@@ -105,7 +105,7 @@ func newPoolMachine(e *engine.Engine, cfg settings, scopeEngine func(scope strin
 		driverConfig:    cfg.driverConfig,
 		controlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
 		policy:          cfg.Env(),
-		keys:            newPoolKeys(e.Driver),
+		keys:            newPoolKeys(e.Driver, cfg),
 		shell:           []string{"/bin/bash", "-l"},
 		logs:            journalCommand,
 		logSource:       "pool machine journal",
@@ -637,6 +637,9 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 		}
 		bootstrap.DriverConfig = config
 	}
+	// The key file holds a sentinel for the driver's key, which the pool's
+	// engine has its proxy swap (ADR 26-11-11-080 §9).
+	bootstrap.KeySentinel = h.keys.sentinel()
 	// The network its sandboxes' machines are made on, and none at an edge.
 	if len(networks) > 0 {
 		bootstrap.MachineNetwork = networks[0]
@@ -954,6 +957,13 @@ func (h *poolMachine) openConsole(ctx context.Context, pool *model.Pool, opts sa
 		return nil, fmt.Errorf("open a shell in pool %s's machine: %w", pool.ID, err)
 	}
 	return newGuestProcess(process, true), nil
+}
+
+// resolveDriverKey is what the pool's proxy puts in place of the sentinel
+// the pool's machine holds, by the record of what was placed there
+// (poolKeys.resolve).
+func (h *poolMachine) resolveDriverKey(pool *model.Pool, sentinel, host string) (string, error) {
+	return h.keys.resolve(decodeRuntimeState(pool).Key, sentinel, host)
 }
 
 func (h *poolMachine) openLogs(ctx context.Context, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {

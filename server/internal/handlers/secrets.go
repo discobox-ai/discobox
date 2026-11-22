@@ -204,6 +204,35 @@ func (h *Handler) ResolveSandboxSecret(ctx context.Context, req *apimodel.Resolv
 	return &resp, nil
 }
 
+// ResolveDriverKey hands a pool's proxy its provider's key, as the driver
+// sends it to one host, in place of the sentinel the pool's host holds for it
+// (ADR 26-11-11-080 §9), under the same principal and scope as a swap. The
+// pool is the asking pool, never one the body names.
+func (h *Handler) ResolveDriverKey(ctx context.Context, req *apimodel.ResolveDriverKeyBody, _ serverapi.ResolveDriverKeyParams) (serverapi.ResolveDriverKeyRes, error) {
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool {
+		return apiError(apperrors.NewStatusError(http.StatusUnauthorized, "pool agent authentication required")), nil
+	}
+	if !principal.HasScope(poolauth.ScopeSecretResolve) {
+		return apiError(apperrors.NewStatusError(http.StatusForbidden, "secret:resolve scope required")), nil
+	}
+	value, err := h.services.Pools.ResolveDriverKey(ctx, principal.PoolID, req.Sentinel, req.Host)
+	if err != nil {
+		return apiError(err), nil
+	}
+	// The proxy holds the key this long and refreshes it before then, so a
+	// control-plane restart does not fail the engine's calls; a pool deleted,
+	// or a key replaced, reaches the proxy within it. Without an expiry the
+	// proxy holds nothing, and asks again on every call.
+	resp := &apimodel.ResolveDriverKeyResponse{Value: value}
+	resp.SetExpiresAt(serverapi.NewOptDateTime(time.Now().Add(driverKeyHold)))
+	return resp, nil
+}
+
+// driverKeyHold is how long a pool's proxy holds its provider's key: the
+// proxy's own cap on any resolved value (proxy.DefaultSecretPositiveTTLSeconds).
+const driverKeyHold = 5 * time.Minute
+
 // ResolveSandboxRawSecret hands a pool the value of one of its sandbox's raw
 // bindings (ADR 26-10-27-840), under the same principal and scope as a swap.
 func (h *Handler) ResolveSandboxRawSecret(ctx context.Context, req *apimodel.ResolveSandboxRawSecretBody, _ serverapi.ResolveSandboxRawSecretParams) (serverapi.ResolveSandboxRawSecretRes, error) {

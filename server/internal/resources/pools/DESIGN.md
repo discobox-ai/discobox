@@ -43,6 +43,18 @@ flowchart LR
   submits delete intent; the reconciler removes the runtime, then deletes the
   row. The seeded pool is not otherwise special — it is seeded once, at first
   install, and is an ordinary pool afterwards.
+  `ResolveDriverKey` answers a pool's proxy
+  (`/pool-agent/{poolId}/resolve-driver-key`, the `secret:resolve` scope)
+  with the pool's provider's key in place of the sentinel its host holds
+  for it (ADR 26-11-11-080 §9): the pool is the asking pool's assertion's,
+  the provider the one it is bound to, refused (403) while it is being
+  deleted, and the rest — its recorded sentinel, a host the driver sends its
+  key to — is its runtime's to answer (`sandbox.ErrDriverKeyRefused`). It
+  lives here, not in `secrets`, because the key is the provider's sealed
+  field, which only the resolved provider runtime holds; the method, path
+  and place a sentinel may go are the grant the pool agent writes from the
+  same declaration (`proxyagent.DriverKeySends`), as a sandbox's routes are
+  checked by its pool.
   `OpenPoolConsole`, `OpenPoolLogs`, and `BuildPoolGuestImage` also live here
   and check nothing beyond the pool and its provider-instance rows existing:
   they resolve the provider's `sandbox.PoolRuntime` directly, without

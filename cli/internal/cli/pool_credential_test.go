@@ -32,6 +32,10 @@ func TestFormatPoolHostCredential(t *testing.T) {
 			"its machine's own in-machine credential, which reaches the org as the machine's owner; nothing is placed, and it ends with the machine",
 		},
 		{
+			apimodel.PoolHostCredential{Key: apiclientgen.NewOptPoolHostCredentialKey(apiclientgen.PoolHostCredentialKeySentinel)},
+			"a sentinel for the provider's key, which the pool's proxy swaps for the key only where the provider's driver sends it; the key is never on the host's disk",
+		},
+		{
 			apimodel.PoolHostCredential{MachineToken: apiclientgen.NewOptBool(true)},
 			"the driver's machine token, which reaches the org",
 		},

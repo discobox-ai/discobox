@@ -3311,6 +3311,7 @@ func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()              {}
 func (*ErrorModelStatusCode) reportSandboxInventoriesRes()              {}
 func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()          {}
 func (*ErrorModelStatusCode) resetHarnessConfigRes()                    {}
+func (*ErrorModelStatusCode) resolveDriverKeyRes()                      {}
 func (*ErrorModelStatusCode) resolveGatewayHeadersRes()                 {}
 func (*ErrorModelStatusCode) resolvePoolAssetRes()                      {}
 func (*ErrorModelStatusCode) resolveSandboxRawSecretRes()               {}
@@ -18181,9 +18182,11 @@ func (*PoolHeldSandboxesBody) listPoolHeldSandboxesRes() {}
 type PoolHostCredential struct {
 	// How the host authenticates its engine: in-machine, as its own machine, with the credential its
 	// driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's
-	// driver issued for this pool, which expires and is renewed and revoked by discobox; or provider,
-	// the provider's own key an older server delivered, which the pool's next reconcile takes off.
-	// Absent when it holds none.
+	// driver issued for this pool, which expires and is renewed and revoked by discobox; sentinel, a
+	// stand-in for the provider's key, which the pool's proxy swaps for the key only where the
+	// provider's driver sends it, so the key is never on the host's disk (archil); or provider, the
+	// provider's own key an older server delivered, which the pool's next reconcile takes off. Absent
+	// when it holds none.
 	Key OptPoolHostCredentialKey `json:"key"`
 	// What the key reaches, as the driver says (account, org, project). Absent where it cannot tell.
 	Scope OptString `json:"scope"`
@@ -18249,14 +18252,17 @@ func (s *PoolHostCredential) SetMachineToken(val OptBool) {
 
 // How the host authenticates its engine: in-machine, as its own machine, with the credential its
 // driver gives it (boxd), nothing of the provider's placed on it; issued, a key the provider's
-// driver issued for this pool, which expires and is renewed and revoked by discobox; or provider,
-// the provider's own key an older server delivered, which the pool's next reconcile takes off.
-// Absent when it holds none.
+// driver issued for this pool, which expires and is renewed and revoked by discobox; sentinel, a
+// stand-in for the provider's key, which the pool's proxy swaps for the key only where the
+// provider's driver sends it, so the key is never on the host's disk (archil); or provider, the
+// provider's own key an older server delivered, which the pool's next reconcile takes off. Absent
+// when it holds none.
 type PoolHostCredentialKey string
 
 const (
 	PoolHostCredentialKeyIssued    PoolHostCredentialKey = "issued"
 	PoolHostCredentialKeyInMachine PoolHostCredentialKey = "in-machine"
+	PoolHostCredentialKeySentinel  PoolHostCredentialKey = "sentinel"
 	PoolHostCredentialKeyProvider  PoolHostCredentialKey = "provider"
 )
 
@@ -18265,6 +18271,7 @@ func (PoolHostCredentialKey) AllValues() []PoolHostCredentialKey {
 	return []PoolHostCredentialKey{
 		PoolHostCredentialKeyIssued,
 		PoolHostCredentialKeyInMachine,
+		PoolHostCredentialKeySentinel,
 		PoolHostCredentialKeyProvider,
 	}
 }
@@ -18275,6 +18282,8 @@ func (s PoolHostCredentialKey) MarshalText() ([]byte, error) {
 	case PoolHostCredentialKeyIssued:
 		return []byte(s), nil
 	case PoolHostCredentialKeyInMachine:
+		return []byte(s), nil
+	case PoolHostCredentialKeySentinel:
 		return []byte(s), nil
 	case PoolHostCredentialKeyProvider:
 		return []byte(s), nil
@@ -18291,6 +18300,9 @@ func (s *PoolHostCredentialKey) UnmarshalText(data []byte) error {
 		return nil
 	case PoolHostCredentialKeyInMachine:
 		*s = PoolHostCredentialKeyInMachine
+		return nil
+	case PoolHostCredentialKeySentinel:
+		*s = PoolHostCredentialKeySentinel
 		return nil
 	case PoolHostCredentialKeyProvider:
 		*s = PoolHostCredentialKeyProvider
@@ -22118,6 +22130,92 @@ func (s *ReportSandboxSecretRejectionBodyOutcome) UnmarshalText(data []byte) err
 type ReportSandboxSecretRejectionNoContent struct{}
 
 func (*ReportSandboxSecretRejectionNoContent) reportSandboxSecretRejectionRes() {}
+
+// Worker request for its provider's key, which its host holds a sentinel for, as the provider's
+// driver sends it to one host. Answered only for the asking pool's own provider, its recorded
+// sentinel, and a host the driver sends its key to.
+// Ref: #/components/schemas/ResolveDriverKeyBody
+type ResolveDriverKeyBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The sentinel the pool's host holds in place of the key.
+	Sentinel string `json:"sentinel"`
+	// The host the request carrying the sentinel goes to, without its port.
+	Host string `json:"host"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveDriverKeyBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSentinel returns the value of Sentinel.
+func (s *ResolveDriverKeyBody) GetSentinel() string {
+	return s.Sentinel
+}
+
+// GetHost returns the value of Host.
+func (s *ResolveDriverKeyBody) GetHost() string {
+	return s.Host
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveDriverKeyBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSentinel sets the value of Sentinel.
+func (s *ResolveDriverKeyBody) SetSentinel(val string) {
+	s.Sentinel = val
+}
+
+// SetHost sets the value of Host.
+func (s *ResolveDriverKeyBody) SetHost(val string) {
+	s.Host = val
+}
+
+// What the pool's proxy puts in the sentinel's place.
+// Ref: #/components/schemas/ResolveDriverKeyResponse
+type ResolveDriverKeyResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The value that replaces the sentinel where the driver sends its key.
+	Value string `json:"value"`
+	// When the pool's proxy stops using the value and asks again.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveDriverKeyResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetValue returns the value of Value.
+func (s *ResolveDriverKeyResponse) GetValue() string {
+	return s.Value
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *ResolveDriverKeyResponse) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveDriverKeyResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetValue sets the value of Value.
+func (s *ResolveDriverKeyResponse) SetValue(val string) {
+	s.Value = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *ResolveDriverKeyResponse) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+func (*ResolveDriverKeyResponse) resolveDriverKeyRes() {}
 
 // Worker request for the server environment values a sandbox's gateway sets headers from (ADR
 // 26-10-16-470 §4).

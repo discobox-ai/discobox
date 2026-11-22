@@ -15,11 +15,27 @@
   provider's own key a fingerprint. Why: the pool's row is read back by the
   API and the server's logs leave the host.
 - The provider's own key is never placed on a pool's machine (ADR
-  26-11-11-080 §9): in-machine, or an issued key, or the pool is blocked.
+  26-11-11-080 §9): in-machine, or an issued key, or a sentinel its proxy
+  swaps, or the pool is blocked.
   An issue that fails is retried, never answered with a wider key. A
   renewal never revokes the key it replaces. Why: a transient error must not
   hand a pool a wider key that nothing expires (551 §4), and a revoked key
   fails the calls already in flight on it.
+- A sentinel is answered for (`poolKeys.resolve`) only against the record's
+  sentinel, compared in constant time, and only for a host the driver's
+  declaration names; what is answered is the key as the driver would send it
+  in the sentinel's place (`inPlaceOf`), never the bare key at a place that
+  rewrites it. Why: the proxy substitutes the sentinel's text alone, so a key
+  typed without the driver's prefix would otherwise reach the service
+  malformed, and any other host is one the key was never meant for.
+- A lost record takes the sentinel the machine's key file already holds
+  (`heldSentinel`) before placing a new one, and only one this server
+  placed: named `sentinelKeyName` and of `newSentinel`'s exact shape. Any
+  other key there is replaced. Why: the running agent registered the one it
+  read with its proxy, so placing another under it fails its calls; but a
+  real key taken as a sentinel would stay on the disk, be written to the
+  proxy's policy file and audit, and be swapped for — what the sentinel
+  exists to prevent.
 - What a pool's machine was placed with that the provider's configuration
   decides (the bootstrap, the policy) is recorded and compared on every
   reconcile, as its bundles are, so a moved configuration is placed again in

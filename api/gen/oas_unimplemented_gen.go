@@ -1328,6 +1328,15 @@ func (UnimplementedHandler) ResetHarnessConfig(ctx context.Context, params Reset
 	return r, ht.ErrNotImplemented
 }
 
+// ResolveDriverKey implements resolve-driver-key operation.
+//
+// Resolve the provider key a pool's host holds a sentinel for.
+//
+// POST /pool-agent/{poolId}/resolve-driver-key
+func (UnimplementedHandler) ResolveDriverKey(ctx context.Context, req *ResolveDriverKeyBody, params ResolveDriverKeyParams) (r ResolveDriverKeyRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ResolveGatewayHeaders implements resolve-gateway-headers operation.
 //
 // Resolve the server environment values a sandbox's gateway sets headers from.

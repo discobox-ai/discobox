@@ -668,9 +668,9 @@ type PoolManifest struct {
 // holds, as the pool shows it: never its secret.
 type PoolHostCredential struct {
 	// Key is how the host authenticates its engine: PoolHostKeyIssued,
-	// PoolHostKeyInMachine, or PoolHostKeyProvider (an older server's).
-	// Empty is none.
-	Key string `json:"key,omitempty" enum:"issued,in-machine,provider"`
+	// PoolHostKeyInMachine, PoolHostKeySentinel, or PoolHostKeyProvider (an
+	// older server's). Empty is none.
+	Key string `json:"key,omitempty" enum:"issued,in-machine,sentinel,provider"`
 	// Scope is what the key reaches, as the driver says (account, org,
 	// project); empty where it cannot tell.
 	Scope string `json:"scope,omitempty"`
@@ -696,6 +696,10 @@ const (
 	// credential its driver gives the machine (boxd's in-machine token,
 	// ADR 26-11-11-080 §9): nothing of the provider's is placed on it.
 	PoolHostKeyInMachine = "in-machine"
+	// PoolHostKeySentinel is a host that holds a sentinel for the provider's
+	// key, which the pool's proxy swaps for the key where the driver sends
+	// it (ADR 26-11-11-080 §9): the key is never on the host's disk.
+	PoolHostKeySentinel = "sentinel"
 )
 
 // Pool is the user-visible sharing boundary sandboxes are scheduled into,

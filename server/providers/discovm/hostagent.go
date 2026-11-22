@@ -57,3 +57,9 @@ func (h *hostAgent) openLogs(ctx context.Context, pool *model.Pool, opts sandbox
 	}
 	return &sandbox.PoolLogStream{Source: "host pool agent log", ReadCloser: reader}, nil
 }
+
+// resolveDriverKey refuses: a host pool agent's engine is this host's, and
+// calls no service with a key (ADR 26-11-11-080 §9).
+func (h *hostAgent) resolveDriverKey(*model.Pool, string, string) (string, error) {
+	return "", fmt.Errorf("%w: a pool agent on this host holds no sentinel for a key", sandbox.ErrDriverKeyRefused)
+}

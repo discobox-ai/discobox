@@ -4534,6 +4534,8 @@ func (s PoolHostCredentialKey) Validate() error {
 		return nil
 	case "in-machine":
 		return nil
+	case "sentinel":
+		return nil
 	case "provider":
 		return nil
 	default:

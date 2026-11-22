@@ -37,6 +37,10 @@ type poolHost interface {
 	acquireAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error)
 	openConsole(ctx context.Context, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error)
 	openLogs(ctx context.Context, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
+	// resolveDriverKey is what replaces the sentinel the host holds for the
+	// provider's key where the driver sends it to host; a host that holds
+	// none refuses (sandbox.ErrDriverKeyRefused).
+	resolveDriverKey(pool *model.Pool, sentinel, host string) (string, error)
 }
 
 // newPoolHost places a pool's agent where the driver's machines are (ADR
@@ -282,6 +286,15 @@ func requirePool(pool *model.Pool) error {
 		return errors.New("pool is required")
 	}
 	return nil
+}
+
+// ResolveDriverKey answers the pool's proxy for the sentinel its machine
+// holds for the provider's key (ADR 26-11-11-080 §9; poolKeys.resolve).
+func (r *Runtime) ResolveDriverKey(_ context.Context, _ *model.SandboxProviderInstance, pool *model.Pool, sentinel, host string) (string, error) {
+	if err := requirePool(pool); err != nil {
+		return "", err
+	}
+	return r.host.resolveDriverKey(pool, sentinel, host)
 }
 
 // BuildGuestImage builds nothing, on any driver. A remote driver's pool machine

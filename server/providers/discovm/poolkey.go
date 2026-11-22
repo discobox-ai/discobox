@@ -1,12 +1,18 @@
 package discovm
 
 import (
+	"archive/tar"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base32"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +20,9 @@ import (
 	"github.com/discobox-ai/vm/pkg/machine"
 
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
@@ -26,40 +34,62 @@ const poolKeyTTL = 7 * 24 * time.Hour
 // poolKeys is how a pool's machine authenticates its engine (ADR
 // 26-11-11-080 §9), in the first of these ways its driver offers: in-machine,
 // where the driver gives the machine a credential of its own, and nothing is
-// placed; or a key the driver issues for the pool, which expires and cannot
-// itself issue keys (ADR 26-10-23-551 §4). The provider's own key is never
-// placed on a pool's machine: a driver that offers neither has its pools
-// blocked, until §9's sentinel is built for it.
+// placed; a key the driver issues for the pool, which expires and cannot
+// itself issue keys (ADR 26-10-23-551 §4); or else a sentinel shaped as the
+// driver's key, which the pool's proxy swaps for the provider's key only where
+// the driver declares it sends it (archil). The provider's own key is never
+// placed on a pool's machine: a driver that offers none of these has its
+// pools blocked.
 type poolKeys struct {
 	driver machine.Driver
 	// inMachineField is the field of the driver's configuration that has
 	// its machine authenticate as itself (inMachineField), or empty for a
 	// driver that cannot: a pool's machine on one that can is given nothing.
 	inMachineField string
-	ttl            time.Duration
-	now            func() time.Time
+	// sends are where the driver sends its key under the provider's
+	// configuration, on a driver whose pools hold a sentinel for it: one
+	// that neither authenticates in-machine nor issues keys, and declares
+	// where it sends its one key (proxyagent.DriverKeySends, which the pool
+	// agent holds its sentinel to as well). Empty is no sentinel.
+	sends []machine.SecretSend
+	// providerKey is the provider's own key, what a pool's proxy is handed
+	// in a sentinel's place (resolve); never placed on a machine.
+	providerKey string
+	ttl         time.Duration
+	now         func() time.Time
 }
 
-func newPoolKeys(driver machine.Driver) poolKeys {
+func newPoolKeys(driver machine.Driver, cfg settings) poolKeys {
 	field, _ := inMachineField(driver.Name())
-	return poolKeys{
+	k := poolKeys{
 		driver:         driver,
 		inMachineField: field,
+		providerKey:    cfg.key,
 		ttl:            poolKeyTTL,
 		now:            time.Now,
 	}
+	if !k.inMachine() && driver.Capabilities().Keys.Mode == machine.KeysNone {
+		// A driver that declares no place a proxy could swap its key in
+		// has its pools blocked, as before (keyable).
+		k.sends, _ = proxyagent.DriverKeySends(driver.Name(), cfg.driverConfig)
+	}
+	return k
 }
 
 // inMachine reports whether the driver's pools authenticate in-machine.
 func (k poolKeys) inMachine() bool { return k.inMachineField != "" }
 
+// sentinel reports whether the driver's pools hold a sentinel for its key.
+func (k poolKeys) sentinel() bool { return len(k.sends) > 0 }
+
 // keyable refuses, before any machine is made for it, a pool whose machine
-// no key could ever reach: the driver authenticates no machine in-machine and
-// issues no keys at all (machine.KeysNone). Such a machine would be made and
-// billed, then blocked at its first key (ensure), and started again at every
-// pass. A driver that issues keys but refuses one is found by ensure.
+// no key could ever reach: the driver authenticates no machine in-machine,
+// issues no keys at all (machine.KeysNone), and declares no place a sentinel
+// could be swapped for its key. Such a machine would be made and billed, then
+// blocked at its first key (ensure), and started again at every pass. A
+// driver that issues keys but refuses one is found by ensure.
 func (k poolKeys) keyable(pool *model.Pool) error {
-	if k.inMachine() || k.driver.Capabilities().Keys.Mode != machine.KeysNone {
+	if k.inMachine() || k.sentinel() || k.driver.Capabilities().Keys.Mode != machine.KeysNone {
 		return nil
 	}
 	return k.blocked(pool, machine.ErrNoKey)
@@ -68,7 +98,7 @@ func (k poolKeys) keyable(pool *model.Pool) error {
 // blocked is the error of a pool whose machine its driver gives no key: the
 // provider's own key is never placed there (ADR 26-11-11-080 §9).
 func (k poolKeys) blocked(pool *model.Pool, err error) error {
-	return fmt.Errorf("pool %s is blocked: the %s driver neither authenticates its machines in-machine nor can issue one a key (%w), and the provider's own key is never placed on a pool's machine", pool.ID, k.driver.Name(), err)
+	return fmt.Errorf("pool %s is blocked: the %s driver neither authenticates its machines in-machine, nor can issue one a key (%w), nor declares where it sends its key for the pool's proxy to swap a sentinel for it, and the provider's own key is never placed on a pool's machine", pool.ID, k.driver.Name(), err)
 }
 
 // poolKeyRecord is how a pool's machine authenticates, as the provider's
@@ -80,6 +110,11 @@ type poolKeyRecord struct {
 	Issued bool `json:"issued"`
 	// InMachine is a machine that authenticates as itself, given nothing.
 	InMachine bool `json:"inMachine,omitempty"`
+	// Sentinel is the sentinel placed for the driver's key, which the
+	// pool's proxy swaps for the provider's key (ADR 26-11-11-080 §9). It
+	// is no secret: a stand-in, which the server resolves only for this
+	// pool, and only where the driver sends its key.
+	Sentinel string `json:"sentinel,omitempty"`
 	// ID and Name are the driver's for an issued key.
 	ID       string        `json:"id,omitempty"`
 	Name     string        `json:"name,omitempty"`
@@ -139,7 +174,201 @@ func (k poolKeys) ensure(ctx context.Context, pool *model.Pool, guest machine.Gu
 		}
 		return renewed, nil
 	}
+	if k.sentinel() {
+		return k.ensureSentinel(ctx, pool, guest, current)
+	}
 	return k.ensureIssued(ctx, pool, guest, current)
+}
+
+// ensureSentinel is ensure on a driver whose pools hold a sentinel for its
+// key: one placed is kept, for the pool's life. With none recorded, the
+// sentinel the machine's key file already holds is taken as the record (a
+// record lost: the running agent keeps the sentinel it registered with its
+// proxy); with none there, or the provider's own key an older server placed,
+// a new one is placed over it.
+func (k poolKeys) ensureSentinel(ctx context.Context, pool *model.Pool, guest machine.Guest, current *poolKeyRecord) (*poolKeyRecord, error) {
+	if current != nil && current.Sentinel != "" {
+		return current, nil
+	}
+	if current == nil {
+		if held, ok := k.heldSentinel(ctx, guest); ok {
+			return &poolKeyRecord{Sentinel: held}, nil
+		}
+	}
+	sentinel, err := k.newSentinel()
+	if err != nil {
+		return current, err
+	}
+	data, err := json.Marshal(machine.Key{Driver: k.driver.Name(), Name: sentinelKeyName, Secret: sentinel}) //nolint:gosec // G117: a sentinel, no secret, in the key file the pool's engine reads
+	if err != nil {
+		return current, err
+	}
+	if err := poolruntime.PlaceBoxFiles(ctx, guest, poolruntime.BoxFile{Path: bundle.ProvisioningKeyFile, Data: data}); err != nil {
+		return current, fmt.Errorf("place pool %s's key sentinel: %w", pool.ID, err)
+	}
+	return &poolKeyRecord{Sentinel: sentinel}, nil
+}
+
+// sentinelKeyName names the key file a sentinel is placed in: what tells
+// one this server placed from any other key a file holds, a real one an
+// older server or a person put there included.
+const sentinelKeyName = "discobox-sentinel"
+
+// heldSentinel is the sentinel the machine's key file holds: one this server
+// placed, by its name and its exact shape (newSentinel's). Anything else —
+// the provider's key an older server placed, a key a person put there — is
+// no sentinel, and is replaced, never kept on the disk as one.
+func (k poolKeys) heldSentinel(ctx context.Context, guest machine.Guest) (string, bool) {
+	data, err := readKeyFile(ctx, guest)
+	if err != nil {
+		return "", false
+	}
+	var key machine.Key
+	if json.Unmarshal(data, &key) != nil || key.Driver != k.driver.Name() || key.Name != sentinelKeyName || !k.sentinelShaped(key.Secret) {
+		return "", false
+	}
+	return key.Secret, true
+}
+
+// sentinelShaped reports whether s is what newSentinel makes: the driver's
+// placeholder prefix, or none, then sentinelRandom's characters.
+func (k poolKeys) sentinelShaped(s string) bool {
+	body := s
+	if secret, ok := secretOf(k.driver.Name()); ok {
+		if prefix, _, found := strings.Cut(secret.Placeholder, "..."); found && prefix != "" {
+			body = strings.TrimPrefix(s, prefix)
+		}
+	}
+	if len(body) != sentinelRandomLen || !k.sentinelFound(s) {
+		return false
+	}
+	for _, r := range body {
+		if (r < 'a' || r > 'z') && (r < '2' || r > '7') {
+			return false
+		}
+	}
+	return true
+}
+
+// sentinelRandomLen is the length of a sentinel's random characters: 20
+// random bytes in lower-case base32, unpadded.
+const sentinelRandomLen = 32
+
+// readKeyFile is the machine's provisioning key file, as it stands.
+func readKeyFile(ctx context.Context, guest machine.Guest) ([]byte, error) {
+	archive, err := guest.CopyFrom(ctx, bundle.ProvisioningKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	defer archive.Close()
+	tr := tar.NewReader(archive)
+	if _, err := tr.Next(); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(io.LimitReader(tr, 64<<10))
+}
+
+// newSentinel is a sentinel for the driver's key: shaped as one (its
+// placeholder's prefix, archil's "key-", then random characters), where that
+// shape survives the driver's own rewriting of the key at every place it
+// sends it, so the proxy finds it there; or else the random characters
+// alone.
+func (k poolKeys) newSentinel() (string, error) {
+	var raw [20]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	random := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw[:]))
+	if secret, ok := secretOf(k.driver.Name()); ok {
+		if prefix, _, found := strings.Cut(secret.Placeholder, "..."); found && prefix != "" {
+			shaped := prefix + random
+			if k.sentinelFound(shaped) {
+				return shaped, nil
+			}
+		}
+	}
+	if !k.sentinelFound(random) {
+		return "", fmt.Errorf("the %s driver rewrites its key where it sends it, so no sentinel survives for the pool's proxy to find", k.driver.Name())
+	}
+	return random, nil
+}
+
+// sentinelFound reports whether sentinel stands whole at every place the
+// driver sends its key, as the driver puts it there.
+func (k poolKeys) sentinelFound(sentinel string) bool {
+	for _, send := range k.sends {
+		if !strings.Contains(sentAs(send, sentinel), sentinel) {
+			return false
+		}
+	}
+	return true
+}
+
+// sentAs is a key as the driver puts it at a place it sends it: in a header,
+// after its value prefix and less its trimmed prefix; in a JSON field, as it
+// is.
+func sentAs(send machine.SecretSend, key string) string {
+	if send.Header == "" {
+		return key
+	}
+	return send.ValuePrefix + strings.TrimPrefix(key, send.TrimPrefix)
+}
+
+// resolve is what a pool's proxy puts in the place of the sentinel its
+// machine holds, at a place the driver sends its key to host (ADR
+// 26-11-11-080 §9): the provider's key, as the driver would put it there in
+// place of the sentinel, so the request the proxy sends is the one the driver
+// would send with the key itself. It is answered only for the sentinel the
+// pool's record holds, and for a host the driver sends its key to.
+func (k poolKeys) resolve(record *poolKeyRecord, sentinel, host string) (string, error) {
+	if !k.sentinel() {
+		return "", fmt.Errorf("%w: the %s driver's pools hold no sentinel", sandbox.ErrDriverKeyRefused, k.driver.Name())
+	}
+	if record == nil || record.Sentinel == "" || subtle.ConstantTimeCompare([]byte(record.Sentinel), []byte(sentinel)) != 1 {
+		return "", fmt.Errorf("%w: not the sentinel this pool's machine holds", sandbox.ErrDriverKeyRefused)
+	}
+	if k.providerKey == "" {
+		return "", fmt.Errorf("the %s provider has %w", k.driver.Name(), errNoKey)
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	value, found := "", false
+	for _, send := range k.sends {
+		if !slices.ContainsFunc(send.Hosts, func(hostPort string) bool {
+			h, _, err := net.SplitHostPort(hostPort)
+			return err == nil && strings.EqualFold(h, host)
+		}) {
+			continue
+		}
+		placed, err := inPlaceOf(send, sentinel, k.providerKey)
+		if err != nil {
+			return "", err
+		}
+		if found && placed != value {
+			return "", fmt.Errorf("the %s driver sends its key to %s in more than one form, and a sentinel has one value", k.driver.Name(), host)
+		}
+		value, found = placed, true
+	}
+	if !found {
+		return "", fmt.Errorf("%w: the %s driver never sends its key to %s", sandbox.ErrDriverKeyRefused, k.driver.Name(), host)
+	}
+	return value, nil
+}
+
+// inPlaceOf is what replaces sentinel where send carries it so the result is
+// key as the driver would send it there: the sentinel stands within the
+// driver's form of it (sentAs), and what is around it there must be around
+// the key's form too.
+func inPlaceOf(send machine.SecretSend, sentinel, key string) (string, error) {
+	withSentinel, withKey := sentAs(send, sentinel), sentAs(send, key)
+	at := strings.Index(withSentinel, sentinel)
+	if at < 0 {
+		return "", errors.New("the sentinel does not stand whole where the driver sends its key")
+	}
+	before, after := withSentinel[:at], withSentinel[at+len(sentinel):]
+	if !strings.HasPrefix(withKey, before) || !strings.HasSuffix(withKey, after) || len(withKey) < len(before)+len(after) {
+		return "", errors.New("the provider's key does not take the form the driver gives its sentinel")
+	}
+	return withKey[len(before) : len(withKey)-len(after)], nil
 }
 
 // ensureIssued is ensure for a key the driver issues the pool.
@@ -285,6 +514,9 @@ func (k poolKeys) hostCredential(record *poolKeyRecord) *model.PoolHostCredentia
 		credential.Key, credential.Scope, credential.KeyID = model.PoolHostKeyProvider, string(record.Scope), record.ID
 		if record.InMachine {
 			credential.Key = model.PoolHostKeyInMachine
+		}
+		if record.Sentinel != "" {
+			credential.Key = model.PoolHostKeySentinel
 		}
 		if record.Issued {
 			credential.Key = model.PoolHostKeyIssued
