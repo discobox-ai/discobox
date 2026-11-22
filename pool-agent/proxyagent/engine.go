@@ -15,10 +15,12 @@ import (
 
 // EngineClientID is the pool proxy client a machine pool's own engine calls
 // its driver's service as, where the pool's provisioning key file holds a
-// sentinel for the driver's key rather than a key (ADR 26-11-11-080 §9). No
-// sandbox ID has a colon, so no sandbox, nor any build step, which presents
-// its sandbox's certificate, can be this client. Its client certificate is
-// root's alone, in the pool's certificate directory.
+// sentinel for the driver's key rather than a key (ADR 26-11-11-080 §9). Every
+// sandbox ID starts sbx_ (the control plane's id.PrefixSandbox), so no
+// sandbox, nor any build step, which presents its sandbox's certificate, can
+// be this client. It names its certificate's directory, so it is a name every
+// OS takes (no colon: Windows refuses one). Its client certificate is root's
+// alone, in the pool's certificate directory.
 //
 // Its sentinel is swapped only where its grant, written from where the driver
 // declares it sends its key, allows it; resolving it asks the control plane
@@ -26,7 +28,7 @@ import (
 // secret; and the answer to every request it swaps into is never recorded
 // (proxy.SecretClient.Exchanges), since a driver can trade its key there for
 // a credential of its own.
-const EngineClientID = "pool:engine"
+const EngineClientID = "pool-engine"
 
 // EnsureEngineMaterial issues (or reuses, or renews) the engine's client
 // certificate, and returns it with the pool's CAs: the mTLS CA the proxy's
