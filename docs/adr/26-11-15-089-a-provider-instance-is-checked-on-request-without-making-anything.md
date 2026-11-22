@@ -1,6 +1,6 @@
 # 26-11-15-089 — A provider instance is checked on request, without making anything
 
-- **Status**: Accepted
+- **Status**: Accepted (§3's check of a disabled instance on a provider built for the check alone superseded by [26-11-22-507](26-11-22-507-a-disabled-provider-takes-no-new-pools-and-its-existing-pools-keep-working.md): a disabled instance is checked on its cached provider like any other)
 - **Date**: 2026-11-15
 
 Accepted by the owner by merging #1207, 2026-11-15.

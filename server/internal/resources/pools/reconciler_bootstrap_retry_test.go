@@ -72,7 +72,7 @@ func newBootstrapRetryFixture(t *testing.T) *bootstrapRetryFixture {
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	return &bootstrapRetryFixture{t: t, store: appStore, db: db, runtime: runtime, reconciler: NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil), nil)}
+	return &bootstrapRetryFixture{t: t, store: appStore, db: db, runtime: runtime, reconciler: NewPoolReconciler(appStore, manager, NewControlPlane(appStore, manager, nil), nil)}
 }
 
 func (f *bootstrapRetryFixture) reconcile() error {
@@ -384,11 +384,11 @@ func TestBootstrapRetryWaitsForACallableProvider(t *testing.T) {
 	first := f.attempt()
 	first.Failure = "image not found"
 	f.setAttempt(first)
-	if err := f.db.Model(&model.SandboxProviderInstance{}).Where("id = ?", "provider-1").UpdateColumn("disabled", true).Error; err != nil {
+	if err := f.db.Model(&model.SandboxProviderInstance{}).Where("id = ?", "provider-1").UpdateColumn("type", "unsupported").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := f.reconcile(); err != nil {
-		t.Fatalf("reconcile with a disabled provider: %v", err)
+		t.Fatalf("reconcile with a provider this server cannot build: %v", err)
 	}
 	if b := f.attempt(); b.Attempt != first.Attempt {
 		t.Fatal("an attempt started with no provider to call")

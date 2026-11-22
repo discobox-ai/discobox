@@ -2,14 +2,17 @@ package sandbox
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -63,8 +66,25 @@ type ProviderManager struct {
 }
 
 type cachedProvider struct {
-	provider  Provider
-	updatedAt time.Time
+	provider Provider
+	built    string // buildKey of the row it was built from
+}
+
+// buildKey is what of an instance's row its provider is built from: its type,
+// config, sealed fields and carried endpoints. A write that changes none of
+// them, such as a rename or turning Disabled on or off, keeps the cached
+// provider: rebuilding closes the old one, and a VM-backed provider's Close
+// powers its pools' VMs off (ADR 26-11-22-507 §1: disabling changes nothing
+// for existing pools).
+func buildKey(instance *model.SandboxProviderInstance) string {
+	h := sha256.New()
+	for _, part := range [][]byte{[]byte(instance.Type), instance.Config, instance.EncryptedConfig, []byte(strings.Join(instance.CarriedEndpoints, "\x00"))} {
+		var size [8]byte
+		binary.BigEndian.PutUint64(size[:], uint64(len(part)))
+		h.Write(size[:])
+		h.Write(part)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // NewProviderManager creates an empty provider manager. secrets opens what an
@@ -268,11 +288,10 @@ func (m *ProviderManager) ListProviderStatuses() map[string]ProviderStatus {
 // definition alone does not make a type resolvable.
 func (m *ProviderManager) ValidateProviderConfig(providerType string, config json.RawMessage) error {
 	m.mu.RLock()
-	_, hasFactory := m.factories[providerType]
-	_, hasProvider := m.providers[providerType]
+	buildable := m.buildableLocked(providerType)
 	validator := m.validators[providerType]
 	m.mu.RUnlock()
-	if !hasFactory && !hasProvider {
+	if !buildable {
 		return fmt.Errorf("unknown sandbox provider type %q", providerType)
 	}
 	if validator == nil {
@@ -313,13 +332,12 @@ func (m *ProviderManager) ResolveForSandbox(ctx context.Context, sandbox *model.
 	return m.ResolveInstance(ctx, sandbox.Pool.ProviderInstance)
 }
 
-// ResolveInstance returns the provider for a configured provider instance.
+// ResolveInstance returns the provider for a configured provider instance,
+// disabled or not: disabled only closes it to new pools, which the pool
+// service refuses (ADR 26-11-22-507 §1).
 func (m *ProviderManager) ResolveInstance(ctx context.Context, instance *model.SandboxProviderInstance) (Provider, error) {
 	if instance == nil {
 		return m.GetProvider("")
-	}
-	if instance.Disabled {
-		return nil, fmt.Errorf("sandbox provider instance %q is disabled", instance.ID)
 	}
 	if factory := m.factory(instance.Type); factory != nil {
 		return m.cachedProvider(ctx, instance, factory)
@@ -328,41 +346,41 @@ func (m *ProviderManager) ResolveInstance(ctx context.Context, instance *model.S
 }
 
 // CheckInstance asks the instance's provider whether it reaches what its
-// pools need (ADR 26-11-15-089 §3), with the same joined secret and the same
-// endpoint-policy dialer a pool's resolve would use, so a check that passes
-// went the way a pool's create would. An enabled instance is checked on its
-// cached provider, resolved as its pools resolve it. A disabled one is
-// checked too, so an operator can check it before enabling it, but on a
-// provider built for the check alone, never Initialized or cached, and closed
-// when it returns: nothing else in the server builds a disabled instance, and
-// a build may start the provider's own loops (a Docker provider's watchers).
-// An instance that does not build fails its check with that error.
+// pools need (ADR 26-11-15-089 §3), on the cached provider its pools resolve,
+// so a check that passes went the way a pool's create would. A disabled
+// instance is resolved and checked like any other (ADR 26-11-22-507 §1). An
+// instance that does not build fails its check with that error.
 func (m *ProviderManager) CheckInstance(ctx context.Context, instance *model.SandboxProviderInstance) error {
-	if !instance.Disabled {
-		provider, err := m.ResolveInstance(ctx, instance)
-		if err != nil {
-			return err
-		}
-		return provider.Check(ctx)
-	}
-	factory := m.factory(instance.Type)
-	if factory == nil {
-		provider, err := m.GetProvider(instance.Type)
-		if err != nil {
-			return err
-		}
-		return provider.Check(ctx)
-	}
-	resolved, err := m.withSecrets(ctx, instance)
+	provider, err := m.ResolveInstance(ctx, instance)
 	if err != nil {
 		return err
 	}
-	provider, err := factory(ctx, resolved)
-	if err != nil {
-		return err
-	}
-	defer closeProvider(provider)
 	return provider.Check(ctx)
+}
+
+// Buildable reports whether this server can build an instance of the
+// provider type at all: a factory or a registered provider serves it. An
+// instance of a type that is not buildable here (`unsupported`, a migrated
+// `vm` row, a `vz` or `wslc` row on another OS) cannot have anything this
+// server could reach, so its pools are not converged and their delete drops
+// the row alone (ADR 26-11-22-507 §2). A buildable type whose build fails is
+// not this: that is a failure to retry.
+func (m *ProviderManager) Buildable(providerType string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.buildableLocked(providerType)
+}
+
+// buildableLocked is Buildable for a caller holding m.mu.
+func (m *ProviderManager) buildableLocked(providerType string) bool {
+	if _, ok := m.factories[providerType]; ok {
+		return true
+	}
+	if providerType == "" {
+		providerType = m.defaultID
+	}
+	_, ok := m.providers[providerType]
+	return ok
 }
 
 // ListRuntimeSandboxes returns runtime sandboxes from all process-wide providers.
@@ -470,18 +488,18 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 		closeProvider(previous)
 	}
 	m.mu.Lock()
-	m.cache[instance.ID] = cachedProvider{provider: provider, updatedAt: instance.UpdatedAt}
+	m.cache[instance.ID] = cachedProvider{provider: provider, built: buildKey(instance)}
 	m.mu.Unlock()
 	return provider, nil
 }
 
-// cachedFor is the cached provider of instance, if it was built from the row
-// as it reads now.
+// cachedFor is the cached provider of instance, if it was built from what the
+// row now holds (buildKey).
 func (m *ProviderManager) cachedFor(instance *model.SandboxProviderInstance) (Provider, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	cached, ok := m.cache[instance.ID]
-	if !ok || !cached.updatedAt.Equal(instance.UpdatedAt) {
+	if !ok || cached.built != buildKey(instance) {
 		return nil, false
 	}
 	return cached.provider, true

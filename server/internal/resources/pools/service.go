@@ -90,6 +90,12 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 	if err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
+	// Disabled closes a provider to new pools and to nothing else: its
+	// existing pools keep reconciling, serving and deleting (ADR 26-11-22-507
+	// §1), so this is the one place it is checked.
+	if provider.Disabled {
+		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("provider instance %q is disabled and takes no new pools", provider.Name))
+	}
 	if err := s.checkPoolSize(provider, sizeOf(input)); err != nil {
 		return nil, err
 	}

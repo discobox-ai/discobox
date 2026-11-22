@@ -27841,7 +27841,9 @@ type SandboxProviderInstance struct {
 	Config jx.Raw `json:"config"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
-	// Whether this provider is disabled.
+	// Whether this provider is closed to new pools. Creating a pool on a disabled provider is refused.
+	// Its existing pools keep working, and deleting one removes what it runs, so disabling alone does
+	// not stop what they cost.
 	Disabled bool `json:"disabled"`
 	// Stable provider instance ID.
 	ID string `json:"id"`
@@ -35039,7 +35041,9 @@ type UpdateSandboxProviderInstanceBody struct {
 	// Provider configuration, replacing the stored one. A secret field left out keeps its value, a value
 	// replaces it, and null clears it.
 	Config jx.Raw `json:"config"`
-	// Whether this provider is disabled.
+	// Whether this provider is closed to new pools. Creating a pool on a disabled provider is refused.
+	// Its existing pools keep working, and deleting one removes what it runs, so disabling alone does
+	// not stop what they cost.
 	Disabled OptBool `json:"disabled"`
 	// Provider display name.
 	Name OptString `json:"name"`

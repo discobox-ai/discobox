@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/pools"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -104,19 +106,22 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesPoolReconcile(t *testing
 	}
 }
 
-// An instance that cannot resolve (here a type this server does not build) is
-// that instance's failure, not the server's: startup goes on and marks its
-// pools, whose reconciles retry the resolve with backoff.
+// An instance that cannot resolve (here a type this server builds, whose
+// build fails) is that instance's failure, not the server's: startup goes on
+// and marks its pools, whose reconciles retry the resolve with backoff.
 func TestEnsureExistingSandboxProviderInstancesToleratesUnresolvableInstance(t *testing.T) {
 	ctx := context.Background()
 	appStore, db := newProviderInstanceTestStore(ctx, t)
-	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "no-such-type", Name: "provider-1"}); err != nil {
+	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "fails-to-build", Name: "provider-1"}); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
 	createProviderWithPool(ctx, t, appStore, "provider-1", "pool-1")
 
 	engine := newStartedTestReconcileEngine(ctx, t, db)
 	svc := New(appStore, engine, Options{AssetDir: t.TempDir()})
+	svc.SandboxProviderManager().RegisterFactory("fails-to-build", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		return nil, errors.New("the service refused the key")
+	})
 	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		t.Fatalf("ensure existing providers: %v", err)
 	}
@@ -127,6 +132,44 @@ func TestEnsureExistingSandboxProviderInstancesToleratesUnresolvableInstance(t *
 	}
 	if len(dirty) != 1 || dirty[0].ResourceID != pools.PoolDirtyID("project-1", "pool-1") {
 		t.Fatalf("dirty pool marks = %#v, want only pool-1", dirty)
+	}
+}
+
+// A disabled instance is resolved at startup like an enabled one, since its
+// pools keep working; one whose type this server cannot build is skipped,
+// since nothing of its pools could be reached (ADR 26-11-22-507).
+func TestEnsureExistingSandboxProviderInstancesResolvesDisabledAndSkipsUnbuildable(t *testing.T) {
+	ctx := context.Background()
+	appStore, db := newProviderInstanceTestStore(ctx, t)
+	for _, instance := range []*model.SandboxProviderInstance{
+		{ID: "provider-off", ProjectID: "project-1", Type: "counted", Name: "off", Disabled: true},
+		{ID: "provider-gone", ProjectID: "project-1", Type: "unsupported", Name: "gone", Disabled: true},
+	} {
+		if err := appStore.CreateSandboxProviderInstance(ctx, instance); err != nil {
+			t.Fatalf("create provider: %v", err)
+		}
+	}
+	createProviderWithPool(ctx, t, appStore, "provider-gone", "pool-gone")
+
+	engine := newStartedTestReconcileEngine(ctx, t, db)
+	svc := New(appStore, engine, Options{AssetDir: t.TempDir()})
+	var built []string
+	svc.SandboxProviderManager().RegisterFactory("counted", func(_ context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		built = append(built, instance.ID)
+		return nil, errors.New("not reached")
+	})
+	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
+		t.Fatalf("ensure existing providers: %v", err)
+	}
+	if len(built) != 1 || built[0] != "provider-off" {
+		t.Fatalf("built %v, want the disabled instance resolved", built)
+	}
+	dirty, err := engine.ListDirty(ctx, pools.PoolResourceType)
+	if err != nil {
+		t.Fatalf("list dirty: %v", err)
+	}
+	if len(dirty) != 0 {
+		t.Fatalf("dirty pool marks = %#v, want none for a provider this server cannot build", dirty)
 	}
 }
 

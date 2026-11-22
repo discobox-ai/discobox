@@ -41,8 +41,8 @@ type PoolBoxes interface {
 	PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error)
 }
 
-func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPlane {
-	return &ControlPlane{store: appStore, engine: engine, upgrades: NewUpgradeWatch(appStore)}
+func NewControlPlane(appStore *store.Store, manager *sandbox.ProviderManager, engine *reconcile.Engine) *ControlPlane {
+	return &ControlPlane{store: appStore, engine: engine, upgrades: NewUpgradeWatch(appStore, manager)}
 }
 
 // Upgrades is the watch of the pools this server run has not yet brought onto

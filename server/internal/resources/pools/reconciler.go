@@ -99,8 +99,10 @@ func NewPoolReconciler(appStore *store.Store, manager *sandbox.ProviderManager, 
 }
 
 // Reconcile loads the latest project + pool + provider state and converges
-// the pool's runtime. Missing pools and missing or disabled providers are
-// converged trivially (nothing to do), settling the dirty row. A run whose
+// the pool's runtime. Missing pools, and providers that are gone or whose
+// type this server cannot build, are converged trivially (nothing to do),
+// settling the dirty row; a disabled provider is converged like any other
+// (ADR 26-11-22-507). A run whose
 // generation-guarded write lost to newer intent settles too: that intent's
 // mark re-runs the pool, and returning the error would back that run off as
 // if this one had failed.
@@ -645,15 +647,12 @@ func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	provider, err := convergedProvider(ctx, r.store, pool)
+	provider, err := convergedProvider(ctx, r.store, r.manager, pool)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if provider == nil {
 		return project, nil, nil, nil
-	}
-	if r.manager == nil {
-		return nil, nil, nil, fmt.Errorf("sandbox provider manager is required")
 	}
 	runtimeProvider, err := r.manager.ResolveInstance(ctx, provider)
 	if err != nil {
@@ -668,8 +667,14 @@ func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.
 
 // convergedProvider is the pool's provider instance when the reconciler
 // converges a host for it, and nil when it converges nothing: the instance is
-// gone, or disabled. Both the reconciler and the upgrade watch decide it here.
-func convergedProvider(ctx context.Context, appStore *store.Store, pool *model.Pool) (*model.SandboxProviderInstance, error) {
+// gone, or its type cannot be built on this server (ADR 26-11-22-507 §2). A
+// disabled instance is converged like an enabled one (§1). Both the
+// reconciler and the upgrade watch decide it here, and a pool it answers nil
+// for is deleted as its row alone.
+func convergedProvider(ctx context.Context, appStore *store.Store, manager *sandbox.ProviderManager, pool *model.Pool) (*model.SandboxProviderInstance, error) {
+	if manager == nil {
+		return nil, fmt.Errorf("sandbox provider manager is required")
+	}
 	provider, err := appStore.GetSandboxProviderInstance(ctx, pool.ProjectID, pool.ProviderInstanceID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
@@ -677,7 +682,7 @@ func convergedProvider(ctx context.Context, appStore *store.Store, pool *model.P
 	if err != nil {
 		return nil, err
 	}
-	if provider.Disabled {
+	if !manager.Buildable(provider.Type) {
 		return nil, nil
 	}
 	return provider, nil

@@ -146,7 +146,9 @@ func (s *Service) copyInto(ctx context.Context, project *model.Project, plan cop
 }
 
 // copyProviders duplicates the source project's provider instances and returns
-// the source-to-copy ID mapping pools are rebound through.
+// the source-to-copy ID mapping pools are rebound through. A disabled
+// instance is copied disabled and left out of the mapping: it takes no new
+// pools (ADR 26-11-22-507 §1), and a copy of one of its pools would be one.
 func (s *Service) copyProviders(ctx context.Context, sourceProjectID, projectID string) (map[string]string, error) {
 	sourceProviders, err := s.store.ListSandboxProviderInstances(ctx, sourceProjectID)
 	if err != nil {
@@ -183,12 +185,14 @@ func (s *Service) copyProviders(ctx context.Context, sourceProjectID, projectID 
 			return nil, fmt.Errorf("%s: %w", sourceProvider.Name, err)
 		}
 		// Disabled is not a create input, but a disabled provider that comes
-		// back enabled would start dialing a backend the user turned off.
+		// back enabled would take new pools the user closed it to.
 		if sourceProvider.Disabled {
 			created.Disabled = true
 			if err := s.store.UpdateSandboxProviderInstance(ctx, created); err != nil {
 				return nil, err
 			}
+			slog.WarnContext(ctx, "a disabled provider's pools are not copied", "project", sourceProjectID, "provider", sourceProvider.ID)
+			continue
 		}
 		ids[sourceProvider.ID] = created.ID
 	}
@@ -207,7 +211,8 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 		providerID, ok := providerIDs[sourcePool.ProviderInstanceID]
 		if !ok {
 			// The source pool's provider instance was deleted out from under it,
-			// so there is nothing to bind the copy to.
+			// was not copied, or is disabled and takes no new pools, so there
+			// is nothing to bind the copy to.
 			continue
 		}
 		created, err := s.pools.CreatePool(ctx, project.ID, services.CreatePoolBody{

@@ -301,9 +301,6 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
-	if instance.Disabled {
-		return nil, apperrors.NewStatusError(http.StatusConflict, "provider instance disabled")
-	}
 	provider, err := s.sandboxProviders.ResolveInstance(ctx, instance)
 	if err != nil {
 		return nil, err

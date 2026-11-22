@@ -51,8 +51,8 @@ func TestProviderInitializedInsideAPoolReconcileResolves(t *testing.T) {
 		time.Sleep(time.Millisecond) // pools list in created_at order
 	}
 
-	controlPlane := pools.NewControlPlane(appStore, engine)
 	manager := sandbox.NewProviderManager(noProviderSecrets{})
+	controlPlane := pools.NewControlPlane(appStore, manager, engine)
 	manager.RegisterFactory("test", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		return New(&testRuntimeProvider{}, sandbox.ProviderDefinition{}, controlPlane, nil), nil
 	})

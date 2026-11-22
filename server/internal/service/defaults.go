@@ -265,6 +265,8 @@ func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID stri
 		provider.Type = "wslc"
 		provider.Name = "Windows"
 	default:
+		// Disabled so it takes no pools; nothing of it is ever built, since
+		// no provider serves type `unsupported` (ADR 26-11-22-507 §2).
 		provider.Type = "unsupported"
 		provider.Name = runtime.GOOS
 		provider.Disabled = true

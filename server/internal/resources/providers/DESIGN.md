@@ -3,7 +3,10 @@
 `internal/resources/providers` owns provider-instance API behavior, the
 provider-type catalog, and startup reconciliation. A provider instance is
 backend identity only — type, name, connection config, its credentials, and a
-disabled flag (`model.SandboxProviderInstance`). Capacity, sharing policy, and
+disabled flag (`model.SandboxProviderInstance`). Disabled closes an instance
+to new pools and nothing else (ADR 26-11-22-507): the pool service refuses a
+create on it (409), and its existing pools reconcile, upgrade, take
+sandboxes and delete through it as on an enabled one. Capacity, sharing policy, and
 observed runtime status belong to `Pool` (`internal/resources/pools`).
 
 ## Credentials
@@ -30,8 +33,8 @@ rest of the config (ADR 26-10-31-694):
   store and joins them into the config the provider's factory and
   `Initialize` decode; a provider imports nothing of the store. A secret
   field still in `config` fails the resolve and never reaches the provider.
-- **Rotation** is an update: it moves `UpdatedAt`, on which the manager's
-  cache is keyed. No secret field is `Immutable`.
+- **Rotation** is an update: it changes the sealed fields, which are part of
+  what the manager's cache is keyed on. No secret field is `Immutable`.
 - **Built once.** An instance is built one resolve at a time; a concurrent
   resolve waits and takes the cached provider. Every start resolves each
   instance from the running engine and the startup pass together, and a
@@ -72,7 +75,10 @@ flowchart LR
   instance was already accepted. Update validates config against the stored
   type (400 on refusal) and persists name, config, and `Disabled`; type is
   immutable. Update does not re-resolve: the manager rebuilds a cached
-  provider on the next resolve because the cache is keyed by `UpdatedAt`.
+  provider on the next resolve because the cache is keyed by what a build
+  reads (`buildKey`: type, config, sealed fields, carried endpoints). A rename
+  or a change of `Disabled` keeps the cached provider, since rebuilding closes
+  the old one and a VM-backed provider's close powers its pools' VMs off.
 - Project copy creates the copied instances through this service
   (`CreateSandboxProviderInstance`), so they get the same validation and
   resolve. It hands the create the source's config with its sealed fields
@@ -97,11 +103,13 @@ flowchart LR
   changes the field.
 - Startup reconciliation (`EnsureExistingSandboxProviderInstances`), run from
   `internal/service.Service.Start` once the reconcile engine is up, resolves
-  every enabled instance in every project. Resolving runs the provider's
+  every instance in every project, disabled ones included, except one whose
+  type this server cannot build (`ProviderManager.Buildable`): nothing of its
+  pools exists to reach. Resolving runs the provider's
   factory and `Initialize`, and a pool-backed provider's `Initialize` schedules
   each of its pools' reconciles. An instance that does not resolve is logged
   and does not fail server start — it belongs to one project, and a stopped
-  server cannot serve the API that would disable or delete it. Its pools are
+  server cannot serve the API that would fix or delete it. Its pools are
   marked dirty instead, so their reconciles retry the resolve with the
   engine's backoff and carry the error. Only a store error fails the start.
 - So a resolve, and `Initialize` with it, may run inside one of the
@@ -125,12 +133,9 @@ flowchart LR
   ADR 26-11-15-089) asks one instance whether the server reaches what its
   pools need, and makes nothing. `ProviderManager.CheckInstance` builds it
   with the joined secret and the endpoint-policy dialer a pool's resolve
-  uses, and calls the required `Provider.Check`, bounded at 60s. An enabled
-  instance is checked on its cached provider, resolved as its pools resolve
-  it. A disabled one is checked too, but on a provider built for the check
-  alone: never `Initialize`d (which marks its pools) or cached, and closed
-  when it returns, since nothing else builds a disabled instance and a build
-  may start the provider's own loops (a Docker provider's watchers). The
+  uses, and calls the required `Provider.Check`, bounded at 60s. Every
+  instance, disabled or not, is checked on its cached provider, resolved as
+  its pools resolve it. The
   answer is 200 `ProviderCheck`: `ok`, `unreachable` (an error wrapping
   `sandbox.ErrPoolNotReachable` or `sandbox.ErrProviderNotReachable`, or the
   bound running out) or `refused` (any other error, an instance that does

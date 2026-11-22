@@ -363,6 +363,45 @@ func TestCreateProjectCopyLeavesARetiredProviderTypeBehind(t *testing.T) {
 	}
 }
 
+// A disabled provider takes no new pools (ADR 26-11-22-507 §1), and a copy
+// of its pool would be one: the copy carries the provider, disabled, and
+// leaves its pools behind, copying the rest rather than failing whole.
+func TestCreateProjectCopyLeavesADisabledProvidersPoolsBehind(t *testing.T) {
+	svc, st, ctx := newService(t)
+	source := seedSourceProject(ctx, t, st)
+	off := &model.SandboxProviderInstance{ProjectID: source.ID, Type: "docker", Name: "Off", Disabled: true}
+	if err := st.CreateSandboxProviderInstance(ctx, off); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreatePool(ctx, &model.Pool{ProjectID: source.ID, PoolManifest: model.PoolManifest{Name: "Closed", ProviderInstanceID: off.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Copy", CopyFromProjectId: apigen.NewOptString(source.ID)})
+	if err != nil {
+		t.Fatalf("a copy of a project with a disabled provider: %v", err)
+	}
+	providers, err := st.ListSandboxProviderInstances(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiedOff *model.SandboxProviderInstance
+	for i := range providers {
+		if providers[i].Name == "Off" {
+			copiedOff = &providers[i]
+		}
+	}
+	if copiedOff == nil || !copiedOff.Disabled {
+		t.Fatalf("copied providers %+v, want the disabled one copied disabled", providers)
+	}
+	pools, err := st.ListPools(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pools) != 1 || pools[0].Name != "Default" {
+		t.Fatalf("copied pools %+v, want only the enabled provider's", pools)
+	}
+}
+
 func TestCreateProjectCopySelectionExcludesPoolsAndHarnesses(t *testing.T) {
 	svc, st, ctx := newService(t)
 	source := seedSourceProject(ctx, t, st)

@@ -3067,7 +3067,7 @@ discobox admin provider update PROVIDER [flags]
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --config | string |  | Provider config JSON or @path |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
-| --disabled | bool | false | Disable or enable the provider instance Value when passed without an argument: true. |
+| --disabled | bool | false | Close the provider instance to new pools; its existing pools keep running until deleted Value when passed without an argument: true. |
 | --help | bool | false | Show update help; use --help=PROVIDER for provider-specific flags Value when passed without an argument: true. |
 | --name | string |  | Provider instance name |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
