@@ -3,6 +3,10 @@
 - **Status**: Accepted
 - **Date**: 2026-11-16
 - Accepted by the owner by merging #1270, 2026-11-17
+- **§5 superseded in part by**: [26-11-21-395](26-11-21-395-a-machine-pool-freezes-a-sleeping-sandbox-where-its-driver-can-and-stops-it-where-it-cannot.md)
+  — its first bullet's "a sleep is a stop on archil, as on every machine
+  pool" and "discobox never asks Archil for a pause": a machine pool freezes
+  a sleep and a suspend where its driver can. The rest of §5 stands.
 - **Issue**: #1053 (row A0 of the remote-drivers plan, #947)
 - **Supersedes in part** (implementation of each has shipped, so these are
   superseded, not amended):
