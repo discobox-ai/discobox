@@ -1,7 +1,12 @@
 # 26-11-21-395 — A machine pool freezes a sleeping sandbox where its driver can, and stops it where it cannot
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-21
+- Accepted by the owner by merging #1519, 2026-11-21
+- Amended before anything shipped against it, 2026-11-22: §5's cache clear
+  leaves a suspended machine with its cache, as a stopped one (the owner's
+  choice, on #1274's implementation), where it had said a cache clear acts
+  on it as on a running one.
 - **Issue**: #1274
 - **Extends** [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)
   §§1–5 (as amended by
@@ -184,8 +189,12 @@ running machine boots on, and restarts it onto that (`placementCurrent`),
 applies to it as to any other running machine. A thaw is given no exception
 to it.
 
-Restart, stop, archive, delete and a cache clear act on a suspended machine
-as on a running one. disco-vm's stop of a paused machine stops it (§1).
+Restart, stop, archive and delete act on a suspended machine as on a running
+one. disco-vm's stop of a paused machine stops it (§1). A cache clear leaves
+a suspended machine with its cache, as it leaves a stopped one: on a machine
+pool it stops nothing and asks each running sandbox's agent to empty its own
+cache, which a frozen agent cannot answer, and thawing every sleeping box to
+ask would undo the sleeps it was asked to keep.
 
 ### 6. A frozen machine sandbox is read like a frozen container
 
