@@ -97,6 +97,13 @@
   any change over. Why: disco-vm exports none of them, so the test runs
   copies; it is gated on Docker, and its copies would keep passing after
   the driver's lines moved.
+- When the disco-vm pin moves, check which `machine.Driver` call each
+  `engine` method makes. `poolTestDriver` fakes the driver's service
+  failing by queueing errors on the calls that reach it (`serviceErrs`:
+  `State` and `Attach`), so a wrapper that misses the call the engine now
+  makes shifts every queue by one. Why: at vm 4035d8f `Engine.State` moved
+  from `Attach` to the new `Driver.State`, and two tests failed until
+  `State` was wrapped too.
 - Map a disco-vm sentinel in `unreachable` only when a call that goes
   through `notReachable` can return it. `machine.ErrUnreachable` is a guest
   operation's, which `engine.Start` retries itself and this package keeps

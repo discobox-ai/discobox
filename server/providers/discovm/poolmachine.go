@@ -841,6 +841,9 @@ func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst engine.I
 		return engine.Running, nil
 	case errors.Is(err, machine.ErrNotRunning):
 		return engine.Stopped, nil
+	case errors.Is(err, machine.ErrPaused):
+		// Paused by its provider: not running, and resumed by Start alone.
+		return engine.Paused, nil
 	default:
 		return state, fmt.Errorf("pool %s's machine cannot be asked for its state: %w", pool.ID, notReachable(err))
 	}
