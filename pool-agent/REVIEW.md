@@ -584,6 +584,13 @@ was meant to show (#1523).
   a running machine before something only a stopped one gets (a new root,
   `engine.Upgrade`, a rebuild in place) stops a paused or frozen one too; the
   stop resumes it first.
+- Bound every `engine.State` read made under a sandbox's power lock to judge
+  a failed pause or resume, or to settle a freeze, with
+  `machineStateReadTimeout`, and treat a timed-out read as the state unknown.
+  Why: a driver that stops answering holds the lock, and every power
+  operation on the sandbox, stop and delete included, until the read gives
+  up; one bound for all of them keeps any one from holding it longer
+  (#1561's merge score, t13).
 - Resume a paused machine, the pool's freeze or a provider's pause, only
   through `resumeLocked`, and put what differs between them (the after-thaw
   steps or the document alone) after it, in `startLocked`. Why: the resume is
