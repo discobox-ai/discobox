@@ -1,7 +1,8 @@
 # 26-11-22-507 — A disabled provider takes no new pools, and its existing pools keep working
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-22
+- Accepted by the owner by merging #1557, 2026-11-22
 - **Issue**: #1556
 - **Supersedes in part**
   [26-11-14-624](26-11-14-624-after-an-upgrade-the-server-is-not-ready-until-its-pools-are.md)
