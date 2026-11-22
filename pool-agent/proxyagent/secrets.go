@@ -667,6 +667,9 @@ type rejectionRequestBody struct {
 }
 
 func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveRequest) (proxy.SecretResolveResult, error) {
+	if req.ClientID == EngineClientID {
+		return r.resolveDriverKey(ctx, req)
+	}
 	rc, err := readResolveContext(r.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
 		// No usable credential yet says nothing about the sandbox's: it is
@@ -849,6 +852,11 @@ func resolveStatusTransient(status int) bool {
 // Report tells the control plane what an upstream made of a value this resolver
 // handed out.
 func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportRequest) error {
+	if req.ClientID == EngineClientID {
+		// The driver's key is the provider's, which no sandbox's report
+		// is about: the engine's own driver says what its service made of it.
+		return nil
+	}
 	rc, err := readResolveContext(r.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
 		return nil
@@ -1208,7 +1216,7 @@ func secretClients(byClient, rawByClient map[string][]string, generations map[st
 		if len(sentinels) == 0 && len(rawByClient[clientID]) == 0 {
 			continue
 		}
-		clients = append(clients, proxy.SecretClient{ClientID: clientID, Sentinels: sentinels, Raw: rawByClient[clientID], Generations: generations[clientID]})
+		clients = append(clients, proxy.SecretClient{ClientID: clientID, Sentinels: sentinels, Raw: rawByClient[clientID], Generations: generations[clientID], Exchanges: clientID == EngineClientID})
 	}
 	for clientID, raw := range rawByClient {
 		if _, ok := byClient[clientID]; ok || len(raw) == 0 {

@@ -120,6 +120,19 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 			}
 		}
 	}
+	// A pool whose key file holds a sentinel for its driver's key registers
+	// it with its proxy now, before the proxy unit starts and reads
+	// SecretsFile, so the engine's first call finds it (ADR 26-11-11-080 §9).
+	var sentinel *proxyagent.EngineSentinel
+	if runtimeKind == RuntimeMachine && bootstrap.KeySentinel {
+		if sentinel, err = proxyagent.NewEngineSentinel(root, bootstrap.ProjectID, bootstrap.PoolID, bootstrap.Driver, bootstrap.DriverConfig); err != nil {
+			return err
+		}
+		if err := sentinel.Register(ctx, provisioningKeys(poolbundle.ProvisioningKeyFile, bootstrap.Driver)); err != nil {
+			// Its first use registers it, once the file is there.
+			logger.Warn("the provisioning key's sentinel is not registered with the pool's proxy yet", "error", err)
+		}
+	}
 	// Render the shared builder's and its registry's configuration for the
 	// same reason and at the same point: both run as systemd units with a
 	// clean environment, and every path they own is pool-scoped (ADR 0044).
@@ -197,7 +210,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	status := dockerPoolStatus()
 	var machines *engine.Engine
 	if runtimeKind == RuntimeMachine {
-		if machines, err = openMachineEngine(root, bootstrap, poolbundle.ProvisioningKeyFile); err != nil {
+		if machines, err = openMachineEngine(root, bootstrap, poolbundle.ProvisioningKeyFile, sentinel); err != nil {
 			return err
 		}
 		// Refused before the first report: a pool whose sandboxes could

@@ -1090,6 +1090,33 @@ anew at the next start of any of them. Root on the
 machine can set the mark, or mint the credential anyway; the ADR states that
 cost.
 
+Where the bootstrap says `KeySentinel` (a driver that neither authenticates
+in-machine nor issues keys: archil), the key file holds a sentinel for the
+driver's key, and the engine reaches its driver's service through the
+pool's proxy (`proxyagent.EngineSentinel`, ADR 26-11-11-080 §9):
+
+- **Its own client.** It presents a client certificate of
+  `proxyagent.EngineClientID` (`pool:engine`, which no sandbox ID can be;
+  root's, in the pool's certificate directory, reissued by its dial), over
+  mTLS to the proxy on `127.0.0.1:17080`, and `CONNECT`s the host.
+- **Only where the key goes.** A connection to a host the driver sends its
+  key to (`proxyagent.DriverKeySends`, the server's own reading of disco-vm's
+  declaration, under the bootstrap's `DriverConfig`) goes through the proxy;
+  any other is direct (Archil's process WebSocket, whose URL carries a token
+  the audit must not keep). The engine trusts, beside the system's roots,
+  the proxy's MITM CA restated with name constraints for those hosts alone
+  (`proxy.CertificateBundle.ConstrainedMITMCA`).
+- **Held to those places.** The sentinel the key file holds is registered in
+  `SecretsFile` under that client before the proxy unit starts (it reads the
+  file as it starts, so the engine's first call finds it) and whenever the
+  file holds another, with one grant of a route per place the driver sends its
+  key (host, method, path; a JSON field's body place), so the proxy swaps it
+  there and refuses it anywhere else.
+- **Resolved as the pool.** The proxy's resolver asks the control plane's
+  `resolve-driver-key` for that client, never `resolve-sandbox-secret`, and
+  reports nothing of it. The answer to every request it swaps into is never
+  recorded (`proxy.SecretClient.Exchanges`).
+
 ```mermaid
 flowchart LR
     create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network\nor at its edge on none,\nfenced to the pool,\npool URL on, no ingress URL)"]
