@@ -355,14 +355,20 @@ func (r *MachineSandboxRuntime) lastObserved(sandboxID string) (Status, bool) {
 
 // status is the machine's power state as its engine reads it. A driver that
 // cannot be asked is no stop (ADR 26-10-09-106 §2): the state last seen
-// stands, and a machine never seen is an error rather than a guess. One its
-// provider paused (disco-vm ADR 26-11-21-438) is StatusPaused, never
-// suspended: the pool froze nothing (ADR 26-11-16-619 §5).
+// stands, and a machine never seen is an error rather than a guess.
+//
+// A machine its provider paused (Archil at a sandbox's session limit; disco-vm
+// ADR 26-11-21-438) is StatusPaused: held, with its memory, running nothing,
+// and resumed by a start (engine.Start). The pool froze nothing, so it is not
+// StatusSuspended (ADR 26-11-16-619 §5), but it is reported as a pause, not as
+// running (stateFromStatus). Reading it resumes nothing, and its endpoint
+// goes, since a paused machine dials nothing.
 func (r *MachineSandboxRuntime) status(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord) (Status, error) {
 	switch r.engine.State(ctx, inst) {
 	case engine.Running:
 		return r.observe(sandboxID, StatusRunning), nil
 	case engine.Paused:
+		r.endpoints.Delete(sandboxID)
 		return r.observe(sandboxID, StatusPaused), nil
 	case engine.Stopped:
 		r.endpoints.Delete(sandboxID)
@@ -1411,6 +1417,14 @@ func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID str
 			conn, err := connect(ctx)
 			if err != nil {
 				cache.endpoint.CompareAndSwap(endpoint, nil)
+				// A machine its provider paused since the last poll still
+				// reads as running here, and its URL may still resolve:
+				// the dial is what finds it. Forgotten, the next use takes
+				// the power lock and reads its state, which resumes it
+				// (answersRunning).
+				if ctx.Err() == nil {
+					r.observed.Delete(sandboxID)
+				}
 			}
 			return conn, err
 		}

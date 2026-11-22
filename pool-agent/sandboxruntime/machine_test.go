@@ -1195,9 +1195,19 @@ func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts mac
 	if d.startRefused.Load() {
 		return nil, fmt.Errorf("start %s: refused: %w", inst.Name, machine.ErrUnavailable)
 	}
+	// A paused machine is resumed, booting nothing: its guest, its /run and
+	// its agent carry on as they were.
+	state, err := d.State(ctx, inst)
+	if err != nil {
+		return nil, err
+	}
 	m, err := d.Driver.Start(ctx, inst, opts)
 	if err != nil {
 		return nil, err
+	}
+	if state == machine.StatePaused {
+		d.record(inst.Name, "resume")
+		return &agentMachine{Machine: m, driver: d, inst: inst}, nil
 	}
 	// A fake guest's root is a directory that outlives a start, so the new
 	// tmpfs a real start mounts at /run is stood in for: no start's token.
@@ -1521,6 +1531,15 @@ type fakeMachineAgent struct {
 	mu        sync.Mutex
 	delivered []int64
 	clears    int
+	// unanswered is every path it had no route for, in order.
+	unanswered []string
+}
+
+// unansweredPaths is every path the agent was asked that it has no route for.
+func (a *fakeMachineAgent) unansweredPaths() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.unanswered)
 }
 
 func (a *fakeMachineAgent) revisions() []int64 {
@@ -1570,6 +1589,9 @@ func (a *fakeMachineAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == prefix+"/sources":
 		_, _ = io.WriteString(w, `{"sources":[]}`)
 	default:
+		a.mu.Lock()
+		a.unanswered = append(a.unanswered, r.URL.Path)
+		a.mu.Unlock()
 		http.NotFound(w, r)
 	}
 }
@@ -2019,9 +2041,10 @@ func (d *endpointRefreshDriver) Service(ctx context.Context, _ machine.Instance)
 }
 
 // A machine its provider paused (disco-vm ADR 26-11-21-438) reads as paused
-// however often it is read, which wakes nothing, and is reported running,
-// never as a sleep (ADR 26-11-16-619 §5). A use resumes it on the machine it
-// had, and so does the state poll's reconcile.
+// however often it is read, which wakes nothing, and is reported as a pause,
+// though not one the pool made (StatusPaused, not StatusSuspended; ADR
+// 26-11-16-619 §5). A use resumes it on the machine it had, and so does the
+// state poll's reconcile.
 func TestAPausedMachineIsNoSleepAndIsResumed(t *testing.T) {
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
@@ -2059,8 +2082,8 @@ func TestAPausedMachineIsNoSleepAndIsResumed(t *testing.T) {
 		if sb.Status != StatusPaused {
 			t.Fatalf("a machine %s reads %s, want %s", when, sb.Status, StatusPaused)
 		}
-		if state := stateFromStatus(sb.Status); state != StateRunning {
-			t.Fatalf("a machine %s is reported %s, want %s: a provider's pause is no sleep", when, state, StateRunning)
+		if state := stateFromStatus(sb.Status); state != StateSuspended {
+			t.Fatalf("a machine %s is reported %s, want %s: a provider's pause is reported as the pause it is", when, state, StateSuspended)
 		}
 	}
 	if err := r.EnsureSandboxRunning(ctx, "sbx_9"); err != nil {
@@ -2147,7 +2170,7 @@ func TestAPausedMachineOwedANewRootIsStoppedForIt(t *testing.T) {
 }
 
 // A resume its provider refuses leaves the machine paused, and so reports it
-// running, never stopped; and the state poll does not ask again until
+// paused, never stopped; and the state poll does not ask again until
 // resumeRetryInterval has passed.
 func TestARefusedResumeIsNoStopAndIsBackedOff(t *testing.T) {
 	f := newMachineFixture(t, nil)
@@ -2186,8 +2209,8 @@ func TestARefusedResumeIsNoStopAndIsBackedOff(t *testing.T) {
 	mu.Lock()
 	last := published[len(published)-1]
 	mu.Unlock()
-	if last != StateRunning {
-		t.Fatalf("published %v after a refused resume, want it to end %s: still paused, no stop", published, StateRunning)
+	if last != StateSuspended {
+		t.Fatalf("published %v after a refused resume, want it to end %s: still paused, no stop", published, StateSuspended)
 	}
 	r.resumeFailed.Store("sbx_12", time.Now())
 	r.resumeInBackground(ctx, slog.Default(), "sbx_12")

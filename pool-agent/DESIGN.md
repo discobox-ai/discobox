@@ -719,7 +719,8 @@ operation rather than something the runtime can observe. For the same reason a
 report carries no error message: what this channel feeds is the control plane's
 runtime state field, and the field that records why something failed belongs to
 the reconciler (ADR 0034 §7). `suspended` is the one state beyond the four: a
-paused container, which Docker itself calls running.
+paused container, which Docker itself calls running, or a machine its provider
+paused ([Machine Sandboxes](#machine-sandboxes)).
 
 The sandbox-agent proxy names every path it forwards
 (`server/sandbox_proxy.go`), rather than forwarding a prefix, so that the scope
@@ -766,7 +767,8 @@ than boots, so an explicit start, the scheduled wake's, and every on-use
 calls the sandbox agent's pool-only `POST .../autostop/resumed`, which sets
 aside the wakes now due and the notes kept for the next start. Stop, restart, archive, delete and a cache clear act
 on a suspended sandbox as on a running one; Docker delivers the stop signal as
-it thaws.
+it thaws. On a machine pool, `suspended` is a machine its provider paused
+(`StatusPaused`), which nothing here froze ([Machine Sandboxes](#machine-sandboxes)).
 
 **The control plane decides what starts a sandbox, and this agent carries it
 out** (ADR 26-10-12-711 §2). Every sandbox-directed route — the HTTP proxy, the
@@ -1164,17 +1166,34 @@ flowchart LR
   (`SandboxDialer`, `Engine.URL` with `machine.URLPool`: TLS for an `https`
   URL). The URL can reach the agent on the pool's network or through a
   credentialed provider edge. Only the pool URL for the agent's port is used.
-- **Power is the engine's.** State is read from the driver; one it cannot be
-  asked for keeps the state last seen, since a lost connection is not a stop.
-  A machine its provider paused (Archil at a session's limit; disco-vm ADR
-  26-11-21-438) is `StatusPaused`. The pool froze nothing, so it is no sleep
-  (ADR 26-11-16-619 §5): the state channel reports it `running`, never
-  `suspended`. No state read or guest call from here wakes it; a start resumes it
-  (`engine.Start`), whether a use's (`EnsureSandboxRunning`) or the state
-  poll's (`resumePaused`, under the power lock, only while it is still
-  paused), and a stop resumes it to shut it down.
-  The state channel polls (no event stream), and a poll that cannot read every
-  machine publishes nothing rather than a sync that would report one gone.
+- **Power is the engine's.** State is read from the driver (`Driver.State`,
+  which wakes nothing); one it cannot be asked for keeps the state last seen,
+  since a lost connection is not a stop. The state channel polls (no event
+  stream), so a machine its provider stopped or paused with no call from
+  discobox is reported within a poll; a poll that cannot read every machine
+  publishes nothing rather than a sync that would report one gone.
+- **A machine its provider paused** (Archil at a sandbox's session limit;
+  disco-vm ADR 26-11-21-438) is `StatusPaused`: held with its memory,
+  running nothing. The pool froze nothing, so it is not `StatusSuspended`
+  (ADR 26-11-16-619 §5), but it is reported as the pause it is, `suspended`,
+  on the state channel, the pool API and a read refused for it, never as
+  running; this departs, at the owner's direction (#1523), from §5's "never
+  reported to the server as a sleep". So whatever reads `suspended` reads it
+  too: an attached CLI terminal detaches from it, as from a freeze, rather
+  than reconnecting, though the poll resumes the box. A start resumes it, through the engine's
+  `Start`, which boots nothing, detached from its caller, since a resume cut
+  short is stopped and loses the memory the pause kept (`resumeLocked`):
+  a use's (`EnsureSandboxRunning`), an explicit start, or the state poll's
+  (`resumePaused`, under the power lock, only while it is still paused,
+  backed off after a failure). A pause since the last poll is found by the
+  dial that fails: it drops the running the runtime last saw, so that request
+  fails and the next resumes the box. One that holds what it boots on now is
+  then delivered its runtime-config document (`deliverAfterResume`), but its
+  agent is not told it resumed, since that would set aside a wake that fell
+  due across a pause that was no sleep; one whose placement moved while it was
+  paused is placed as a running machine and restarted onto it; one still to
+  be given a new root is stopped for it. Stop, archive and delete act on it as
+  on a running one, the engine resuming it before its orderly shutdown.
 - **Volumes.** A sandbox's machine, made from its plan's snapshot or fresh
   from the driver's base, has a data volume at `/.discobox/data` and a cache
   volume at `/.discobox/cache` where the driver attaches them (a snapshot's
@@ -1249,7 +1268,7 @@ flowchart LR
   its own (`cache/clear`, the pool-only `cache-clear` scope), and drops the
   pool's snapshots ([On a machine pool](#on-a-machine-pool)). A stopped
   sandbox keeps its cache.
-- **Refused**: suspend (a machine is not frozen whole; a sleep is a stop),
+- **Refused**: suspend (the pool freezes no machine whole; a sleep is a stop),
   tree export and import, both `sandboxruntime.ErrUnsupported`, answered 501.
 - **The reaper** deletes an unheld sandbox, its machine with its tree, and a
   machine of the pool's disco-vm scope named as a generated sandbox ID's

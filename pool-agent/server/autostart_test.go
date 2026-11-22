@@ -286,10 +286,10 @@ func TestOnUseWaitsOutABootOnlyForAnInspect(t *testing.T) {
 	}
 }
 
-// A sandbox whose machine its provider paused is no sleep: a read of what is
-// inside it is refused as starting, since the pool is resuming it, and the
-// pool API reports it running, as the state channel does.
-func TestAPausedSandboxIsStartingToAReadAndRunningToTheAPI(t *testing.T) {
+// A sandbox whose machine its provider paused is reported as the pause it
+// is: a read of what is inside it is refused as suspended, and the pool API
+// reports it suspended, as the state channel does.
+func TestAPausedSandboxIsSuspendedToAReadAndToTheAPI(t *testing.T) {
 	served := false
 	runtime := &bootingRuntime{status: sandboxruntime.StatusPaused}
 	service := &sandboxService{runtime: runtime}
@@ -297,11 +297,11 @@ func TestAPausedSandboxIsStartingToAReadAndRunningToTheAPI(t *testing.T) {
 	router.Handle("/sandboxes/{sandboxId}/execs", service.requireRunning(refuseBooting, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { served = true })))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/sandboxes/sbx_1/execs", nil))
-	if served || rec.Code != http.StatusConflict || rec.Header().Get(workerapimodel.SandboxNotRunningHeader) != "starting" {
-		t.Fatalf("served %v, status %d, %s = %q; want 409 marked starting", served, rec.Code, workerapimodel.SandboxNotRunningHeader, rec.Header().Get(workerapimodel.SandboxNotRunningHeader))
+	if served || rec.Code != http.StatusConflict || rec.Header().Get(workerapimodel.SandboxNotRunningHeader) != "suspended" {
+		t.Fatalf("served %v, status %d, %s = %q; want 409 marked suspended", served, rec.Code, workerapimodel.SandboxNotRunningHeader, rec.Header().Get(workerapimodel.SandboxNotRunningHeader))
 	}
 	out := sandboxInstanceFromRuntime(&sandboxruntime.Sandbox{SandboxID: "sbx_1", Status: sandboxruntime.StatusPaused}, nil)
-	if out.Runtime.Status != string(sandboxruntime.StatusRunning) {
-		t.Fatalf("a paused sandbox's runtime status = %q, want running", out.Runtime.Status)
+	if out.Runtime.Status != string(sandboxruntime.StatusSuspended) {
+		t.Fatalf("a paused sandbox's runtime status = %q, want suspended", out.Runtime.Status)
 	}
 }

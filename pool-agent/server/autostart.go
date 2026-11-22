@@ -149,9 +149,9 @@ func (s *sandboxService) requireRunning(boot bootWait, next http.Handler) http.H
 				status = "starting"
 			}
 			if sb.Status == sandboxruntime.StatusPaused {
-				// Its provider paused it, and the pool is resuming it: no
-				// sleep (StatusPaused), but nothing in it answers yet.
-				status = "starting"
+				// Its provider paused it: reported as the pause it is, as
+				// the state channel reports it (StatusPaused).
+				status = string(sandboxruntime.StatusSuspended)
 			}
 			if status != string(sandboxruntime.StatusRunning) {
 				w.Header().Set(workerapimodel.SandboxNotRunningHeader, status)

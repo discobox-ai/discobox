@@ -202,11 +202,24 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	// gone mid-start, or the stop after a failed placement failing too — runs
 	// with no agent, and is placed now. One still to be given a new root
 	// (upgradeMachine) is stopped for it: a root is given only to a stopped
-	// machine.
+	// machine. A machine its provider paused (StatusPaused) is resumed
+	// (resumeLocked), and is then a running one; one still to be given a new
+	// root is stopped for it instead, the engine's Stop resuming it first so
+	// its guest writes out what it holds.
 	running := sb.Status == StatusRunning
+	resumed := false
+	if sb.Status == StatusPaused && !record.NewRoot {
+		if err := r.resumeLocked(ctx, sandboxID, record); err != nil {
+			return err
+		}
+		running, resumed = true, true
+	}
 	if running && !record.NewRoot {
-		current, err := r.placementCurrent(ctx, sandboxID, sb.ID)
+		current, err := r.placementCurrent(context.WithoutCancel(ctx), sandboxID, sb.ID)
 		if err != nil || current {
+			if err == nil && resumed {
+				r.deliverAfterResume(ctx, sandboxID)
+			}
 			return err
 		}
 		slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
@@ -242,8 +255,8 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			}
 			cancel()
 		}
-		// A paused machine whose resume failed is still paused: no stop,
-		// and no sleep (StatusPaused).
+		// A machine still paused is reported as such, not stopped
+		// (StatusPaused).
 		state := StateStopped
 		if r.engine.State(context.WithoutCancel(ctx), inst) == engine.Paused {
 			state = stateFromStatus(StatusPaused)
@@ -336,6 +349,51 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		slog.WarnContext(ctx, "read whether a sandbox machine keeps its data on its volume", "sandboxId", sandboxID, "error", err)
 	}
 	return nil
+}
+
+// resumeLocked resumes a machine its provider paused (StatusPaused; Archil at
+// a sandbox's session limit), through the engine's Start, which boots
+// nothing: its guest, its memory and its agent carry on as they were
+// (disco-vm ADR 26-11-21-438 §5). The caller, startLocked, then delivers its
+// runtime-config document (deliverAfterResume) where it holds what it boots
+// on now, and otherwise places it as a running machine, restarting it onto
+// what moved while it was paused. A resume that fails reports the machine as
+// the driver has it. The caller holds the sandbox's power lock.
+func (r *MachineSandboxRuntime) resumeLocked(ctx context.Context, sandboxID string, record machineRecord) error {
+	inst, err := r.instance(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	r.publishSandboxState(ctx, sandboxID, StateStarting)
+	r.endpoints.Delete(sandboxID)
+	// Detached, bounded by the start's own timeout: a resume cut short by its
+	// caller leaving (a request's context on use) is stopped by the engine,
+	// losing the memory the pause kept.
+	if err := r.engine.Start(context.WithoutCancel(ctx), inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
+		if status, statusErr := r.status(context.WithoutCancel(ctx), sandboxID, inst, record); statusErr == nil {
+			r.publishSandboxState(ctx, sandboxID, stateFromStatus(status))
+		}
+		return fmt.Errorf("resume sandbox %s's machine: %w", sandboxID, err)
+	}
+	r.observe(sandboxID, StatusRunning)
+	r.publishSandboxState(ctx, sandboxID, StateRunning)
+	return nil
+}
+
+// deliverAfterResume delivers the runtime-config document to a sandbox whose
+// machine was resumed from its provider's pause, as a boot's wait does, since
+// what the pool holds for it may have moved while it was paused. Its agent is
+// not told it resumed (autostop/resumed): that sets aside the wakes now due
+// and the next start's notes, which is what a thaw of the pool's own freeze
+// means (ADR 26-10-16-420 §4), and a provider's pause was neither a sleep nor
+// a start, so a wake due across it is still owed. Detached from the caller;
+// a failure is logged, and the next start delivers again.
+func (r *MachineSandboxRuntime) deliverAfterResume(ctx context.Context, sandboxID string) {
+	ctx = context.WithoutCancel(ctx)
+	slog.InfoContext(ctx, "resumed a sandbox machine its provider paused", "sandboxId", sandboxID)
+	if err := logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, nil)); err != nil {
+		slog.WarnContext(ctx, "deliver runtime config to a resumed sandbox machine", "sandboxId", sandboxID, "error", err)
+	}
 }
 
 // recordForcedPlacement records a placement a machine was forced off on its
