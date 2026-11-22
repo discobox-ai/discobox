@@ -273,6 +273,13 @@ type machineRecord struct {
 	// with only that key reads as false, so a machine is rebuilt on the root
 	// it has until a start on this pool reads its volume again (§4).
 	DataOnVolume bool `json:"dataAndWorkingRootOnVolume,omitempty"`
+	// Frozen is that the pool froze the machine (freezeLocked): written,
+	// under the power lock, before the driver is asked, and cleared if the
+	// freeze fails, once a thaw's after-thaw steps have run (thawedLocked),
+	// or once the machine is seen stopped. Only a paused machine this says
+	// the pool froze is suspended; any other paused machine is one its
+	// provider paused (ADR 26-11-21-395 §4).
+	Frozen bool `json:"frozen,omitempty"`
 }
 
 // snapshotProvenName marks, in a sandbox's tree, that the agent of its
@@ -357,18 +364,23 @@ func (r *MachineSandboxRuntime) lastObserved(sandboxID string) (Status, bool) {
 // cannot be asked is no stop (ADR 26-10-09-106 §2): the state last seen
 // stands, and a machine never seen is an error rather than a guess.
 //
-// A machine its provider paused (Archil at a sandbox's session limit; disco-vm
-// ADR 26-11-21-438) is StatusPaused: held, with its memory, running nothing,
-// and resumed by a start (engine.Start). The pool froze nothing, so it is not
-// StatusSuspended (ADR 26-11-16-619 §5), but it is reported as a pause, not as
-// running (stateFromStatus). Reading it resumes nothing, and its endpoint
-// goes, since a paused machine dials nothing.
+// A paused machine (disco-vm ADR 26-11-21-438) is StatusSuspended where the
+// pool's record says the pool froze it (ADR 26-11-21-395 §4). Any other is one
+// its provider paused (Archil at a sandbox's session limit): StatusPaused,
+// held, with its memory, running nothing, and resumed by a start
+// (engine.Start). The pool froze nothing, so it is not StatusSuspended (ADR
+// 26-11-16-619 §5), but it is reported as a pause, not as running
+// (stateFromStatus). Reading either resumes nothing, and its endpoint goes,
+// since a paused machine dials nothing.
 func (r *MachineSandboxRuntime) status(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord) (Status, error) {
 	switch r.engine.State(ctx, inst) {
 	case engine.Running:
 		return r.observe(sandboxID, StatusRunning), nil
 	case engine.Paused:
 		r.endpoints.Delete(sandboxID)
+		if record.Frozen {
+			return r.observe(sandboxID, StatusSuspended), nil
+		}
 		return r.observe(sandboxID, StatusPaused), nil
 	case engine.Stopped:
 		r.endpoints.Delete(sandboxID)
@@ -500,6 +512,9 @@ func (r *MachineSandboxRuntime) CreateSandbox(ctx context.Context, req *workerap
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return nil, err
+	}
 	if err := r.harnessCreateAllowed(sandboxID, req.HarnessChangeId.Or("")); err != nil {
 		return nil, err
 	}
@@ -539,7 +554,7 @@ func (r *MachineSandboxRuntime) CreateSandbox(ctx context.Context, req *workerap
 				"reason", "the project configuration its delivered source declares")
 		} else {
 			slog.InfoContext(ctx, "making a sandbox machine again in place", "sandboxId", sandboxID,
-				"reason", "a spec change", "running", existing.Status == StatusRunning)
+				"reason", "a spec change", "running", existing.Status == StatusRunning || existing.Status == StatusSuspended)
 		}
 	}
 	// A machine is made at most twice per create, as a container is built:
@@ -576,9 +591,10 @@ func (r *MachineSandboxRuntime) resumeCreate(ctx context.Context, existing *Sand
 		return nil, false, err
 	}
 	switch {
-	case moved && existing.Status == StatusRunning:
-		// Restarted into them, as a container is (ADR 26-10-24-953 §1). A
-		// stopped machine boots on them at its next start.
+	case moved && (existing.Status == StatusRunning || existing.Status == StatusSuspended):
+		// Restarted into them, as a container is (ADR 26-10-24-953 §1), a
+		// frozen one too, as a frozen container is replaced. A stopped
+		// machine boots on them at its next start.
 		slog.InfoContext(ctx, "restarting sandbox into its moved bundles", "sandboxId", sandboxID)
 		if err := r.stopLocked(ctx, sandboxID); err != nil {
 			return nil, false, err
@@ -691,7 +707,9 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 	if err := r.writeMachineRecord(sandboxID, record); err != nil {
 		return nil, false, err
 	}
-	running := existing != nil && existing.Status == StatusRunning
+	// A frozen machine is restarted on its new bootstrap as a running one
+	// is, as a frozen container is replaced running.
+	running := existing != nil && (existing.Status == StatusRunning || existing.Status == StatusSuspended)
 	if running {
 		if err := r.rebuildInPlace(ctx, sandboxID); err != nil {
 			return nil, false, err
@@ -1991,10 +2009,14 @@ func (r *MachineSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *
 			complete := now.Sub(synced) >= sandboxStateSyncInterval
 			batch := SandboxStateBatch{Complete: complete, ReportedAt: now.UTC()}
 			seen := make(map[string]string, len(sandboxes))
-			var paused []string
+			var paused, settle []string
 			for _, sb := range sandboxes {
-				if sb.Status == StatusPaused {
+				switch sb.Status {
+				case StatusPaused:
 					paused = append(paused, sb.SandboxID)
+				case StatusSuspended:
+				default:
+					settle = append(settle, sb.SandboxID)
 				}
 				state := stateFromStatus(sb.Status)
 				seen[sb.SandboxID] = state
@@ -2025,6 +2047,11 @@ func (r *MachineSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *
 			// holds, so a pause published after them would never be seen.
 			for _, sandboxID := range paused {
 				r.resumeInBackground(ctx, logger, sandboxID)
+			}
+			// A machine the pool froze that no longer reads paused is
+			// settled after the batch too, for the same reason.
+			for _, sandboxID := range settle {
+				r.settleFrozenInBackground(ctx, logger, sandboxID)
 			}
 		}
 		select {

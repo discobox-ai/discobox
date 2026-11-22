@@ -536,35 +536,45 @@ changed. A step added that lays a binary needs it there too.
 
 ## A provider's pause is not a sleep
 
-A machine `engine.State` reads `Paused` is one its provider paused
-(`StatusPaused`), never `StatusSuspended`, while the pool freezes no machine:
-`StatusSuspended` is a freeze the pool made, and the code that acts on one
-(a suspend's completion, a sleep's wake) must not act on a provider's pause
-(ADR 26-11-16-619 §5). It is reported as the pause it is (`suspended` on the
-wire, through `stateFromStatus`, the pool API and a refused read's header,
-never `running`; owner, #1523) and resumed by a start, the state poll's
-included. Once the pool can freeze a machine, only the freeze it recorded is
-`StatusSuspended` (ADR 26-11-21-395 §4).
+A machine `engine.State` reads `Paused` is `StatusSuspended` only when the
+pool's record says the pool froze it (`machineRecord.Frozen`, ADR
+26-11-21-395 §4). Any other paused machine is one its provider paused
+(`StatusPaused`), never `StatusSuspended`: `StatusSuspended` is a freeze the
+pool made, and the code that acts on one (a suspend's completion, a sleep's
+wake, the after-thaw steps) must not act on a provider's pause (ADR
+26-11-16-619 §5). A provider's pause is reported as the pause it is
+(`suspended` on the wire, through `stateFromStatus`, the pool API and a
+refused read's header, never `running`; owner, #1523) and resumed by a start,
+the state poll's included.
 
 Never tell a sandbox agent it resumed (`autostop/resumed`) after a provider's
 pause; deliver its runtime-config document alone (`deliverAfterResume`). Why:
 `autostop/resumed` sets aside every wake now due and hands the next start's
-notes over, which is right only after the pool's own freeze, whose sleep the
-wake was set for; after a provider's pause it would drop a wake that fell due
-across it, and the box would sleep with nothing to bring it back.
+notes over, which is right only after the pool's own freeze (`afterThaw`),
+whose sleep the wake was set for; after a provider's pause it would drop a
+wake that fell due across it, and the box would sleep with nothing to bring
+it back.
 
 Begin what the state poll itself starts for a sandbox (its resume of a
-provider's pause, `resumeInBackground`) only after the poll's batch is
-published; a use's or an explicit start does not wait for the poll. Why: the
-batch is stamped when the poll has listed the machines, the control plane
-drops a report older than one it holds, and a resume the poll began before
-publishing reported `starting` first, so on a live boxd pool the server never
-saw the pause it was meant to show (#1523).
+provider's pause, `resumeInBackground`; its settling of a frozen machine,
+`settleFrozenInBackground`) only after the poll's batch is published; a use's
+or an explicit start does not wait for the poll. Why: the batch is stamped
+when the poll has listed the machines, the control plane drops a report older
+than one it holds, and a resume the poll began before publishing reported
+`starting` first, so on a live boxd pool the server never saw the pause it
+was meant to show (#1523).
 
-Every "is it running" branch in `machinepower.go` has this third state: a
-paused machine is not running and not stopped. A branch that stops a running
-machine before something only a stopped one gets (a new root,
-`engine.Upgrade`) stops a paused one too; the stop resumes it first.
+- `Frozen` is written under the power lock before `engine.Pause` and cleared
+  when the freeze fails, when a stop or a start finds the machine stopped, and
+  after a thaw's after-thaw steps. A path that leaves it set on a machine that
+  is not paused turns the next provider pause into a sleep nothing wakes.
+- Every "is it running" branch in `machinepower.go` has two more states: a
+  paused or frozen machine is not running and not stopped. A branch that stops
+  a running machine before something only a stopped one gets (a new root,
+  `engine.Upgrade`, a rebuild in place) stops a paused or frozen one too; the
+  stop resumes it first.
+- A resume runs detached from its caller (`thawLocked`): disco-vm stops a
+  machine whose resume it cannot finish, which loses what the freeze kept.
 
 ## A machine's new root
 

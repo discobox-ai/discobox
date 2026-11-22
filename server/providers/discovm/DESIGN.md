@@ -93,7 +93,12 @@ Each linked driver is a provider type of its name (`Register`, last in
 `RegisterBuiltInSandboxProviderFactories`): `Types` is `machine.Names()`
 without `fake`, which only tests link. A build links the drivers its OS has
 (`drivers.go`: archil and boxd everywhere, `drivers_windows.go`: hcs) as
-imports and nothing else. docker, libkrun and vz are built-in provider types,
+imports and nothing else. A pool on a driver that reports `Capabilities.Pause`
+freezes a sleeping or suspended box whole (ADR 26-11-21-395): boxd
+(`SuspendVm`), archil (its sandbox pause) and hcs here, and disco-vm's vz and
+docker; libkrun has no pause, so a sleep there stops the box and a suspend is
+refused. The pool agent's machine runtime does it (`pool-agent/DESIGN.md`).
+docker, libkrun and vz are built-in provider types,
 so disco-vm's drivers of those names are not linked (ADR 26-11-11-080
 Deferred); registering a taken name panics, and a test fails a build that
 does.

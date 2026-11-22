@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -121,10 +120,8 @@ func TestMachinePausedByItsProviderIsReportedAndResumedByUse(t *testing.T) {
 	if got := len(agent.revisions()); got != deliveries+1 {
 		t.Fatalf("runtime-config deliveries after the resume = %d, want %d", got, deliveries+1)
 	}
-	for _, path := range agent.unansweredPaths() {
-		if strings.Contains(path, "/autostop/") {
-			t.Fatalf("the resume from a provider's pause called %s, want no autostop call", path)
-		}
+	if confirms, resumes := agent.autostopCalls(); confirms != 0 || resumes != 0 {
+		t.Fatalf("the resume from a provider's pause made %d autostop confirms and %d resumed calls, want none", confirms, resumes)
 	}
 	if _, err := sandboxAgentHealth(ctx, mustDialer(t, r, "sbx_p")); err != nil {
 		t.Fatalf("reach the resumed sandbox: %v", err)

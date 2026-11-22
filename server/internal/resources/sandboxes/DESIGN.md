@@ -219,7 +219,9 @@ a dirty row no other reconcile returns over.
   is never acted on as it stands: the runtime asks the sandbox to confirm under
   its power lock, and `ErrPowerDownRefused` is the instruction having nothing
   to do. Exit and idle are always a stop; sleep is the runtime's to freeze if it can,
-  which a Docker pool does: the sandbox then reports `suspended`, is not
+  which a Docker pool does, and a machine pool on a driver that can freeze
+  ([ADR 26-11-21-395](../../../../docs/adr/26-11-21-395-a-machine-pool-freezes-a-sleeping-sandbox-where-its-driver-can-and-stops-it-where-it-cannot.md)):
+  the sandbox then reports `suspended`, is not
   running, and is not asked again on the status that froze it.
 - **Suspend.** `SuspendSandbox` is a power instruction beside stop
   ([ADR 26-10-16-420](../../../../docs/adr/26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)):

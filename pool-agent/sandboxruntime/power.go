@@ -142,15 +142,25 @@ func (r *DockerSandboxRuntime) resumeLocked(ctx context.Context, sb *Sandbox) er
 	if _, err := r.client.ContainerUnpause(ctx, sb.ID, client.ContainerUnpauseOptions{}); err != nil {
 		return fmt.Errorf("resume sandbox %s: %w", sb.SandboxID, err)
 	}
-	ctx = context.WithoutCancel(ctx)
 	slog.InfoContext(ctx, "resumed suspended sandbox", "sandboxId", sb.SandboxID)
-	if err := logRuntimeConfigFailure(ctx, sb.SandboxID, r.deliverRuntimeConfig(ctx, sb.SandboxID, nil)); err != nil {
-		slog.WarnContext(ctx, "deliver runtime config to a resumed sandbox", "sandboxId", sb.SandboxID, "error", err)
-	}
-	if err := r.tellResumed(ctx, sb.SandboxID); err != nil {
-		slog.WarnContext(ctx, "tell a resumed sandbox it resumed", "sandboxId", sb.SandboxID, "error", err)
-	}
+	r.afterThaw(ctx, sb.SandboxID)
 	return nil
+}
+
+// afterThaw delivers what changed while a sandbox was frozen, a container or
+// a machine (ADR 26-10-16-420 §4, ADR 26-11-21-395 §5): its runtime-config
+// document, and to its agent the news that it resumed, which sets aside the
+// wakes now due and counts the thaw as a start for its idle clock. Both run
+// detached from the caller; see resumeLocked for why, and why neither is the
+// thaw's to fail. The caller holds the sandbox's power lock.
+func (r *sandboxCore) afterThaw(ctx context.Context, sandboxID string) {
+	ctx = context.WithoutCancel(ctx)
+	if err := logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, nil)); err != nil {
+		slog.WarnContext(ctx, "deliver runtime config to a resumed sandbox", "sandboxId", sandboxID, "error", err)
+	}
+	if err := r.tellResumed(ctx, sandboxID); err != nil {
+		slog.WarnContext(ctx, "tell a resumed sandbox it resumed", "sandboxId", sandboxID, "error", err)
+	}
 }
 
 // PowerDownSandbox carries out a power-down the sandbox asked for, on what the
