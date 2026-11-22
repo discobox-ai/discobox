@@ -573,8 +573,17 @@ was meant to show (#1523).
   a running machine before something only a stopped one gets (a new root,
   `engine.Upgrade`, a rebuild in place) stops a paused or frozen one too; the
   stop resumes it first.
-- A resume runs detached from its caller (`thawLocked`): disco-vm stops a
-  machine whose resume it cannot finish, which loses what the freeze kept.
+- Resume a paused machine, the pool's freeze or a provider's pause, only
+  through `resumeLocked`, and put what differs between them (the after-thaw
+  steps or the document alone) after it, in `startLocked`. Why: the resume is
+  detached (disco-vm stops a machine whose resume it cannot finish, losing
+  what the pause kept), reports its states, and takes a machine found running
+  after a failed resume as resumed by something else; a second copy drifted
+  from it within one rebase (#1274).
+- Every operation a client can ask for on a `suspended` box handles a
+  provider's pause too: since #1523 both read `suspended` on the wire. Why: a
+  suspend refused as not running for a box its provider paused was then
+  resumed by the state poll, the opposite of what was asked (#1274).
 
 ## A machine's new root
 

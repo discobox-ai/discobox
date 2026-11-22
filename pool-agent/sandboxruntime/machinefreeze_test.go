@@ -279,9 +279,10 @@ func TestAFrozenMachineOwedANewRootIsStoppedForIt(t *testing.T) {
 	assertNewRootKeptVolumes(t, r, inst)
 }
 
-// A thaw that finds the machine already resumed by something else in between
-// (Archil, for a request with its port token) is a thaw, not a failed start.
-func TestAThawRacingAResumeOutsideThePoolIsAThaw(t *testing.T) {
+// A resume that finds the machine already resumed by something else in
+// between (Archil, for a request with its port token) is a resume, not a
+// failed start; the start then runs the freeze's after-thaw steps.
+func TestAResumeRacingAResumeOutsideThePoolIsAResume(t *testing.T) {
 	f, inst := freezeFixture(t, nil, "sbx_28")
 	ctx := context.Background()
 	r := f.runtime
@@ -289,22 +290,55 @@ func TestAThawRacingAResumeOutsideThePoolIsAThaw(t *testing.T) {
 	if err := r.SuspendSandbox(ctx, "sbx_28", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.owner.Start(ctx, inst, machine.BootOptions{}); err != nil {
-		t.Fatalf("resume behind the pool's back: %v", err)
-	}
 	record, _, err := r.readMachineRecord("sbx_28")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.owner.Start(ctx, inst, machine.BootOptions{}); err != nil {
+		t.Fatalf("resume behind the pool's back: %v", err)
+	}
 	lock := r.sandboxLock("sbx_28")
 	lock.Lock()
-	err = r.thawLocked(ctx, "sbx_28", &record)
+	err = r.resumeLocked(ctx, "sbx_28", record)
 	lock.Unlock()
 	if err != nil {
-		t.Fatalf("a thaw of a machine resumed in between: %v", err)
+		t.Fatalf("a resume of a machine resumed in between: %v", err)
 	}
-	requireStatus(t, r, "sbx_28", StatusRunning, "thawed")
-	requireFrozenRecord(t, r, "sbx_28", false, "thawed")
+	if err := r.EnsureSandboxRunning(ctx, "sbx_28"); err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, r, "sbx_28", StatusRunning, "resumed")
+	requireFrozenRecord(t, r, "sbx_28", false, "resumed")
+	if _, resumes := agent.autostopCalls(); resumes != 1 {
+		t.Fatalf("agent told of %d thaws, want 1", resumes)
+	}
+}
+
+// A suspend of a machine its provider paused, which reads suspended on the
+// wire, records the freeze: it stays suspended, the state poll does not
+// resume it, and a start thaws it with the after-thaw steps.
+func TestASuspendOfAProviderPauseIsAFreeze(t *testing.T) {
+	f, inst := freezeFixture(t, nil, "sbx_29")
+	ctx := context.Background()
+	r := f.runtime
+	agent := f.agents.get(t, "sbx_29")
+	if err := fake.Pause(ctx, f.owner, inst); err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, r, "sbx_29", StatusPaused, "paused by its provider")
+	if err := r.SuspendSandbox(ctx, "sbx_29", nil); err != nil {
+		t.Fatalf("suspend a machine its provider paused: %v", err)
+	}
+	requireStatus(t, r, "sbx_29", StatusSuspended, "suspended")
+	requireFrozenRecord(t, r, "sbx_29", true, "suspended")
+	if err := r.resumePaused(ctx, "sbx_29"); err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, r, "sbx_29", StatusSuspended, "after the state poll")
+	if err := r.EnsureSandboxRunning(ctx, "sbx_29"); err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, r, "sbx_29", StatusRunning, "used")
 	if _, resumes := agent.autostopCalls(); resumes != 1 {
 		t.Fatalf("agent told of %d thaws, want 1", resumes)
 	}

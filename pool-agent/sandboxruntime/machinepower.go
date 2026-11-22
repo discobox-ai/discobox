@@ -78,12 +78,16 @@ func (r *MachineSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID st
 	if err != nil {
 		return err
 	}
+	// A machine its provider paused reads suspended on the wire, so a
+	// suspend of it is taken as asked: the freeze is recorded (engine.Pause
+	// leaves a paused machine as it is), and the state poll no longer
+	// resumes it.
 	switch {
 	case sb.Status == StatusSuspended:
 		return r.suspendWithCompletion(ctx, sandboxID, req, func() error { return nil })
-	case sb.Status != StatusRunning:
+	case sb.Status != StatusRunning && sb.Status != StatusPaused:
 		return ErrNotRunning
-	case r.SandboxBooting(sandboxID):
+	case sb.Status == StatusRunning && r.SandboxBooting(sandboxID):
 		return fmt.Errorf("%w: it is still starting", ErrNotRunning)
 	case !r.engine.Driver.Capabilities().Pause:
 		return fmt.Errorf("%w: the %s driver cannot freeze a machine whole", ErrUnsupported, r.engine.Driver.Name())
@@ -166,39 +170,6 @@ func (r *MachineSandboxRuntime) freezeLocked(ctx context.Context, sandboxID stri
 	r.observe(sandboxID, StatusSuspended)
 	r.publishSandboxState(ctx, sandboxID, StateSuspended)
 	return nil
-}
-
-// thawLocked resumes a machine the pool froze (engine.Start, which boots
-// nothing), then runs the after-thaw steps (thawedLocked). The resume runs
-// detached, bounded by a start's timeout: disco-vm stops a machine whose
-// resume it cannot finish, so a caller going away part way would throw away
-// what the freeze kept. One that fails and leaves the machine paused stays
-// suspended; one that leaves it stopped is stopped; one that leaves it running
-// was resumed by something else in between (Archil, for a request with its
-// port token), and is thawed. The caller holds the sandbox's power lock.
-func (r *MachineSandboxRuntime) thawLocked(ctx context.Context, sandboxID string, record *machineRecord) error {
-	inst, err := r.instance(ctx, sandboxID)
-	if err != nil {
-		return err
-	}
-	r.endpoints.Delete(sandboxID)
-	detached := context.WithoutCancel(ctx)
-	if err := r.engine.Start(detached, inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
-		err = fmt.Errorf("resume sandbox %s's machine: %w", sandboxID, err)
-		switch r.engine.State(detached, inst) {
-		case engine.Stopped:
-			record.Frozen = false
-			r.observe(sandboxID, StatusStopped)
-			r.publishSandboxState(ctx, sandboxID, StateStopped)
-			return errors.Join(err, r.writeMachineRecord(sandboxID, *record))
-		case engine.Running:
-			slog.InfoContext(ctx, "a frozen sandbox machine was resumed by something else as the pool resumed it", "sandboxId", sandboxID, "error", err)
-			return r.thawedLocked(ctx, sandboxID, record)
-		}
-		return err
-	}
-	slog.InfoContext(ctx, "resumed frozen sandbox machine", "sandboxId", sandboxID)
-	return r.thawedLocked(ctx, sandboxID, record)
 }
 
 // thawedLocked runs the after-thaw steps of a machine the pool froze that runs
@@ -379,16 +350,10 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	if !ok {
 		return ErrNoContainer
 	}
-	// A frozen machine still to be given a new root is stopped for it below,
-	// as a running one is; any other is thawed. One the pool froze that runs
-	// again was thawed outside it, and is owed its after-thaw steps; one
-	// stopped since is no longer frozen.
+	// One the pool froze that runs again was thawed outside it, and is owed
+	// its after-thaw steps; one stopped since is no longer frozen. One still
+	// frozen is resumed below, as one its provider paused is.
 	switch {
-	case sb.Status == StatusSuspended && !record.NewRoot:
-		if err := r.thawLocked(ctx, sandboxID, &record); err != nil {
-			return err
-		}
-		sb.Status = StatusRunning
 	case record.Frozen && sb.Status == StatusRunning:
 		if err := r.thawedLocked(ctx, sandboxID, &record); err != nil {
 			return err
@@ -404,13 +369,14 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	// gone mid-start, or the stop after a failed placement failing too — runs
 	// with no agent, and is placed now. One still to be given a new root
 	// (upgradeMachine) is stopped for it: a root is given only to a stopped
-	// machine. A machine its provider paused (StatusPaused) is resumed
+	// machine. A paused machine, one its provider paused (StatusPaused) or
+	// one the pool froze (StatusSuspended, ADR 26-11-21-395 §5), is resumed
 	// (resumeLocked), and is then a running one; one still to be given a new
 	// root is stopped for it instead, the engine's Stop resuming it first so
 	// its guest writes out what it holds.
 	running := sb.Status == StatusRunning
 	resumed := false
-	if sb.Status == StatusPaused && !record.NewRoot {
+	if (sb.Status == StatusPaused || sb.Status == StatusSuspended) && !record.NewRoot {
 		if err := r.resumeLocked(ctx, sandboxID, record); err != nil {
 			return err
 		}
@@ -420,9 +386,22 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		current, err := r.placementCurrent(context.WithoutCancel(ctx), sandboxID, sb.ID)
 		if err != nil || current {
 			if err == nil && resumed {
+				// The pool's own freeze is thawed with the after-thaw steps
+				// (afterThaw); a provider's pause gets its document alone.
+				if record.Frozen {
+					return r.thawedLocked(ctx, sandboxID, &record)
+				}
 				r.deliverAfterResume(ctx, sandboxID)
 			}
 			return err
+		}
+		// Restarted onto what moved, a frozen machine boots, and its boot
+		// hands over the wakes due: it is no longer frozen.
+		if record.Frozen {
+			record.Frozen = false
+			if err := r.writeMachineRecord(sandboxID, record); err != nil {
+				return err
+			}
 		}
 		slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
 	}
@@ -557,14 +536,19 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	return nil
 }
 
-// resumeLocked resumes a machine its provider paused (StatusPaused; Archil at
-// a sandbox's session limit), through the engine's Start, which boots
-// nothing: its guest, its memory and its agent carry on as they were
-// (disco-vm ADR 26-11-21-438 §5). The caller, startLocked, then delivers its
-// runtime-config document (deliverAfterResume) where it holds what it boots
-// on now, and otherwise places it as a running machine, restarting it onto
-// what moved while it was paused. A resume that fails reports the machine as
-// the driver has it. The caller holds the sandbox's power lock.
+// resumeLocked resumes a paused machine, one its provider paused
+// (StatusPaused; Archil at a sandbox's session limit) or one the pool froze
+// (StatusSuspended), through the engine's Start, which boots nothing: its
+// guest, its memory and its agent carry on as they were (disco-vm ADR
+// 26-11-21-438 §5). It is the one resume. The caller, startLocked, then runs
+// what the pause owes where the machine holds what it boots on now (a
+// provider's pause its runtime-config document, deliverAfterResume; the
+// pool's freeze its after-thaw steps, thawedLocked), and otherwise places it
+// as a running machine, restarting it onto what moved while it was paused. A
+// resume that fails reports the machine as the driver has it, unless the
+// machine runs: then something else resumed it in between (Archil, for a
+// request with its port token), and it is resumed. The caller holds the
+// sandbox's power lock.
 func (r *MachineSandboxRuntime) resumeLocked(ctx context.Context, sandboxID string, record machineRecord) error {
 	inst, err := r.instance(ctx, sandboxID)
 	if err != nil {
@@ -576,7 +560,13 @@ func (r *MachineSandboxRuntime) resumeLocked(ctx context.Context, sandboxID stri
 	// caller leaving (a request's context on use) is stopped by the engine,
 	// losing the memory the pause kept.
 	if err := r.engine.Start(context.WithoutCancel(ctx), inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
-		if status, statusErr := r.status(context.WithoutCancel(ctx), sandboxID, inst, record); statusErr == nil {
+		status, statusErr := r.status(context.WithoutCancel(ctx), sandboxID, inst, record)
+		if statusErr == nil && status == StatusRunning {
+			slog.InfoContext(ctx, "a paused sandbox machine was resumed by something else as the pool resumed it", "sandboxId", sandboxID, "error", err)
+			r.publishSandboxState(ctx, sandboxID, StateRunning)
+			return nil
+		}
+		if statusErr == nil {
 			r.publishSandboxState(ctx, sandboxID, stateFromStatus(status))
 		}
 		return fmt.Errorf("resume sandbox %s's machine: %w", sandboxID, err)
