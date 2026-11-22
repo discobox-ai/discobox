@@ -1222,7 +1222,10 @@ flowchart LR
     Docker runtime (the runtime-config document and `autostop/resumed`), where
     a provider's pause gets its document alone; one whose placement moved is
     restarted onto it, and its boot hands over the wakes due. A refused thaw
-    leaves it suspended. Stop, restart, archive, delete and a rebuild act on a
+    that leaves the machine paused leaves it suspended, its memory kept for a
+    later start; one that leaves it stopped (its host restarted, its provider
+    expired the pause) boots it fresh in the same start, as a slept machine
+    did before a sleep froze one, and so does a provider's pause. Stop, restart, archive, delete and a rebuild act on a
     frozen machine as on a running one; the engine resumes it to shut it down.
     A cache clear leaves it, as it leaves a stopped one, with its cache.
   - **A suspend of a machine its provider paused** freezes it: it reads
