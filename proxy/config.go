@@ -109,6 +109,13 @@ type SecretClient struct {
 	// control plane delivered it: a value the proxy holds of another one was
 	// replaced, and is dropped rather than sent (secrets.Config.Generations).
 	Generations map[string]string
+	// Exchanges is a client whose every swapped request trades the
+	// credential for whatever the upstream answers: a pool's own engine
+	// calling its driver's service, whose answers can carry a credential the
+	// key obtained (a process URL's token). Such a request's response body
+	// is never recorded and its header values are redacted, as a body swap's
+	// are (ADR 26-11-11-080 §9).
+	Exchanges bool
 }
 
 // ControlConfig controls the optional control API — audit reads, and the purge

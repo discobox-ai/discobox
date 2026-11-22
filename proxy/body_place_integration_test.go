@@ -113,7 +113,7 @@ func TestHTTPProxySwapsASentinelAtABodyPlace(t *testing.T) {
 		_, _ = io.WriteString(w, `{"token":"`+token+`"}`)
 	})
 	t.Cleanup(origin.Close)
-	client, dbPath, bodyDir := startRouteProxy(ctx, t, origin, sentinel, resolver)
+	client, dbPath, bodyDir := startRouteProxy(ctx, t, origin, SecretClient{ClientID: "sandbox-1", Sentinels: []string{sentinel}}, resolver)
 	port := origin.Listener.Addr().(*net.TCPAddr).Port
 	target := func(path string, n int) string {
 		return (&url.URL{Scheme: "http", Host: net.JoinHostPort("api.x.test", strconv.Itoa(port)), Path: path, RawQuery: "n=" + strconv.Itoa(n)}).String()

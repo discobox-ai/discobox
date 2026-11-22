@@ -120,14 +120,14 @@ func (o *routeOrigin) requests() []routeOriginRequest {
 
 // startRouteProxy brings up a proxy recording bodies, whose upstream transport
 // sends every dial to origin, so a request to any name reaches it.
-func startRouteProxy(ctx context.Context, t *testing.T, origin *routeOrigin, sentinel string, resolver SecretResolver) (client *http.Client, dbPath, bodyDir string) {
+func startRouteProxy(ctx context.Context, t *testing.T, origin *routeOrigin, secretClient SecretClient, resolver SecretResolver) (client *http.Client, dbPath, bodyDir string) {
 	t.Helper()
 	dir := t.TempDir()
 	prepared, err := PrepareCertificates(PrepareOptions{
 		Dir:         filepath.Join(dir, "certs"),
 		ProxyURL:    "https://127.0.0.1:0",
 		ServerHosts: []string{"127.0.0.1", "localhost"},
-		ClientIDs:   []string{"sandbox-1"},
+		ClientIDs:   []string{secretClient.ClientID},
 	})
 	if err != nil {
 		t.Fatalf("PrepareCertificates() error = %v", err)
@@ -139,7 +139,7 @@ func startRouteProxy(ctx context.Context, t *testing.T, origin *routeOrigin, sen
 		CertDir:       prepared.Bundle.Dir,
 		DatabaseDSN:   dbPath,
 		Recording:     RecordingConfig{Enabled: true, QueueSize: 16, BodyDir: bodyDir},
-		Secrets:       SecretsConfig{Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}}},
+		Secrets:       SecretsConfig{Clients: []SecretClient{secretClient}},
 	}, prepared.Bundle, resolver)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -155,7 +155,7 @@ func startRouteProxy(ctx context.Context, t *testing.T, origin *routeOrigin, sen
 	go func() { errCh <- server.ListenAndServe() }()
 	t.Cleanup(closeProxyServer(t, server, errCh))
 	addr := waitForAddr(t, server)
-	return mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"]), dbPath, bodyDir
+	return mtlsHTTPClient(t, addr.String(), prepared.Clients[secretClient.ClientID]), dbPath, bodyDir
 }
 
 func gzipped(t *testing.T, text string) []byte {
@@ -189,7 +189,7 @@ func TestHTTPProxyHoldsAGraphQLRouteToTheRequestBody(t *testing.T) {
 	}
 	resolver := &routeResolver{lists: [][]secretroute.Route{{route}}, values: []string{realValue}}
 	origin := newRouteOrigin(t, realValue)
-	client, dbPath, bodyDir := startRouteProxy(ctx, t, origin, sentinel, resolver)
+	client, dbPath, bodyDir := startRouteProxy(ctx, t, origin, SecretClient{ClientID: "sandbox-1", Sentinels: []string{sentinel}}, resolver)
 	port := origin.Listener.Addr().(*net.TCPAddr).Port
 
 	const query = `{"query":"query { viewer { login } }"}`
@@ -278,7 +278,7 @@ func TestHTTPProxyHoldsARetryToAGraphQLRoute(t *testing.T) {
 	}
 	resolver := &routeResolver{lists: [][]secretroute.Route{{route}}, values: []string{stale, rotated}}
 	origin := newRouteOrigin(t, rotated)
-	client, _, _ := startRouteProxy(ctx, t, origin, sentinel, resolver)
+	client, _, _ := startRouteProxy(ctx, t, origin, SecretClient{ClientID: "sandbox-1", Sentinels: []string{sentinel}}, resolver)
 	port := origin.Listener.Addr().(*net.TCPAddr).Port
 
 	const query = `{"query":"query { viewer { login } }"}`
@@ -337,7 +337,7 @@ func TestHTTPProxyRefusesARetryItsRoutesNoLongerAllow(t *testing.T) {
 	resolver := &routeResolver{lists: [][]secretroute.Route{{both}}, values: []string{stale, rotated}}
 	narrowing := &narrowingResolver{routeResolver: resolver, after: [][]secretroute.Route{{queries}}}
 	origin := newRouteOrigin(t, rotated)
-	client, _, _ := startRouteProxy(ctx, t, origin, sentinel, narrowing)
+	client, _, _ := startRouteProxy(ctx, t, origin, SecretClient{ClientID: "sandbox-1", Sentinels: []string{sentinel}}, narrowing)
 	port := origin.Listener.Addr().(*net.TCPAddr).Port
 
 	const mutation = `{"query":"mutation { addComment(input: {}) { clientMutationId } }"}`
@@ -401,7 +401,7 @@ func TestHTTPProxyHoldsAMethodOverrideToItsRoutes(t *testing.T) {
 	}
 	resolver := &routeResolver{lists: [][]secretroute.Route{lists}, values: []string{realValue}}
 	origin := newRouteOrigin(t, realValue)
-	client, _, _ := startRouteProxy(ctx, t, origin, sentinel, resolver)
+	client, _, _ := startRouteProxy(ctx, t, origin, SecretClient{ClientID: "sandbox-1", Sentinels: []string{sentinel}}, resolver)
 	target := "http://" + net.JoinHostPort("api.x.test", strconv.Itoa(origin.Listener.Addr().(*net.TCPAddr).Port)) + "/repos/a"
 
 	post := func(override string) (int, string) {

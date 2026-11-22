@@ -139,6 +139,11 @@ Certificate preparation is independent of running the proxy:
   (`<sandbox>.sandbox.discobox.internal`, ADR 26-10-29-481 §3), kept under `servers/<name>` and reissued within
   `RenewBefore` of expiry. `MTLSCAPath` names the CA a client verifies them
   against.
+- A constrained MITM CA (`ConstrainedMITMCA`): the MITM CA restated, same
+  name and key, with name constraints for given hosts, so a client trusting
+  it believes the proxy's certificate for those hosts and no other. A pool's
+  engine trusts it for the hosts its driver sends its key to (ADR
+  26-11-11-080 §9). Made in memory, never written.
 
 `PrepareCertificates` creates or reuses this material — reissuing anything within
 `RenewBefore` of expiry, and the server certificate when it no longer covers
@@ -632,6 +637,14 @@ Key properties:
   own upstreams on transports of their own. `Config.AllowLoopbackDestinations`
   turns the refusal off, for tests whose upstreams are on loopback; a pool
   never sets it.
+- **A client whose swaps are exchanges** (`SecretClient.Exchanges`: a pool's
+  own engine calling its driver's service, ADR 26-11-11-080 §9) has the
+  answer to every request a value was swapped into treated as a body swap's
+  is: its response body is never spooled or cached, and every response
+  header value but the framing ones is redacted. Its request is recorded as
+  it was sent, with the sentinel. A driver can trade its key there for a
+  credential of its own (an Archil process URL's token), which the audit,
+  readable by any project member, must never hold.
 - **A request the proxy refuses is its own answer** (`requestMeta.answered`):
   it is audited once, as blocked, and the response path neither records it
   again nor reads it as the upstream's word on a credential.
