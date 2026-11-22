@@ -1096,7 +1096,8 @@ driver's key, and the engine reaches its driver's service through the
 pool's proxy (`proxyagent.EngineSentinel`, ADR 26-11-11-080 §9):
 
 - **Its own client.** It presents a client certificate of
-  `proxyagent.EngineClientID` (`pool:engine`, which no sandbox ID can be;
+  `proxyagent.EngineClientID` (`pool-engine`, which no sandbox ID, always
+  `sbx_…`, can be; a directory name on every OS;
   root's, in the pool's certificate directory, reissued by its dial), over
   mTLS to the proxy on `127.0.0.1:17080`, and `CONNECT`s the host.
 - **Only where the key goes.** A connection to a host the driver sends its
