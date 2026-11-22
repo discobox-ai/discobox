@@ -148,6 +148,11 @@ func (s *sandboxService) requireRunning(boot bootWait, next http.Handler) http.H
 			if sb.Status == sandboxruntime.StatusRunning && s.runtime.SandboxBooting(sandboxID) {
 				status = "starting"
 			}
+			if sb.Status == sandboxruntime.StatusPaused {
+				// Its provider paused it, and the pool is resuming it: no
+				// sleep (StatusPaused), but nothing in it answers yet.
+				status = "starting"
+			}
 			if status != string(sandboxruntime.StatusRunning) {
 				w.Header().Set(workerapimodel.SandboxNotRunningHeader, status)
 				http.Error(w, fmt.Sprintf("discobox %s is %s: what is read here is inside it, and reading it does not start it", sandboxID, status), http.StatusConflict)

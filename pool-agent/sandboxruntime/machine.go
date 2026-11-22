@@ -134,6 +134,12 @@ type MachineSandboxRuntime struct {
 	// endpoints caches each running sandbox's pool endpoint until a dial
 	// fails, the machine changes state, or its edge credential needs renewal.
 	endpoints sync.Map // sandbox ID → *machineEndpointCache
+	// resuming holds each sandbox the state poll is resuming from its
+	// provider's pause, so a slow resume is not begun again.
+	resuming sync.Map // sandbox ID → struct{}
+	// resumeFailed is when the state poll's last resume of each sandbox
+	// failed, which holds its next off for resumeRetryInterval.
+	resumeFailed sync.Map // sandbox ID → time.Time
 }
 
 var _ Runtime = (*MachineSandboxRuntime)(nil)
@@ -349,11 +355,15 @@ func (r *MachineSandboxRuntime) lastObserved(sandboxID string) (Status, bool) {
 
 // status is the machine's power state as its engine reads it. A driver that
 // cannot be asked is no stop (ADR 26-10-09-106 §2): the state last seen
-// stands, and a machine never seen is an error rather than a guess.
+// stands, and a machine never seen is an error rather than a guess. One its
+// provider paused (disco-vm ADR 26-11-21-438) is StatusPaused, never
+// suspended: the pool froze nothing (ADR 26-11-16-619 §5).
 func (r *MachineSandboxRuntime) status(ctx context.Context, sandboxID string, inst machine.Instance, record machineRecord) (Status, error) {
 	switch r.engine.State(ctx, inst) {
 	case engine.Running:
 		return r.observe(sandboxID, StatusRunning), nil
+	case engine.Paused:
+		return r.observe(sandboxID, StatusPaused), nil
 	case engine.Stopped:
 		r.endpoints.Delete(sandboxID)
 		if !record.Started {
@@ -1884,6 +1894,56 @@ func (r *MachineSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *
 	}
 }
 
+// resumeInBackground resumes a sandbox its provider paused, unless a resume
+// of it is already under way: the state poll's reconcile of a pause the pool
+// did not make (ADR 26-11-16-619 §5), which can take as long as a start.
+//
+// One whose resume failed is not tried again by the poll for
+// resumeRetryInterval: a provider that refuses it, or pauses it again at once,
+// would otherwise be asked every poll. A use still resumes it at once
+// (EnsureSandboxRunning).
+func (r *MachineSandboxRuntime) resumeInBackground(ctx context.Context, logger *slog.Logger, sandboxID string) {
+	if value, ok := r.resumeFailed.Load(sandboxID); ok {
+		if failed, ok := value.(time.Time); ok && time.Since(failed) < resumeRetryInterval {
+			return
+		}
+	}
+	if _, busy := r.resuming.LoadOrStore(sandboxID, struct{}{}); busy {
+		return
+	}
+	go func() {
+		defer r.resuming.Delete(sandboxID)
+		if err := r.resumePaused(ctx, sandboxID); err != nil {
+			r.resumeFailed.Store(sandboxID, time.Now())
+			if ctx.Err() == nil {
+				logger.Warn("resume a sandbox machine its provider paused", "sandboxId", sandboxID, "error", err, "retryIn", resumeRetryInterval)
+			}
+			return
+		}
+		r.resumeFailed.Delete(sandboxID)
+	}()
+}
+
+// resumeRetryInterval is how long the state poll waits to resume again a
+// sandbox whose resume failed.
+const resumeRetryInterval = 5 * time.Minute
+
+// resumePaused starts a sandbox whose machine its provider paused, which
+// resumes it with what it held (engine.Start), and places what its agent
+// boots on as any start does. Under the power lock it starts only one still
+// paused: one stopped since the poll saw it stays stopped.
+func (r *MachineSandboxRuntime) resumePaused(ctx context.Context, sandboxID string) error {
+	lock := r.sandboxLock(sandboxID)
+	lock.Lock()
+	defer lock.Unlock()
+	sb, err := r.powerTarget(ctx, sandboxID)
+	if err != nil || sb.Status != StatusPaused {
+		return err
+	}
+	slog.InfoContext(ctx, "resuming a sandbox machine its provider paused", "sandboxId", sandboxID)
+	return r.startLocked(ctx, sandboxID)
+}
+
 // machineStatePollInterval paces the state channel's look at the pool's
 // machines: the driver has no event stream, so a transition nothing here
 // made — a machine that powered itself off — is seen by looking.
@@ -1918,6 +1978,9 @@ func (r *MachineSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *
 			batch := SandboxStateBatch{Complete: complete, ReportedAt: now.UTC()}
 			seen := make(map[string]string, len(sandboxes))
 			for _, sb := range sandboxes {
+				if sb.Status == StatusPaused {
+					r.resumeInBackground(ctx, logger, sb.SandboxID)
+				}
 				state := stateFromStatus(sb.Status)
 				seen[sb.SandboxID] = state
 				if complete || last[sb.SandboxID] != state {

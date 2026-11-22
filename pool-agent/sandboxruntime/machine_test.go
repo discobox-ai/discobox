@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"aidanwoods.dev/go-paseto"
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
+	"github.com/discobox-ai/vm/pkg/machine/fake"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/layout"
@@ -1117,7 +1119,10 @@ type agentDriver struct {
 	// shutdownRefused has a machine refuse to power off in order, so its
 	// stop is forced.
 	shutdownRefused atomic.Bool
-	mu              sync.Mutex
+	// startRefused has every start refused, as a provider that will not
+	// resume a paused machine refuses it.
+	startRefused atomic.Bool
+	mu           sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
 	// forcedOff, when set, is a machine whose orderly shutdown times out, so
@@ -1187,6 +1192,9 @@ func (d *agentDriver) Upgrade(ctx context.Context, inst machine.Instance, from *
 }
 
 func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts machine.BootOptions) (machine.Machine, error) {
+	if d.startRefused.Load() {
+		return nil, fmt.Errorf("start %s: refused: %w", inst.Name, machine.ErrUnavailable)
+	}
 	m, err := d.Driver.Start(ctx, inst, opts)
 	if err != nil {
 		return nil, err
@@ -2008,4 +2016,182 @@ func (d *endpointRefreshDriver) Capabilities() machine.Capabilities {
 
 func (d *endpointRefreshDriver) Service(ctx context.Context, _ machine.Instance) (machine.Service, error) {
 	return d.service(ctx)
+}
+
+// A machine its provider paused (disco-vm ADR 26-11-21-438) reads as paused
+// however often it is read, which wakes nothing, and is reported running,
+// never as a sleep (ADR 26-11-16-619 §5). A use resumes it on the machine it
+// had, and so does the state poll's reconcile.
+func TestAPausedMachineIsNoSleepAndIsResumed(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	first, err := r.CreateSandbox(ctx, machineCreate("sbx_9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pause := func() {
+		t.Helper()
+		if err := fake.Pause(ctx, f.owner, inst); err != nil {
+			t.Fatal(err)
+		}
+	}
+	running := func(how string) {
+		t.Helper()
+		sb, err := r.GetSandbox(ctx, "sbx_9")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sb.ID != first.ID || sb.Status != StatusRunning {
+			t.Fatalf("sandbox resumed by %s = %+v, want machine %s running", how, sb, first.ID)
+		}
+	}
+	pause()
+	for _, when := range []string{"paused", "paused, read again"} {
+		sb, err := r.GetSandbox(ctx, "sbx_9")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sb.Status != StatusPaused {
+			t.Fatalf("a machine %s reads %s, want %s", when, sb.Status, StatusPaused)
+		}
+		if state := stateFromStatus(sb.Status); state != StateRunning {
+			t.Fatalf("a machine %s is reported %s, want %s: a provider's pause is no sleep", when, state, StateRunning)
+		}
+	}
+	if err := r.EnsureSandboxRunning(ctx, "sbx_9"); err != nil {
+		t.Fatalf("use a paused machine's sandbox: %v", err)
+	}
+	running("a use")
+
+	pause()
+	if _, err := r.GetSandbox(ctx, "sbx_9"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.resumePaused(ctx, "sbx_9"); err != nil {
+		t.Fatalf("the state poll's resume: %v", err)
+	}
+	running("the state poll")
+}
+
+// The state poll's resume starts only a machine still paused: a sandbox
+// stopped since stays stopped.
+func TestTheStatePollDoesNotStartAStoppedMachine(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_10")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StopSandbox(ctx, "sbx_10", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.resumePaused(ctx, "sbx_10"); err != nil {
+		t.Fatal(err)
+	}
+	sb, err := r.GetSandbox(ctx, "sbx_10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Status != StatusStopped {
+		t.Fatalf("a stopped sandbox after the poll's resume is %s, want stopped", sb.Status)
+	}
+}
+
+// A paused machine owed a new root is stopped for it, as a running one is,
+// rather than handed to an upgrade that refuses a machine not stopped.
+func TestAPausedMachineOwedANewRootIsStoppedForIt(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_11")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+	record, _, err := r.readMachineRecord("sbx_11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.NewRoot = true
+	if err := r.writeMachineRecord("sbx_11", record); err != nil {
+		t.Fatal(err)
+	}
+	if err := fake.Pause(ctx, f.owner, inst); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.GetSandbox(ctx, "sbx_11"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.resumePaused(ctx, "sbx_11"); err != nil {
+		t.Fatalf("resume a paused machine owed a new root: %v", err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want one", f.driver.upgrades)
+	}
+	sb, err := r.GetSandbox(ctx, "sbx_11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Status != StatusRunning {
+		t.Fatalf("sandbox = %s, want running on its new root", sb.Status)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+}
+
+// A resume its provider refuses leaves the machine paused, and so reports it
+// running, never stopped; and the state poll does not ask again until
+// resumeRetryInterval has passed.
+func TestARefusedResumeIsNoStopAndIsBackedOff(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_12")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fake.Pause(ctx, f.owner, inst); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var published []string
+	r.statePublisher.Store(func(_ context.Context, batch SandboxStateBatch) error {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, s := range batch.States {
+			published = append(published, s.State)
+		}
+		return nil
+	})
+	f.driver.startRefused.Store(true)
+	if _, err := r.GetSandbox(ctx, "sbx_12"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.resumePaused(ctx, "sbx_12"); err == nil {
+		t.Fatal("a refused resume succeeded")
+	}
+	if state := r.engine.State(ctx, inst); state != engine.Paused {
+		t.Fatalf("a machine whose resume was refused is %s, want paused", state)
+	}
+	mu.Lock()
+	last := published[len(published)-1]
+	mu.Unlock()
+	if last != StateRunning {
+		t.Fatalf("published %v after a refused resume, want it to end %s: still paused, no stop", published, StateRunning)
+	}
+	r.resumeFailed.Store("sbx_12", time.Now())
+	r.resumeInBackground(ctx, slog.Default(), "sbx_12")
+	if _, resuming := r.resuming.Load("sbx_12"); resuming {
+		t.Fatal("the state poll resumed again within resumeRetryInterval of a refused resume")
+	}
 }

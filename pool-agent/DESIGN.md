@@ -1166,6 +1166,13 @@ flowchart LR
   credentialed provider edge. Only the pool URL for the agent's port is used.
 - **Power is the engine's.** State is read from the driver; one it cannot be
   asked for keeps the state last seen, since a lost connection is not a stop.
+  A machine its provider paused (Archil at a session's limit; disco-vm ADR
+  26-11-21-438) is `StatusPaused`. The pool froze nothing, so it is no sleep
+  (ADR 26-11-16-619 §5): the state channel reports it `running`, never
+  `suspended`. No state read or guest call from here wakes it; a start resumes it
+  (`engine.Start`), whether a use's (`EnsureSandboxRunning`) or the state
+  poll's (`resumePaused`, under the power lock, only while it is still
+  paused), and a stop resumes it to shut it down.
   The state channel polls (no event stream), and a poll that cannot read every
   machine publishes nothing rather than a sync that would report one gone.
 - **Volumes.** A sandbox's machine, made from its plan's snapshot or fresh
