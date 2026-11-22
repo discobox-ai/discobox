@@ -1125,6 +1125,12 @@ type agentDriver struct {
 	// pauseRefused has every pause refused, as a provider that fails one
 	// refuses it, leaving the machine running.
 	pauseRefused atomic.Bool
+	// pauseLate has every pause take effect and then report a failure, as
+	// one that timed out after its provider paused the machine does.
+	pauseLate atomic.Bool
+	// stateUnknown has every power-state read fail, as a provider that
+	// cannot be asked does.
+	stateUnknown atomic.Bool
 	mu           sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
@@ -1303,7 +1309,20 @@ func (m *agentMachine) Pause(ctx context.Context) error {
 	if m.driver.pauseRefused.Load() {
 		return fmt.Errorf("pause %s: refused: %w", m.inst.Name, machine.ErrUnavailable)
 	}
-	return m.Machine.Pause(ctx)
+	if err := m.Machine.Pause(ctx); err != nil {
+		return err
+	}
+	if m.driver.pauseLate.Load() {
+		return fmt.Errorf("pause %s: %w", m.inst.Name, context.DeadlineExceeded)
+	}
+	return nil
+}
+
+func (d *agentDriver) State(ctx context.Context, inst machine.Instance) (machine.State, error) {
+	if d.stateUnknown.Load() {
+		return "", fmt.Errorf("state of %s: %w", inst.Name, machine.ErrUnavailable)
+	}
+	return d.Driver.State(ctx, inst)
 }
 
 func (m *agentMachine) Shutdown(ctx context.Context, reboot bool) error {
