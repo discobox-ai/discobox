@@ -1135,7 +1135,14 @@ type agentDriver struct {
 	// stopped, as a host restart or a provider that expired the pause, or
 	// the engine stopping a resume it could not finish, leaves it.
 	resumeLost atomic.Bool
-	mu         sync.Mutex
+	// stateHangs has every power-state read wait until its caller gives up,
+	// as a driver whose provider stops answering does.
+	stateHangs atomic.Bool
+	// stateHangsAfterLoss sets stateHangs once a resume is lost
+	// (resumeLost): the provider stops answering just as the pool reads
+	// what the lost resume left.
+	stateHangsAfterLoss atomic.Bool
+	mu                  sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
 	// forcedOff, when set, is a machine whose orderly shutdown times out, so
@@ -1222,6 +1229,9 @@ func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts mac
 		d.agents.stop(inst.Name)
 		if err := m.Kill(ctx); err != nil {
 			return nil, err
+		}
+		if d.stateHangsAfterLoss.Load() {
+			d.stateHangs.Store(true)
 		}
 		return nil, fmt.Errorf("resume %s: lost, and stopped: %w", inst.Name, machine.ErrUnavailable)
 	}
@@ -1332,6 +1342,10 @@ func (m *agentMachine) Pause(ctx context.Context) error {
 func (d *agentDriver) State(ctx context.Context, inst machine.Instance) (machine.State, error) {
 	if d.stateUnknown.Load() {
 		return "", fmt.Errorf("state of %s: %w", inst.Name, machine.ErrUnavailable)
+	}
+	if d.stateHangs.Load() {
+		<-ctx.Done()
+		return "", ctx.Err()
 	}
 	return d.Driver.State(ctx, inst)
 }

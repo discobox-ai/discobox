@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
@@ -441,4 +442,39 @@ func TestAResumeThatLosesTheMachineBootsItFresh(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The read of what a lost resume left is bounded: a driver that stops
+// answering then fails the start once machineStateReadTimeout passes, rather
+// than holding the sandbox's power lock while it hangs, and the next start,
+// with the driver answering again, boots the machine fresh.
+func TestALostResumesStateReadIsBounded(t *testing.T) {
+	saved := machineStateReadTimeout
+	machineStateReadTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { machineStateReadTimeout = saved })
+	f, _ := freezeFixture(t, nil, "sbx_33")
+	ctx := context.Background()
+	r := f.runtime
+	if err := r.SuspendSandbox(ctx, "sbx_33", nil); err != nil {
+		t.Fatal(err)
+	}
+	f.driver.resumeLost.Store(true)
+	f.driver.stateHangsAfterLoss.Store(true)
+	done := make(chan error, 1)
+	go func() { done <- r.EnsureSandboxRunning(ctx, "sbx_33") }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a start whose lost resume could not be read succeeded")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("a start held the power lock while the driver hung")
+	}
+	f.driver.stateHangsAfterLoss.Store(false)
+	f.driver.stateHangs.Store(false)
+	if err := r.EnsureSandboxRunning(ctx, "sbx_33"); err != nil {
+		t.Fatalf("start once the driver answers: %v", err)
+	}
+	requireStatus(t, r, "sbx_33", StatusRunning, "booted fresh")
+	requireFrozenRecord(t, r, "sbx_33", false, "booted fresh")
 }

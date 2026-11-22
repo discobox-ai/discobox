@@ -32,6 +32,15 @@ const (
 	machineStopTimeout = time.Minute
 )
 
+// machineStateReadTimeout bounds every read of a machine's power state the
+// pool makes under a sandbox's power lock to judge what a failed pause or
+// resume left, or to settle a freeze: a driver that does not answer holds
+// that lock, and every power operation on the sandbox, until the read gives
+// up. disco-vm caps a read at a minute (engine.State); this holds it to less.
+// A read that times out is the state unknown. A variable so tests can shorten
+// it.
+var machineStateReadTimeout = 30 * time.Second
+
 func (r *MachineSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
@@ -168,7 +177,7 @@ func (r *MachineSandboxRuntime) freezeLocked(ctx context.Context, sandboxID stri
 	defer cancel()
 	if err := r.engine.Pause(pauseCtx, inst); err != nil {
 		err = fmt.Errorf("freeze sandbox %s's machine: %w", sandboxID, err)
-		stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineFreezeTimeout)
+		stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineStateReadTimeout)
 		defer cancel()
 		switch r.engine.State(stateCtx, inst) {
 		case engine.Paused:
@@ -245,7 +254,10 @@ func (r *MachineSandboxRuntime) settleFrozen(ctx context.Context, sandboxID stri
 	if err != nil {
 		return err
 	}
-	switch r.engine.State(ctx, inst) {
+	stateCtx, cancel := context.WithTimeout(ctx, machineStateReadTimeout)
+	state := r.engine.State(stateCtx, inst)
+	cancel()
+	switch state {
 	case engine.Running:
 		slog.InfoContext(ctx, "a sandbox machine the pool froze runs again; running its after-thaw steps", "sandboxId", sandboxID)
 		return r.thawedLocked(ctx, sandboxID, &record)
@@ -410,7 +422,13 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			// resumes it: disco-vm cannot stop a paused machine it cannot
 			// resume (disco-vm ADR 26-11-21-438 §6).
 			inst, instErr := r.instance(ctx, sandboxID)
-			if instErr != nil || r.engine.State(context.WithoutCancel(ctx), inst) != engine.Stopped {
+			if instErr != nil {
+				return err
+			}
+			stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineStateReadTimeout)
+			state := r.engine.State(stateCtx, inst)
+			cancel()
+			if state != engine.Stopped {
 				return err
 			}
 			slog.WarnContext(ctx, "a paused sandbox machine did not resume and is stopped; booting it fresh", "sandboxId", sandboxID, "error", err)
@@ -602,7 +620,9 @@ func (r *MachineSandboxRuntime) resumeLocked(ctx context.Context, sandboxID stri
 	// caller leaving (a request's context on use) is stopped by the engine,
 	// losing the memory the pause kept.
 	if err := r.engine.Start(context.WithoutCancel(ctx), inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
-		status, statusErr := r.status(context.WithoutCancel(ctx), sandboxID, inst, record)
+		statusCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineStateReadTimeout)
+		status, statusErr := r.status(statusCtx, sandboxID, inst, record)
+		cancel()
 		if statusErr == nil && status == StatusRunning {
 			slog.InfoContext(ctx, "a paused sandbox machine was resumed by something else as the pool resumed it", "sandboxId", sandboxID, "error", err)
 			r.publishSandboxState(ctx, sandboxID, StateRunning)
