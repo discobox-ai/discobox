@@ -144,10 +144,12 @@ type requestMeta struct {
 	// place, when a value was swapped into it at a body place: what the
 	// audit spools in place of the body that was sent.
 	preSwapBody []byte
-	// bodySwapped is a request a value was swapped into at a body place: the
-	// exchange of a credential for whatever the upstream answers, so its
-	// response body is never spooled (ADR 26-11-11-080 §9).
-	bodySwapped bool
+	// exchange is a request that trades a swapped credential for whatever
+	// the upstream answers — one a value was swapped into at a body place, or
+	// any swapped request of a client whose swaps are exchanges
+	// (SecretClient.Exchanges) — so its response body is never spooled, and
+	// its response headers are redacted (ADR 26-11-11-080 §9).
+	exchange bool
 	// retryBody holds the request body when the request is eligible for an
 	// unauthorized retry, which is the only reason it is in memory at all.
 	retryBody []byte
@@ -640,7 +642,7 @@ func (h *httpProxy) setupHandlers() {
 		var store *cache.StreamingPut
 		// A pool host's content is the pool's own, already on its disk: a
 		// cache entry would only store it twice.
-		if matcher := h.cache.Matcher(); meta.poolHost == nil && !meta.bodySwapped && !meta.raw.carried.Load() && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
+		if matcher := h.cache.Matcher(); meta.poolHost == nil && !meta.exchange && !meta.raw.carried.Load() && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
 			key := matcher.GenerateKey(ctx.Req)
 			meta.cacheKey = key
 			_, cacheSpan := proxyTracer().Start(meta.ctx, "proxy.cache.store.start", trace.WithAttributes(attribute.String("proxy.cache.key", meta.rawSet.Redact(key))))
@@ -659,9 +661,9 @@ func (h *httpProxy) setupHandlers() {
 			bodyRecord *audit.BodyRecord
 			bodySpool  *audit.BodySpool
 		)
-		// Nor is the answer to a body swap: it is the exchange of a key for
+		// Nor is the answer to an exchange: it is a key traded for
 		// whatever credential the upstream hands back (ADR 26-11-11-080 §9).
-		if store == nil && !meta.bodySwapped && (meta.poolHost == nil || !meta.poolHost.unspooledBodies) {
+		if store == nil && !meta.exchange && (meta.poolHost == nil || !meta.poolHost.unspooledBodies) {
 			var err error
 			bodyRecord, bodySpool, err = h.beginResponseBody(meta)
 			if err != nil {
@@ -805,7 +807,10 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		// The trail keeps the body as the sandbox sent it, with its
 		// sentinels, and none of the answer to it (ADR 26-11-11-080 §9).
 		meta.preSwapBody = body.Raw()
-		meta.bodySwapped = true
+		meta.exchange = true
+	}
+	if swapper.Exchanges(client.ID) {
+		meta.exchange = true
 	}
 	if len(result.QueryParams) > 0 {
 		// A swapped value now lives in the outbound URL; audit the pre-swap URL
@@ -1777,14 +1782,14 @@ func (m *requestMeta) redactRequestHeaders() []string {
 	return slices.Compact(out)
 }
 
-// responseHeaders is a response's headers as the audit keeps them. After a
-// body swap the exchange is a key traded for whatever the upstream hands
-// back, and a header may carry it under any name, a Location URL included
-// (ADR 26-11-11-080 §9): every value but those of framingHeaders is redacted,
+// responseHeaders is a response's headers as the audit keeps them. After an
+// exchange (a body swap, or any swap of a client whose swaps are exchanges)
+// the key is traded for whatever the upstream hands back, and a header may
+// carry it under any name, a Location URL included (ADR 26-11-11-080 §9): every value but those of framingHeaders is redacted,
 // names kept. Any other response is kept as it came, for the audit's own
 // name-based redaction.
 func (m *requestMeta) responseHeaders(headers http.Header) http.Header {
-	if m == nil || !m.bodySwapped || headers == nil {
+	if m == nil || !m.exchange || headers == nil {
 		return headers
 	}
 	out := make(http.Header, len(headers))

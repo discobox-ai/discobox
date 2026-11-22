@@ -224,8 +224,12 @@ func swapperConfig(cfg Config) secrets.Config {
 	sentinels := make(map[string][]string, len(cfg.Secrets.Clients))
 	raw := make(map[string][]string, len(cfg.Secrets.Clients))
 	generations := make(map[string]map[string]string, len(cfg.Secrets.Clients))
+	exchanges := map[string]bool{}
 	for _, client := range cfg.Secrets.Clients {
 		sentinels[client.ClientID] = client.Sentinels
+		if client.Exchanges {
+			exchanges[client.ClientID] = true
+		}
 		if len(client.Raw) > 0 {
 			raw[client.ClientID] = client.Raw
 		}
@@ -237,6 +241,7 @@ func swapperConfig(cfg Config) secrets.Config {
 		Sentinels:       sentinels,
 		Raw:             raw,
 		Generations:     generations,
+		Exchanges:       exchanges,
 		ScanQuery:       cfg.Secrets.ScanQuery,
 		PositiveTTL:     time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
 		NegativeTTL:     time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,

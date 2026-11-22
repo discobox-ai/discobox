@@ -7,11 +7,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -471,4 +473,57 @@ func (b *CertificateBundle) SignHost(host string) (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, nil
+}
+
+// ConstrainedMITMCA is the MITM CA restated to vouch for hosts alone: the same
+// subject, key and key ID, with name constraints naming each host (a name and
+// the names below it, or the one address). A client that trusts it, in place
+// of the MITM CA, believes a certificate the proxy minted only for those
+// hosts; one the proxy, or anyone else holding the MITM key, minted for any
+// other host fails to verify. A pool's engine trusts it beside the system's
+// roots, for the hosts its driver sends its key to through the proxy (ADR
+// 26-11-11-080 §9). A kind of name none of hosts is permits nothing of that
+// kind: a constraint on addresses that only the unspecified address meets,
+// or on names that only the reserved "invalid." meets.
+func (b *CertificateBundle) ConstrainedMITMCA(hosts []string) (*x509.Certificate, error) {
+	if len(hosts) == 0 {
+		return nil, errors.New("a constrained MITM CA needs a host to vouch for")
+	}
+	caCert, err := parseLeaf(b.MITMCA)
+	if err != nil {
+		return nil, err
+	}
+	tmpl := *caCert
+	// RawSubject is kept, so the restated CA's name is byte for byte the one
+	// the proxy's leaves name as their issuer.
+	tmpl.Raw, tmpl.RawTBSCertificate, tmpl.RawSubjectPublicKeyInfo, tmpl.RawIssuer = nil, nil, nil, nil
+	tmpl.Signature, tmpl.Extensions, tmpl.ExtraExtensions, tmpl.UnhandledCriticalExtensions = nil, nil, nil, nil
+	tmpl.SubjectKeyId = caCert.SubjectKeyId
+	tmpl.PermittedDNSDomainsCritical = true
+	tmpl.PermittedDNSDomains, tmpl.PermittedIPRanges = nil, nil
+	for _, host := range hosts {
+		if ip := net.ParseIP(host); ip != nil {
+			bits := 8 * len(ip.To16())
+			if v4 := ip.To4(); v4 != nil {
+				ip, bits = v4, 32
+			}
+			tmpl.PermittedIPRanges = append(tmpl.PermittedIPRanges, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		tmpl.PermittedDNSDomains = append(tmpl.PermittedDNSDomains, strings.ToLower(strings.TrimSuffix(host, ".")))
+	}
+	if len(tmpl.PermittedDNSDomains) == 0 {
+		tmpl.PermittedDNSDomains = []string{"invalid"}
+	}
+	if len(tmpl.PermittedIPRanges) == 0 {
+		tmpl.PermittedIPRanges = []*net.IPNet{
+			{IP: net.IPv4zero.To4(), Mask: net.CIDRMask(32, 32)},
+			{IP: net.IPv6zero, Mask: net.CIDRMask(128, 128)},
+		}
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, caCert.PublicKey, b.MITMCA.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("restate the MITM CA for %v: %w", hosts, err)
+	}
+	return x509.ParseCertificate(der)
 }

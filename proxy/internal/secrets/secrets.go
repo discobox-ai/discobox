@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"slices"
@@ -305,6 +306,11 @@ type Config struct {
 	// answer of one is not cached. A sentinel with none here keeps what it
 	// holds, which is what a control plane that predates generations gets.
 	Generations map[string]map[string]string
+	// Exchanges are the clients whose every swapped request trades the
+	// credential for whatever the upstream answers (a pool's own engine
+	// calling its driver's service, ADR 26-11-11-080 §9): the answer to such
+	// a request is the client's alone, and never the audit's.
+	Exchanges map[string]bool
 }
 
 const (
@@ -375,6 +381,7 @@ type settings struct {
 	resolveRetry time.Duration
 	sentinels    map[string][]string
 	generations  map[string]map[string]string
+	exchanges    map[string]bool
 	gateHost     string
 }
 
@@ -531,6 +538,7 @@ func newSettings(cfg Config) *settings {
 		resolveRetry: resolveRetry,
 		sentinels:    sentinels,
 		generations:  generations,
+		exchanges:    maps.Clone(cfg.Exchanges),
 		gateHost:     extractHost(strings.ToLower(strings.TrimSpace(cfg.GateHost))),
 	}
 }
@@ -620,6 +628,12 @@ func (s *Swapper) Raw(clientID string) *RawSet {
 // Active reports whether the Swapper can swap for clientID.
 func (s *Swapper) Active(clientID string) bool {
 	return s != nil && s.resolver != nil && len(s.settings.Load().sentinels[clientID]) > 0
+}
+
+// Exchanges reports whether clientID's swapped requests trade the credential
+// for whatever the upstream answers (Config.Exchanges).
+func (s *Swapper) Exchanges(clientID string) bool {
+	return s != nil && s.settings.Load().exchanges[clientID]
 }
 
 // Apply swaps any sentinels found in req's headers (and query, when enabled),
