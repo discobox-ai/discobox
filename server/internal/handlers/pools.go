@@ -21,7 +21,7 @@ func (h *Handler) ListPools(ctx context.Context, params serverapi.ListPoolsParam
 	}
 	body := apimodel.ListPoolsBody{Pools: make([]apimodel.Pool, 0, len(pools))}
 	for i := range pools {
-		pool, err := services.PoolToAPI(&pools[i])
+		pool, err := services.PoolToAPI(ctx, &pools[i])
 		if err != nil {
 			return nil, err
 		}
@@ -35,7 +35,7 @@ func (h *Handler) CreatePool(ctx context.Context, req *apimodel.CreatePoolBody, 
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.PoolToAPI(pool)
+	body, err := services.PoolToAPI(ctx, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (h *Handler) GetPool(ctx context.Context, params serverapi.GetPoolParams) (
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.PoolToAPI(pool)
+	body, err := services.PoolToAPI(ctx, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (h *Handler) UpdatePool(ctx context.Context, req *apimodel.UpdatePoolBody, 
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.PoolToAPI(pool)
+	body, err := services.PoolToAPI(ctx, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (h *Handler) ReconcilePool(ctx context.Context, params serverapi.ReconcileP
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.PoolToAPI(pool)
+	body, err := services.PoolToAPI(ctx, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func (h *Handler) UpdatePoolStatus(ctx context.Context, req *apimodel.UpdatePool
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.PoolToAPI(pool)
+	body, err := services.PoolToAPI(ctx, pool)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
@@ -174,14 +175,14 @@ func TestSandboxUpgradeTargetIgnoresTheSandboxsPlatform(t *testing.T) {
 func TestSandboxToAPIIncludesThePlatform(t *testing.T) {
 	sb := sandboxWithHarness("", shellBundle, contentDigest("a"))
 	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
-	out, err := SandboxToAPI(sb, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sb, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := out.Platform.Or(""); got != "linux/arm64" {
 		t.Fatalf("platform = %q, want linux/arm64", got)
 	}
-	out, err = SandboxToAPI(sandboxWithHarness("", shellBundle, contentDigest("a")), SandboxUpgradeBasis{})
+	out, err = SandboxToAPI(context.Background(), sandboxWithHarness("", shellBundle, contentDigest("a")), SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

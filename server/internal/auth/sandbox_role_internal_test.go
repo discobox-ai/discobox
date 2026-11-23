@@ -356,6 +356,26 @@ func TestSandboxRoleReadsItsProjectsEventStream(t *testing.T) {
 	})
 }
 
+// A discobox lists and reads its project's pools, so it can create on one by
+// name or ID; every other pool route stays a person's, and another project's
+// pools stay refused (ADR 26-11-23-743 §1).
+func TestSandboxRoleReadsItsProjectsPools(t *testing.T) {
+	checkRole(t, []roleCase{
+		{"list the project's pools", roleLead, http.MethodGet, "/projects/default/pools", http.StatusOK},
+		{"read one pool", roleLead, http.MethodGet, "/projects/default/pools/pool-1", http.StatusOK},
+		{"read one by the project's ID", roleWorker, http.MethodGet, "/projects/proj-1/pools/pool-1", http.StatusOK},
+		{"list another project's pools", roleLead, http.MethodGet, "/projects/proj-2/pools", http.StatusForbidden},
+		{"create a pool", roleLead, http.MethodPost, "/projects/default/pools", http.StatusForbidden},
+		{"update a pool", roleLead, http.MethodPatch, "/projects/default/pools/pool-1", http.StatusForbidden},
+		{"delete a pool", roleLead, http.MethodDelete, "/projects/default/pools/pool-1", http.StatusForbidden},
+		{"make a pool the default", roleLead, http.MethodPost, "/projects/default/pools/pool-1/default", http.StatusForbidden},
+		{"clear a pool's cache", roleLead, http.MethodPost, "/projects/default/pools/pool-1/clear-cache", http.StatusForbidden},
+		{"read a pool's logs", roleLead, http.MethodGet, "/projects/default/pools/pool-1/logs", http.StatusForbidden},
+		{"read the project", roleLead, http.MethodGet, "/projects/default", http.StatusForbidden},
+		{"read pools without the API", Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-persons", ProjectID: "proj-1", UserID: "user-1"}, http.MethodGet, "/projects/default/pools", http.StatusForbidden},
+	})
+}
+
 func TestAdoptionTransfersEveryChildRouteAndNoSecretValues(t *testing.T) {
 	st := roleStore(t)
 	ctx := context.Background()

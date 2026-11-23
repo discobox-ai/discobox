@@ -2,6 +2,7 @@ package sandboxes
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"reflect"
@@ -50,7 +51,7 @@ func TestCreateKeepsItsSkillsAndRefusesBadOnes(t *testing.T) {
 	if !reflect.DeepEqual(sb.Skills, want) {
 		t.Fatalf("stored skills = %#v, want %#v", sb.Skills, want)
 	}
-	read, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
+	read, err := services.SandboxToAPI(context.Background(), sb, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

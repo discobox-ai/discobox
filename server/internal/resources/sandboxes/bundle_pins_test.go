@@ -97,7 +97,7 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	if got := sandboxDelivery(sb); got.Agent != want.Agent || !slices.Equal(got.Bundles, want.Bundles) {
 		t.Fatalf("delivery sent to the pool = %+v, want %+v", got, want)
 	}
-	read, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
+	read, err := services.SandboxToAPI(context.Background(), sb, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

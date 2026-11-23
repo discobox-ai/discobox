@@ -1,6 +1,7 @@
 package sandboxes
 
 import (
+	"context"
 	"errors"
 	"maps"
 	"net/http"
@@ -39,7 +40,7 @@ func TestCreateKeepsItsFeatures(t *testing.T) {
 	if !maps.Equal(sb.Features, want) {
 		t.Fatalf("stored features = %v, want %v", sb.Features, want)
 	}
-	read, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
+	read, err := services.SandboxToAPI(context.Background(), sb, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

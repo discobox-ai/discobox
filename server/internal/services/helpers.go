@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -242,7 +243,7 @@ func SandboxGitFromModel(sandbox *model.Sandbox) *serverapi.SandboxGitIdentity {
 	return git
 }
 
-func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.Sandbox, error) {
+func SandboxToAPI(ctx context.Context, sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.Sandbox, error) {
 	if sandbox == nil {
 		return serverapi.Sandbox{}, nil
 	}
@@ -442,7 +443,7 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 		return result, err
 	}
 	if sandbox.Pool != nil {
-		pool, err := PoolToAPI(sandbox.Pool)
+		pool, err := PoolToAPI(ctx, sandbox.Pool)
 		if err != nil {
 			return result, err
 		}
@@ -702,10 +703,10 @@ func sandboxPrimaryTerminalTitleAndMsg(sandbox *model.Sandbox) (title, msg strin
 	return programstatus.PrimaryTitleAndMsg(status.Sessions)
 }
 
-func SandboxesToAPI(sandboxes []model.Sandbox, basis SandboxUpgradeBasis) ([]serverapi.Sandbox, error) {
+func SandboxesToAPI(ctx context.Context, sandboxes []model.Sandbox, basis SandboxUpgradeBasis) ([]serverapi.Sandbox, error) {
 	out := make([]serverapi.Sandbox, 0, len(sandboxes))
 	for i := range sandboxes {
-		converted, err := SandboxToAPI(&sandboxes[i], basis)
+		converted, err := SandboxToAPI(ctx, &sandboxes[i], basis)
 		if err != nil {
 			return nil, err
 		}

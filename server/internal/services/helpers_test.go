@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -29,7 +30,7 @@ func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 			RunCommand: []string{"codex"},
 		},
 	}
-	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestSandboxToAPIIncludesCalculatedDisplayState(t *testing.T) {
 		},
 		RuntimeState: model.SandboxRuntimeStateRunning,
 	}
-	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestSandboxToAPIOmitsUnobservedRuntimeState(t *testing.T) {
 			ObservedGeneration: 1,
 		},
 	}
-	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestSandboxToAPIReportsASourceDelivery(t *testing.T) {
 			Generation:   2,
 		},
 	}
-	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestSandboxToAPIReportsASourceDelivery(t *testing.T) {
 
 	delivered := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 	sandbox.SourceDeliveredAt = &delivered
-	out, err = SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err = SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestSandboxToAPIIncludesTheCreatingSandbox(t *testing.T) {
 		createdBy *string
 		want      string
 	}{{&lead, lead}, {nil, ""}} {
-		out, err := SandboxToAPI(&model.Sandbox{ID: "sb_1", ProjectID: "p1", CreatedByUserID: "user-1", CreatedBySandboxID: tc.createdBy}, SandboxUpgradeBasis{})
+		out, err := SandboxToAPI(context.Background(), &model.Sandbox{ID: "sb_1", ProjectID: "p1", CreatedByUserID: "user-1", CreatedBySandboxID: tc.createdBy}, SandboxUpgradeBasis{})
 		if err != nil {
 			t.Fatalf("SandboxToAPI: %v", err)
 		}
@@ -233,7 +234,7 @@ func TestSandboxUserValidateAccountTakesTheGuestsIDs(t *testing.T) {
 // of a level its flags leave out by reading it back from here.
 func TestSandboxToAPIIncludesItsEgressLevel(t *testing.T) {
 	sandbox := &model.Sandbox{ID: "sb_1", ProjectID: "p1", Egress: egress.Policy{DenyByDefault: true, Allow: []string{"github.com"}}}
-	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -256,7 +257,7 @@ func TestAGitSourceKeepsItsRemotesDefaultBranch(t *testing.T) {
 	if source.DefaultBranch == nil || *source.DefaultBranch != "trunk" {
 		t.Fatalf("model default branch = %v, want trunk", source.DefaultBranch)
 	}
-	out, err := SandboxToAPI(&model.Sandbox{ID: "sb_1", ProjectID: "p1", SandboxManifest: model.SandboxManifest{Source: &source}}, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), &model.Sandbox{ID: "sb_1", ProjectID: "p1", SandboxManifest: model.SandboxManifest{Source: &source}}, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +274,7 @@ func TestSandboxToAPIServesWhatTheBoxStartedFrom(t *testing.T) {
 		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStateReady},
 		StartedFrom:       model.RawJSON(`{"from":"snapshot","snapshot":"k1"}`),
 	}
-	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
+	out, err := SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -282,7 +283,7 @@ func TestSandboxToAPIServesWhatTheBoxStartedFrom(t *testing.T) {
 		t.Fatalf("startedFrom = %+v, want the snapshot k1", out.Runtime.StartedFrom)
 	}
 	sandbox.StartedFrom = nil
-	if out, err = SandboxToAPI(sandbox, SandboxUpgradeBasis{}); err != nil || out.Runtime.StartedFrom.Set {
+	if out, err = SandboxToAPI(context.Background(), sandbox, SandboxUpgradeBasis{}); err != nil || out.Runtime.StartedFrom.Set {
 		t.Fatalf("a sandbox never reported on serves startedFrom %+v (%v)", out.Runtime.StartedFrom, err)
 	}
 }

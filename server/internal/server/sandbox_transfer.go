@@ -105,7 +105,7 @@ func sandboxImportHandler(service services.SandboxService) http.Handler {
 		// the other), and a client decoding the generated type refuses it
 		// outright (ADR 0118: whoever serves an API is strict).
 		basis, _ := service.UpgradeBasis(r.Context(), projectID)
-		body, err := services.SandboxToAPI(result.Sandbox, basis)
+		body, err := services.SandboxToAPI(r.Context(), result.Sandbox, basis)
 		if err != nil {
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
