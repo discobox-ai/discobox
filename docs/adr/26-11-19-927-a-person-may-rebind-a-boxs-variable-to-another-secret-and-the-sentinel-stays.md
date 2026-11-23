@@ -1,9 +1,10 @@
 # 26-11-19-927 — A person may rebind a box's variable to another secret, and the sentinel stays
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-19
+  Accepted by the owner by merging #1407, 2026-11-19.
 - **Issue**: [#832](https://github.com/discobox-ai/discobox/issues/832)
-- **Would amend**:
+- **Amends**:
   - [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md)
     §5's "a variable that already holds a *different* secret is still
     refused instead of taken over". A person approving with an explicit

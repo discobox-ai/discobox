@@ -1,6 +1,6 @@
 # 26-11-03-329 — A box may be granted routes for a time beside its binding, without replacing it
 
-- **Status**: Accepted (amended before implementation landed: Leaves standing names §4, not §3, as what adds to 022 §4; §§3 and 6 say a listing reads the resolved bindings, not the delivered rows)
+- **Status**: Accepted (amended before implementation landed: Leaves standing names §4, not §3, as what adds to 022 §4; §§3 and 6 say a listing reads the resolved bindings, not the delivered rows; §2's additions of another secret amended for a rebind, which deletes them, by [26-11-19-927](26-11-19-927-a-person-may-rebind-a-boxs-variable-to-another-secret-and-the-sentinel-stays.md))
 - **Date**: 2026-11-03
 
   Accepted by the owner by merging #502, 2026-11-03.

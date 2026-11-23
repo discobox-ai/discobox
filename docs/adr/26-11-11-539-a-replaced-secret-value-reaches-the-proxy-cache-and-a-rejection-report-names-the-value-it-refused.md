@@ -4,7 +4,7 @@
   since #1024 and #1029, plus §2's renewal memory, which #1140 implements;
   the owner accepts it by merging its PR; §3's passing a refusal through
   when the retry's fresh resolve failed transiently narrowed by
-  [26-11-17-078](26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md))
+  [26-11-17-078](26-11-17-078-a-control-plane-401-is-about-the-pool-and-is-transient.md); §1's generation amended to name its secret by [26-11-19-927](26-11-19-927-a-person-may-rebind-a-boxs-variable-to-another-secret-and-the-sentinel-stays.md))
 - **Date**: 2026-11-11
 - **Issue**: [#1022](https://github.com/discobox-ai/discobox/issues/1022)
 - **Supersedes**, in part:
