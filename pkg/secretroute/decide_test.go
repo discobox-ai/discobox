@@ -190,6 +190,19 @@ func TestDecideSpecificity(t *testing.T) {
 			cases:  map[string]bool{"GET https://x.test/a": false},
 		},
 		{
+			// #1538: h. is h, so a fully qualified spelling of the host is held
+			// to the host's block and does not fall through to *.
+			name:   "a trailing-dot host is the host",
+			routes: []string{"*", "localhost/admin/**=blocked", "*.github.com/a=blocked"},
+			cases: map[string]bool{
+				"GET http://localhost./admin/x":      false,
+				"GET http://LOCALHOST.:8080/admin/x": false,
+				"GET http://localhost/admin/x":       false,
+				"GET http://localhost./other":        true,
+				"GET https://api.github.com./a":      false,
+			},
+		},
+		{
 			name:   "host before path",
 			routes: []string{"*.github.com/a/b/c=blocked", "api.github.com"},
 			cases: map[string]bool{

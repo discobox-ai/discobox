@@ -152,8 +152,9 @@ func (h *httpProxy) servePassthrough(req *http.Request, client net.Conn, entry s
 }
 
 // internalHost reports whether authority names the gate or a pool host
-// however it is spelled — a trailing dot, another case — which the checks
-// before the filter match only as written. Passthrough never splices to one:
+// however it is spelled — a trailing dot, another case — which the gate's
+// check before the filter matches only as written (a pool host's reads the
+// host through hostscope.Normalize, which drops the dot itself). Passthrough never splices to one:
 // what reaches them is the gate's, or the pool listener's, to decide.
 func (h *httpProxy) internalHost(authority string) bool {
 	host, port, err := net.SplitHostPort(authority)

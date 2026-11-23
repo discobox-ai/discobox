@@ -89,6 +89,18 @@
   and empty segments resolved, the cleaned path forwarded, an encoded slash
   refused. Matching the raw URL lets a sandbox
   step around a gateway or out of its target's prefix with the gateway's key.
+- A rule keyed by a destination host (a secret route, a report scope, a pool
+  host) compares both sides in `hostscope.Normalize` form, and its test sends
+  the `h.` spelling too. `h.` is h to DNS and to the proxy's misdirected check
+  (`authorityHostname`), so a rule that read it as another name was stepped
+  around: a gateway first, then a secret route's block under an open `*`
+  (#1538). The proxy's own authority readings (`authorityHostname`,
+  `internalHost`, egress `Match`) drop any final dot, where `Normalize` drops
+  only one that follows a label character, so they differ on `h..`, `.`, `*.`
+  and `a*.`: names Go's resolver refuses (an upstream proxy is handed them as
+  written). A difference on a dialable name is the same bypass again: an IPv6
+  literal is `::1` to `Normalize` with or without brackets or a port, as it is
+  to `authorityHostname` and egress `Match`.
 - A 401 is evidence about a swapped credential only if the credential reached
   the upstream. A gateway that removes or sets the header it was swapped into
   makes the answer the gateway's: never retry or report it.

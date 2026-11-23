@@ -182,8 +182,10 @@ func (r RejectionRule) Validate() error {
 		return errors.New("a rejectionScope entry requires a host")
 	}
 	// A host and nothing else. A URL, a port or a path normalizes to a name no
-	// destination has, and the scope would then silence every report.
-	if strings.ContainsAny(host, "/:@?# \t") || hostscope.Normalize(host) != host {
+	// destination has, and the scope would then silence every report. A
+	// fully qualified name's trailing dot is the host itself, which
+	// normalizing drops.
+	if strings.ContainsAny(host, "/:@?# \t") || hostscope.Normalize(host) != strings.TrimSuffix(host, ".") {
 		return fmt.Errorf("rejectionScope host %q must be a bare host name: no scheme, port or path", r.Host)
 	}
 	for _, path := range r.Paths {

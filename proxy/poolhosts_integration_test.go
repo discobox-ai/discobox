@@ -214,6 +214,23 @@ func TestPoolHostsRefuseAnUpstreamThatIsNoTransport(t *testing.T) {
 	}
 }
 
+// A pool host answers its name however a sandbox spells it: another case, a
+// port, or the trailing dot of a fully qualified name, which is the same host.
+func TestAPoolHostAnswersEverySpellingOfItsName(t *testing.T) {
+	hosts, err := newPoolHosts([]PoolHostConfig{{Host: "git.discobox.internal", Upstream: "http://127.0.0.1:1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spelling := range []string{"git.discobox.internal", "GIT.discobox.internal", "git.discobox.internal:443", "git.discobox.internal.", "git.discobox.internal.:443"} {
+		if hosts.answering(spelling) == nil {
+			t.Errorf("answering(%q) = nil, want the pool host", spelling)
+		}
+	}
+	if hosts.answering("git.discobox.internal..") != nil {
+		t.Error("answering(git.discobox.internal..) answered, want no host")
+	}
+}
+
 // A pool host's response is never cached, even on a path the cache would
 // admit — the registry's blobs are already on the pool's disk — and a host
 // whose bodies are unspooled, the build registry, spools neither its request

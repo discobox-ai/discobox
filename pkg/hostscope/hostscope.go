@@ -14,17 +14,40 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
-// Normalize is the one reading of a host string: lowercased, trimmed, and
-// without a port. The proxy reports the destination this way, so anything
-// stored differently is a scope that can never match.
+// Normalize is the one reading of a host string: lowercased, trimmed,
+// without a port or an IPv6 literal's brackets, and without the trailing dot
+// of a fully qualified name. The proxy reports the destination this way, so
+// anything stored differently is a scope that can never match. `h.` is h in
+// DNS and to the proxy's own policy, so a route or scope that read it as
+// another name would be stepped around by a request that spelled it so
+// (#1538).
+//
+// Only a dot that ends a name goes: one after a letter, digit, `-` or `_`.
+// Anything else stays as written, so `.` never becomes the empty wildcard and
+// `*.` never becomes `*`.
 func Normalize(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if trimmed, _, err := net.SplitHostPort(host); err == nil {
-		return trimmed
+		host = trimmed
+	} else if literal, ok := strings.CutPrefix(host, "["); ok && strings.HasSuffix(literal, "]") && net.ParseIP(strings.TrimSuffix(literal, "]")) != nil {
+		// An IPv6 literal is bracketed only beside a port; without one it
+		// is the address, as SplitHostPort gives it when a port follows.
+		host = strings.TrimSuffix(literal, "]")
+	}
+	if name, ok := strings.CutSuffix(host, "."); ok && name != "" && endsLabel(name) {
+		return name
 	}
 	return host
+}
+
+// endsLabel reports whether name's last character can end a DNS label.
+func endsLabel(name string) bool {
+	r, _ := utf8.DecodeLastRuneInString(name)
+	return r == '-' || r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // Covers reports whether scope authorizes traffic to host.

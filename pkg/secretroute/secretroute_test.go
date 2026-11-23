@@ -24,6 +24,13 @@ func TestNormalize(t *testing.T) {
 			want: Route{Hosts: []string{"*.github.com", "github.com"}, Methods: []string{"GET", "POST"}, Paths: []string{"/a/**", "/b"}},
 		},
 		{name: "any host", in: Route{Hosts: []string{"*"}}, want: Route{Hosts: []string{"*"}}},
+		{
+			name: "a fully qualified host is the host",
+			in:   Route{Hosts: []string{"GitHub.com.", "*.github.com.", "github.com"}},
+			want: Route{Hosts: []string{"*.github.com", "github.com"}},
+		},
+		{name: "a dotted wildcard is no wildcard", in: Route{Hosts: []string{"*.:443"}}, wantErr: "must name a host"},
+		{name: "two trailing dots", in: Route{Hosts: []string{"github.com.."}}, wantErr: "empty label"},
 		{name: "root path stays", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/"}}, want: Route{Hosts: []string{"x.test"}, Paths: []string{"/"}}},
 		{
 			name: "graphql operations lower-cased, fields sorted",
