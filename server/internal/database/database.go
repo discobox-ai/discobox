@@ -151,6 +151,11 @@ func (db *DB) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	// After the engine's table exists: once, for the value generation's
+	// change of shape.
+	if err := redeliverSentinelGenerations(write); err != nil {
+		return err
+	}
 	if err := dropHarnessImageColumns(write); err != nil {
 		return err
 	}

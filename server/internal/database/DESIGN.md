@@ -189,6 +189,13 @@ so `backfillPoolImageKinds` writes OCI into the pools that existed, only on
 the start that adds the column, which `addsImageKindColumn` reads before
 `AutoMigrate`.
 
+The value generation a pool caches each value by names its secret since ADR
+26-11-19-927 §5, so every generation a pool holds from before reads as
+replaced. `redeliverSentinelGenerations` marks every discobox holding a
+sentinel for delivery once, through `reconcile.MarkTx`, and records that in
+`server_state` in the same transaction, so a start that fails first marks
+them again and none after does.
+
 A VM kind was spelled `discovm/<driver>` until ADR 26-10-15-629 respelled it
 `vm/<driver>`, and only the new spelling is read, so a stored old one would
 fail every scan of its row. `respellDiscoVMImageKinds` rewrites them on pools

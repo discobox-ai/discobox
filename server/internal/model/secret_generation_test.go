@@ -30,3 +30,15 @@ func TestValueWrittenAdvancesGeneration(t *testing.T) {
 		})
 	}
 }
+
+// Two secrets whose values were written in the same microsecond are two
+// generations: a variable rebound from one to the other must make the proxy
+// drop the first one's value (ADR 26-11-19-927 §5).
+func TestValueGenerationNamesItsSecret(t *testing.T) {
+	written := time.Date(2026, 11, 19, 12, 0, 0, 123456000, time.UTC)
+	a := Secret{ID: "sec_a", ValueUpdatedAt: &written}
+	b := Secret{ID: "sec_b", ValueUpdatedAt: &written}
+	if a.ValueGeneration() == b.ValueGeneration() {
+		t.Fatalf("secrets %s and %s written at the same instant share generation %q", a.ID, b.ID, a.ValueGeneration())
+	}
+}
