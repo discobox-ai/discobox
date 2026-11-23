@@ -2457,8 +2457,9 @@ flowchart LR
   pool's clock must allow it, so an addition stops at its expiry whether or
   not the delivery removing it has landed; and a grant allows it with
   `secretroute.Decide` over every one of its lists: in each list, every reading of its
-  path (`secretroute.RequestPaths`: decoded, and with an encoded `/` kept in
-  its segment) must fall on a route whose hosts, methods (every one the
+  path (`secretroute.RequestPaths`: decoded, with an encoded `/` kept in
+  its segment, and with each segment's `;` parameters removed as a servlet
+  container does) must fall on a route whose hosts, methods (every one the
   request names, overrides included), paths and GraphQL or MCP block all
   match, and the most specific routes it falls on must not be
   blocked. A list never unblocks what another blocks, a grant is decided whole
