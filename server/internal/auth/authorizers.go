@@ -238,6 +238,11 @@ var sandboxRole = []sandboxRoleRoute{
 	// copies into each create as a person's client does (ADR 26-10-14-894
 	// §1). Adding and removing them are a member's.
 	{method: http.MethodGet, path: "skills-sources"},
+	// The project's pools, so a create names one and is spelled for its
+	// platform (ADR 26-11-23-743 §1). What a discobox is sent of one is
+	// narrowed where it is served (§2); every other pool route is a person's.
+	{method: http.MethodGet, path: "pools"},
+	{method: http.MethodGet, path: "pools/*"},
 	{method: http.MethodPost, path: "api-access-requests"},
 	{method: http.MethodGet, path: "api-access-requests"},
 	{method: http.MethodGet, path: "api-access-requests/*", names: ownAPIAccess},

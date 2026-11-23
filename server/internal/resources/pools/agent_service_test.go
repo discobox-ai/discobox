@@ -441,7 +441,7 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
-	apiPool, err := services.PoolToAPI(poolModel)
+	apiPool, err := services.PoolToAPI(context.Background(), poolModel)
 	if err != nil {
 		t.Fatalf("project pool through the API schema: %v\nstored: %s", err, poolModel.Resources)
 	}
@@ -480,7 +480,7 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	apiSandbox, err := services.SandboxToAPI(sandboxModel, services.SandboxUpgradeBasis{})
+	apiSandbox, err := services.SandboxToAPI(context.Background(), sandboxModel, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("project sandbox through the API schema: %v\nstored: %s", err, sandboxModel.Resources)
 	}
@@ -515,7 +515,7 @@ func TestAPoolResourceBlobFromAnotherVersionDoesNotFailThePoolRead(t *testing.T)
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
-	apiPool, err := services.PoolToAPI(poolModel)
+	apiPool, err := services.PoolToAPI(context.Background(), poolModel)
 	if err != nil {
 		t.Fatalf("an unreadable resource blob failed the whole pool read: %v", err)
 	}

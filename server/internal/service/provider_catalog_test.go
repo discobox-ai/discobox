@@ -202,7 +202,7 @@ func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 	if sb.PoolID != poolID || sb.State != model.SandboxStatePending || sb.Converged() {
 		t.Fatalf("create did not persist pending intent on the chosen pool: %+v", sb)
 	}
-	view, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
+	view, err := services.SandboxToAPI(context.Background(), sb, services.SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatal(err)
 	}

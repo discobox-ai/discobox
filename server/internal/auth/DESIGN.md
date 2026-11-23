@@ -171,7 +171,14 @@ Current authorizers:
     general binding reads and writes remain outside the role;
   - the project's skills sources list
     ([ADR 26-10-14-894](../../../docs/adr/26-10-14-894-a-project-names-skills-repositories-every-discobox-is-created-with.md)
-    §1).
+    §1);
+  - the project's pools, list and get, so a create names one and is spelled
+    for its platform; every other pool route is a person's. What a discobox
+    is sent of a pool, read itself or embedded in a sandbox, is a fixed list
+    of fields (`services.PoolToAPI`): no provider instance or its
+    configuration, agent key, host credential, proxy, egress, conditions or
+    errors
+    ([ADR 26-11-23-743](../../../docs/adr/26-11-23-743-a-discobox-reads-its-projects-pools-without-their-secrets.md)).
 
   A route naming a discobox (`childDiscobox`) takes only one the caller
   leads (`Sandbox.ParentSandboxID`, ADR 26-10-27-880 §9); a discobox is

@@ -207,7 +207,11 @@ columns migrate additively; an old row without a status timestamp is unknown
 until its agent reports. No backfill should certify an old report as fresh.
 
 `services.PoolToAPI` exposes health and masks stale `Ready`/`Schedulable` flags,
-including pools nested in sandbox responses. Clients accept an omitted health
+including pools nested in sandbox responses. For a sandbox principal it sends
+only a fixed list of fields, what placing a create needs, and none of the
+provider, key, credential, proxy, egress or agent-reported detail
+([ADR 26-11-23-743](../../../../docs/adr/26-11-23-743-a-discobox-reads-its-projects-pools-without-their-secrets.md)
+§2); a field added to `Pool` reaches a discobox only once that list names it. Clients accept an omitted health
 field from older servers as `unknown`. Placement and sandbox traffic use the same `Pool.IsReady` gate. Fresh health permits placement
 even if a blocked runtime reconcile still carries an older `offline` state.
 API health does not wait for runtime reconciliation. Placement additionally

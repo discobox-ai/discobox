@@ -80,7 +80,14 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 		{http.MethodGet, project + "/secret-grants", http.StatusForbidden},
 		// It reaches only the discoboxes it created, and is not its own creator.
 		{http.MethodGet, project + "/sandboxes/" + routeTestSandboxID, http.StatusForbidden},
-		{http.MethodGet, project + "/pools", http.StatusForbidden},
+		// Its project's pools are read, and nothing else of them is reached
+		// (ADR 26-11-23-743 §1).
+		{http.MethodGet, project + "/pools", http.StatusOK},
+		{http.MethodGet, project + "/pools/" + routeTestPoolID, http.StatusOK},
+		{http.MethodPost, project + "/pools", http.StatusForbidden},
+		{http.MethodPost, project + "/pools/" + routeTestPoolID + "/default", http.StatusForbidden},
+		{http.MethodDelete, project + "/pools/" + routeTestPoolID, http.StatusForbidden},
+		{http.MethodGet, project, http.StatusForbidden},
 		// The event stream is served, whole (TestASandboxReadsItsProjectsEventStream);
 		// another project's is not.
 		{http.MethodGet, "/api/projects/another-project/events", http.StatusForbidden},
@@ -93,6 +100,15 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 			resp := forwardRoute(t, router, tc.method, tc.path, "", token, routeTestPoolID, routeTestSandboxID)
 			if resp.Code != tc.want {
 				t.Fatalf("status = %d, want %d; body = %s", resp.Code, tc.want, resp.Body.String())
+			}
+			// A pool a discobox reads carries no provider instance, key or
+			// host credential (ADR 26-11-23-743 §2).
+			if strings.Contains(tc.path, "/pools") && resp.Code == http.StatusOK {
+				for _, field := range []string{`"providerInstance"`, `"publicKey"`, `"hostCredential"`, `"proxy"`, `"egress"`} {
+					if strings.Contains(resp.Body.String(), field) {
+						t.Fatalf("a discobox's pool read carries %s: %s", field, resp.Body.String())
+					}
+				}
 			}
 		})
 	}
