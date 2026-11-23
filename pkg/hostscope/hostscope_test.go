@@ -23,6 +23,10 @@ func TestCoversIsOneWay(t *testing.T) {
 		{"", "api.github.com", true, "the wildcard covers everything"},
 		{"github.com", "", false, "a destination nothing named is not covered"},
 		{"API.GitHub.com", "api.github.com:443", true, "case and port are not what decides it"},
+		{"github.com", "api.github.com.", true, "nor is a fully qualified name's trailing dot"},
+		{"github.com.", "github.com", true, "on either side"},
+		{".", "evil.com", false, "a lone dot is no scope at all, not the wildcard"},
+		{"[::1]:443", "[::1]", true, "an IPv6 literal is one address with or without its brackets"},
 	} {
 		if got := hostscope.Covers(tc.scope, tc.host); got != tc.want {
 			t.Errorf("Covers(%q, %q) = %v, want %v: %s", tc.scope, tc.host, got, tc.want, tc.why)
@@ -127,5 +131,37 @@ func TestCoversEvery(t *testing.T) {
 	}
 	if !hostscope.CoversEvery(nil, nil) || !hostscope.CoversEvery(nil, []string{"anything.example.com"}) {
 		t.Error("the wildcard covers everything")
+	}
+}
+
+func TestNormalize(t *testing.T) {
+	for in, want := range map[string]string{
+		"API.GitHub.com":      "api.github.com",
+		" api.github.com:443": "api.github.com",
+		"localhost.":          "localhost",
+		"localhost.:8080":     "localhost",
+		"Example.COM.":        "example.com",
+		"a-.":                 "a-",
+		"[::1]:443":           "::1",
+		"[::1]":               "::1",
+		"[FE80::1]":           "fe80::1",
+		"[not-an-ip]":         "[not-an-ip]",
+		// Only a dot that ends a name goes; nothing else is rewritten.
+		".":    ".",
+		"..":   "..",
+		"a..":  "a..",
+		"*.":   "*.",
+		"a .":  "a .",
+		"":     "",
+		"*":    "*",
+		"*.a.": "*.a",
+	} {
+		got := hostscope.Normalize(in)
+		if got != want {
+			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
+		}
+		if again := hostscope.Normalize(got); again != got {
+			t.Errorf("Normalize(Normalize(%q)) = %q, want it unchanged at %q", in, again, got)
+		}
 	}
 }

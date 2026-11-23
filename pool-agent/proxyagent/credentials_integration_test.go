@@ -147,6 +147,76 @@ func TestASentinelIsHeldToItsRoutesOnRealTraffic(t *testing.T) {
 	}
 }
 
+// A fully qualified spelling of a host (`localhost.`) is the host: a route
+// block on it holds, rather than the request falling through to an open `*`
+// and carrying the real credential (#1538).
+func TestATrailingDotHostIsHeldToTheHostsBlock(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "ghp_SENTINELSENTINELSENTINELSENTINEL1"
+	const realValue = "ghp_REALREALREALREALREALREALREALREAL12"
+
+	var sawAuthorization []string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
+		sawAuthorization = append(sawAuthorization, r.URL.Path+" "+r.Header.Get("Authorization"))
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer origin.Close()
+	parsed, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := parsed.Port()
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
+		expiry := time.Now().Add(time.Hour)
+		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "approved", Value: realValue, ExpiresAt: &expiry})
+	}))
+	defer controlPlane.Close()
+
+	server, material := startRoutedProxy(ctx, t, controlPlane.URL, sentinel, [][]secretroute.Route{{
+		{Hosts: []string{secretroute.AnyHost}},
+		{Hosts: []string{"localhost"}, Paths: []string{"/admin/**"}, Blocked: true},
+	}}, nil)
+	client := proxyClient(t, server, material)
+	get := func(host, path string) int {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(host, port)+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+sentinel)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("proxied request: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	for _, host := range []string{"localhost", "localhost.", "LOCALHOST."} {
+		if status := get(host, "/admin/x"); status != http.StatusForbidden {
+			t.Errorf("GET %s/admin/x = %d, want the proxy's 403", host, status)
+		}
+	}
+	// The allowed request names the host undotted: whether `localhost.`
+	// resolves at all is the machine's resolver's, not the proxy's.
+	if status := get("localhost", "/repos"); status != http.StatusOK {
+		t.Fatalf("GET localhost/repos = %d, want the upstream's 200 under *", status)
+	}
+	if len(sawAuthorization) != 1 || sawAuthorization[0] != "/repos Bearer "+realValue {
+		t.Fatalf("upstream saw %q, want only the allowed request, with the real credential", sawAuthorization)
+	}
+}
+
 // TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate serves the real
 // mTLS endpoint and proves the two things it exists to guarantee: a caller is
 // whoever its certificate says, and it cannot claim to be another sandbox.
