@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/spf13/cobra"
 
@@ -58,7 +60,14 @@ func (a *App) newPoolListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		// A discobox reads its project's pools but not the project (ADR
+		// 26-11-23-743 §1): refused the project, it lists them with no pool
+		// marked the default rather than failing the listing it may read.
 		defaultPoolID, err := a.defaultPoolID(cmd.Context(), client, projectID)
+		var refused *plainStatusError
+		if errors.As(err, &refused) && refused.code == http.StatusForbidden {
+			defaultPoolID, err = "", nil
+		}
 		if err != nil {
 			return err
 		}

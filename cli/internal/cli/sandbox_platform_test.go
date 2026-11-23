@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -16,8 +17,9 @@ func platformPool(id, name, platform string) string {
 
 // placementServer answers a create on a project whose default pool hosts
 // linux and whose other pool, "win", hosts windows. It refuses everything
-// else, the SSH sync among it, so a create ends at the post it records.
-func placementServer(t *testing.T, posted *map[string]any) *httptest.Server {
+// else, the SSH sync among it, so a create ends at the post it records; and,
+// when asDiscobox, the project's read too, as it refuses a discobox's.
+func placementServer(t *testing.T, posted *map[string]any, asDiscobox bool) *httptest.Server {
 	t.Helper()
 	linux := platformPool("pool_default", "Default", "linux/amd64")
 	windows := platformPool("pool_win", "win", "windows/amd64")
@@ -31,7 +33,7 @@ func placementServer(t *testing.T, posted *map[string]any) *httptest.Server {
 			}
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1" && !asDiscobox:
 			_, _ = w.Write([]byte(`{"id":"project-1","name":"p","defaultPoolId":"pool_default","default":true,"ownerUserId":"user-1","harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/pools":
 			_, _ = w.Write([]byte(`{"pools":[` + linux + `,` + windows + `]}`))
@@ -82,7 +84,7 @@ func TestRunPlacesTheSourceByThePoolPlatform(t *testing.T) {
 			repo := newRunSourceTestRepo(t)
 			t.Chdir(repo)
 			var posted map[string]any
-			server := placementServer(t, &posted)
+			server := placementServer(t, &posted, false)
 
 			cmd := NewRootCommand()
 			var out, errOut bytes.Buffer
@@ -111,9 +113,40 @@ func TestRunPlacesTheSourceByThePoolPlatform(t *testing.T) {
 	}
 }
 
-// A discobox creating another is refused a read of any pool, so a pool it
-// names is a platform it cannot learn: the create is refused rather than
-// placing paths for a guessed one, and nothing is posted.
+// A discobox creating another reads its project's pools but not the project
+// (ADR 26-11-23-743 §1), so --pool resolves and places as a person's does: by
+// name, short or full ID, on the platform that pool hosts.
+func TestRunFromADiscoboxPlacesOnTheNamedPool(t *testing.T) {
+	for _, pool := range []string{"win", "pool_win"} {
+		t.Run(pool, func(t *testing.T) {
+			setHome(t, t.TempDir())
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			t.Chdir(newRunSourceTestRepo(t))
+			var posted map[string]any
+			server := placementServer(t, &posted, true)
+
+			cmd := NewRootCommand()
+			var out, errOut bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&errOut)
+			cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", ".", "--pool", pool, "-p", "fix it"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute new: %v\n%s", err, errOut.String())
+			}
+			if posted["poolId"] != "pool_win" {
+				t.Fatalf("poolId = %#v, want pool_win", posted["poolId"])
+			}
+			if directory := postedPrimaryDestination(t, posted)["directory"]; directory != `C:\workspace\source` {
+				t.Fatalf("destination directory = %#v, want the windows pool's spelling", directory)
+			}
+		})
+	}
+}
+
+// A server that refuses a read of any pool — one from before a discobox could
+// read them — leaves a pool the caller names a platform it cannot learn: the
+// create is refused rather than placing paths for a guessed one, and nothing
+// is posted.
 func TestRunRefusesAPoolItCannotRead(t *testing.T) {
 	setHome(t, t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -134,5 +167,26 @@ func TestRunRefusesAPoolItCannotRead(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--pool win") {
 		t.Fatalf("execute new = %v, want the named pool refused", err)
+	}
+}
+
+// A discobox lists its project's pools though it is refused the project's
+// read, with no pool marked the default (ADR 26-11-23-743 §1).
+func TestPoolListFromADiscoboxListsWithoutTheDefault(t *testing.T) {
+	setHome(t, t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	var posted map[string]any
+	server := placementServer(t, &posted, true)
+
+	cmd := NewRootCommand()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "pool", "ls", "-q"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("pool ls: %v\n%s", err, errOut.String())
+	}
+	if got := strings.Fields(out.String()); !slices.Equal(got, []string{"pool_default", "pool_win"}) {
+		t.Fatalf("pool ls = %q, want both pools", out.String())
 	}
 }

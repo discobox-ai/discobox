@@ -50,13 +50,15 @@ func sandboxPaths(sandbox *apimodel.Sandbox) sandboxpath.Paths {
 // is the one that counts. A project with no default pool has no platform to
 // read, and its create fails on the server for that reason rather than here.
 //
-// A caller the server refuses these reads (403) is a discobox creating
-// another, whose role reads no project and no pool (ADR 0140 §4). With no
-// --pool it creates on the default pool with undeclaredPlatform, as every
-// create did before a platform was read, and as the SSH sync after it goes
-// ahead without the sync. A pool it named is refused instead: that pool is a
-// choice of platform, and paths placed for a guessed one would name places the
-// discobox does not have.
+// A discobox creating another reads its project's pools but not the project
+// (ADR 26-11-23-743 §1), so a pool it names resolves and is read as a
+// person's is, and with no --pool the project's read is refused (403). It then
+// creates on the default pool with undeclaredPlatform, as every create did
+// before a platform was read, and as the SSH sync after it goes ahead without
+// the sync. A server that refuses the pool's read too (one from before a
+// discobox could read pools) refuses a pool the caller named instead: that
+// pool is a choice of platform, and paths placed for a guessed one would name
+// places the discobox does not have.
 func (a *App) newSandboxPlacement(ctx context.Context, client *apiclientgen.Client, projectID, pool string) (string, platform.Platform, error) {
 	pool = strings.TrimSpace(pool)
 	poolID, p, err := a.readNewSandboxPlacement(ctx, client, projectID, pool)

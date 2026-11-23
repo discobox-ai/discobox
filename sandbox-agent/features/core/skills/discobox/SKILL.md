@@ -580,8 +580,11 @@ answer for it. Approval enables access until a person turns it off in Settings.
 Every other API call is refused while access is off.
 
 With it, you may create discoboxes with `discobox run`, cut from the SOURCE
-you give it — `.` for this box's own checkout; list and read them (`admin box
-ls`, `admin box get`). On the discoboxes **you lead** (created or adopted), and no others, you
+you give it — `.` for this box's own checkout — on the project's default pool
+or on any pool of the project you name with `--pool <name or ID>`; list and
+read them (`admin box ls`, `admin box get`), and list and read the project's
+pools (`admin pool ls`, `admin pool get`), which shows you their names,
+platforms and room but not how they are configured. On the discoboxes **you lead** (created or adopted), and no others, you
 may run commands and login shells (`discobox exec`), copy files both ways
 (`discobox cp`, `scp` alias), attach to and end existing execs, and read and type into their terminals (`discobox capture`, `send`,
 `send-key`, and `wait --until finished --until blocked`, which counts from
