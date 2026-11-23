@@ -113,8 +113,11 @@ runs:
 
     # Go does not retry a module the proxy drops partway, and the failure reads
     # like a broken change (`could not import ... (typecheck)`, a build error).
-    # Retry only a transport error attached to a Go module fetch. Other
-    # downloads (including apt during image builds) have their own retry policy.
+    # Retry only a transport error attached to a Go module fetch, or the proxy
+    # answering one with a 502, 503 or 504 (`<mod>@<ver>: reading <url>: 502 Bad
+    # Gateway`). Any other status, a 404 or 410 above all, is a version that is
+    # really missing and fails the job. Other downloads (including apt during
+    # image builds) have their own retry policy.
     #
     # The target reaches the script through a variable named for this action
     # alone. Task hands every environment variable to its templates as a
@@ -134,7 +137,7 @@ runs:
         unset DISCOBOX_CI_TASK_TARGET
         log=$(mktemp)
         if $run $target 2>&1 | tee "$log"; then exit 0; fi
-        if grep -qiE '[^[:space:]]+@v[^[:space:]]+: (Get |read .*: ).*(dial tcp|connection reset|unexpected EOF|TLS handshake timeout|i/o timeout|context deadline exceeded|: EOF)' "$log"; then
+        if grep -qiE '[^[:space:]]+@v[^[:space:]]+: ((Get |read .*: ).*(dial tcp|connection reset|unexpected EOF|TLS handshake timeout|i/o timeout|context deadline exceeded|: EOF)|reading https?://[^[:space:]]+: 50[234]( |$))' "$log"; then
           echo "::warning title=Retrying $target::The first run failed in a way that looks like a dropped module download; running it once more."
           $run $target
         else
