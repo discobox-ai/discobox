@@ -1808,15 +1808,19 @@ func (s *Secret) ValueWrittenAt() time.Time {
 	return s.CreatedAt
 }
 
-// ValueGeneration names the current value: it moves when the value is
-// replaced (a saved login, an update, an answered refresh request — every
-// write the store stamps), and not when the control plane renews it in place.
-// A pool's proxy drops a value it holds of another generation, and a report
-// about one is not judged against this one (#1022). It is opaque outside the
-// control plane. It is read to the microsecond, the finest every store keeps,
-// so a row read back names the generation the write stamped.
+// ValueGeneration names the current value: the secret it is of, and when it
+// was written. It moves when the value is replaced (a saved login, an update,
+// an answered refresh request — every write the store stamps), and not when
+// the control plane renews it in place. A pool's proxy drops a value it holds
+// of another generation, and a report about one is not judged against this
+// one (#1022). Naming the secret makes a variable rebound to another secret
+// (ADR 26-11-19-927 §5) always deliver another generation, even when the two
+// values were written in the same microsecond, so the proxy drops the old
+// secret's value. It is opaque outside the control plane. The stamp is read to
+// the microsecond, the finest every store keeps, so a row read back names the
+// generation the write stamped.
 func (s *Secret) ValueGeneration() string {
-	return strconv.FormatInt(s.ValueWrittenAt().UnixMicro(), 36)
+	return s.ID + "." + strconv.FormatInt(s.ValueWrittenAt().UnixMicro(), 36)
 }
 
 // StaleTime is when the current value stops being trusted, and false for one

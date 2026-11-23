@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -828,5 +830,63 @@ func TestReplacingAValueMarksItsHolders(t *testing.T) {
 	}
 	if len(marks.secrets) != 1 || marks.secrets[0] != secret.ID {
 		t.Fatalf("marked %v after a replaced value, want the secret's holders once", marks.secrets)
+	}
+}
+
+// A report about the old secret's value that arrives after its variable was
+// rebound to another secret is about a value the sentinel no longer stands
+// for: the generation names its secret, so it is dropped even when both
+// values were written at the same instant, and spends nothing of the new
+// secret's (ADR 26-11-19-927 §5).
+func TestARejectionOfTheSecretAVariableWasReboundFromIsNotJudged(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	tokenServer := newOAuthTokenServer(t, "rotated-access", "rotated-refresh", 3600)
+	value := func(access string) model.SecretValue {
+		return model.SecretValue{Token: access, RefreshToken: access + "-refresh", TokenURL: tokenServer.server.URL, ClientID: "client-1",
+			AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli()}
+	}
+	personal := mustOAuthSecret(t, st, "personal", value("personal-access"))
+	team := mustOAuthSecret(t, st, "team", value("team-access"))
+	written := personal.ValueWrittenAt()
+	if err := st.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
+		return tx.Model(&model.Secret{}).Where("id = ?", team.ID).Update("value_updated_at", written).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mustBind(t, st, personal.ID, model.SecretBindingTargetProject, "project-1")
+	createSandbox(t, st, "sb-1", "pool-1")
+	mustAssign(t, st, "sb-1", personal.ID, "SENTINEL-A")
+	resolved, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.example.com")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	// The variable is rebound: the row keeps its sentinel and stands for the
+	// team secret now.
+	rows, err := st.ListSandboxSecrets(ctx, "project-1", "sb-1")
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %+v, %v", rows, err)
+	}
+	rows[0].SecretID = team.ID
+	if err := st.UpdateSandboxSecret(ctx, &rows[0]); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := st.GetSecret(ctx, "project-1", team.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ValueGeneration() == resolved.ValueGeneration {
+		t.Fatalf("team generation %q is the personal value's", stored.ValueGeneration())
+	}
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, resolved.ValueGeneration); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	if n := tokenServer.calls.Load(); n != 0 {
+		t.Fatalf("token endpoint calls = %d, want none for the old secret's value", n)
+	}
+	if rejections := mustRejections(t, st); len(rejections) != 0 {
+		t.Fatalf("rejections = %v, want none for the old secret's value", rejections)
 	}
 }
