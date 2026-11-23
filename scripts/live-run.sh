@@ -624,8 +624,10 @@ echo "--- test secret" >&2
 test_value=live-run-value-$nonce
 secret_config=$work/test-secret.json
 jq -n --arg token "$test_value" '{token: $token}' >"$secret_config"
-if ! dcout out 0 '{"id":"sec_dryrun"}' -o json secret create --name "$name" --type token --format 'live-run-sentinel-{hex:32}' --value-json "@$secret_config"; then
-	fail sentinels "could not create the test secret"
+# A secret names where it may be sent; this one's only route is a host no
+# resolver answers (RFC 2606), so its value goes nowhere.
+if ! dcout out 0 '{"id":"sec_dryrun"}' -o json secret create --name "$name" --type token --format 'live-run-sentinel-{hex:32}' --route live-run.invalid --value-json "@$secret_config"; then
+	fail sentinels "could not create the test secret: $err"
 	exit 1
 fi
 rm -f "$secret_config"
@@ -702,17 +704,6 @@ box_id=$(field "$out" '.id // empty')
 [ -n "$box_id" ] || { fail discobox "run printed no id: $out $err"; exit 1; }
 pass discobox "created $box_id"
 
-# Attaching is the stream a person gets: its first screen is enough. With no
-# terminal it is raw; stdin stays open for a while, so it does not detach at
-# once, and the timeout leaves the discobox running.
-attached=$(ext 0 'dry run screen' timeout $((attach_wait + 10)) "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} attach --raw "$box_id" < <(sleep "$attach_wait") 2>"$work/attach.err" || true)
-printf '%s' "$attached" >"$evidence/attach.raw"
-if [ -n "$attached" ]; then
-	pass attach "the primary terminal streamed $(printf '%s' "$attached" | wc -c | tr -d ' ') bytes"
-else
-	fail attach "attach streamed nothing: $(tail -c 300 "$work/attach.err")"
-fi
-
 # Provisioning goes on past readiness (a feature marked async), and a box
 # started from the base provisions under its own level too: it is narrowed
 # only once nothing more will be provisioned, so no feature is cut off by it.
@@ -741,13 +732,29 @@ while :; do
 	waited=$((waited + 10))
 done
 
+# Attaching is the stream a person gets once the discobox is up: its first
+# screen is enough. Attached while it still provisions (minutes on archil),
+# it shows only progress. With no terminal it is raw; stdin stays open for a
+# while, so it does not detach at once, and the timeout leaves the discobox
+# running.
+attached=$(ext 0 'dry run screen' timeout $((attach_wait + 10)) "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} attach --raw "$box_id" < <(sleep "$attach_wait") 2>"$work/attach.err" || true)
+printf '%s' "$attached" >"$evidence/attach.raw"
+if [ -n "$attached" ]; then
+	pass attach "the primary terminal streamed $(printf '%s' "$attached" | wc -c | tr -d ' ') bytes"
+else
+	fail attach "attach streamed nothing: $(tail -c 300 "$work/attach.err")"
+fi
+
 if [ "$harness" = claude-code ]; then
 	harness_started=$SECONDS
-	if answer=$(ext 0 "$want" timeout -k 5s "$harness_timeout" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$box_id" -- claude -p "$prompt" </dev/null 2>"$work/harness.err") &&
-		printf '%s\n' "$answer" | grep -Fxq "$want"; then
+	rc=0
+	answer=$(ext 0 "$want" timeout -k 5s "$harness_timeout" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$box_id" -- claude -p "$prompt" </dev/null 2>"$work/harness.err") || rc=$?
+	if [ "$rc" = 0 ] && printf '%s\n' "$answer" | grep -Fxq "$want"; then
 		pass harness "Claude Code returned the expected answer after $((SECONDS - harness_started))s"
+	elif [ "$rc" = 124 ]; then
+		fail harness "Claude Code did not answer within $harness_timeout"
 	else
-		fail harness "Claude Code did not return the expected answer within $harness_timeout"
+		fail harness "Claude Code exited $rc after $((SECONDS - harness_started))s without the expected answer; it printed: $(printf '%s' "$answer" | tail -c 200) $(tail -c 300 "$work/harness.err")"
 	fi
 else
 	if ! dcout out 0 'finished' wait "$box_id" --until finished --until blocked --for "$harness_timeout"; then
