@@ -182,7 +182,7 @@ func readTarTree(t *testing.T, tree io.Reader) (map[string]*tar.Header, map[stri
 // its agent serves TLS, its key root's alone, and nothing where it does not.
 func TestBootstrapTreeCarriesTheAgentsKeypairWhereItServesTLS(t *testing.T) {
 	dir := "etc/discobox/" + sandboxconfig.AgentTLSDirName + "/"
-	entries, bodies := readTarTree(t, bootstrapTree([]byte(`{}`), &sandboxconfig.AgentTLS{Cert: "cert", Key: "key"}))
+	entries, bodies := readTarTree(t, bootstrapTree([]byte(`{}`), &sandboxconfig.AgentTLS{Cert: "cert", Key: "key"}, ""))
 	cert, key := entries[dir+sandboxconfig.AgentTLSCertName], entries[dir+sandboxconfig.AgentTLSKeyName]
 	if cert == nil || key == nil || entries["etc/discobox/sandbox.json"] == nil {
 		t.Fatalf("tree holds %v, want sandbox.json and the agent's keypair", entries)
@@ -190,7 +190,7 @@ func TestBootstrapTreeCarriesTheAgentsKeypairWhereItServesTLS(t *testing.T) {
 	if bodies[dir+sandboxconfig.AgentTLSKeyName] != "key" || key.Mode != 0o600 || cert.Mode != 0o644 {
 		t.Fatalf("key %q mode %o, cert mode %o; want the key root's alone", bodies[dir+sandboxconfig.AgentTLSKeyName], key.Mode, cert.Mode)
 	}
-	plain, _ := readTarTree(t, bootstrapTree([]byte(`{}`), nil))
+	plain, _ := readTarTree(t, bootstrapTree([]byte(`{}`), nil, ""))
 	if plain[dir] != nil || plain["etc/discobox/sandbox.json"] == nil {
 		t.Fatalf("tree of an agent told plain HTTP holds %v, want sandbox.json alone", plain)
 	}
