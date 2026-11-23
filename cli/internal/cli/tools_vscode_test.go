@@ -138,9 +138,13 @@ func TestEditorsOpenDefaultPrimarySourceDirectory(t *testing.T) {
 func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	sshFixture := vscodeFakeServer()
 	record := fakeVSCode(t)
-	_, state, _, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
+	_, state, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
+	}
+	wantNote := "note: the discobox runs Linux; if VS Code asks for the remote platform, choose Linux\n"
+	if !strings.Contains(stderr, wantNote) {
+		t.Fatalf("tools vscode stderr = %q, want remote platform note %q", stderr, wantNote)
 	}
 
 	configPath, _ := managedPaths(t, state)

@@ -275,6 +275,9 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 		return err
 	}
 	fmt.Fprintf(stderr, "opening %s in %s\n", remote.describe(), launch.program)
+	if launch.def.ID == "vscode" {
+		fmt.Fprintln(stderr, "note: the discobox runs Linux; if VS Code asks for the remote platform, choose Linux")
+	}
 	// No token: the CLI a tool runs is authorized by its transport, and
 	// clearing an inherited one keeps the primary's off another server.
 	return launch.run(ctx, target.app.childCLIEnv(""), handed, expanded, args, stdin, stdout, stderr)
