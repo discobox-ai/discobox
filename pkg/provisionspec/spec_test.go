@@ -163,3 +163,22 @@ func TestPackagesForPrefersTheBoxsOwnDistribution(t *testing.T) {
 		}
 	}
 }
+
+// A version floor admits a version number by number, a missing number 0.
+func TestAVersionFloorAdmitsNumberByNumber(t *testing.T) {
+	floor := Version{Command: "node", Minimum: "22.19"}
+	for version, want := range map[string]bool{
+		"22.19":   true,
+		"22.19.0": true,
+		"22.20.1": true,
+		"25.9.0":  true,
+		"22.18.9": false,
+		"22.9":    false,
+		"21":      false,
+		"100.0":   true,
+	} {
+		if got := floor.Admits(version); got != want {
+			t.Errorf("%s admits %s = %v, want %v", floor.Minimum, version, got, want)
+		}
+	}
+}
