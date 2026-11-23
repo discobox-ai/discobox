@@ -321,6 +321,10 @@ Global review expectations:
   docker: killing only the parent leaves an exporter able to overwrite the
   next attempt's `.partial.tar`. `WaitDelay` only bounds pipe draining; it
   does not kill descendants. Keep a non-exec child exporter in deadline tests.
+- A watcher build deadline measures silence, not total time: a cold base
+  image build behind a slow mirror outlasts any total budget and, cancelled,
+  leaves no cache, so it would retry forever. Feed every build's stdout and
+  stderr through its deadline; probes keep a total deadline.
 
 - A watcher test that lowers the Docker deadline (`dockerCommandTimeout`)
   lowers it for every inspection and tag command, not only the one meant to
