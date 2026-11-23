@@ -230,6 +230,12 @@ check() { record CHECK "$1" "$2"; }
 note() { printf '      %s\n' "$(clean "$*")" >&2; }
 # field JSON FILTER is FILTER's answer on JSON, or nothing when JSON is not.
 field() { printf '%s' "$1" | jq -r "$2" 2>/dev/null || true; }
+# provision_failure names what failed in a box answer's provisioning: the
+# document's own error (readiness itself), then each failed feature. Empty
+# when it names nothing.
+provision_failure() {
+	field "$1" '.runtime.agentStatus.provision // {} | [(.error // empty), (.features // {} | to_entries[] | select(.value.state == "failed") | "\(.key) (\(.value.error // "no error"))")] | join("; ")'
+}
 # words puts a list of lines on one line.
 words() { printf '%s' "$1" | tr '\n' ' ' | sed 's/ *$//'; }
 
@@ -721,7 +727,8 @@ while :; do
 	failed)
 		# Failed is a feature that failed, or readiness itself, which only
 		# the document's own error names.
-		fail provision "failed: $(field "$out" '.runtime.agentStatus.provision | [(.error // empty), (.features // {} | to_entries[] | select(.value.state == "failed") | "\(.key) (\(.value.error // "no error"))")] | if length == 0 then "no error given" else join("; ") end')"
+		why=$(provision_failure "$out")
+		fail provision "failed: ${why:-no error given}"
 		break ;;
 	esac
 	if [ "$waited" -ge "$pool_wait" ]; then
@@ -1121,11 +1128,15 @@ if [ -n "$snapshot" ]; then
 	else
 		waited=0
 		while :; do
-			if ! dcout out 0 '{"runtime":{"state":"running","startedFrom":{"from":"snapshot","snapshot":"dry-snapshot"}}}' -o json admin box get "$second_box_id"; then
+			if ! dcout out 0 '{"runtime":{"state":"ready","runtimeState":"running","displayState":"running","startedFrom":{"from":"snapshot","snapshot":"dry-snapshot"}}}' -o json admin box get "$second_box_id"; then
 				fail snapshot-start "could not read the second discobox: $err"
 				break
 			fi
-			state=$(field "$out" '.runtime.state // "unknown"')
+			# displayState is the server's one composition of the box's
+			# existence (.runtime.state) and power (.runtime.runtimeState),
+			# which a client never combines itself: running once the box is up
+			# and its required setup done, error once either failed.
+			state=$(field "$out" '.runtime.displayState // "unknown"')
 			if [ "$state" = running ]; then
 				started_from=$(field "$out" '.runtime.startedFrom | select(.from == "snapshot") | .snapshot // empty')
 				if [ "$started_from" = "$snapshot" ]; then
@@ -1137,7 +1148,17 @@ if [ -n "$snapshot" ]; then
 				fi
 				break
 			fi
-			if [ "$state" = failed ] || [ "$waited" -ge "$pool_wait" ]; then
+			if [ "$state" = error ]; then
+				# A box that is up reads error when its required setup
+				# failed, which only its provisioning document names; any
+				# other error is the one the server recorded.
+				why=$(field "$out" '.runtime.errorMessage // empty')
+				setup=$(provision_failure "$out")
+				[ -z "$setup" ] || why=${why:+$why; }$setup
+				fail snapshot-start "$second_box_id failed after ${waited}s: ${why:-no error given}"
+				break
+			fi
+			if [ "$waited" -ge "$pool_wait" ]; then
 				fail snapshot-start "$second_box_id is $state after ${waited}s"
 				break
 			fi

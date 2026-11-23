@@ -315,6 +315,14 @@ Global review expectations:
   `-D` file is. The stand-in once wrote no headers, so the header branch for
   boxd's bot-protection challenge was never reached in a test, and `server`
   carried curl's trailing CR in every real report unseen.
+- A script or test that waits on a box reads `.runtime.displayState`, the
+  server's one composition, never `.runtime.state` (existence: `ready`,
+  `failed`) or `.runtime.runtimeState` (power) alone or combined by hand.
+  The live run's `snapshot-start` waited for `.runtime.state` to read
+  `running`, which it never does, and its stand-in answered that same wrong
+  shape, so the suite passed a step no live run could (#1595). Power alone
+  is no better: it reads `running` while the box's required setup still runs
+  or has failed.
 
 - A watcher build deadline stops the whole process tree before cleanup and
   retry. Docker starts buildx as a child, and builder setup is go → task →
