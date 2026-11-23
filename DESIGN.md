@@ -323,7 +323,8 @@ flowchart TD
   packages, which measured no slower than restoring an `actions/cache` tarball
   of them. Go does not retry a download the proxy drops, so the task action
   retries a target once when the log shows a transport error on a Go module
-  fetch.
+  fetch, or the proxy answering one with a 502, 503 or 504. Any other status,
+  a 404 or 410 above all, is a version that is really missing and fails.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
