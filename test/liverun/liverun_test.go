@@ -27,7 +27,10 @@ set -- "${args[@]}"
 case "$1 ${2:-} ${3:-}" in
 "admin harness get") echo '{}' ;;
 "secret bound --harness") cat "$STUB/harness-binding" 2>/dev/null || echo '{"boundSecrets":[{"use":true,"envVar":"ANTHROPIC_API_KEY","routes":[[{"hosts":["api.anthropic.com"]}]]}]}' ;;
-"secret create --name") echo '{"id":"sec_T1"}' ;;
+"secret create --name")
+	# The CLI refuses a secret that names nowhere it may be sent.
+	[[ " $* " == *" --route "* ]] || { echo "say where the secret may be sent with --route ROUTE, repeated for more, or --route '*' for anywhere; see --help for a route's form" >&2; exit 1; }
+	echo '{"id":"sec_T1"}' ;;
 "secret bind sec_T1"|"secret rm sec_T1") ;;
 "admin provider list") echo '[]' ;;
 "admin box get")
@@ -88,6 +91,9 @@ exec*)
 	# The listener the closed-proxy step starts prints the ports it bound.
 	case "$*" in
 	*"claude -p"*)
+		# $STUB/claude-out, when there, is a Claude Code that is not logged in:
+		# it says so on stdout and exits 1 at once.
+		[ ! -e "$STUB/claude-out" ] || { cat "$STUB/claude-out"; exit 1; }
 		prompt=$(printf '%s\n' "$@" | grep -o 'string [0-9a-f]* written' | awk '{print $2}')
 		printf '%s' "$prompt" | awk '{for (i = length($0); i > 0; i--) printf "%s", substr($0, i, 1); print ""}' ;;
 	*/run/discobox/secrets/secrets.json*) echo true ;;
@@ -292,6 +298,11 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	// The discobox is restricted to the allowed host, and the egress probes
 	// run against the hosts the run names.
 	assertCall(t, r, "discobox --server unix:///tmp/live-run-test.sock admin box update sbx_T1 --egress-deny-by-default --egress-allow example.com")
+	// A person attaches to a discobox that is up: the attach follows the
+	// provisioning reads, so it does not stream only progress.
+	if read, attach := indexOf(r.calls, "admin box get sbx_T1"), indexOf(r.calls, "attach --raw sbx_T1"); read < 0 || attach < read {
+		t.Fatalf("attach (call %d) comes before provisioning is read (call %d):\n%s", attach, read, strings.Join(r.calls, "\n"))
+	}
 	// The cleanup's order: the discobox, the pool (its grant of the key goes
 	// with it), the provider, then what the provider holds, in each scope.
 	order := []string{"admin box purge sbx_T2", "admin box purge sbx_T1", "admin pool rm pool_T1", "admin provider rm prov_T1",
@@ -346,6 +357,20 @@ func TestLiveRunRefusesUnknownArchilRegion(t *testing.T) {
 	})
 	if r.exit != 2 || !strings.Contains(r.out, "aws-us-east-1, aws-us-west-2 or aws-eu-west-1") {
 		t.Fatalf("expected the region to be refused, exit %d:\n%s", r.exit, r.out)
+	}
+}
+
+// A harness that exits at once is reported with its status, its time and
+// what it printed, not as a timeout.
+func TestLiveRunHarnessFailureSaysWhatHappened(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "claude-out"), "Not logged in · Please run /login\n", 0o644)
+	})
+	if !strings.Contains(r.report, "| FAIL | harness | Claude Code exited 1 after ") || !strings.Contains(r.report, "Not logged in") {
+		t.Fatalf("harness failure does not say what happened:\n%s", r.report)
+	}
+	if strings.Contains(r.report, "did not answer within") {
+		t.Fatalf("an exit at once is reported as a timeout:\n%s", r.report)
 	}
 }
 
