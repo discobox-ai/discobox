@@ -1898,12 +1898,19 @@ flowchart LR
   it — and the egress
   policy the server sends as `provisionEgress`: every level of ADR
   26-10-01-032 but the sandbox's own. Its `agentlayer.SnapshotPlan` names no
-  account, source, secret, gateway, sentinel or credentials endpoint. The
+  account, source, secret, gateway, sentinel or credentials endpoint. It
+  reaches the pool by the sandboxes' hop; behind an edge its proxy carries the
+  edge as the pool holds it then (address and credential, ADR 26-11-16-619
+  §3), so its bridges resolve nothing their fence closes. The plan is never
+  renewed, so a build the pool can name no edge address for yet, or no
+  credential that outlasts the longest build, is refused, a failed build,
+  rather than started to reach nothing. The
   material reaper leaves a build's identity alone, since it has no sandbox
   container to be found by: its material goes with the build, or with the
   sweep once its container is gone.
 - **Nothing of the build is committed but what it provisioned.** The plan,
-  which holds the build's client key, is never on a disk: it is the command's
+  which holds the build's client key (and behind an edge the pool's edge
+  credential), is never on a disk: it is the command's
   stdin. Its proxy material and the agent's record of it are under
   `/etc/discobox`, which is never on the committed disk either — a Docker
   build's bind, a VM build's tmpfs the command mounts in systemd's own mount
