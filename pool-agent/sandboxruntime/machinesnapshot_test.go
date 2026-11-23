@@ -529,6 +529,75 @@ func TestASnapshotBuildReachesItsPoolByTheSandboxesHop(t *testing.T) {
 	}
 }
 
+// A build behind an edge reaches its pool as the pool's sandboxes do: its
+// plan's proxy carries the edge the pool holds now — the address it dials and
+// the credential the edge takes — so its bridge takes the edge path and
+// resolves nothing its fence closes. A plan without it had the bridge resolve
+// the pool's host, which the fence denies, and the build never finished.
+func TestASnapshotBuildBehindAnEdgeCarriesThePoolsEdge(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	r := f.runtime
+	r.poolEndpoints = proxyagent.PoolEndpoints("wss://7302-pool.edge.example")
+	edge := sandboxconfig.RuntimeEdge{Address: "192.0.2.7", Header: "X-Edge-Token", Token: "token", Expires: time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)}
+	r.poolEdge = func() *sandboxconfig.RuntimeEdge {
+		held := edge
+		return &held
+	}
+	plan, err := r.newSnapshotPlan(r.snapshotBase(), machineSnapshotCreate("sbx_1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := r.prepareSnapshotBuild(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.removeSnapshotBuildMaterial(plan.buildID()) })
+	var doc agentlayer.SnapshotPlan
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.RuntimeConfig.Proxy == nil {
+		t.Fatal("the build's plan carries no proxy material")
+	}
+	if got := doc.RuntimeConfig.Proxy.Edge; got == nil || *got != edge {
+		t.Fatalf("the build's plan carries proxy edge %+v, want the pool's %+v", got, edge)
+	}
+}
+
+// A build behind an edge the pool cannot yet name an address or a credential
+// for, or holds a credential for that expires before the longest build ends,
+// is refused rather than started: its plan is delivered once and never
+// renewed, so its bridge would resolve the pool's host, which its fence
+// denies, or be turned away by the edge, for the whole of the build. Refused,
+// it is recorded as failed and built again later, by which time the pool
+// holds both.
+func TestASnapshotBuildBehindAnEdgeWithoutItsAddressOrCredentialIsRefused(t *testing.T) {
+	full := sandboxconfig.RuntimeEdge{Address: "192.0.2.7", Header: "X-Edge-Token", Token: "token", Expires: time.Now().Add(24 * time.Hour)}
+	noAddress, noCredential, expiring := full, full, full
+	noAddress.Address = ""
+	noCredential.Header, noCredential.Token, noCredential.Expires = "", "", time.Time{}
+	expiring.Expires = time.Now().Add(snapshotBuildTimeout / 2)
+	for name, edge := range map[string]sandboxconfig.RuntimeEdge{"no address": noAddress, "no credential": noCredential, "expiring mid-build": expiring} {
+		f := newMachineFixture(t, nil)
+		r := f.runtime
+		r.poolEndpoints = proxyagent.PoolEndpoints("wss://7302-pool.edge.example")
+		r.poolEdge = func() *sandboxconfig.RuntimeEdge {
+			held := edge
+			return &held
+		}
+		plan, err := r.newSnapshotPlan(r.snapshotBase(), machineSnapshotCreate("sbx_1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := r.prepareSnapshotBuild(context.Background(), plan); err == nil {
+			t.Errorf("%s: the build was prepared, want it refused", name)
+		}
+		if err := r.removeSnapshotBuildMaterial(plan.buildID()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // A machine that keeps its data on its volume, rebuilt while its plan has a
 // snapshot, is given a root from that snapshot, and keeps its data and cache
 // volumes: its new root does not provision every feature from scratch.

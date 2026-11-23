@@ -495,6 +495,24 @@ func (r *sandboxCore) snapshotsDir() string {
 // removeSnapshotBuildMaterial, once the build's box is gone.
 func (r *sandboxCore) prepareSnapshotBuild(ctx context.Context, plan snapshotPlan) ([]byte, agentlayer.Agent, error) {
 	id := plan.buildID()
+	// Behind an edge, the edge as it is now: the address the build's bridges
+	// dial, so they resolve nothing their fence closes, and the credential
+	// the edge takes (ADR 26-11-16-619 §3). A build's plan is delivered once
+	// and never renewed, so one the pool cannot complete yet is refused
+	// rather than started to reach nothing — nor with a credential that may
+	// expire before it ends: refused, it is a failed build, built again later.
+	var edge *sandboxconfig.RuntimeEdge
+	if r.poolEdge != nil {
+		edge = r.poolEdge()
+		switch {
+		case edge.Address == "":
+			return nil, agentlayer.Agent{}, errors.New("the pool's host has not resolved yet, so the build could not reach the pool through its edge")
+		case edge.Token == "":
+			return nil, agentlayer.Agent{}, errors.New("the pool holds no credential for its edge, so the edge would refuse the build's tunnels")
+		case edge.Expires.Before(time.Now().Add(snapshotBuildTimeout)):
+			return nil, agentlayer.Agent{}, fmt.Errorf("the pool's credential for its edge expires at %s, before the longest build would end, and the server has not renewed it", edge.Expires.Format(time.RFC3339))
+		}
+	}
 	dir := r.root.Snapshot(r.projectID, r.poolID, id)
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, agentlayer.Agent{}, err
@@ -528,6 +546,7 @@ func (r *sandboxCore) prepareSnapshotBuild(ctx context.Context, plan snapshotPla
 	endpoints := r.poolEndpoints
 	endpoints.Credentials, endpoints.BuildKit = "", ""
 	proxy := material.Proxy
+	proxy.Edge = edge
 	doc := agentlayer.SnapshotPlan{
 		ID:            id,
 		ProjectID:     r.projectID,

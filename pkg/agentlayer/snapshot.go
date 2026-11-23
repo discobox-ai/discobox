@@ -15,8 +15,9 @@ import (
 // commits a disco-vm VM — starts the provider's base with the agent placed as
 // Archive places it, and runs the agent's snapshot command in the box as one
 // blocking exec, with a SnapshotPlan on its standard input instead of a
-// sandbox's bootstrap. The plan holds the build's proxy client key, so it is
-// never written to the box's disk: on a VM anything written there is on the
+// sandbox's bootstrap. The plan holds the build's proxy client key, and
+// behind an edge the edge's credential, so it is never written to the box's
+// disk: on a VM anything written there is on the
 // disk the snapshot commits, and deleting a file leaves its bytes in free
 // blocks. For the same reason the command puts SnapshotDir, where the plan's
 // proxy material is laid, on a tmpfs unless it is a mount already (a
@@ -28,8 +29,11 @@ import (
 // taker stops it in order, and snapshots what is left.
 //
 // The plan is anonymous: it names no sandbox, account, source, secret or
-// credential, and its proxy identity is the build's own, so nothing of the
-// sandbox whose create asked for it reaches the snapshot.
+// credential of any sandbox's, and its proxy identity is the build's own, so
+// nothing of the sandbox whose create asked for it reaches the snapshot. The
+// one credential it carries besides its own key is the pool's: behind an
+// edge, the token the pool's sandboxes share for its listener (ADR
+// 26-11-16-619 §3), which reaches that listener and nothing else.
 const (
 	// SnapshotDir holds what the plan's runtime config lays: the directory a
 	// sandbox's bootstrap is in. It is never on the disk a snapshot keeps (a
@@ -67,7 +71,9 @@ type SnapshotPlan struct {
 	// sandbox's bootstrap names it in Env and ProxyEnvs.
 	Env map[string]string `json:"env,omitempty"`
 	// RuntimeConfig carries the build's proxy material, applied by the
-	// agent's intake as a delivery would be. It holds nothing else.
+	// agent's intake as a delivery would be: its own identity, and behind an
+	// edge the edge the pool holds (its address and the pool's credential for
+	// it). It holds nothing else.
 	RuntimeConfig sandboxconfig.RuntimeConfig `json:"runtimeConfig"`
 	// Features turns features off by name, as a sandbox's bootstrap does; it
 	// is part of what the snapshot is keyed by.
