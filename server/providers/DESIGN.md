@@ -347,8 +347,12 @@ with no failed unit; sandboxes keep it. No harness is an image (ADR 26-10-16-423
 shells-editors are installed in the base before application inputs
 (ADR 26-11-06-664). Feature declarations remain portable requirements; the
 provisioner checks the local package database and skips satisfied apt work.
-Feature opt-outs skip configuration without removing base software. Node,
-browsers and harness installation remain feature provisioning.
+Feature opt-outs skip configuration without removing base software. Node
+and its npm are built in too, the exact NodeSource package the node feature
+would install (ADR 26-11-19-780), so a box's first run adopts them; the
+feature still selects them, owns pnpm and the npm-global prefix, and installs
+Node on an image without it. Browsers and harness installation remain feature
+provisioning.
 
 It is released and staged under its own role, and resolves from the release
 manifest's `Images.SandboxBase`, then a provider's

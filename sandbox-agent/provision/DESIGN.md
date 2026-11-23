@@ -152,7 +152,9 @@ closed to every other user), a dangling link, an older copy. So which copy
   feature's `select` step writes `/usr/local/lib/discobox/node.env`
   (`DISCOBOX_NODE`, `DISCOBOX_NPM`, `DISCOBOX_NPM_PREFIX`) from what it was
   told it adopted, or `/usr/bin`'s NodeSource copy it installed; npm-global,
-  the agent store and the harnesses' install steps read that.
+  the agent store and the harnesses' install steps read that. The Docker
+  sandbox base builds that same NodeSource package in (ADR 26-11-19-780), so
+  there it is adopted and nothing is installed.
 - **Where it installs is always a prefix Discobox owns**,
   `/usr/local/lib/discobox/<tool>`, never a tool's default prefix and never
   through what the box has at the name: npm packages (harness CLIs, pnpm)

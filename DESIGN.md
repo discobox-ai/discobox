@@ -575,9 +575,10 @@ change of its own, made after that release's first point release.
   a stage built on any other base, an apt-get before the stage writes the
   list, the list or an apt source written outside that setup, another release
   named in a build, a snapshot, an expired or unsigned index allowed, an apt
-  pin or a PPA, a source other than the list and the two third-party
-  repositories (Docker's, GitHub CLI's), or a copy of the list's setup that
-  differs from the others.
+  pin or a PPA, a source other than the list and the three third-party
+  repositories (Docker's, GitHub CLI's, and NodeSource's, which the layer that
+  writes it also removes), or a copy of the list's setup that differs from the
+  others.
 - **No snapshot.** A rebuild installs the newest packages in the release's
   pockets, so a security fix, the guest kernel's included, reaches the next
   build without a bump, and a scheduled build proves what a release would

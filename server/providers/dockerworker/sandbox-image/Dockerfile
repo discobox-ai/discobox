@@ -2,9 +2,12 @@
 # sandbox container is, before the platform is provisioned onto it. It is the
 # Docker driver's equivalent of a provider's own image (exe.dev's exeuntu,
 # boxd's), and holds what those have in common rather than what either alone
-# has. Node, a browser, Nix, brew and the coding agents are features the
-# platform provisions, and stay out of here so the platform cannot come to
-# depend on them unnoticed. It is Ubuntu 26.04 LTS (resolute), the one Linux
+# has. A browser, Nix, brew and the coding agents are features the platform
+# provisions, and stay out of here so the platform cannot come to depend on
+# them unnoticed. Node is the one exception (ADR 26-11-19-780): every harness
+# but shell needs it on a box's first run, so it is built in below, and the
+# node feature still checks for it and installs it where an image lacks it. It
+# is Ubuntu 26.04 LTS (resolute), the one Linux
 # this repository builds on (see "Ubuntu" in the root DESIGN.md), and the
 # features provision onto any Debian-family image.
 #
@@ -194,6 +197,44 @@ RUN set -eux \
     && apt-get install -y --no-install-recommends gh \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Node and its npm, the node feature's NodeSource package built in (ADR
+# 26-11-19-780), so a box's first run adopts it rather than installing it. The
+# feature still owns everything after the package: which Node every script
+# runs, the npm-global prefix, pnpm and the agent store, and on an image
+# without this layer it installs the same package itself.
+#
+# NODE_VERSION is an exact NodeSource package from the line install-node.sh
+# sets up (sandbox-agent/features/node), and at least the feature's adopt
+# minimum; TestTheSandboxBaseShipsTheNodeTheFeatureWouldInstall holds both.
+# Move them together. NodeSource's key is served beside the packages it
+# signs, so it is held to its fingerprint, the key the feature ships its own
+# copy of (nodesource-repo.asc); the same test holds the two together. The
+# source and key are build-time only: removed in the same layer, so a box's apt
+# reads no NodeSource.
+ARG NODE_VERSION=25.9.0-1nodesource1
+ARG NODESOURCE_APT_KEY_FINGERPRINT=6F71F525282841EEDAF851B42F59B5F99B1BE0B4
+RUN set -eux \
+    && key=/etc/apt/keyrings/nodesource.asc \
+    && curl -fsSL --retry 5 --retry-all-errors https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o "$key" \
+    && gnupg=$(mktemp -d) \
+    && fingerprints=$(GNUPGHOME=$gnupg gpg --show-keys --with-colons "$key" | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }') \
+    && rm -rf "$gnupg" \
+    && if [ "$fingerprints" != "$NODESOURCE_APT_KEY_FINGERPRINT" ]; then \
+        echo "NodeSource's apt key is not $NODESOURCE_APT_KEY_FINGERPRINT: $fingerprints" >&2; exit 1; \
+    fi \
+    && major=${NODE_VERSION%%.*} \
+    && printf 'Types: deb\nURIs: https://deb.nodesource.com/node_%s.x\nSuites: nodistro\nComponents: main\nArchitectures: %s\nSigned-By: %s\n' \
+        "$major" "$(dpkg --print-architecture)" "$key" \
+        > /etc/apt/sources.list.d/nodesource.sources \
+    && cat /etc/apt/mirrors/ubuntu.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs="$NODE_VERSION" \
+    && rm -f /etc/apt/sources.list.d/nodesource.sources "$key" \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version \
+    && npm --version
 
 # Go and uv, each its upstream release, pinned with its checksum: Ubuntu's Go
 # trails upstream, and Ubuntu packages no uv. Go is the repository's one Go

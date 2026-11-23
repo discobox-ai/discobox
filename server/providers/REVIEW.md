@@ -266,9 +266,13 @@
   and the cli feature ships its own copy,
   `sandbox-agent/features/cli/githubcli-archive-keyring.asc`. Both hold the
   fingerprints GitHub publishes in cli/cli `docs/install_linux.md`, and a
-  change to either moves both. Why: the keyring is served beside the packages
-  it signs, and the feature still fetched it unchecked after the image's copy
-  was pinned (#1168).
+  change to either moves both. NodeSource's key is pinned the same way:
+  `NODESOURCE_APT_KEY_FINGERPRINT` here and the node feature's
+  `nodesource-repo.asc`, held together by
+  `TestTheSandboxBaseShipsTheNodeTheFeatureWouldInstall`. Why: the keyring is
+  served beside the packages it signs, and the feature still fetched it
+  unchecked after the image's copy was pinned (#1168), and again for
+  NodeSource (#1399).
 - A change to the sandbox base image (`dockerworker/sandbox-image`) is also
   a change to every archil machine's base, once `oci-base:pin` moves
   `discovm.DefaultOCIBase` to the release that ships it. Check it still boots
