@@ -310,9 +310,9 @@ func TestAWakeDueWhileTheServerWasDownFiresWhenItsPoolIsReady(t *testing.T) {
 	if started[0].Sub(readyAt) > 2*time.Second {
 		t.Fatalf("started %v after the pool's ready report", started[0].Sub(readyAt))
 	}
-	if got := f.wakeAt(); got != nil {
-		t.Fatalf("wake = %v after its start, want it spent", got)
-	}
+	// The pool runs the start before the server hears it took it, and only
+	// then is the wake spent: wait for the spend, not the start.
+	f.waitFor("the wake to be spent", func() bool { return f.wakeAt() == nil })
 	time.Sleep(200 * time.Millisecond)
 	if started, _ := f.provider.starts(); len(started) != 1 {
 		t.Fatalf("starts = %d, want exactly one", len(started))
@@ -356,9 +356,7 @@ func TestAWakeIsKeptUntilItsPoolTakesTheStart(t *testing.T) {
 	}
 	f.provider.setReachable(true)
 	f.waitFor("the wake to start the sandbox", func() bool { started, _ := f.provider.starts(); return len(started) > 0 })
-	if got := f.wakeAt(); got != nil {
-		t.Fatalf("wake = %v after its start, want it spent", got)
-	}
+	f.waitFor("the wake to be spent", func() bool { return f.wakeAt() == nil })
 }
 
 // A person's stop admitted while the wake waits for its pool wins: it cancels
