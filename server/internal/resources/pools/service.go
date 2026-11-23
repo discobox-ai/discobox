@@ -236,7 +236,7 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 			if !reflect.DeepEqual(old, intent) && s.pools != nil && s.pools.engine != nil {
 				previous := current.Generation
 				current.IncrementGeneration()
-				if err := txStore.UpdatePoolWithGeneration(ctx, current, previous); err != nil {
+				if err := txStore.UpdatePoolIntentWithGeneration(ctx, current, previous); err != nil {
 					return err
 				}
 				if err := s.pools.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(projectID, poolID)); err != nil {

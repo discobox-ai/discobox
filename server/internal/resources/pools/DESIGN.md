@@ -142,7 +142,10 @@ flowchart LR
   request from the API) also lives here.
 - `controlplane.go` — trusted operations implementing `sandbox.PoolManager`:
   reads for drivers, enrollment (`EnrollPool`: the key a pool's maker read
-  from its box, ADR 26-10-24-953 §4), what a pool's box is placed with
+  from its box, ADR 26-10-24-953 §4), the provider's record of the pool's
+  host saved mid-pass (`RecordPoolHost`: what its agent asks for by it, an
+  engine key in a sentinel's place, is answered from the row before the pass
+  settles), what a pool's box is placed with
   (`PoolBox`, through `PoolBoxes`, the assets service), agent token minting,
   the schedulable-pool
   placement gate, drift marks (`SchedulePoolReconciliation`, via
@@ -381,7 +384,8 @@ the tree is read).
 
 ## Who owns which status field
 
-Every pool status field has exactly one writer, and writers must not overlap:
+Every pool status field has exactly one owner, and owners must not overlap; a
+field its owner saves by more than one path names each:
 
 | Fields | Owner | Written by |
 | --- | --- | --- |
@@ -392,8 +396,8 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
-| `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState`, `ReconciledAt` | reconciler | `PoolReconciler`, and nothing else |
-| `HostCredential` | provider, through the reconciler | the runtime provider sets it beside `RuntimeState` when it places a credential of its own on the pool's host (a disco-vm driver's provisioning key); `PoolReconciler` persists both |
+| `State`, `ErrorMessage`, `ObservedGeneration`, `ReconciledAt` | reconciler | `PoolReconciler`, and nothing else |
+| `RuntimeState`, `HostCredential` | runtime provider, within its reconcile pass | the provider sets both on the pool (`HostCredential` when it places a credential of its own on the pool's host: a disco-vm driver's key or sentinel); `PoolReconciler` persists them as the pass settles, and `ControlPlane.RecordPoolHost` mid-pass, ungated by generation, where the host's agent may ask for what they name before then (a placed key) |
 
 Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and

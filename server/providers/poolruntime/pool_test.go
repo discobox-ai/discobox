@@ -94,6 +94,10 @@ func (m *fakePoolManager) CountSandboxesForPool(context.Context, string, string)
 	return 0, nil
 }
 
+func (m *fakePoolManager) RecordPoolHost(context.Context, string, model.RawJSON, *model.PoolHostCredential) error {
+	return nil
+}
+
 func (m *fakePoolManager) EnrollPool(_ context.Context, _ string, publicKey string) error {
 	m.enrolledKeys = append(m.enrolledKeys, publicKey)
 	return nil

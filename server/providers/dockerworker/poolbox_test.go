@@ -36,6 +36,10 @@ func (m *fakeMaker) Box(context.Context, imagecache.Platform) (sandbox.PoolBox, 
 	return m.box, m.boxErr
 }
 
+func (m *fakeMaker) RecordHost(context.Context, model.RawJSON, *model.PoolHostCredential) error {
+	return nil
+}
+
 func (m *fakeMaker) Enroll(context.Context, string) error {
 	m.enrolled = true
 	return nil

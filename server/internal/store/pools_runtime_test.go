@@ -605,3 +605,58 @@ func TestAPoolThatNamesNoOSTakesItsAgentsPlatform(t *testing.T) {
 		t.Fatalf("pool = os %q, platform %q, schedulable %v", reported.SandboxOS, reported.Platform, reported.Schedulable)
 	}
 }
+
+// RecordPoolHost saves what a pool's provider records of its host while the
+// reconcile still runs, and nothing else: no generation guards it, and the
+// reconciler's verdict, the agent's health and the pool's intent are left as
+// they stand.
+func TestRecordPoolHostWritesOnlyTheHostsRecord(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	before, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before.RecordFailure(model.PoolStateOffline, "runtime did not converge", "")
+	if err := s.UpdatePoolWithGeneration(ctx, before, before.Generation); err != nil {
+		t.Fatal(err)
+	}
+
+	credential := &model.PoolHostCredential{Key: model.PoolHostKeySentinel}
+	if err := s.RecordPoolHost(ctx, "pool-1", model.RawJSON(`{"instance":"m-1"}`), credential); err != nil {
+		t.Fatalf("RecordPoolHost() = %v", err)
+	}
+	after, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after.RuntimeState) != `{"instance":"m-1"}` || after.HostCredential == nil || after.HostCredential.Key != model.PoolHostKeySentinel {
+		t.Fatalf("pool after RecordPoolHost: runtime state %s, host credential %+v", after.RuntimeState, after.HostCredential)
+	}
+	if after.State != model.PoolStateOffline || after.ErrorMessage == nil || after.Generation != before.Generation || after.ObservedGeneration != before.ObservedGeneration {
+		t.Fatalf("RecordPoolHost wrote more than the host's record: %#v", after)
+	}
+	// New intent written from a copy read before the save leaves the host's
+	// record as saved: the generation guard passes, since the save bumps
+	// nothing, so only leaving the columns out keeps it.
+	stale := *before
+	stale.IncrementGeneration()
+	stale.RecordIntent(model.DesiredStateDeleted)
+	if err := s.UpdatePoolIntentWithGeneration(ctx, &stale, before.Generation); err != nil {
+		t.Fatalf("UpdatePoolIntentWithGeneration() = %v", err)
+	}
+	after, err = s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Generation != before.Generation+1 || after.DesiredState != model.DesiredStateDeleted {
+		t.Fatalf("intent not written: generation %d, desired %q", after.Generation, after.DesiredState)
+	}
+	if string(after.RuntimeState) != `{"instance":"m-1"}` || after.HostCredential == nil || after.HostCredential.Key != model.PoolHostKeySentinel {
+		t.Fatalf("intent from a stale copy put back the host's record: runtime state %s, host credential %+v", after.RuntimeState, after.HostCredential)
+	}
+	if err := s.RecordPoolHost(ctx, "pool-gone", model.RawJSON(`{}`), nil); err != nil {
+		t.Fatalf("RecordPoolHost() on a pool that is gone = %v, want it left gone", err)
+	}
+}

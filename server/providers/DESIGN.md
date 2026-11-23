@@ -76,7 +76,9 @@ sandbox's pool must have fresh health and be schedulable — there is no candida
 and no capacity check; sandboxes share their pool's CPU, memory, and storage
 with no per-sandbox reservation, docs/adr/0029), capacity waits,
 the pool's maker (`PoolMaker`: its bootstrap, what its box is placed with,
-and its enrollment), pool runtime convergence
+its enrollment, and `RecordHost`, which saves the provider's record of the
+pool's host on the pool's row mid-pass, for what the host's agent asks for
+by it before the pass settles), pool runtime convergence
 (`sandbox.PoolRuntime`), and user-sandbox operations through the
 pool-agent API. Docker never appears at this layer or above: the boundary
 contract downward is the `poolruntime.RuntimeProvider` interface, and the

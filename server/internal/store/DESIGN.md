@@ -175,7 +175,10 @@ save silently replays a stale value.
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.
 - Pool status ownership is split between the pool's maker (`EnrollPool`, its
-  key alone), the agent (`UpdatePoolStatus`) and the reconciler; see
+  key alone; `RecordPoolHost`, the provider's runtime state and host
+  credential alone, while its reconcile still runs, with no generation
+  guard, so new intent is written without them:
+  `UpdatePoolIntentWithGeneration`), the agent (`UpdatePoolStatus`) and the reconciler; see
   [`resources/pools/DESIGN.md`](../resources/pools/DESIGN.md).
 
 When a new field gains a second writer, narrow the write rather than relying on

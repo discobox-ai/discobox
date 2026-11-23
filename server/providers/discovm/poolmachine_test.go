@@ -448,11 +448,20 @@ func guestKey(t *testing.T, r *Runtime, pool *model.Pool) machine.Key {
 }
 
 // testMaker is a PoolMaker whose box is an agent and one pool bundle at
-// digest, and which records what it enrolled.
+// digest, and which records what it enrolled, and what of the pool's host was
+// saved on its row (the row's runtime state and host credential).
 type testMaker struct {
 	digest   string
 	enrolled []string
 	platform imagecache.Platform
+	// row is the pool's row as RecordHost last saved it; rowAtEnroll is it as
+	// the box made its identity, before its agent ran.
+	row, rowAtEnroll model.Pool
+}
+
+func (m *testMaker) RecordHost(_ context.Context, runtimeState model.RawJSON, credential *model.PoolHostCredential) error {
+	m.row.RuntimeState, m.row.HostCredential = slices.Clone(runtimeState), credential
+	return nil
 }
 
 func (m *testMaker) Bootstrap(context.Context) (poolagent.Bootstrap, error) {
@@ -487,6 +496,7 @@ func (m *testMaker) Box(_ context.Context, platform imagecache.Platform) (sandbo
 
 func (m *testMaker) Enroll(_ context.Context, publicKey string) error {
 	m.enrolled = append(m.enrolled, publicKey)
+	m.rowAtEnroll = m.row
 	return nil
 }
 
@@ -1797,6 +1807,10 @@ func (m *progressPoolManager) EnsureAgentTrustKey(context.Context) (string, erro
 
 func (m *progressPoolManager) EnrollPool(ctx context.Context, _, publicKey string) error {
 	return m.maker.Enroll(ctx, publicKey)
+}
+
+func (m *progressPoolManager) RecordPoolHost(ctx context.Context, _ string, runtimeState model.RawJSON, credential *model.PoolHostCredential) error {
+	return m.maker.RecordHost(ctx, runtimeState, credential)
 }
 
 func (m *progressPoolManager) ListPools(context.Context, string) ([]model.Pool, error) {

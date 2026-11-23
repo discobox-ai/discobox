@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -156,18 +157,37 @@ func (s *Store) GetPoolByID(ctx context.Context, poolID string, options ...PoolG
 	return pool, nil
 }
 
+// poolLifecycleColumns are what a reconcile and new intent write on a pool,
+// guarded by its generation.
+var poolLifecycleColumns = []string{"desired_state", "state", "state_changed_at", "generation",
+	"outbound_probes", "outbound_restart_required", "outbound_applied_revision", "observed_generation", "error_message", "reconciled_at", "revoked_at", "updated_at"}
+
 // UpdatePoolWithGeneration persists lifecycle and runtime fields only when the
 // generation matches. Agent observations and other telemetry have separate
-// writers and must survive a reconcile holding an older snapshot.
+// writers and must survive a reconcile holding an older snapshot. It is the
+// reconciler's: the runtime state and host credential it writes are its own
+// pass's, which RecordPoolHost may have saved already.
 func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, generation int64) error {
+	return s.updatePoolColumns(ctx, pool, generation, append(slices.Clone(poolLifecycleColumns), "runtime_state", "host_credential"))
+}
+
+// UpdatePoolIntentWithGeneration persists new intent (a generation bump, its
+// desired state) when the generation matches, and never the runtime state or
+// host credential: those a pass running on the previous generation may save
+// at any moment (RecordPoolHost), with no generation to guard them, and a
+// copy read before it would put the old record back.
+func (s *Store) UpdatePoolIntentWithGeneration(ctx context.Context, pool *model.Pool, generation int64) error {
+	return s.updatePoolColumns(ctx, pool, generation, poolLifecycleColumns)
+}
+
+func (s *Store) updatePoolColumns(ctx context.Context, pool *model.Pool, generation int64, columns []string) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
 	result := write.Model(&model.Pool{}).
 		Where("id = ? AND generation = ?", pool.ID, generation).
-		Select("desired_state", "state", "state_changed_at", "generation",
-			"outbound_probes", "outbound_restart_required", "outbound_applied_revision", "observed_generation", "error_message", "runtime_state", "host_credential", "reconciled_at", "revoked_at", "updated_at").
+		Select(columns).
 		Updates(pool)
 	if result.Error != nil {
 		return result.Error
@@ -193,6 +213,22 @@ func (s *Store) ListPoolsNeedingReconcile(ctx context.Context) ([]model.Pool, er
 		Where("generation > observed_generation").
 		Find(&pools).Error
 	return pools, err
+}
+
+// RecordPoolHost writes what a pool's provider records of its host, its
+// runtime state and the credential the host holds, and nothing else, while
+// the reconcile that placed them still runs (sandbox.PoolManager's). No
+// generation guards it: it describes the host, not the intent. A row that is
+// gone is left gone.
+func (s *Store) RecordPoolHost(ctx context.Context, poolID string, runtimeState model.RawJSON, credential *model.PoolHostCredential) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Model(&model.Pool{}).
+		Where("id = ?", poolID).
+		Select("runtime_state", "host_credential").
+		Updates(&model.Pool{RuntimeState: runtimeState, HostCredential: credential}).Error
 }
 
 // EnrollPool records publicKey as the pool's identity key, which its box

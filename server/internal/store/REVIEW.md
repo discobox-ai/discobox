@@ -53,3 +53,10 @@
   then B each wait on the other, and Postgres fails one with a deadlock (#1171
   review).
 - Whether a write changes a secret's value is decided on plaintexts, opened from both sides, never on the bytes stored and handed over. Why: a sealed row is ciphertext, and sealing is not deterministic, so writing back the value already stored compared unequal on a sealed server only: the write was taken as a replacement, cleared the value's rejections and restarted its lifetime, which an unsealed server never did (#880). The one exception is a stored value that does not open (its key has moved on): it has no plaintext, so its bytes are compared, and a new value still replaces it. Never refuse that write instead, or the secret can no longer be mended and the start that retires exchange secrets fails.
+- New intent on a pool (a generation bump) is written with
+  `UpdatePoolIntentWithGeneration`, never `UpdatePoolWithGeneration`, which
+  is the reconciler's. Why: `runtime_state` and `host_credential` are saved
+  mid-pass with no generation guard (`RecordPoolHost`), so an intent write of
+  the whole row from a copy read before that save passes the guard and puts
+  the old record back: on Postgres it would drop the sentinel record a pool's
+  proxy is about to ask for (#1586 review).

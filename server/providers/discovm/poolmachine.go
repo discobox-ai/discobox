@@ -1,6 +1,7 @@
 package discovm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -298,6 +299,9 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return err
 	}
 	networks := poolNetworks(fencing, scope)
+	// What the pool's row holds of the machine as the pass starts: the key
+	// placed is saved at once only where the record then differs.
+	saved := slices.Clone(pool.RuntimeState)
 	record := decodeRuntimeState(pool)
 	inst, err := h.instance(ctx, pool)
 	if err != nil && !errors.Is(err, errNoPoolMachine) {
@@ -397,13 +401,20 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return fmt.Errorf("reach pool %s's machine: %w", pool.ID, notReachable(err))
 	}
 	steps.Step(ctx, "reached the pool's machine")
-	// The key is placed before anything the agent runs on, and recorded the
-	// moment it is: an issued key whose record is lost would be one nobody
-	// renews.
+	// The key is placed before anything the agent runs on, and saved on the
+	// pool's row the moment it is, not when the pass settles: an issued key
+	// whose record is lost would be one nobody renews, and the agent this
+	// pass starts calls its driver at once, with a sentinel the pool's proxy
+	// is answered for by the row alone (resolveDriverKey).
 	key, err := h.keys.ensure(ctx, pool, guest, record.Key)
 	record.Key = key
-	if werr := h.writeState(pool, record); werr != nil && err == nil {
-		err = werr
+	if werr := h.writeState(pool, record); werr != nil {
+		return errors.Join(err, werr)
+	}
+	if !bytes.Equal(pool.RuntimeState, saved) {
+		if rerr := maker.RecordHost(ctx, pool.RuntimeState, pool.HostCredential); rerr != nil {
+			return errors.Join(err, fmt.Errorf("save pool %s's key record: %w", pool.ID, rerr))
+		}
 	}
 	if err != nil {
 		return err
