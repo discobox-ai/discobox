@@ -675,6 +675,10 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	}
 	if approval.Use != "" {
 		body.Use = decide(approval.Use, approval.Raw, approval.UseAs, approval.UseScope, approval.UseRoutes)
+		if part, ok := body.Use.Get(); ok && approval.Use == tui.PartApprove && approval.Replaces != "" {
+			part.Replaces = apiclientgen.NewOptString(approval.Replaces)
+			body.Use = apiclientgen.NewOptSecretRequestPartDecision(part)
+		}
 	}
 	if approval.Delegate != "" {
 		body.Delegate = decide(approval.Delegate, "", "", approval.DelegateScope, approval.DelegateRoutes)
@@ -959,6 +963,11 @@ func (d *apiDataSource) BindingHistory(ctx context.Context, server, secretID str
 			decision.ParentID = terminalSafe(b.ParentId.Or(""))
 			decision.RequestID = terminalSafe(b.RequestId.Or(""))
 			decision.Expires = b.ExpiresAt.Or(time.Time{})
+			decision.SecretName = terminalSafe(b.SecretName.Or(b.SecretId))
+			if replaced, ok := e.Replaced.Get(); ok {
+				decision.ReplacedID = terminalSafe(replaced.ID)
+				decision.ReplacedSecret = terminalSafe(replaced.SecretName.Or(replaced.SecretId))
+			}
 			if receipt, ok := b.Receipt.Get(); ok {
 				decision.GrantedBy = terminalSafe(receipt.Actor)
 				decision.GrantedAt = receipt.At

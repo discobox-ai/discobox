@@ -520,6 +520,57 @@ func TestApproveUseAsSaysHowTheUsePartIsGranted(t *testing.T) {
 	}
 }
 
+// --replaces names the binding of another secret an approval rebinds the
+// variable from (ADR 26-11-19-927 §2): sent on an approved use part granted
+// as a replacement, refused with an addition or a denial.
+func TestApproveReplacesNamesTheBindingItRebinds(t *testing.T) {
+	request := &apimodel.SecretRequest{ID: "request-1", Use: apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{})}
+	answer := approvalAnswer{lifetime: lifetime.NewFlag(), replaces: "sbd_old"}
+	body, err := approvalBody(request, answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part, _ := body.Use.Get(); part.Replaces.Or("") != "sbd_old" {
+		t.Fatalf("use part = %+v, want it to name sbd_old", part)
+	}
+	added := answer
+	added.useAs = asFlag{value: bindingplan.Add}
+	if _, err := approvalBody(request, added); err == nil || !strings.Contains(err.Error(), "--replaces") {
+		t.Fatalf("--replaces with --use-as add = %v, want it refused", err)
+	}
+	denied := answer
+	_ = denied.use.Set("deny")
+	if _, err := approvalBody(request, denied); err == nil || !strings.Contains(err.Error(), "--replaces") {
+		t.Fatalf("--replaces on a denied use part = %v, want it refused", err)
+	}
+}
+
+// A rebind is said with both secrets and their routes, what the replaced
+// binding loses and keeps, the value it handed over, and the sentinel (ADR
+// 26-11-19-927 §6).
+func TestARebindSaysBothSecretsAndWhatTheOldBindingKeeps(t *testing.T) {
+	route := []apimodel.SecretRoute{{Hosts: []string{"api.github.com"}}}
+	view := &rebindView{
+		envVar:   "GH_TOKEN",
+		replaced: apimodel.SecretBinding{ID: "sbd_old", Use: true, Delegate: true, Raw: apiclientgen.NewOptSecretBindingRaw(apiclientgen.SecretBindingRawEnv)},
+		from:     apimodel.Secret{ID: "sec_a", Name: "personal", Routes: apiclientgen.NewOptNilSecretRouteArray(route), Format: apiclientgen.NewOptString("ghp_{alnum:36}")},
+		to:       apimodel.Secret{ID: "sec_b", Name: "team", Routes: apiclientgen.NewOptNilSecretRouteArray(route), Format: apiclientgen.NewOptString("ghp_{alnum:36}")},
+		toRoutes: "(the secret's)",
+		plan:     bindingplan.Plan{Steps: []bindingplan.Step{{Binding: bindingplan.Binding{ID: "sbd_old", Use: true, Delegate: true}, Fate: bindingplan.LosesUse}}},
+		byID:     map[string]apimodel.SecretBinding{"sbd_old": {ID: "sbd_old"}},
+		handedOn: 2, sentinel: sentinelKept,
+	}
+	var out bytes.Buffer
+	view.write(&out, false)
+	for _, want := range []string{"GH_TOKEN moves from personal (sec_a) to team (sec_b)", "secret personal: api.github.com", "secret team: api.github.com",
+		"sbd_old (sent to (the secret's), with no expiry) loses its use in GH_TOKEN", "value stays with processes already running",
+		"its delegation of personal, and the 2 bindings handed on under it", "kept; running processes switch to team"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("rebind = %q, want %q", out.String(), want)
+		}
+	}
+}
+
 // The bound listing marks an addition after the binding it stacks on, and
 // one that does not apply with why (ADR 26-11-03-329 §2).
 func TestBoundListsAdditionsAfterWhatTheyStackOn(t *testing.T) {

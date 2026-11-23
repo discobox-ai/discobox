@@ -8828,6 +8828,24 @@ func (s *SecretBindingEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Replaced.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "replaced",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Event.Validate(); err != nil {
 			return err
 		}
@@ -8855,6 +8873,8 @@ func (s SecretBindingEventEvent) Validate() error {
 	case "expired":
 		return nil
 	case "delivered":
+		return nil
+	case "rebound":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

@@ -481,6 +481,12 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	if write.delegate, err = partDecision("delegate", &req.Delegate, input.Delegate); err != nil {
 		return nil, err
 	}
+	// Changing which secret delivers a variable is a choice between two
+	// credentials only someone seeing both makes (ADR 26-11-19-927 §1).
+	if approverIsSandbox && write.use != nil && write.use.replaces != "" {
+		return nil, apperrors.NewStatusError(http.StatusForbidden,
+			"only a person rebinds a variable to another secret; a discobox answers in the variable as it stands, or its child asks for another variable")
+	}
 	if write.use == nil && write.delegate == nil {
 		// Every part denied: nothing is bound, so no secret is chosen.
 		return req, s.commitApproval(ctx, write)
@@ -534,9 +540,9 @@ func partDecision(which string, part *model.SecretRequestPart, input apigen.OptS
 	}
 	switch decision.Decision {
 	case apigen.SecretRequestPartDecisionDecisionDeny:
-		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set || decision.As.Set || decision.Scope.Set {
+		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set || decision.As.Set || decision.Scope.Set || decision.Replaces.Set {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				fmt.Sprintf("the %s part is denied, so it takes no routes, lifetime, delivery or way of granting it", which))
+				fmt.Sprintf("the %s part is denied, so it takes no routes, lifetime, delivery, way of granting it or binding to replace", which))
 		}
 		return nil, nil
 	case apigen.SecretRequestPartDecisionDecisionApprove:
@@ -596,6 +602,21 @@ func partDecision(which string, part *model.SecretRequestPart, input apigen.OptS
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			"an addition is delivered by sentinel; grant the value itself as a replacement")
 	}
+	// The binding of another secret a person's approval rebinds the
+	// variable from, as the preview showed it (ADR 26-11-19-927 §2).
+	if replaces, ok := decision.Replaces.Get(); ok {
+		switch {
+		case approval.delegate:
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"a delegation delivers nothing, so it replaces no variable's binding; only a use part names one")
+		case approval.adds:
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"an addition never applies beside another secret; rebind the variable by granting the use part as a replacement")
+		case strings.TrimSpace(replaces) == "":
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "replaces names the binding the variable is rebound from")
+		}
+		approval.replaces = strings.TrimSpace(replaces)
+	}
 	return approval, nil
 }
 
@@ -628,8 +649,11 @@ type partApproval struct {
 	ttlNamed bool
 	// adds grants a use part as an addition beside what the discobox
 	// holds, replacing nothing (ADR 26-11-03-329 §4).
-	adds    bool
-	binding *model.SecretBinding
+	adds bool
+	// replaces is the discobox's own binding of another secret a person's
+	// approval rebinds the variable from (ADR 26-11-19-927 §2).
+	replaces string
+	binding  *model.SecretBinding
 }
 
 // commitApproval makes every write an answer makes as one act: each approved
@@ -680,9 +704,23 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 				return err
 			}
 			var made *model.SecretBinding
-			if part.approval.adds {
+			switch {
+			case part.approval.adds:
 				made, err = s.addBinding(ctx, txStore, txDB, binding, now, change)
-			} else {
+			case binding.Use && a.approverID == "":
+				// A person's: the variable is rebound when they named the
+				// binding of another secret holding it, and refused naming
+				// it when they did not.
+				rebound := change
+				var touched []model.SecretBinding
+				if rebound.Replaced, touched, err = s.rebind(ctx, txStore, binding, part.approval.replaces, rebindApproval, change); err != nil {
+					return err
+				}
+				if err := s.markBindingHolders(ctx, txStore, txDB, touched...); err != nil {
+					return err
+				}
+				made, err = s.replaceBindings(ctx, txStore, txDB, binding, part.approval.raw, rebound)
+			default:
 				made, err = s.replaceBindings(ctx, txStore, txDB, binding, part.approval.raw, change)
 			}
 			if err != nil {
@@ -864,6 +902,9 @@ func (s *Service) addBinding(ctx context.Context, txStore *store.Store, txDB *go
 // Bindings on the discobox's harness config and project are not its own and
 // are not touched. Every binding this would update, split or delete is
 // checked first (checkReplaced); any refusal refuses the whole approval.
+// change.Replaced, set when the approval rebinds the variable from another
+// secret, is recorded on the binding the use part leaves in the variable
+// alone (ADR 26-11-19-927 §8).
 func (s *Service) replaceBindings(ctx context.Context, txStore *store.Store, txDB *gorm.DB, want *model.SecretBinding, raw string, change store.BindingChange) (*model.SecretBinding, error) {
 	standing, err := txStore.ListSecretBindings(ctx, want.ProjectID, store.SecretBindingFilter{TargetKind: want.TargetKind, TargetID: want.TargetID})
 	if err != nil {
@@ -878,9 +919,12 @@ func (s *Service) replaceBindings(ctx context.Context, txStore *store.Store, txD
 	var mine []bindingplan.Binding
 	for i := range standing {
 		binding := &standing[i]
+		// A person's approval has rebound the variable, or been refused,
+		// by now (rebind); this is a discobox's, which never rebinds (ADR
+		// 26-11-19-927 §1).
 		if want.Use && binding.Use && binding.SecretID != want.SecretID && binding.EnvName == want.EnvName {
 			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
-				"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", want.EnvName))
+				"%s already holds another credential in this discobox (binding %s), and only a person rebinds a variable to another secret; approve the request with that secret, or ask for another variable", want.EnvName, binding.ID))
 		}
 		if binding.SecretID != want.SecretID {
 			continue
@@ -900,6 +944,7 @@ func (s *Service) replaceBindings(ctx context.Context, txStore *store.Store, txD
 		}
 	}
 	var touched []model.SecretBinding
+	others := store.BindingChange{Actor: change.Actor, Cause: change.Cause}
 	// Clear and delete first, so the variable want takes is free.
 	for _, step := range plan.Steps {
 		binding := byID[step.Binding.ID]
@@ -907,12 +952,12 @@ func (s *Service) replaceBindings(ctx context.Context, txStore *store.Store, txD
 		case bindingplan.LosesUse:
 			before := *binding
 			binding.Use, binding.EnvName, binding.Raw = false, "", ""
-			if err := txStore.UpdateSecretBinding(ctx, binding, change); err != nil {
+			if err := txStore.UpdateSecretBinding(ctx, binding, others); err != nil {
 				return nil, bindingConflict(err)
 			}
 			touched = append(touched, before)
 		case bindingplan.Deleted:
-			deleted, err := txStore.DeleteSecretBinding(ctx, binding.ProjectID, binding.ID, change)
+			deleted, err := txStore.DeleteSecretBinding(ctx, binding.ProjectID, binding.ID, others)
 			if err != nil {
 				return nil, err
 			}
@@ -1385,5 +1430,6 @@ func sentinelFormat(in apigen.OptString) (string, bool, error) {
 
 // planBinding is a binding as bindingplan reads it.
 func planBinding(binding *model.SecretBinding) bindingplan.Binding {
-	return bindingplan.Binding{ID: binding.ID, Use: binding.Use, Delegate: binding.Delegate, Adds: binding.Adds, EnvName: binding.EnvName, Created: binding.CreatedAt}
+	return bindingplan.Binding{ID: binding.ID, Use: binding.Use, Delegate: binding.Delegate, Adds: binding.Adds, EnvName: binding.EnvName, Created: binding.CreatedAt,
+		Parented: binding.ParentID != "", Raw: binding.Raw != ""}
 }

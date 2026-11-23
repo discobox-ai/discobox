@@ -220,9 +220,9 @@ func (a *App) writeSecretBinding(cmd *cobra.Command, b *apimodel.SecretBinding) 
 }
 
 func (a *App) newAdminBindingCreateCommand() *cobra.Command {
-	var secret, targetKind, target, envVar string
+	var secret, targetKind, target, envVar, replaces string
 	var raw rawFlag
-	var use, delegate bool
+	var use, delegate, dryRun bool
 	var routes []string
 	var policies credentialpolicy.References
 	ttl := lifetime.NewFlag()
@@ -236,6 +236,14 @@ the value itself there (env) or a file holding it (file) rather than a
 sentinel; --delegate makes it a binding to give on, and --use=false one only
 given on. --route narrows the
 secret's routes for this binding; left out, it goes where the secret's go.
+
+--replaces rebinds a discobox's variable from the discobox's own binding of
+another secret that delivers it now, by its ID, in one write: that binding
+loses its use, keeping a delegation it also holds and what was handed on
+under it; the old secret's additions in the variable go; and the variable
+keeps its sentinel unless the two secrets' sentinels have different shapes.
+Without it, a variable another secret holds there is refused, naming the
+binding. What the rebind does is said first; --dry-run says it and stops.
 
 ` + routeHelp,
 		Args: cobra.NoArgs,
@@ -281,6 +289,27 @@ secret's routes for this binding; left out, it goes where the secret's go.
 			if seconds, given := ttl.Seconds(); given {
 				body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
 			}
+			if dryRun && replaces == "" {
+				return fmt.Errorf("--dry-run shows what --replaces would do")
+			}
+			if replaces != "" {
+				if kind != apiclientgen.CreateSecretBindingBodyTargetKindSandbox || envVar == "" {
+					return fmt.Errorf("--replaces rebinds one discobox's variable: it needs --target-kind sandbox, --target and --as")
+				}
+				rebind, err := a.readCreateRebind(cmd.Context(), client, projectID, target, envVar, replaces, secret, routes, policies)
+				if err != nil {
+					return err
+				}
+				tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+				rebind.write(tw, false)
+				if err := tw.Flush(); err != nil {
+					return err
+				}
+				if dryRun {
+					return nil
+				}
+				body.SetReplaces(apiclientgen.NewOptString(rebind.replaced.ID))
+			}
 			res, err := client.CreateSecretBinding(cmd.Context(), body, apiclientgen.CreateSecretBindingParams{ProjectId: projectID})
 			if err != nil {
 				return err
@@ -303,6 +332,8 @@ secret's routes for this binding; left out, it goes where the secret's go.
 	cmd.Flags().Var(&policyValue{references: &policies, argument: true}, "policy-arg", "An argument NAME=VALUE for the preceding --policy; repeat for more")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "A route narrowing the secret's, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(ttl, "for", "How long it lasts (e.g. 1h, 2w, forever); the secret's limit when omitted")
+	cmd.Flags().StringVar(&replaces, "replaces", "", replacesFlagUsage)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "With --replaces: say what the rebind would do, and change nothing")
 	_ = cmd.MarkFlagRequired("secret")
 	_ = cmd.MarkFlagRequired("target-kind")
 	return cmd
@@ -443,7 +474,9 @@ func (a *App) newAdminBindingEventsCommand() *cobra.Command {
 		Short: "Show the trail of changes to the project's secret bindings",
 		Long: `Show the trail of changes to the project's secret bindings: each creation,
 change, deletion and expiry, who or what made it, and why — the request it
-answered, the binding it was handed on under, or the upgrade that made it.`,
+answered, the binding it was handed on under, or the upgrade that made it. A
+rebound is a variable moved from a binding of one secret to a binding of
+another; it names both, and is in both bindings' trails.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, client, err := a.adminBindingClient()
@@ -477,11 +510,18 @@ answered, the binding it was handed on under, or the upgrade that made it.`,
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "AT\tEVENT\tBINDING\tSECRET\tTARGET\tVARIABLE\tACTOR\tCAUSE")
 			for _, e := range body.GetSecretBindingEvents() {
+				// A rebound names both bindings and both secrets, the one
+				// replaced first.
+				bindingText, secretText := e.BindingId, terminalSafe(e.Binding.SecretName.Or(e.Binding.SecretId))
+				if replaced, ok := e.Replaced.Get(); ok {
+					bindingText = replaced.ID + " → " + e.BindingId
+					secretText = terminalSafe(replaced.SecretName.Or(replaced.SecretId)) + " → " + secretText
+				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 					formatTime(e.At),
 					e.Event,
-					e.BindingId,
-					terminalSafe(e.Binding.SecretName.Or(e.Binding.SecretId)),
+					bindingText,
+					secretText,
 					secretBindingTarget(e.Binding),
 					orDash(terminalSafe(e.Binding.EnvVar.Or(""))),
 					terminalSafe(e.Actor),

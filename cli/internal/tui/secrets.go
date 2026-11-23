@@ -1845,6 +1845,11 @@ func (m *Model) showBindingDecision(e BindingDecision, back func() tea.Cmd) tea.
 	if e.RequestID != "" {
 		fields = append(fields, field{label: "answered request", value: e.RequestID})
 	}
+	// A rebound names the binding and the credential it took the variable
+	// from, beside this one's.
+	if e.ReplacedID != "" {
+		fields = append(fields, field{label: "rebound from", value: "“" + e.ReplacedSecret + "” (binding " + e.ReplacedID + ") to “" + e.SecretName + "”", tone: toneAlert})
+	}
 	if len(e.RouteLists) == 0 {
 		fields = append(fields, field{label: "effective limits", value: "not recorded for this historical change"})
 	}

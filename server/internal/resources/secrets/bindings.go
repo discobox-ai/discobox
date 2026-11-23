@@ -82,7 +82,11 @@ func (s *Service) GetSecretBinding(ctx context.Context, projectID, bindingID str
 
 // CreateSecretBinding binds a secret at a target: to use it in a variable,
 // to delegate it, or both. Its lifetime defaults to the secret's limit and is
-// held to it.
+// held to it. On a discobox, a variable its own binding of another secret
+// holds is refused unless replaces names that binding: the person then
+// rebinds it (rebind, ADR 26-11-19-927), taking over a binding handed on
+// under a delegation or one handing over the value, which an approval does
+// not.
 func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, input services.CreateSecretBindingBody) (*model.SecretBinding, error) {
 	if err := refuseSandboxPrincipal(ctx); err != nil {
 		return nil, err
@@ -120,6 +124,11 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 	if err := checkBindingShape(binding); err != nil {
 		return nil, err
 	}
+	replaces, rebinding := input.Replaces.Get()
+	if rebinding && (kind != model.SecretBindingTargetSandbox || !use) {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"a rebind is of one discobox's variable: replaces needs targetKind sandbox and use")
+	}
 	ttl, named := input.TtlSeconds.Get()
 	if !named {
 		ttl = secret.MaxBindingTTL
@@ -148,10 +157,17 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 		if err := checkSecretPlaces(binding, locked, nil); err != nil {
 			return err
 		}
-		if err := txStore.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: binding.CreatedBy}); err != nil {
+		change := store.BindingChange{Actor: binding.CreatedBy}
+		var touched []model.SecretBinding
+		if kind == model.SecretBindingTargetSandbox && use {
+			if change.Replaced, touched, err = s.rebind(ctx, txStore, binding, replaces, rebindDirect, change); err != nil {
+				return err
+			}
+		}
+		if err := txStore.CreateSecretBinding(ctx, binding, change); err != nil {
 			return bindingConflict(err)
 		}
-		return s.markBindingHolders(ctx, txStore, txDB, *binding)
+		return s.markBindingHolders(ctx, txStore, txDB, append(touched, *binding)...)
 	}); err != nil {
 		return nil, err
 	}

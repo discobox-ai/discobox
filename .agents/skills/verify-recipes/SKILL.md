@@ -294,8 +294,16 @@ and that the process started after the build (no `ps` in the image: walk
   to `/pool-agent/<pool>/sandbox-secret-rejections` as the dev pool (minted
   with the `secret:resolve` scope, [below](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-pool-agentpoolid)).
   The token endpoint's log says what was renewed; `secret_rejections` in the
-  same database what was recorded. A generation is base36 of
-  `secrets.value_updated_at` in Unix microseconds.
+  same database what was recorded. A generation is the secret's ID, a dot,
+  and base36 of `secrets.value_updated_at` in Unix microseconds.
+- A variable rebound to another secret (`admin binding create --replaces`,
+  `secret request approve --replaces`, or the console choosing another saved
+  secret): read the box's variable before and after with `admin exec create
+  <box> -- sh -c 'echo $VAR'` (same sentinel), and drive a request to a route
+  both secrets share before and after; `admin audit http --discobox <id>`
+  names the secret swapped in each (SECRETS column), so the old one's cached
+  value is seen dropped. `admin binding events --secret <either>` shows the
+  one `rebound` event.
 - A harness bundle's manifest reaches the server only when the image watcher
   has rebuilt it (`.tmp/discobox-dev-images.json` names a new tag). If it never
   does, a build in the chain is failing and retried every 15s: read the

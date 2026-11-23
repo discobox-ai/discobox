@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"gorm.io/gorm"
+
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -137,5 +139,66 @@ func TestMaterializeMakesTheSentinelsTheEffectiveBindings(t *testing.T) {
 	}
 	if rows = materialized(t, st, "sb-1"); len(rows) != 0 {
 		t.Fatalf("rows = %+v, want none once nothing binds the variable", rows)
+	}
+}
+
+// A variable rebound to another secret (ADR 26-11-19-927 §§4-5) keeps its
+// sentinel, so a process holding it switches to the new secret without a
+// restart, and now delivers another value generation even when both values
+// were written at the same instant, so the pool drops the old one. Only a
+// secret minting sentinels of another shape gives the variable a new one.
+func TestARebindKeepsTheSentinelAndMovesTheGeneration(t *testing.T) {
+	svc, _ := newAssignFixture(t)
+	st := svc.store
+	ctx := context.Background()
+	personal := bearerSecret(t, st, "personal", "")
+	team := bearerSecret(t, st, "team", "")
+	other := bearerSecret(t, st, "other-shape", "")
+	written := personal.ValueWrittenAt()
+	for _, sec := range []*model.Secret{team, other} {
+		sec.ValueUpdatedAt = &written
+	}
+	other.Format, other.FormatSet = "xoxb-{alnum:40}", true
+	for _, sec := range []*model.Secret{team, other} {
+		if err := st.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
+			return tx.Model(&model.Secret{}).Where("id = ?", sec.ID).Updates(map[string]any{"value_updated_at": written, "format": sec.Format, "format_set": sec.FormatSet}).Error
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rebindTo := func(from *model.SecretBinding, secretID string) *model.SecretBinding {
+		t.Helper()
+		before := *from
+		if _, err := st.DeleteReboundBinding(ctx, "project-1", from.ID, store.BindingChange{Actor: "user-1"}); err != nil {
+			t.Fatal(err)
+		}
+		to := &model.SecretBinding{ProjectID: "project-1", SecretID: secretID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "GH_TOKEN"}
+		if err := st.CreateSecretBinding(ctx, to, store.BindingChange{Actor: "user-1", Replaced: &before}); err != nil {
+			t.Fatal(err)
+		}
+		return to
+	}
+	generation := func(row model.SandboxSecret) string {
+		t.Helper()
+		generations, err := st.SentinelGenerations(ctx, "project-1", []model.SandboxSecret{row})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return generations[row.Sentinel]
+	}
+
+	first := bindUse(t, st, personal.ID, model.SecretBindingTargetSandbox, "sb-1", "GH_TOKEN")
+	held := materialized(t, st, "sb-1")["GH_TOKEN"]
+	second := rebindTo(first, team.ID)
+	moved := materialized(t, st, "sb-1")["GH_TOKEN"]
+	if moved.ID != held.ID || moved.Sentinel != held.Sentinel || moved.SecretID != team.ID || moved.BindingID != second.ID {
+		t.Fatalf("row = %+v, want %+v repointed to %s under the same sentinel", moved, held, second.ID)
+	}
+	if generation(moved) == generation(held) {
+		t.Fatalf("generation %q unchanged by a rebind between values written at the same instant", generation(moved))
+	}
+	rebindTo(second, other.ID)
+	if reminted := materialized(t, st, "sb-1")["GH_TOKEN"]; reminted.Sentinel == held.Sentinel || reminted.SecretID != other.ID {
+		t.Fatalf("row = %+v, want a new sentinel for a secret of another shape", reminted)
 	}
 }

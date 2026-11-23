@@ -19,18 +19,16 @@ import (
 // Why a secret cannot answer a request (cannotAnswer).
 const (
 	notCovered = "routes" // its routes do not cover what is asked
-	notHeld    = "held"   // the variable already holds another secret in this box
 )
 
-// cannotAnswer is why s cannot answer req, or "". The server takes no other
-// secret in a variable the box's own bindings deliver (heldBy); a secret whose
-// routes do not cover the request would be refused on the requests it was
-// approved for. A variable held from the harness config or project takes
-// another secret as a replacement shadowing it (requestAnswer.useAs).
-func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, pinned, readable bool) string {
-	if req.Use != nil && pinned && s.ID != holder.SecretID {
-		return notHeld
-	}
+// cannotAnswer is why s cannot answer req, or "": a secret whose routes do
+// not cover the request would be refused on the requests it was approved
+// for. Another secret than the one holding the variable answers too: in a
+// variable the box's own binding delivers, approving it rebinds the
+// variable, which the cards show first (rebindPreview, ADR 26-11-19-927); one
+// held from the harness config or project is shadowed by it
+// (requestAnswer.useAs).
+func cannotAnswer(s Secret, req CredentialRequest, holder HeldGrant, readable bool) string {
 	// The secret the variable holds, when it is not one this window can read
 	// (heldSecret names it and nothing more), has routes nobody here can
 	// check: it is not said to cover nothing, and the server takes it.
@@ -339,6 +337,9 @@ type requestAnswer struct {
 	held     []HeldGrant
 	// holderID is the secret delivering the use part's variable now, if any.
 	holderID string
+	// rebind is, when the box's own binding of another secret holds the
+	// variable, what approving with this one rebinds (ADR 26-11-19-927).
+	rebind *rebindPreview
 }
 
 // canAdd follows the server's rule: additions apply only beside the same
@@ -405,6 +406,9 @@ func (ans requestAnswer) approval(req CredentialRequest) Approval {
 	if ans.use == PartApprove {
 		sent.UseScope, sent.UseRoutes = scope(ans.useChoice)
 		sent.UseAs = string(ans.useAs(req))
+		if ans.rebind != nil {
+			sent.Replaces = ans.rebind.holder.BindingID
+		}
 	}
 	if ans.delegate == PartApprove {
 		sent.DelegateScope, sent.DelegateRoutes = scope(ans.delegateChoice)
@@ -725,6 +729,11 @@ func approvalConsequences(req CredentialRequest, ans requestAnswer) []section {
 			out = append(out, gap)
 		}
 	}
+	// A rebind is said on the approval card before Accept: a swap of
+	// credentials is never one a person finds after (ADR 26-11-19-927 §6).
+	if ans.rebind != nil && ans.use == PartApprove {
+		out = append(out, ans.rebind.sections(ans)...)
+	}
 	if lines := replaces(req, ans, ans.ttl, true); len(lines) > 0 {
 		out = append(out, section{label: "this replaces", labelTone: toneAlert, lines: lines})
 	}
@@ -754,10 +763,10 @@ func useReplaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, kn
 		}
 		planned := make([]bindingplan.Held, 0, len(ans.held))
 		for _, grant := range ans.held {
-			planned = append(planned, bindingplan.Held{ID: grant.BindingID, Adds: grant.Adds, Own: grant.From == BindingSandbox, Expires: grant.Expires})
+			planned = append(planned, bindingplan.Held{ID: grant.BindingID, SecretID: grant.SecretID, Adds: grant.Adds, Own: grant.From == BindingSandbox, Expires: grant.Expires})
 		}
 		fates := map[string]bindingplan.HeldFate{}
-		for _, step := range bindingplan.Replacing(planned, until) {
+		for _, step := range bindingplan.Replacing(planned, ans.secret.ID, until) {
 			fates[step.Held.ID] = step.Fate
 		}
 		for _, grant := range ans.held {
@@ -779,8 +788,16 @@ func useReplaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, kn
 			switch fates[grant.BindingID] {
 			case bindingplan.Goes:
 				out = append(out, line{text: what + " — goes", tone: toneAlert, bullet: true})
+			case bindingplan.Rebound:
+				out = append(out, line{text: what + " — is rebound to “" + ans.credential + "”", tone: toneAlert, bullet: true})
 			case bindingplan.Shadowed:
-				out = append(out, line{text: what + " — is set aside for " + approvalSpan(ttl, known), tone: toneAlert, bullet: true})
+				text := what + " — is set aside for " + approvalSpan(ttl, known)
+				// Another credential taking the variable is said by name
+				// (ADR 26-11-19-927 §7).
+				if grant.SecretID != ans.secret.ID {
+					text += ", while “" + ans.credential + "” delivers it instead"
+				}
+				out = append(out, line{text: text, tone: toneAlert, bullet: true})
 			case bindingplan.Shortened:
 				out = append(out, line{text: what + " — lasts only " + approvalSpan(ttl, known), tone: toneAlert, bullet: true})
 			}
@@ -793,7 +810,7 @@ func useReplaces(req CredentialRequest, ans requestAnswer, ttl time.Duration, kn
 				if b.ID != keep {
 					continue
 				}
-				if steps := bindingplan.Replacing([]bindingplan.Held{{ID: b.ID, Own: true, Expires: b.Expires}}, until); len(steps) > 0 && steps[0].Fate == bindingplan.Shortened {
+				if steps := bindingplan.Replacing([]bindingplan.Held{{ID: b.ID, SecretID: ans.secret.ID, Own: true, Expires: b.Expires}}, ans.secret.ID, until); len(steps) > 0 && steps[0].Fate == bindingplan.Shortened {
 					out = append(out, line{text: "“" + ans.credential + "” in " + variableOf(req) + " — lasts only " + approvalSpan(ttl, known), tone: toneAlert, bullet: true})
 				}
 			}

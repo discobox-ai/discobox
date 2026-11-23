@@ -592,14 +592,25 @@ flowchart LR
 - **Credential and lifetime.** The credential picker lists compatible saved
   credentials. Each route list must cover the request (`uncovered`,
   `secretroute.ProveContained`). A variable delivered by the box's own
-  binding takes its current credential, even if the console can only name
-  it from the held grant. Lifetime defaults to the requested duration or
-  one hour. Presets and Custom edit it in place. A lifetime above the
+  binding lists its current credential first, even if the console can only
+  name it from the held grant; another one rebinds it (below). Lifetime
+  defaults to the requested duration or one hour. Presets and Custom edit it in place. A lifetime above the
   selected credential's limit disables Accept and explains the limit.
 - **Existing bindings.** The card shows whether approving appends routes
   or replaces the box's rules for the credential across all variables.
   Binding losses, route diffs, and shortened lifetimes are shown before
   Accept. Replacement under a lead's delegation remains unavailable.
+- **Rebinding.** A variable the box's own binding holds with another
+  secret takes any saved secret that covers the request: choosing one
+  rebinds the variable (ADR 26-11-19-927, `credential_rebind.go`). The card
+  says the variable moves from one secret to the other, what the old
+  binding loses and keeps (`bindingplan.Rebind`), both secrets' routes and
+  the sentinel (`bindingplan.KeepsSentinel`), and the approval names the
+  binding it showed (`Approval.Replaces`). A binding handed on under a
+  delegation or handing over the value is not rebound by approval
+  (`bindingplan.ApprovalRefusal`): Accept stays off and the card gives the
+  direct command. A new credential is not offered over such a variable; it
+  is saved first. Binding history shows a rebound's old binding and secret.
 - **Advanced.** Expand the controls on the card to answer the box's own
   access and its workers' access independently. Each approved part can keep
   the requested routes, allow any method and path on requested hosts, use
