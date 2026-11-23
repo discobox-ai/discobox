@@ -126,7 +126,16 @@ flowchart TD
 - **Locks.** `packages` steps and `run` steps marked `apt` take one lock;
   before apt work for unsatisfied packages or an apt-marked script runs,
   `dpkg --configure -a` finishes any configuration interrupted by a previous
-  boot under that lock, noninteractively and keeping existing configuration files. Recovery failure fails the step without recording it. A
+  boot under that lock, noninteractively and keeping existing configuration
+  files. Then apt parses its package lists in memory (`apt-cache
+  gencaches`, no cache written, no lock taken): a list a machine that died
+  mid-update left cut short or empty is kept by apt as current and fails
+  every later apt run, so when apt names a file of `/var/lib/apt/lists` as
+  what it cannot read, the lists (all but `lock`) and the binary caches
+  built from them are removed for the step's own update to fetch whole (an
+  apt-marked script runs its own `apt-get update`, as every bundled one
+  does). Any other failure is the step's own apt's to report.
+  Recovery failure fails the step without recording it. A
   `file` step with `merge: json` takes another across its read and its write,
   so features merging into one file in parallel keep each other's keys.
 

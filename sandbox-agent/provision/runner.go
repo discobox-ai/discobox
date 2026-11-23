@@ -817,7 +817,7 @@ func (r *Runner) apply(ctx context.Context, out io.Writer, plan *featurePlan, st
 		if step.Apt {
 			r.apt.Lock()
 			defer r.apt.Unlock()
-			if err := r.recoverDpkg(ctx, out); err != nil {
+			if err := r.recoverApt(ctx, out); err != nil {
 				return err
 			}
 		}

@@ -63,7 +63,7 @@ steps:
 				if tool == "dpkg" {
 					return nil // Never change the host package database.
 				}
-				if tool != "apt-get" {
+				if tool != "apt-get" && tool != "apt-cache" {
 					t.Fatalf("unexpected tool %s", tool)
 				}
 				if len(args) > 0 && args[0] == "install" {
