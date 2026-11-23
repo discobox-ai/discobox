@@ -40,6 +40,10 @@ type BindingsDeletedFunc func(txStore *Store, tx *gorm.DB, deleted []model.Secre
 type BindingChange struct {
 	Actor string
 	Cause string
+	// Replaced is, for the binding a rebind writes, the binding of another
+	// secret whose variable it takes, as it stood (ADR 26-11-19-927 §8): its
+	// create or update is then recorded as one rebound event naming both.
+	Replaced *model.SecretBinding
 }
 
 // CreateSecretBinding stores a binding and its created event. A binding for a
@@ -308,8 +312,12 @@ func deleteBindingTreeTx(tx *gorm.DB, binding *model.SecretBinding, event string
 	if err := tx.Delete(&model.SecretBinding{}, "id = ?", binding.ID).Error; err != nil {
 		return nil, err
 	}
-	if err := recordBindingEventTx(tx, binding, event, change); err != nil {
-		return nil, err
+	// No event is the rebound delete's (DeleteReboundBinding); its children
+	// still record theirs.
+	if event != "" {
+		if err := recordBindingEventTx(tx, binding, event, change); err != nil {
+			return nil, err
+		}
 	}
 	deleted := []model.SecretBinding{*binding}
 	for i := range children {
@@ -431,7 +439,32 @@ func ExpireSecretBindingTx(tx *gorm.DB, binding *model.SecretBinding, now time.T
 // the change leaves the binding with an expiry, arms the expiry sweep for
 // that instant.
 func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event string, change BindingChange) error {
-	if (event == model.SecretBindingEventCreated || event == model.SecretBindingEventUpdated) && binding.ExpiresAt != nil {
+	var replaced *model.SecretBinding
+	if change.Replaced != nil && (event == model.SecretBindingEventCreated || event == model.SecretBindingEventUpdated) {
+		event = model.SecretBindingEventRebound
+		snapshot := *change.Replaced
+		snapshot.Project = nil
+		replaced = &snapshot
+	}
+	// The history names each secret as it was called when the change was
+	// made, the replaced one's included.
+	name := func(b *model.SecretBinding) error {
+		if b == nil || b.SecretName != "" {
+			return nil
+		}
+		var names []string
+		if err := tx.Model(&model.Secret{}).Where("project_id = ? AND id = ?", b.ProjectID, b.SecretID).Limit(1).Pluck("name", &names).Error; err != nil {
+			return err
+		}
+		if len(names) == 1 {
+			b.SecretName = names[0]
+		}
+		return nil
+	}
+	if err := name(replaced); err != nil {
+		return err
+	}
+	if (event == model.SecretBindingEventCreated || event == model.SecretBindingEventUpdated || event == model.SecretBindingEventRebound) && binding.ExpiresAt != nil {
 		ctx := tx.Statement.Context
 		if ctx == nil {
 			ctx = context.Background()
@@ -442,15 +475,8 @@ func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event strin
 	}
 	snapshot := *binding
 	snapshot.Project = nil
-	// The history names the secret as it was called when the change was made.
-	if snapshot.SecretName == "" {
-		var names []string
-		if err := tx.Model(&model.Secret{}).Where("project_id = ? AND id = ?", binding.ProjectID, binding.SecretID).Limit(1).Pluck("name", &names).Error; err != nil {
-			return err
-		}
-		if len(names) == 1 {
-			snapshot.SecretName = names[0]
-		}
+	if err := name(&snapshot); err != nil {
+		return err
 	}
 	// Within a binding, a sequence orders its events where the clock does
 	// not: a coarse clock (Windows) stamps two changes in one tick alike.
@@ -465,7 +491,7 @@ func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event strin
 	if len(last) == 1 {
 		seq = last[0].Seq + 1
 	}
-	return tx.Create(&model.SecretBindingEvent{
+	record := &model.SecretBindingEvent{
 		ProjectID: binding.ProjectID,
 		BindingID: binding.ID,
 		SecretID:  binding.SecretID,
@@ -475,7 +501,30 @@ func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event strin
 		Binding:   snapshot,
 		Seq:       seq,
 		At:        time.Now().UTC(),
-	}).Error
+	}
+	if replaced != nil {
+		record.Replaced, record.ReplacedBindingID, record.ReplacedSecretID = replaced, replaced.ID, replaced.SecretID
+	}
+	return tx.Create(record).Error
+}
+
+// DeleteReboundBinding deletes the binding a rebind replaces, and what was
+// handed on under it, as DeleteSecretBinding does — read again locked, each
+// child with its event — but records no event of the binding's own: the
+// rebound event of the binding taking its variable names it, and is in its
+// history (ADR 26-11-19-927 §8, BindingChange.Replaced). It returns what it
+// deleted.
+func (s *Store) DeleteReboundBinding(ctx context.Context, projectID, bindingID string, change BindingChange) ([]model.SecretBinding, error) {
+	var deleted []model.SecretBinding
+	err := s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		binding, err := firstByID[model.SecretBinding](tx.Where("project_id = ?", projectID), "id", bindingID)
+		if err != nil {
+			return err
+		}
+		deleted, err = deleteBindingTreeTx(tx, binding, "", change)
+		return err
+	})
+	return deleted, err
 }
 
 // SecretBindingEventFilter narrows ListSecretBindingEvents.
@@ -493,11 +542,13 @@ func (s *Store) ListSecretBindingEvents(ctx context.Context, projectID string, f
 		return nil, err
 	}
 	query := read.Where("project_id = ?", projectID)
+	// A rebound is in the replaced binding's history, and its secret's, as
+	// well as its own (ADR 26-11-19-927 §8).
 	if filter.BindingID != "" {
-		query = query.Where("binding_id = ?", filter.BindingID)
+		query = query.Where("binding_id = ? OR replaced_binding_id = ?", filter.BindingID, filter.BindingID)
 	}
 	if filter.SecretID != "" {
-		query = query.Where("secret_id = ?", filter.SecretID)
+		query = query.Where("secret_id = ? OR replaced_secret_id = ?", filter.SecretID, filter.SecretID)
 	}
 	if !filter.Since.IsZero() {
 		query = query.Where("at >= ?", filter.Since.UTC())

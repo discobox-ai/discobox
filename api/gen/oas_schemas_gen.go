@@ -2349,6 +2349,12 @@ type CreateSecretBindingBody struct {
 	Raw OptCreateSecretBindingBodyRaw `json:"raw"`
 	// Routes that narrow the secret's for this binding; omitted or empty inherits the secret's.
 	Routes []SecretRouteInput `json:"routes"`
+	// Rebind a discobox's variable to this secret: the ID of the discobox's own binding, of another
+	// secret, that delivers envVar now. Its use goes in the same write: one that also delegates keeps
+	// its delegation and what was handed on under it, and the variable keeps its sentinel unless the two
+	// secrets' sentinel formats differ. Needs targetKind sandbox and use. Refused when that binding no
+	// longer delivers envVar, so the rebind is the one the person saw.
+	Replaces OptString `json:"replaces"`
 	// The secret, by name or ID.
 	Secret string `json:"secret"`
 	// The harness config (slug, name or ID) or discobox (name or ID) to bind to; omitted for the project.
@@ -2386,6 +2392,11 @@ func (s *CreateSecretBindingBody) GetRaw() OptCreateSecretBindingBodyRaw {
 // GetRoutes returns the value of Routes.
 func (s *CreateSecretBindingBody) GetRoutes() []SecretRouteInput {
 	return s.Routes
+}
+
+// GetReplaces returns the value of Replaces.
+func (s *CreateSecretBindingBody) GetReplaces() OptString {
+	return s.Replaces
 }
 
 // GetSecret returns the value of Secret.
@@ -2436,6 +2447,11 @@ func (s *CreateSecretBindingBody) SetRaw(val OptCreateSecretBindingBodyRaw) {
 // SetRoutes sets the value of Routes.
 func (s *CreateSecretBindingBody) SetRoutes(val []SecretRouteInput) {
 	s.Routes = val
+}
+
+// SetReplaces sets the value of Replaces.
+func (s *CreateSecretBindingBody) SetReplaces(val OptString) {
+	s.Replaces = val
 }
 
 // SetSecret sets the value of Secret.
@@ -15708,6 +15724,52 @@ func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretBinding returns new OptSecretBinding with value set to v.
+func NewOptSecretBinding(v SecretBinding) OptSecretBinding {
+	return OptSecretBinding{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretBinding is optional SecretBinding.
+type OptSecretBinding struct {
+	Value SecretBinding
+	Set   bool
+}
+
+// IsSet returns true if OptSecretBinding was set.
+func (o OptSecretBinding) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretBinding) Reset() {
+	var v SecretBinding
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretBinding) SetTo(v SecretBinding) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretBinding) Get() (v SecretBinding, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretBinding) Or(d SecretBinding) SecretBinding {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -31164,10 +31226,14 @@ type SecretBindingEvent struct {
 	Binding SecretBinding `json:"binding"`
 	// The binding changed.
 	BindingId string `json:"bindingId"`
+	// For rebound, the binding of another secret whose variable this one took, as it stood before; the
+	// event is in that binding's history too.
+	Replaced OptSecretBinding `json:"replaced"`
 	// Why, when something caused it: the request it answered, or the parent binding whose removal took it.
 	Cause OptString `json:"cause"`
 	// What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once
-	// per value (ADR 26-10-27-840 §5).
+	// per value (ADR 26-10-27-840 §5); rebound is a binding taking a discobox's variable from a binding
+	// of another secret, named in replaced.
 	Event SecretBindingEventEvent `json:"event"`
 	// Event ID.
 	ID string `json:"id"`
@@ -31198,6 +31264,11 @@ func (s *SecretBindingEvent) GetBinding() SecretBinding {
 // GetBindingId returns the value of BindingId.
 func (s *SecretBindingEvent) GetBindingId() string {
 	return s.BindingId
+}
+
+// GetReplaced returns the value of Replaced.
+func (s *SecretBindingEvent) GetReplaced() OptSecretBinding {
+	return s.Replaced
 }
 
 // GetCause returns the value of Cause.
@@ -31245,6 +31316,11 @@ func (s *SecretBindingEvent) SetBindingId(val string) {
 	s.BindingId = val
 }
 
+// SetReplaced sets the value of Replaced.
+func (s *SecretBindingEvent) SetReplaced(val OptSecretBinding) {
+	s.Replaced = val
+}
+
 // SetCause sets the value of Cause.
 func (s *SecretBindingEvent) SetCause(val OptString) {
 	s.Cause = val
@@ -31266,7 +31342,8 @@ func (s *SecretBindingEvent) SetProjectId(val string) {
 }
 
 // What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once
-// per value (ADR 26-10-27-840 §5).
+// per value (ADR 26-10-27-840 §5); rebound is a binding taking a discobox's variable from a binding
+// of another secret, named in replaced.
 type SecretBindingEventEvent string
 
 const (
@@ -31275,6 +31352,7 @@ const (
 	SecretBindingEventEventDeleted   SecretBindingEventEvent = "deleted"
 	SecretBindingEventEventExpired   SecretBindingEventEvent = "expired"
 	SecretBindingEventEventDelivered SecretBindingEventEvent = "delivered"
+	SecretBindingEventEventRebound   SecretBindingEventEvent = "rebound"
 )
 
 // AllValues returns all SecretBindingEventEvent values.
@@ -31285,6 +31363,7 @@ func (SecretBindingEventEvent) AllValues() []SecretBindingEventEvent {
 		SecretBindingEventEventDeleted,
 		SecretBindingEventEventExpired,
 		SecretBindingEventEventDelivered,
+		SecretBindingEventEventRebound,
 	}
 }
 
@@ -31300,6 +31379,8 @@ func (s SecretBindingEventEvent) MarshalText() ([]byte, error) {
 	case SecretBindingEventEventExpired:
 		return []byte(s), nil
 	case SecretBindingEventEventDelivered:
+		return []byte(s), nil
+	case SecretBindingEventEventRebound:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -31323,6 +31404,9 @@ func (s *SecretBindingEventEvent) UnmarshalText(data []byte) error {
 		return nil
 	case SecretBindingEventEventDelivered:
 		*s = SecretBindingEventEventDelivered
+		return nil
+	case SecretBindingEventEventRebound:
+		*s = SecretBindingEventEventRebound
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -33082,6 +33166,13 @@ type SecretRequestPartDecision struct {
 	// variable the request named, file the path of a file holding it there. A person's choice alone, and
 	// only of a secret that allows raw. Absent grants a sentinel.
 	Raw OptSecretRequestPartDecisionRaw `json:"raw"`
+	// Use part only, granted as replace, and a person's answer only: the ID of the discobox's own
+	// binding, of another secret, that delivers the request's variable now, to rebind the variable to
+	// the secret approved. Its use goes; one that also delegates keeps its delegation. A binding handed
+	// on under a delegation, or one handing over the value itself, is rebound directly instead. Refused
+	// when that binding no longer delivers the variable, and required when a binding of another secret
+	// does.
+	Replaces OptString `json:"replaces"`
 	// Routes the binding is approved for, narrowing the secret's; omitted takes the routes the part
 	// asked for.
 	Routes []SecretRouteInput `json:"routes"`
@@ -33108,6 +33199,11 @@ func (s *SecretRequestPartDecision) GetScope() OptSecretRequestPartDecisionScope
 // GetRaw returns the value of Raw.
 func (s *SecretRequestPartDecision) GetRaw() OptSecretRequestPartDecisionRaw {
 	return s.Raw
+}
+
+// GetReplaces returns the value of Replaces.
+func (s *SecretRequestPartDecision) GetReplaces() OptString {
+	return s.Replaces
 }
 
 // GetRoutes returns the value of Routes.
@@ -33138,6 +33234,11 @@ func (s *SecretRequestPartDecision) SetScope(val OptSecretRequestPartDecisionSco
 // SetRaw sets the value of Raw.
 func (s *SecretRequestPartDecision) SetRaw(val OptSecretRequestPartDecisionRaw) {
 	s.Raw = val
+}
+
+// SetReplaces sets the value of Replaces.
+func (s *SecretRequestPartDecision) SetReplaces(val OptString) {
+	s.Replaces = val
 }
 
 // SetRoutes sets the value of Routes.

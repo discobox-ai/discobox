@@ -14912,9 +14912,9 @@ func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request
 type ListSecretBindingEventsParams struct {
 	// Project ID.
 	ProjectId string
-	// Only this binding's events.
+	// Only this binding's events, a rebound that replaced it included.
 	BindingId OptString `json:",omitempty,omitzero"`
-	// Only events of bindings of this secret, by name or ID.
+	// Only events of bindings of this secret, by name or ID, a rebound that replaced one included.
 	Secret OptString `json:",omitempty,omitzero"`
 	// Only events at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`

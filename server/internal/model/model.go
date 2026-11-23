@@ -1607,6 +1607,11 @@ const (
 	// pool of a discobox it covers, to deliver there (ADR 26-10-27-840 §5):
 	// once per value and discobox, Cause naming the discobox.
 	SecretBindingEventDelivered = "delivered"
+	// SecretBindingEventRebound is a binding taking a discobox's variable
+	// from the discobox's own binding of another secret (ADR 26-11-19-927
+	// §8): one event, on the binding taking it, in place of its created or
+	// updated, naming the binding replaced as it stood.
+	SecretBindingEventRebound = "rebound"
 	// SecretBindingActorSystem is the actor of a change nobody made directly:
 	// a cascade from a removed parent, an expiry, or the upgrade.
 	SecretBindingActorSystem = "system"
@@ -2192,10 +2197,17 @@ type SecretBindingEvent struct {
 	ProjectID string        `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	BindingID string        `gorm:"column:binding_id;not null;type:text;index" json:"bindingId" doc:"The binding changed"`
 	SecretID  string        `gorm:"column:secret_id;not null;type:text;index" json:"-"`
-	Event     string        `gorm:"column:event;not null;type:text" json:"event" doc:"What happened; delivered is a raw binding's value reaching the discobox it covers, once per value" enum:"created,updated,deleted,expired,delivered"`
+	Event     string        `gorm:"column:event;not null;type:text" json:"event" doc:"What happened; delivered is a raw binding's value reaching the discobox it covers, once per value; rebound is a binding taking a variable from a binding of another secret" enum:"created,updated,deleted,expired,delivered,rebound"`
 	Actor     string        `gorm:"column:actor;not null;type:text" json:"actor" doc:"Who did it, or system"`
 	Cause     string        `gorm:"column:cause;not null;type:text;default:''" json:"cause,omitempty" doc:"Why, when something caused it"`
 	Binding   SecretBinding `gorm:"column:binding;type:text;serializer:json" json:"binding" doc:"The binding after the change; before it, for a delete or an expiry"`
+	// Replaced is, for a rebound, the binding whose variable this one took,
+	// as it stood before (ADR 26-11-19-927 §8). ReplacedBindingID and
+	// ReplacedSecretID index it, so the event is in that binding's history,
+	// and its secret's, too.
+	Replaced          *SecretBinding `gorm:"column:replaced;type:text;serializer:json" json:"replaced,omitempty" doc:"For rebound, the binding replaced, as it stood before"`
+	ReplacedBindingID string         `gorm:"column:replaced_binding_id;not null;type:text;default:'';index" json:"-"`
+	ReplacedSecretID  string         `gorm:"column:replaced_secret_id;not null;type:text;default:'';index" json:"-"`
 	// Seq orders a binding's events among themselves, where At ties.
 	Seq int64     `gorm:"column:seq;not null;default:0" json:"-"`
 	At  time.Time `gorm:"column:at;not null;index" json:"at" doc:"When it happened" format:"date-time"`

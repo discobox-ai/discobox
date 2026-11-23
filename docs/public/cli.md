@@ -487,6 +487,14 @@ sentinel; --delegate makes it a binding to give on, and --use=false one only
 given on. --route narrows the
 secret's routes for this binding; left out, it goes where the secret's go.
 
+--replaces rebinds a discobox's variable from the discobox's own binding of
+another secret that delivers it now, by its ID, in one write: that binding
+loses its use, keeping a delegation it also holds and what was handed on
+under it; the old secret's additions in the variable go; and the variable
+keeps its sentinel unless the two secrets' sentinels have different shapes.
+Without it, a variable another secret holds there is refused, naming the
+binding. What the rebind does is said first; --dry-run says it and stops.
+
 A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked],
 one per --route:
 
@@ -540,12 +548,14 @@ discobox admin binding create --secret SECRET --target-kind KIND [--target ID] [
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --delegate | bool | false | Let the target give it to the discoboxes it leads Value when passed without an argument: true. |
+| --dry-run | bool | false | With --replaces: say what the rebind would do, and change nothing Value when passed without an argument: true. |
 | --for | duration |  | How long it lasts (e.g. 1h, 2w, forever); the secret's limit when omitted |
 | --help, -h | bool | false | help for create Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --policy | FILE |  | A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file |
 | --policy-arg | NAME=VALUE |  | An argument NAME=VALUE for the preceding --policy; repeat for more |
 | --raw | delivery |  | Hand over the value itself: env, or file for a file whose path is in the variable; left out, a sentinel |
+| --replaces | string |  | Rebind the variable from the discobox's own binding of another secret that delivers it now, by ID: its use goes, a delegation it also holds stays |
 | --route | stringArray | [] | A route narrowing the secret's, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked]; one per flag, repeat for more |
 | --secret | string |  | The secret, by name or ID |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -559,7 +569,9 @@ discobox admin binding create --secret SECRET --target-kind KIND [--target ID] [
 ~~~~text
 Show the trail of changes to the project's secret bindings: each creation,
 change, deletion and expiry, who or what made it, and why — the request it
-answered, the binding it was handed on under, or the upgrade that made it.
+answered, the binding it was handed on under, or the upgrade that made it. A
+rebound is a variable moved from a binding of one secret to a binding of
+another; it names both, and is in both bindings' trails.
 ~~~~
 
 ```text
@@ -5700,6 +5712,15 @@ variable, file the path of a file in memory holding it. It is yours to choose
 --allow-raw), and only the use part takes it. The discobox can then send the
 value anywhere; its pool only refuses a request carrying it off its routes.
 
+--replaces rebinds the variable from the discobox's own binding of another
+secret that holds it now, by its ID, as secret request get --secret
+--replaces showed: that binding loses its use, keeping a delegation it also
+holds and what was handed on under it, and the variable keeps its sentinel
+unless the two secrets' sentinels have different shapes. Without it, a
+variable held by another secret is refused, naming the binding. A binding
+handed on under a delegation, or one handing over the value itself, is
+rebound with admin binding create --replaces instead.
+
 A route is [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked],
 one per --route:
 
@@ -5758,6 +5779,7 @@ discobox secret request approve REQUEST_ID [flags]
 | --help, -h | bool | false | help for approve Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --raw | delivery |  | Use part only: grant the value itself, env (in the variable) or file (a file whose path is in it); left out, a sentinel |
+| --replaces | string |  | Rebind the variable from the discobox's own binding of another secret that delivers it now, by ID: its use goes, a delegation it also holds stays |
 | --route | stringArray | [] | Where the use part may send it, narrowing the secret's routes, as [METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][ body=PLACES][ ws=PLACES][=blocked]; one per flag, repeat for more (default the routes the part named) |
 | --secret | string |  | The secret that answers the request, by name or ID |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -5802,6 +5824,11 @@ secret, the use part as the request asks, would do to the bindings the
 discobox already holds of it: a part approved to replace replaces them, so
 access it loses is read before it is approved. approve --secret says it again
 for the parts it approves.
+
+A variable the discobox's own binding of another secret holds is rebound only
+when the approval names that binding (--replaces). get --secret --replaces
+shows what that does first: both secrets and their routes, what the binding
+loses and keeps, and whether the variable keeps its sentinel.
 ~~~~
 
 ```text
@@ -5814,6 +5841,7 @@ discobox secret request get REQUEST_ID [flags]
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --help, -h | bool | false | help for get Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --replaces | string |  | With --secret: show what rebinding the variable from this binding of another secret would do |
 | --secret | string |  | On a pending request: show what approving it with this secret, by name or ID, would replace |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |

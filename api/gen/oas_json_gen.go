@@ -4775,6 +4775,12 @@ func (s *CreateSecretBindingBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Replaces.Set {
+			e.FieldStart("replaces")
+			s.Replaces.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("secret")
 		e.Str(s.Secret)
 	}
@@ -4802,17 +4808,18 @@ func (s *CreateSecretBindingBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSecretBindingBody = [10]string{
-	0: "$schema",
-	1: "delegate",
-	2: "envVar",
-	3: "raw",
-	4: "routes",
-	5: "secret",
-	6: "target",
-	7: "targetKind",
-	8: "ttlSeconds",
-	9: "use",
+var jsonFieldsNameOfCreateSecretBindingBody = [11]string{
+	0:  "$schema",
+	1:  "delegate",
+	2:  "envVar",
+	3:  "raw",
+	4:  "routes",
+	5:  "replaces",
+	6:  "secret",
+	7:  "target",
+	8:  "targetKind",
+	9:  "ttlSeconds",
+	10: "use",
 }
 
 // Decode decodes CreateSecretBindingBody from json.
@@ -4881,8 +4888,18 @@ func (s *CreateSecretBindingBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"routes\"")
 			}
+		case "replaces":
+			if err := func() error {
+				s.Replaces.Reset()
+				if err := s.Replaces.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"replaces\"")
+			}
 		case "secret":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Secret = string(v)
@@ -4904,7 +4921,7 @@ func (s *CreateSecretBindingBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"target\"")
 			}
 		case "targetKind":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.TargetKind.Decode(d); err != nil {
 					return err
@@ -4943,8 +4960,8 @@ func (s *CreateSecretBindingBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10100000,
-		0b00000000,
+		0b01000000,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -23006,6 +23023,39 @@ func (s OptSandboxUser) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxUser) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretBinding as json.
+func (o OptSecretBinding) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretBinding from json.
+func (o *OptSecretBinding) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretBinding to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretBinding) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretBinding) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -52200,6 +52250,12 @@ func (s *SecretBindingEvent) encodeFields(e *jx.Encoder) {
 		e.Str(s.BindingId)
 	}
 	{
+		if s.Replaced.Set {
+			e.FieldStart("replaced")
+			s.Replaced.Encode(e)
+		}
+	}
+	{
 		if s.Cause.Set {
 			e.FieldStart("cause")
 			s.Cause.Encode(e)
@@ -52219,16 +52275,17 @@ func (s *SecretBindingEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretBindingEvent = [9]string{
+var jsonFieldsNameOfSecretBindingEvent = [10]string{
 	0: "$schema",
 	1: "actor",
 	2: "at",
 	3: "binding",
 	4: "bindingId",
-	5: "cause",
-	6: "event",
-	7: "id",
-	8: "projectId",
+	5: "replaced",
+	6: "cause",
+	7: "event",
+	8: "id",
+	9: "projectId",
 }
 
 // Decode decodes SecretBindingEvent from json.
@@ -52296,6 +52353,16 @@ func (s *SecretBindingEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"bindingId\"")
 			}
+		case "replaced":
+			if err := func() error {
+				s.Replaced.Reset()
+				if err := s.Replaced.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"replaced\"")
+			}
 		case "cause":
 			if err := func() error {
 				s.Cause.Reset()
@@ -52307,7 +52374,7 @@ func (s *SecretBindingEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cause\"")
 			}
 		case "event":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Event.Decode(d); err != nil {
 					return err
@@ -52317,7 +52384,7 @@ func (s *SecretBindingEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"event\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -52329,7 +52396,7 @@ func (s *SecretBindingEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -52350,8 +52417,8 @@ func (s *SecretBindingEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11011110,
-		0b00000001,
+		0b10011110,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -52423,6 +52490,8 @@ func (s *SecretBindingEventEvent) Decode(d *jx.Decoder) error {
 		*s = SecretBindingEventEventExpired
 	case SecretBindingEventEventDelivered:
 		*s = SecretBindingEventEventDelivered
+	case SecretBindingEventEventRebound:
+		*s = SecretBindingEventEventRebound
 	default:
 		*s = SecretBindingEventEvent(v)
 	}
@@ -55452,6 +55521,12 @@ func (s *SecretRequestPartDecision) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Replaces.Set {
+			e.FieldStart("replaces")
+			s.Replaces.Encode(e)
+		}
+	}
+	{
 		if s.Routes != nil {
 			e.FieldStart("routes")
 			e.ArrStart()
@@ -55469,13 +55544,14 @@ func (s *SecretRequestPartDecision) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretRequestPartDecision = [6]string{
+var jsonFieldsNameOfSecretRequestPartDecision = [7]string{
 	0: "as",
 	1: "decision",
 	2: "scope",
 	3: "raw",
-	4: "routes",
-	5: "ttlSeconds",
+	4: "replaces",
+	5: "routes",
+	6: "ttlSeconds",
 }
 
 // Decode decodes SecretRequestPartDecision from json.
@@ -55526,6 +55602,16 @@ func (s *SecretRequestPartDecision) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"raw\"")
+			}
+		case "replaces":
+			if err := func() error {
+				s.Replaces.Reset()
+				if err := s.Replaces.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"replaces\"")
 			}
 		case "routes":
 			if err := func() error {

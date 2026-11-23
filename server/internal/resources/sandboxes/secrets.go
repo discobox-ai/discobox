@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -156,7 +157,7 @@ func materializeSandboxSecrets(ctx context.Context, st *store.Store, sb *model.S
 			// A row minted before formats were recorded keeps its sentinel:
 			// what it was minted from is unknown, and guessing wrong costs a
 			// live harness session.
-			if row.Format != "" && row.Format != format {
+			if !bindingplan.KeepsSentinel(row.Format, format) {
 				if row.Sentinel, err = secretformat.MintSentinel(format); err != nil {
 					return false, err
 				}

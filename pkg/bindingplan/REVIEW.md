@@ -7,4 +7,7 @@
   says something other than what is done. That happened once with what a
   replacement does to the bindings a discobox holds, and again with what it
   does to the grants held in a variable (ADR 26-11-03-329 §5); both now live
-  here (`Answer`, `Replacing`, `NewRoutes`).
+  here (`Answer`, `Replacing`, `NewRoutes`). A rebind's preview nearly
+  made it a third time, with the sentinel's fate and the approval's
+  refusals restated in the CLI and the console: they are `KeepsSentinel` and
+  `ApprovalRefusal`, which the server calls too (ADR 26-11-19-927).

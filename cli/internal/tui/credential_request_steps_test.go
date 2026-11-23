@@ -503,22 +503,99 @@ func TestHowLongSaysWhatTheApprovalReplaces(t *testing.T) {
 	}
 }
 
-// A variable this discobox already holds a secret in takes only that one: the
-// others, and a new credential, cannot answer, and saying why names it.
-func TestAVariableHeldInTheBoxTakesOnlyItsSecret(t *testing.T) {
-	t.Parallel()
+// rebindSource is a request whose variable the box's own binding holds with
+// one secret, and another saved secret that covers it, with the box's
+// bindings of the old secret: the one holding the variable and an addition.
+func rebindSource(t *testing.T, holder SecretBinding) (*Model, *fakeSource) {
+	t.Helper()
 	m, ds := sourceWithRequest(t)
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
-	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_gh2", Name: "another github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
-	openApproval(t, m, "sec_gh")
-	m.dialog.form.choose("credential", "sec_gh2")
-	if m.dialog.form.chosen("credential") != "sec_gh" {
-		t.Fatal("a different credential was selectable")
+	ds.heldGrants = []HeldGrant{{BindingID: holder.ID, SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox}}
+	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_gh2", Name: "team github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
+	holder.SecretID, holder.TargetKind, holder.TargetID, holder.Use, holder.EnvVar = "sec_gh", BindingSandbox, "sbx_one", true, "GH_TOKEN"
+	ds.projectBindings = append(ds.projectBindings, holder,
+		SecretBinding{ID: "sbd_added", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Adds: true, EnvVar: "GH_TOKEN"})
+	return m, ds
+}
+
+// approvalCardText is the approval card's sections as text, whatever is scrolled
+// into view.
+func approvalCardText(m *Model) string {
+	plainFrame(m) // the card refreshes its sections as it is drawn
+	var out []string
+	for _, s := range m.dialog.sections {
+		out = append(out, s.label)
+		for _, l := range s.lines {
+			out = append(out, l.text)
+		}
+		for _, f := range s.fields {
+			out = append(out, f.label+": "+f.value)
+		}
 	}
+	return strings.Join(out, "\n")
+}
+
+// Another saved secret answers a variable the box's own binding holds: the
+// card says the variable is rebound from one to the other, what the old
+// binding loses and keeps, both secrets' routes and the sentinel, and the
+// approval names the binding it showed (ADR 26-11-19-927 §6). A new
+// credential is not offered over it, since its shape is unknown until saved.
+func TestAnotherSecretRebindsAVariableTheBoxHolds(t *testing.T) {
+	t.Parallel()
+	m, ds := rebindSource(t, SecretBinding{ID: "sbd_own", Delegate: true})
+	openApproval(t, m, "sec_gh2")
 	for _, row := range m.dialog.form.rows {
 		if row.key == "new" {
-			t.Fatal("a new credential was offered for a pinned variable")
+			t.Fatal("a new credential was offered for a variable the box holds")
 		}
+	}
+	text := approvalCardText(m)
+	for _, want := range []string{"GH_TOKEN moves from “GitHub token” to “team github”", "sbd_own — loses its use in GH_TOKEN",
+		"the addition sbd_added of “GitHub token” — goes", "keeps its delegation of “GitHub token”", "“team github” may be sent to"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("card = %q, want %q", text, want)
+		}
+	}
+	readRequestEnd(t, m, "pgdown")
+	grantFor(t, m, time.Hour)
+	if len(ds.approvals) != 1 || ds.approvals[0].Replaces != "sbd_own" || ds.approvals[0].SecretID != "sec_gh2" || ds.approvals[0].UseAs != "replace" {
+		t.Fatalf("approvals = %#v, want team github replacing sbd_own", ds.approvals)
+	}
+}
+
+// The secret holding the variable is approved with nothing to replace.
+func TestTheHoldingSecretReplacesNothing(t *testing.T) {
+	t.Parallel()
+	m, ds := rebindSource(t, SecretBinding{ID: "sbd_own"})
+	openApproval(t, m, "sec_gh")
+	if strings.Contains(approvalCardText(m), "this rebinds") {
+		t.Fatalf("card = %q, want no rebind", approvalCardText(m))
+	}
+	readRequestEnd(t, m, "pgdown")
+	grantFor(t, m, time.Hour)
+	if len(ds.approvals) != 1 || ds.approvals[0].Replaces != "" {
+		t.Fatalf("approvals = %#v, want nothing replaced", ds.approvals)
+	}
+}
+
+// A binding an approval may not rebind — handed on under a delegation, or
+// handing over the value itself — keeps Accept off, says why and how to
+// rebind it directly, and nothing is sent.
+func TestARebindAnApprovalMayNotMakeSaysHowToDoItDirectly(t *testing.T) {
+	t.Parallel()
+	for name, holder := range map[string]SecretBinding{
+		"delegated": {ID: "sbd_own", ParentID: "sbd_lead"},
+		"raw":       {ID: "sbd_own", RawDelivery: "env"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, ds := rebindSource(t, holder)
+			openApproval(t, m, "sec_gh2")
+			if text := approvalCardText(m); !strings.Contains(text, "--replaces sbd_own") || m.dialog.formActions[0].enabled {
+				t.Fatalf("card = %q, accept enabled %v; want Accept off and admin binding create --replaces", text, m.dialog.formActions[0].enabled)
+			}
+			if len(ds.approvals) != 0 {
+				t.Fatalf("approvals = %#v, want none", ds.approvals)
+			}
+		})
 	}
 }
 

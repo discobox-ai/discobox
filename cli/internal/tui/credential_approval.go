@@ -46,7 +46,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 	}
 	for _, secret := range ordered {
 		readable := slices.ContainsFunc(secrets, func(s Secret) bool { return s.ID == secret.ID })
-		if cannotAnswer(secret, req, holder, pinned, readable) != "" {
+		if cannotAnswer(secret, req, holder, readable) != "" {
 			continue
 		}
 		ans := requestAnswer{credential: secret.Name, secret: secret, credentialRoutes: secret.Routes, maxTTL: secret.MaxTTL, held: held, holderID: holder.SecretID}
@@ -54,6 +54,12 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			if b.SecretID == secret.ID && b.TargetKind == BindingSandbox && b.TargetID == req.SandboxID {
 				ans.standing = append(ans.standing, b)
 			}
+		}
+		// Another secret than the one the box's own binding holds the
+		// variable with rebinds it (ADR 26-11-19-927).
+		if req.Use != nil && pinned && secret.ID != holder.SecretID {
+			ans.rebind = &rebindPreview{holder: holder, from: heldSecret(secrets, holder)}
+			ans.rebind.read(bindings, req)
 		}
 		answers[secret.ID] = ans
 		credentials = append(credentials, choice{key: secret.ID, label: secret.Name})
@@ -195,6 +201,8 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			return ans, "Enter the edited routes before approving."
 		case ans.use == PartApprove && ans.useAs(req) == bindingplan.Replace && ans.replaceUnavailable() != "":
 			return ans, ans.replaceUnavailable()
+		case ans.use == PartApprove && ans.rebind != nil && bindingErr == nil && ans.rebind.unavailable(req, ans) != "":
+			return ans, ans.rebind.unavailable(req, ans)
 		}
 		return ans, ""
 	}

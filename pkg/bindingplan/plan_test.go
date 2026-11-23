@@ -182,13 +182,13 @@ func TestAnswerAddingTouchesNothing(t *testing.T) {
 func TestReplacingSaysWhatBecomesOfEachGrantHeld(t *testing.T) {
 	until := at(60)
 	held := []Held{
-		{ID: "own-forever", Own: true},
-		{ID: "own-sooner", Own: true, Expires: at(30)},
-		{ID: "inherited"},
-		{ID: "added", Own: true, Adds: true, Expires: at(90)},
+		{ID: "own-forever", SecretID: "s", Own: true},
+		{ID: "own-sooner", SecretID: "s", Own: true, Expires: at(30)},
+		{ID: "inherited", SecretID: "s"},
+		{ID: "added", SecretID: "s", Own: true, Adds: true, Expires: at(90)},
 	}
 	got := map[string]HeldFate{}
-	for _, step := range Replacing(held, until) {
+	for _, step := range Replacing(held, "s", until) {
 		got[step.Held.ID] = step.Fate
 	}
 	want := map[string]HeldFate{"own-forever": Shortened, "inherited": Shadowed, "added": Goes}
@@ -200,8 +200,44 @@ func TestReplacingSaysWhatBecomesOfEachGrantHeld(t *testing.T) {
 			t.Fatalf("fates %v, want %v", got, want)
 		}
 	}
-	if steps := Replacing([]Held{{ID: "own-forever", Own: true}}, time.Time{}); len(steps) != 0 {
+	if steps := Replacing([]Held{{ID: "own-forever", SecretID: "s", Own: true}}, "s", time.Time{}); len(steps) != 0 {
 		t.Fatalf("a replacement made forever = %+v, want nothing cut short", steps)
+	}
+}
+
+// A grant of another secret is the discobox's own binding to rebind, or a
+// harness config's or project's to shadow; never one cut short, since the
+// approval does not take its routes (ADR 26-11-19-927 §§6-7).
+func TestReplacingReboundsTheDiscoboxsOwnBindingOfAnotherSecret(t *testing.T) {
+	held := []Held{{ID: "own-a", SecretID: "a", Own: true, Expires: at(90)}}
+	if steps := Replacing(held, "b", at(60)); len(steps) != 1 || steps[0].Fate != Rebound {
+		t.Fatalf("own binding of another secret = %+v, want rebound", steps)
+	}
+	held = []Held{{ID: "config-a", SecretID: "a"}}
+	if steps := Replacing(held, "b", at(60)); len(steps) != 1 || steps[0].Fate != Shadowed {
+		t.Fatalf("inherited binding of another secret = %+v, want shadowed", steps)
+	}
+}
+
+// A rebind takes the use from the binding it names, splitting one that also
+// delegates so its delegation stays, deletes the old secret's additions in
+// the variable, and leaves its bindings in other variables alone (ADR
+// 26-11-19-927 §4).
+func TestRebindTakesTheVariableAndTheOldSecretsAdditionsThere(t *testing.T) {
+	standing := []Binding{
+		{ID: "combined", Use: true, Delegate: true, EnvName: "GH_TOKEN", Created: at(1)},
+		{ID: "added", Use: true, Adds: true, EnvName: "GH_TOKEN", Created: at(2)},
+		{ID: "elsewhere", Use: true, EnvName: "OTHER", Created: at(3)},
+		{ID: "added-elsewhere", Use: true, Adds: true, EnvName: "OTHER", Created: at(4)},
+	}
+	plan := Rebind(standing, "combined", "GH_TOKEN")
+	got := fates(plan)
+	if len(got) != 2 || got["combined"] != LosesUse || got["added"] != Deleted || plan.Keep != "" {
+		t.Fatalf("rebind of a combined binding = %+v, want it to lose its use and the addition in GH_TOKEN to go", plan)
+	}
+	plan = Rebind([]Binding{{ID: "plain", Use: true, EnvName: "GH_TOKEN"}}, "plain", "GH_TOKEN")
+	if got := fates(plan); len(got) != 1 || got["plain"] != Deleted {
+		t.Fatalf("rebind of a plain binding = %+v, want it deleted", plan)
 	}
 }
 
@@ -209,5 +245,28 @@ func TestNewRoutesAreTheOnesNoGrantNames(t *testing.T) {
 	got := NewRoutes([]string{"GET a", "POST a", "DELETE a"}, [][]string{{"GET a"}, {"DELETE a"}})
 	if len(got) != 1 || got[0] != "POST a" {
 		t.Fatalf("new routes %v, want POST a alone", got)
+	}
+}
+
+// An approval rebinds from no binding handed on under a delegation nor one
+// handing over the value; a plain one it may (ADR 26-11-19-927 §3).
+func TestApprovalRefusalNamesWhatAnApprovalMayNotRebind(t *testing.T) {
+	for b, want := range map[Binding]Refusal{
+		{ID: "plain", Use: true}:                 "",
+		{ID: "child", Use: true, Parented: true}: UnderDelegation,
+		{ID: "raw", Use: true, Raw: true}:        HandsOverValue,
+		{ID: "split", Use: true, Delegate: true}: "",
+	} {
+		if got := ApprovalRefusal(b); got != want {
+			t.Fatalf("ApprovalRefusal(%s) = %q, want %q", b.ID, got, want)
+		}
+	}
+}
+
+// A rebound variable keeps its sentinel unless the new secret mints another
+// shape; one minted before formats were recorded is kept (ADR 26-11-19-927 §4).
+func TestKeepsSentinelUnlessTheShapeDiffers(t *testing.T) {
+	if !KeepsSentinel("ghp_{alnum:36}", "ghp_{alnum:36}") || !KeepsSentinel("", "xoxb-{alnum:40}") || KeepsSentinel("ghp_{alnum:36}", "xoxb-{alnum:40}") {
+		t.Fatal("KeepsSentinel disagrees with the rule")
 	}
 }

@@ -86,6 +86,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     type: array
+                replaces:
+                    description: "Rebind a discobox's variable to this secret: the ID of the discobox's own binding, of another secret, that delivers envVar now. Its use goes in the same write: one that also delegates keeps its delegation and what was handed on under it, and the variable keeps its sentinel unless the two secrets' sentinel formats differ. Needs targetKind sandbox and use. Refused when that binding no longer delivers envVar, so the rebind is the one the person saw."
+                    type: string
                 secret:
                     description: The secret, by name or ID
                     type: string
@@ -2389,17 +2392,21 @@ components:
                 bindingId:
                     description: The binding changed
                     type: string
+                replaced:
+                    $ref: '#/components/schemas/SecretBinding'
+                    description: For rebound, the binding of another secret whose variable this one took, as it stood before; the event is in that binding's history too
                 cause:
                     description: 'Why, when something caused it: the request it answered, or the parent binding whose removal took it'
                     type: string
                 event:
-                    description: What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once per value (ADR 26-10-27-840 §5)
+                    description: What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once per value (ADR 26-10-27-840 §5); rebound is a binding taking a discobox's variable from a binding of another secret, named in replaced
                     enum:
                         - created
                         - updated
                         - deleted
                         - expired
                         - delivered
+                        - rebound
                     type: string
                 id:
                     description: Event ID
@@ -5685,6 +5692,9 @@ components:
                     enum:
                         - env
                         - file
+                    type: string
+                replaces:
+                    description: "Use part only, granted as replace, and a person's answer only: the ID of the discobox's own binding, of another secret, that delivers the request's variable now, to rebind the variable to the secret approved. Its use goes; one that also delegates keeps its delegation. A binding handed on under a delegation, or one handing over the value itself, is rebound directly instead. Refused when that binding no longer delivers the variable, and required when a binding of another secret does."
                     type: string
                 routes:
                     description: Routes the binding is approved for, narrowing the secret's; omitted takes the routes the part asked for
@@ -12819,17 +12829,17 @@ paths:
                       default: default
                       description: Project ID
                       type: string
-                - description: Only this binding's events
+                - description: Only this binding's events, a rebound that replaced it included
                   in: query
                   name: bindingId
                   schema:
-                      description: Only this binding's events
+                      description: Only this binding's events, a rebound that replaced it included
                       type: string
-                - description: Only events of bindings of this secret, by name or ID
+                - description: Only events of bindings of this secret, by name or ID, a rebound that replaced one included
                   in: query
                   name: secret
                   schema:
-                      description: Only events of bindings of this secret, by name or ID
+                      description: Only events of bindings of this secret, by name or ID, a rebound that replaced one included
                       type: string
                 - description: Only events at or after this time
                   in: query

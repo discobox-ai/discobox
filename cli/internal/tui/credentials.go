@@ -402,7 +402,8 @@ func replacedFields(standing []SecretBinding, delegate bool, envVar string, useA
 func planBindings(standing []SecretBinding) []bindingplan.Binding {
 	out := make([]bindingplan.Binding, 0, len(standing))
 	for _, b := range standing {
-		out = append(out, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, Adds: b.Adds, EnvName: b.EnvVar, Created: b.Created})
+		out = append(out, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, Adds: b.Adds, EnvName: b.EnvVar, Created: b.Created,
+			Parented: b.ParentID != "", Raw: b.RawDelivery != ""})
 	}
 	return out
 }

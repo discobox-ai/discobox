@@ -290,6 +290,13 @@ A request states the whole access the caller wants of each kind: in Discobox
 an approved part replaces the caller's own binding of that kind for that
 credential, wider or narrower, and never adds to it.
 
+A request cannot ask to replace another credential. When the variable it names
+already holds a different credential in the caller, only a person approving it
+may move the variable to the credential they choose, naming the binding they
+replace. The variable keeps its placeholder unless the two credentials'
+placeholders have different shapes, so a process holding it switches over
+without restarting. A discobox answering for one it leads never does this.
+
 A second ask from the same caller for the same `name`, `envVar` (or none),
 lifetime and parts, each part resolving to the same routes (in any order),
 while one is still pending returns that pending request rather than a new

@@ -65,9 +65,12 @@ flowchart LR
   blocked routes never cut into another's, and an addition lapsing takes only
   its own routes away.
 - **Every change is recorded** in `secret_binding_events`, in the transaction
-  that makes it: created, updated, deleted, expired, with who did it and why
-  — a request ID, the parent whose removal took it, the target or secret whose
-  delete took it, or `upgrade`. Cascades and expiry are the system's.
+  that makes it: created, updated, deleted, expired, rebound, with who did it
+  and why — a request ID, the parent whose removal took it, the target or
+  secret whose delete took it, or `upgrade`. Cascades and expiry are the
+  system's. A rebind's replaced use-only binding is the one delete with no
+  event of its own: the rebound event names it
+  ([below](#a-person-rebinds-a-variable-to-another-secret)).
 - **Every change reaches the discoboxes it covers.** A write marks
   `sandboxSentinels` for each in the same transaction
   (`SecretHolders.MarkBindingHoldersDirtyTx`); the sandbox service
@@ -265,7 +268,44 @@ binding and then updates the delegation left in place, with no split.
   removed only by a grant of the value again
   ([above](#a-raw-binding-hands-over-the-value)), and one that also delegates
   is not split. A variable the discobox holds with another secret is a 409
-  too, never taken over.
+  naming the binding, unless a person's answer names it in `replaces`
+  ([below](#a-person-rebinds-a-variable-to-another-secret)); a discobox's
+  answer never rebinds.
+
+## A person rebinds a variable to another secret
+
+A person may move one of a discobox's variables from secret A to secret B in
+one write ([ADR 26-11-19-927](../../../../docs/adr/26-11-19-927-a-person-may-rebind-a-boxs-variable-to-another-secret-and-the-sentinel-stays.md)),
+directly (`CreateSecretBinding` with `replaces`) or approving a request (the
+use part's `replaces`, granted as a replacement). Both go through `rebind`
+(`rebind.go`), in the write's transaction, before B's binding is written.
+
+- **The binding replaced is named, and must still be the one.** `replaces`
+  names the discobox's own binding of A delivering the variable, as the
+  store resolves it (`EffectiveBindings.UseFor`, what a preview reads), by
+  its whole ID, read again locked. One that no longer delivers it, one of B itself, or none
+  named where A holds the variable, is a 409 naming the binding there now.
+  A person's direct create without `replaces` is refused the same way.
+- **What each path takes over** (§3): directly, any of the discobox's own
+  bindings — one under a delegation, a raw one; the new binding is the
+  person's, parentless. By approval, no binding the rebind touches — the one
+  named or an addition it deletes — that is under a delegation or raw
+  (`bindingplan.ApprovalRefusal`), each a 409 saying to rebind it directly. A discobox answering (a lead)
+  never names one (403) and is refused over another secret as before.
+- **What A keeps** (`bindingplan.Rebind`, each step's fate applied as
+  `replaceBindings` applies its own): a binding that also delegates is split
+  — its ID, routes, lifetime and children stay as the delegation; one that
+  only uses is deleted with no event of its own (`store.DeleteReboundBinding`). A's additions in the variable go; A's other variables
+  are untouched. On approval, B's own use bindings are then replaced as any
+  approval replaces them.
+- **One event.** B's create or update is recorded as `rebound`, carrying the
+  replaced binding as it stood (`BindingChange.Replaced`); it is indexed by
+  the replaced binding and secret, so it is in A's history too.
+- **The sentinel stays**: the variable's row is repointed when materialized,
+  and re-minted only when B's sentinel format differs
+  (`bindingplan.KeepsSentinel`, which the previews ask too). The value generation
+  names its secret (`Secret.ValueGeneration`), so the pool drops A's cached
+  value and a late report about A is not judged against B.
 
 Deleting a sandbox closes its open requests as denied, each part with it: the
 agent waiting on the answer is gone. A discobox sees and answers only the
@@ -605,8 +645,9 @@ discobox that hit the failure, and a credential fixed upstream would otherwise
 keep a band nobody can dismiss.
 
 **A report is about the value it names.** A resolve answers with the value's
-generation (`Secret.ValueGeneration`: when the value was written, which a
-replacement moves and a renewal in place does not), and the pool's proxy
+generation (`Secret.ValueGeneration`: the secret, and when its value was
+written, which a replacement or a rebind to another secret moves and a
+renewal in place does not), and the pool's proxy
 reports a refusal or an acceptance with the generation of the value the
 upstream answered for. One about a value since replaced is not judged: a dead
 login reported after a new one was saved over it would otherwise force a

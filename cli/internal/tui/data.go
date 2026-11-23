@@ -1905,6 +1905,10 @@ type Approval struct {
 	// edited rather than those it asked for (ADR 26-11-02-022 §3); nil sends
 	// none, and the part takes its scope's.
 	UseRoutes, DelegateRoutes []secretroute.Route
+	// Replaces is, for a use part rebinding its variable from another
+	// secret, the discobox's own binding delivering it now, as the card the
+	// person approved showed it (ADR 26-11-19-927 §§2, 6); empty for none.
+	Replaces string
 }
 
 // A part's answer.
@@ -2669,4 +2673,8 @@ type BindingDecision struct {
 	ID, Event, Actor, RequestID, BindingID, TargetID, EnvVar, ParentID string
 	At, Expires                                                        time.Time
 	RouteLists                                                         [][]secretroute.Route
+	// SecretName is the binding's secret. ReplacedID and ReplacedSecret
+	// are, for a rebound, the binding of another secret whose variable this
+	// one took, and that secret's name (ADR 26-11-19-927 §8).
+	SecretName, ReplacedID, ReplacedSecret string
 }

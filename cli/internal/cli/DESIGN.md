@@ -97,6 +97,17 @@ would cut short, shadow or remove (`writeUseGrants`). `approve --use-as
 add|replace` chooses the way, sent only when given so the server grants it as
 the request asked; it is refused on a use part denied or absent.
 
+A variable the discobox's own binding of another secret holds is rebound
+only when the person names that binding (ADR 26-11-19-927): `approve
+--replaces`, and `admin binding create --replaces` for the direct path. The
+rebind is read before anything is sent (`readRebind`, `secret_rebind.go`) and
+said as rows of its own: both secrets and their routes, what the replaced
+binding loses and keeps by `bindingplan.Rebind`, a value it handed over, and
+the sentinel by `bindingplan.KeepsSentinel`. `get --secret --replaces` and
+`admin binding create --replaces --dry-run` say it and send nothing; the
+grants rows name a held binding of another secret as rebound only with
+`--replaces`. Nothing fills `--replaces` in on the person's behalf.
+
 ## Adoption
 
 `adopt DISCOBOX --reason` files a sandbox-role adoption request and polls its

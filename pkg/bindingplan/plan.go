@@ -22,6 +22,10 @@ type Binding struct {
 	Adds    bool
 	EnvName string
 	Created time.Time
+	// Parented is a binding handed on under a delegation; Raw one handing
+	// over the value itself. An approval rebinds neither (ApprovalRefusal).
+	Parented bool
+	Raw      bool
 }
 
 // Fate is what an approval does to a standing binding.
@@ -131,6 +135,68 @@ func Delegate(standing []Binding) Plan {
 	return Plan{}
 }
 
+// Rebind plans a person rebinding envName to another secret (ADR
+// 26-11-19-927 §4): standing are the discobox's own bindings of the secret
+// that holds the variable now, and replaces is the one delivering it. That
+// one loses its use: one that also delegates keeps its delegation and what
+// was handed on under it, and one that only uses goes. Every addition of the
+// secret in envName goes with it, since it would apply again unseen if the
+// variable ever came back to that secret. Its bindings in other variables are
+// not touched. Nothing is kept: the binding of the new secret is the plan's
+// for that secret (Use), or a new one.
+func Rebind(standing []Binding, replaces, envName string) Plan {
+	var plan Plan
+	for _, b := range oldestFirst(standing) {
+		switch {
+		case b.ID == replaces && b.Delegate:
+			plan.Steps = append(plan.Steps, Step{b, LosesUse})
+		case b.ID == replaces:
+			plan.Steps = append(plan.Steps, Step{b, Deleted})
+		case b.Adds && b.EnvName == envName:
+			plan.Steps = append(plan.Steps, Step{b, Deleted})
+		}
+	}
+	return plan
+}
+
+// Refusal is why a person's approval may not rebind a variable from a
+// binding a rebind would take the use from or delete (ADR 26-11-19-927 §3):
+// the server refuses it, and the console says so before anything is sent.
+type Refusal string
+
+const (
+	// UnderDelegation is a binding handed on under a delegation, which a
+	// request's answer never takes over (ADR 26-11-02-022 §5).
+	UnderDelegation Refusal = "handed on under a delegation"
+	// HandsOverValue is a binding handing over the value itself, which only
+	// a person's direct change ends (ADR 26-10-27-840 §2).
+	HandsOverValue Refusal = "hands over the value itself"
+)
+
+// ApprovalRefusal is why an approval may not rebind from b, empty when it
+// may. It is asked of every binding a Rebind plan touches, not only the one
+// it names: an addition handed on under a delegation is a lead's grant too.
+// A person's direct rebind may touch any of them.
+func ApprovalRefusal(b Binding) Refusal {
+	switch {
+	case b.Parented:
+		return UnderDelegation
+	case b.Raw:
+		return HandsOverValue
+	}
+	return ""
+}
+
+// KeepsSentinel is whether a variable whose sentinel was minted from the
+// format minted keeps it when rebound to a secret minting from format (ADR
+// 26-11-19-927 §4): a sentinel mimics its credential's shape, so one of
+// another shape is minted again, and one minted before formats were
+// recorded is kept. The server materializes by it; a preview asks it of
+// the formats the two secrets are stored with.
+func KeepsSentinel(minted, format string) bool {
+	return minted == "" || minted == format
+}
+
 func oldestFirst(standing []Binding) []Binding {
 	out := append([]Binding(nil), standing...)
 	// Compared at whole seconds, ties broken by ID. The server plans from
@@ -197,12 +263,14 @@ func After(standing []Binding, use Plan, envName string) []Binding {
 // it (ADR 26-11-03-329 §5): the binding delivering the variable, or an
 // addition stacking on it. Own is whether it is the discobox's own, on the
 // sandbox, rather than its harness config's or project's; Expires is when it
-// lapses, zero never.
+// lapses, zero never. SecretID is the secret it is of: one of another secret
+// than the approval's is rebound or shadowed, never shortened.
 type Held struct {
-	ID      string
-	Adds    bool
-	Own     bool
-	Expires time.Time
+	ID       string
+	SecretID string
+	Adds     bool
+	Own      bool
+	Expires  time.Time
 }
 
 // HeldFate is what granting a use part as a replacement does to a grant
@@ -218,8 +286,14 @@ const (
 	Shortened HeldFate = "shortened"
 	// Shadowed is a harness config's or project's binding: not the
 	// discobox's own, so not touched, but the approval's, on the sandbox, is
-	// narrower and delivers the variable while it lasts.
+	// narrower and delivers the variable while it lasts. One of another
+	// secret is shadowed too, and the change of secret is the reader's to
+	// say (ADR 26-11-19-927 §7).
 	Shadowed HeldFate = "shadowed"
+	// Rebound is the discobox's own binding of another secret: only a
+	// person approving with replaces naming it takes the variable from it
+	// (ADR 26-11-19-927 §§2, 4), and it then loses its use (Rebind).
+	Rebound HeldFate = "rebound"
 )
 
 // HeldStep is one grant held and what a replacement does to it.
@@ -228,13 +302,14 @@ type HeldStep struct {
 	Fate HeldFate
 }
 
-// Replacing says what granting a use part as a replacement, lasting until
-// until (zero never), does to each grant held in its variable, by the rule
-// Use applies, in the order held: an addition goes, the discobox's own
-// binding is cut short when it had longer, and one from its harness config
+// Replacing says what granting a use part of secretID as a replacement,
+// lasting until until (zero never), does to each grant held in its variable,
+// by the rule Use and Rebind apply, in the order held: an addition goes, the
+// discobox's own binding of another secret is rebound, its own binding of
+// secretID is cut short when it had longer, and one from its harness config
 // or project is shadowed. A grant left as it would be is not listed. An
 // addition changes none of them (AddBeside).
-func Replacing(held []Held, until time.Time) []HeldStep {
+func Replacing(held []Held, secretID string, until time.Time) []HeldStep {
 	var out []HeldStep
 	for _, h := range held {
 		switch {
@@ -242,6 +317,8 @@ func Replacing(held []Held, until time.Time) []HeldStep {
 			out = append(out, HeldStep{h, Goes})
 		case !h.Own:
 			out = append(out, HeldStep{h, Shadowed})
+		case h.SecretID != secretID:
+			out = append(out, HeldStep{h, Rebound})
 		case !until.IsZero() && (h.Expires.IsZero() || h.Expires.After(until)):
 			out = append(out, HeldStep{h, Shortened})
 		}

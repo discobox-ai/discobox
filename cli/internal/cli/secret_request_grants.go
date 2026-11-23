@@ -26,11 +26,19 @@ type useGrants struct {
 	// delivers it, then each addition stacking on it.
 	held  []apimodel.BoundSecret
 	asked []apimodel.SecretRoute
+	// secretID is the secret the approval would grant: the one chosen,
+	// else the one delivering the variable now.
+	secretID string
+	// rebind is, when the approval names a binding of another secret to
+	// replace, what rebinding the variable does (ADR 26-11-19-927 §6).
+	rebind *rebindView
 }
 
 // requestUseGrants reads what applies in the variable of a request's use
-// part on the discobox that asked; nil for a request with no use part.
-func (a *App) requestUseGrants(ctx context.Context, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest) (*useGrants, error) {
+// part on the discobox that asked, as approving it with secretID would meet
+// it (empty: the secret delivering the variable now); nil for a request with
+// no use part.
+func (a *App) requestUseGrants(ctx context.Context, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest, secretID string) (*useGrants, error) {
 	use, ok := request.Use.Get()
 	box, envVar := request.SandboxId.Or(""), request.EnvName.Or("")
 	if !ok || box == "" || envVar == "" {
@@ -48,11 +56,14 @@ func (a *App) requestUseGrants(ctx context.Context, client *apiclientgen.Client,
 	if err != nil {
 		return nil, err
 	}
-	grants := &useGrants{envVar: envVar, asked: use.Routes}
+	grants := &useGrants{envVar: envVar, asked: use.Routes, secretID: secretID}
 	for _, bound := range body.BoundSecrets {
 		if bound.Use && bound.EnvVar.Or("") == envVar && bound.NotApplied.Or("") == "" {
 			grants.held = append(grants.held, bound)
 		}
+	}
+	if grants.secretID == "" && len(grants.held) > 0 {
+		grants.secretID = grants.held[0].SecretId
 	}
 	return grants, nil
 }
@@ -93,7 +104,7 @@ func formatRouteTexts(routes []apimodel.SecretRoute) []string {
 func (g *useGrants) planHeld() []bindingplan.Held {
 	var out []bindingplan.Held
 	for _, bound := range g.held {
-		held := bindingplan.Held{ID: bound.BindingId, Adds: bound.Adds.Or(false), Own: bound.From == apiclientgen.BoundSecretFromSandbox}
+		held := bindingplan.Held{ID: bound.BindingId, SecretID: bound.SecretId, Adds: bound.Adds.Or(false), Own: bound.From == apiclientgen.BoundSecretFromSandbox}
 		if at, ok := bound.ExpiresAt.Get(); ok {
 			held.Expires = at
 		}
@@ -162,18 +173,26 @@ func writeUseGrants(w io.Writer, g *useGrants, as bindingplan.As, ttl time.Durat
 	for _, bound := range g.held {
 		byID[bound.BindingId] = bound
 	}
-	for _, step := range bindingplan.Replacing(g.planHeld(), now.Add(ttl)) {
+	for _, step := range bindingplan.Replacing(g.planHeld(), g.secretID, now.Add(ttl)) {
 		bound := byID[step.Held.ID]
 		var fate string
 		switch step.Fate {
 		case bindingplan.Goes:
 			fate = "goes"
+		case bindingplan.Rebound:
+			fate = fmt.Sprintf("holds %s with %s, another secret: approving rebinds the variable only with --replaces %s", terminalSafe(g.envVar), terminalSafe(bound.SecretName.Or(bound.SecretId)), step.Held.ID)
 		case bindingplan.Shadowed:
 			fate = fmt.Sprintf("from its %s, is shadowed by the approval's binding for %s, and its routes do not apply while it is", bound.From, until)
+			if bound.SecretId != g.secretID {
+				fate = fmt.Sprintf("from its %s, holds %s with %s, another secret, and is shadowed by the approval's binding of this one for %s", bound.From, terminalSafe(g.envVar), terminalSafe(bound.SecretName.Or(bound.SecretId)), until)
+			}
 		case bindingplan.Shortened:
 			fate = fmt.Sprintf("held %s, takes the approval's routes and lasts only %s", grantLifetime(bound.ExpiresAt), until)
 		}
 		fmt.Fprintf(w, "  IF REPLACED\t%s %s\n", step.Held.ID, fate)
+	}
+	if g.rebind != nil {
+		g.rebind.write(w, false)
 	}
 }
 

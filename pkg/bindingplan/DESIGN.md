@@ -25,6 +25,16 @@ use binding that the server never makes. `Delegate` relies on a discobox
 holding at most one delegate binding of a secret, which the server's store
 enforces (`idx_secret_binding_delegate`).
 
-It decides fates only, from IDs, flags, variables and age; refusals, writes
-and sentinels stay with the server. Standard library only, so the CLI's
+A person may rebind the variable from another secret (ADR 26-11-19-927):
+`Rebind` plans what the replaced secret's bindings lose — the one named loses
+its use (split when it also delegates), its additions in the variable go —
+and `Replacing` reports the discobox's own binding of another secret as
+`rebound`, never `shortened`; a harness config's or project's of another
+secret stays `shadowed`. `Held.SecretID` is what tells them apart, so every
+caller fills it. `ApprovalRefusal` is the approval path's refusal of a
+binding a rebind touches, and `KeepsSentinel` whether the variable keeps its
+sentinel: the server applies both, and the CLI and console say them first.
+
+It decides fates, and the two rebind rules above, from IDs, flags, variables,
+formats and age; writes, refusal wording and minting stay with the server. Standard library only, so the CLI's
 module graph gains nothing. Change the rule here, never in a reader.

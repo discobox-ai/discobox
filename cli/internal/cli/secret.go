@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -325,7 +326,7 @@ func (a *App) newSecretRequestListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestGetCommand() *cobra.Command {
-	var secretRef string
+	var secretRef, replaces string
 	cmd := &cobra.Command{Use: "get REQUEST_ID", Short: "Show a secret request", Long: `Show a secret request: what each part asks, the roles it was asked by beside
 what their routes grant, and the answer once there is one.
 
@@ -339,7 +340,12 @@ replacement would cut short or shadow.
 secret, the use part as the request asks, would do to the bindings the
 discobox already holds of it: a part approved to replace replaces them, so
 access it loses is read before it is approved. approve --secret says it again
-for the parts it approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+for the parts it approves.
+
+A variable the discobox's own binding of another secret holds is rebound only
+when the approval names that binding (--replaces). get --secret --replaces
+shows what that does first: both secrets and their routes, what the binding
+loses and keeps, and whether the variable keeps its sentinel.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -361,12 +367,16 @@ for the parts it approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Com
 			return err
 		}
 		var replacements []partReplacement
+		var secretID string
+		replaces = strings.TrimSpace(replaces)
+		if replaces != "" && strings.TrimSpace(secretRef) == "" {
+			return fmt.Errorf("--replaces shows a rebind to the secret --secret names")
+		}
 		if strings.TrimSpace(secretRef) != "" {
 			if request.Status != apiclientgen.SecretRequestStatusPending {
 				return fmt.Errorf("--secret shows what approving would replace; request %s is already %s", request.ID, request.Status)
 			}
-			secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
-			if err != nil {
+			if secretID, err = a.resolveSecretID(cmd.Context(), client, projectID, secretRef); err != nil {
 				return err
 			}
 			if !a.usesSandboxRole() {
@@ -377,18 +387,25 @@ for the parts it approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Com
 		}
 		var grants *useGrants
 		if request.Status == apiclientgen.SecretRequestStatusPending && a.output != "json" && !a.usesSandboxRole() {
-			if grants, err = a.requestUseGrants(cmd.Context(), client, projectID, request); err != nil {
+			if grants, err = a.requestUseGrants(cmd.Context(), client, projectID, request, secretID); err != nil {
 				return err
+			}
+			if grants != nil && replaces != "" {
+				use, _ := request.Use.Get()
+				if grants.rebind, err = a.readRebind(cmd.Context(), client, projectID, request.SandboxId.Or(""), request.EnvName.Or(""), replaces, secretID, approvedRoutesText(use.Routes, nil, "")); err != nil {
+					return err
+				}
 			}
 		}
 		return a.writeSecretRequest(cmd, request, replacements, grants)
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "On a pending request: show what approving it with this secret, by name or ID, would replace")
+	cmd.Flags().StringVar(&replaces, "replaces", "", "With --secret: show what rebinding the variable from this binding of another secret would do")
 	return cmd
 }
 
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
-	var secretRef string
+	var secretRef, replaces string
 	var raw rawFlag
 	var routes, delegateRoutes []string
 	var useDecision, delegateDecision decisionFlag
@@ -431,6 +448,15 @@ variable, file the path of a file in memory holding it. It is yours to choose
 --allow-raw), and only the use part takes it. The discobox can then send the
 value anywhere; its pool only refuses a request carrying it off its routes.
 
+--replaces rebinds the variable from the discobox's own binding of another
+secret that holds it now, by its ID, as secret request get --secret
+--replaces showed: that binding loses its use, keeping a delegation it also
+holds and what was handed on under it, and the variable keeps its sentinel
+unless the two secrets' sentinels have different shapes. Without it, a
+variable held by another secret is refused, naming the binding. A binding
+handed on under a delegation, or one handing over the value itself, is
+rebound with admin binding create --replaces instead.
+
 ` + routeHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -472,6 +498,7 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 			delegateRoutes: handedOn,
 			raw:            raw,
 			lifetime:       lifetimeFlag,
+			replaces:       strings.TrimSpace(replaces),
 		})
 		if err != nil {
 			return err
@@ -481,6 +508,10 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 		// What the approval replaces is read before it is sent, while the
 		// discobox still holds it, and said after.
 		var replacements []partReplacement
+		var rebind *rebindView
+		if strings.TrimSpace(replaces) != "" && strings.TrimSpace(secretRef) == "" {
+			return fmt.Errorf("--replaces rebinds the variable to the secret --secret names")
+		}
 		if strings.TrimSpace(secretRef) != "" {
 			selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
 			if err != nil {
@@ -490,6 +521,13 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 			if !a.usesSandboxRole() {
 				if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, asked, selectedSecretID, grantedAs(asked, body.Use), approves(body.Delegate)); err != nil {
 					return err
+				}
+				if strings.TrimSpace(replaces) != "" {
+					use, _ := asked.Use.Get()
+					toRoutes := approvedRoutesText(use.Routes, routes, useScope.value)
+					if rebind, err = a.readRebind(cmd.Context(), client, projectID, asked.SandboxId.Or(""), asked.EnvName.Or(""), strings.TrimSpace(replaces), selectedSecretID, toRoutes); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -520,6 +558,13 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 			}
 			return nil
 		}
+		if rebind != nil {
+			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			rebind.write(tw, true)
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+		}
 		// What was approved is each binding, not the ask: its routes and
 		// lifetime can be narrower than what the agent asked for, so they are
 		// read back and said as `secret bind` says them.
@@ -535,6 +580,7 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 	cmd.Flags().StringArrayVar(&delegateRoutes, "delegate-route", nil, "What the delegate part may hand on, as a route like --route; one per flag (default the routes the part named)")
 	cmd.Flags().Var(lifetimeFlag, "for", bindingLifetimeApproveFlagUsage)
 	cmd.Flags().Var(&raw, "raw", "Use part only: grant the value itself, env (in the variable) or file (a file whose path is in it); left out, a sentinel")
+	cmd.Flags().StringVar(&replaces, "replaces", "", replacesFlagUsage)
 	return cmd
 }
 
@@ -609,6 +655,9 @@ type approvalAnswer struct {
 	useRoutes, delegateRoutes []apimodel.SecretRouteInput
 	raw                       rawFlag
 	lifetime                  *lifetime.Flag
+	// replaces is the binding of another secret the use part rebinds the
+	// variable from (ADR 26-11-19-927 §2).
+	replaces string
 }
 
 // approvalBody turns the flags into an answer naming a decision for every
@@ -666,12 +715,18 @@ func approvalBody(request *apimodel.SecretRequest, answer approvalAnswer) (*apim
 			if answer.useAs.value != "" {
 				part.As = apiclientgen.NewOptSecretRequestPartDecisionAs(apiclientgen.SecretRequestPartDecisionAs(answer.useAs.value))
 			}
-		} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" || answer.useScope.value != "" {
-			return nil, fmt.Errorf("--route, --raw, --use-as and --use-scope are for an approved use part; the use part is denied")
+			if answer.replaces != "" {
+				if answer.useAs.value == bindingplan.Add || (answer.useAs.value == "" && askedAs(request) == bindingplan.Add) {
+					return nil, fmt.Errorf("--replaces rebinds the variable, which an addition never does; grant the use part with --use-as replace")
+				}
+				part.Replaces = apiclientgen.NewOptString(answer.replaces)
+			}
+		} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" || answer.useScope.value != "" || answer.replaces != "" {
+			return nil, fmt.Errorf("--route, --raw, --use-as, --use-scope and --replaces are for an approved use part; the use part is denied")
 		}
 		body.Use = apiclientgen.NewOptSecretRequestPartDecision(part)
-	} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" || answer.useScope.value != "" {
-		return nil, fmt.Errorf("--route, --raw, --use-as and --use-scope are the use part's; request %s asks only to delegate (--delegate-route narrows what it hands on)", request.ID)
+	} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" || answer.useScope.value != "" || answer.replaces != "" {
+		return nil, fmt.Errorf("--route, --raw, --use-as, --use-scope and --replaces are the use part's; request %s asks only to delegate (--delegate-route narrows what it hands on)", request.ID)
 	}
 	if hasDelegate {
 		decision := decide(answer.delegate.value)
