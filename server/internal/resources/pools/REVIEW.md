@@ -34,6 +34,11 @@
   `BootstrapEvidence` is such a change, even one that is display only; a
   place with nothing to add says so to its reviewer. A display-only field
   once updated this package's doc alone.
+- A new writer of a pool column updates "Who owns which status field" in
+  this package's `DESIGN.md`, and `server/internal/store/DESIGN.md` where it
+  is a narrow store write: a mid-pass save of the provider's record
+  (`RecordPoolHost`) once left the table naming the reconciler its only
+  writer.
 - Display state a pass writes on the attempt (`PoolBootstrap.Waiting`) is
   cleared by the pass that ends it, not only by progress: a pass can get
   past a wait and report no evidence, and an expiry would then blame the

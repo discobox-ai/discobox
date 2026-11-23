@@ -93,7 +93,9 @@ type RuntimeProvider interface {
 	Check(ctx context.Context) error
 	// EnsurePool creates or drift-corrects the pool's host runtime. It is
 	// idempotent and updates the pool row's runtime state and scheduling flags
-	// in place; the caller persists the row.
+	// in place; the caller persists the row as the pass settles. What the
+	// host's agent may ask for before then (a key placed on it) the provider
+	// saves itself, at once, through maker.RecordHost.
 	//
 	// maker is what a box is made with, enrolled and provisioned (ADR
 	// 26-10-24-953 §§2, 4). Before replacing or creating an agent, begin must

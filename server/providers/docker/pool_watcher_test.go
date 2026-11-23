@@ -328,6 +328,10 @@ func (m *recordingPoolManager) EnrollPool(context.Context, string, string) error
 	return nil
 }
 
+func (m *recordingPoolManager) RecordPoolHost(context.Context, string, model.RawJSON, *model.PoolHostCredential) error {
+	return nil
+}
+
 func (m *recordingPoolManager) PoolBox(context.Context, imagecache.Platform) (sandbox.PoolBox, error) {
 	return sandbox.PoolBox{}, nil
 }

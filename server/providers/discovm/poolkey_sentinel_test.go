@@ -120,6 +120,48 @@ func TestFakePoolMachineHoldsASentinelForTheDriversKey(t *testing.T) {
 	}
 }
 
+// The pool's proxy asks for its engine's key while the pass that placed the
+// sentinel is still running: the pass starts the agent, which calls its
+// driver at once, and the server answers by the pool's row. So the sentinel's
+// record is on the row before the box's agent runs, and the row as it stands
+// then is answered, not refused: a refusal leaves the sentinel in place, the
+// driver's service refuses it, and the proxy holds that refusal past the pool
+// turning active (#1586). A pass that places nothing new saves nothing.
+func TestFakePoolMachineSentinelIsSavedBeforeItsAgentRuns(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-sentinel-early", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	asArchil(t, r, driver, "key-THEPROVIDERSOWN")
+
+	maker := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatalf("EnsurePool() on an archil pool = %v, want it made", err)
+	}
+	sentinel := guestKey(t, r, pool).Secret
+	if len(maker.enrolled) == 0 {
+		t.Fatal("the pool's box was never enrolled")
+	}
+	// The row as the server stores it while the pass runs on.
+	row := model.Pool{ID: pool.ID, ProjectID: pool.ProjectID, RuntimeState: maker.rowAtEnroll.RuntimeState, HostCredential: maker.rowAtEnroll.HostCredential}
+	if credential := row.HostCredential; credential == nil || credential.Key != model.PoolHostKeySentinel {
+		t.Fatalf("host credential saved before the agent ran = %+v, want sentinel", credential)
+	}
+	provider := poolruntime.New(r, Definition("archil"), nil, nil)
+	value, err := provider.ResolveDriverKey(ctx, nil, &row, sentinel, archilControlPlane)
+	if err != nil || value != "key-THEPROVIDERSOWN" {
+		t.Fatalf("ResolveDriverKey() by the row before the pass settled = %q, %v; want the provider's key", value, err)
+	}
+
+	again := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, again, nil); err != nil {
+		t.Fatal(err)
+	}
+	if again.row.RuntimeState != nil {
+		t.Fatalf("a pass that placed nothing saved %s on the pool's row", again.row.RuntimeState)
+	}
+}
+
 // A provider key an older server placed on such a pool's machine is replaced
 // by the sentinel: the file holds the sentinel, and the record says so.
 func TestFakePoolMachineSentinelReplacesTheProvidersKeyAnOlderServerPlaced(t *testing.T) {

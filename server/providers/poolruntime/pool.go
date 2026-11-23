@@ -13,8 +13,9 @@ import (
 
 // PoolMaker is what a runtime provider makes a pool's box with (ADR
 // 26-10-24-953 §§2, 4), as a pool makes a sandbox's: the pool's bootstrap, what
-// the box is placed with, and the enrollment of the key the box makes. The
-// provider supplies the box and the channel into it; nothing here is minted,
+// the box is placed with, the enrollment of the key the box makes, and the
+// saving of what the provider records of the box's host before the pass
+// settles. The provider supplies the box and the channel into it; nothing here is minted,
 // so a drift check that finds a healthy pool may hold one and spend nothing.
 type PoolMaker interface {
 	// Bootstrap is the pool's bootstrap: which pool it is and which control
@@ -30,6 +31,11 @@ type PoolMaker interface {
 	// identity`), as the pool's identity: what the box fetches its bundles
 	// with, and its agent signs with, from then on.
 	Enroll(ctx context.Context, publicKey string) error
+	// RecordHost saves runtimeState and credential, what the provider
+	// records of the pool's host, on the pool's row now rather than when the
+	// pass settles (PoolManager.RecordPoolHost): the agent the pass starts
+	// may ask for what they name before then.
+	RecordHost(ctx context.Context, runtimeState model.RawJSON, credential *model.PoolHostCredential) error
 }
 
 // poolMaker is the PoolMaker of one pool, over the control plane.
@@ -87,6 +93,10 @@ func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) 
 
 func (m *poolMaker) Box(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
 	return m.manager.PoolBox(ctx, platform)
+}
+
+func (m *poolMaker) RecordHost(ctx context.Context, runtimeState model.RawJSON, credential *model.PoolHostCredential) error {
+	return m.manager.RecordPoolHost(ctx, m.pool.ID, runtimeState, credential)
 }
 
 func (m *poolMaker) Enroll(ctx context.Context, publicKey string) error {

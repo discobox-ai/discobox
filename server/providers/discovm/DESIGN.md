@@ -530,6 +530,13 @@ the machine.
   before its machine is made (`keyable`), so no machine is billed that no
   key could reach; the provider's key an older server placed
   (`deliverProviderKey`, gone) is taken off the machine.
+- **Saved at once**: whatever key the pass placed, its record is saved on the
+  pool's row the moment it is placed (`PoolMaker.RecordHost`), before the
+  box's agent is provisioned, not when the pass settles. The agent calls its
+  driver as soon as it starts, and the proxy's `resolve-driver-key` is answered
+  from the row: a sentinel the row did not yet hold would be refused, and the
+  proxy holds a refusal for a while, past the pool turning active. A pass that
+  places nothing new saves nothing.
 - **Revoked**: every issued key of the pool, by name, when the pool is
   deleted or its machine replaced. A record that says a key was issued makes
   a refused listing an error to retry rather than a key left behind.

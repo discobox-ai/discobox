@@ -600,6 +600,9 @@ func (enrollAny) Box(context.Context, imagecache.Platform) (sandbox.PoolBox, err
 	return sandbox.PoolBox{}, errors.New("unused")
 }
 func (enrollAny) Enroll(context.Context, string) error { return nil }
+func (enrollAny) RecordHost(context.Context, model.RawJSON, *model.PoolHostCredential) error {
+	return nil
+}
 
 // placeSandbox places a sandbox's agent in g as its pool places it in a
 // machine: the agent layer with the machine's units, from the agent bundle,

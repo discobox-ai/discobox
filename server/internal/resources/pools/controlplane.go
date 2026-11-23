@@ -104,6 +104,10 @@ func (s *ControlPlane) EnrollPool(ctx context.Context, poolID, publicKey string)
 	return err
 }
 
+func (s *ControlPlane) RecordPoolHost(ctx context.Context, poolID string, runtimeState model.RawJSON, credential *model.PoolHostCredential) error {
+	return s.store.RecordPoolHost(ctx, poolID, runtimeState, credential)
+}
+
 func (s *ControlPlane) PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
 	if s.boxes == nil {
 		return sandbox.PoolBox{}, errors.New("this server has nothing to place a pool's box with")
@@ -204,7 +208,7 @@ func (s *ControlPlane) SchedulePoolRepair(ctx context.Context, poolID, reason st
 			pool.IncrementGeneration()
 			pool.RecordIntent(pool.DesiredState)
 			slog.InfoContext(ctx, "re-driving a settled pool failure", "poolId", pool.ID, "reason", reason)
-			if err := txStore.UpdatePoolWithGeneration(ctx, pool, previousGeneration); err != nil {
+			if err := txStore.UpdatePoolIntentWithGeneration(ctx, pool, previousGeneration); err != nil {
 				if errors.Is(err, store.ErrGenerationConflict) {
 					return nil // concurrent intent already re-drove the pool
 				}
@@ -234,7 +238,7 @@ func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID s
 		previousGeneration := pool.Generation
 		pool.IncrementGeneration()
 		pool.RecordIntent(model.DesiredStateDeleted)
-		if err := txStore.UpdatePoolWithGeneration(ctx, pool, previousGeneration); err != nil {
+		if err := txStore.UpdatePoolIntentWithGeneration(ctx, pool, previousGeneration); err != nil {
 			return err
 		}
 		return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))

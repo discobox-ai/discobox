@@ -39,6 +39,14 @@ type PoolManager interface {
 	// request the pool signs is verified against from then on. It is the
 	// pool's registration, made by the server itself.
 	EnrollPool(ctx context.Context, poolID, publicKey string) error
+	// RecordPoolHost saves runtimeState and credential, what a pool's
+	// provider records of its host, on the pool's row at once, not when the
+	// reconcile settles: what the host's agent asks for by them (its
+	// engine's key, in a sentinel's place) is answered from the row while the
+	// pass that placed them is still running. It writes nothing else, and
+	// is guarded by no generation: it is what the host now holds, whatever
+	// intent the pass was for.
+	RecordPoolHost(ctx context.Context, poolID string, runtimeState model.RawJSON, credential *model.PoolHostCredential) error
 	// PoolBox is what a pool's maker places in its box (ADR 26-10-24-953 §2):
 	// the release's agent, its layer for platform, and the pool's bundles.
 	PoolBox(ctx context.Context, platform imagecache.Platform) (PoolBox, error)
