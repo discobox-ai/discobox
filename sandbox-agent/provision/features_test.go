@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -606,22 +607,19 @@ func TestTheNodeFeatureAdoptsTheBaseImagesNodeAndInstallsWhereThereIsNone(t *tes
 			ran := filepath.Join(t.TempDir(), "ran")
 			b.feature("core", map[string]string{provisionspec.FileName: head + "steps: []\n"})
 			files := map[string]string{}
-			err := filepath.WalkDir("../features/node", func(path string, d os.DirEntry, err error) error {
+			shipped := os.DirFS("../features/node")
+			err := fs.WalkDir(shipped, ".", func(path string, d fs.DirEntry, err error) error {
 				if err != nil || d.IsDir() {
-					return err
-				}
-				rel, err := filepath.Rel("../features/node", path)
-				if err != nil {
 					return err
 				}
 				switch {
 				case strings.HasPrefix(d.Name(), "check-"):
-					files[rel] = "#!/bin/sh\nexit 1\n"
+					files[path] = "#!/bin/sh\nexit 1\n"
 				case strings.HasSuffix(d.Name(), ".sh"):
-					files[rel] = "#!/bin/sh\necho " + strings.TrimSuffix(d.Name(), ".sh") + " >> " + ran + "\n"
+					files[path] = "#!/bin/sh\necho " + strings.TrimSuffix(d.Name(), ".sh") + " >> " + ran + "\n"
 				default:
-					data, err := os.ReadFile(path)
-					files[rel] = string(data)
+					data, err := fs.ReadFile(shipped, path)
+					files[path] = string(data)
 					return err
 				}
 				return nil
