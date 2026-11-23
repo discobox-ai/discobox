@@ -108,3 +108,14 @@
 - A place shown for approval (`MessagePlace.Describe`) quotes its pointer and
   every condition name: a name may read "op is 2 and nonce", and shown bare
   an approver reads a condition the place does not have.
+- **A request is held to every way an upstream may read its path**
+  (`RequestPaths`): decoded, with an encoded `/` kept in its segment, and
+  with each segment's `;` parameters removed before dot segments resolve,
+  at a `;` as sent and at one decoded from `%3B`. Tomcat routes
+  `/admin;x/a` as `/admin/a` and `/public/..;/admin` as `/admin`; reading
+  only the literal path let a sandbox carry a credential past a blocked
+  path or out of an open one (#1537). A new way servers normalize a path
+  becomes another reading, with a case in `TestRequestPathsResolveDotSegments`.
+  A reading that keeps one escape encoded (`%2F`) still decodes every other
+  escape in that segment: keeping the whole segment as sent hid a `%3B`
+  beside a `%2F` from the parameter readings.

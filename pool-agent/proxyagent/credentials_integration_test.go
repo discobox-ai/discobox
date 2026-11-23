@@ -136,8 +136,12 @@ func TestASentinelIsHeldToItsRoutesOnRealTraffic(t *testing.T) {
 	if status := get("/repos"); status != http.StatusOK {
 		t.Fatalf("allowed request = %d, want the upstream's 200", status)
 	}
-	if status := get("/admin/users"); status != http.StatusForbidden {
-		t.Fatalf("blocked route = %d, want the proxy's 403", status)
+	// A servlet container drops a segment's ";" parameters before routing,
+	// so each of these is /admin/users to it (#1537).
+	for _, path := range []string{"/admin/users", "/admin;x/users", "/repos/..;/admin/users", "/repos/..%3B/admin/users"} {
+		if status := get(path); status != http.StatusForbidden {
+			t.Fatalf("blocked route at %s = %d, want the proxy's 403", path, status)
+		}
 	}
 	if len(sawAuthorization) != 1 || sawAuthorization[0] != "/repos Bearer "+realValue {
 		t.Fatalf("upstream saw %q, want only the allowed request, with the real credential", sawAuthorization)

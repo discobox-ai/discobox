@@ -72,32 +72,85 @@ const methodOverrideParam = "_method"
 
 // RequestPaths are the paths a request's URL is matched on, each with its dot
 // segments resolved, so a request cannot step out of the path it names
-// (/mcp/readonly/../write is /mcp/write). The first is the path decoded. An
-// encoded "/" is data to a server that routes on the path as sent and a
-// separator to one that decodes it first, and the proxy cannot tell which the
-// upstream is, so a path holding one has a second reading that keeps it
-// inside its segment: /mcp/x%2F..%2Freadonly is /mcp/readonly decoded and
-// /mcp/x%2F..%2Freadonly as sent. A request is held to every reading. A URL
-// that does not parse has the root path.
+// (/mcp/readonly/../write is /mcp/write). The first is the path decoded. A
+// request is held to every reading, and the proxy cannot tell how the
+// upstream reads a path, so one is read every way an upstream might:
+//
+//   - An encoded "/" is data to a server that routes on the path as sent and a
+//     separator to one that decodes it first, so a path holding one is also
+//     read with it kept inside its segment: /mcp/x%2F..%2Freadonly is
+//     /mcp/readonly decoded and /mcp/x%2F..%2Freadonly as sent.
+//   - A ";" starts a segment's path parameters, which servlet containers
+//     (Tomcat, Jetty) drop before routing, so a path holding one is also read
+//     with each segment's parameters removed before its dot segments
+//     resolve: /admin;x/a is /admin/a, and /public/..;/admin is /admin. They
+//     are removed both at a ";" as sent, before decoding (Tomcat), and at one
+//     decoded from %3B, for a server that decodes first.
+//
+// A URL that does not parse has the root path.
 func RequestPaths(rawURL string) []string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Path == "" {
 		return []string{"/"}
 	}
-	decoded := path.Clean("/" + u.Path)
-	segments := strings.Split(u.EscapedPath(), "/")
-	for i, segment := range segments {
-		// Every escape but a "/" is read as the server would, so an encoded
-		// dot segment (%2e%2e) still resolves.
-		if unescaped, err := url.PathUnescape(segment); err == nil && !strings.Contains(unescaped, "/") {
-			segments[i] = unescaped
+	escaped := strings.Split(u.EscapedPath(), "/")
+	var paths []string
+	add := func(p string) {
+		if p = path.Clean("/" + p); !slices.Contains(paths, p) {
+			paths = append(paths, p)
 		}
 	}
-	asSent := path.Clean("/" + strings.Join(segments, "/"))
-	if asSent == decoded {
-		return []string{decoded}
+	for _, paramsAsSent := range []bool{false, true} {
+		for _, slashDecoded := range []bool{true, false} {
+			segments := make([]string, len(escaped))
+			for i, segment := range escaped {
+				if paramsAsSent {
+					segment, _, _ = strings.Cut(segment, ";")
+				}
+				// Every escape is read as the server would, so an encoded dot
+				// segment (%2e%2e) or ";" (%3B) still counts, but for a "/"
+				// in the reading that keeps it in its segment.
+				if slashDecoded {
+					segments[i] = unescapeSegment(segment)
+				} else {
+					segments[i] = unescapeExceptSlash(segment)
+				}
+			}
+			joined := strings.Join(segments, "/")
+			add(joined)
+			add(withoutPathParams(joined))
+		}
 	}
-	return []string{decoded, asSent}
+	return paths
+}
+
+// unescapeSegment decodes every escape in a path segment, or leaves it as
+// sent when it does not decode.
+func unescapeSegment(segment string) string {
+	if unescaped, err := url.PathUnescape(segment); err == nil {
+		return unescaped
+	}
+	return segment
+}
+
+// unescapeExceptSlash decodes every escape in a path segment but an encoded
+// "/", which stays as %2F, so the segment keeps it as data.
+func unescapeExceptSlash(segment string) string {
+	parts := strings.Split(strings.ReplaceAll(segment, "%2f", "%2F"), "%2F")
+	for i, part := range parts {
+		parts[i] = unescapeSegment(part)
+	}
+	return strings.Join(parts, "%2F")
+}
+
+// withoutPathParams removes each segment's path parameters, from its first
+// ";" to its end.
+func withoutPathParams(p string) string {
+	segments := strings.Split(p, "/")
+	for i, segment := range segments {
+		segments[i], _, _ = strings.Cut(segment, ";")
+	}
+	return strings.Join(segments, "/")
 }
 
 // Decide says whether a request may carry a secret, held to every route list

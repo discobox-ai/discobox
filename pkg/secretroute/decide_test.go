@@ -48,6 +48,19 @@ func TestRequestPathsResolveDotSegments(t *testing.T) {
 		// as a server routing on the path as sent would keep it.
 		"https://x.test/mcp/x%2F..%2Freadonly":            {"/mcp/readonly", "/mcp/x%2F..%2Freadonly"},
 		"https://x.test/mcp/readonly/a%2F..%2F..%2Fwrite": {"/mcp/write", "/mcp/readonly/a%2F..%2F..%2Fwrite"},
+		// A ";" is read both ways too: as data, and as the start of path
+		// parameters a servlet container drops before resolving dot segments.
+		"https://x.test/admin;x/who.jsp":           {"/admin;x/who.jsp", "/admin/who.jsp"},
+		"https://x.test/public/..;/admin/who.jsp":  {"/public/..;/admin/who.jsp", "/admin/who.jsp"},
+		"https://x.test/public/..;a=b/admin":       {"/public/..;a=b/admin", "/admin"},
+		"https://x.test/public;a/b;c=d/e?q=;":      {"/public;a/b;c=d/e", "/public/b/e"},
+		"https://x.test/public/;/admin":            {"/public/;/admin", "/public/admin"},
+		"https://x.test/public/..%3b/admin":        {"/public/..;/admin", "/admin"},
+		"https://x.test/admin%3Bx/who.jsp":         {"/admin;x/who.jsp", "/admin/who.jsp"},
+		"https://x.test/public/x;%2F..%2F..%2Fadm": {"/adm", "/public/x;%2F..%2F..%2Fadm", "/public/x"},
+		// A "%3B" beside a "%2F" in one segment is decoded in the reading
+		// that keeps the "/" as data, and its parameters removed.
+		"https://x.test/admin%3B%2Fx/who": {"/admin;/x/who", "/admin/x/who", "/admin;%2Fx/who", "/admin/who"},
 	} {
 		if got := RequestPaths(raw); !slices.Equal(got, want) {
 			t.Fatalf("RequestPaths(%q) = %q, want %q", raw, got, want)
@@ -230,6 +243,38 @@ func TestDecideSpecificity(t *testing.T) {
 				"GET https://x.test/mcp/readonly/../write":        false,
 				"GET https://x.test/mcp/readonly%2F..%2F..%2Fmcp": false,
 				"GET https://x.test/mcp/x%2F..%2Freadonly":        false,
+			},
+		},
+		{
+			name:   "path parameters are held to the reading without them",
+			routes: []string{"x.test", "x.test/admin/**=blocked"},
+			cases: map[string]bool{
+				"GET https://x.test/public/a;v=1":          true,
+				"GET https://x.test/admin/who.jsp":         false,
+				"GET https://x.test/admin;x/who.jsp":       false,
+				"GET https://x.test/admin%3bx/who.jsp":     false,
+				"GET https://x.test/public/..;/admin/x":    false,
+				"GET https://x.test/public/..%3B/admin/x":  false,
+				"GET https://x.test/ADMIN;jsessionid=1/x":  false,
+				"GET https://x.test/public/%2e%2e;/admin/": false,
+				"GET https://x.test/admin%3B%2Fx/who.jsp":  false,
+			},
+		},
+		{
+			name:   "path parameters cannot leave an open path",
+			routes: []string{"x.test/public/**"},
+			cases: map[string]bool{
+				"GET https://x.test/public/who.jsp": true,
+				// Every reading must fit, and public;v=1 is not public.
+				"GET https://x.test/public;v=1/who.jsp":                        false,
+				"GET https://x.test/public/who.jsp;v=1":                        true,
+				"GET https://x.test/admin/who.jsp":                             false,
+				"GET https://x.test/public/..;/admin/x":                        false,
+				"GET https://x.test/public/..;x=y/admin/x":                     false,
+				"GET https://x.test/public/..%3b/admin/x":                      false,
+				"GET https://x.test/public/a/..;/..;/admin":                    false,
+				"GET https://x.test/public/..%3Bq%2F..%2Fpublic%2Fp/admin/x":   false,
+				"GET https://x.test/public/%2e%2e%3Bq%2F..%2Fpublic%2Fp/admin": false,
 			},
 		},
 	} {
