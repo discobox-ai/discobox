@@ -25,8 +25,10 @@ sandbox create requests.
   where the server puts a create that names none (`App.newSandboxPlacement`). A
   pool that has declared no platform is taken as Linux, which every pool from
   before platforms is, and so is the default pool of a caller the server
-  refuses those reads (a discobox creating another); such a caller naming
-  `--pool` is refused, because the platform it chose is one it cannot learn.
+  refuses the project's read (a discobox creating another, which reads pools
+  but not its project; ADR 26-11-23-743). A caller refused the pool's read too
+  (a server from before that) naming `--pool` is refused, because the platform
+  it chose is one it cannot learn.
 - Skills are read here, as content, because nothing past this machine can read
   its disk (`ReadSkills`; ADR 26-10-09-395 §4). `--user-skills` reads
   `~/.claude/skills` then `~/.agents/skills`, each skipped when absent; every
