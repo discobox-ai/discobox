@@ -36,7 +36,7 @@ case "$1 ${2:-} ${3:-}" in
 "admin box get")
 	# $STUB/provision, when there, is the discobox's provisioning state.
 	if [ "$4" = sbx_T2 ]; then
-		cat "$STUB/second-box" 2>/dev/null || echo '{"runtime":{"state":"running","startedFrom":{"from":"snapshot","snapshot":"snapshot-1"}}}'
+		cat "$STUB/second-box" 2>/dev/null || echo '{"runtime":{"state":"ready","runtimeState":"running","displayState":"running","startedFrom":{"from":"snapshot","snapshot":"snapshot-1"}}}'
 	else
 		cat "$STUB/provision" 2>/dev/null || echo '{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"ready"}}}}'
 	fi ;;
@@ -407,12 +407,37 @@ func TestLiveRunRejectsUnrestrictedHarnessCredential(t *testing.T) {
 
 func TestLiveRunRejectsSecondBoxFromBase(t *testing.T) {
 	r := liveRun(t, func(stub string) {
-		write(t, filepath.Join(stub, "second-box"), `{"runtime":{"state":"running","startedFrom":{"from":"base"}}}`+"\n", 0o644)
+		write(t, filepath.Join(stub, "second-box"), `{"runtime":{"state":"ready","runtimeState":"running","displayState":"running","startedFrom":{"from":"base"}}}`+"\n", 0o644)
 	})
 	if r.exit == 0 || !strings.Contains(r.report, "| FAIL | snapshot-start | sbx_T2 started from no snapshot, expected snapshot-1") {
 		t.Fatalf("run did not reject the second box's origin:\n%s", r.report)
 	}
 	assertCall(t, r, "admin box purge sbx_T2")
+}
+
+// The server's box answer keeps existence in state and power in runtimeState,
+// and their one composition in displayState: a second box that displays
+// running from the snapshot passes.
+func TestLiveRunSecondBoxRunningIsReadByDisplayState(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "second-box"), `{"runtime":{"state":"ready","runtimeState":"running","displayState":"running","startedFrom":{"from":"snapshot","snapshot":"snapshot-1"}}}`+"\n", 0o644)
+		write(t, filepath.Join(stub, "args"), "--pool-timeout 0s", 0o644)
+	})
+	if !strings.Contains(r.report, "| PASS | snapshot-start | sbx_T2 started from snapshot-1") {
+		t.Fatalf("a running second box was not seen running:\n%s", r.report)
+	}
+}
+
+// A second box whose container runs while its required setup failed displays
+// error: it is reported as failed, with why, not as a wait that ran out.
+func TestLiveRunSecondBoxErrorStopsTheWait(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "second-box"), `{"runtime":{"state":"ready","runtimeState":"running","displayState":"error","agentStatus":{"provision":{"state":"failed","ready":false,"error":"step go failed: exit status 56"}},"startedFrom":{"from":"snapshot","snapshot":"snapshot-1"}}}`+"\n", 0o644)
+		write(t, filepath.Join(stub, "args"), "--pool-timeout 0s", 0o644)
+	})
+	if r.exit == 0 || !strings.Contains(r.report, "| FAIL | snapshot-start | sbx_T2 failed after 0s: step go failed: exit status 56 |") {
+		t.Fatalf("a failed second box was not reported failed:\n%s", r.report)
+	}
 }
 
 // The run narrows the discobox's own egress level, never the pool's: a
