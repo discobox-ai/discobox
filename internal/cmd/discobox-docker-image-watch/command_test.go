@@ -78,3 +78,49 @@ func TestDeadlineStopsDescendantExporter(t *testing.T) {
 		}
 	}
 }
+
+// A slow mirror makes the base image's apt stage outlast the build budget
+// while it is still fetching. A build that keeps reporting progress must be
+// let finish; only one that goes quiet is stalled.
+func TestProgressingBuildOutlastsBuildDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script on PATH")
+	}
+	old := *buildCommandTimeout
+	*buildCommandTimeout = time.Second
+	t.Cleanup(func() { *buildCommandTimeout = old })
+	dir := t.TempDir()
+	// Three seconds of build, one progress line every 200ms.
+	script := "#!/bin/sh\ni=0\nwhile [ $i -lt 15 ]; do echo \"#7 fetched $i\"; i=$((i+1)); sleep 0.2; done\n"
+	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := runCommand(t.Context(), dir, "docker", "buildx", "build", "."); err != nil {
+		t.Fatalf("progressing build was cut off: %v", err)
+	}
+}
+
+// Only builds earn more time by printing: a probe that keeps writing is still
+// stopped at its total deadline.
+func TestChattyProbeKeepsTotalDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script on PATH")
+	}
+	old := *dockerCommandTimeout
+	*dockerCommandTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { *dockerCommandTimeout = old })
+	dir := t.TempDir()
+	script := "#!/bin/sh\nwhile :; do echo line; sleep 0.05; done\n"
+	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	start := time.Now()
+	if _, err := commandOutput(t.Context(), dir, "docker", "image", "ls"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("command error = %v", err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("probe did not stop promptly: %v", time.Since(start))
+	}
+}

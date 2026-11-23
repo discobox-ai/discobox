@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -27,7 +29,7 @@ const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
 // Probes should fail promptly; builds need time to download and compile inputs.
 var dockerCommandTimeout = flag.Duration("docker-command-timeout", 30*time.Second, "Deadline for Docker inspection and tag commands")
-var buildCommandTimeout = flag.Duration("build-command-timeout", 30*time.Minute, "Deadline for each Docker build or builder setup")
+var buildCommandTimeout = flag.Duration("build-command-timeout", 30*time.Minute, "How long a Docker build or builder setup may go without output before it is stopped")
 
 var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder for local OCI bundle exports when the host daemon's own cannot export them")
 
@@ -1095,47 +1097,91 @@ func devImageTag(prefix, imageID string) string {
 }
 
 // command bounds the process and the wait for any inherited output pipes.
-// Builder setup invokes Docker through task, so it gets the build budget too.
-func command(ctx context.Context, dir, name string, args ...string) (*exec.Cmd, context.Context, context.CancelFunc) {
-	deadline := *dockerCommandTimeout
+// A probe or tag has a total deadline. A build, or builder setup (which
+// invokes Docker through task), has an inactivity deadline instead: each
+// write to its stdout or stderr restarts it, so a slow build that is still
+// making progress (a cold apt stage behind a slow mirror) finishes, and only
+// one that has gone quiet is stopped.
+func command(ctx context.Context, dir, name string, args ...string) (*exec.Cmd, *commandDeadline) {
+	deadline := &commandDeadline{limit: *dockerCommandTimeout}
 	if name == "go" || (len(args) > 0 && (args[0] == "build" || (args[0] == "buildx" && len(args) > 1 && args[1] == "build"))) {
-		deadline = *buildCommandTimeout
+		deadline.limit, deadline.idle = *buildCommandTimeout, true
 	}
-	bounded, cancel := context.WithTimeout(ctx, deadline)
+	bounded, cancel := context.WithCancelCause(ctx)
+	deadline.ctx, deadline.cancel = bounded, cancel
+	deadline.timer = time.AfterFunc(deadline.limit, deadline.expire)
 	cmd := exec.CommandContext(bounded, name, args...)
 	cmd.Dir = dir
 	cancelProcessTree(cmd)
 	cmd.WaitDelay = time.Second
-	return cmd, bounded, cancel
+	return cmd, deadline
+}
+
+// commandDeadline cancels a command once its limit passes: since it started,
+// or for an idle deadline, since its last output. As an io.Writer it is
+// written every chunk of the command's output.
+type commandDeadline struct {
+	ctx    context.Context
+	cancel context.CancelCauseFunc
+	limit  time.Duration
+	idle   bool
+
+	mu    sync.Mutex
+	timer *time.Timer
+}
+
+func (d *commandDeadline) Write(p []byte) (int, error) {
+	if d.idle {
+		d.mu.Lock()
+		d.timer.Reset(d.limit)
+		d.mu.Unlock()
+	}
+	return len(p), nil
+}
+
+func (d *commandDeadline) expire() {
+	if d.idle {
+		d.cancel(fmt.Errorf("no output for its %s deadline: %w", d.limit, context.DeadlineExceeded))
+		return
+	}
+	d.cancel(fmt.Errorf("past its %s deadline: %w", d.limit, context.DeadlineExceeded))
+}
+
+func (d *commandDeadline) stop() {
+	d.mu.Lock()
+	d.timer.Stop()
+	d.mu.Unlock()
+	d.cancel(context.Canceled)
 }
 
 func runCommand(ctx context.Context, dir, name string, args ...string) error {
-	cmd, bounded, cancel := command(ctx, dir, name, args...)
-	defer cancel()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd, deadline := command(ctx, dir, name, args...)
+	defer deadline.stop()
+	cmd.Stdout = io.MultiWriter(os.Stdout, deadline)
+	cmd.Stderr = io.MultiWriter(os.Stderr, deadline)
 	if err := cmd.Run(); err != nil {
-		return commandError(bounded, cmd, err)
+		return commandError(deadline.ctx, cmd, err)
 	}
 	return nil
 }
 
 func commandOutput(ctx context.Context, dir, name string, args ...string) (string, error) {
-	cmd, bounded, cancel := command(ctx, dir, name, args...)
-	defer cancel()
-	out, err := cmd.Output()
-	if err != nil {
-		return "", commandError(bounded, cmd, err)
+	cmd, deadline := command(ctx, dir, name, args...)
+	defer deadline.stop()
+	var out bytes.Buffer
+	cmd.Stdout = io.MultiWriter(&out, deadline)
+	cmd.Stderr = deadline
+	if err := cmd.Run(); err != nil {
+		return "", commandError(deadline.ctx, cmd, err)
 	}
-	return string(out), nil
+	return out.String(), nil
 }
 
 func commandError(ctx context.Context, cmd *exec.Cmd, err error) error {
-	if ctx.Err() != nil {
-		err = ctx.Err()
+	if cause := context.Cause(ctx); cause != nil {
+		err = cause
 	}
-	deadline, _ := ctx.Deadline()
-	return fmt.Errorf("%s (deadline %s): %w", strings.Join(cmd.Args, " "), deadline.Format(time.RFC3339), err)
+	return fmt.Errorf("%s: %w", strings.Join(cmd.Args, " "), err)
 }
 
 func updateEnv(path string, values map[string]string) error {

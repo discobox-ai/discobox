@@ -512,7 +512,8 @@ bundle setting in `.env` from one inspection of the full local set; the two
 publications must never name different base images or bundles. Failed
 build or publication work stays pending and retries without requiring another
 file change, including the initial build. Docker probes and tag operations have a
-30-second deadline; each build or builder setup has 30 minutes. A single
+30-second deadline; a build or builder setup is stopped once it has written
+no output for 30 minutes, so a slow build that is still progressing finishes. A single
 background presence inspection runs at a time, so a stalled daemon cannot
 stop file-change intake; a failed inspection is logged and retried on the next
 presence tick. Both deadlines are watcher flags. Build-mode references hash
