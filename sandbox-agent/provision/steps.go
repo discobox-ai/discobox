@@ -393,7 +393,7 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 		return nil
 	}
 	env := []string{"DEBIAN_FRONTEND=noninteractive"}
-	if err := r.recoverDpkg(ctx, out); err != nil {
+	if err := r.recoverApt(ctx, out); err != nil {
 		return err
 	}
 	if !r.aptUpdated {
@@ -447,11 +447,66 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// recoverDpkg finishes configuration left interrupted by a previous boot.
-// The caller holds apt through recovery and the package work that follows.
-func (r *Runner) recoverDpkg(ctx context.Context, out io.Writer) error {
+// recoverApt repairs what a previous boot cut off mid-transaction, before
+// any apt work: it finishes configuration dpkg left interrupted, then has apt
+// read its package lists. A list a machine that died during an update left
+// cut short or empty is one apt keeps as current and fails to parse on every
+// later run; when apt names a file of its lists as the one it cannot read,
+// the lists and the caches built from them are removed, so the update that
+// follows fetches them whole. The read is apt's own parse, in memory: it
+// writes no cache and takes no lock, so it cannot fail for want of either.
+// Any other failure is left for the step's own apt to report. The caller
+// holds apt through recovery and the package work that follows.
+func (r *Runner) recoverApt(ctx context.Context, out io.Writer) error {
 	if err := r.command(ctx, out, "/", []string{"DEBIAN_FRONTEND=noninteractive"}, "dpkg", "--force-confdef", "--force-confold", "--configure", "-a"); err != nil {
 		return fmt.Errorf("recover interrupted dpkg: %w", err)
+	}
+	var read bytes.Buffer
+	if r.command(ctx, io.MultiWriter(out, &read), "/", nil, "apt-cache", aptListsRead...) == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !strings.Contains(read.String(), aptLists+"/") {
+		return nil
+	}
+	fmt.Fprintln(out, "discobox provision: apt cannot read its package lists; removing them to fetch them again")
+	if err := r.removeAptLists(); err != nil {
+		return fmt.Errorf("remove unreadable apt package lists: %w", err)
+	}
+	r.aptUpdated = false
+	return nil
+}
+
+// aptLists is where apt keeps the package lists it fetched.
+const aptLists = "/var/lib/apt/lists"
+
+// aptListsRead has apt-cache parse every package list into a cache built in
+// memory and thrown away, without the lock writing one would take.
+var aptListsRead = []string{"-o", "Debug::NoLocking=true", "-o", "Dir::Cache::pkgcache=", "-o", "Dir::Cache::srcpkgcache=", "gencaches"}
+
+// removeAptLists removes apt's package lists, all but its lock file, and the
+// binary caches apt builds from them. apt makes its download directory again
+// as it updates. A removal a crash undoes is made again by the next run.
+func (r *Runner) removeAptLists() error {
+	lists := r.path(aptLists)
+	entries, err := os.ReadDir(lists)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == "lock" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(lists, entry.Name())); err != nil {
+			return err
+		}
+	}
+	for _, cache := range []string{"pkgcache.bin", "srcpkgcache.bin"} {
+		if err := os.Remove(r.path("/var/cache/apt/" + cache)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 	}
 	return nil
 }
