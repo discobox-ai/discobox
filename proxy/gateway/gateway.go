@@ -236,9 +236,15 @@ func parseOrigin(raw string) (origin, error) {
 	}
 	// Cleaned as a request's path is (cleanPath), so a match and the requests
 	// it names are compared in one spelling.
-	path, err := cleanPath(parsed.EscapedPath())
+	path, err := cleanPath(parsed.EscapedPath(), paramsKept)
 	if err != nil {
 		return origin{}, fmt.Errorf("%q: %w", raw, err)
+	}
+	// A match or target is a prefix in every reading of ;parameters (params),
+	// so it has none: a match with one is under no route when they are
+	// stripped, and a target's ../;x steps out of its own prefix.
+	if strings.Contains(strings.ToLower(path), "%3b") || strings.Contains(path, ";") {
+		return origin{}, fmt.Errorf("%q has ;parameters, which a server may read as another path", raw)
 	}
 	path = strings.TrimRight(path, "/")
 	return origin{scheme: scheme, host: originHost(scheme, parsed.Host), path: path}, nil
@@ -266,9 +272,41 @@ func originHost(scheme, hostport string) string {
 
 // ErrAmbiguousPath is a request under a gateway's origin whose path a server
 // could read as another path: an encoded slash or a backslash, which some
-// servers turn into a separator after the gateway has matched. It is refused
-// rather than matched one way and read another.
-var ErrAmbiguousPath = errors.New("path has an encoded slash or a backslash")
+// servers turn into a separator after the gateway has matched, or ;parameters
+// that, stripped as some servers strip them, route it elsewhere (params). It
+// is refused rather than matched one way and read another.
+var ErrAmbiguousPath = errors.New("path has an encoded slash, a backslash, or ;parameters that move it")
+
+// params is how a server reads a segment's ;parameters (RFC 3986 §3.3). Most
+// keep them as part of the segment; a servlet container strips them before it
+// resolves dot segments, so /v1/..;/x is /x to it; and a server that decodes
+// the path first strips them from "%3B" as well. The proxy cannot tell which
+// the upstream is, so a gateway is matched under every reading.
+type params int
+
+const (
+	paramsKept params = iota
+	paramsStripped
+	paramsStrippedDecoded
+)
+
+var readings = []params{paramsKept, paramsStripped, paramsStrippedDecoded}
+
+// segment is an escaped segment as p reads it.
+func (p params) segment(segment string) string {
+	end := len(segment)
+	if p >= paramsStripped {
+		if i := strings.IndexByte(segment, ';'); i >= 0 {
+			end = i
+		}
+	}
+	if p == paramsStrippedDecoded {
+		if i := strings.Index(strings.ToLower(segment), "%3b"); i >= 0 && i < end {
+			end = i
+		}
+	}
+	return segment[:end]
+}
 
 // decodeUnreserved decodes every percent-encoded unreserved character —
 // letters, digits, and -._~ — as RFC 3986 §6.2.2.2 says is equivalent, so
@@ -298,8 +336,9 @@ func unreserved(c byte) bool {
 // matches the path the request will be read as: /./v1 and //v1 are /v1, and
 // /v1/../x is /x, which no /v1 gateway can be stepped out of. An unreserved
 // character spelled with percent-encoding is decoded first (decodeUnreserved),
-// so %2e%2e is a dot segment and /%761 is /v1. A trailing slash is kept.
-func cleanPath(escaped string) (string, error) {
+// so %2e%2e is a dot segment and /%761 is /v1. Each segment is read as p
+// reads its parameters before dot segments resolve. A trailing slash is kept.
+func cleanPath(escaped string, p params) (string, error) {
 	lower := strings.ToLower(escaped)
 	if strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(escaped, `\`) {
 		return "", ErrAmbiguousPath
@@ -307,7 +346,7 @@ func cleanPath(escaped string) (string, error) {
 	escaped = decodeUnreserved(escaped)
 	var out []string
 	for _, segment := range strings.Split(escaped, "/") {
-		switch segment {
+		switch segment = p.segment(segment); segment {
 		case "", ".":
 		case "..":
 			if len(out) > 0 {
@@ -380,36 +419,74 @@ func (t *Table) Lookup(name string) (Route, bool) {
 
 // Match is the route a request URL falls under and the URL it is forwarded
 // to, or false when no route matches. The host is matched as policy reads it
-// and the path as a server reads it (cleanPath), and the cleaned path is what
-// is forwarded. A request to a gateway's origin whose path is ambiguous is
-// ErrAmbiguousPath, whichever prefix it names.
+// and the path as a server reads it (cleanPath), under every reading of its
+// parameters (params), and the path cleaned with them kept is what is
+// forwarded. A request to a gateway's origin whose path is ambiguous is
+// ErrAmbiguousPath, with the route it names: one with an encoded slash or a
+// backslash; one whose readings fall under different routes, or one under
+// none, since a request sent as is to the gateway's origin is read there as
+// the upstream reads it; and one whose forwarded path still has a segment a
+// reading resolves as a dot segment, since the target would resolve it out of
+// the prefix the match was made on (/v1/..;/v1/x is /v1/x to every reading,
+// but forwarded as /t/..;/v1/x it is /v1/x on the target).
 func (t *Table) Match(u *url.URL) (Route, *url.URL, bool, error) {
 	if t == nil || u == nil {
 		return Route{}, nil, false, nil
 	}
 	scheme := strings.ToLower(u.Scheme)
 	host := originHost(scheme, u.Host)
-	var path string
-	var pathErr error
-	cleaned := false
+	var routes []compiled
 	for _, route := range t.routes {
-		if route.match.scheme != scheme || route.match.host != host {
-			continue
+		if route.match.scheme == scheme && route.match.host == host {
+			routes = append(routes, route)
 		}
-		if !cleaned {
-			path, pathErr = cleanPath(u.EscapedPath())
-			cleaned = true
-		}
-		if pathErr != nil {
-			return route.Route, nil, false, pathErr
-		}
-		rest, ok := underPrefix(path, route.match.path)
-		if !ok {
-			continue
-		}
-		return route.Route, route.rewrite(u, rest), true, nil
 	}
-	return Route{}, nil, false, nil
+	if len(routes) == 0 {
+		return Route{}, nil, false, nil
+	}
+	matched, rest := -1, ""
+	for i, p := range readings {
+		path, err := cleanPath(u.EscapedPath(), p)
+		if err != nil {
+			return routes[0].Route, nil, false, err
+		}
+		under := -1
+		for j, route := range routes {
+			if r, ok := underPrefix(path, route.match.path); ok {
+				under = j
+				if i == 0 {
+					rest = r
+				}
+				break
+			}
+		}
+		if i == 0 {
+			matched = under
+		} else if under != matched {
+			return routes[max(under, matched)].Route, nil, false, ErrAmbiguousPath
+		}
+	}
+	if matched < 0 {
+		return Route{}, nil, false, nil
+	}
+	route := routes[matched]
+	if hasParamDotSegment(rest) {
+		return route.Route, nil, false, ErrAmbiguousPath
+	}
+	return route.Route, route.rewrite(u, rest), true, nil
+}
+
+// hasParamDotSegment reports whether a cleaned path has a segment that a
+// reading which strips parameters resolves as a dot segment: ..;x or .%3B.
+func hasParamDotSegment(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		for _, p := range readings {
+			if s := p.segment(segment); s != segment && (s == "." || s == "..") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // underPrefix is what is left of path beneath prefix, on a segment boundary:

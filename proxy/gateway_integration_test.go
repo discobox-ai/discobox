@@ -407,8 +407,10 @@ func TestGateway401OnAWithheldCredentialIsNotTheCredentials(t *testing.T) {
 func TestGatewayRefusesAnAmbiguousPath(t *testing.T) {
 	resolver := &gatewayResolver{env: map[string]string{"DISCOBOX_GATEWAY_KEY": gatewayKey}}
 	f := newGatewayFixture(t, resolver, nil)
-	if status, _ := f.send(t, "/v1/..%2F..%2Fadmin"); status != http.StatusBadRequest {
-		t.Fatalf("status %d", status)
+	for _, path := range []string{"/v1/..%2F..%2Fadmin", "/v1/..;/admin", "/v1/..%3B/admin", "/v1;/messages"} {
+		if status, _ := f.send(t, path); status != http.StatusBadRequest {
+			t.Fatalf("%s: status %d", path, status)
+		}
 	}
 	if seen, provided := f.requests(); len(seen) != 0 || provided != 0 {
 		t.Fatalf("sent: gateway %d, provider %d", len(seen), provided)

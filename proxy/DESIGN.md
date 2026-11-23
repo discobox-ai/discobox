@@ -1116,7 +1116,12 @@ flowchart LR
   path is what is forwarded: a sandbox can neither spell its way around a
   gateway nor `..` its way out of the target's prefix. A path under a
   gateway's origin with an encoded slash or a backslash is refused `400`,
-  since a server may read it as another path after the match.
+  since a server may read it as another path after the match. So is one
+  whose `;` parameters (or `%3B`), stripped before dot segments resolve as a
+  servlet container strips them, put it under another route or none
+  (`/v1/..;/x`, `/v1;/x`), or leave a segment in the forwarded path that
+  such a server reads as a dot segment (`/v1/..;/v1/x`). A match or target
+  with `;` parameters is refused when written.
 - **A credential the gateway withholds is not judged by the answer.** When
   the gateway removes or sets a header a credential was swapped into, the
   upstream never saw the credential: a 401 is not retried and nothing is

@@ -134,6 +134,9 @@ func TestValidateRefuses(t *testing.T) {
 		"no host":             base(func(r *Route) { r.Target = "https:///v1" }),
 		"query":               base(func(r *Route) { r.Target = "https://gw.example.com/?a=b" }),
 		"encoded slash":       base(func(r *Route) { r.Match = "https://api.anthropic.com/v1%2Fx" }),
+		"match parameters":    base(func(r *Route) { r.Match = "https://api.anthropic.com/v1;x" }),
+		"target parameters":   base(func(r *Route) { r.Target = "https://gw.example.com/a/..;/b" }),
+		"encoded parameters":  base(func(r *Route) { r.Target = "https://gw.example.com/a%3Bb" }),
 		"user":                base(func(r *Route) { r.Target = "https://me:pw@gw.example.com" }),
 		"host header":         base(func(r *Route) { r.RequestHeaders.Set = []Header{{Name: "Host", Value: "x"}} }),
 		"hop-by-hop":          base(func(r *Route) { r.RequestHeaders.Remove = []string{"Connection"} }),
@@ -199,5 +202,72 @@ func TestNewTableSkipsWhatItCannotApply(t *testing.T) {
 	u, _ = url.Parse("https://api.openai.com/v1/chat")
 	if _, _, ok, _ := table.Match(u); !ok {
 		t.Fatal("a valid route beside an invalid one did not apply")
+	}
+}
+
+// A segment's ;parameters, sent as ";" or "%3B", are stripped by some servers
+// (servlet containers) before they resolve dot segments, and kept by others.
+// A path whose route depends on which, or whose forwarded path one of them
+// would resolve differently, is refused, so a request can neither step out of
+// a gateway's prefix with its headers nor around it.
+func TestMatchRefusesAPathItsParametersReroute(t *testing.T) {
+	table := NewTable([]Route{anthropic()})
+	for _, raw := range []string{
+		"https://api.anthropic.com/v1/..;/other",
+		"https://api.anthropic.com/v1/..%3B/other",
+		"https://api.anthropic.com/v1/..%3b/other",
+		"https://api.anthropic.com/v1/x/..;/../../other",
+		// Inside the prefix under every reading, but forwarded as
+		// /anthropic/v1/..;/v1/x, which a stripping target reads as
+		// /anthropic/v1/x after stepping out of and back into its prefix,
+		// and /v1/..;/../x as /x on the target.
+		"https://api.anthropic.com/v1/..;/v1/messages",
+		"https://api.anthropic.com/v1/messages/.;/x",
+		"https://api.anthropic.com/v1/messages/%2e%2e;x/x",
+		// Around the gateway: /v1;/messages is /v1/messages to a stripping
+		// server, and would reach the provider without the gateway.
+		"https://api.anthropic.com/v1;/messages",
+		"https://api.anthropic.com/v1%3Bx/messages",
+		"https://api.anthropic.com/v1;/..%3B/messages",
+	} {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		route, forwarded, ok, err := table.Match(u)
+		if !errors.Is(err, ErrAmbiguousPath) || ok || route.Name != "anthropic" {
+			t.Errorf("%s: %q %v %v %v", raw, route.Name, forwarded, ok, err)
+		}
+	}
+}
+
+// Parameters that change no reading's route, nor what the forwarded path
+// resolves to, are kept and forwarded.
+func TestMatchKeepsParametersThatRerouteNothing(t *testing.T) {
+	table := NewTable([]Route{anthropic()})
+	cases := []struct{ in, out string }{
+		{"https://api.anthropic.com/v1/messages;v=2", "https://gateway.example.com/anthropic/v1/messages;v=2"},
+		{"https://api.anthropic.com/v1/a;x/../messages", "https://gateway.example.com/anthropic/v1/messages"},
+		{"https://api.anthropic.com/v1/messages%3Bv=2", "https://gateway.example.com/anthropic/v1/messages%3Bv=2"},
+	}
+	for _, tc := range cases {
+		u, err := url.Parse(tc.in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, forwarded, ok, err := table.Match(u)
+		if err != nil || !ok || forwarded.String() != tc.out {
+			t.Errorf("%s: %v %v %v, want %s", tc.in, forwarded, ok, err, tc.out)
+		}
+	}
+	// No route under any reading: sent as is.
+	for _, raw := range []string{
+		"https://api.anthropic.com/v1;x/../other",
+		"https://api.anthropic.com/v2;x/../other",
+	} {
+		u, _ := url.Parse(raw)
+		if _, _, ok, err := table.Match(u); ok || err != nil {
+			t.Errorf("%s, outside every route: %v %v", raw, ok, err)
+		}
 	}
 }

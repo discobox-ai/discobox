@@ -87,7 +87,11 @@
 - A gateway matches the host and path the way policy and the upstream read
   them: no trailing dot, unreserved escapes decoded (`/%761` is `/v1`), dot
   and empty segments resolved, the cleaned path forwarded, an encoded slash
-  refused. Matching the raw URL lets a sandbox
+  refused, and every reading of `;` parameters (kept, stripped, stripped from
+  `%3B`) agreeing on the route. A route's own match and target hold no `;`
+  or `%3B` at all: a match with one is under no route once they are
+  stripped, and a target's `..;` steps out of its own prefix, which no check
+  on the request's path can see. Matching the raw URL lets a sandbox
   step around a gateway or out of its target's prefix with the gateway's key.
 - A 401 is evidence about a swapped credential only if the credential reached
   the upstream. A gateway that removes or sets the header it was swapped into
