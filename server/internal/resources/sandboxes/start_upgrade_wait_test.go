@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -251,7 +252,9 @@ func TestExplicitUpgradeStartNarratesPoolThenUpgradeAndClearsProgress(t *testing
 
 func TestPendingUpgradeCeilingIncludesFirstCompatibilityProbe(t *testing.T) {
 	old := sandboxPoolHostWaitCeiling
-	sandboxPoolHostWaitCeiling = 30 * time.Millisecond
+	// Long enough that a loaded host's lookups before the first probe do not
+	// spend it, so the probe is what the ceiling ends.
+	sandboxPoolHostWaitCeiling = 500 * time.Millisecond
 	t.Cleanup(func() { sandboxPoolHostWaitCeiling = old })
 	svc, p, db := useFixture(t)
 	if err := db.Model(&model.Sandbox{}).Where("id = ?", "sb-1").Updates(map[string]any{"state": model.SandboxStateReady, "generation": 4, "observed_generation": 3, "upgrade_generation": 4, "last_successful_create": 3, "error_message": nil}).Error; err != nil {
@@ -259,7 +262,7 @@ func TestPendingUpgradeCeilingIncludesFirstCompatibilityProbe(t *testing.T) {
 	}
 	p.compatibilityCall = func(ctx context.Context, _ sandbox.SandboxRef) error {
 		deadline, ok := ctx.Deadline()
-		if !ok || time.Until(deadline) > 100*time.Millisecond {
+		if !ok || time.Until(deadline) > sandboxPoolHostWaitCeiling {
 			t.Error("first probe exceeds upgrade ceiling")
 		}
 		<-ctx.Done()
@@ -267,7 +270,7 @@ func TestPendingUpgradeCeilingIncludesFirstCompatibilityProbe(t *testing.T) {
 	}
 	started := time.Now()
 	_, err := svc.StartSandbox(useContext(t), "project-1", "sb-1", services.StartSandboxBody{})
-	if err == nil || time.Since(started) > time.Second || !strings.Contains(err.Error(), "waiting ended") || !strings.Contains(err.Error(), "pool-1") {
+	if err == nil || time.Since(started) > 5*time.Second || !strings.Contains(err.Error(), "waiting ended") || !strings.Contains(err.Error(), "pool-1") {
 		t.Fatalf("err=%v duration=%v", err, time.Since(started))
 	}
 	if p.starts.Load() != 0 {
@@ -280,9 +283,14 @@ func TestFirstUpgradeProbeCallerDeadlinePreservesRefusal(t *testing.T) {
 	if err := db.Model(&model.Sandbox{}).Where("id = ?", "sb-1").Updates(map[string]any{"state": model.SandboxStateReady, "generation": 4, "observed_generation": 3, "upgrade_generation": 4, "last_successful_create": 3, "error_message": nil}).Error; err != nil {
 		t.Fatal(err)
 	}
-	p.compatibilityCall = func(ctx context.Context, _ sandbox.SandboxRef) error { <-ctx.Done(); return ctx.Err() }
-	ctx, cancel := context.WithTimeout(useContext(t), 30*time.Millisecond)
-	defer cancel()
+	// The caller's deadline runs out once the first probe is under way, never
+	// in the lookups before it, however slow the host.
+	ctx := newProbeDeadlineContext(useContext(t))
+	p.compatibilityCall = func(probeCtx context.Context, _ sandbox.SandboxRef) error {
+		ctx.expire()
+		<-probeCtx.Done()
+		return probeCtx.Err()
+	}
 	_, err := svc.StartSandbox(ctx, "project-1", "sb-1", services.StartSandboxBody{})
 	var status apperrors.StatusError
 	if !errors.As(err, &status) || status.Status != http.StatusConflict || !strings.Contains(err.Error(), "waiting ended") || !strings.Contains(err.Error(), "pool-1") {
@@ -290,5 +298,30 @@ func TestFirstUpgradeProbeCallerDeadlinePreservesRefusal(t *testing.T) {
 	}
 	if p.starts.Load() != 0 {
 		t.Fatal("expired request sent start")
+	}
+}
+
+// probeDeadlineContext is a caller's context whose deadline the test runs out
+// at the moment it chooses, rather than at a time a loaded host can overtake.
+type probeDeadlineContext struct {
+	context.Context
+	done chan struct{}
+	once sync.Once
+}
+
+func newProbeDeadlineContext(parent context.Context) *probeDeadlineContext {
+	return &probeDeadlineContext{Context: parent, done: make(chan struct{})}
+}
+
+func (c *probeDeadlineContext) expire() { c.once.Do(func() { close(c.done) }) }
+
+func (c *probeDeadlineContext) Done() <-chan struct{} { return c.done }
+
+func (c *probeDeadlineContext) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
 	}
 }
