@@ -1051,10 +1051,14 @@ user waits on every single start.
 
 - A feature never trusts an apt key fetched beside the packages it signs: it
   ships its own copy (`features/core/git-core-ppa.asc`,
-  `features/cli/githubcli-archive-keyring.asc`). The GitHub CLI copy holds the
-  same keys as the sandbox base image's `GH_APT_KEY_FINGERPRINTS`; a change to
-  one moves the other. Why: #1168 pinned the image's key while this feature
-  still downloaded it unchecked.
+  `features/cli/githubcli-archive-keyring.asc`,
+  `features/node/nodesource-repo.asc`), and never runs a vendor's setup script
+  that fetches one (`curl … | bash`). The GitHub CLI copy holds the same keys
+  as the sandbox base image's `GH_APT_KEY_FINGERPRINTS`, and NodeSource's the
+  key its `NODESOURCE_APT_KEY_FINGERPRINT` pins; a change to one moves the
+  other. Why: #1168 pinned the image's key while this feature still downloaded
+  it unchecked, and the node feature did the same again after the image pinned
+  NodeSource's (#1399).
 
 ## File watches
 

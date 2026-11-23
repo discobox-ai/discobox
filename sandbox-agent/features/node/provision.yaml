@@ -23,6 +23,7 @@ steps:
     install: true
     apt: true
     run: install-node.sh
+    inputs: [nodesource-repo.asc]
   # The chosen Node, recorded in /usr/local/lib/discobox/node.env and linked
   # into /usr/local/bin, adopted or installed.
   - name: select
