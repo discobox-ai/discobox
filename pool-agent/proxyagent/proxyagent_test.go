@@ -315,3 +315,18 @@ func TestSandboxEnvironmentExemptsThePoolByName(t *testing.T) {
 		}
 	}
 }
+
+// Every variable the pool sets in a discobox is one no credential may be
+// delivered in: a sentinel there would replace it in every process (#1545).
+func TestEveryVariableThePoolSetsIsOneTheDiscoboxRunsOn(t *testing.T) {
+	root := withTestRoot(t)
+	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range material.Env {
+		if !sandboxconfig.RuntimeEnvVar(name) {
+			t.Errorf("the pool sets %s, which sandboxconfig.RuntimeEnvVar does not name", name)
+		}
+	}
+}

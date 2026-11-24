@@ -2,8 +2,11 @@ package sandboxes
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
 
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -95,5 +98,18 @@ func TestCreateSandboxIntentRollsBackSandboxOnSecretFailure(t *testing.T) {
 	// the route `*`.
 	if _, err := st.GetSecret(ctx, "project-1", inlineSecrets[0].ID); err == nil {
 		t.Fatal("the inline secret survived a failed create")
+	}
+}
+
+// An inline secret may not take a variable the discobox runs on (#1545).
+func TestAnInlineSecretInAVariableTheDiscoboxRunsOnIsRefused(t *testing.T) {
+	ctx, _, _, _ := createIntentFixture(t)
+	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
+	for _, env := range []string{"PATH", "HOME", "LD_PRELOAD", "https_proxy"} {
+		_, _, err := inlineSandboxBindings(ctx, "project-1", sandbox, []services.SandboxSecretInput{{Env: env, Value: "v"}})
+		var status apperrors.StatusError
+		if !errors.As(err, &status) || status.Status != http.StatusBadRequest {
+			t.Errorf("inline secret in %s = %v, want 400", env, err)
+		}
 	}
 }

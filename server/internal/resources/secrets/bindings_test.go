@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -323,6 +324,26 @@ func TestAVariableIsAnEnvironmentVariableName(t *testing.T) {
 	}
 }
 
+// A binding may not take a variable the discobox itself runs on: a sentinel in
+// PATH, HOME or LD_PRELOAD breaks every process it starts.
+func TestAVariableTheDiscoboxRunsOnIsRefused(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	createBearerSecret(ctx, t, svc)
+	for _, env := range []string{"PATH", "HOME", "SHELL", "USER", "LD_PRELOAD", "LD_LIBRARY_PATH"} {
+		if _, err := svc.CreateSecretBinding(ctx, "project-1", services.CreateSecretBindingBody{
+			Secret: "github", TargetKind: serverapi.CreateSecretBindingBodyTargetKindProject, EnvVar: serverapi.NewOptString(env),
+		}); !isStatus(err, http.StatusBadRequest) {
+			t.Errorf("binding in %q = %v, want 400", env, err)
+		}
+		if _, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+			SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString(env), Hosts: []string{"github.com"},
+		}); !isStatus(err, http.StatusBadRequest) {
+			t.Errorf("ask for %q = %v, want 400", env, err)
+		}
+	}
+}
+
 // A harness config attached to a discobox gives it the config's use
 // bindings, never its delegations (ADR 26-10-27-172 §1).
 func TestAnAttachedHarnessConfigDelegatesNothing(t *testing.T) {
@@ -369,6 +390,19 @@ func TestABoundSecretLapsesWithItsParent(t *testing.T) {
 	bound, err := svc.ListBoundSecrets(ctx, "project-1", model.SecretBindingTargetSandbox, testSandboxID)
 	if err != nil || len(bound) != 1 || bound[0].ExpiresAt == nil || !bound[0].ExpiresAt.Equal(sooner) {
 		t.Fatalf("bound = %+v, %v; want it lapsing with its parent at %v", bound, err, sooner)
+	}
+}
+
+// A binding stored in a variable the discobox runs on before one was refused
+// (#1545) is listed once, still delegating, with why its use does not apply.
+func TestABoundSecretInAVariableTheDiscoboxRunsOnIsListedNotApplied(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	stored := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Use: true, Delegate: true, EnvName: "LD_PRELOAD"})
+	bound, err := svc.ListBoundSecrets(ctx, "project-1", model.SecretBindingTargetSandbox, testSandboxID)
+	if err != nil || len(bound) != 1 || bound[0].Binding.ID != stored.ID || !strings.Contains(bound[0].NotApplied, "LD_PRELOAD is a variable the discobox runs on") {
+		t.Fatalf("bound = %+v, %v; want the stored binding once, not applied", bound, err)
 	}
 }
 

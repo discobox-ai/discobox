@@ -249,6 +249,15 @@ credentials endpoint over its own mTLS link, and keeps each value at
 `RawDeliveryEnv`/`RawDeliveryFile` say whether the variable holds the value
 or that path.
 
+`RuntimeEnvVar` names the variables no credential is delivered in, because
+the discobox's own processes run on them (#1545): `PATH`, `HOME`, `SHELL`,
+`USER`, `LANG` and the like, `LD_*` and `DYLD_*`, every proxy and CA-bundle
+variable the pool sets, the discobox's own address, endpoints and
+`DISCOBOX_USER_*`, and the Windows counterparts, in any case. The server
+refuses a binding, an ask or a harness secret in one, and does not deliver one
+stored before. Tests in `pool-agent/proxyagent` and `sandbox-agent/boot` hold
+what the pool sets and what sudo keeps to it.
+
 ## Runtime config
 
 `RuntimeConfig` (`runtimeconfig.go`) is the pool's whole view of a *running*

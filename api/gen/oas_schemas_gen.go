@@ -719,8 +719,10 @@ type BoundSecret struct {
 	Adds OptBool `json:"adds"`
 	// The binding that applies.
 	BindingId string `json:"bindingId"`
-	// Why this addition does not apply, when it does not; it stands, and applies again should that
-	// change within its lifetime.
+	// Why this binding does not apply, when it does not: an addition beside a variable another secret or
+	// a raw value delivers stands, and applies again should that change within its lifetime; a use in a
+	// variable the discobox runs on, such as PATH or HOME, never applies, though what the binding
+	// delegates still does.
 	NotApplied OptString `json:"notApplied"`
 	// The target may give it to the discoboxes it leads.
 	Delegate bool `json:"delegate"`

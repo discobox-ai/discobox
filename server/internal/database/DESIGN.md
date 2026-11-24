@@ -162,6 +162,9 @@ by what it is looking for and is idempotent:
    sandbox state split (ADR 0034), denying the open requests of a sandbox that
    no longer exists (`denyOrphanedSecretRequests`), re-keying every sandbox
    origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4),
+   marking the sentinel delivery of every present sandbox still holding a row
+   in a variable it runs on, so the binding that no longer applies stops
+   being delivered without a restart (`markRuntimeEnvHolders`, #1545),
    and, last, a `sandbox.updated` event for every sandbox that has none or
    whose latest event differs from the store's projection
    (`store.BackfillSandboxEvents`, ADR 26-10-29-316, 26-11-01-560 §2), so the

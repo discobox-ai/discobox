@@ -66,6 +66,17 @@ func HarnessConfigFilesToModel(files []apimodel.HarnessConfigFile) []model.Harne
 // harness setting is delivered in may be called, wherever one is named.
 var EnvVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// RefuseRuntimeEnvVar is why no credential is delivered in name, when it is a
+// variable the discobox runs on (sandboxconfig.RuntimeEnvVar), or nil. Every
+// write that names a credential's variable holds it beside EnvVarNamePattern
+// (#1545).
+func RefuseRuntimeEnvVar(name string) error {
+	if !sandboxconfig.RuntimeEnvVar(name) {
+		return nil
+	}
+	return fmt.Errorf("%s is a variable the discobox runs on (as PATH, HOME, SHELL, USER, LANG, LD_* and the proxy variables are), and a credential in it would break every program the discobox starts; name another variable", name)
+}
+
 // SandboxUserFields is the sandbox user as the model stores it. Every field is
 // optional and stays nil when the request omitted it: the control plane cannot
 // resolve a sandbox's names or ids, so it records intent verbatim and the

@@ -248,6 +248,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := rekeySandboxOrigins(write); err != nil {
 		return err
 	}
+	if err := markRuntimeEnvHolders(write); err != nil {
+		return err
+	}
 	// Last, so the state each sandbox's first event reports is what the steps
 	// above left.
 	return store.BackfillSandboxEvents(write)
