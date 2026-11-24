@@ -629,6 +629,33 @@ func TestANewCredentialFromACommandIsStoredWithIt(t *testing.T) {
 	}
 }
 
+func TestRawJSONFromApprovalPreservesSelections(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	req := waitingRequest()
+	req.Raw = `{"id":"sreq_1"}`
+	ds.requests = []CredentialRequest{req}
+	send(t, m, tickMsg{})
+	openApproval(t, m, "sec_gh")
+	d := m.dialog
+	d.form.choose("ttl", "1 day")
+	d.form.choose("binding", "add")
+	readRequestEnd(t, m, "pgdown")
+	x, y := at(t, m, "View request")
+	tap(t, m, x+1, y)
+	if m.dialog.title != "Raw request" || !strings.Contains(plainFrame(m), "sreq_1") {
+		t.Fatalf("click did not open raw JSON: %s", describe(m.dialog))
+	}
+	send(t, m, keyPress("esc"))
+	if m.dialog != d || d.form.chosen("ttl") != "1 day" || d.form.chosen("binding") != "add" {
+		t.Fatal("returning from raw JSON changed the approval")
+	}
+	send(t, m, keyPress("ctrl+r"))
+	if m.dialog.title != "Raw request" || len(ds.approvals) != 0 {
+		t.Fatal("keyboard shortcut did not open raw JSON without approving")
+	}
+}
+
 // ctrl+r shows the request as sent from any step, and Esc comes back to that
 // step as it was left.
 func TestTheRawRequestOpensFromAStepAndComesBack(t *testing.T) {
