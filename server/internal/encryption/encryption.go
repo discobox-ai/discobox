@@ -60,10 +60,6 @@ func SandboxProviderSecrets(projectID, providerID string) Field {
 	return Field{Scope: projectID, Purpose: "sandbox_provider_instances.encrypted_config", ResourceID: projectID + "/" + providerID}
 }
 
-func SandboxAccessIssuerKey(projectID, userID string) Field {
-	return Field{Scope: projectID, Purpose: "sandbox_access_issuer_keys.private_key", ResourceID: projectID + "/" + userID}
-}
-
 // PoolAgentIssuerKey is the field of the key the server signs its requests
 // to pool agents with, kept under stateKey in server_state.
 func PoolAgentIssuerKey(stateKey string) Field {

@@ -233,7 +233,6 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&model.SecretRefreshRequest{},
 			&model.Secret{},
 			&model.SandboxProviderInstance{},
-			&model.SandboxAccessIssuerKey{},
 			&model.ProjectSkillsSource{},
 			&model.ProjectGateway{},
 			&model.ProjectMember{},

@@ -26,7 +26,6 @@ flowchart LR
     resources --> reconcile
     resources --> store
     resources --> sandbox[internal/sandbox]
-    resources --> sandboxauth[internal/auth/sandbox]
     providers -. implements .-> sandbox
 ```
 
@@ -1068,7 +1067,6 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/server` | HTTP startup, singleton lock, listener binding and startup status, chi router composition, auth middleware wiring, generated route mounting, hand-wired stream transport registration, and application component wiring. |
 | `internal/auth` | Request authentication, authorization, and principal context helpers. |
 | `internal/auth/poolagent` | Control-plane signed requests to pool agents, and the pool-agent token scopes proxies request. |
-| `internal/auth/sandbox` | Sandbox access issuer: per-project trust keys and sandbox access tokens. |
 | `internal/services` | Service interfaces and generated server DTO aliases used across server packages. |
 | `internal/handlers` | Generated OpenAPI handler adapter methods split by resource; transport DTO conversion only. |
 | `internal/service` | Root API service aggregation, default data initialization, service startup, and reconciler registration. |
@@ -1123,6 +1121,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | Package | Design notes |
 | --- | --- |
 | `internal/auth` | [`internal/auth/DESIGN.md`](internal/auth/DESIGN.md) |
+| `internal/auth/poolagent` | [`internal/auth/poolagent/DESIGN.md`](internal/auth/poolagent/DESIGN.md) |
 | `internal/database` | [`internal/database/DESIGN.md`](internal/database/DESIGN.md) |
 | `internal/model` | [`internal/model/DESIGN.md`](internal/model/DESIGN.md) |
 | `internal/reconcile` | [`internal/reconcile/DESIGN.md`](internal/reconcile/DESIGN.md) |
@@ -1134,7 +1133,6 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/projects` | [`internal/resources/projects/DESIGN.md`](internal/resources/projects/DESIGN.md) |
 | `internal/resources/sandboxes` | [`internal/resources/sandboxes/DESIGN.md`](internal/resources/sandboxes/DESIGN.md) |
 | `internal/resources/secrets` | [`internal/resources/secrets/DESIGN.md`](internal/resources/secrets/DESIGN.md) |
-| `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
 | `internal/sshd` | [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md) |

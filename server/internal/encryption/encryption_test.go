@@ -107,14 +107,14 @@ func TestAValueOpensOnlyAsItsOwnField(t *testing.T) {
 func TestALegacyValueOpensWithTheLocalKeyAndIsSealedAgain(t *testing.T) {
 	ctx := context.Background()
 	cfg, oldKey := localSettings(t)
-	f := SandboxAccessIssuerKey("proj_a", "user-1")
+	f := SecretValue("proj_a", "sec-1")
 	legacy := legacySeal(t, oldKey, f, []byte("private"))
 
 	k := newKeyring(t, cfg, &envelopetest.MemoryStore{})
 	if got, err := k.Open(ctx, f, legacy); err != nil || string(got) != "private" {
 		t.Fatalf("Open legacy = %q, %v", got, err)
 	}
-	if _, err := k.Open(ctx, SandboxAccessIssuerKey("proj_a", "user-2"), legacy); err == nil {
+	if _, err := k.Open(ctx, SecretValue("proj_a", "sec-2"), legacy); err == nil {
 		t.Fatal("a legacy value opened as another field")
 	}
 	resealed, err := k.SealForWrite(ctx, f, legacy)

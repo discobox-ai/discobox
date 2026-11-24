@@ -24,8 +24,7 @@ touches before you read the diff:
   widens what goes around the proxy goes around its policy, its secret
   swapping and its audit trail. `proxy/REVIEW.md`.
 - **Anyone → the control plane.** Authentication, authorization, and the tokens
-  sandboxes and pools hold. `server/internal/auth/REVIEW.md`,
-  `server/internal/auth/sandbox/REVIEW.md`.
+  sandboxes and pools hold. `server/internal/auth/REVIEW.md`.
 - **The box → the user's machine.** What the CLI and console run, open, or
   write on the user's side because a box asked. `cli/REVIEW.md`,
   `cli/internal/tui/REVIEW.md`.

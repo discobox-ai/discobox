@@ -28,7 +28,6 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/x/id"
 
-	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"gorm.io/gorm"
@@ -41,7 +40,6 @@ type Service struct {
 	store            *store.Store
 	engine           *reconcile.Engine
 	sandboxProviders *sandbox.ProviderManager
-	sandboxAuth      *sandboxauth.Manager
 	defaultUserID    string
 	// archiveRetention is the server-wide default retention for archived
 	// sandboxes; zero leaves DefaultArchiveRetention in force.
@@ -101,10 +99,6 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 	}
 	// Applies the sandbox events' retention (ADR 26-10-29-316 §4).
 	return s.engine.Register(SandboxEventPruneResourceType, &sandboxEventPruneReconciler{store: s.store, now: time.Now})
-}
-
-func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
-	s.sandboxAuth = manager
 }
 
 // SetArchiveRetention records the server-wide default retention for archived
@@ -1762,7 +1756,6 @@ func (s *Service) NewSandboxReconciler() *SandboxReconciler {
 	return NewSandboxReconciler(
 		s.store,
 		WithSandboxProviderManager(s.sandboxProviders),
-		WithSandboxAuthenticator(s.sandboxAuth),
 		WithSandboxReconcileEngine(s.engine),
 		WithArchiveRetention(s.archiveRetention),
 		WithServerPeerID(s.serverPeerID),
@@ -1829,19 +1822,4 @@ func (s *Service) ListSandboxProviderCatalog() []SandboxProviderCatalogItem {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
-}
-
-func (s *Service) CreateSandboxAuthToken(ctx context.Context, projectID, sandboxID string) (string, error) {
-	if s == nil || s.sandboxAuth == nil {
-		return "", nil
-	}
-	sb, err := s.store.GetSandbox(ctx, projectID, sandboxID)
-	if err != nil {
-		return "", apperrors.NotFound(err, "sandbox not found")
-	}
-	return s.sandboxAuth.CreateToken(ctx, sandboxauth.TokenClaims{
-		ProjectID: sb.ProjectID,
-		SandboxID: sb.ID,
-		UserID:    sb.CreatedByUserID,
-	})
 }

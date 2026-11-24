@@ -49,7 +49,7 @@ The root service should:
 3. Register resource reconcilers with the injected `reconcile.Engine`.
 4. Start the engine, then run startup reconciliation.
 5. Fan process-wide settings out to the resource types that need them
-   (`SetSandboxAuthManager`, `SetWorkerAgentAuthManager`).
+   (`SetWorkerAgentAuthManager`).
 
 Keep these responsibilities out of `internal/service`:
 

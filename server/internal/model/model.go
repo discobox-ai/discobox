@@ -332,29 +332,6 @@ type ServerState struct {
 
 func (ServerState) TableName() string { return "server_state" }
 
-// SandboxAccessIssuerKey stores per-project, per-user key material used by the
-// control plane to sign sandbox access tokens.
-type SandboxAccessIssuerKey struct {
-	ProjectID           string     `gorm:"column:project_id;primaryKey;type:text" json:"-"`
-	UserID              string     `gorm:"column:user_id;primaryKey;type:text" json:"-"`
-	PublicKey           string     `gorm:"column:public_key;not null;type:text" json:"-"`
-	EncryptedPrivateKey []byte     `gorm:"column:encrypted_private_key;not null" json:"-"`
-	KeyType             string     `gorm:"column:key_type;not null;type:text;default:'ed25519'" json:"-"`
-	RotatedAt           *time.Time `gorm:"column:rotated_at" json:"-"`
-	RevokedAt           *time.Time `gorm:"column:revoked_at;index" json:"-"`
-	CreatedAt           time.Time  `gorm:"autoCreateTime" json:"-"`
-	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"-"`
-
-	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
-	User    *User    `gorm:"-" json:"-"`
-}
-
-func (SandboxAccessIssuerKey) TableName() string { return "sandbox_access_issuer_keys" }
-
-// ProjectUserKey is an alias of SandboxAccessIssuerKey, and the name the
-// sandbox auth package's key store (auth/sandbox) is written against.
-type ProjectUserKey = SandboxAccessIssuerKey
-
 // HarnessConfig stores a project-scoped harness runtime configuration.
 //
 // A harness config is the single harness concept: the included harnesses are
@@ -2349,7 +2326,6 @@ func AllModels() []any {
 		&ServerState{},
 		&VerifiedBundle{},
 		&EncryptionKey{},
-		&SandboxAccessIssuerKey{},
 		&HarnessConfig{},
 		&HarnessCaptureReceipt{},
 		&Sandbox{},

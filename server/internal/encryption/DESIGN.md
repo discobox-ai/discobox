@@ -13,7 +13,7 @@ flowchart LR
     keyring --> envelope[envelope.Keyring]
     envelope -- "wrapped data keys" --> keys["store.EncryptionKeys (encryption_keys)"]
     store[internal/store] --> keyring
-    auth["auth/sandbox, auth/poolagent"] --> keyring
+    auth["auth/poolagent"] --> keyring
 ```
 
 - A `Field` names where a value lives: its scope (a project ID, or

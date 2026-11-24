@@ -12,7 +12,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
-	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -231,10 +230,6 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		assets:           assetService,
 		gateways:         gatewayService,
 	}
-}
-
-func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
-	s.Service.SetSandboxAuthManager(manager)
 }
 
 func (s *Service) SetWorkerAgentAuthManager(manager *poolagentauth.Manager) {

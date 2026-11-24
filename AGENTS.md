@@ -23,7 +23,7 @@
 - `server/internal/sandbox`: sandbox provider Go contract, provider manager, and shared provider types.
 - `server/internal/store`: database access, split by resource.
 - `server/internal/database`: database setup and resolution.
-- `server/internal/auth`: API authentication and authorization; `auth/sandbox` issues sandbox access tokens, `auth/poolagent` signs control-plane requests to pool agents.
+- `server/internal/auth`: API authentication and authorization; `auth/poolagent` signs control-plane requests to pool agents.
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
   `server/providers/dockerworker/sandbox-image` is the Docker driver's Ubuntu
   sandbox base image every sandbox container runs, with its platform and

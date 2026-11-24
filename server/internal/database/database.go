@@ -205,6 +205,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropProjectEvents(write); err != nil {
 		return err
 	}
+	if err := dropSandboxAccessIssuerKeys(write); err != nil {
+		return err
+	}
 	if err := migrateSandboxStateSplit(write); err != nil {
 		return err
 	}
@@ -874,6 +877,21 @@ func dropProjectEvents(db *gorm.DB) error {
 		return nil
 	}
 	return db.Migrator().DropTable("project_events")
+}
+
+// dropSandboxAccessIssuerKeys removes the retired sandbox_access_issuer_keys
+// table: a per-(project, user) Ed25519 key whose public half was handed to
+// each sandbox as DISCOBOX_TRUST_KEY, for access tokens nothing ever verified.
+// Each row holds a private key sealed with its project's data key, and
+// nothing signs with them any more, so the rows go with the table.
+//
+// A plain drop, as for project_events: the table references projects, and
+// nothing references it.
+func dropSandboxAccessIssuerKeys(db *gorm.DB) error {
+	if !db.Migrator().HasTable("sandbox_access_issuer_keys") {
+		return nil
+	}
+	return db.Migrator().DropTable("sandbox_access_issuer_keys")
 }
 
 // dropExchangeRecipeColumn removes secrets.exchange_recipe, the recipe an
