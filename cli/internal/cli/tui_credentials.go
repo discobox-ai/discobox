@@ -784,15 +784,16 @@ func (d *apiDataSource) DismissRefresh(ctx context.Context, server, requestID st
 	return nil
 }
 
-// Bindings lists the bindings of a secret, or one server's whole project's.
+// Bindings lists the bindings on one box, or the entire project.
 func (d *apiDataSource) Bindings(ctx context.Context, server string, filter tui.BindingFilter) ([]tui.SecretBinding, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
 	}
 	params := apiclientgen.ListSecretBindingsParams{ProjectId: d.projectID}
-	if secretID := strings.TrimSpace(filter.SecretID); secretID != "" {
-		params.Secret = apiclientgen.NewOptString(secretID)
+	if filter.SandboxID != "" {
+		params.TargetKind = apiclientgen.NewOptListSecretBindingsTargetKind(apiclientgen.ListSecretBindingsTargetKindSandbox)
+		params.Target = apiclientgen.NewOptString(filter.SandboxID)
 	}
 	res, err := d.client.ListSecretBindings(ctx, params)
 	if err != nil {

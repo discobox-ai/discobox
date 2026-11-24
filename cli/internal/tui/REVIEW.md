@@ -435,10 +435,9 @@
   harmless-looking `GET *.com/favicon.ico`, to a narrow ask; stored from every
   host it named, the typed-in token had no ceiling of its own, or nearly none.
 
-- A card a step goes back to is the same card, so its focus is where it was
-  left. Put the focus back on its first decision when coming back from a side
-  card (`modifyPart`'s back): left on Modify…, the next Enter reopened Modify
-  and its editor instead of approving.
+- Returning from the route editor restores the same approval card and
+  invalidates the read state when the routes change. The new preview must be
+  read before a decision can be sent.
 
 - A form submitting asynchronous work installs its wait dialog synchronously
   before returning the command. An intermediate submit message leaves a gap
