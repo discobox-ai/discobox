@@ -5,6 +5,15 @@
   for reconciliation (`sandbox.PoolManager.SchedulePoolReconciliation`, a drift
   mark that never cuts a failure backoff); direct provider cleanup is reserved
   for managed runtime orphans with no DB row.
+- A pool list that decides what is an orphan is read from the primary
+  (`sandbox.PoolManager`'s `ListPoolsForProviderInstance`, the drift
+  watcher's, and `ListPools`, pool-sync's, do). A cleanup that lists runtimes
+  itself lists them before it reads the rows, as the Docker drift watcher
+  does. Why: a pool's row commits before its runtime exists, so rows read
+  first, or from a replica that lags them, miss a pool created a moment ago,
+  and its fresh container is removed as an orphan (#1473). Pool-sync does
+  not yet keep that order: the agent scans after the server read the list
+  (#1643).
 - Provider code can run inside a pool's own reconcile: `ReconcilePool` and
   `RepairPool`, and `Initialize`, which the pool reconciler's resolve runs
   whenever it rebuilds the provider (after an update, or a startup resolve

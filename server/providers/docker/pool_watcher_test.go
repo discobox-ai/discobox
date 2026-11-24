@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -289,6 +290,65 @@ func TestDockerWorkerWatcherRemovesAnOrphanPoolsRuntimeButNotItsTrees(t *testing
 			t.Errorf("orphan cleanup created a container (its trees must stay); requests: %v", requests)
 		}
 	}
+}
+
+// A pool whose row commits while the scan runs, just before its container
+// shows in the Docker list, keeps that container: the scan reads rows after
+// listing containers, so the new container is never taken for an orphan
+// (#1473).
+func TestDockerPoolWatcherKeepsPoolCreatedDuringScan(t *testing.T) {
+	versionPrefix := regexp.MustCompile(`^/v[0-9.]+`)
+	manager := &poolCreatedDuringScan{}
+	var removed atomic.Bool
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := versionPrefix.ReplaceAllString(r.URL.Path, "")
+		created := `{"Id":"container-1","Config":{"Labels":{"` + dockerworker.LabelPoolID + `":"pool-1"}}}`
+		switch {
+		case r.Method == http.MethodGet && path == "/containers/json":
+			// The pool row commits immediately before its container becomes visible.
+			manager.created.Store(true)
+			_, _ = w.Write([]byte(`[` + created + `]`))
+		case r.Method == http.MethodGet && path == "/containers/container-1/json":
+			_, _ = w.Write([]byte(created))
+		case r.Method == http.MethodDelete:
+			removed.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"not found"}`))
+		}
+	}))
+	t.Cleanup(daemon.Close)
+	cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(daemon.URL, "http://")), client.WithAPIVersion("1.51"))
+	if err != nil {
+		t.Fatalf("new docker client: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	engine, err := dockerworker.New(dockerworker.Config{SandboxBaseImage: "worker:test"}, &LocalDriver{client: cli, agentPort: defaultAgentPort})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	watcher := dockerPoolWatcher{client: cli, engine: engine, manager: manager, projectID: "project-1", providerID: "provider-1"}
+
+	if _, err := watcher.scan(t.Context()); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if removed.Load() {
+		t.Fatal("scan removed container-1 after its pool row was committed")
+	}
+}
+
+// poolCreatedDuringScan lists no pool rows until its pool's row is created.
+type poolCreatedDuringScan struct {
+	recordingPoolManager
+	created atomic.Bool
+}
+
+func (m *poolCreatedDuringScan) ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error) {
+	if !m.created.Load() {
+		return nil, nil
+	}
+	return m.recordingPoolManager.ListPoolsForProviderInstance(ctx, projectID, providerID)
 }
 
 type recordingPoolManager struct {

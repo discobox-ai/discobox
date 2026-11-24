@@ -75,12 +75,18 @@ func (s *ControlPlane) GetPool(ctx context.Context, projectID, poolID string) (*
 	return s.store.WithPrimaryRead().GetPool(ctx, projectID, poolID)
 }
 
+// ListPoolsForProviderInstance reads the primary: a provider's drift watcher
+// removes the runtime of any pool missing from this list, and a replica that
+// has not yet seen a new pool's row would have it remove that pool's fresh
+// container (#1473).
 func (s *ControlPlane) ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error) {
-	return s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
+	return s.store.WithPrimaryRead().ListPoolsForProviderInstance(ctx, projectID, providerID)
 }
 
+// ListPools reads the primary for the same reason: pool-sync hands the agent
+// this list as the pools that exist, and the agent reaps what it leaves out.
 func (s *ControlPlane) ListPools(ctx context.Context, projectID string) ([]model.Pool, error) {
-	return s.store.ListPools(ctx, projectID)
+	return s.store.WithPrimaryRead().ListPools(ctx, projectID)
 }
 
 func (s *ControlPlane) SchedulablePoolForSandbox(ctx context.Context, sb *model.Sandbox) (*model.Pool, error) {

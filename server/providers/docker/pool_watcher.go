@@ -105,11 +105,16 @@ type dockerPoolWatcher struct {
 }
 
 func (w dockerPoolWatcher) scan(ctx context.Context) (bool, error) {
-	pools, err := w.manager.ListPoolsForProviderInstance(ctx, w.projectID, w.providerID)
+	// Containers are listed before pool rows, and the rows are read from the
+	// primary: a pool's row commits before its container exists, so every
+	// listed container whose pool is live finds its row in the later read.
+	// Reading rows first, or from a lagging replica, would let a pool created
+	// just before have its new container removed as an orphan (#1473).
+	containers, err := w.listPoolContainers(ctx)
 	if err != nil {
 		return false, err
 	}
-	containers, err := w.listPoolContainers(ctx)
+	pools, err := w.manager.ListPoolsForProviderInstance(ctx, w.projectID, w.providerID)
 	if err != nil {
 		return false, err
 	}
