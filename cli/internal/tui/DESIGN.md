@@ -574,8 +574,9 @@ it is the letter of the thing it does.
 
 **A credential request is answered on one approval card**
 (`credential_approval.go`). The card names the requesting box, its reason,
-and the routes each part would grant. Ctrl+R opens the request as sent.
-Escape leaves it waiting.
+and the routes each part would grant. The Raw JSON row and Ctrl+R open the
+request as sent. Escape returns to the approval with choices intact, or
+leaves it waiting when pressed on the approval itself.
 
 ```mermaid
 flowchart LR

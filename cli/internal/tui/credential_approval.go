@@ -164,6 +164,15 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		}
 		rows = append(rows, decision, scope, edit)
 	}
+	if req.Raw != "" {
+		rows = append(rows, formRow{
+			key: "raw", label: "Raw JSON", openOnClick: true,
+			show: func(*form) string { return "View request" },
+			open: func() tea.Cmd {
+				return m.showRawRequest(req, func() tea.Cmd { m.dialog = d; return nil })
+			},
+		})
+	}
 	f := newForm(rows...)
 	f.choose("ttl", lifetime.Label(ttl))
 	if req.Use != nil && req.Use.Add {
