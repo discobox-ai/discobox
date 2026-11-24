@@ -38,7 +38,7 @@ func dnsAuditFixture(t *testing.T) (*ControlClient, string, ed25519.PrivateKey) 
 		Control: ControlConfig{
 			TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 			ProjectID:      "project-1",
-			WorkerID:       "pool-1",
+			PoolID:         "pool-1",
 		},
 	}, prepared.Bundle, nil)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestControlClientReadsTheDNSAudit(t *testing.T) {
 // spelled for the HTTP trail: answering 200 would read as "these matched".
 func TestControlDNSRefusesHTTPFiltersAndCursors(t *testing.T) {
 	client, url, key := dnsAuditFixture(t)
-	token, err := CreateControlToken(key, ControlTokenClaims{ProjectID: "project-1", WorkerID: "pool-1", Scopes: []string{ScopeAuditRead}})
+	token, err := CreateControlToken(key, ControlTokenClaims{ProjectID: "project-1", PoolID: "pool-1", Scopes: []string{ScopeAuditRead}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestControlDroppedIsNarrowedToTheTokensSandbox(t *testing.T) {
 		Control: ControlConfig{
 			TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 			ProjectID:      "project-1",
-			WorkerID:       "pool-1",
+			PoolID:         "pool-1",
 		},
 	}, prepared.Bundle, nil)
 	if err != nil {
@@ -173,7 +173,7 @@ func TestControlDroppedIsNarrowedToTheTokensSandbox(t *testing.T) {
 	client := NewControlClient(served.URL, privateKey, "project-1", "pool-1", nil)
 	read := func(sandboxID string) map[string]uint64 {
 		t.Helper()
-		token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", WorkerID: "pool-1", SandboxID: sandboxID, Scopes: []string{ScopeAuditRead}})
+		token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", PoolID: "pool-1", SandboxID: sandboxID, Scopes: []string{ScopeAuditRead}})
 		if err != nil {
 			t.Fatal(err)
 		}

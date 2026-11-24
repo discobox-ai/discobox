@@ -17,7 +17,7 @@ func TestControlAuthRequiresValidToken(t *testing.T) {
 	auth, err := newControlAuthenticator(ControlConfig{
 		TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 		ProjectID:      "project-1",
-		WorkerID:       "worker-1",
+		PoolID:         "pool-1",
 	})
 	if err != nil {
 		t.Fatalf("newControlAuthenticator() error = %v", err)
@@ -27,7 +27,7 @@ func TestControlAuthRequiresValidToken(t *testing.T) {
 		if !ok {
 			t.Fatal("missing control claims")
 		}
-		if claims.ProjectID != "project-1" || claims.WorkerID != "worker-1" {
+		if claims.ProjectID != "project-1" || claims.PoolID != "pool-1" {
 			t.Fatalf("claims = %#v", claims)
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -39,7 +39,7 @@ func TestControlAuthRequiresValidToken(t *testing.T) {
 		t.Fatalf("unauthorized status = %d", rec.Code)
 	}
 
-	token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", WorkerID: "worker-1", Scopes: []string{ScopeAuditRead}})
+	token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", PoolID: "pool-1", Scopes: []string{ScopeAuditRead}})
 	if err != nil {
 		t.Fatalf("CreateControlToken() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestControlAuthSandboxTokenRestrictsClientQuery(t *testing.T) {
 	}))
 	token, err := CreateControlToken(privateKey, ControlTokenClaims{
 		ProjectID: "project-1",
-		WorkerID:  "worker-1",
+		PoolID:    "pool-1",
 		SandboxID: "sandbox-1",
 		Scopes:    []string{ScopeAuditRead},
 	})
@@ -79,6 +79,39 @@ func TestControlAuthSandboxTokenRestrictsClientQuery(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("sandbox mismatch status = %d", rec.Code)
+	}
+}
+
+// A token signed for another pool of the project is refused, even by the same
+// key: the pool_id claim is what keeps one pool's reader to its own proxy.
+func TestControlAuthRejectsAnotherPoolsToken(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	auth, err := newControlAuthenticator(ControlConfig{
+		TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
+		ProjectID:      "project-1",
+		PoolID:         "pool-1",
+	})
+	if err != nil {
+		t.Fatalf("newControlAuthenticator() error = %v", err)
+	}
+	handler := auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for pool, want := range map[string]int{"pool-1": http.StatusNoContent, "pool-2": http.StatusForbidden} {
+		token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", PoolID: pool, Scopes: []string{ScopeAuditRead}})
+		if err != nil {
+			t.Fatalf("CreateControlToken() error = %v", err)
+		}
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/audit/http", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("token for %s: status = %d, want %d", pool, rec.Code, want)
+		}
 	}
 }
 
@@ -98,14 +131,14 @@ func TestControlAuthSandboxTokenNarrowsEveryUnscopedRoute(t *testing.T) {
 	auth, err := newControlAuthenticator(ControlConfig{
 		TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 		ProjectID:      "project-1",
-		WorkerID:       "worker-1",
+		PoolID:         "pool-1",
 	})
 	if err != nil {
 		t.Fatalf("newControlAuthenticator() error = %v", err)
 	}
 	token, err := CreateControlToken(privateKey, ControlTokenClaims{
 		ProjectID: "project-1",
-		WorkerID:  "worker-1",
+		PoolID:    "pool-1",
 		SandboxID: "sandbox-1",
 		Scopes:    []string{ScopeAuditRead},
 	})
@@ -259,7 +292,7 @@ func TestControlAuthPurgeNeedsItsOwnScopeAndItsSandbox(t *testing.T) {
 		{"purge token cannot read", http.MethodGet, "/audit/http", "sbx_1", []string{ScopeAuditPurge}, http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", WorkerID: "worker-1", SandboxID: tc.sandbox, Scopes: tc.scopes})
+			token, err := CreateControlToken(privateKey, ControlTokenClaims{ProjectID: "project-1", PoolID: "pool-1", SandboxID: tc.sandbox, Scopes: tc.scopes})
 			if err != nil {
 				t.Fatalf("CreateControlToken() error = %v", err)
 			}

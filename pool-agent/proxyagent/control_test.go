@@ -86,7 +86,7 @@ func TestControlConfigTrustsTheKeysPublicHalf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("controlConfig() error = %v", err)
 	}
-	if cfg.ListenAddress != ControlListenAddress || cfg.ProjectID != testProjectID || cfg.WorkerID != testPoolID {
+	if cfg.ListenAddress != ControlListenAddress || cfg.ProjectID != testProjectID || cfg.PoolID != testPoolID {
 		t.Fatalf("control config = %+v", cfg)
 	}
 	publicKey, ok := key.Public().(ed25519.PublicKey)

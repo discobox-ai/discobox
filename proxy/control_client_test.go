@@ -46,7 +46,7 @@ func controlClientFixture(t *testing.T) (string, ed25519.PrivateKey, string) {
 		Control: ControlConfig{
 			TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 			ProjectID:      "project-1",
-			WorkerID:       "pool-1",
+			PoolID:         "pool-1",
 		},
 	}, prepared.Bundle, nil)
 	if err != nil {
@@ -172,7 +172,7 @@ func TestControlClientOrdersAndFiltersByStatus(t *testing.T) {
 // is refused, not answered with every row.
 func TestControlSOCKSRefusesHTTPOnlyFilters(t *testing.T) {
 	url, key, _ := controlClientFixture(t)
-	token, err := CreateControlToken(key, ControlTokenClaims{ProjectID: "project-1", WorkerID: "pool-1", Scopes: []string{ScopeAuditRead}})
+	token, err := CreateControlToken(key, ControlTokenClaims{ProjectID: "project-1", PoolID: "pool-1", Scopes: []string{ScopeAuditRead}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestControlClientGetHTTPReadsTheWholeRow(t *testing.T) {
 func TestControlSOCKSRefusesAnHTTPCursor(t *testing.T) {
 	url, key, _ := controlClientFixture(t)
 	client := NewControlClient(url, key, "project-1", "pool-1", nil)
-	token, err := CreateControlToken(key, ControlTokenClaims{ProjectID: "project-1", WorkerID: "pool-1"})
+	token, err := CreateControlToken(key, ControlTokenClaims{ProjectID: "project-1", PoolID: "pool-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

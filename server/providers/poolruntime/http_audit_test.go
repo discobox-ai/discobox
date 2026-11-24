@@ -53,7 +53,7 @@ func newHTTPAuditRuntimeProvider(t *testing.T, scopes ...string) *testRuntimePro
 		Control: proxy.ControlConfig{
 			TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 			ProjectID:      "project-1",
-			WorkerID:       "pool-1",
+			PoolID:         "pool-1",
 		},
 	}, prepared.Bundle, nil)
 	if err != nil {

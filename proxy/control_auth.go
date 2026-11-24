@@ -31,7 +31,7 @@ type controlClaimsContextKey struct{}
 // CreateControlToken signs them.
 type ControlTokenClaims struct {
 	ProjectID string
-	WorkerID  string
+	PoolID    string
 	SandboxID string
 	Scopes    []string
 }
@@ -71,7 +71,7 @@ func CreateControlToken(privateKey ed25519.PrivateKey, claims ControlTokenClaims
 	token.SetNotBefore(now.Add(-controlClockSkew))
 	token.SetExpiration(now.Add(controlTokenTTL))
 	token.SetString("project_id", claims.ProjectID)
-	token.SetString("worker_id", claims.WorkerID)
+	token.SetString("pool_id", claims.PoolID)
 	if claims.SandboxID != "" {
 		token.SetString("sandbox_id", claims.SandboxID)
 	}
@@ -92,7 +92,7 @@ func CreateControlToken(privateKey ed25519.PrivateKey, claims ControlTokenClaims
 type controlAuthenticator struct {
 	publicKey paseto.V4AsymmetricPublicKey
 	projectID string
-	workerID  string
+	poolID    string
 }
 
 func newControlAuthenticator(cfg ControlConfig) (*controlAuthenticator, error) {
@@ -111,7 +111,7 @@ func newControlAuthenticator(cfg ControlConfig) (*controlAuthenticator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load proxy control public key: %w", err)
 	}
-	return &controlAuthenticator{publicKey: publicKey, projectID: cfg.ProjectID, workerID: cfg.WorkerID}, nil
+	return &controlAuthenticator{publicKey: publicKey, projectID: cfg.ProjectID, poolID: cfg.PoolID}, nil
 }
 
 func (a *controlAuthenticator) Middleware(next http.Handler) http.Handler {
@@ -149,9 +149,9 @@ func (a *controlAuthenticator) parseClaims(tokenText string) (ControlTokenClaims
 	if err != nil {
 		return ControlTokenClaims{}, fmt.Errorf("read project_id claim: %w", err)
 	}
-	workerID, err := token.GetString("worker_id")
+	poolID, err := token.GetString("pool_id")
 	if err != nil {
-		return ControlTokenClaims{}, fmt.Errorf("read worker_id claim: %w", err)
+		return ControlTokenClaims{}, fmt.Errorf("read pool_id claim: %w", err)
 	}
 	var sandboxID string
 	_ = token.Get("sandbox_id", &sandboxID)
@@ -159,15 +159,15 @@ func (a *controlAuthenticator) parseClaims(tokenText string) (ControlTokenClaims
 	if err := token.Get("scopes", &scopes); err != nil {
 		return ControlTokenClaims{}, fmt.Errorf("read scopes claim: %w", err)
 	}
-	return ControlTokenClaims{ProjectID: projectID, WorkerID: workerID, SandboxID: sandboxID, Scopes: scopes}, nil
+	return ControlTokenClaims{ProjectID: projectID, PoolID: poolID, SandboxID: sandboxID, Scopes: scopes}, nil
 }
 
 func (a *controlAuthenticator) authorize(r *http.Request, claims ControlTokenClaims) error {
 	if a.projectID != "" && claims.ProjectID != a.projectID {
 		return errors.New("proxy control token project does not match")
 	}
-	if a.workerID != "" && claims.WorkerID != a.workerID {
-		return errors.New("proxy control token worker does not match")
+	if a.poolID != "" && claims.PoolID != a.poolID {
+		return errors.New("proxy control token pool does not match")
 	}
 	if r.Method == http.MethodDelete {
 		if !claims.hasScope(ScopeAuditPurge) {

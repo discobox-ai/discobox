@@ -1188,7 +1188,7 @@ body and upgraded-stream spool files only through the owning HTTP audit row
 read is narrowed to `client_id` when one is given. When `Control.TrustPublicKey` is configured, every control
 request must use a PASETO v4.public bearer token for audience
 `discobox-proxy-control` with `audit:read` scope, matching `Control.ProjectID`
-and `WorkerID` when set. A token carrying `sandbox_id` *narrows* every read to
+and `PoolID` when set (claims `project_id` and `pool_id`). A token carrying `sandbox_id` *narrows* every read to
 that sandbox rather than being compared against a `client_id` the caller was
 trusted to send — a comparison only rejects a mismatch, so a request that simply
 omitted the parameter would read every sandbox's rows and spooled bodies. A
