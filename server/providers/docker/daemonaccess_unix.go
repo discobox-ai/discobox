@@ -70,7 +70,10 @@ func describeSocketAccess(path string, gid int, member bool, mode fs.FileMode) s
 	if name == "" {
 		name = strconv.Itoa(gid)
 	}
-	return fmt.Sprintf("%s and this process is not in it: add the user to that group with `sudo usermod -aG %s $USER`, then start a new login session — on WSL, `wsl.exe --shutdown`", groupAccess, name)
+	// A process's groups are fixed when it starts, and the CLI reuses a running
+	// local server, so a new login session alone leaves the server that hit
+	// this refusal running without the group (#1471).
+	return fmt.Sprintf("%s and this process is not in it: add the user to that group with `sudo usermod -aG %s $USER` and start a new login session. For a local Discobox server, run `discobox admin server shutdown --wait` from that session before retrying. On WSL, `wsl.exe --shutdown` also stops the server", groupAccess, name)
 }
 
 // groupName is the name to type into usermod, or "" for a gid that has none.
