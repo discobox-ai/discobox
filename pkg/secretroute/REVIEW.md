@@ -97,6 +97,12 @@
   (ADR 26-11-06-442 §2). A blocked route without a protocol block still
   refuses a message on its host and path, and a WebSocket route grants no
   header or body use.
+- **A message's string keeps one pointer step, never a copy of its whole
+  pointer.** The sandbox writes the message, and a copy per string is name
+  length times string count: one long member name over an array of `""`
+  costs hundreds of megabytes in one 64 KiB WebSocket message. Build a
+  pointer (`MessageString.At`) only for a string being matched, and keep
+  `ParseDocument`'s allocation tests covering long names over many strings.
 - Read a message strictly and compare conditions on the original, before any
   value is swapped in. A lenient decoder takes the last of two members and
   replaces an unpaired surrogate, either of which lets the proxy and the

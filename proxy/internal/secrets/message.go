@@ -119,16 +119,17 @@ func (s *Swapper) MatchMessage(clientID string, payload []byte, text bool, retai
 		case str.Name:
 			// Named by its parent's pointer: its own holds the placeholder.
 			where := "the top level"
-			if parent := str.At[:strings.LastIndex(str.At, "/")]; parent != "" {
+			at := str.At()
+			if parent := at[:strings.LastIndex(at, "/")]; parent != "" {
 				where = secretroute.Safe(parent)
 			}
 			return MessageUses{}, &MessageRefusal{Reason: "a credential's placeholder is in a member name under " + where + ", which is no place"}
 		case slices.Contains(current, str.Value):
-			uses = append(uses, bodyUse{Place: Place{Sentinel: str.Value, At: str.At}, start: str.Start, end: str.End})
+			uses = append(uses, bodyUse{Place: Place{Sentinel: str.Value, At: str.At()}, start: str.Start, end: str.End})
 		case slices.Contains(all, str.Value):
-			return MessageUses{}, &MessageRefusal{Reason: "the string at " + secretroute.Safe(str.At) + " is a credential's placeholder this sandbox no longer holds"}
+			return MessageUses{}, &MessageRefusal{Reason: "the string at " + secretroute.Safe(str.At()) + " is a credential's placeholder this sandbox no longer holds"}
 		default:
-			return MessageUses{}, &MessageRefusal{Reason: "a credential's placeholder is inside the string at " + secretroute.Safe(str.At) + ", not the whole of it"}
+			return MessageUses{}, &MessageRefusal{Reason: "a credential's placeholder is inside the string at " + secretroute.Safe(str.At()) + ", not the whole of it"}
 		}
 	}
 	for _, sentinel := range carried {

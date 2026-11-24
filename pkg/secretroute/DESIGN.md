@@ -41,7 +41,13 @@ block. Specificity is host then path as for every use; conditions add none.
 unpaired surrogates, depth 64, with numbers kept as exact decimals
 (`canonicalNumber`), so `2` and `2.0` are one value and no float rounding
 joins two. Conditions are stored in that canonical spelling, which makes
-`Format` and containment comparisons byte equality. The typed form is
+`Format` and containment comparisons byte equality. It builds no tree.
+It reads twice: once to refuse and to count the strings and pointer
+steps, then again to record them, into slices of that size, with the
+root object's scalars. A string keeps one shared step and builds its
+pointer only when asked (`MessageString.At`). So reading costs what it
+keeps, not a node per value, a pointer per string, or room for strings a
+document turns out not to hold. The typed form is
 `ws=` and a JSON array, cut out of the text as one JSON value before the
 rest is split into words.
 

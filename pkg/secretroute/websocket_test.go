@@ -127,7 +127,7 @@ func TestParseMessageStrict(t *testing.T) {
 	got := map[string]string{}
 	for _, s := range m.Strings() {
 		if !s.Name {
-			got[s.At] = s.Value
+			got[s.At()] = s.Value
 		}
 	}
 	if got["/d/to~1ken"] != "t" || got["/d/a~0b/0"] != "x" || got["/d/a~0b/1"] != "😀" {
