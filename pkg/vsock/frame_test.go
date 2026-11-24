@@ -5,9 +5,11 @@ package vsock
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -501,6 +503,19 @@ func TestFrameListenerClosedDuringBackoffReturnsErrClosed(t *testing.T) {
 // writev. The host end of each connection is a Unix socket with a small send
 // buffer, so a host that stops reading blocks the queue, and with it every
 // connection, exactly as on a Mac.
+//
+// The guest end has the 256 KiB buffer of Linux's vsock transport, and the
+// queue delivers what the guest has queued in one write of up to that much.
+// That run size is the model's assumption, not something measured on the
+// framework. A full run is more than everything between the queue and the
+// parent's pump can hold (about 80 KiB: the child's host socket, the host's
+// copy buffer, the parent's host socket and the pump's chunk), so one write
+// of it wedges the unframed hairpin. A run is full whenever the child's pump
+// has waited on the queue while the guest kept writing, which on one CPU is
+// every run after the first. With several CPUs a read can come back short,
+// and the hairpin then wedges as it did before runs were this large: by the
+// child getting ahead of the parent's short reads. That alone never happened
+// on one CPU.
 
 const hairpinBytes = 32 << 20
 
@@ -519,6 +534,15 @@ func TestModelUnframedHairpinStallsTheQueue(t *testing.T) {
 	}
 	if counted.load() >= hairpinBytes {
 		t.Fatal("the unframed hairpin delivered everything; the model no longer reproduces the deadlock")
+	}
+}
+
+// The unframed model must build its stall whatever the number of CPUs the
+// test gets: an archil box has one.
+func TestModelUnframedHairpinStallsOnOneCPU(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	for i := range 5 {
+		t.Run(fmt.Sprint(i), TestModelUnframedHairpinStallsTheQueue)
 	}
 }
 
@@ -658,23 +682,30 @@ func (vm *modelVM) assertQueueNeverBlocked(t *testing.T) {
 	}
 }
 
+// The buffers of the model's two socket pairs: the framework's end of a host
+// connection, and the guest kernel's vsock buffer.
+const (
+	modelHostBuffer  = 8 << 10
+	modelGuestBuffer = 256 << 10
+)
+
 // connect makes one connection. Each program's end is one of a Unix socket
-// pair whose other end the queue reads and writes, with 8 KiB buffers, as the
-// framework's end of a host connection has.
+// pair whose other end the queue reads and writes.
 func (vm *modelVM) connect() modelConn {
-	hostProgram, hostQueue := socketPair(vm.t)
-	guestProgram, guestQueue := socketPair(vm.t)
+	hostProgram, hostQueue := socketPair(vm.t, modelHostBuffer)
+	guestProgram, guestQueue := socketPair(vm.t, modelGuestBuffer)
 	vm.pump(guestQueue, hostQueue)
 	vm.pump(hostQueue, guestQueue)
 	return modelConn{host: hostProgram, guest: guestProgram}
 }
 
 // pump reads src for as long as it has data, as the framework credits the
-// guest, and hands every chunk to the one queue.
+// guest, and hands every chunk to the one queue. A chunk is whatever one read
+// returns, up to a guest buffer: from the guest's end, a whole run.
 func (vm *modelVM) pump(src, dst net.Conn) {
 	go func() {
 		for {
-			buf := make([]byte, 32<<10)
+			buf := make([]byte, modelGuestBuffer)
 			n, err := src.Read(buf)
 			if n > 0 {
 				select {
@@ -798,9 +829,9 @@ func (zeros) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// socketPair returns both ends of a Unix stream socket pair with 8 KiB
-// buffers.
-func socketPair(t *testing.T) (net.Conn, net.Conn) {
+// socketPair returns both ends of a Unix stream socket pair whose send and
+// receive buffers are set to size.
+func socketPair(t *testing.T, size int) (net.Conn, net.Conn) {
 	t.Helper()
 	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	if err != nil {
@@ -809,7 +840,7 @@ func socketPair(t *testing.T) (net.Conn, net.Conn) {
 	conns := make([]net.Conn, 2)
 	for i, fd := range fds {
 		for _, opt := range []int{syscall.SO_SNDBUF, syscall.SO_RCVBUF} {
-			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, opt, 8<<10); err != nil {
+			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, opt, size); err != nil {
 				t.Fatal(err)
 			}
 		}
