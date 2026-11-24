@@ -23,7 +23,7 @@
 
 - **In `waitReady`, a probe that ran out its own timeout reached a live
   server; only a refused connection or a missing socket or pipe
-  (`listenerGone`) means it is gone.** It once counted every probe error
+  (`ListenerGone`) means it is gone.** It once counted every probe error
   toward "stopped while starting", and on a host at load 116 three slow
   `/healthz` answers in a row ended the wait of a server busy upgrading its
   pools (#1298); the earlier fix, a short run of failures before giving up,

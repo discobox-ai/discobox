@@ -354,7 +354,7 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) (hea
 			unanswered, silent = 0, true
 		case !isProbeConnectionError(err):
 			return health.Status{}, err
-		case listenerGone(err):
+		case ListenerGone(err):
 			// It was answering and now nothing listens. A server holds its
 			// listeners for the whole of startup and releases them only when
 			// the process ends, so this is one that gave up — a step that
@@ -695,10 +695,12 @@ func (o LaunchOptions) probeInterval() time.Duration {
 	return defaultProbeInterval
 }
 
-// listenerGone reports whether a probe found nothing listening at all: the
+// ListenerGone reports whether a probe found nothing listening at all: the
 // connection refused, or the socket or pipe no longer there. Unlike a probe
-// that timed out, that is what a server that has exited looks like.
-func listenerGone(err error) bool {
+// that timed out, that is what a server that has exited looks like — or one
+// that never started. A probe answered by something that is not a Discobox
+// server, or a socket this user may not open, is neither: something is there.
+func ListenerGone(err error) bool {
 	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, errConnRefused)
 }
 

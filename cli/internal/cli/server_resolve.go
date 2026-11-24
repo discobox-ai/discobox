@@ -117,6 +117,23 @@ func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolv
 
 // resolve returns the path of the server binary to run, staging it when that is
 // what it takes.
+func (r serverResolver) resolve(ctx context.Context) (string, error) {
+	binary, manifest, err := r.choose(ctx)
+	if err != nil || manifest == nil {
+		return binary, err
+	}
+	dir, err := r.stage(ctx, *manifest)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, manifest.Command), nil
+}
+
+// choose decides which server resolve runs, and touches nothing to decide it:
+// a binary already on this machine, run as it is, or the manifest of one to
+// stage. Exactly one of the two is set when err is nil. It is the one place
+// that order lives, so that a question about which server would run
+// (needsDownload) is answered by the same decision resolve acts on.
 //
 // The order is: what the caller named, then what is installed beside this
 // binary, then what this build was cut against.
@@ -128,7 +145,7 @@ func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolv
 // more attacker-controlled than the executable itself, and "the server was
 // replaced by something earlier in PATH" is not a failure mode worth buying a
 // convenience with.
-func (r serverResolver) resolve(ctx context.Context) (string, error) {
+func (r serverResolver) choose(ctx context.Context) (string, *serverstage.Manifest, error) {
 	if named := r.source.binary; named != "" {
 		// Absolute, because a bare name means two different files to the two
 		// halves of this: os.Stat resolves it against the working directory
@@ -140,18 +157,18 @@ func (r serverResolver) resolve(ctx context.Context) (string, error) {
 		// named.
 		named, err := filepath.Abs(named)
 		if err != nil {
-			return "", fmt.Errorf("server binary %s: %w", r.source.binary, err)
+			return "", nil, fmt.Errorf("server binary %s: %w", r.source.binary, err)
 		}
 		if _, err := os.Stat(named); err != nil {
-			return "", fmt.Errorf("server binary %s: %w", named, err)
+			return "", nil, fmt.Errorf("server binary %s: %w", named, err)
 		}
-		return named, nil
+		return named, nil, nil
 	}
 	// An explicit manifest is an instruction, so it outranks whatever happens
 	// to be lying beside the binary.
 	if r.source.manifest == "" && r.source.releaseManifest == "" {
 		if sibling, ok := r.sibling(); ok {
-			return sibling, nil
+			return sibling, nil, nil
 		}
 	}
 	manifest, err := r.manifest(ctx)
@@ -159,22 +176,38 @@ func (r serverResolver) resolve(ctx context.Context) (string, error) {
 		// The end of the order, and the only place that can say what the whole
 		// of it was: this build has nothing to download and the machine has
 		// nothing to run, so name both ways out.
-		return "", fmt.Errorf(
+		return "", nil, fmt.Errorf(
 			"%w, and there is no %s beside %s\nBuild one with `go tool task build`, or name one with --binary or %s",
 			err, serverBinaryName(), r.executableName(), ServerBinaryEnv)
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if !manifest.ForThisPlatform() {
-		return "", fmt.Errorf("that manifest describes a server for %s, and this is %s/%s",
+		return "", nil, fmt.Errorf("that manifest describes a server for %s, and this is %s/%s",
 			manifest.Platform(), runtime.GOOS, runtime.GOARCH)
 	}
-	dir, err := r.stage(ctx, manifest)
+	return "", &manifest, nil
+}
+
+// needsDownload reports, without downloading or writing anything, whether
+// resolve would have to download the server: choose settled on a manifest,
+// and that manifest is not staged yet.
+//
+// known is false when choose fails — a named binary that is not there, no
+// manifest to stage from (a development build), one that does not load or
+// describes another platform. resolve fails on each of those too, so neither
+// "it is there" nor "stage it" would be the true thing to tell somebody.
+func (r serverResolver) needsDownload(ctx context.Context) (download, known bool) {
+	_, manifest, err := r.choose(ctx)
 	if err != nil {
-		return "", err
+		return false, false
 	}
-	return filepath.Join(dir, manifest.Command), nil
+	if manifest == nil {
+		return false, true
+	}
+	_, staged := serverstage.Staged(r.stageRoot, *manifest)
+	return !staged, true
 }
 
 // expectedVersion follows the selected server source without staging a binary.
