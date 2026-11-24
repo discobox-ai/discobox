@@ -61,6 +61,13 @@
 - **The composer's height is a function of its contents**, so `layout()` runs
   after every key *and* every mouse event — a press that changes what is in the
   field changes where everything under it is drawn.
+- **Segment text by `ansi.FirstGraphemeCluster`, not by the decoder alone,
+  when it is the cluster that matters** (`forWidthMethod`).
+  `DecodeSequenceInString` reads an ASCII character on its own, so a keycap
+  (`1️⃣`) comes back as `1` and a cluster of no width, and a width check over
+  those pieces passes on a cluster the emulator gave two cells. The first
+  version of the WcWidth rewrite missed keycaps this way: the line measured
+  right and everything after the keycap sat a column left.
 
 ## Key routing
 

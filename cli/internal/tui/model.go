@@ -108,6 +108,11 @@ type Model struct {
 	// screenWidth is the terminal's width; width is what the window draws in,
 	// which is less the workspace tree while it is up. See tree.go.
 	screenWidth int
+	// widthMethod is how Bubble Tea's renderer measures what the window
+	// draws: WcWidth until the terminal answers the mode 2027 query, which the
+	// Windows 10 console never does. Every frame is drawn for it; see
+	// forWidthMethod.
+	widthMethod ansi.Method
 	// parked is every workspace switched away from, by server and discobox id, still
 	// attached; wsOpening is a workspace on its way up, before its primary.
 	parked    map[boxRef]*workspace
@@ -1039,6 +1044,16 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.chromeSel.Clear()
 		m.layout()
 		return reread
+
+	case tea.ModeReportMsg:
+		// The same answer Bubble Tea switches its renderer to grapheme width
+		// on, read the same way, so the frame switches with it.
+		if msg.Mode == ansi.ModeUnicodeCore {
+			switch msg.Value {
+			case ansi.ModeReset, ansi.ModeSet, ansi.ModePermanentlySet:
+				m.widthMethod = ansi.GraphemeWidth
+			}
+		}
 
 	case gitCredentialPolicyMsg:
 		if msg.gen != m.gitPolicyGen {
@@ -3946,6 +3961,10 @@ func (m *Model) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeAllMotion
 	view.WindowTitle = m.windowTitle()
+	// Measured the way the renderer will measure it, here for the same
+	// reason: every pane, title and label a box wrote leaves by this one
+	// place, and none of their builders has to know. See widthMethod.
+	view.Content = forWidthMethod(view.Content, m.widthMethod)
 	return view
 }
 

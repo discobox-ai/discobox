@@ -249,6 +249,11 @@ below the wrap and desyncs the hardware cursor from the screen the application
 believes it is drawing on — which is why the host is given rows rather than a
 rendered block.
 
+Rows are measured by grapheme cluster, as the emulator lays its grid out. A
+host whose renderer measures otherwise (Bubble Tea's, until the terminal
+answers the mode 2027 query) reconciles its whole frame rather than each pane:
+the console does, in `View` (see `cli/internal/tui/DESIGN.md`).
+
 **Chrome state is exposed, not acted on.** Title, alt-screen, cursor visibility,
 shape, blink and colour (through `Cursor`), and a bell count come from the
 emulator's callbacks and are readable by the host; the title is cleared on each
