@@ -218,14 +218,18 @@ string
 - `mcp=TOOLS`: the MCP tools a `tools/call` may name, each optionally ending
   in `*`; the protocol's own methods (`initialize`, `ping`, `tools/list`,
   notifications) pass.
-- `body=PLACES`: places in a JSON request body, JSON pointers joined by `,/`
-  (`body=/api_key`), for an API that takes its credential in the body. The
-  credential is sent there, as the whole JSON string at one of them, and
-  nowhere else: a route with `body=` allows it at no header, and a route
-  without one allows it at no body place. Only a body sent with a JSON
-  Content-Type is read for its places; any other is sent as it is. A JSON
-  body that cannot be read for them (too large, chunked, compressed, or not
-  valid JSON) is refused.
+- `body=PLACES`: places in a request body, joined by commas, for an API that
+  takes its credential in the body: JSON pointers into a JSON body
+  (`body=/api_key`), or `form:NAME` for a field of a URL-encoded form body
+  (`body=form:client_secret`, as an OAuth token endpoint takes it). The
+  credential is sent there, as the whole JSON string or the whole field
+  value at one of them, and nowhere else: a route with `body=` allows it at
+  no header, and a route without one allows it at no body place. A JSON
+  pointer is read only in a body sent with a JSON Content-Type, and a form
+  field only in one sent as `application/x-www-form-urlencoded`; any other
+  body is sent as it is. A body that cannot be read for them (too large,
+  chunked, compressed, not valid JSON, or a form naming the field twice or
+  holding a pair that does not decode or a `;`) is refused.
 - `ws=PLACES`: places in the JSON text messages a client sends on the
   WebSocket connection the route's request upgrades, for a service that
   takes its credential in a message (Discord's Gateway IDENTIFY and

@@ -359,6 +359,12 @@ type StatusRequest struct {
 	// one from before sends none, and is sent no route with one, which its
 	// decoder would refuse.
 	SentinelWebSocket bool `json:"sentinelWebSocket"`
+	// SentinelFormPlaces declares that this agent takes a body block's form
+	// places (form:NAME, #1577), and its proxy swaps a sentinel at the form
+	// fields they name. Always true from an agent that has them; one from
+	// before sends none, and is sent its body routes without them, which it
+	// would read as routes it cannot hold.
+	SentinelFormPlaces bool `json:"sentinelFormPlaces"`
 	// FirstReport marks the one report this agent process sends at start,
 	// before it serves; its heartbeats leave it out. A server upgrading the
 	// pool counts a marked report received after it recorded the agent's

@@ -8269,21 +8269,26 @@ func (s *SentinelRoute) SetWebsocket(val OptSentinelRouteWebSocket) {
 	s.Websocket = val
 }
 
-// Narrows a route to places in a JSON request body: the credential is carried there and swapped
-// there, as the whole of the JSON string at one of places, and nowhere else in the request. A route
-// with a body block allows the credential at the places it names and nowhere else, not in the
-// headers or query; a route without one allows it in the headers or query and at no body place. A
-// blocked body route refuses the credential at its places; a blocked route without a body block
-// refuses it in the body as well. The proxy reads the body only for a request a route names places
-// for whose Content-Type says JSON (/json or +json); any other body is sent unread, with nothing in
-// it swapped. A JSON body it cannot read for them is refused, unsent: too large, of undeclared
-// length, holding the credential under a Content-Encoding, or not JSON with each member named once.
-// The request is recorded as sent, with the placeholder, and the answer to it is recorded without
-// its body.
+// Narrows a route to places in a request body: the credential is carried there and swapped there, as
+// the whole of the JSON string at a JSON pointer, or the whole decoded value of a URL-encoded form
+// field, at one of places, and nowhere else in the request. A route with a body block allows the
+// credential at the places it names and nowhere else, not in the headers or query; a route without
+// one allows it in the headers or query and at no body place. A blocked body route refuses the
+// credential at its places; a blocked route without a body block refuses it in the body as well. The
+// proxy reads the body only for a request a route names places for: for JSON pointers when its
+// Content-Type says JSON (/json or +json), for form fields when every Content-Type it carries is
+// application/x-www-form-urlencoded; any other body is sent unread, with nothing in it swapped. A
+// body it cannot read for them is refused, unsent: too large, of undeclared length, holding the
+// credential under a Content-Encoding, not JSON with each member named once, or a form naming a
+// field a place names twice, in any case, or holding a pair that does not decode or holds a ;. The
+// request is recorded as sent, with the placeholder, and the answer to it is recorded without its
+// body.
 // Ref: #/components/schemas/SentinelRouteBody
 type SentinelRouteBody struct {
-	// JSON pointers (RFC 6901) into the request body, each starting with / and naming one member or
-	// array element, such as /api_key. At least one; no spaces, = or ,/.
+	// Where in the body the credential may be, at least one: JSON pointers (RFC 6901) into a JSON body,
+	// each starting with / and naming one member or array element, such as /api_key, with no spaces, =, ,
+	// / or ,form:; and fields of a URL-encoded form body, each form: and the field's decoded name, such
+	// as form:client_secret, with no spaces, = or ,.
 	Places []string `json:"places"`
 }
 

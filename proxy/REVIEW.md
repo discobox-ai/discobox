@@ -122,10 +122,13 @@
   base64 forms stay one behavior. `Apply` and `ApplyPrevious` share it
   deliberately; a second hand-written scan loop is how one of them silently
   stops covering an encoding. A body place is the one exception, on purpose:
-  it swaps only a sentinel that is the whole JSON string at a named pointer
-  (`MatchBody`), never one inside a longer string or a base64 token, so it
-  has its own walk, `MatchBody`, and `Apply` swaps exactly what it found,
-  through `BodyUses`.
+  it swaps only a sentinel that is the whole value at a named place — the
+  JSON string at a pointer (`MatchBody`), or a form field's decoded value
+  (`MatchForm`) — never one inside a longer string or a base64 token, so
+  each body kind has its own walk, and `Apply` swaps exactly what it found,
+  through `BodyUses`, writing it back in that body's own encoding (a JSON
+  string, or `url.QueryEscape`). A new body kind is a third walk of the same
+  shape, never a scan for a sentinel anywhere in the body.
 - The resolver is a stable construction dependency, not reloadable config. It
   must be preserved across `ApplyConfig`; only the sentinel set and swap tuning
   come from `Config.Secrets`.
@@ -181,6 +184,13 @@
   a credential the sandbox brought itself is not evidence about a secret.
 - Keep the previous-value memory out of the cache entry. `Invalidate` drops the
   entry, and the fallback exists precisely to outlive the value being dropped.
+- Read a body for a place only of the kind its Content-Type says it is: a
+  JSON pointer in a JSON body, a form place in a body whose every
+  Content-Type is `application/x-www-form-urlencoded`. A form carrying a
+  sentinel is refused, never guessed at, when the upstream could read it
+  otherwise than the proxy: a field a place names twice, in any case
+  (frameworks keep the first or the last, and some read names without case), a `;` in a pair (some split on it), or a pair that
+  does not unescape.
 - Swap in a request body only at a body place, and only with the body the
   sandbox sent spooled in its place (`preSwapBody`): the spool reading the
   body that is sent would capture the credential. The response to a body

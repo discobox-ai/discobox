@@ -653,33 +653,42 @@ Key properties:
   The rest of a body is never scanned or swapped. When a value is swapped into
   a query parameter, the audit records the pre-swap URL so the real value never
   lands in an audit row.
-- **A body place is where a route says a credential goes in a JSON body**
-  (`secretroute.Body`, `internal/secrets/body.go`; #1012, ADR 26-11-11-080
-  §9), for an API that takes its key in the body, such as boxd's token
+- **A body place is where a route says a credential goes in a JSON or
+  URL-encoded form body** (`secretroute.Body`, `internal/secrets/body.go`;
+  #1012, #1577, ADR 26-11-11-080 §9), for an API that takes its key in the
+  body, such as boxd's token
   exchange (`POST …/auth/token`, `{"api_key": …}`), which the pool agent's
   own client sends through its pool's proxy (ADR 26-11-11-080 §9):
   - The resolver names the places a client's routes give a request
     (`Resolver.BodyPlaces`, judged on method, host and path alone), and the
-    body is read only when there are some and its Content-Type says JSON —
-    through `routeBody`, the same bounded, once-only read the authorizer
-    uses. Nearly every request names none and is never read for this; an
-    upload, a form, a stream or an upgrade on a body route is sent unread,
-    with nothing in it swapped.
+    body is read only when there are some of the kind its Content-Type says
+    it is — JSON pointers for a JSON body, form places (`form:NAME`,
+    `secretroute.FormPlace`) for a body whose every Content-Type is
+    `application/x-www-form-urlencoded` — through `routeBody`, the same
+    bounded, once-only read the authorizer uses. Nearly every request names
+    none and is never read for this; an upload, a stream, an upgrade, an
+    untyped body, or a body of the kind no place names is sent unread, with
+    nothing in it swapped.
   - A sentinel counts only written literally as the whole JSON string at one
-    of those places (`MatchBody`); one inside a longer string, in a member
-    name, or anywhere else is sent as written. A body holding none of the
-    client's sentinels is not parsed.
+    of those places (`MatchBody`), or as the whole decoded value of a form
+    field one names (`MatchForm`); one inside a longer string, in a member or
+    field name, or anywhere else is sent as written. A body holding none of
+    the client's sentinels (in a form, written as is or percent-encoded) is
+    not judged.
   - Each `(sentinel, place)` found is authorized beside the header sentinels
     (`AuthorizeRequest.Places`, `secretroute.Request.At`) before anything is
     resolved, and one grant must allow every use of a sentinel.
   - Refused with a 403 and audited once as blocked, never sent: a JSON body
     the places cannot be read in (past `routeBodyLimit`, of undeclared length, in
     an encoding not decoded), one holding a sentinel that is not JSON with
-    each member named once (`ErrBodyNotJSON`), and one with a sentinel at a
+    each member named once (`ErrBodyNotJSON`), a form holding a sentinel
+    with a pair that does not unescape or holds a `;`, or naming a field a
+    place names twice, in any case (`ErrBodyNotForm`), and one with a sentinel at a
     place under a `Content-Encoding`, which is decoded to read and not
     encoded again.
   - `Apply` writes each resolved value over its string's bytes as a JSON
-    string and leaves the rest of the body byte for byte; a denial leaves the
+    string, or over a form field's value percent-encoded
+    (`url.QueryEscape`), and leaves the rest of the body byte for byte; a denial leaves the
     sentinel as in a header. Such a request is not retried on a 401
     (`retryable`), since the retry rebuilds from headers alone.
   - **The audit never holds the credential or what it buys**: the request

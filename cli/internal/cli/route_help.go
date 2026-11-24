@@ -21,11 +21,13 @@ one per --route:
             * for any), then optionally :FIELDS, the root fields they may
             select, each name allowed one trailing *
   mcp=      the MCP tools a tools/call may name, or * for any
-  body=     places in a JSON request body, JSON pointers joined by ,/
-            (body=/api_key). The credential goes there, as the whole string
-            at one of them, and nowhere else: not in the headers, and not
-            elsewhere in the body. A route without body= allows it in the
-            headers and query, and at no body place
+  body=     places in a request body, joined by commas: JSON pointers into
+            a JSON body (body=/api_key), or fields of a URL-encoded form
+            body, each form:NAME (body=form:client_secret). The credential
+            goes there, as the whole string or field value at one of them,
+            and nowhere else: not in the headers, and not elsewhere in the
+            body. A route without body= allows it in the headers and query,
+            and at no body place
   ws=       places in the JSON messages a client sends on the WebSocket
             connection the route's request upgrades: a JSON array of
             {"at": POINTER, "when": {MEMBER: VALUE}}, quoted as one word.
@@ -42,6 +44,7 @@ one per --route:
   'api.github.com/graphql graphql=mutation:createPullRequest'
   'api.github.com/repos/*/*/pulls/*/merge=blocked'
   'POST app.boxd.sh/api/v1/auth/token body=/api_key'
+  'POST api.login.example.com/oauth2/get_token body=form:client_secret'
   'GET gateway.discord.gg,*.discord.gg ws=[{"at":"/d/token","when":{"op":2}},{"at":"/d/token","when":{"op":6}}]'
 
 A request must fall on a route of every list it is held to; within a list the

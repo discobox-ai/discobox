@@ -359,11 +359,14 @@ as route lists; whether it takes each sentinel's value generation
 (`sentinelGenerations`, #1022); and whether it takes a route's body block
 (`sentinelBodyPlaces`, `Pool.SentinelBodyPlaces`, #1012) and a route's
 WebSocket block (`sentinelWebSocket`, `Pool.SentinelWebSocket`, ADR
-26-11-06-442), without each of which its sandboxes are sent no route with one.
+26-11-06-442), without each of which its sandboxes are sent no route with one;
+and whether it takes a body block's form places (`sentinelFormPlaces`,
+`Pool.SentinelFormPlaces`, #1577), without which its sandboxes are sent each
+body route without them, and none that names nothing else.
 It also declares whether it takes a
 git source's `defaultBranch` (`sourceDefaultBranch`, `Pool.SourceDefaultBranch`,
 #245), without which its sandboxes' sources are sent none and their
-`origin/HEAD` stays unset. All five are `store.AgentDeclarations`. An agent
+`origin/HEAD` stays unset. All six are `store.AgentDeclarations`. An agent
 from before any of them sends none, recorded as false. A
 report that changes a sentinel declaration marks every present sandbox on the pool for sentinel
 delivery, as drift, in the transaction that records it
