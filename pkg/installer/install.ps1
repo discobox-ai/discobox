@@ -273,21 +273,102 @@ function Install-Discobox {
         }
     }
 
+    # Saves one URL to a file. Once the source has sent part of the file, a
+    # try that fails (a transfer dropped part way, one that stalls for a
+    # minute, a reconnect that fails) is tried again, up to five tries in all,
+    # resuming from the bytes the file already has, so an unstable connection
+    # costs what it dropped rather than the whole file. It is the .NET request
+    # rather than Invoke-WebRequest, whose -Resume is PowerShell 7's alone, or
+    # curl.exe, which Windows before 10 1803 lacks and which is another program
+    # under pwsh elsewhere. A source that has sent nothing yet (it cannot be
+    # reached, or answers with an HTTP error other than 408, 429 and 5xx) ends
+    # at once, so the next source is tried. A resume the source refuses or
+    # ignores starts over from nothing. Returns '' when it gave up, 'resumed'
+    # when the file was finished by a resume, and 'whole' otherwise.
+    function Save-DiscoboxUrl([string]$Url, [string]$OutFile) {
+        if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force }
+        for ($try = 1; $try -le 5; $try++) {
+            if ($try -gt 1) { Start-Sleep -Seconds ($try - 1) }
+            $have = [long]0
+            if (Test-Path -LiteralPath $OutFile) { $have = (Get-Item -LiteralPath $OutFile).Length }
+            $request = [Net.HttpWebRequest]::Create($Url)
+            $request.UserAgent = 'discobox-install.ps1'
+            $request.Timeout = 60000
+            $request.ReadWriteTimeout = 60000
+            if ($have -gt 0) { $request.AddRange($have) }
+            try {
+                $response = $request.GetResponse()
+            } catch {
+                $e = $_.Exception
+                while ($e -and -not ($e -is [Net.WebException])) { $e = $e.InnerException }
+                $status = 0
+                if ($e -and $e.Response) {
+                    $status = [int]$e.Response.StatusCode
+                    $e.Response.Close()
+                }
+                if ($status -eq 0) {
+                    if ($have -eq 0) { return '' }
+                    if ($try -lt 5) { Write-DiscoboxWarn "the download from $Url stopped part way; resuming" }
+                    continue
+                }
+                if ($have -gt 0) {
+                    Remove-Item -LiteralPath $OutFile -Force
+                    Write-DiscoboxWarn "the download from $Url could not resume; starting over"
+                } elseif ($status -ne 408 -and $status -ne 429 -and $status -lt 500) {
+                    return ''
+                }
+                continue
+            }
+            try {
+                $resumed = ($have -gt 0) -and ([int]$response.StatusCode -eq 206)
+                $mode = [IO.FileMode]::Append
+                if (-not $resumed) {
+                    $mode = [IO.FileMode]::Create
+                    if ($have -gt 0) { Write-DiscoboxWarn "the download from $Url could not resume; starting over" }
+                    $have = 0
+                }
+                $length = -1
+                if ($response.ContentLength -ge 0) { $length = $have + $response.ContentLength }
+                $file = [IO.File]::Open($OutFile, $mode, [IO.FileAccess]::Write)
+                try {
+                    $body = $response.GetResponseStream()
+                    try { $body.CopyTo($file) } finally { $body.Dispose() }
+                } finally {
+                    $file.Dispose()
+                }
+                # A connection closed early can end the body without an error.
+                if ($length -lt 0 -or (Get-Item -LiteralPath $OutFile).Length -eq $length) {
+                    if ($resumed) { return 'resumed' }
+                    return 'whole'
+                }
+            } catch {
+            } finally {
+                $response.Close()
+            }
+            if (-not ((Test-Path -LiteralPath $OutFile) -and (Get-Item -LiteralPath $OutFile).Length -gt 0)) { return '' }
+            if ($try -lt 5) { Write-DiscoboxWarn "the download from $Url stopped part way; resuming" }
+        }
+        return ''
+    }
+
     # Downloads <tag>/<asset> from the first source that has it and, given a
-    # digest, whose bytes match it.
+    # digest, whose bytes match it. A resumed file that misses the digest is
+    # downloaded whole once more before the source is judged, since a resume
+    # joins two responses that need not be of the same file.
     function Get-DiscoboxFile([string]$Tag, [string]$Name, [string]$OutFile, [string]$Sha256) {
         $from = $sources
         if ($Tag -like '*-main.*') { $from = $mainSources }
         foreach ($base in $from) {
             $url = "$base/$Tag/$Name"
-            try {
-                Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing
-            } catch {
-                continue
+            for ($again = $true; ; $again = $false) {
+                $saved = Save-DiscoboxUrl $url $OutFile
+                if (-not $saved) { break }
+                if (-not $Sha256) { return $true }
+                if ((Get-DiscoboxSha256 $OutFile) -eq $Sha256) { return $true }
+                if ($saved -eq 'resumed' -and $again) { continue }
+                Write-DiscoboxWarn "$url is not the file $release was released with; trying the next source"
+                break
             }
-            if (-not $Sha256) { return $true }
-            if ((Get-DiscoboxSha256 $OutFile) -eq $Sha256) { return $true }
-            Write-DiscoboxWarn "$url is not the file $release was released with; trying the next source"
         }
         return $false
     }
