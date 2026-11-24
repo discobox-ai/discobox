@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"fmt"
+	"cmp"
 	"slices"
 	"strings"
 
@@ -14,7 +14,6 @@ const harnessChangesKey = "H"
 type HarnessChanges struct {
 	CandidateID string
 	State       string
-	Revision    int64
 	Files       []HarnessChangedFile
 	Credentials []string
 	Diagnostics []string
@@ -69,13 +68,27 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		return nil
 	}
 	c := msg.changes
-	var body strings.Builder
-	fmt.Fprintf(&body, "State: %s · revision %d\n", c.State, c.Revision)
-	if len(c.Files)+len(c.Credentials) == 0 {
-		body.WriteString("\nNo saveable settings or credentials.\n")
-	}
-	body.WriteString("\nSave updates shared harness defaults and credentials. Discard leaves local files unchanged.")
+	saveable := c.CandidateID != "" && ((c.State == "pending" && len(c.Files)+len(c.Credentials) > 0) || c.State == "saved-handoff-pending")
+	title, body := harnessChangesHeading(msg.box, c, saveable)
+	// The short sections go first: the logins Save shares, and why any of it
+	// cannot be, are a line each, while a file's diff runs as long as the
+	// file. A sign-in's credentials file is a dozen lines of JSON, and under
+	// it the login would be below the fold of a 24-row terminal.
 	var sections []section
+	if len(c.Credentials) > 0 {
+		sec := section{label: "credentials"}
+		for _, credential := range c.Credentials {
+			sec.lines = append(sec.lines, line{text: credential, bullet: true})
+		}
+		sections = append(sections, sec)
+	}
+	if len(c.Diagnostics) > 0 {
+		sec := section{label: "diagnostics"}
+		for _, diagnostic := range c.Diagnostics {
+			sec.lines = append(sec.lines, line{text: diagnostic, bullet: true, tone: toneAlert})
+		}
+		sections = append(sections, sec)
+	}
 	for _, f := range c.Files {
 		sec := section{label: f.Action + " " + f.Path}
 		if f.Shadowed {
@@ -93,21 +106,6 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		}
 		sections = append(sections, sec)
 	}
-	if len(c.Credentials) > 0 {
-		sec := section{label: "credentials"}
-		for _, credential := range c.Credentials {
-			sec.lines = append(sec.lines, line{text: credential, bullet: true})
-		}
-		sections = append(sections, sec)
-	}
-	if len(c.Diagnostics) > 0 {
-		sec := section{label: "diagnostics"}
-		for _, diagnostic := range c.Diagnostics {
-			sec.lines = append(sec.lines, line{text: diagnostic, bullet: true, tone: toneAlert})
-		}
-		sections = append(sections, sec)
-	}
-	saveable := c.CandidateID != "" && ((c.State == "pending" && len(c.Files)+len(c.Credentials) > 0) || c.State == "saved-handoff-pending")
 	// A review reached from the explainer, which came up unasked over typing,
 	// commits on no letter: a hold says only that the keyboard paused, not
 	// that the card was read. Save and Discard are chosen with the arrow
@@ -124,7 +122,7 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		{key: "d", press: commitPress("d"), label: "Discard candidate", enabled: c.CandidateID != "" && c.State == "pending", why: "no pending candidate"},
 		{key: "r", press: "r", label: "Refresh preview", enabled: true},
 	}
-	m.dialog = actionsDialog("Harness changes — "+msg.box.Name, body.String(), items, func(key string) tea.Cmd {
+	m.dialog = actionsDialog(title, body, items, func(key string) tea.Cmd {
 		if key == "r" {
 			return m.reviewHarnessChanges(msg.box, msg.unasked)
 		}
@@ -148,6 +146,39 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		m.dialog.cursor = slices.IndexFunc(items, func(it action) bool { return it.key == "r" })
 	}
 	return nil
+}
+
+// harnessChangesHeading is the review card's title and the one sentence it
+// opens on: what it asks and what each answer does, in as few rows as that
+// takes, so on a 24-row terminal the login and the first file's name are
+// above the fold beneath it (#1426). A card Save can take asks the question Save
+// answers, naming what it would share: a login when the change carries one,
+// since that is what a sign-in leaves and what most needs knowing is shared;
+// the files beside it are listed under the login. Any other card says why there
+// is nothing to save, or that it is saved and still being handed to the box.
+// saveable is showHarnessChanges' own judgement, so the words and the Save
+// item never disagree.
+func harnessChangesHeading(box Sandbox, c HarnessChanges, saveable bool) (title, body string) {
+	from := "From the box \"" + box.Name + "\". "
+	switch {
+	case c.State == "saved-handoff-pending":
+		// The server retries the handoff on its own; Save, when the card
+		// still has the candidate to name, only retries it now.
+		body = from + "Saved; this box is still being handed it, and discobox keeps retrying."
+		if saveable {
+			body += " Save retries now."
+		}
+		return harnessChangesName(box, "Harness") + " changes saved", body
+	case saveable && len(c.Credentials) > 0:
+		title = "Save this " + harnessChangesName(box, "harness") + " login for future boxes?"
+	case saveable:
+		title = "Save these " + harnessChangesName(box, "harness") + " settings for future boxes?"
+	case c.State == "pending":
+		return harnessChangesName(box, "Harness") + " changes", from + "No saveable settings or credentials."
+	default:
+		return harnessChangesName(box, "Harness") + " changes", from + "Nothing to save: this change is " + cmp.Or(c.State, "unknown") + "."
+	}
+	return title, from + "Save gives it to new boxes; Discard keeps it there."
 }
 
 func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
@@ -182,16 +213,11 @@ func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
 // a different change has a new candidate, and the band comes back for it.
 // Pressing it opens the review, where Save is what takes it.
 
-// harnessChangesName is what the band calls the box's harness: its name, or
-// the slug the row shows when it has none.
-func harnessChangesName(box Sandbox) string {
-	if box.HarnessName != "" {
-		return box.HarnessName
-	}
-	if box.Harness != "" {
-		return box.Harness
-	}
-	return "the harness"
+// harnessChangesName is what the band, the explainer and the review call the
+// box's harness: its name, or the slug the row shows when it has none, or
+// fallback, which each caller words to read in its own sentence.
+func harnessChangesName(box Sandbox, fallback string) string {
+	return cmp.Or(box.HarnessName, box.Harness, fallback)
 }
 
 // viewHarnessChangesBanner is the workspace's line about a harness change to
@@ -200,7 +226,7 @@ func harnessChangesName(box Sandbox) string {
 func (m *Model) viewHarnessChangesBanner(width int) string {
 	box := m.currentBox()
 	st := m.st
-	subject := st.attentionText.Render(harnessChangesName(box) + " settings or login changed in this box")
+	subject := st.attentionText.Render(harnessChangesName(box, "the harness") + " settings or login changed in this box")
 	call := bannerChip(st, "click to review and save", colOfferChip)
 	return bannerRow(st, offerPalette, width, subject, call, m.leader()+" "+harnessChangesKey)
 }
@@ -263,7 +289,7 @@ func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
 		{key: "r", press: "r", label: "Review and save", detail: "see what changed, then save or discard it", enabled: true},
 		{key: "n", press: "n", label: "Not now", detail: "the band and " + harnessChangesKey + " stay to review it later", enabled: true},
 	}
-	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(harnessChangesName(box)), items, func(key string) tea.Cmd {
+	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(harnessChangesName(box, "the harness")), items, func(key string) tea.Cmd {
 		if key == "r" {
 			return m.reviewHarnessChanges(box, true)
 		}
