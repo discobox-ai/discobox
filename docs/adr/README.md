@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-24-684](26-11-24-684-an-exec-attachs-keepalive-is-a-frame-in-its-own-stream.md) | An exec attach's keepalive is a frame in its own stream | Proposed |
 | [26-11-19-859](26-11-19-859-sandbox-create-supplies-an-account-and-a-handle.md) | Sandbox create supplies an account and a handle | Proposed |
 | [26-11-19-219](26-11-19-219-a-person-can-keep-a-login-in-discobox.md) | A person can keep a login in Discobox | Proposed |
 | [26-11-19-075](26-11-19-075-a-boxs-name-never-holds-what-its-program-is-doing.md) | A box's name never holds what its program is doing, and its handle is called a handle | Proposed (would supersede [26-10-31-618](26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md) §1's `title: msg` display name and §3; would amend [26-10-12-026](26-10-12-026-a-sandboxs-name-is-meta-and-renaming-it-is-a-meta-write.md) §3 and [26-11-16-207](26-11-16-207-a-box-is-named-at-creation-by-seeding-its-meta-name.md): `config.name` becomes `handle`) |
