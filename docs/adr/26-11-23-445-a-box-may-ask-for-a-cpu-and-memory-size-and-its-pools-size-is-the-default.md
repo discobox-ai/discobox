@@ -5,8 +5,11 @@
   Consequences' "a future need starts from a clean slate"; 0029 §2, no
   capacity gating, and its removal of `storageBytes` and `timeoutSeconds`,
   stand)
-- **Date**: 2026-11-23
-- **Issue**: [#1601](https://github.com/discobox-ai/discobox/issues/1601)
+- **Date**: 2026-11-23; amended 2026-11-24, before it merged, by the
+  owner's decision on #1751: the pool's own machine on a disco-vm provider
+  has a size of its own (§8), replacing §5's "not sized"
+- **Issue**: [#1601](https://github.com/discobox-ai/discobox/issues/1601);
+  [#1751](https://github.com/discobox-ai/discobox/issues/1751) (§8)
 - **Relates to**: [0003](0003-promote-pool-to-a-first-class-primitive.md) §1
   (the pool envelope, which stays); [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §8 and [26-11-03-986](26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md)
@@ -50,7 +53,19 @@ What is true at `97b228184`:
   (`pool-agent/sandboxruntime/machine.go`) makes every machine, a box's and a
   snapshot build's, with no `CPUs`/`Memory`, though `engine.CreateOptions`
   carries both. The pool's own machine (`poolMachine.create`,
-  `server/providers/discovm/poolmachine.go`) is unsized too.
+  `server/providers/discovm/poolmachine.go`) is unsized too, so on archil it
+  runs the pool agent, its proxy and the git cache at Archil's default of 1
+  vCPU and 2 GiB. On 2026-11-24 that machine was the bottleneck there (#1751):
+  box creates timed out in the pool agent when a few ran at once (6 of 6
+  parallel launches), boxes took up to ~35 minutes to come up, and source
+  pulls timed out.
+- **The pool machine is made once and kept.** `poolMachine.converge` makes
+  it only when none is found under the pool's name (a new pool, or one lost
+  outside discobox), and nothing replaces a running one. The pool agent's
+  durable state (its identity key, every box's tree, the git cache) is on
+  that machine's root disk, and a machine made again registers anew (ADR
+  26-10-23-551 §1). disco-vm has no seam to resize a machine, and `Upgrade`
+  keeps the size its spec set; Archil's API has no resize either.
 - **Drivers differ.** At the pinned vm (`v0.0.0-20261121233619-4035d8ffe365`),
   archil and boxd send the size to their API, vz and hcs size the VM they
   boot, and the disco-vm docker driver only labels the container with it
@@ -136,15 +151,18 @@ made fresh, at the asked size, and logged, as a snapshot gone between lookup
 and create is today. With the size in the key this is not expected; it keeps
 a mismatch from failing the box with the driver's raw error.
 
-The pool's own machine on a disco-vm provider is not sized: it runs the pool
-agent and its proxy, not boxes, and the pool's size is its boxes'.
+The pool's own machine on a disco-vm provider is not sized from the pool's
+`cpuVcpus`/`memoryBytes`: it runs the pool agent and its proxy, not boxes,
+and the pool's size is its boxes'. It has a size of its own (§8).
 
 ### 6. A provider says whether it sizes a box, and one that does not refuses
 
 `ProviderDefinition.PoolSizeFields` becomes `SizeFields`, the CPU and memory
-fields the provider acts on for a box and as a pool's default, plus
-`storageBytes` for a pool where declared. One list serves both because no
-provider acts on one and not the other (§3). The sandbox create path checks a
+fields the provider acts on for a box and as a pool's default, plus the
+pool-only fields where declared: `storageBytes`, and the pool machine's
+`poolMachineCpuVcpus`/`poolMachineMemoryBytes` (§8). One list serves box
+and pool CPU and memory because no provider acts on one and not the other
+(§3). The sandbox create path checks a
 box's non-zero fields against it before the box is stored, and refuses one
 the provider does not act on with a 400 naming the field, the provider
 instance and its type, as `checkPoolSize` words a pool's refusal.
@@ -173,6 +191,34 @@ only against bounds that are fixed:
 A size past what the driver or Docker can give (Archil's own limits, more
 CPUs than the host has) fails the box's create with the driver's or Docker's
 message, reported as a create failure is today.
+
+### 8. A disco-vm pool's own machine has a size of its own
+
+A pool gains `poolMachineCpuVcpus` and `poolMachineMemoryBytes`, on create
+and update in the API, `discobox admin pool create` and `update`
+(`--pool-machine-cpu-vcpus`, `--pool-machine-memory`, parsed as `--memory`
+is), and the console's pool form. They size the machine that runs the pool's
+agent, proxy and caches, and nothing else: they are not a box's default (§3)
+and not a limit on any box. Absent or 0 is the driver's default, as today.
+
+`poolMachine.create` passes them to the engine as `CPUs` (rounded up to a
+whole vCPU, as §5 rounds) and `Memory`. They are pool size fields like any
+other, so `checkPoolSize` refuses them on a provider that does not declare
+them: every docker worker provider (its pool's VM is sized by
+`cpuVcpus`/`memoryBytes`, ADR 0003 §1) and every disco-vm driver that does
+not size a machine (§6, from the same disco-vm declaration). A provider that
+cannot size its pool machine refuses the field with §6's 400, never accepts
+it and ignores it.
+
+**A changed size waits for the next machine; it never replaces a running
+one.** Replacing the pool's machine would take its agent's durable state
+with it (Context), and no driver can resize one in place. So the size is
+applied when `converge` next makes the pool's machine: a new pool, or one
+whose machine was lost. `poolRuntimeState` records the size its machine was
+made at, and the pool's read, `discobox admin pool get` and `discobox admin
+pool resources` show both the size asked and the size the machine runs at,
+so a size that is waiting shows as waiting rather than as in force. To have
+it at once, a person recreates the pool.
 
 ## Open, for implementation
 
@@ -209,8 +255,21 @@ message, reported as a create failure is today.
   hold: a one-shot comparison against a stale, overcommitted figure refuses
   honest boxes and catches nothing real.
 - **Size the disco-vm pool machine from the pool's size.** It holds no box;
-  an 8-vCPU pool would pay for an 8-vCPU proxy. Revisited if a pool machine's
-  proxy or agent is shown to need more than the driver's default.
+  an 8-vCPU pool would pay for an 8-vCPU proxy, and a pool wanting small
+  boxes behind a large proxy could not have both. §8 gives it fields of its
+  own instead.
+- **Leave the pool machine at the driver's default** (this ADR before its
+  amendment). Archil's default is too small to carry a few box creates at
+  once (Context, #1751).
+- **Replace a running pool machine when its size changes**, as the docker
+  worker replaces a pool VM whose size no longer matches (`VMSpec`). That VM
+  keeps its pool's state elsewhere; a disco-vm pool machine holds its
+  agent's on its root, so every box's tree and the agent's identity would go
+  with it.
+- **Reuse `cpuVcpus`/`memoryBytes` on disco-vm for the pool machine and give
+  boxes new fields.** The same field would mean "the pool's machine" on one
+  provider and "each box" on another; §3 keeps it "each box" wherever boxes
+  are sized.
 - **Keep a list in discobox of which disco-vm drivers size a machine.**
   `PoolSizeFields` exists so that the declaration lives next to the code that
   honors it; a list in discobox goes stale the first time a driver changes.
@@ -221,6 +280,10 @@ message, reported as a create failure is today.
 
 ## Deferred
 
+- **Resizing a running pool machine in place** (§8). Revisited when
+  disco-vm has a seam to resize a stopped machine and the drivers that
+  matter (archil first) can take it, or when the pool agent's state moves off
+  the machine's root so a replacement keeps it.
 - **Resizing a running box.** Docker can update a container's limits; an
   archil machine cannot change size. Revisited when someone asks to resize
   without recreating.
@@ -241,5 +304,9 @@ message, reported as a create failure is today.
   VM, which changes nothing in practice; a smaller box size limits that box.
 - A machine pool holds one snapshot per size its boxes ask for, each a held
   machine on the provider's bill.
+- An archil pool can be made with a bigger machine for its agent and proxy
+  (`--pool-machine-cpu-vcpus 4 --pool-machine-memory 8g`), apart from its
+  boxes' size. An existing pool gets a new size only by being recreated, and
+  shows the size as waiting until then.
 - `boxConfig`'s and `createOptions`' comments citing 0029, and the pool
   agent's and providers' `DESIGN.md`, change with the code.
