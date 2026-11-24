@@ -3,6 +3,7 @@ package sourceref
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,6 +65,40 @@ func TestParseRefusesAPathOutsideTheSource(t *testing.T) {
 		if r, err := Parse(value); err == nil {
 			t.Errorf("Parse(%q) = %+v, want a refusal", value, r)
 		}
+	}
+}
+
+// A reference that names a repository is often repository content (a
+// settings file's declared source), so an unprintable character in its URL
+// or its ref — a C0 or C1 control, DEL, a bidirectional override — is
+// refused, and the refusal shows it escaped. A directory's own name is left
+// to the directory: one that is there wins over the notation.
+func TestParseRefusesAnUnprintableCharacterInARepository(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		"git@github.com:acme/\x1b]0;owned\x07lib.git",
+		"git@github.com:acme/lib\x7f.git",
+		"git@github.com:acme/\u009b2Jlib.git",
+		"git@github.com:acme/lib\u202e.git",
+		"git@github.com:acme/lib.git@main\x1b[2J",
+		"git@github.com:acme/lib.git@main\u202e",
+		"https://github.com/acme/lib.git@main\x1b[2J",
+		"https://github.com/acme/\u009b2Jlib.git",
+		"git@github.com:acme/\x9b2Jlib.git",
+		"acme/lib@main\x1b[2J",
+	} {
+		r, err := Parse(value)
+		if err == nil {
+			t.Errorf("Parse(%q) = %+v, want a refusal", value, r)
+			continue
+		}
+		// A raw 0x9b byte is no rune ContainsAny can look for.
+		if strings.ContainsAny(err.Error(), "\x1b\x07\x7f\u009b\u202e") || strings.Contains(err.Error(), "\x9b") {
+			t.Errorf("Parse(%q): error %q, want the control characters escaped", value, err.Error())
+		}
+	}
+	if r, err := Parse("./odd\x01dir@main"); err != nil || r.Kind != Directory {
+		t.Errorf("Parse of a directory with a control character = %+v, %v; want the directory", r, err)
 	}
 }
 

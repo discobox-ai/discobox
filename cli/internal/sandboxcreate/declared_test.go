@@ -684,3 +684,18 @@ func TestReadRemoteSettingsWithExplicitBareRepositories(t *testing.T) {
 		t.Fatalf("read remote settings with safe.bareRepository=explicit: %v", err)
 	}
 }
+
+// A declared source is repository content, and a JSON escape in its value
+// decodes to a raw control character. An scp-form URL carrying one is refused
+// where the file is checked, and the refusal shows the value escaped, so the
+// escape never reaches the terminal of whoever runs the create (cli/REVIEW.md).
+func TestCheckDeclaredSourcesRefusesAControlCharacterInAnSCPFormURL(t *testing.T) {
+	value := "git@github.com:acme/\x1b]0;owned\x07lib.git"
+	got, err := checkDeclaredSources(map[string]string{"lib": value}, "settings.json")
+	if err == nil {
+		t.Fatalf("declared source %q: got %q, want a refusal", value, got["lib"])
+	}
+	if strings.ContainsAny(err.Error(), "\x1b\x07") {
+		t.Fatalf("error = %q, want the control characters escaped", err.Error())
+	}
+}
