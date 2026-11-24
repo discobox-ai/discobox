@@ -456,7 +456,13 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			listed = r.URL.Query()
-			_, _ = w.Write([]byte(`[{"Id":"img_unused"},{"Id":"img_running"}]`))
+			// The repository holds every pool's snapshots on a shared daemon;
+			// another pool's is not this clear's to remove.
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"Id": "img_unused", "Labels": map[string]string{sandboxLabelPool: "pool_1"}},
+				{"Id": "img_running", "Labels": map[string]string{sandboxLabelPool: "pool_1"}},
+				{"Id": "img_other_pool", "Labels": map[string]string{sandboxLabelPool: "pool_2"}},
+			})
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/images/img_running"):
 			http.Error(w, `{"message":"image is being used by running container"}`, http.StatusConflict)
 		case r.Method == http.MethodDelete:
@@ -481,8 +487,8 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 	if !slices.Equal(removed, []string{"img_unused"}) {
 		t.Errorf("removed %v, want the unused snapshot alone", removed)
 	}
-	if filters := listed.Get("filters"); !strings.Contains(filters, snapshotRepository) || !strings.Contains(filters, "pool_1") {
-		t.Errorf("listed with filters %s, want this pool's snapshots", filters)
+	if filters := listed.Get("filters"); !strings.Contains(filters, snapshotRepository) || strings.Contains(filters, "label") {
+		t.Errorf("listed with filters %s, want the snapshot repository alone", filters)
 	}
 	if r.snapshotFailedRecently("k", time.Now()) {
 		t.Error("a clear kept the plans that failed to build")

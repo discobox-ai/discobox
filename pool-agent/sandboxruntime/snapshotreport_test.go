@@ -35,8 +35,8 @@ func TestADockerPoolReportsItsSnapshots(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			listed = r.URL.Query().Get("filters")
 			_ = json.NewEncoder(w).Encode([]map[string]any{
-				{"Id": "img_new", "RepoTags": []string{snapshotRepository + ":knew"}, "Created": 1_763_400_000, "Size": 3 << 30, "Labels": map[string]string{snapshotPlanLabel: string(plan)}},
-				{"Id": "img_old", "RepoTags": []string{snapshotRepository + ":kold"}, "Created": 1_763_300_000, "Size": 2 << 30, "Labels": map[string]string{}},
+				{"Id": "img_new", "RepoTags": []string{snapshotRepository + ":knew"}, "Created": 1_763_400_000, "Size": 3 << 30, "Labels": map[string]string{sandboxLabelPool: "pool_1", snapshotPlanLabel: string(plan)}},
+				{"Id": "img_old", "RepoTags": []string{snapshotRepository + ":kold"}, "Created": 1_763_300_000, "Size": 2 << 30, "Labels": map[string]string{sandboxLabelPool: "pool_1"}},
 			})
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			// Counted by what each container records it was made from,
@@ -62,8 +62,8 @@ func TestADockerPoolReportsItsSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(listed, snapshotRepository) || !strings.Contains(listed, "pool_1") {
-		t.Errorf("listed with filters %s, want this pool's snapshots", listed)
+	if !strings.Contains(listed, snapshotRepository) {
+		t.Errorf("listed with filters %s, want the snapshot repository", listed)
 	}
 	if len(report.Held) != 2 || report.Building == nil || report.Failed == nil {
 		t.Fatalf("report = %+v, want two held and empty, not absent, lists", report)
@@ -213,5 +213,56 @@ func TestAContainerSaysWhatItWasMadeFrom(t *testing.T) {
 	}
 	if got := startedFromLabels(map[string]string{sandboxLabelSandbox: "sbx_1"}); got != nil {
 		t.Errorf("a container made before the label read as %+v, want unknown", got)
+	}
+}
+
+// A Docker pool lists its snapshots by repository alone and keeps its own by
+// their pool label itself: a daemon-side label filter makes a containerd
+// image store read every image's config on the daemon, so the list's cost
+// grows with the host's images, not the pool's snapshots.
+func TestADockerPoolListsItsSnapshotsWithoutADaemonLabelFilter(t *testing.T) {
+	var listed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Api-Version", "1.45")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			listed = append(listed, r.URL.Query().Get("filters"))
+			// The repository holds every pool's snapshots on a shared daemon.
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"Id": "img_mine", "RepoTags": []string{snapshotRepository + ":kmine"}, "Created": 1_763_400_000, "Labels": map[string]string{sandboxLabelPool: "pool_1"}},
+				{"Id": "img_other", "RepoTags": []string{snapshotRepository + ":kother"}, "Created": 1_763_300_000, "Labels": map[string]string{sandboxLabelPool: "pool_2"}},
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"})
+	report, err := r.Snapshots(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, filters := range listed {
+		var parsed map[string]map[string]bool
+		if err := json.Unmarshal([]byte(filters), &parsed); err != nil {
+			t.Fatalf("filters %q: %v", filters, err)
+		}
+		if _, ok := parsed["label"]; ok {
+			t.Errorf("listed with filters %s, want the repository alone, no label filter", filters)
+		}
+		if !parsed["reference"][snapshotRepository] {
+			t.Errorf("listed with filters %s, want the snapshot repository", filters)
+		}
+	}
+	if len(report.Held) != 1 || report.Held[0].Key != "kmine" {
+		t.Errorf("held = %+v, want this pool's snapshot alone", report.Held)
 	}
 }
