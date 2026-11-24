@@ -14,7 +14,8 @@ import (
 )
 
 // Store is the annotation record: one Markdown file a person and an agent both
-// read, plus a directory of cropped screenshots beside it.
+// read, plus a directory of screenshots beside it — for each note, the marked
+// region cropped and the whole desktop with the region drawn on it.
 //
 // The Markdown is the store, not a rendering of one. There is no sidecar index,
 // because what the agent writes after acting on an item — its reply — would then
@@ -123,7 +124,9 @@ the desktop viewer on http://127.0.0.1:6900.
 
 Each item marks a rectangle of the screen and says what should change there.
 Coordinates are framebuffer pixels, measured against the framebuffer size named
-on the same line. Screenshots are cropped to the marked region.
+on the same line. An item can carry two screenshots: ` + "`screenshot:`" + ` is the
+marked region cropped, to see the detail the note is about, and ` + "`screen:`" + ` is
+the whole desktop with the rectangle drawn on it, to see where that is.
 
 To answer an item, reply to it: add a blockquote under it, saying what you did
 or why you did not. Attribute it and date it on the first line. **Start every
