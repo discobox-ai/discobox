@@ -12,8 +12,9 @@ with git: a box clones your repository, the agent commits, and you merge those
 commits back to your machine or push them as a pull request.
 
 Claude Code, Codex, OpenCode, GitHub Copilot, omp, and pi are included; other terminal
-agents can be packaged in an image. Discobox supports macOS, Linux, and Windows
-11 (not Windows 10) and is under active development.
+agents can be packaged in an image. Discobox supports Linux, Windows 11 (not
+Windows 10), and macOS on Apple Silicon (not Intel Macs), and is under active
+development.
 
 Public documentation: [the manual](docs/public/index.md).
 
@@ -39,6 +40,18 @@ irm https://discobox.ai/install.ps1 | iex
 
 Each of those installs the stable channel. [Release channels](#release-channels)
 covers the newer ones and how to pin a version.
+
+If `discobox.ai` does not resolve where you are (some network resolvers block
+newly registered domains), use Homebrew, which downloads from GitHub, or fetch
+the same installer from the GitHub release:
+
+```bash
+curl -sSfL https://github.com/discobox-ai/discobox/releases/latest/download/install.sh | sh
+```
+
+```powershell
+irm https://github.com/discobox-ai/discobox/releases/latest/download/install.ps1 | iex
+```
 
 Discobox generates SSH aliases in its local state directory. On the first
 interactive SSH config sync, it asks whether it may add Include lines to
