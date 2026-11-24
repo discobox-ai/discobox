@@ -57,6 +57,85 @@ OpenSSH. Change your choice with `discobox admin ssh-config enable` or
 `discobox admin ssh-config disable`. Uninstalling with `discobox admin uninstall`
 removes the managed Includes.
 
+## Verify a download
+
+The installers check every binary they download against digests written into
+the installer itself. To check a download without trusting `discobox.ai` or the
+mirror it came from, verify its build provenance with the GitHub CLI. Every
+file a release or main build publishes is attested by the GitHub Actions
+workflow that built it, in `discobox-ai/discobox`, whichever repository the
+file was downloaded from.
+
+Name both the workflow that signed the file and the ref it ran from. `--repo`
+alone accepts an attestation made by any workflow in the repository, and
+`--signer-workflow` alone accepts that workflow run from any branch.
+
+| What you installed | `--signer-workflow` | `--source-ref` |
+| --- | --- | --- |
+| A release (stable, beta, edge, or a version such as `v0.20.0`) | `discobox-ai/discobox/.github/workflows/release.yml` | `refs/tags/TAG` |
+| A main build (the main channel, or a version ending `-main.N.gSHA`) | `discobox-ai/discobox/.github/workflows/main-build.yml` | `refs/heads/main` |
+
+Replace `TAG` with the tag of the release you meant to install, taken from
+GitHub rather than from the file you are checking, which could name any tag.
+The newest stable release's is
+`gh release view --repo discobox-ai/discobox --json tagName --jq .tagName`. A
+release republished by hand is signed from `main` rather than its tag: if its
+tag finds no attestation, check it with `--source-ref refs/heads/main`.
+
+To check a binary you already have, such as one installed by Homebrew or an
+installer:
+
+```sh
+gh attestation verify "$(command -v discobox)" \
+  --repo discobox-ai/discobox \
+  --signer-workflow discobox-ai/discobox/.github/workflows/release.yml \
+  --source-ref refs/tags/TAG
+```
+
+```powershell
+gh attestation verify (Get-Command discobox).Source `
+  --repo discobox-ai/discobox `
+  --signer-workflow discobox-ai/discobox/.github/workflows/release.yml `
+  --source-ref refs/tags/TAG
+```
+
+To check the installer before it runs, save it to a file, verify it, then run
+it. A verified installer checks each binary it installs against the digests it
+carries, so those binaries are covered too:
+
+```sh
+curl -sSfL https://discobox.ai -o install.sh
+gh attestation verify install.sh \
+  --repo discobox-ai/discobox \
+  --signer-workflow discobox-ai/discobox/.github/workflows/release.yml \
+  --source-ref refs/tags/TAG
+sh install.sh
+```
+
+```powershell
+Invoke-WebRequest https://discobox.ai/install.ps1 -OutFile install.ps1
+gh attestation verify install.ps1 `
+  --repo discobox-ai/discobox `
+  --signer-workflow discobox-ai/discobox/.github/workflows/release.yml `
+  --source-ref refs/tags/TAG
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Run a verified installer with no arguments, and with `DISCOBOX_VERSION` and
+`DISCOBOX_CHANNEL` unset. Given a version or a channel, it downloads and runs
+another release's installer, and nothing checks that one. To verify a
+particular release, download `install.sh` or `install.ps1` from that release's
+assets on GitHub, verify it as above, and run it with no arguments.
+
+A passing check says which workflow, ref and commit built the file. It does not
+say that commit was reviewed or is safe to run: a release's workflow runs from
+whatever commit its tag points at, so the check is only as strong as control
+over who can push tags to `discobox-ai/discobox`.
+
+Releases published before attestations were added, `v0.20.0-rc.1` and earlier,
+and main builds from before then, have none: `gh attestation verify` finds no
+attestation for them.
+
 ## Take the tour
 
 Start the guided tour from your host:
