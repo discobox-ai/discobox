@@ -86,7 +86,10 @@ func (m *Model) readGit() tea.Cmd {
 			return filesGitMsg{box: box, root: root}
 		}
 		dir := strings.TrimSpace(top.Stdout)
-		status, err := ds.RunCommand(ctx, box.ID, dir, []string{"git", "status", "--porcelain=v1", "-z", "--untracked-files=all"})
+		// --no-optional-locks: this read is killed at its timeout, and a
+		// killed git status leaves .git/index.lock behind, which then fails
+		// the box's next commit with "File exists".
+		status, err := ds.RunCommand(ctx, box.ID, dir, []string{"git", "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"})
 		if err != nil {
 			return filesGitMsg{box: box, root: root, err: err}
 		}

@@ -349,7 +349,7 @@ func TestTheBoxMenusFileTreeSaysWhenTheWindowIsTooNarrow(t *testing.T) {
 
 const (
 	gitTop    = "git rev-parse --show-toplevel"
-	gitStatus = "git status --porcelain=v1 -z --untracked-files=all"
+	gitStatus = "git --no-optional-locks status --porcelain=v1 -z --untracked-files=all"
 )
 
 // gitFilesSource is filesSource in a repository whose README is modified and

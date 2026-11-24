@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -320,5 +321,74 @@ func TestComputeGitStatusDiffStatUnresolvableUpstreamKeepsSpawnBase(t *testing.T
 	got := statuses[0]
 	if got.DiffBase != base {
 		t.Fatalf("diffBase = %q, want the spawn commit %q", got.DiffBase, base)
+	}
+}
+
+// TestComputeGitStatusOverrunLeavesNoIndexLock pins that the status poll
+// never leaves the sandbox's own repository locked. git status takes
+// .git/index.lock after refreshing the index and holds it while it collects
+// (diffs, submodules, the untracked scan) so it can write the refreshed index
+// back. A poll that outruns its timeout is SIGKILLed, which git cannot clean
+// up after, so the lock stays and the harness's next commit fails with
+// "index.lock: File exists". A big freshly delivered checkout is what outruns
+// it in a box; here a submodule whose own status runs a slow clean filter
+// holds the parent's collect phase open, deterministically.
+func TestComputeGitStatusOverrunLeavesNoIndexLock(t *testing.T) {
+	dir := t.TempDir()
+	runGitCommand(t, dir, "init", "-b", "main")
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitCommand(t, sub, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(sub, "f"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCommand(t, sub, "add", "f")
+	runGitCommand(t, sub, "commit", "-m", "sub")
+	// The poll stops waiting at its deadline, but the filter runs on, with
+	// its working directory in dir. Its marker says it has finished; the
+	// cleanup below (run before dir's own) waits for it, so the test leaves
+	// no process behind and Windows can remove dir.
+	marker := filepath.Join(t.TempDir(), "filter-done")
+	runGitCommand(t, sub, "config", "filter.slow.clean", "sleep 3; cat; : > '"+filepath.ToSlash(marker)+"'")
+	t.Cleanup(func() {
+		for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+			if _, err := os.Stat(marker); err == nil {
+				return
+			}
+		}
+		t.Log("the slow filter never reported finishing")
+	})
+	if err := os.WriteFile(filepath.Join(sub, ".git", "info", "attributes"), []byte("f filter=slow\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCommand(t, dir, "add", "sub")
+	runGitCommand(t, dir, "commit", "-m", "initial")
+	// Make the submodule's file stat-dirty, so its status must run the filter.
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(filepath.Join(sub, "f"), later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	statuses := ComputeGitStatus(ctx, []sandboxconfig.Source{{Slug: "primary", Target: dir}}, nil)
+	elapsed := time.Since(start)
+	if len(statuses) != 1 || statuses[0].Error == "" {
+		t.Fatalf("statuses = %+v, want one that timed out", statuses)
+	}
+	// The submodule's git and its filter hold git's output pipes open past
+	// the kill; the poll still answers within its deadline and gitWaitDelay,
+	// well before the filter's three seconds.
+	if limit := 300*time.Millisecond + gitWaitDelay + time.Second; elapsed > limit {
+		t.Fatalf("a timed-out status poll took %s, want at most %s: the deadline does not bound it", elapsed, limit)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	if _, err := os.Stat(lock); err == nil {
+		t.Fatalf("a timed-out status poll left %s behind; the harness's next commit fails with \"File exists\"", lock)
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 }

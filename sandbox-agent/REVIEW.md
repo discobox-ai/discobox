@@ -849,6 +849,13 @@ user waits on every single start.
   sandbox's status every 15 seconds and holds a wait on its ports open
   around the clock (ADR 26-11-03-815), so anything a read counts as activity
   keeps every sandbox up forever.
+- **A status read never takes a git lock.** Every git command `agentstatus`
+  runs goes through `gitCommand`, which passes `--no-optional-locks`. The poll
+  is SIGKILLed at its deadline, and a killed `git status` leaves
+  `.git/index.lock` behind, failing the harness's next commit with "File
+  exists". A git command built with `exec.Command` directly loses that, and
+  the `WaitDelay` `gitCommand` sets: a child git or filter holds the output
+  pipes open past the kill, so without it the poll outlasts its deadline.
 - **The status wait holds only on the current version.** `GET .../status/wait`
   answers at once unless the caller named the version it has now — one
   opaque token joining the port snapshot's signal, the harness capture's and
