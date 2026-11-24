@@ -202,6 +202,106 @@ box. Isolation and
 credential routing do not make agent-written code trustworthy: review code
 and results before merging or running them on your machine.
 
+### GitHub, one repository per box
+
+To let a box push to one repository and open pull requests on it, keep your
+GitHub token in a secret and bind it to each box with routes for that
+repository alone. The token itself never enters the box, and the pool sends
+it nowhere else.
+
+Save this policy as `github-repo.json`. It covers Git over HTTPS to the
+repository, with or without `.git` on its URL, reading it through the REST
+API, and opening pull requests:
+
+```json
+{
+  "version": 1,
+  "description": "Push to and open pull requests on one GitHub repository",
+  "parameters": {
+    "owner": { "type": "pathSegment" },
+    "repo": { "type": "pathSegment" }
+  },
+  "routes": [
+    { "hosts": ["github.com"], "methods": ["GET", "POST"],
+      "paths": ["/${owner}/${repo}.git/**",
+                "/${owner}/${repo}/info/refs",
+                "/${owner}/${repo}/git-upload-pack",
+                "/${owner}/${repo}/git-receive-pack"] },
+    { "hosts": ["api.github.com"], "methods": ["GET"],
+      "paths": ["/repos/${owner}/${repo}/**"] },
+    { "hosts": ["api.github.com"], "methods": ["POST"],
+      "paths": ["/repos/${owner}/${repo}/pulls"] }
+  ]
+}
+```
+
+Create the secret once. Its own routes are the most any binding of it can
+get, here every repository of one owner:
+
+```sh
+discobox secret create --name github --type token \
+  --refresh-command "gh auth token" --max-binding-ttl 2w \
+  --route 'github.com/OWNER/**' --route 'api.github.com/repos/OWNER/**'
+```
+
+Then bind it to a new box for one repository:
+
+```sh
+discobox run --bind 'github:GH_TOKEN,policy=github-repo.json,owner=OWNER,repo=REPO'
+```
+
+or to a box that already exists:
+
+```sh
+discobox secret bind github BOX --as GH_TOKEN --for 1w \
+  --policy github-repo.json --policy-arg owner=OWNER --policy-arg repo=REPO
+```
+
+`discobox secret bound BOX` shows the routes the binding holds. A request
+must fall on the secret's routes and the binding's both, so the token is not
+sent to another repository, to GitHub's GraphQL API, or to any API call the
+policy leaves out, such as merging a pull request.
+
+The routes bound where the token goes, not what a push does. One Git push is
+one request, and the branches and tags it changes are inside it, where no
+route looks: the box can push to any branch of the repository, the default
+branch included, delete one, or push a tag. A pushed branch can also change
+a workflow, or a script one runs, and GitHub then runs it with the
+repository's Actions secrets. Protect the default branch with a branch
+protection rule or ruleset, and prefer a fine-grained token limited to that
+repository without the Workflows permission.
+
+`GH_TOKEN` holds a sentinel, which the pool swaps for the token only on those
+routes, including inside Git's Basic authentication. A shell started before
+the binding, such as an agent's tool shell, does not have the variable;
+`eval "$(discobox-access env)"` loads it. So in the box, have Git load it each
+time it asks, then push over HTTPS. An SSH remote does not go through the
+swap.
+
+```sh
+git config --global credential.https://github.com.helper \
+  '!f() { test "$1" = get || exit 0; eval "$(discobox-access env)"; echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+git push https://github.com/OWNER/REPO.git HEAD:refs/heads/my-branch
+```
+
+`gh pr create` goes through GitHub's GraphQL API, whose requests all go to one
+URL that says nothing about the repository. No route can hold it to one
+repository, so the policy leaves GraphQL out. Open the pull request through
+the REST API instead, which names the repository in its path:
+
+```sh
+eval "$(discobox-access env)"
+gh api -X POST repos/OWNER/REPO/pulls \
+  -f head=my-branch -f base=main -f title='Fix the thing' -f body='What and why'
+```
+
+Anything outside the routes, another repository's API or a `gh` command that
+uses GraphQL, gets a 403 that starts `blocked by proxy:`. For each further
+call a box needs, add a route to the policy, such as `PATCH` on
+`/repos/${owner}/${repo}/pulls/*` to edit its pull requests. A binding keeps
+the routes its policy had when it was made, so bind the box again to give it
+the new ones.
+
 ## Services, ports and tools
 
 Repositories can declare services under `.discobox/services`. They start at
