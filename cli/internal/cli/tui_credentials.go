@@ -12,6 +12,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/cli/internal/github"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
@@ -596,6 +597,20 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 	}
 	_, err = expectResponse[apimodel.Secret](res)
 	return err
+}
+
+// gitHubLoginTimeout bounds the check that gh is logged in: it is asked while
+// a person waits for the credential card, and a logged-in gh answers at once.
+const gitHubLoginTimeout = 5 * time.Second
+
+// GitHubLogin is this machine's gh login command, when it prints a token here.
+func (d *apiDataSource) GitHubLogin(ctx context.Context) []string {
+	ctx, cancel := context.WithTimeout(ctx, gitHubLoginTimeout)
+	defer cancel()
+	if !github.LoggedIn(ctx) {
+		return nil
+	}
+	return github.LoginCommand()
 }
 
 // HeldGrants are the grants applying in one variable of a discobox, from its

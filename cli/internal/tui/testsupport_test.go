@@ -172,6 +172,10 @@ type fakeSource struct {
 	// bindings a delete takes with it, by binding ID.
 	projectBindings []SecretBinding
 	bindingsErr     error
+	// ghLogin is whether this machine's gh login answers (GitHubLogin), and
+	// ghChecks how many times it was asked.
+	ghLogin  bool
+	ghChecks int
 	// heldGrants are what applies in a variable of the asking discobox.
 	heldGrants       []HeldGrant
 	unbindings       []string
@@ -2078,6 +2082,16 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 			f.projectSecrets[i].Routes = *update.Routes
 		}
 	}
+}
+
+func (f *fakeSource) GitHubLogin(context.Context) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ghChecks++
+	if !f.ghLogin {
+		return nil
+	}
+	return []string{"gh", "auth", "token", "--hostname", "github.com"}
 }
 
 func (f *fakeSource) HeldGrants(_ context.Context, server, _, _ string) ([]HeldGrant, error) {

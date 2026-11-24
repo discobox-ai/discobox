@@ -65,7 +65,10 @@ type secretsLoadedMsg struct {
 	// held is what applies in the use part's variable now, read with the
 	// secrets: a variable a secret already holds is answered with that one.
 	held []HeldGrant
-	err  error
+	// ghLogin is the command printing this machine's gh login, when it can
+	// answer the request: it asks only for GitHub and gh is logged in.
+	ghLogin []string
+	err     error
 }
 
 // credentialAnsweredMsg reports an approval or a denial coming back. ttl is
@@ -190,14 +193,25 @@ func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
 	if req.Trust != nil {
 		return m.askAboutTrust(req)
 	}
-	m.dialog = statusDialog("Credential request", "reading the project's secrets…")
+	// A refresh request renews a secret it already names: no gh login is
+	// offered for it, so gh is not asked.
+	askGH := req.Refresh == nil && asksOnlyGitHub(req)
+	reading := "reading the project's secrets…"
+	if askGH {
+		reading = "reading the project's secrets, and whether gh is logged in here…"
+	}
+	m.dialog = statusDialog("Credential request", reading)
 	return func() tea.Msg {
 		secrets, err := m.ds.Secrets(m.ctx, req.Server)
 		var held []HeldGrant
 		if err == nil && req.Use != nil && req.EnvVar != "" && req.SandboxID != "" {
 			held, err = m.ds.HeldGrants(m.ctx, req.Server, req.SandboxID, req.EnvVar)
 		}
-		return secretsLoadedMsg{requestID: req.ID, secrets: secrets, held: held, err: err}
+		var ghLogin []string
+		if err == nil && askGH {
+			ghLogin = m.ds.GitHubLogin(m.ctx)
+		}
+		return secretsLoadedMsg{requestID: req.ID, secrets: secrets, held: held, ghLogin: ghLogin, err: err}
 	}
 }
 
@@ -214,11 +228,12 @@ func (m *Model) credentialRequestByID(requestID string) (CredentialRequest, bool
 
 // askAboutCredential opens the first part card, or the token refresh card.
 // held is what applies in the use part's variable now.
-func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
+// ghLogin is the gh login's command, when it can answer (asksOnlyGitHub).
+func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, ghLogin []string) tea.Cmd {
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
 	}
-	return m.askCredentialApproval(req, secrets, held)
+	return m.askCredentialApproval(req, secrets, held, ghLogin)
 }
 
 // heldBy is the secret the discobox's own bindings deliver in the use part's

@@ -103,11 +103,28 @@ func LocalToken(ctx context.Context) string {
 			return token
 		}
 	}
-	out, err := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", "github.com").Output()
+	login := LoginCommand()
+	out, err := exec.CommandContext(ctx, login[0], login[1:]...).Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// LoginCommand is the command that prints the token this machine's gh is
+// logged in to github.com with.
+func LoginCommand() []string {
+	return []string{"gh", "auth", "token", "--hostname", "github.com"}
+}
+
+// LoggedIn says whether LoginCommand prints a token, and nothing of what it
+// printed. It reads the token rather than asking `gh auth status`, which
+// checks the token against the network and so fails offline or slowly for a
+// login that is there.
+func LoggedIn(ctx context.Context) bool {
+	login := LoginCommand()
+	out, err := exec.CommandContext(ctx, login[0], login[1:]...).Output()
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 // Repository is the owner and name a repository's web address names:

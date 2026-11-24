@@ -2559,6 +2559,13 @@ type DataSource interface {
 	// BindingHistory includes answered requests and direct grants, as immutable events.
 	BindingHistory(ctx context.Context, server, secretID string) ([]BindingDecision, error)
 
+	// GitHubLogin is the command that prints the token this machine's gh is
+	// logged in to github.com with, or nil when it is not: whether a request
+	// for GitHub can be answered with the gh login already here. A credential
+	// stored from it keeps the command as what renews it. Nothing it printed
+	// is kept.
+	GitHubLogin(ctx context.Context) []string
+
 	// HeldGrants are the grants that apply in one variable of a discobox
 	// now (ADR 26-11-03-329 §5): the binding that delivers it, whichever
 	// level it is on, then each addition stacking on it.
