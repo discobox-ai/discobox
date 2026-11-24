@@ -290,6 +290,15 @@ outside the set it answers (`WatchSandboxVolumes`, ADR 26-10-01-876), and an
 unanswered ask is never an empty set. A new path that reclaims per-sandbox
 durable state asks the same question.
 
+## A removed container takes its anonymous volumes
+
+Every `ContainerRemove` passes `RemoveVolumes`: a sandbox's, one replaced for
+a spec change or a rebuild, a snapshot build's, an export's. The sandbox base
+image declares `VOLUME`s for container-runtime state (ADR 26-11-23-993 §§2–3),
+so each such container has anonymous volumes, and a removal without it leaks
+them. Never carry them to a replacement: runtime state is a cache, and a
+replaced container starts with none.
+
 ## A sandbox's proxy record
 
 - **Remove a sandbox's proxy record only under its power lock, after a look

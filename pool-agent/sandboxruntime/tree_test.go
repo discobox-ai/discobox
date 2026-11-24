@@ -108,7 +108,9 @@ func (d *exportDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"StatusCode": status})
 	case r.Method == http.MethodDelete:
 		d.mu.Lock()
-		d.removed = true
+		// Only with its anonymous volumes: the image declares VOLUMEs (ADR
+		// 26-11-23-993 §3), and a removal without them leaks one per export.
+		d.removed = r.URL.Query().Get("v") == "1"
 		d.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	case strings.Contains(path, "/containers/") && strings.HasSuffix(path, "/json"):

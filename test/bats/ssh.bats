@@ -148,7 +148,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
 
   for pool_id in $pool_ids; do
-    docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f >/dev/null 2>&1 || true
+    docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f -v >/dev/null 2>&1 || true
     docker network rm "discobox-sbnet-$pool_id" >/dev/null 2>&1 || true
   done
 }

@@ -133,7 +133,7 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	defer func() {
 		err = errors.Join(err, r.removeSnapshotBuild(context.WithoutCancel(ctx), id))
 	}()
-	if _, err := r.client.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := r.client.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove an earlier build container: %w", err)
 	}
 	data, agent, err := r.prepareSnapshotBuild(ctx, plan)
@@ -257,7 +257,7 @@ func (r *DockerSandboxRuntime) sweepSnapshotBuilds(ctx context.Context) error {
 		if slices.ContainsFunc(ctr.Names, func(name string) bool { return named[name] }) {
 			continue
 		}
-		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			errs = append(errs, err)
 		}
 	}
@@ -281,7 +281,7 @@ func (r *DockerSandboxRuntime) imageHoldsAgent(ctx context.Context, containerID,
 // removeSnapshotBuild removes the build id: its container, then what the
 // pool laid for it (removeSnapshotBuildMaterial), only once the container is gone.
 func (r *DockerSandboxRuntime) removeSnapshotBuild(ctx context.Context, id string) error {
-	if _, err := r.client.ContainerRemove(ctx, r.snapshotContainerName(id), client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := r.client.ContainerRemove(ctx, r.snapshotContainerName(id), client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove build %s's container: %w", id, err)
 	}
 	return r.removeSnapshotBuildMaterial(id)

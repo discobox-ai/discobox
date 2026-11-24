@@ -753,7 +753,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 		if err := r.stashWorkingRoot(ctx, sandboxID, replaced.ID); err != nil {
 			return nil, false, err
 		}
-		if _, err := r.client.ContainerRemove(ctx, replaced.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		if _, err := r.client.ContainerRemove(ctx, replaced.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			return nil, false, fmt.Errorf("remove sandbox container for a spec change: %w", err)
 		}
 	}
@@ -1096,7 +1096,7 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 
 // prepareSandboxVolumes provisions the host-backed roots and returns their
 // container mounts. The pool host does not decide in-sandbox paths (home,
-// /var/lib/docker, sources targets); it only supplies the primary volumes. The
+// /var/lib/discobox, sources targets); it only supplies the primary volumes. The
 // sandbox-agent wires everything else from the image's declarative volume list
 // and the manifest's source list (ADR 0007).
 //
@@ -2393,7 +2393,7 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 		if _, ok := known[poolID]; ok || poolID == "" {
 			continue
 		}
-		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			logger.Warn("remove orphan pool snapshot build", "poolID", poolID, "container", ctr.ID, "error", err)
 		}
 	}

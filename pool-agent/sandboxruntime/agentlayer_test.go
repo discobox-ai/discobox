@@ -277,8 +277,10 @@ func TestDeliveredMovedComparesWhatTheContainerBootedOn(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/containers/ctr_1/json"):
 			_, _ = w.Write([]byte(`{"Id":"ctr_1","Image":"sha256:base-v1","State":{"Status":"running"},"Config":{"Labels":{}}}`))
-		case strings.HasSuffix(r.URL.Path, "/images/discobox-sandbox-base:test/json"):
+		case strings.HasSuffix(r.URL.Path, "/images/discobox-sandbox-base:test/json") && base != "":
 			_, _ = w.Write([]byte(`{"Id":"` + base + `"}`))
+		case strings.HasSuffix(r.URL.Path, "/images/discobox-sandbox-base:test/json"):
+			http.Error(w, `{"message":"No such image"}`, http.StatusNotFound)
 		default:
 			http.NotFound(w, r)
 		}
@@ -312,7 +314,10 @@ func TestDeliveredMovedComparesWhatTheContainerBootedOn(t *testing.T) {
 		"the pins it booted on":       {create(pin("a")), "sha256:base-v1", movedNothing},
 		"moved pins":                  {create(pin("b")), "sha256:base-v1", movedPins},
 		"moved pins and a moved base": {create(pin("b")), "sha256:base-v2", movedBase},
-		"no platform":                 {&workerapimodel.PoolSandboxCreateRequest{SandboxId: "sbx_1"}, "sha256:base-v2", movedNothing},
+		// Not pulled yet, as at an upgrade: no container runs it, so a
+		// restart would leave the box on its old base, recorded as converged.
+		"moved pins and a base not on the host": {create(pin("b")), "", movedBase},
+		"no platform":                           {&workerapimodel.PoolSandboxCreateRequest{SandboxId: "sbx_1"}, "sha256:base-v2", movedNothing},
 	} {
 		base = tc.base
 		got, err := r.deliveredMoved(context.Background(), existing, tc.req)

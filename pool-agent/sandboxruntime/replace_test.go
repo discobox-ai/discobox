@@ -99,6 +99,7 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 			state := withTestRoot(t)
 			var mu sync.Mutex
 			var pulled bool
+			var inspected int
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Api-Version", "1.45")
@@ -111,9 +112,18 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 				case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/ctr_built/json"):
 					_, _ = w.Write([]byte(`{"Id":"ctr_built","Image":"sha256:same","State":{"Status":"` + tc.state + `"},"Config":{"Labels":{"` + sandboxLabelSpec + `":"spec-1"}}}`))
 				case strings.Contains(path, "/images/") && strings.HasSuffix(path, "/json"):
-					// No base image here: the pins are then taken to have
-					// moved, which a container not running keeps for its
-					// next start, and a rebuild has to pull.
+					// The first look, deliveredMoved's, finds the base the
+					// container runs: only the pins moved, which a container
+					// not running keeps for its next start. Every later one
+					// finds none, so a rebuild has to pull.
+					mu.Lock()
+					inspected++
+					first := inspected == 1
+					mu.Unlock()
+					if first {
+						_, _ = w.Write([]byte(`{"Id":"sha256:same"}`))
+						return
+					}
 					w.WriteHeader(http.StatusNotFound)
 					_, _ = w.Write([]byte(`{"message":"not found"}`))
 				case strings.HasSuffix(path, "/images/create"):

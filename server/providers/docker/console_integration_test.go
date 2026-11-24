@@ -59,7 +59,7 @@ func TestDockerIntegrationPoolConsole(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cleanupCancel()
-		_, _ = dockerClient.ContainerRemove(cleanupCtx, dockerworker.ConsoleContainerName(pool.ID), client.ContainerRemoveOptions{Force: true})
+		_, _ = dockerClient.ContainerRemove(cleanupCtx, dockerworker.ConsoleContainerName(pool.ID), client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	})
 
 	// Commands work before any pool agent or persistent shell exists.

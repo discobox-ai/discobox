@@ -1409,7 +1409,7 @@ func (e *Engine) removePoolStateTrees(ctx context.Context, cli *client.Client, p
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_, _ = cli.ContainerRemove(cleanup, created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = cli.ContainerRemove(cleanup, created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}()
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return fmt.Errorf("start pool state removal: %w", err)
@@ -1601,10 +1601,12 @@ func (e *Engine) containerMounts() []mount.Mount {
 	// which systemd requires. The host bind mount would shadow it with the
 	// read-only host cgroup root.
 	//
-	// There is no /var/lib/docker volume: no daemon runs in the pool
+	// There is no named /var/lib/docker volume: no daemon runs in the pool
 	// container. Its agent drives the hosting daemon through the socket bound
-	// above, and BuildKit keeps its state in the cache tree (PoolBuild). Pools
-	// made before this carry an empty legacy volume, removed with their next
+	// above, and BuildKit keeps its state in the cache tree (PoolBuild). The
+	// sandbox base image's VOLUMEs give it empty anonymous ones, which every
+	// removal drops with RemoveVolumes (ADR 26-11-23-993 §4). Pools made before
+	// this carry an empty legacy named volume, removed with their next
 	// container (removeLegacyPoolVolume).
 	return mounts
 }
