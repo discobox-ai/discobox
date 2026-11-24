@@ -925,7 +925,13 @@ Examples:
 ## discobox admin box ls
 
 ~~~~text
-List discoboxes
+List the project's discoboxes.
+
+With --snapshot-builds, also list each pool's running snapshot builds: the
+boxes a pool provisions for no discobox, so that a new discobox of the same
+plan starts from one. Each shows its pool, its key, whether it is queued or
+building, the box it runs in and what it is provisioning. Read a build's logs
+with "discobox admin pool snapshot logs".
 ~~~~
 
 ```text
@@ -942,6 +948,7 @@ Aliases: list.
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --quiet, -q | bool | false | Only display resource IDs Value when passed without an argument: true. |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --snapshot-builds | bool | false | Also list each pool's running snapshot builds Value when passed without an argument: true. |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox admin box pause
@@ -2596,6 +2603,103 @@ discobox admin pool set-default POOL [flags]
 | --help, -h | bool | false | help for set-default Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox admin pool snapshot
+
+~~~~text
+Reach the snapshot builds a pool runs: the boxes it provisions for no
+discobox, so that a new discobox of the same plan starts from one instead of
+provisioning from scratch.
+
+"discobox admin pool get POOL" lists them with their keys; "discobox admin box
+ls --snapshot-builds" lists them beside the boxes. A KEY may be the short key
+those tables show.
+~~~~
+
+```text
+discobox admin pool snapshot [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for snapshot Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox admin pool snapshot exec
+
+~~~~text
+Open a shell, or run a command, in the box of one of a pool's running
+snapshot builds, to see why it is slow or stuck.
+
+The pool reaches the build's box itself, on every runtime, so no provider
+credential or console is needed. The build runs on while you look, but once you
+have run anything in its box its result is never kept as a snapshot: whatever
+you changed would be in every box made from it. The next discobox of its plan
+asks for the build again.
+
+The session ends when the build does, since the build removes its box.
+Everything after KEY is the command; an optional -- separates them. A TTY is
+allocated when stdin is a terminal, or with -t.
+~~~~
+
+```text
+discobox admin pool snapshot exec POOL KEY [--] [CMD...] [flags]
+```
+
+Examples:
+
+```text
+  discobox admin pool snapshot exec pool_01hq 3f9a2c1d0e4b
+  discobox admin pool snapshot exec pool_01hq 3f9a2c1d0e4b -- ps aux
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for exec Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+| --tty, -t | bool | false | Allocate a TTY for a command Value when passed without an argument: true. |
+
+## discobox admin pool snapshot logs
+
+~~~~text
+Print the feature logs of one of a pool's snapshot builds: what each
+feature's steps wrote as the build provisioned it.
+
+The pool reads them through the build's own box while it runs, on every
+runtime, so no provider credential or console is needed. A build that failed
+recently keeps the end of each log, which this prints after its box is gone.
+~~~~
+
+```text
+discobox admin pool snapshot logs POOL KEY [flags]
+```
+
+Examples:
+
+```text
+  discobox admin pool snapshot logs pool_01hq 3f9a2c1d0e4b
+  discobox admin pool snapshot logs pool_01hq 3f9a2c1d0e4b --feature docker -f
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --feature | string |  | Print one feature's log (default every feature's) |
+| --follow, -f | bool | false | Keep printing until the build ends Value when passed without an argument: true. |
+| --help, -h | bool | false | help for logs Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --tail | int | 0 | Print the last N lines of each log (default 200) |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox admin pool unset-default

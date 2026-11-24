@@ -65,11 +65,16 @@ func writePoolSnapshots(w io.Writer, snapshots apimodel.PoolSnapshots, now time.
 		row(shortSnapshotKey(held.Key), "held", "built "+formatRelativeTime(now, held.BuiltAt), formatSnapshotPlan(plan, held.Plan.Set), strings.Join(detail, ", "))
 	}
 	for _, build := range snapshots.Building {
-		state, when := "queued", "asked "+formatRelativeTime(now, build.RequestedAt)
-		if started, ok := build.StartedAt.Get(); ok {
-			state, when = "building", "started "+formatRelativeTime(now, started)
+		state, when := snapshotBuildState(build, now)
+		// What it runs in and what it is provisioning (ADR 26-11-23-004 §7).
+		var detail []string
+		if box, ok := build.Box.Get(); ok {
+			detail = append(detail, "in "+box)
 		}
-		row(shortSnapshotKey(build.Key), state, when, formatSnapshotPlan(build.Plan, true), "")
+		if build.Progress.Set {
+			detail = append(detail, snapshotBuildProgress(build.Progress))
+		}
+		row(shortSnapshotKey(build.Key), state, when, formatSnapshotPlan(build.Plan, true), strings.Join(detail, ", "))
 	}
 	for _, failed := range snapshots.Failed {
 		detail := "retry after " + formatRelativeTime(now, failed.RetryAfter)

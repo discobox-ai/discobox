@@ -86,7 +86,7 @@ func TestPoolConsoleCommandStream(t *testing.T) {
 	defer server.Close()
 	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	var out, errout bytes.Buffer
-	err := app.attachPoolConsole(ctx, "proj_1", "pool_1", []string{"sh", "-c", "echo a b"}, false, strings.NewReader("piped input\n"), &out, &errout)
+	err := app.attachPoolExec(ctx, poolConsoleRoute("proj_1", "pool_1"), []string{"sh", "-c", "echo a b"}, false, strings.NewReader("piped input\n"), &out, &errout)
 	if code, ok := ExitCode(err); !ok || code != 37 {
 		t.Fatalf("exit=%v", err)
 	}
@@ -132,7 +132,7 @@ func TestPoolConsoleCommandRequiresCompletion(t *testing.T) {
 			}))
 			defer server.Close()
 			app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
-			err := app.attachPoolConsole(ctx, "proj_1", "pool_1", []string{"true"}, false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+			err := app.attachPoolExec(ctx, poolConsoleRoute("proj_1", "pool_1"), []string{"true"}, false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 			if err == nil {
 				t.Fatal("incomplete/failed command returned success")
 			}

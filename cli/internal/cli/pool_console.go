@@ -89,11 +89,11 @@ Without POOL the project's default pool is used.`,
 			}
 			if len(line.command) > 0 {
 				tty := forceTTY || isTerminalStream(cmd.InOrStdin())
-				return a.attachPoolConsole(cmd.Context(), projectID, poolID, line.command, tty, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return a.attachPoolExec(cmd.Context(), poolConsoleRoute(projectID, poolID), line.command, tty, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Opening an admin console on pool %s's host (%s to detach)\n", poolID, a.detachHint())
 			fmt.Fprintln(cmd.ErrOrStderr(), "If the screen stays blank, press Enter to redraw the prompt.")
-			return a.attachPoolConsole(cmd.Context(), projectID, poolID, nil, true, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return a.attachPoolExec(cmd.Context(), poolConsoleRoute(projectID, poolID), nil, true, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 	command.Flags().SetInterspersed(false)
@@ -101,13 +101,32 @@ Without POOL the project's default pool is used.`,
 	return command
 }
 
-func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, argv []string, tty bool, stdin io.Reader, stdout, stderr io.Writer) error {
+// poolExecRoute is a pool route that runs a command, or a shell, over a
+// WebSocket of execstream frames: the pool host's console, or a snapshot
+// build's box.
+type poolExecRoute struct {
+	// path is the route's path under the server's base URL.
+	path string
+	// kind names the session in what is said of it, and where its interrupt
+	// lands.
+	kind, where string
+}
+
+// poolConsoleRoute is the console of the host of pool poolID.
+func poolConsoleRoute(projectID, poolID string) poolExecRoute {
+	return poolExecRoute{
+		path: "/api/projects/" + url.PathEscape(projectID) + "/pools/" + url.PathEscape(poolID) + "/console",
+		kind: "pool console", where: "the pool host",
+	}
+}
+
+func (a *App) attachPoolExec(ctx context.Context, route poolExecRoute, argv []string, tty bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	console := client.NewOSConsole(stdin, stdout)
 	var cols, rows int
 	if console != nil {
 		cols, rows, _ = console.Size()
 	}
-	frames, err := a.openPoolConsoleAttach(ctx, projectID, poolID, argv, tty, rows, cols)
+	frames, err := a.openPoolExecAttach(ctx, route, argv, tty, rows, cols)
 	if err != nil {
 		return err
 	}
@@ -122,10 +141,10 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, a
 		Stdout:      stdout,
 		Stderr:      stderr,
 		Console:     console,
-		Kind:        "pool console",
-		Action:      "open pool console",
+		Kind:        route.kind,
+		Action:      "open " + route.kind,
 		RequireExit: len(argv) > 0,
-		ErrorFrame:  func(payload []byte) error { return fmt.Errorf("pool console: %s", terminalSafe(string(payload))) },
+		ErrorFrame:  func(payload []byte) error { return fmt.Errorf("%s: %s", route.kind, terminalSafe(string(payload))) },
 		RawMode:     tty,
 		Terminal:    tty,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
@@ -134,7 +153,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, a
 			}
 			return copySandboxExecInput(ctx, s, true)
 		},
-		InterruptNotice: interruptNotice(stderr, tty, "the pool host"),
+		InterruptNotice: interruptNotice(stderr, tty, route.where),
 		OtherErr: func(err error) (bool, error) {
 			if client.IsDone(err) {
 				return true, nil
@@ -155,10 +174,10 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, a
 	return err
 }
 
-// openPoolConsoleAttach dials the console websocket. The size travels as query
+// openPoolExecAttach dials route's websocket. The size travels as query
 // parameters so the shell's first prompt is already drawn at the caller's size,
 // before the session's own resize tracking has said anything.
-func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID string, argv []string, tty bool, rows, cols int) (*directAttachFrames, error) {
+func (a *App) openPoolExecAttach(ctx context.Context, route poolExecRoute, argv []string, tty bool, rows, cols int) (*directAttachFrames, error) {
 	baseURL, httpClient, err := a.httpClient()
 	if err != nil {
 		return nil, err
@@ -173,9 +192,9 @@ func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID strin
 	case "https":
 		u.Scheme = "wss"
 	default:
-		return nil, fmt.Errorf("open pool console: unsupported websocket base URL scheme %q", u.Scheme)
+		return nil, fmt.Errorf("open %s: unsupported websocket base URL scheme %q", route.kind, u.Scheme)
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/api/projects/" + url.PathEscape(projectID) + "/pools/" + url.PathEscape(poolID) + "/console"
+	u.Path = strings.TrimRight(u.Path, "/") + route.path
 	query := url.Values{}
 	for _, arg := range argv {
 		query.Add("command", arg)
@@ -194,10 +213,10 @@ func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID strin
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			if message := attachErrorMessage(body); message != "" {
-				return nil, fmt.Errorf("open pool console: %s", message)
+				return nil, fmt.Errorf("open %s: %s", route.kind, message)
 			}
 		}
-		return nil, fmt.Errorf("open pool console: %w", err)
+		return nil, fmt.Errorf("open %s: %w", route.kind, err)
 	}
 	return &directAttachFrames{conn: websocket.NetConn(ctx, conn, websocket.MessageBinary)}, nil
 }
