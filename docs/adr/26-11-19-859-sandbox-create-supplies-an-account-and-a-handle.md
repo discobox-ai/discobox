@@ -1,7 +1,8 @@
 # 26-11-19-859 — Sandbox create supplies an account and a handle
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-19
+  Accepted by the owner by merging #1490, 2026-11-24.
 - **Amends**: [ADR 0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5 for Linux sandbox create, and [ADR 26-11-16-207](26-11-16-207-a-box-is-named-at-creation-by-seeding-its-meta-name.md)
   §1 for a create with no handle.
