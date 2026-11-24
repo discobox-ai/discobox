@@ -35,3 +35,4 @@
   not reopen the adopted-child binding privacy boundary. Build approval history
   from the secret reloaded under the final handoff locks, not the earlier
   preparation read: an intervening edit must record its current revision.
+- A chosen format is checked against the token it stands for (`sentinelFormat`, `secretformat.CheckValue`, #1633), so whether a format is refused says something about the stored value: a caller can recover the token a byte at a time from the 400s. It is safe only because the only callers of secret create and update are project members, who control the secret already. A new principal that may update a secret's format without being able to read its value (a narrower role, a sandbox route) must not be given that answer.
