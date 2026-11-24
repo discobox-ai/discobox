@@ -65,3 +65,53 @@ func TestSecretFormatMustParse(t *testing.T) {
 		}
 	}
 }
+
+// A format is stored in the clear, so one that copies the value's bytes past
+// its prefix is refused, the way the console refuses it, whichever client
+// sets it.
+func TestSecretFormatMayNotCopyTheValue(t *testing.T) {
+	svc := newTestService(t)
+	ctx := testPrincipalContext()
+	_, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
+		Name:   "copied",
+		Type:   apigen.CreateSecretBodyTypeToken,
+		Value:  apigen.SecretValue{Token: apigen.NewOptString("dbx_fake_ABCDEFGHIJKLMNOPQRSTUVWX")},
+		Format: apigen.NewOptString("dbx_fake_ABCDEFGH{alnum:16}"),
+	})
+	if statusOf(err) != http.StatusBadRequest || !strings.Contains(err.Error(), "copied from the value") {
+		t.Fatalf("create err = %v, want 400 naming the copied text", err)
+	}
+
+	sec, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
+		Name:  "plain",
+		Type:  apigen.CreateSecretBodyTypeToken,
+		Value: apigen.SecretValue{Token: apigen.NewOptString("dbx_fake_ABCDEFGHIJKLMNOPQRSTUVWX")},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err = svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Format: apigen.NewOptString("dbx_fake_ABCDEFGH{alnum:16}")})
+	if statusOf(err) != http.StatusBadRequest || !strings.Contains(err.Error(), "copied from the value") {
+		t.Fatalf("update --format err = %v, want 400 naming the copied text", err)
+	}
+
+	// With a new value in the same update, the format is held to that value,
+	// not the one it replaces.
+	_, err = svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{
+		Value:  apigen.NewOptSecretValue(apigen.SecretValue{Token: apigen.NewOptString("dbx_fake_ZYXWVUTSRQPONMLKJIHGFEDC")}),
+		Format: apigen.NewOptString("dbx_fake_ZYXWVUTS{alnum:16}"),
+	})
+	if statusOf(err) != http.StatusBadRequest || !strings.Contains(err.Error(), "copied from the value") {
+		t.Fatalf("update --token --format err = %v, want 400 naming the copied text", err)
+	}
+	updated, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{
+		Value:  apigen.NewOptSecretValue(apigen.SecretValue{Token: apigen.NewOptString("dbx_fake_ZYXWVUTSRQPONMLKJIHGFEDC")}),
+		Format: apigen.NewOptString("dbx_fake_ABCDEFGH{alnum:16}"),
+	})
+	if err != nil {
+		t.Fatalf("update with a format copying only the replaced value: %v", err)
+	}
+	if updated.Format != "dbx_fake_ABCDEFGH{alnum:16}" {
+		t.Fatalf("format = %q, want the one given", updated.Format)
+	}
+}

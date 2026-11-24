@@ -180,7 +180,7 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	if err := checkOAuthValue(secretType, input.Value); err != nil {
 		return nil, err
 	}
-	format, formatSet, err := sentinelFormat(input.Format)
+	format, formatSet, err := sentinelFormat(input.Format, input.Value.Token.Or(""))
 	if err != nil {
 		return nil, err
 	}
@@ -244,9 +244,18 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			sec.Name = name
 		}
 		if input.Format.IsSet() {
-			// Cleared, the store reads the shape from the value again on this
-			// write, the way it does for a value nobody described.
-			if sec.Format, sec.FormatSet, err = sentinelFormat(input.Format); err != nil {
+			// The format is checked against the value it will stand for: the
+			// one this update writes, or else the one already stored. Cleared,
+			// there is nothing to check, and the store reads the shape from the
+			// value again on this write, the way it does for a value nobody
+			// described.
+			token := ""
+			if strings.TrimSpace(input.Format.Or("")) != "" {
+				if token, err = updatedToken(ctx, txStore, sec, input.Value); err != nil {
+					return err
+				}
+			}
+			if sec.Format, sec.FormatSet, err = sentinelFormat(input.Format, token); err != nil {
 				return err
 			}
 		}
@@ -1349,15 +1358,39 @@ func isUniqueViolation(err error) bool {
 // setting it to empty goes back to. A template that does not parse is refused
 // here rather than stored, since the minter would quietly fall back to the
 // default shape and the person would never learn their template was ignored.
-func sentinelFormat(in apigen.OptString) (string, bool, error) {
+// A format is stored in the clear, so one that copies the token's bytes past
+// its prefix is refused too (secretformat.CheckValue), for every client the
+// way the console refuses it; CheckValue's warning, a format the value itself
+// does not fit, stays the console's hint.
+func sentinelFormat(in apigen.OptString, token string) (string, bool, error) {
 	format := strings.TrimSpace(in.Or(""))
 	if format == "" {
 		return "", false, nil
 	}
-	if _, err := secretformat.ParseChosen(format); err != nil {
+	tmpl, err := secretformat.ParseChosen(format)
+	if err != nil {
+		return "", false, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("invalid format: %v", err))
+	}
+	if _, err := secretformat.CheckValue(tmpl, token); err != nil {
 		return "", false, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("invalid format: %v", err))
 	}
 	return format, true, nil
+}
+
+// updatedToken is the token a secret holds once an update is written: the
+// update's own when it sets a value, otherwise the one stored.
+func updatedToken(ctx context.Context, txStore *store.Store, sec *model.Secret, value apigen.OptSecretValue) (string, error) {
+	if v, ok := value.Get(); ok {
+		return v.Token.Or(""), nil
+	}
+	stored, err := txStore.OpenSecretValue(ctx, sec)
+	if err != nil {
+		return "", fmt.Errorf("decrypt secret: %w", err)
+	}
+	if stored == nil {
+		return "", nil
+	}
+	return stored.Token, nil
 }
 
 // planBinding is a binding as bindingplan reads it.

@@ -652,7 +652,11 @@ an older provider table (`sk-ant-{alnum:5}-` before the kind marker was kept) is
 corrected without anybody replacing the value. A person may set a format instead
 (`format` on create and update, held by `secretformat.ParseChosen` to braces
 that pair and do not nest, known charsets, at least 64 random bits — two
-sentinels must never come out the same — and its length bound, when it is
+sentinels must never come out the same — and its length bound, and by
+`secretformat.CheckValue` to no text of eight bytes or more copied from the
+token past its prefix — a format is stored in the clear — checked against the
+token the update writes, or else the stored one, so every client is held to it
+and not only the console; all of it when it is
 written: a format stored under older rules keeps minting until somebody
 replaces it, and an update that does not name a format does not re-check it);
 `FormatSet` then keeps it through every write and the startup pass, and setting
