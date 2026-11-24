@@ -34,8 +34,12 @@ type Server struct {
 	socks       *socksProxy
 	controlAuth *controlAuthenticator
 
-	listener net.Listener
+	// connMu guards listener and conns, the closing of closed, and every
+	// wg.Add that Close waits on: each happens under it after a check of
+	// closed, so a Close racing a starting ListenAndServe or an Accept
+	// either sees what it started, or stops it from starting at all.
 	connMu   sync.Mutex
+	listener net.Listener
 	conns    map[net.Conn]struct{}
 	wg       sync.WaitGroup
 	closed   chan struct{}
@@ -251,22 +255,33 @@ func swapperConfig(cfg Config) secrets.Config {
 	}
 }
 
-// ListenAndServe starts the mTLS listener.
+// ListenAndServe starts the mTLS listener. On a server already closed it
+// returns nil without serving.
 func (s *Server) ListenAndServe() error {
 	var listenConfig net.ListenConfig
 	tcp, err := listenConfig.Listen(s.ctx, "tcp", s.cfg.ListenAddress)
 	if err != nil {
 		return err
 	}
-	s.startRetentionSweeper()
-	s.listener = tls.NewListener(tcp, &tls.Config{
+	listener := tls.NewListener(tcp, &tls.Config{
 		Certificates: []tls.Certificate{s.certs.ServerCert},
 		ClientCAs:    s.certs.ClientCAPool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		MinVersion:   tls.VersionTLS12,
 	})
+	s.connMu.Lock()
+	select {
+	case <-s.closed:
+		s.connMu.Unlock()
+		_ = listener.Close()
+		return nil
+	default:
+	}
+	s.listener = listener
+	s.startRetentionSweeper()
+	s.connMu.Unlock()
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
 			case <-s.closed:
@@ -275,9 +290,27 @@ func (s *Server) ListenAndServe() error {
 				return err
 			}
 		}
-		s.wg.Add(1)
+		if !s.admit(conn) {
+			_ = conn.Close()
+			return nil
+		}
 		go s.serveConn(conn)
 	}
+}
+
+// admit tracks an accepted connection for Close to close and wait on, unless
+// the server has closed.
+func (s *Server) admit(conn net.Conn) bool {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	select {
+	case <-s.closed:
+		return false
+	default:
+	}
+	s.conns[conn] = struct{}{}
+	s.wg.Add(1)
+	return true
 }
 
 // startRetentionSweeper runs the audit retention pass on an interval derived
@@ -290,6 +323,9 @@ func (s *Server) ListenAndServe() error {
 // It is driven from the configuration rather than by the pool agent so that the
 // bound travels with the recorder: anything that records is swept, and there is
 // no deployment in which the two can be wired apart.
+//
+// The caller holds connMu, so Close either waits for the sweeper or stops it
+// from starting.
 func (s *Server) startRetentionSweeper() {
 	retention := s.cfg.Recording.Retention
 	budgeted := s.audit.SpoolBudget().Enabled()
@@ -429,6 +465,7 @@ func (s *Server) ClientHTTPAudit(ctx context.Context, clientID string, query Aud
 
 // Close stops the proxy and flushes queued audit events.
 func (s *Server) Close() error {
+	s.connMu.Lock()
 	select {
 	case <-s.closed:
 	default:
@@ -437,7 +474,6 @@ func (s *Server) Close() error {
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
-	s.connMu.Lock()
 	for conn := range s.conns {
 		_ = conn.Close()
 	}
@@ -470,7 +506,12 @@ func (s *Server) Close() error {
 
 // Addr returns the listener address after ListenAndServe starts.
 func (s *Server) Addr() net.Addr {
-	if s == nil || s.listener == nil {
+	if s == nil {
+		return nil
+	}
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if s.listener == nil {
 		return nil
 	}
 	return s.listener.Addr()
@@ -480,9 +521,6 @@ func (s *Server) serveConn(conn net.Conn) {
 	ctx, span := proxyTracer().Start(s.ctx, "proxy.connection", trace.WithSpanKind(trace.SpanKindServer))
 	defer span.End()
 	defer s.wg.Done()
-	s.connMu.Lock()
-	s.conns[conn] = struct{}{}
-	s.connMu.Unlock()
 	defer func() {
 		s.connMu.Lock()
 		_, stillTracked := s.conns[conn]

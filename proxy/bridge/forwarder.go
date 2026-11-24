@@ -37,8 +37,12 @@ type Forwarder struct {
 	worker        *Dialer
 	localSubnets  func() []string
 
-	listener net.Listener
+	// connMu guards listener and conns, the closing of closed, and every
+	// wg.Add that Close waits on: each happens under it after a check of
+	// closed, so a Close racing a starting Serve or an Accept either sees
+	// what it started, or stops it from starting at all.
 	connMu   sync.Mutex
+	listener net.Listener
 	conns    map[net.Conn]struct{}
 	wg       sync.WaitGroup
 	closed   chan struct{}
@@ -99,9 +103,19 @@ func (f *Forwarder) ListenAndServe() error {
 // Serve runs the forwarder's accept loop on an already-open listener, such as
 // one systemd passed via socket activation (see
 // github.com/coreos/go-systemd/v22/activation). ListenAndServe is Serve over a
-// listener this Forwarder dials itself.
+// listener this Forwarder dials itself. On a forwarder already closed it closes
+// listener and returns nil without serving.
 func (f *Forwarder) Serve(listener net.Listener) error {
+	f.connMu.Lock()
+	select {
+	case <-f.closed:
+		f.connMu.Unlock()
+		_ = listener.Close()
+		return nil
+	default:
+	}
 	f.listener = listener
+	f.connMu.Unlock()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -112,13 +126,17 @@ func (f *Forwarder) Serve(listener net.Listener) error {
 				return err
 			}
 		}
-		f.wg.Add(1)
+		if !f.admit(conn) {
+			_ = conn.Close()
+			return nil
+		}
 		go f.forward(conn)
 	}
 }
 
 // Close stops the forwarder and closes active connections.
 func (f *Forwarder) Close() error {
+	f.connMu.Lock()
 	select {
 	case <-f.closed:
 	default:
@@ -127,7 +145,6 @@ func (f *Forwarder) Close() error {
 	if f.listener != nil {
 		_ = f.listener.Close()
 	}
-	f.connMu.Lock()
 	for conn := range f.conns {
 		_ = conn.Close()
 	}
@@ -146,7 +163,12 @@ func (f *Forwarder) Close() error {
 
 // Addr returns the listener address after ListenAndServe starts.
 func (f *Forwarder) Addr() net.Addr {
-	if f == nil || f.listener == nil {
+	if f == nil {
+		return nil
+	}
+	f.connMu.Lock()
+	defer f.connMu.Unlock()
+	if f.listener == nil {
 		return nil
 	}
 	return f.listener.Addr()
@@ -158,7 +180,6 @@ func (f *Forwarder) forward(local net.Conn) {
 	)
 	defer span.End()
 	defer f.wg.Done()
-	f.trackConn(local)
 	defer f.untrackConn(local)
 
 	client := bufio.NewReaderSize(local, maxRequestLine)
@@ -212,6 +233,21 @@ func (f *Forwarder) trackConn(conn net.Conn) {
 	f.connMu.Lock()
 	defer f.connMu.Unlock()
 	f.conns[conn] = struct{}{}
+}
+
+// admit tracks an accepted connection for Close to close and wait on, unless
+// the forwarder has closed.
+func (f *Forwarder) admit(conn net.Conn) bool {
+	f.connMu.Lock()
+	defer f.connMu.Unlock()
+	select {
+	case <-f.closed:
+		return false
+	default:
+	}
+	f.conns[conn] = struct{}{}
+	f.wg.Add(1)
+	return true
 }
 
 func (f *Forwarder) untrackConn(conn net.Conn) {
