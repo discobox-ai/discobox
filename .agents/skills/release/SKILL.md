@@ -375,10 +375,23 @@ gh release view vX.Y.Z --repo discobox-ai/discobox \
   --json isPrerelease,assets -q '"prerelease=\(.isPrerelease) assets=\(.assets|length)"'
 ```
 
-The assets include `install.sh` and `install.ps1`, which `release:publish`
-stamps with the tag and every CLI binary's SHA-256 just before it uploads
-(`release:installers`, ADR 0110). `edge.discobox.ai` serves the newest
-release's installer, so once the release is up it should name this tag:
+The assets include `install.sh` and `install.ps1`, which `release:stage`
+stamps with the tag and every CLI binary's SHA-256 just before the workflow
+attests every asset and `release:publish` uploads them (`release:installers`,
+ADR 0110, ADR 26-11-23-787). Confirm an asset carries its attestation:
+
+```bash
+gh release download vX.Y.Z --repo discobox-ai/discobox --pattern install.sh --dir /tmp/vX.Y.Z
+gh attestation verify /tmp/vX.Y.Z/install.sh --repo discobox-ai/discobox \
+  --signer-workflow discobox-ai/discobox/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z
+```
+
+A release re-run with `workflow_dispatch` is dispatched from `main` (the
+run's first job refuses any other branch, before anything is built) and is signed from it, so check that
+one with `--source-ref refs/heads/main`.
+
+`edge.discobox.ai` serves the newest release's installer, so once the release is up it should name this tag:
 
 ```bash
 curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
@@ -389,7 +402,9 @@ curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
 `-rc`/`-alpha` tag does not.
 
 Every step is a Taskfile target that also runs locally (ADR 0066 §1):
-`release:build`, `release:images`, `release:publish`.
+`release:build`, `release:images`, `release:stage`, `release:publish`. Only
+the attestation is a workflow step: it needs the job's OIDC token, so a
+release published from a developer's machine has none.
 
 Once a dot release's images are up, move the OCI base pin to the sandbox base
 image it published, in a PR of its own: every VM driver whose base is an OCI

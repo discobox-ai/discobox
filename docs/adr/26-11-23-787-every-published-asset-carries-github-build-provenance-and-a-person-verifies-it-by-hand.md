@@ -1,9 +1,10 @@
 # 26-11-23-787 — Every published asset carries GitHub build provenance, and a person verifies it by hand
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-23
+- Accepted by the owner by merging #1606, 2026-11-24
 - **Issue**: #1571
-- **Would supersede**: [0099](0099-the-cli-downloads-the-server-it-starts.md)
+- **Supersedes**: [0099](0099-the-cli-downloads-the-server-it-starts.md)
   §8's condition for revisiting signatures. That condition is met by §1 below,
   and §5 replaces it with a new one. §8's deferral of automatic verification
   stands, and so does the rest of 0099.

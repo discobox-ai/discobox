@@ -5,6 +5,19 @@ this directory and parent directories.
 
 Global review expectations:
 
+- A new release asset is written by `release:build` or `release:stage`, never
+  by `release:publish` or anything after it. The workflows attest
+  `build/release/bin` between `release:stage` and `release:publish`, so a file
+  that appears later is uploaded with no attestation, and nothing fails to
+  say so (ADR 26-11-23-787 §1).
+- A documented `gh attestation verify` names the signing workflow and the ref
+  it ran from (`--signer-workflow` and `--source-ref`), and takes the ref from
+  GitHub, never from the file being checked. Without both, `--repo` accepts any
+  workflow and `--signer-workflow` that workflow edited on any branch and
+  dispatched there. Even with both, a `v*` tag pushed on an unreviewed commit
+  runs that commit's `release.yml`, so the docs say the check rests on who can
+  push tags.
+
 - Keep changes scoped to the package responsibility.
 - A new shared root-module package goes under `pkg/`, not at the repository
   root; the root holds only components and `internal` (`DESIGN.md`, root module
