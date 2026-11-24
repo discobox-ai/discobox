@@ -660,7 +660,8 @@ func TestConcurrentMembersDeliveriesOfOneRemoteAllRecordIt(t *testing.T) {
 		refspecs = append(refspecs, fmt.Sprintf("refs/tags/backup/v%d", i))
 	}
 	// A record a newer delivery drops, packed, so dropping it locks packed-refs.
-	if out, err := w.push(s, path, "sbx-seed", "widget", "", append(refspecs, tip+":refs/remotes/origin/gone")...); err != nil {
+	// The tags go by one pattern: 1500 refspecs overrun Windows' command line.
+	if out, err := w.push(s, path, "sbx-seed", "widget", "", refspecs[0], refspecs[1], "refs/tags/backup/*:refs/tags/backup/*", tip+":refs/remotes/origin/gone"); err != nil {
 		t.Fatalf("push: %v\n%s", err, out)
 	}
 	if _, err := git(context.Background(), path, nil, nil, "pack-refs", "--all"); err != nil {

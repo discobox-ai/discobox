@@ -1687,7 +1687,7 @@ flowchart TD
   per cache (`Store.writeShared`): concurrent deliveries of one remote share
   those lock files, and git waits on a held one only briefly before failing
   the write. The sweep holds the cache exclusively instead. A namespace's
-  refs are not serialised: deliveries into different namespaces share no
+  refs are not serialized: deliveries into different namespaces share no
   lock file.
 - **A sandbox delivering to a discobox it created**
   ([ADR 26-09-24-630](../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md),

@@ -90,7 +90,7 @@ type cacheLocks struct {
 	// briefly before it fails the write. Sweep's deletes need it not: it
 	// holds use exclusively. A namespace's refs are not shared: deliveries
 	// into different namespaces never meet on a lock file, and two at once
-	// into one namespace are not serialised here.
+	// into one namespace are not serialized here.
 	shared sync.Mutex
 }
 
