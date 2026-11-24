@@ -14,6 +14,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -480,8 +481,7 @@ func (r *DockerSandboxRuntime) stopRefusedSandbox(ctx context.Context, sandboxID
 	}
 	slog.WarnContext(ctx, "stopping a sandbox that refuses the pool's runtime config", "sandboxId", sandboxID, "error", refusal)
 	r.publishSandboxState(ctx, sandboxID, StateStopping)
-	timeout := sandboxStopTimeoutSeconds
-	if _, err := r.client.ContainerStop(ctx, sb.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
+	if err := r.stopContainer(ctx, sandboxID, sb.ID); err != nil && !cerrdefs.IsNotFound(err) {
 		slog.WarnContext(ctx, "stop a sandbox that refuses the pool's runtime config", "sandboxId", sandboxID, "error", err)
 	}
 }
@@ -706,12 +706,69 @@ func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string)
 		return err
 	}
 	r.publishSandboxState(ctx, sandboxID, StateStopping)
-	timeout := sandboxStopTimeoutSeconds
-	_, err = r.client.ContainerStop(ctx, sb.ID, client.ContainerStopOptions{Timeout: &timeout})
-	return err
+	return r.stopContainer(ctx, sandboxID, sb.ID)
 }
 
-const sandboxStopTimeoutSeconds = 10
+// stopContainer stops a sandbox's container, and waits out one Docker gave up
+// on. Docker sends SIGTERM, then SIGKILL after sandboxStopTimeoutSeconds, then
+// waits only a fixed while for the kill's exit event; a box running nested
+// containers (docker compose in the box) can take longer than that to come
+// down, and Docker fails the stop ("tried to kill container, but did not
+// receive an exit event") although the container exits moments later. So a
+// failed stop waits for the container to be not running, for at most
+// sandboxStopExitWait within the caller's context, and a container that exits
+// in that time is stopped. One that does not is reported as Docker reports it,
+// not left reading as stopping, and the stop fails saying it did not exit.
+//
+// A missing container is returned as Docker's not-found error, unchanged. A
+// caller whose context ends first gets the error and nothing is reported: the
+// container is still on its way down, and its exit event reports it.
+func (r *DockerSandboxRuntime) stopContainer(ctx context.Context, sandboxID, containerID string) error {
+	timeout := sandboxStopTimeoutSeconds
+	_, stopErr := r.client.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+	if stopErr == nil || cerrdefs.IsNotFound(stopErr) || ctx.Err() != nil {
+		// A caller that went away leaves the stop to Docker, which carries it
+		// on; reading the container now, mid-grace, would report it running
+		// over the stopping just published.
+		return stopErr
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, sandboxStopExitWait)
+	defer cancel()
+	waited := r.client.ContainerWait(waitCtx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	select {
+	case <-waited.Result:
+		slog.InfoContext(ctx, "a sandbox's container exited after Docker gave up stopping it", "sandboxId", sandboxID, "stopError", stopErr)
+		return nil
+	case err := <-waited.Error:
+		if cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("the sandbox's container had not exited when the stop was abandoned: %w", stopErr)
+		}
+	}
+	reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), sandboxStopReportTimeout)
+	defer cancelReport()
+	if sb, err := r.GetSandbox(reportCtx, sandboxID); err == nil {
+		state := stateFromStatus(sb.Status)
+		r.publishSandboxState(reportCtx, sandboxID, state)
+		if state == StateStopped {
+			return nil
+		}
+	}
+	return fmt.Errorf("the sandbox's container did not exit after it was stopped: %w", stopErr)
+}
+
+const (
+	sandboxStopTimeoutSeconds = 10
+	// sandboxStopReportTimeout bounds reading and reporting the state a stop
+	// that failed leaves the sandbox in.
+	sandboxStopReportTimeout = 10 * time.Second
+)
+
+// sandboxStopExitWait is how long a stop Docker gave up on waits for the
+// container to exit. A variable so a test can wait less.
+var sandboxStopExitWait = time.Minute
 
 var ErrStartNotAuthorized = errors.New("explicit start is no longer authorized")
 

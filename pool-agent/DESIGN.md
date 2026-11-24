@@ -712,16 +712,19 @@ cannot overwrite a newer sync. The interval's arrival doubles as pool liveness.
 
 `starting` and `stopping` are published by the power operations themselves
 (`sandboxruntime/power.go`): by the time a Docker event arrives the transition
-is over, and a state nobody can report is a state that does not exist. The
-channel deliberately has no `failed` — an exited container looks the same
-whether it was stopped on purpose or died, so failure is a judgement about an
-operation rather than something the runtime can observe. For the same reason a
-report carries no error message: what this channel feeds is the control plane's
-runtime state field, and the field that records why something failed belongs to
-the reconciler (ADR 0034 §7). `suspended` is the one state beyond the four: a
-paused container, which Docker itself calls running, or a paused machine:
-one the pool froze (ADR 26-11-21-395) or one its provider paused
-([Machine Sandboxes](#machine-sandboxes)).
+is over, and a state nobody can report is a state that does not exist. Docker
+fails a stop whose kill's exit event is late, as for a box running nested
+containers, so a stop waits, bounded, for the container to exit and counts the
+exit as success. One still running fails, and publishes the state Docker reports
+rather than leave `stopping` behind. The channel deliberately has no `failed` —
+an exited container looks the same whether it was stopped on purpose or died, so
+failure is a judgement about an operation rather than something the runtime can
+observe. For the same reason a report carries no error message: what this
+channel feeds is the control plane's runtime state field, and the field that
+records why something failed belongs to the reconciler (ADR 0034 §7).
+`suspended` is the one state beyond the four: a paused container, which Docker
+itself calls running, or a paused machine: one the pool froze (ADR 26-11-21-395)
+or one its provider paused ([Machine Sandboxes](#machine-sandboxes)).
 
 The sandbox-agent proxy names every path it forwards
 (`server/sandbox_proxy.go`), rather than forwarding a prefix, so that the scope

@@ -290,6 +290,14 @@ outside the set it answers (`WatchSandboxVolumes`, ADR 26-10-01-876), and an
 unanswered ask is never an empty set. A new path that reclaims per-sandbox
 durable state asks the same question.
 
+## A sandbox's container is stopped through `stopContainer`
+
+Stop a sandbox's container only through `stopContainer`, never a bare
+`ContainerStop`. Why: Docker fails a stop whose kill's exit event is late (a box
+running nested compose, #1709) though the container exits moments later, and a
+bare stop returns that failure with `stopping` already published.
+`stopContainer` waits the exit out and reports what Docker then shows.
+
 ## A sandbox's proxy record
 
 - **Remove a sandbox's proxy record only under its power lock, after a look
