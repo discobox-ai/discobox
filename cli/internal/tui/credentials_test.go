@@ -117,6 +117,123 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 	}
 }
 
+// The row's mark says a person is being waited on, and the key line under the
+// list says which key answers it: a mark whose answer only F1 names is a mark
+// people attach to the box to deal with.
+func TestTheKeyLineOffersTheAnswerOnAMarkedRow(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"))
+	if hints := hintLine(m.hints()); !strings.Contains(hints, credentialsKey+" ") {
+		t.Fatalf("hints = %q, want %s offered on the row with a request waiting", hints, credentialsKey)
+	}
+	send(t, m, keyPress("down"))
+	if hints := hintLine(m.hints()); strings.Contains(hints, credentialsKey+" ") {
+		t.Fatalf("hints = %q, want %s not offered on a row with nothing waiting", hints, credentialsKey)
+	}
+}
+
+// The action menu is every action, so it carries the answer too, and choosing
+// it there asks the same question the row key does.
+func TestTheActionMenuAnswersTheMarkedRow(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress("."))
+	var offered *action
+	for i, a := range m.dialog.items {
+		if a.key == credentialsKey {
+			offered = &m.dialog.items[i]
+		}
+	}
+	if offered == nil || !offered.enabled {
+		t.Fatalf("menu = %+v, want %s offered and enabled on the marked row", m.dialog.items, credentialsKey)
+	}
+	send(t, m, keyPress(credentialsKey))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+	}
+}
+
+// With boxes waiting on several rows, the mark's own key walks them in list
+// order and wraps, so they are answered one after another rather than hunted
+// for.
+func TestTheNextRequestKeyWalksTheMarkedRows(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	second := waitingRequest()
+	second.ID, second.SandboxID = "sreq_2", "sbx_three"
+	ds.requests = []CredentialRequest{waitingRequest(), second}
+	m := newTestModel(t, ds)
+	showAllFolders(t, m)
+
+	if hints := hintLine(m.hints()); !strings.Contains(hints, nextRequestKey+" next request") {
+		t.Fatalf("hints = %q, want %s offered while another row is waiting", hints, nextRequestKey)
+	}
+	var walked []string
+	for range 3 {
+		send(t, m, keyPress(nextRequestKey))
+		cur := m.list.current()
+		if cur == nil || cur.PendingRequests == 0 {
+			t.Fatalf("cursor on %v, want a row with a request waiting", cur)
+		}
+		walked = append(walked, cur.ID)
+	}
+	if walked[0] == walked[1] || walked[2] != walked[0] {
+		t.Fatalf("walked %v, want both waiting rows in turn and then a wrap", walked)
+	}
+}
+
+// From the filter, the palette's next request lands on the list, where the
+// row it moved to is answered; over a workspace the list is not drawn, and it
+// says so rather than moving a cursor nobody can see.
+func TestTheNextRequestCommandGoesToTheList(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+	send(t, m, keyPress("tab"), keyPress("up"))
+	if m.focus != focusFilter {
+		t.Fatalf("focus = %v, want the filter", m.focus)
+	}
+	if cmd := m.dispatchConsoleCommand("next request", Sandbox{}); cmd != nil {
+		t.Fatalf("next request answered %v, want it to move the cursor quietly", cmd())
+	}
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list", m.focus)
+	}
+	if cur := m.list.current(); cur == nil || cur.ID != "sbx_one" {
+		t.Fatalf("cursor on %v, want the row with the request", cur)
+	}
+
+	m.paneBox = Sandbox{ID: "sbx_one"}
+	m.wsOpening = true
+	for _, c := range m.consoleCommands(nil) {
+		if c.id == "next request" && c.enabled {
+			t.Fatal("next request offered over a workspace whose list does not have the keys")
+		}
+	}
+}
+
+// With one row waiting and the cursor on it, there is nowhere for the key to
+// go, so the key line does not offer it.
+func TestTheNextRequestKeyIsOfferedOnlyWhereItGoes(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"))
+	if hints := hintLine(m.hints()); strings.Contains(hints, nextRequestKey+" ") {
+		t.Fatalf("hints = %q, want %s not offered on the only waiting row", hints, nextRequestKey)
+	}
+	send(t, m, keyPress("down"))
+	if hints := hintLine(m.hints()); !strings.Contains(hints, nextRequestKey+" next request") {
+		t.Fatalf("hints = %q, want %s offered away from the waiting row", hints, nextRequestKey)
+	}
+	send(t, m, keyPress(nextRequestKey))
+	if cur := m.list.current(); cur == nil || cur.ID != "sbx_one" {
+		t.Fatalf("cursor on %v, want the row with the request", cur)
+	}
+}
+
 // An ask to delegate reads like an ask to use in every field but one, so the
 // card says it before anything else about the credential.
 func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {

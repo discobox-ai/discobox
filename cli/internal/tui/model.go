@@ -2272,16 +2272,6 @@ func (m *Model) promptEnd() {
 // is in discobox-review's file lists, because there is no text to type.
 func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
-	case credentialsKey:
-		// The marked row, answered from where you saw the mark. The request
-		// belongs to one discobox, so this takes the row under the cursor and
-		// never the selection: approving a credential for several boxes at
-		// once is not a thing anyone means to do.
-		if s := m.list.current(); s != nil {
-			m.recordConsoleUse("requests")
-			return m.openCredentialDialog(*s)
-		}
-		return nil
 	case "down", "j":
 		// Visual mode holds you in the list: falling out of the bottom of a
 		// range you are still drawing would throw the range away.
@@ -2599,11 +2589,19 @@ func (m *Model) actions(targets []Sandbox) []action {
 	if one && targets[0].State == StateArchived {
 		settable, settableWhy = false, "an archived box is unarchived before its settings change"
 	}
+	// One box's request, never a selection's: approving a credential for
+	// several boxes at once is not a thing anyone means to do (ADR 0131 §1).
+	waiting, waitingWhy := one && len(m.pendingFor(targets[0])) > 0, "nothing is waiting on this box"
+	if !one {
+		waitingWhy = "takes exactly one box"
+	}
 	return []action{
 		{key: "a", press: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
 			why: attachWhy(one, targets)},
 		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
+		{key: credentialsKey, press: credentialsKey, label: "answer request", detail: "answer the credential request waiting on the box", enabled: waiting,
+			why: waitingWhy},
 		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == StateRunning, why: "takes one running box"},
 		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
@@ -2726,6 +2724,9 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	}
 	if key == settingsKey {
 		return m.askSettings(targets[0])
+	}
+	if key == credentialsKey {
+		return m.openCredentialDialog(targets[0])
 	}
 	if action, ok := interactions[key]; ok {
 		// Every interaction is drawn in the window, and a pane shows one
@@ -4683,6 +4684,9 @@ func (m *Model) hints() []hint {
 				out = append(out, keyed(a.key, a.key, a.label))
 			}
 		}
+		if m.list.pendingElsewhere() {
+			out = append(out, keyed(nextRequestKey, nextRequestKey, "next request"))
+		}
 		out = append(out, keyed("Space", " ", "select"), keyed("V", "V", "range"))
 		if m.list.showArchived {
 			out = append(out, keyed("A", "A", "hide archived"))
@@ -4979,6 +4983,7 @@ func (m *Model) helpText() string {
 		"    R      repair — rebuild the discobox in place on the",
 		"           current image, keeping its workspace and changes",
 		"    " + credentialsKey + "      answer the credential request waiting on it",
+		"    " + nextRequestKey + "      to the next discobox with a credential request waiting",
 		"    H      review and save harness settings and logins",
 		"    e      rename          E  settings",
 		"    t      stop            " + pauseKey + "  pause",
@@ -5009,7 +5014,7 @@ func (m *Model) helpText() string {
 		"      ● running    ◐ starting    ‖ paused    ○ stopped    ▪ archived",
 		"      ✗ error — the message shows under the cursor",
 		"      ↑ an upgrade to the current harness image is available",
-		"      ! an agent is waiting on a credential; " + credentialsKey + " answers it",
+		"      ! an agent is waiting on a credential; " + credentialsKey + " answers it, " + nextRequestKey + " goes to the next",
 		"",
 		"  Without color, the glyph is replaced by the state spelled out in a",
 		"  column.",

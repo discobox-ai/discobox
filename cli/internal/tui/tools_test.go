@@ -448,6 +448,25 @@ func TestKeysUnderAToolWindowAnswer(t *testing.T) {
 	})
 }
 
+// The request band is drawn over a tool's window and names its key there, so
+// that key answers it rather than saying the tool has the window.
+func TestTheLeaderAnswersARequestOverATool(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: waitingRequest().routes()}}
+		d, m := openTool(t, ds, "d")
+		if m.showingTool() == nil {
+			t.Fatal("no tool has the window")
+		}
+
+		d.key("ctrl+a")
+		d.key(credentialsLeaderKey)
+		d.wait("the question", func() bool { return onRequestCard(m) })
+	})
+}
+
 // Closing is the other button: it ends the session in the discobox, which is
 // the one thing the window does that a detach never does.
 func TestClosingAToolEndsItsSession(t *testing.T) {

@@ -39,6 +39,9 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 		if a.label == "attach" {
 			aliases = append(aliases, "open")
 		}
+		if a.label == "answer request" {
+			aliases = append(aliases, "requests", "credential requests")
+		}
 		out = append(out, consoleCommand{id: a.label, label: a.label, detail: a.detail, key: key, aliases: aliases,
 			prefixKeys: []string{key}, action: true, targeted: true, enabled: a.enabled, why: a.why,
 			run: func(m *Model, s Sandbox) tea.Cmd { return m.actOn(key, []Sandbox{s}) }})
@@ -99,7 +102,6 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 	add("servers", "servers", "choose the server, folder or tags", "", []string{"tags", "filters"}, false, func(m *Model, _ Sandbox) tea.Cmd { m.dialog = m.filterDialog(); return nil })
 	add("all", "all discoboxes", "show the console list", "", []string{"boxes"}, false, func(m *Model, _ Sandbox) tea.Cmd { return m.showAllBoxes() })
 	add("services", "services", "view and manage this box's services", "", nil, true, func(m *Model, s Sandbox) tea.Cmd { return tea.Batch(m.switchTo(s), m.openServices()) })
-	add("requests", "credential requests", "answer this box's credential requests", credentialsKey, []string{"requests"}, true, func(m *Model, s Sandbox) tea.Cmd { return m.openCredentialDialog(s) })
 	add("rejections", "rejected credentials", "remedy a refused credential", rejectedKey, []string{"rejections"}, true, func(m *Model, s Sandbox) tea.Cmd { return m.openRejectedRemedy(s) })
 	add("files", "files changed", "review the pull request's changes", pullFilesKey, []string{"diff"}, true, func(m *Model, s Sandbox) tea.Cmd {
 		switchCmd := m.switchTo(s)
@@ -126,6 +128,17 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 			return status("showing archived discoboxes")
 		}
 		return status("hiding archived discoboxes")
+	})
+	// The mark's own key: the next row wearing it, so a list with several
+	// boxes waiting is answered one after another without hunting for them.
+	add("next request", "next request", "move to the next box with a credential request waiting", nextRequestKey, []string{"waiting"}, false, func(m *Model, _ Sandbox) tea.Cmd {
+		if !m.list.nextPending() {
+			return status("nothing is waiting on a credential")
+		}
+		// From the filter too: the cursor it moved is the list's, and a row
+		// moved to is one to answer.
+		m.focusListForMouse()
+		return nil
 	})
 	add("options", "run options", "choose defaults for the next discobox", optionsKey, []string{"options"}, false, func(m *Model, _ Sandbox) tea.Cmd {
 		m.optionsOpen = true
@@ -181,6 +194,13 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 			c.prefixKeys = nil
 		case "archived":
 			c.prefixKeys = nil
+		case "next request":
+			c.prefixKeys = nil
+			// It moves the list's cursor, which a workspace covers unless the
+			// list beside it has the keys.
+			if (m.inPanes() || m.wsOpening || m.pageOpen()) && !m.listHasKeys() {
+				c.contextWhy = "moves the list's cursor; use it from the list"
+			}
 		case "help":
 			c.keyAliases = []string{"?"}
 		case "archive":
@@ -196,9 +216,8 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 				}
 			}
 
-		case "requests":
-			c.enabled = box != nil && len(m.pendingFor(*box)) > 0
-			c.why = "nothing waiting on this discobox"
+		case "answer request":
+			// Behind the leader it is g, not C: see credentialsLeaderKey.
 			c.prefixKeys = []string{credentialsLeaderKey}
 		case "rejections":
 			if box != nil {
