@@ -79,13 +79,8 @@ func pushableNow(sb apimodel.Sandbox) bool {
 	if sandboxOwedSource(sb) || sandboxAwaitingSource(sb) {
 		return false
 	}
-	switch sb.Runtime.DisplayState.Or("") {
-	case "archived", "archiving":
-		// No container for the git route to start, so the push would fail in
-		// the proxy with nothing useful to say.
-		return false
-	}
-	return true
+	// The push would fail in the proxy with nothing useful to say.
+	return !sandboxArchived(sb)
 }
 
 // autoPushable reports whether one source is one an automatic push may send.

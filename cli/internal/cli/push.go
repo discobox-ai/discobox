@@ -158,10 +158,9 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 	if err != nil {
 		return err
 	}
-	// An archived sandbox has no container for the git route to start, so the
-	// push would fail in the proxy with nothing useful to say.
-	if state := sandbox.Runtime.DisplayState.Or(""); state == "archived" || state == "archiving" {
-		return fmt.Errorf("the discobox is %s; unarchive it before pushing to its origin", state)
+	// The push would fail in the proxy with nothing useful to say.
+	if sandboxArchived(*sandbox) {
+		return errors.New("the discobox is archived; unarchive it before pushing to its origin")
 	}
 	host, err := hostid.Get()
 	if err != nil {
@@ -269,6 +268,16 @@ func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *ap
 // given a source it cannot fetch itself.
 func sandboxAwaitingSource(sandbox apimodel.Sandbox) bool {
 	return sandbox.Runtime.State == apiclientgen.SandboxRuntimeStateAwaitingSource
+}
+
+// sandboxArchived reports whether the discobox is archived by intent, which
+// is what the server refuses an action into it on. That is its desired state,
+// not the state it is displayed in: one whose unarchive is recorded but not yet
+// carried out still displays archived and takes a push, and one whose archive
+// failed displays error and is refused. `discobox push` and the automatic push
+// both decide by it.
+func sandboxArchived(sandbox apimodel.Sandbox) bool {
+	return sandbox.Runtime.DesiredState == apiclientgen.SandboxRuntimeDesiredStateArchived
 }
 
 // sandboxOwedSource reports whether the discobox is owed its delivery: it has
