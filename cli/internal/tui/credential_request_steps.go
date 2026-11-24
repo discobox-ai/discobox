@@ -61,11 +61,34 @@ func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
 	return msg.then(msg.output, msg.err)
 }
 
+// takenNameNotice says that the name a request asked for is the project's
+// already, what the new credential will be named instead, and whether the one
+// holding that name could answer the request in its place.
+func takenNameNotice(req CredentialRequest, secrets []Secret, held []HeldGrant, asked, suggested string) string {
+	text := "The project already has a credential named “" + asked + "”, so this one will be named “" + suggested + "” unless you rename it."
+	holder, pinned := heldBy(held)
+	for _, s := range secrets {
+		if strings.TrimSpace(s.Name) != strings.TrimSpace(asked) {
+			continue
+		}
+		switch cannotAnswer(s, req, holder, pinned, true) {
+		case "":
+			return text + " Esc goes back to choose “" + asked + "” instead."
+		case notCovered:
+			return text + " “" + asked + "” cannot answer this request: its routes do not cover it."
+		}
+		return text + " “" + asked + "” cannot answer this request."
+	}
+	return text
+}
+
 // enterNewCredential is step 2 for a credential the project does not hold
 // yet: its name, filled from the request, and its value. back returns to approval.
 // Nothing is stored here; the value is held only by this card.
 func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, back func() tea.Cmd, done func(requestAnswer) tea.Cmd) tea.Cmd {
-	name := textRow("name", "Name", "what you'll know it by", freeSecretName(secrets, credentialName(req)))
+	asked := credentialName(req)
+	suggested := freeSecretName(secrets, asked)
+	name := textRow("name", "Name", "what you'll know it by", suggested)
 	name.required = "give it a name"
 	source := pickRow("source", "Get it by",
 		choice{key: "paste", label: "Paste a value"},
@@ -202,6 +225,14 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 	})
 	d.titleRight = "new credential"
 	d.body = m.credentialSentence(req)
+	// The card opens on the value, so a name changed to one the project does
+	// not hold yet is said where it is read, before anything is stored under
+	// it. Going back to the one already named is offered only when the
+	// approval card's credential picker lists it: otherwise it is why this
+	// card was opened at all.
+	if suggested != asked {
+		d.body += "\n\n" + takenNameNotice(req, secrets, held, asked, suggested)
+	}
 	d.keys = []hint{pressing("Enter continues", "enter"), pressing("Esc goes back", "esc")}
 	m.withRawRequest(d, req)
 	d.onCancel = back

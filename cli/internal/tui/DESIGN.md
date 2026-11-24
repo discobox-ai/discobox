@@ -607,7 +607,9 @@ flowchart LR
   route table follows that choice. Edits use the configured editor and
   return to the same card. Roles always describe the box's request.
 
-- **New credential.** Name (the one asked for, or the first free one), then
+- **New credential.** Name (the one asked for, or the first free one,
+  `name-2`…; the card opens on the value, so its body then says the name asked
+  for is taken and what this one will be named, before anything is stored), then
   "Paste a value" or "Output of a command" (`gh auth token` its example).
   The sentinel row shows, dimmed, the format the value would be read as
   (`secretformat.Describe`), and Enter on it opens a card listing the syntax
