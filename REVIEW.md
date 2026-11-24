@@ -34,6 +34,13 @@ Global review expectations:
   generator not written in Go cannot import it and keeps the same rules
   itself, as `scripts/build-harness-settings.mjs` does (`writeIfChanged`); a
   change to one is made to the other.
+- A hook in `.discobox/hooks` that lists the inputs of what it runs
+  (`30-generate.sh` for `task generate`) is changed with them: moving one,
+  adding a generator, a `//go:generate` line or a file a generator reads,
+  updates the pattern in the same change. `test/repohooks` fails on a listed
+  entry that matches no tracked file, never on an input left out. The
+  generate hook watched three directories that no longer existed, and never
+  fired, until #21.
 - A websocket keepalive must not call its peer dead for a ping left
   unanswered while this end was not reading. coder/websocket reads a pong only
   inside a `Read`, so a reader stopped behind a paused consumer (`| less`) holds
