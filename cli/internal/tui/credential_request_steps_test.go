@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -585,6 +586,54 @@ func TestANewCredentialIsStoredOnItsHostsAndApproved(t *testing.T) {
 	}
 	if ds.approvals[0].SecretID != "sec_new" {
 		t.Fatalf("approval = %#v, want it made with the credential stored", ds.approvals[0])
+	}
+}
+
+// A new credential whose name the project already holds is named apart, and
+// the card says so before anything is stored, offering the one holding the
+// name only when it could answer; a name that is free says nothing.
+func TestANewCredentialNamedApartSaysSo(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+	openApproval(t, m, "new")
+	if text := dialogText(m); strings.Contains(text, "already has a credential") {
+		t.Fatalf("card = %q, want no notice for a name the project does not hold", text)
+	}
+
+	for _, tc := range []struct {
+		host    string
+		want    string
+		offered bool
+	}{
+		{"example.com", "“github” cannot answer this request: its routes do not cover it.", false},
+		{"api.github.com", "Esc goes back to choose “github” instead.", true},
+	} {
+		m, ds := sourceWithRequest(t)
+		ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_old", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{tc.host}}}})
+		openApproval(t, m, "new")
+		if !onStep(m, "new credential") {
+			t.Fatalf("%s: dialog = %s, want the new credential", tc.host, describe(m.dialog))
+		}
+		if got := m.dialog.form.value("name"); got != "github-2" {
+			t.Fatalf("%s: name = %q, want one the project does not hold", tc.host, got)
+		}
+		// Read as one sentence: the card wraps it across its rows.
+		text := strings.Join(strings.Fields(strings.ReplaceAll(dialogText(m), "│", " ")), " ")
+		if !strings.Contains(text, "already has a credential named “github”, so this one will be named “github-2”") || !strings.Contains(text, tc.want) {
+			t.Fatalf("%s: card = %q, want the name taken, the new one, and %q", tc.host, text, tc.want)
+		}
+		if len(ds.createdSecrets) != 0 {
+			t.Fatalf("%s: created = %v, want nothing stored yet", tc.host, ds.createdSecrets)
+		}
+		// What the notice says of going back is what the approval card offers.
+		send(t, m, keyPress("esc"))
+		if !onRequestCard(m) {
+			t.Fatalf("%s: dialog = %s, want the approval card back", tc.host, describe(m.dialog))
+		}
+		offered := slices.ContainsFunc(m.dialog.form.rows[0].choices, func(c choice) bool { return c.key == "sec_old" })
+		if offered != tc.offered {
+			t.Fatalf("%s: credential picker offers “github” = %v, want %v", tc.host, offered, tc.offered)
+		}
 	}
 }
 

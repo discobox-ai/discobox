@@ -494,6 +494,12 @@
   sends neither scope nor override routes. A scope wider than the request
   requires a deliberate selection, and requested roles only describe the
   original ask.
+- **A card points back to a choice only when that choice can be taken.**
+  The new-credential card's notice of a taken name (`takenNameNotice`)
+  offers the secret holding it only when `cannotAnswer` passes it, the test
+  the approval card's credential picker lists by. A person is often on that
+  card because that very secret cannot answer, and "go back and choose it"
+  sent them looking for a credential the picker does not offer.
 - **An add/replace line names the scope `bindingplan` replaces, never just
   the asked variable** (`useMode`, `delegateMode`). A use part's replacement
   is the box's whole use of the credential, in every variable
