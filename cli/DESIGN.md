@@ -99,7 +99,17 @@ transport helpers where OpenAPI does not model the stream.
   the server's, which is asked for on its health endpoint
   (`endpoint.ProbeHealth`) with autolaunch off: a server that does not answer is
   `unavailable` and the command still succeeds, and none is ever started to
-  answer. The client's line is written first, before the server is asked. The
+  answer. When nothing is listening on the local endpoint
+  (`endpoint.ListenerGone`), the line also says why (`localServerHint`): not
+  downloaded yet, or there and not running, with what downloads or starts it
+  under this invocation's autolaunch setting. Which of the two comes from the
+  same decision `resolve` acts on (`serverResolver.choose`, read by
+  `needsDownload`), and nothing is downloaded or written to answer it. No hint
+  for a remote server; for a probe that timed out, was refused permission, or
+  was answered by something that is not a Discobox server, since something is
+  there; or for a build with nothing to stage from, where "stage it" would send
+  somebody to a command that fails. The client's line is written first, before
+  the server is asked. The
   wait for the server's is bounded at five seconds around the whole attempt
   rather than the request alone, because over iroh preparing this machine's
   identity and binding the transport happens on a context of its own and is most

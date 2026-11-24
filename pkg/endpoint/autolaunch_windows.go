@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// errConnRefused is a refused connection, for listenerGone. Winsock reports
+// errConnRefused is a refused connection, for ListenerGone. Winsock reports
 // it as a code of its own, which syscall.ECONNREFUSED does not match on Windows.
 //
 // Windows refuses a closed loopback TCP port only after retrying for about two

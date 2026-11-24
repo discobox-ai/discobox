@@ -99,6 +99,10 @@ func (a *App) serverVersion(ctx context.Context) string {
 			return
 		}
 		status, err := endpoint.ProbeHealth(ctx, baseURL, client)
+		if err != nil && endpoint.ListenerGone(err) {
+			answered <- serverVersionText(false, "") + a.localServerHint(ctx)
+			return
+		}
 		answered <- serverVersionText(err == nil, status.Version)
 	}()
 	select {
@@ -109,10 +113,44 @@ func (a *App) serverVersion(ctx context.Context) string {
 	}
 }
 
+// localServerHint says why a local server did not answer, when the machine
+// says so: one that is not downloaded yet, or one that is there and not
+// running, and what starts it. Right after an install both are expected, and
+// a bare "unavailable" read as an error.
+//
+// It is only for the local endpoint, the one this CLI can stage and start: a
+// remote server that does not answer is not fixed by downloading one here. It
+// reads the disk and nothing else — a version neither downloads nor starts a
+// server (printVersion). Only a probe that found nothing listening
+// (endpoint.ListenerGone) gets it: one that timed out, was refused permission,
+// or was answered by something that is not a Discobox server found something
+// there, and "not running" would be false.
+func (a *App) localServerHint(ctx context.Context) string {
+	if !a.serverEndpoint().AutoLaunchable() {
+		return ""
+	}
+	download, known := a.serverResolver(nil).needsDownload(ctx)
+	if !known {
+		return ""
+	}
+	autoLaunch := shouldAutoLaunchServer(a.autoStart)
+	switch {
+	case download && autoLaunch:
+		return ": not downloaded yet (the first command that needs it downloads it, or run `discobox admin server stage`)"
+	case download:
+		return ": not downloaded yet (download it with `discobox admin server stage`, start it with `discobox admin server`)"
+	case autoLaunch:
+		return ": not running (the first command that needs it starts it)"
+	default:
+		return ": not running (start it with `discobox admin server`)"
+	}
+}
+
 // serverVersionText is how a server's version is written for a reader: what it
 // reported, "unknown" for a server that answered without saying, and
 // "unavailable" when no server answered at all. `admin server status` writes it
-// the same way.
+// the same way, without localServerHint: its connect row carries its own
+// remedy for a local endpoint nothing is listening on.
 func serverVersionText(answered bool, reported string) string {
 	switch {
 	case !answered:

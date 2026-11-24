@@ -16,7 +16,7 @@ import (
 	"syscall"
 )
 
-// errConnRefused is a refused connection, for listenerGone.
+// errConnRefused is a refused connection, for ListenerGone.
 var errConnRefused error = syscall.ECONNREFUSED
 
 // backlogFull reports a unix socket dial refused because its listener's
