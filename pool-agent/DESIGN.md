@@ -925,7 +925,14 @@ other spec change through one comparison (ADR 0017 §5). A container carrying no
 fingerprint label predates that label; it is compared against the pinned image
 digest instead, so a missing label never reads as "converged". The old
 container is removed only once the new image is on the host, so a re-pin whose
-image cannot be obtained leaves the sandbox the container it had.
+image cannot be obtained leaves the sandbox the container it had. It is removed
+with its anonymous volumes, the sandbox base image's container-runtime state
+(`/var/lib/docker`, `/var/lib/containerd`, Kubernetes'): the replacement starts
+with none, nested images and containers included
+([ADR 26-11-23-993](../docs/adr/26-11-23-993-container-runtime-state-is-on-the-boxs-root-never-on-a-declared-volume.md)
+§3). A base image the host does not have yet, as at an upgrade, is a moved
+base (`deliveredMoved`), so a moved pin never restarts a box onto a base it
+does not run.
 
 Separately, persisted per-sandbox proxy material supplies a periodic
 level-triggered sweep that reclaims the proxy record of sandboxes that no longer
@@ -1175,8 +1182,8 @@ flowchart LR
   **A placement the machine restarts onto** — the first in an instance (the
   pool's record names none in it, a new root's included), or one whose
   agent, pins or bootstrap moved — applies nothing and records nothing: the
-  machine's provider's dockerd and containerd already run on the paths its
-  volumes are mounted onto, which only the unit may mount, at a boot before
+  machine's own services already run on the paths its volumes are mounted
+  onto, which only the unit may mount, at a boot before
   them ([ADR 26-11-02-023](../docs/adr/26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
   §3). After the restart the agent starts from its own units, as a
   container's does, and the placement is made again, applying nothing, and
@@ -2242,7 +2249,7 @@ flowchart LR
   sandboxes it issued material for, which the orphan reaper reads.
 - The pool host provisions five host-backed primary volumes and mounts them at
   `/.discobox/{data,cache,config,sources,secrets}`; it does not decide
-  in-sandbox paths (home, `/var/lib/docker`, source targets). `data`, `config`,
+  in-sandbox paths (home, `/var/lib/discobox`, source targets). `data`, `config`,
   `sources`, and `secrets` are per-sandbox; `cache` is shared across the pool's
   sandboxes in this project — the whole tree is bound in, and the sandbox agent
   partitions it by the uid it resolved, except for the paths an image declares
@@ -2822,7 +2829,10 @@ any container work, so a malformed request costs nothing.
   a delete; an export carries the volumes only, so not it. The next container built for the sandbox is
   given it, into its layer, with its owners, before it starts
   (`restoreWorkingRoot`), and the stash is removed; boot moves it onto the
-  data root. Nothing the box wrote is extracted on the pool host.
+  data root. Nothing the box wrote is extracted on the pool host. Its
+  container-runtime state is not carried: every one of these removals takes
+  the container's anonymous volumes with it, so nested Docker starts empty
+  (ADR 26-11-23-993 §3).
 - An image the pool cannot obtain is `ErrImageUnavailable`: the daemon
   refuses the base image's pull as not found before any progress, or the
   sandbox is pinned to no platform (`ErrUndelivered`). An unauthorized or

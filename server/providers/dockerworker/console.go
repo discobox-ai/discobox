@@ -94,7 +94,7 @@ func (e *Engine) runConsoleCommand(ctx context.Context, lease *DockerClientLease
 	cleanup := func() {
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_, _ = cli.ContainerRemove(cleanCtx, created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = cli.ContainerRemove(cleanCtx, created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}
 	attached, err := cli.ContainerAttach(ctx, created.ID, client.ContainerAttachOptions{Stream: true, Stdin: true, Stdout: true, Stderr: true})
 	if err != nil {
@@ -162,7 +162,7 @@ func (e *Engine) ensureConsoleContainer(ctx context.Context, lease *DockerClient
 		// while that is still the best available, so the one-console-per-host
 		// promise — and any capture running in it — survives a registry outage.
 		if e.shouldReplaceConsoleContainer(existing.Container, image) {
-			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 				return "", err
 			}
 			return e.createConsoleContainer(ctx, cli, provider, pool, name, image)
@@ -301,7 +301,7 @@ func (e *Engine) shouldReplaceConsoleContainer(existing container.InspectRespons
 // part of pool teardown: the console is the one container the engine creates
 // that no reconcile would otherwise account for.
 func (e *Engine) removeConsoleContainer(ctx context.Context, cli *client.Client, poolID string) error {
-	if _, err := cli.ContainerRemove(ctx, ConsoleContainerName(poolID), client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := cli.ContainerRemove(ctx, ConsoleContainerName(poolID), client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return err
 	}
 	return nil

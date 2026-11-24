@@ -392,6 +392,9 @@ func TestTheSweepRemovesWhatABuildLeft(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"Id":"ctr_treeless","Names":["/discobox-snapshot-pool_1-` + strings.Repeat("f", 24) + `"]},{"Id":"ctr_live","Names":["/discobox-snapshot-pool_1-` + key[:24] + `"]}]`))
 		case r.Method == http.MethodDelete && target == "discobox-snapshot-pool_1-"+strings.Repeat("a", 24):
 			http.Error(w, `{"message":"removal in progress"}`, http.StatusInternalServerError)
+		case r.Method == http.MethodDelete && r.URL.Query().Get("v") != "1":
+			t.Errorf("%s removed without its anonymous volumes", target)
+			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete && target == "discobox-snapshot-pool_1-left":
 			removed = append(removed, target)
 			http.Error(w, `{"message":"No such container"}`, http.StatusNotFound)

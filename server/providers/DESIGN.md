@@ -560,13 +560,17 @@ Pool runtime lifecycle is not the same as pool row deletion. The engine
 replaces the pool-agent container (and a VM driver may replace the VM) for an
 existing pool during reconciliation or repair, but the pool row and pool ID
 are preserved: recovery is strictly in-place, and pool-local state survives in
-the bind-mounted state trees. A pool container mounts no volume: no daemon runs
-in it (its agent drives the hosting daemon through the bound socket, and
+the bind-mounted state trees. A pool container mounts no named volume: no
+daemon runs in it (its agent drives the hosting daemon through the bound socket, and
 BuildKit keeps its state in `PoolBuild`). Pools made before that carry an empty
 legacy `discobox-pool-<id>-docker` volume once mounted at `/var/lib/docker`,
 which the engine removes before it creates the pool's next container; dropping
 the mount bumped the layout version in the config revision, so drift recreates
-every older pool's container once. Pool row
+every older pool's container once. It runs the sandbox base image, whose
+`VOLUME`s for container-runtime state
+([ADR 26-11-23-993](../../docs/adr/26-11-23-993-container-runtime-state-is-on-the-boxs-root-never-on-a-declared-volume.md) §4)
+give it, and every container on that image (the console, a state removal),
+empty anonymous volumes; each removal passes `RemoveVolumes`. Pool row
 deletion is intent-based and allowed only after
 the control plane proves no sandbox is assigned to the pool.
 

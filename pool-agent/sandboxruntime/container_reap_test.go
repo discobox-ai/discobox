@@ -96,6 +96,11 @@ func newContainerDaemon(t *testing.T, sandboxIDs ...string) (*DockerSandboxRunti
 				http.NotFound(w, r)
 				return
 			}
+			// The sandbox image's VOLUMEs go with the container (ADR
+			// 26-11-23-993 §3).
+			if r.URL.Query().Get("v") != "1" {
+				t.Errorf("container %s removed without its anonymous volumes", ctrID)
+			}
 			delete(d.containers, ctrID)
 			w.WriteHeader(http.StatusNoContent)
 		default:

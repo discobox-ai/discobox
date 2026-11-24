@@ -329,6 +329,14 @@ func (r *DockerSandboxRuntime) deliveredMoved(ctx context.Context, existing *San
 		return movedNothing, err
 	}
 	base, err := r.client.ImageInspect(ctx, r.sandboxBaseImage)
+	if cerrdefs.IsNotFound(err) {
+		// Not on the host, as at an upgrade before anything pulled it: no
+		// container runs it, so it moved, and only a new container takes it.
+		// A restart would record the old container as booted on these pins
+		// and never move it, and an old base lacks what the new pins rely on
+		// (its runtime-state VOLUMEs, ADR 26-11-23-993 §2).
+		return movedBase, nil
+	}
 	if err != nil {
 		// A base image this pool cannot read now is no move of it: the
 		// pins still move, by a restart.

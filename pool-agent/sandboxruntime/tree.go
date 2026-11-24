@@ -239,7 +239,7 @@ func (r *DockerSandboxRuntime) runExportMode(ctx context.Context, sandboxID stri
 	remove := func() {
 		// Not the request's context: the container has to go whether or not
 		// whoever asked for the export is still there.
-		if _, err := r.client.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		if _, err := r.client.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			slog.WarnContext(ctx, "could not remove an export container", "sandboxId", sandboxID, "container", created.ID, "error", err)
 		}
 	}
@@ -342,7 +342,7 @@ func (r *DockerSandboxRuntime) removeFinishedExport(ctx context.Context, name st
 	if inspected.Container.State != nil && inspected.Container.State.Running {
 		return ErrExportInProgress
 	}
-	_, err = r.client.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true})
+	_, err = r.client.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	if err != nil && !cerrdefs.IsNotFound(err) {
 		return err
 	}

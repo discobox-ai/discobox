@@ -28,6 +28,11 @@ func labelDaemon(t *testing.T, labels map[string]string) (*DockerSandboxRuntime,
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/ctr_1/json"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "ctr_1", "Config": map[string]any{"Labels": labels}})
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/containers/ctr_1"):
+			// A rebuild's replacement starts with empty runtime state: the
+			// old container's anonymous volumes go with it (ADR 26-11-23-993 §3).
+			if r.URL.Query().Get("v") != "1" {
+				t.Errorf("container removed for a rebuild without its anonymous volumes")
+			}
 			removed.Store(true)
 			w.WriteHeader(http.StatusNoContent)
 		default:

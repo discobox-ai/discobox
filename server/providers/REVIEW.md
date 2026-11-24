@@ -141,11 +141,16 @@
   `Engine.RemovePoolRuntime`, never a bare `ContainerRemove`: an older pool's
   legacy volume is *named*, which `RemoveVolumes` leaves, and the console and
   network go with it (#32, missed on both paths).
-- Do not mount a volume into the pool container. No daemon runs in it: the
+- Do not mount a named volume into the pool container. No daemon runs in it: the
   agent drives the hosting daemon through the bound socket, and pool state
   belongs in a `layout` tree, where `RemovePool` and the reapers can find it.
   The `/var/lib/docker` volume pools once mounted held nothing and leaked on
   every delete (#32).
+- Every `ContainerRemove` of a container on the sandbox base image — a
+  sandbox, a pool, its console, a snapshot build, an export, a one-shot —
+  passes `RemoveVolumes`. The image's `VOLUME`s for container-runtime state
+  (ADR 26-11-23-993) give each such container anonymous volumes, which a
+  removal without it leaks.
 - What `RemovePool` deletes of a pool's state comes from `layout.PoolTrees`,
   never a list of its own. Only an explicit pool deletion removes them
   (identity included) and at once; the watcher's orphan path must not, since a

@@ -528,7 +528,7 @@ func (r *DockerSandboxRuntime) removeForRebuild(ctx context.Context, sb *Sandbox
 	if err := r.stashWorkingRoot(ctx, sb.SandboxID, sb.ID); err != nil {
 		return err
 	}
-	if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove sandbox container for a rebuild: %w", err)
 	}
 	// The control plane learns a container is gone from a complete sync's
