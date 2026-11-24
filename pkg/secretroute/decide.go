@@ -492,7 +492,8 @@ type matcher struct {
 	bodyMethodsRead  bool
 	bodyMethods      []string
 	bodyMethodsState bodyState
-	bodyNotRead      bool // the body _method is unknown because Body returned false
+	bodyNotRead      bool   // the body _method is unknown because Body returned false
+	bodyUnparsed     string // why a body that was read names no known _method, for a reason
 }
 
 // namedMethod is a method a request names, and what named it: "" for the
@@ -590,7 +591,7 @@ func (m *matcher) methodsMatch(methods []string, blocked bool) (bool, string) {
 		case state != bodyKnown && m.bodyNotRead:
 			return true, "a POST whose body could not be read for its _method"
 		case state != bodyKnown:
-			return true, "a POST whose body's _method could not be parsed"
+			return true, "a POST whose body's _method could not be parsed: " + m.bodyUnparsed
 		}
 		return false, ""
 	}
@@ -616,7 +617,7 @@ func (m *matcher) methodsMatch(methods []string, blocked bool) (bool, string) {
 	if m.bodyNotRead {
 		return false, unreadableBody
 	}
-	return false, "cannot tell what method the body's _method names: it does not parse, or names one twice"
+	return false, "cannot tell what method the body's _method names: " + m.bodyUnparsed
 }
 
 // bodyState is what is known of the _method a request's body carries.
@@ -681,21 +682,36 @@ func (m *matcher) bodyMethodOverrides() ([]string, bodyState) {
 	}
 	var methods []string
 	state := bodyKnown
+	var failed []string
 	if form {
 		formMethods, ok := formMethodOverride(string(body))
 		methods = append(methods, formMethods...)
 		if !ok {
-			state = bodyUnknown
+			failed = append(failed, "does not parse as a URL-encoded form")
 		}
 	}
 	if isJSON {
 		jsonMethods, ok := jsonMethodOverride(body)
 		methods = append(methods, jsonMethods...)
 		if !ok {
-			state = bodyUnknown
+			failed = append(failed, "does not parse as JSON, names _method more than once, or gives it a value that is not a string")
 		}
 	}
+	if len(failed) > 0 {
+		state = bodyUnknown
+		m.bodyUnparsed = describeContentType(contentTypes) + ", and the body " + strings.Join(failed, ", and ")
+	}
 	return methods, state
+}
+
+// describeContentType names the Content-Type a body was read for its _method
+// by, as the request sent it, for a reason: a client whose form or JSON the
+// proxy cannot read needs to know which it was taken for (#1746).
+func describeContentType(contentTypes []string) string {
+	if len(contentTypes) == 0 {
+		return "it has no Content-Type, so it is read as a URL-encoded form"
+	}
+	return "its Content-Type is " + Safe(strings.Join(contentTypes, ", "))
 }
 
 // formMethodOverride reads every _method of a URL-encoded body, false when

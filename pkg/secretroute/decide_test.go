@@ -411,6 +411,29 @@ func TestDecideReasons(t *testing.T) {
 			"route POST api.x.test/things/* does not allow DELETE, named by _method in the body",
 		},
 		{
+			// A body whose _method does not parse names the Content-Type it
+			// was read by, so a client can tell what it was taken for.
+			[]string{"POST api.x.test/things/*"},
+			withBody(get("POST", "https://api.x.test/things/1"), http.Header{"Content-Type": {"application/x-www-form-urlencoded"}}, `{"a":"100%"}`, true),
+			"route POST api.x.test/things/* cannot tell what method the body's _method names: its Content-Type is application/x-www-form-urlencoded, and the body does not parse as a URL-encoded form",
+		},
+		{
+			[]string{"POST api.x.test/things/*"},
+			withBody(get("POST", "https://api.x.test/things/1"), nil, "a=%zz", true),
+			"route POST api.x.test/things/* cannot tell what method the body's _method names: it has no Content-Type, so it is read as a URL-encoded form, and the body does not parse as a URL-encoded form",
+		},
+		{
+			// The Content-Type is the sandbox's, so it is escaped.
+			[]string{"POST api.x.test/things/*"},
+			withBody(get("POST", "https://api.x.test/things/1"), http.Header{"Content-Type": {"application/json; x=\x1b]0"}}, `{"_method":1}`, true),
+			`route POST api.x.test/things/* cannot tell what method the body's _method names: its Content-Type is "application/json; x=\x1b]0", and the body does not parse as JSON, names _method more than once, or gives it a value that is not a string`,
+		},
+		{
+			[]string{"api.x.test/**", "DELETE api.x.test/**=blocked"},
+			withBody(get("POST", "https://api.x.test/a"), jsonType, `{"_method":`, true),
+			"route DELETE api.x.test/**=blocked refuses a POST whose body's _method could not be parsed: its Content-Type is application/json, and the body does not parse as JSON, names _method more than once, or gives it a value that is not a string",
+		},
+		{
 			[]string{"POST api.x.test/things/*"},
 			withBody(get("POST", "https://api.x.test/things/1"), nil, "", false),
 			"route POST api.x.test/things/* needs the body, which could not be read (too large, of undeclared length, or in an encoding the proxy cannot decode)",
