@@ -16,7 +16,10 @@ import (
 type Provider struct {
 	Name   string
 	Prefix string // literal prefix used to recognize a value
-	Format string // generative template
+	Format string // generative template; empty when Tail is set
+	// Tail is the charset of a key whose length varies: the template is
+	// Prefix and one Tail token as long as the value's own tail.
+	Tail string
 }
 
 // providers is the seed table, ordered longest-prefix-first so specific
@@ -33,12 +36,25 @@ type Provider struct {
 // Code tells an OAuth access token from an API key by it, so a sentinel for a
 // subscription login must read `sk-ant-oat01-` and one for a Console key
 // `sk-ant-api03-`.
+//
+// A Stripe key's mode is part of its prefix: code and SDKs tell a test key
+// from a live one by `sk_test_` / `sk_live_` (`rk_` restricted, `pk_`
+// publishable), where Infer would keep only `sk_`. Stripe keys come in more
+// than one length (a 24-character tail, or the current 99), so those rows fix
+// the prefix and the tail's alphanumeric charset, and take its length from the
+// value.
 var providers = []Provider{
 	{Name: "anthropic-api-key", Prefix: "sk-ant-api03-", Format: "sk-ant-api03-{base64url:95}"},
 	{Name: "anthropic-oauth", Prefix: "sk-ant-oat01-", Format: "sk-ant-oat01-{base64url:95}"},
 	{Name: "anthropic", Prefix: "sk-ant-", Format: "sk-ant-{alnum:5}-{base64url:95}"},
 	{Name: "openai-project", Prefix: "sk-proj-", Format: "sk-proj-{base64url:48}"},
 	{Name: "github-pat", Prefix: "github_pat_", Format: "github_pat_{base62:82}"},
+	{Name: "stripe-secret-test", Prefix: "sk_test_", Tail: "alnum"},
+	{Name: "stripe-secret-live", Prefix: "sk_live_", Tail: "alnum"},
+	{Name: "stripe-restricted-test", Prefix: "rk_test_", Tail: "alnum"},
+	{Name: "stripe-restricted-live", Prefix: "rk_live_", Tail: "alnum"},
+	{Name: "stripe-publishable-test", Prefix: "pk_test_", Tail: "alnum"},
+	{Name: "stripe-publishable-live", Prefix: "pk_live_", Tail: "alnum"},
 	{Name: "slack-bot", Prefix: "xoxb-", Format: "xoxb-{digits:13}-{digits:13}-{base62:24}"},
 	{Name: "aws-access-key", Prefix: "AKIA", Format: "AKIA{base32:16}"},
 }
@@ -56,10 +72,17 @@ func MatchProvider(value string) (Provider, bool) {
 // Describe returns a format template for a credential value: the seed
 // provider's when one recognizes it, and structural inference otherwise.
 func Describe(value string) string {
-	if p, ok := MatchProvider(value); ok {
+	p, ok := MatchProvider(value)
+	switch {
+	case !ok:
+		return Infer(value).String()
+	case p.Tail == "":
 		return p.Format
+	case len(value) > len(p.Prefix):
+		return render([]part{{literal: p.Prefix}, {charset: p.Tail, length: len(value) - len(p.Prefix)}})
+	default:
+		return Infer(value).String()
 	}
-	return Infer(value).String()
 }
 
 var (
