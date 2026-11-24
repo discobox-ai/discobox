@@ -13,6 +13,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Kind is what a reference's location names.
@@ -78,7 +80,43 @@ func Parse(value string) (Ref, error) {
 	default:
 		r.Kind = Directory
 	}
+	// A reference that names a repository holds no unprintable character:
+	// Git refuses a control character in a ref, url.Parse refuses one in a
+	// URL, and the scp-like form, which nothing else parses, would otherwise
+	// carry an escape sequence or a bidirectional override from a
+	// repository's settings file to the terminal of whoever runs it
+	// (cli/REVIEW.md). A directory is left alone: one that is there wins
+	// over the notation (Resolve). A shorthand is judged here, before Resolve
+	// looks for the directory it may also be, so `owner/repo@REF` with an
+	// unprintable REF is refused even where such a directory exists.
+	if r.Kind != Directory {
+		if c, ok := unprintable(location); ok {
+			return Ref{}, fmt.Errorf("the Git URL %q holds the unprintable character %q", location, c)
+		}
+		if c, ok := unprintable(ref); ok {
+			return Ref{}, fmt.Errorf("ref %q holds the unprintable character %q", ref, c)
+		}
+	}
 	return r, nil
+}
+
+// unprintable is the first character of s that a terminal does not simply
+// draw: a C0 or C1 control, DEL, an invisible format character such as a
+// bidirectional override, any space but U+0020, or a byte that is not UTF-8
+// (a lone 0x9b is a CSI to an 8-bit terminal). It is the set the CLI's
+// terminal escaper rewrites, so what passes here prints as itself.
+func unprintable(s string) (rune, bool) {
+	for i, r := range s {
+		if r == utf8.RuneError {
+			if _, size := utf8.DecodeRuneInString(s[i:]); size == 1 {
+				return rune(s[i]), true
+			}
+		}
+		if r != ' ' && !unicode.IsPrint(r) {
+			return r, true
+		}
+	}
+	return 0, false
 }
 
 // splitPath cuts `//PATH` off a value. A `//` that starts the value is a

@@ -14,6 +14,16 @@ How a source is named, and when two names are one source
   directory that is there wins whatever its name holds (`@`, `//`). `Expand`
   makes a shorthand the URL unconditionally, for places that never name a
   directory.
+- **Nothing unprintable in a repository.** `Parse` refuses a character that
+  is not `unicode.IsPrint` (a C0 or C1 control, DEL, a bidirectional
+  override; U+0020 aside), or a byte that is not UTF-8, in a Git URL, a
+  shorthand, or its `@REF`: a reference is often repository content, and the
+  scp-like form has no `url.Parse` to catch even an ASCII escape. A
+  directory's name is left to `Resolve`, where the directory wins; a
+  shorthand's `@REF` is judged first, before `Resolve` looks for a directory
+  of that name. `ValidatePath` and `NormalizeRemote` keep their narrower
+  checks: what they judge is stored (a skills source's directory, a cache
+  key).
 - **Identity is not transport.** `Key` compares sources: GitHub as
   lower-cased `github.com/owner/repo`, another remote by `NormalizeRemote`,
   a directory by its path, each with `@REF` and `//PATH`; `RepositoryKey`
