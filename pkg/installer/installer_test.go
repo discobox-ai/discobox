@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -20,10 +21,10 @@ import (
 
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-func TestStampWritesTheReleaseAndEveryDigest(t *testing.T) {
+func TestStampWritesTheReleaseAndEveryDigestAndSize(t *testing.T) {
 	scripts, err := Stamp("v1.2.3", []Asset{
-		{Name: "discobox-windows-amd64.exe", SHA256: digest},
-		{Name: "discobox-linux-amd64", SHA256: strings.Repeat("f", 64)},
+		{Name: "discobox-windows-amd64.exe", SHA256: digest, Size: 55_123_456},
+		{Name: "discobox-linux-amd64", SHA256: strings.Repeat("f", 64), Size: 53_400_000},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +33,7 @@ func TestStampWritesTheReleaseAndEveryDigest(t *testing.T) {
 	shell := string(scripts[ShellName])
 	for _, want := range []string{
 		"\nrelease='v1.2.3'\n",
-		"\nchecksums='\n" + strings.Repeat("f", 64) + "  discobox-linux-amd64\n" + digest + "  discobox-windows-amd64.exe\n'\n",
+		"\nassets='\n" + strings.Repeat("f", 64) + " 53400000 discobox-linux-amd64\n" + digest + " 55123456 discobox-windows-amd64.exe\n'\n",
 	} {
 		if !strings.Contains(shell, want) {
 			t.Errorf("%s lacks %q", ShellName, want)
@@ -41,7 +42,10 @@ func TestStampWritesTheReleaseAndEveryDigest(t *testing.T) {
 	powerShell := string(scripts[PowerShellName])
 	for _, want := range []string{
 		"\n    $release = 'v1.2.3'\n",
-		"\n    $checksums = @{\n        'discobox-linux-amd64' = '" + strings.Repeat("f", 64) + "'\n        'discobox-windows-amd64.exe' = '" + digest + "'\n    }\n",
+		"\n    $assets = @{\n" +
+			"        'discobox-linux-amd64' = @{ SHA256 = '" + strings.Repeat("f", 64) + "'; Size = 53400000 }\n" +
+			"        'discobox-windows-amd64.exe' = @{ SHA256 = '" + digest + "'; Size = 55123456 }\n" +
+			"    }\n",
 	} {
 		if !strings.Contains(powerShell, want) {
 			t.Errorf("%s lacks %q", PowerShellName, want)
@@ -55,7 +59,7 @@ func TestStampWritesTheReleaseAndEveryDigest(t *testing.T) {
 }
 
 func TestStampRefusesAnythingThatCouldEscapeItsQuotes(t *testing.T) {
-	good := Asset{Name: "discobox-linux-amd64", SHA256: digest}
+	good := Asset{Name: "discobox-linux-amd64", SHA256: digest, Size: 1}
 	for name, tc := range map[string]struct {
 		release string
 		assets  []Asset
@@ -63,10 +67,12 @@ func TestStampRefusesAnythingThatCouldEscapeItsQuotes(t *testing.T) {
 		"release without v":    {"1.2.3", []Asset{good}},
 		"release with a quote": {"v1.2.3';rm -rf ~;'", []Asset{good}},
 		"no assets":            {"v1.2.3", nil},
-		"asset with a quote":   {"v1.2.3", []Asset{{Name: "a'b", SHA256: digest}}},
-		"asset with a slash":   {"v1.2.3", []Asset{{Name: "../discobox", SHA256: digest}}},
-		"uppercase digest":     {"v1.2.3", []Asset{{Name: "discobox", SHA256: strings.ToUpper(digest)}}},
-		"short digest":         {"v1.2.3", []Asset{{Name: "discobox", SHA256: digest[:63]}}},
+		"asset with a quote":   {"v1.2.3", []Asset{{Name: "a'b", SHA256: digest, Size: 1}}},
+		"asset with a slash":   {"v1.2.3", []Asset{{Name: "../discobox", SHA256: digest, Size: 1}}},
+		"uppercase digest":     {"v1.2.3", []Asset{{Name: "discobox", SHA256: strings.ToUpper(digest), Size: 1}}},
+		"short digest":         {"v1.2.3", []Asset{{Name: "discobox", SHA256: digest[:63], Size: 1}}},
+		"no size":              {"v1.2.3", []Asset{{Name: "discobox", SHA256: digest}}},
+		"negative size":        {"v1.2.3", []Asset{{Name: "discobox", SHA256: digest, Size: -1}}},
 		"asset listed twice":   {"v1.2.3", []Asset{good, good}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -136,7 +142,7 @@ func newServer(t *testing.T, releases []release) *server {
 			s.mainLatest = r.tag
 		}
 		if !r.noInstaller {
-			scripts, err := Stamp(r.tag, []Asset{{Name: asset, SHA256: hex.EncodeToString(sum[:])}})
+			scripts, err := Stamp(r.tag, []Asset{{Name: asset, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(binary))}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -914,6 +920,40 @@ func TestPowerShellRefusesAReleaseListItCannotRead(t *testing.T) {
 			}
 			if !strings.Contains(got.output, "could not read the release list") {
 				t.Errorf("output does not say the list was unreadable:\n%s", got.output)
+			}
+		})
+	}
+}
+
+// downloadSize is how an installer is expected to name a download's size before
+// it starts: a slow download that says nothing looks frozen.
+var downloadSize = regexp.MustCompile(`downloading discobox v1\.1\.0 for [a-z0-9]+/[a-z0-9]+ \([0-9]+(\.[0-9])? MB\)`)
+
+func TestShellSaysHowBigTheDownloadIs(t *testing.T) {
+	requireShell(t)
+	s := newServer(t, ladder)
+	script := s.script(t, "v1.1.0", ShellName)
+	for name, env := range map[string][]string{"plain": nil, "styled": styleEnv} {
+		got := runShell(t, s, script, env)
+		if got.err != nil || got.version != "v1.1.0" {
+			t.Fatalf("%s: installed %q, err %v:\n%s", name, got.version, got.err, got.output)
+		}
+		if !downloadSize.MatchString(got.output) {
+			t.Errorf("%s: the download step does not say how big the download is:\n%s", name, got.output)
+		}
+	}
+}
+
+func TestPowerShellSaysHowBigTheDownloadIs(t *testing.T) {
+	for _, shell := range powerShells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			s := newServer(t, ladder)
+			got := runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "")
+			if got.err != nil || got.version != "v1.1.0" {
+				t.Fatalf("installed %q, err %v:\n%s", got.version, got.err, got.output)
+			}
+			if !downloadSize.MatchString(got.output) {
+				t.Errorf("the download step does not say how big the download is:\n%s", got.output)
 			}
 		})
 	}

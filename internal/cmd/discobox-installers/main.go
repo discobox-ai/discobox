@@ -1,6 +1,6 @@
 // Command discobox-installers writes the install scripts a release uploads,
-// stamped with that release and the SHA-256 of every binary they may install
-// (ADR 0110).
+// stamped with that release and the SHA-256 and size of every binary they may
+// install (ADR 0110).
 //
 //	discobox-installers -version v1.2.3 -out build/release/bin \
 //	  build/release/bin/discobox-linux-amd64 \
@@ -49,11 +49,11 @@ func run() error {
 
 	assets := make([]installer.Asset, 0, flag.NArg())
 	for _, path := range flag.Args() {
-		digest, err := sha256File(path)
+		digest, size, err := sha256File(path)
 		if err != nil {
 			return err
 		}
-		assets = append(assets, installer.Asset{Name: filepath.Base(path), SHA256: digest})
+		assets = append(assets, installer.Asset{Name: filepath.Base(path), SHA256: digest, Size: size})
 	}
 	scripts, err := installer.Stamp(*version, assets)
 	if err != nil {
@@ -73,15 +73,18 @@ func run() error {
 	return nil
 }
 
-func sha256File(path string) (string, error) {
+// sha256File returns the file's digest and its length, both from the one read,
+// so the two cannot describe different bytes.
+func sha256File(path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer file.Close()
 	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
-		return "", err
+	size, err := io.Copy(digest, file)
+	if err != nil {
+		return "", 0, err
 	}
-	return hex.EncodeToString(digest.Sum(nil)), nil
+	return hex.EncodeToString(digest.Sum(nil)), size, nil
 }

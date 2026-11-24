@@ -9,7 +9,7 @@ the ones a release uploads. The decision and the alternatives rejected are
 flowchart TD
     user["curl -sSfL https://discobox.ai | sh"]
     site["discobox-ai/site Worker<br/>discobox.ai: stable<br/>edge.discobox.ai: edge<br/>main.discobox.ai: main"]
-    script["install.sh of release X<br/>stamped: X + SHA-256 per binary"]
+    script["install.sh of release X<br/>stamped: X + SHA-256 and size per binary"]
     api["GitHub Releases API<br/>(only for --channel)"]
     other["install.sh of release Y"]
     binary["discobox-os-arch<br/>mirror, then GitHub<br/>checked against X's stamp"]
@@ -28,10 +28,11 @@ flowchart TD
   installer *that* release uploaded, run with `--version <tag>`. The code
   installing a release is always the code it shipped, and every digest checked
   is one that release stamped. The unstamped source copy only ever hands over.
-- **Stamping** replaces four marker lines (`release=`, `checksums=`,
-  `$release = ''`, `$checksums = @{}`). `Stamp` validates every value against a
-  pattern that cannot close a quote in either language, and requires each marker
-  exactly once. `internal/cmd/discobox-installers` is its one caller, run by
+- **Stamping** replaces four marker lines (`release=`, `assets=`,
+  `$release = ''`, `$assets = @{}`) with the release and, for each binary, its
+  SHA-256 and size in bytes, both taken from one read of the file. `Stamp`
+  validates every value against a pattern that cannot close a quote in either
+  language, and requires each marker exactly once. `internal/cmd/discobox-installers` is its one caller, run by
   `release:installers` over the CLI binaries `release:publish` uploads.
 - **Channels** are resolved by the script, never on the default path
   ([ADR 26-11-16-249](../../docs/adr/26-11-16-249-main-is-a-channel-built-into-its-own-repository-and-latest-is-no-channels-name.md)
@@ -60,6 +61,14 @@ flowchart TD
   Windows refusal is that script's alone. The winget manifest's
   `MinimumOSVersion` is the same build, but winget cannot tell editions apart,
   so winget also refuses Server 2019 and 2022, which the script accepts.
+- **A download says it is moving.** The step line before the binary's download
+  names its stamped size (`(50.2 MB)`, in MB of 1024² bytes as curl and
+  PowerShell count), so a slow one never looks frozen. `install.sh` draws
+  curl's `--progress-bar` when stderr is a terminal and stays silent otherwise. `install.ps1` draws progress only on
+  PowerShell 7, as the caller's `$ProgressPreference` has it: Windows
+  PowerShell 5.1 downloads many times slower while drawing it, so there the
+  size line alone does the job. A source that fails on a terminal shows curl's
+  own error, then says the next source is being tried.
 - **Verification** runs `discobox version --client`, checking the installed
   binary without contacting or starting the server.
 - **The server is not part of the install.** Both scripts close by saying what

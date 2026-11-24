@@ -7,21 +7,22 @@
 #   curl -sSfL https://edge.discobox.ai | sh
 #   curl -sSfL https://main.discobox.ai | sh
 #
-# The copy a release uploads is stamped with that release and the SHA-256 of
-# every binary it uploaded, and run with no arguments installs exactly that
-# release. Asked for any other version or channel, it downloads the installer
-# that release uploaded and hands over to it, so the code installing a release
-# is always the code that release shipped (ADR 0110).
+# The copy a release uploads is stamped with that release and the SHA-256 and
+# size of every binary it uploaded, and run with no arguments installs exactly
+# that release. Asked for any other version or channel, it downloads the
+# installer that release uploaded and hands over to it, so the code installing
+# a release is always the code that release shipped (ADR 0110).
 #
 # Everything happens inside main, called on the last line, so a download cut
 # short part way through runs nothing at all.
 set -eu
 
-# Stamped by internal/cmd/discobox-installers into the copy a release uploads.
-# Empty here in the source tree, where this script can only hand over to a
-# release's own installer.
+# Stamped by internal/cmd/discobox-installers into the copy a release uploads,
+# assets as one "<sha256> <bytes> <name>" line per binary. Empty here in the
+# source tree, where this script can only hand over to a release's own
+# installer.
 release=
-checksums=
+assets=
 
 # Where release assets come from, tried in order as <base>/<tag>/<asset>: the
 # mirror first and the release itself last, every one checked against the same
@@ -439,19 +440,29 @@ newer() {
 }
 
 # fetch downloads <tag>/<asset> to a file from the first source that has it
-# and, given a digest, whose bytes match it.
+# and, given a digest, whose bytes match it. Given "progress" as well, it draws
+# curl's progress bar while it does, when stderr is a terminal to draw it on: a
+# download that takes minutes and shows nothing looks frozen.
 fetch() {
 	from=$sources
 	case $1 in
 		*-main.*) from=$main_sources ;;
 	esac
+	meter=-s
+	if [ "${5:-}" = progress ] && [ -t 2 ]; then
+		meter=--progress-bar
+	fi
 	# shellcheck disable=SC2086 # the list is split on whitespace on purpose
 	for base in $from; do
 		url=$base/$1/$2
-		if curl -fsL --retry 2 -o "$3" "$url"; then
+		if curl -fL "$meter" --retry 2 -o "$3" "$url"; then
 			[ -n "$4" ] || return 0
 			[ "$(sha256 "$3")" = "$4" ] && return 0
 			warn "$url is not the file $release was released with; trying the next source"
+		elif [ "$meter" != -s ]; then
+			# curl has just said why on the terminal; without this its error reads
+			# as the end of the install rather than a mirror being passed over.
+			warn "could not download $url; trying the next source"
 		fi
 	done
 	return 1
@@ -555,8 +566,11 @@ platform() {
 
 install_release() {
 	asset=discobox-$os-$arch
-	expected=$(printf '%s\n' "$checksums" | awk -v asset="$asset" '$2 == asset { print $1 }')
+	expected=$(printf '%s\n' "$assets" | awk -v asset="$asset" '$3 == asset { print $1 }')
 	[ -n "$expected" ] || die "$release has no build for $os on $arch"
+	# In MB of 1024 * 1024 bytes, the unit curl, PowerShell's progress and
+	# Windows all count in, with a point whatever the locale says.
+	size=$(printf '%s\n' "$assets" | LC_ALL=C awk -v asset="$asset" '$3 == asset { printf "%.1f MB", $2 / 1048576 }')
 
 	print_logo
 	# The name of the thing being installed, under its own mark. No symbol: a
@@ -564,8 +578,8 @@ install_release() {
 	if [ -n "$c_mark" ]; then
 		printf '%s\033[1mdiscobox %s%s\n\n' "$c_mark" "$release" "$c_reset" >&2
 	fi
-	step "downloading discobox $release for $os/$arch"
-	fetch "$release" "$asset" "$tmp/discobox" "$expected" ||
+	step "downloading discobox $release for $os/$arch ($size)"
+	fetch "$release" "$asset" "$tmp/discobox" "$expected" progress ||
 		die "could not download $asset for $release from any source with the SHA-256 it was released with"
 	chmod 755 "$tmp/discobox"
 

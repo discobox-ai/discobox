@@ -35,10 +35,13 @@ var shellScript []byte
 //go:embed install.ps1
 var powerShellScript []byte
 
-// Asset is a file a release uploaded that an installer may download.
+// Asset is a file a release uploaded that an installer may download. Size is
+// its length in bytes, which an installer names before it starts a download
+// that may take minutes.
 type Asset struct {
 	Name   string
 	SHA256 string
+	Size   int64
 }
 
 var (
@@ -69,34 +72,37 @@ func Stamp(release string, assets []Asset) (map[string][]byte, error) {
 		if !digestPattern.MatchString(asset.SHA256) {
 			return nil, fmt.Errorf("asset %s: %q is not a lowercase hex SHA-256", asset.Name, asset.SHA256)
 		}
+		if asset.Size <= 0 {
+			return nil, fmt.Errorf("asset %s: size %d is not a file's length", asset.Name, asset.Size)
+		}
 		if i > 0 && assets[i-1].Name == asset.Name {
 			return nil, fmt.Errorf("asset %s is listed twice", asset.Name)
 		}
 	}
 
-	var sums strings.Builder
-	sums.WriteString("checksums='\n")
+	var list strings.Builder
+	list.WriteString("assets='\n")
 	for _, asset := range assets {
-		fmt.Fprintf(&sums, "%s  %s\n", asset.SHA256, asset.Name)
+		fmt.Fprintf(&list, "%s %d %s\n", asset.SHA256, asset.Size, asset.Name)
 	}
-	sums.WriteString("'")
+	list.WriteString("'")
 	shell, err := stampLines(ShellName, shellScript, map[string]string{
-		"release=":   "release='" + release + "'",
-		"checksums=": sums.String(),
+		"release=": "release='" + release + "'",
+		"assets=":  list.String(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	var table strings.Builder
-	table.WriteString("$checksums = @{\n")
+	table.WriteString("$assets = @{\n")
 	for _, asset := range assets {
-		fmt.Fprintf(&table, "    '%s' = '%s'\n", asset.Name, asset.SHA256)
+		fmt.Fprintf(&table, "    '%s' = @{ SHA256 = '%s'; Size = %d }\n", asset.Name, asset.SHA256, asset.Size)
 	}
 	table.WriteString("}")
 	powerShell, err := stampLines(PowerShellName, powerShellScript, map[string]string{
-		"$release = ''":    "$release = '" + release + "'",
-		"$checksums = @{}": table.String(),
+		"$release = ''": "$release = '" + release + "'",
+		"$assets = @{}": table.String(),
 	})
 	if err != nil {
 		return nil, err
