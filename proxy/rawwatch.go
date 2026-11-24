@@ -153,7 +153,7 @@ func (h *httpProxy) watchRaw(req *http.Request, meta *requestMeta, client client
 	meta.answered = true
 	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))
 	h.recordRefusal(req, meta, client, refusalRecord{url: url, header: req.Header, reason: reason, status: status})
-	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+reason+"\n")
+	return refusalResponse(req, status, "blocked by proxy: "+reason)
 }
 
 // judgeRaw holds a request to the routes of every raw binding found in it,

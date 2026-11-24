@@ -1,5 +1,9 @@
 # Proxy Review Notes
 
+- Every refusal of a request by a credential's routes answers through
+  `refusalResponse` (JSON `message`), never a plain-text body: `gh` and other
+  API clients show a text body as nothing. The raw-secret refusal was missed
+  once when the sentinel one was converted (#1746).
 - Do not put payload blobs in SQLite. Keep cache assets and captured HTTP
   request/response bodies in disk files, and store only audit/cache/spool
   metadata in the database.
