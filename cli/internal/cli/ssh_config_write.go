@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -160,6 +161,9 @@ func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, include 
 	}
 	for _, repaired := range edits.repaired {
 		notes("rewrote an Include of %s that ssh could not read", repaired)
+	}
+	for _, respelled := range edits.respelled {
+		notes("rewrote the Include of %s so every ssh on this machine can follow it", respelled)
 	}
 	if edits.unrestricted != nil {
 		notes("could not narrow %s to the principals ssh reads it under: %v", target.userConfig.client, edits.unrestricted)
@@ -321,13 +325,17 @@ type includeEdits struct {
 	// repaired are the Includes this CLI wrote before it escaped percent
 	// signs, rewritten in the spelling ssh can read.
 	repaired []string
+	// respelled are the Includes of this target's own files rewritten into
+	// the lines this version writes for them (includeLines): a second
+	// spelling added, a file named more than once named once.
+	respelled []string
 	// unrestricted is why a config with no edit to make could not be narrowed
 	// to the principals ssh reads it under. It is a note, not a failure.
 	unrestricted error
 }
 
 func (e includeEdits) none() bool {
-	return !e.added && len(e.dropped) == 0 && len(e.repaired) == 0
+	return !e.added && len(e.dropped) == 0 && len(e.repaired) == 0 && len(e.respelled) == 0
 }
 
 // ensureUserConfigInclude adds an Include for managed to the target ssh's
@@ -372,7 +380,7 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 	}
 	body := cleaned
 	if edits.added {
-		body = "Include " + sshConfigPath(managed.client) + "\n" + cleaned
+		body = strings.Join(t.includeLines(managed.client), "\n") + "\n" + cleaned
 	}
 	if err := t.writeUserConfig(ctx, body); err != nil {
 		return includeEdits{}, err
@@ -458,30 +466,38 @@ func (t sshTarget) writeUserConfig(ctx context.Context, body string) error {
 }
 
 // normalizeManagedIncludes brings the Include lines this CLI owns into the
-// state this run writes them in: the stale ones are removed, and the ones written before it escaped percent signs are rewritten
-// in the spelling ssh can read. It returns the config and what it did to it.
+// state this run writes them in: the stale ones are removed, and the rest are
+// rewritten into the lines includeLines spells for the file they name. It
+// returns the config and what it did to it.
 //
 // Removing the stale ones is tidiness: ssh passes over an Include that names
 // no file. A line naming a file that is there is never removed for being
 // somewhere this run does not write, because another install's line is
 // exactly that (below).
 //
-// The repair is the same failure reached the other way. A line written before
-// escapeSSHPercent existed names a file ssh cannot expand, and ssh abandons the
-// whole config over it rather than that one line: until it is rewritten no host
-// in the file resolves, this CLI's or anyone else's. Matching an Include on the
-// filename it names is what keeps a run from duplicating its own line, and it
-// is also what would leave this one sitting there forever, since the file it
+// The rewrite is for lines some ssh on the machine cannot follow, and only
+// a line this target owns (ownsInclude) gains a spelling: another install's
+// or another distribution's line is put back as it was spelled, its percent
+// signs escaped, and its owner's next run adds the rest. One written
+// before escapeSSHPercent existed names a file ssh cannot expand, and ssh
+// abandons the whole config over it rather than that one line. One a Windows
+// CLI wrote before it added the ~/ spelling (includeLines) is followed by
+// Windows OpenSSH and passed over by Git for Windows' ssh, so `git fetch` from
+// a box's ssh:// remote cannot resolve its host. Matching an Include on the
+// file it names is what keeps a run from duplicating its own line, and it is
+// also what would leave such a line sitting there forever, since the file it
 // names is the file this run would name.
 //
 // It is rewritten rather than dropped because the file it names is still the
 // right one: the line may belong to another project, which this run cannot
-// re-add and whose own next run may be a long way off.
+// re-add and whose own next run may be a long way off. The lines naming one
+// file are put back as one group, where the first of them was, so a file
+// named twice ends up named once in each spelling.
 //
 // A managed path is recognized by its shape — <anything>/discobox/cli/ssh/<project>/config
 // — which is what this CLI has always written and nothing else has reason to.
-// Includes under the current state directory are left alone however many there
-// are: one per project is the design.
+// Includes under the current state directory are left alone however many
+// projects there are: one per project is the design.
 //
 // A managed path outside the current state directory is not necessarily ours.
 // Another install on this machine — a dev build beside the release, each with
@@ -493,41 +509,146 @@ func (t sshTarget) writeUserConfig(ctx context.Context, body string) error {
 //
 // The user's own Includes are untouched. Only this shape is ours to edit.
 func (t sshTarget) normalizeManagedIncludes(ctx context.Context, config, managed string) (string, includeEdits) {
-	var kept []string
+	type group struct {
+		filename string
+		lines    []int
+		fields   []string
+	}
+	lines := strings.SplitAfter(config, "\n")
+	var groups []*group
+	byPath := map[string]*group{}
+	drop := map[int]bool{}
+	replace := map[int]string{}
 	var edits includeEdits
-	for _, line := range strings.SplitAfter(config, "\n") {
+	for i, line := range lines {
 		field, ok := t.includeField(line)
-		filename := unescapeSSHPercent(field)
+		if !ok {
+			continue
+		}
+		filename := t.includeFile(unescapeSSHPercent(field))
 		path := t.clean(filename)
 		switch {
-		case !ok || !t.isManagedConfigPath(path):
-			kept = append(kept, line)
+		case !t.isManagedConfigPath(path):
 		case t.staleManagedInclude(ctx, filename, managed):
 			edits.dropped = append(edits.dropped, path)
-		case field != escapeSSHPercent(filename):
-			edits.repaired = append(edits.repaired, path)
-			line, newline := strings.CutSuffix(line, "\n")
-			_, carriageReturn := strings.CutSuffix(line, "\r")
-			repaired := "Include " + sshConfigPath(filename)
-			if carriageReturn {
-				repaired += "\r"
+			drop[i] = true
+		case !t.ownsInclude(path):
+			// Another install's line, or another distribution's: it is
+			// rewritten only where ssh cannot read it at all, in the spelling
+			// it has, and its owner adds what else it wants.
+			if field != escapeSSHPercent(unescapeSSHPercent(field)) {
+				edits.repaired = append(edits.repaired, path)
+				replace[i] = rewriteInclude(line, []string{"Include " + sshConfigPath(unescapeSSHPercent(field))})
 			}
-			if newline {
-				repaired += "\n"
-			}
-			kept = append(kept, repaired)
 		default:
-			kept = append(kept, line)
+			key := path
+			if t.windows {
+				key = strings.ToLower(key)
+			}
+			g := byPath[key]
+			if g == nil {
+				g = &group{filename: filename}
+				byPath[key] = g
+				groups = append(groups, g)
+			}
+			g.lines = append(g.lines, i)
+			g.fields = append(g.fields, field)
 		}
 	}
-	if len(edits.dropped) == 0 && len(edits.repaired) == 0 {
+	for _, g := range groups {
+		var want []string
+		for _, spelling := range t.includeSpellings(g.filename) {
+			want = append(want, escapeSSHPercent(spelling))
+		}
+		if slices.Equal(g.fields, want) {
+			continue
+		}
+		readable := true
+		for _, field := range g.fields {
+			readable = readable && field == escapeSSHPercent(unescapeSSHPercent(field))
+		}
+		if readable {
+			edits.respelled = append(edits.respelled, t.clean(g.filename))
+		} else {
+			edits.repaired = append(edits.repaired, t.clean(g.filename))
+		}
+		replace[g.lines[0]] = rewriteInclude(lines[g.lines[0]], t.includeLines(g.filename))
+		for _, i := range g.lines[1:] {
+			drop[i] = true
+		}
+	}
+	if len(drop) == 0 && len(replace) == 0 {
 		return config, edits
 	}
-	return strings.Join(kept, ""), edits
+	var kept strings.Builder
+	for i, line := range lines {
+		if rewritten, ok := replace[i]; ok {
+			kept.WriteString(rewritten)
+		} else if !drop[i] {
+			kept.WriteString(line)
+		}
+	}
+	return kept.String(), edits
+}
+
+// rewriteInclude is the lines that replace line, ended the way line was: with
+// or without a newline, and with a carriage return before each if it had one.
+func rewriteInclude(line string, with []string) string {
+	line, newline := strings.CutSuffix(line, "\n")
+	_, carriageReturn := strings.CutSuffix(line, "\r")
+	eol := ""
+	if carriageReturn {
+		eol = "\r"
+	}
+	rewritten := strings.Join(with, eol+"\n")
+	if carriageReturn {
+		rewritten += "\r"
+	}
+	if newline {
+		rewritten += "\n"
+	}
+	return rewritten
+}
+
+// includeSpellings is every spelling the Include of a managed file is written
+// in, so each ssh that reads the target's ssh_config can follow one of them.
+//
+// That is one spelling everywhere but a Windows target, whose ssh_config is
+// read by two builds of OpenSSH: Windows' own, and the MSYS build Git for
+// Windows runs for `git fetch`. MSYS ssh takes an Include path that starts with
+// neither / nor ~ as relative to ~/.ssh, so the drive-letter path Windows
+// OpenSSH follows names ~/.ssh/C:\… to it, and nothing. A file under the
+// profile — where the state directory is unless something moved it — is also
+// written as ~/…, which both builds expand into the user's own home.
+//
+// The drive-letter line stays, rather than ~/… alone: Windows OpenSSH expands ~
+// through HOME but reads its config from the profile, and those can differ, so
+// the line it follows today stays exactly the line it reads. And not /c/…, the
+// MSYS spelling of the drive path: to Windows OpenSSH that is a path from the
+// root of the current drive, C:\c\…, which any local user can create, and every
+// ssh the user runs would read a config someone else wrote. A file outside the
+// profile has no spelling of that kind and keeps its one line, which Git for
+// Windows' ssh cannot follow.
+func (t sshTarget) includeSpellings(filename string) []string {
+	spellings := []string{filename}
+	if home, ok := t.homeRelative(filename); ok {
+		spellings = append(spellings, home)
+	}
+	return spellings
+}
+
+// includeLines is the Include lines for a managed file, one per spelling.
+func (t sshTarget) includeLines(filename string) []string {
+	var lines []string
+	for _, spelling := range t.includeSpellings(filename) {
+		lines = append(lines, "Include "+sshConfigPath(spelling))
+	}
+	return lines
 }
 
 // staleManagedInclude reports whether a managed Include of filename — the
-// file the line names, spelled as it spells it — is a leftover this run should
+// file the line names, spelled as it spells it except that a path from ~ comes
+// already expanded (includeFile) — is a leftover this run should
 // remove rather than another install's line or another project's. Neither
 // managed itself nor anything under the current state directory is: those are
 // this install's, and normalizeManagedIncludes keeps them.
@@ -539,8 +660,8 @@ func (t sshTarget) normalizeManagedIncludes(ctx context.Context, config, managed
 // Windows path wslpath will not translate — is one it cannot tell is gone,
 // and the line stays.
 //
-// The file is looked for under the line's own spelling, not the one clean
-// compares in: clean turns a Windows share's \\server\share into
+// The file is looked for under that spelling, not the one clean compares in
+// (expanding ~ leaves a share's spelling as it was): clean turns a Windows share's \\server\share into
 // /server/share, which names something else entirely, and a line on a share
 // would be judged by a file that was never there.
 func (t sshTarget) staleManagedInclude(ctx context.Context, filename, managed string) bool {
@@ -578,9 +699,16 @@ func (t sshTarget) includeField(line string) (string, bool) {
 }
 
 // isManagedConfigPath reports whether path has the shape this CLI writes:
-// .../discobox/cli/ssh/<project>/config.
+// .../discobox/cli/ssh/<project>/config. A glob is not one of ours even when it
+// has that shape — `.../ssh/proj_*/config` is how a user includes every
+// project's file by hand — and rewriting or judging it stale by the literal
+// pattern would take away a line the user wrote. Only * and ? mark one: a [
+// is a character a Windows profile's name can hold.
 func (t sshTarget) isManagedConfigPath(p string) bool {
 	cleaned := t.clean(p)
+	if strings.ContainsAny(cleaned, "*?") {
+		return false
+	}
 	slash := strings.LastIndex(cleaned, "/")
 	if slash < 0 || !strings.EqualFold(cleaned[slash+1:], "config") {
 		return false
@@ -610,7 +738,7 @@ func (t sshTarget) hasInclude(config, managed string) bool {
 			continue
 		}
 		for _, field := range fields[1:] {
-			if t.samePathAs(unescapeSSHPercent(field), managed) {
+			if t.samePathAs(t.includeFile(unescapeSSHPercent(field)), managed) {
 				return true
 			}
 		}

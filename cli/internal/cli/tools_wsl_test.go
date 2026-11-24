@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -258,9 +259,13 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 		t.Fatalf("the mirrored key's ACL was not narrowed:\n%s", acl)
 	}
 
-	// The Include goes in the Windows user's ssh_config, quoted.
+	// The Include goes in the Windows user's ssh_config: quoted by its drive
+	// path for Windows OpenSSH, and from ~, which Git for Windows' ssh follows
+	// too.
 	userConfig := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", ".ssh", "config"))
-	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID)) + `\config"` + "\n"; userConfig != want {
+	scope := wslTestArtifact(sshConfigNamespace(sshFixture.url, resolvedTestProjectID))
+	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + scope + `\config"` + "\n" +
+		`Include ~/AppData/Local/discobox/cli/ssh/` + scope + `/config` + "\n"; userConfig != want {
 		t.Fatalf("Windows ssh_config = %q, want %q", userConfig, want)
 	}
 	// And this distribution's own ssh is configured too: the machine has two,
@@ -654,7 +659,8 @@ func TestSSHIncludesOnWSLKeepAnotherInstallConfig(t *testing.T) {
 
 	run("enable")
 	mirror := target.configPath(wslTestArtifact(namespace))
-	if got := readFile(t, target.userConfig.local); got != "Include "+sshConfigPath(mirror.client)+"\n"+originalWindows {
+	mirrorLines := target.includeLines(mirror.client)
+	if got := readFile(t, target.userConfig.local); got != strings.Join(mirrorLines, "\n")+"\n"+originalWindows {
 		t.Fatalf("enable did not add only the WSL Include: %q", got)
 	}
 	mirrorData := readFile(t, mirror.local)
@@ -672,7 +678,7 @@ func TestSSHIncludesOnWSLKeepAnotherInstallConfig(t *testing.T) {
 	var found bool
 	for _, config := range edit.ssh {
 		if config.target.acrossWSL() {
-			found = len(config.removed) == 1 && config.removed[0] == "Include "+sshConfigPath(mirror.client)
+			found = slices.Equal(config.removed, mirrorLines)
 		}
 	}
 	if !found {
