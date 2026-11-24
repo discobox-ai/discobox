@@ -743,8 +743,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 			// Stop it the way a stop would, so the sandbox-agent tears its execs
 			// down and flushes their logs instead of being killed outright.
 			r.publishSandboxState(ctx, sandboxID, StateStopping)
-			timeout := sandboxStopTimeoutSeconds
-			if _, err := r.client.ContainerStop(ctx, replaced.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
+			if err := r.stopContainer(ctx, sandboxID, replaced.ID); err != nil && !cerrdefs.IsNotFound(err) {
 				return nil, false, fmt.Errorf("stop sandbox container for a spec change: %w", err)
 			}
 		}
