@@ -158,6 +158,15 @@ transport helpers where OpenAPI does not model the stream.
   fetches rather than on its id, so the attach starts without waiting for a
   listing to come back. The window follows the server from there
   (`Model.currentBox`).
+- `discobox attach` run inside a discobox, naming that discobox, says it is
+  already there before asking the server (`refuseOwnSandbox`): the server's
+  refusal of a discobox without API access advises turning that access on,
+  the wrong advice for someone who forgot where they are typing. Only what
+  names it for certain without the server counts: its full ID (`sbx_` or the
+  hostname's `sbx-`), bare, in a `discobox:///` address, or in an address whose
+  server is the one `DISCOBOX_ADDRESS` names, matched against the sandbox
+  config (`App.ownSandboxID`). A short ID, a name, a pick, or an address on
+  another server goes to the server as before.
 - `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
   be a character you could never type; `alt+` (or `meta+`, `option+`) a letter
