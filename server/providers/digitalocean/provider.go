@@ -68,7 +68,7 @@ func Validate(data json.RawMessage) error {
 		return fmt.Errorf("digitalocean token is required")
 	}
 	if strings.TrimSpace(cfg.SSHPrivateKey) == "" {
-		return fmt.Errorf("digitalocean sshPrivateKey is required to reach worker Docker daemons")
+		return fmt.Errorf("digitalocean sshPrivateKey is required to reach pool Docker daemons")
 	}
 	return nil
 }
@@ -158,7 +158,7 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "DigitalOcean",
 		Icon:        "digitalocean",
-		Description: "Runs one Docker-enabled Droplet per sandbox worker.",
+		Description: "Runs one Docker-enabled Droplet per pool.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "token", Label: "API Token", Type: sandbox.ProviderConfigFieldSecret, Required: true, Description: "DigitalOcean API token the server manages Droplets with."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},
@@ -168,7 +168,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "region", Label: "Region", Type: "string", Placeholder: defaultRegion},
 			{Key: "size", Label: "Droplet Size", Type: "string", Placeholder: defaultSize},
 			{Key: "image", Label: "Droplet Image", Type: "string", Placeholder: defaultImage},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image that every sandbox runs with its platform delivered, and the pool's own container runs provisioned as a pool.", Advanced: true},
 			{Key: "vpcUuid", Label: "VPC UUID", Type: "string", Advanced: true},
 			{Key: "tags", Label: "Tags", Type: "string", Advanced: true},
 			{Key: "backups", Label: "Backups", Type: "boolean", Advanced: true},

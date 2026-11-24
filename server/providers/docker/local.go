@@ -152,7 +152,7 @@ func (d *LocalDriver) AcquireDockerClient(context.Context, string) (*dockerworke
 
 func (d *LocalDriver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error) {
 	if strings.TrimSpace(poolID) == "" {
-		return nil, fmt.Errorf("worker ID is required")
+		return nil, fmt.Errorf("pool ID is required")
 	}
 	inspect, err := d.client.ContainerInspect(ctx, dockerworker.ContainerName(poolID), client.ContainerInspectOptions{})
 	if err != nil {

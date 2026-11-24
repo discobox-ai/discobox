@@ -122,12 +122,12 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "Exec",
 		Icon:        "terminal",
-		Description: "Delegates worker VM lifecycle to an external command, such as a shell script.",
+		Description: "Delegates each pool VM's lifecycle to an external command, such as a shell script.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <worker-id>`."},
+			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <pool-id>`."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
-			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image that every sandbox runs with its platform delivered, and the pool's own container runs provisioned as a pool.", Advanced: true},
+			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the pool-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: "root", Advanced: true},
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: sandbox.ProviderConfigFieldSecret, Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},

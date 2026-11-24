@@ -232,11 +232,11 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "Docker",
 		Icon:        "docker",
-		Description: "Runs VM-style workers as Docker containers with systemd as PID 1.",
+		Description: "Runs each pool as a VM-style Docker container with systemd as PID 1.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image that every sandbox runs with its platform delivered, and the pool's own container runs provisioned as a pool.", Advanced: true},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},

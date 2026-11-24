@@ -223,7 +223,7 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 	}
 	host := publicIPv4(droplet.Networks)
 	if host == "" {
-		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address yet", poolID)
+		return nil, fmt.Errorf("droplet for pool %s has no public IPv4 address yet", poolID)
 	}
 	return d.ssh.AcquireDockerClient(ctx, sshdocker.Target{Host: host})
 }
@@ -235,7 +235,7 @@ func (d *Driver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*tr
 	}
 	host := publicIPv4(droplet.Networks)
 	if host == "" {
-		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address", poolID)
+		return nil, fmt.Errorf("droplet for pool %s has no public IPv4 address", poolID)
 	}
 	baseURL := "http://" + net.JoinHostPort(host, strconv.Itoa(d.agentPort))
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil), nil

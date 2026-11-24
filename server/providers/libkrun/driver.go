@@ -421,17 +421,19 @@ func (d *Driver) resolveArtifacts(ctx context.Context, poolID string) (*guestima
 			Pull:  fetch.PoolPull(),
 		})
 	}
-	// Both failures name the local build that answers them. Both artifacts are
-	// published and pinned by digest (guestimage.DefaultVMImage,
-	// DefaultKernelImage), but a resolver error on its own reports only a
-	// registry problem, and a local build is a way past one.
+	// Both artifacts are published and pinned by digest
+	// (guestimage.DefaultVMImage, DefaultKernelImage), so a failure is first a
+	// pull of a named image — the resolver's error names it — and most who read
+	// it installed a release and have no checkout to build from. A local build
+	// is still a way past a registry problem for whoever does, so the hint
+	// stays, addressed to them.
 	root, err := d.guest.Resolve(ctx, report)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w (build one from this checkout with `task build:vm-guest`)", err)
+		return nil, nil, fmt.Errorf("resolve the VM guest image: %w (from a source checkout, `task build:vm-guest` builds one locally)", err)
 	}
 	kernel, err := d.kernel.Resolve(ctx, report)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w (build one from this checkout with `task build:vm-kernel`)", err)
+		return nil, nil, fmt.Errorf("resolve the VM kernel image: %w (from a source checkout, `task build:vm-kernel` builds one locally)", err)
 	}
 	return root, kernel, nil
 }
