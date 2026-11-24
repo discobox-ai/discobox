@@ -70,8 +70,18 @@ func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 	cached.Config.SetSource(apiclientgen.NewOptGitSource(cachedSource))
 	cached.Runtime.SourceDeliveredAt = pushed.Runtime.SourceDeliveredAt
 
-	archived := pushDeliveredSandbox()
+	// Archived is judged by the desired state, as the server judges it: an
+	// unarchive recorded but not yet carried out still displays archived, and
+	// a failed archive displays error.
+	archived := pushed
+	archived.Runtime.DesiredState = apiclientgen.SandboxRuntimeDesiredStateArchived
 	archived.Runtime.DisplayState = apiclientgen.NewOptSandboxRuntimeDisplayState("archived")
+
+	failedArchive := archived
+	failedArchive.Runtime.DisplayState = apiclientgen.NewOptSandboxRuntimeDisplayState("error")
+
+	unarchiving := archived
+	unarchiving.Runtime.DesiredState = apiclientgen.SandboxRuntimeDesiredStatePresent
 
 	parked := pushDeliveredSandbox()
 	parked.Runtime.State = apiclientgen.SandboxRuntimeStateAwaitingSource
@@ -113,6 +123,8 @@ func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 		{"cloned from a remote", remote, thisHost, false},
 		{"once read live off the directory", bound, thisHost, true},
 		{"archived", archived, thisHost, false},
+		{"archived by intent after a failed archive", failedArchive, thisHost, false},
+		{"being unarchived", unarchiving, thisHost, true},
 		{"still awaiting its source", parked, thisHost, false},
 		{"created on another machine", elsewhere, thisHost, false},
 		{"no recorded origin", noOrigin, thisHost, false},

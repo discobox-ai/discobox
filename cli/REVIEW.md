@@ -184,6 +184,15 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   - format strings, as `%d new keys` became `%d run keys` in a test's failure
     message.
 
+- **A check the CLI makes ahead of a server refusal tests the field the
+  server tests.** `discobox push` and the automatic push refuse an archived
+  discobox before they open the git route because the server refuses an
+  action on its desired state; both ask `sandboxArchived`. Testing the display
+  state instead refused a discobox whose unarchive was recorded but not yet
+  carried out, and let through a failed archive the server then refused with
+  less to say (#1670). A second copy of the same check is how it drifted:
+  `push` was fixed while `pushableNow` kept the old one.
+
 - **A state the CLI writes for a person goes through `stateWord`.** The API
   says `suspended` and the CLI says `paused` (ADR 26-10-20-317 §4): tables, the
   picker, completion, and every error or note that names a box's state in
