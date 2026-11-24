@@ -1,6 +1,7 @@
 # 26-11-02-023 — Every machine sandbox mounts its volumes from its own data and cache roots
 
 - **Status**: Accepted
+- **Superseded in part by**: [26-11-23-993](26-11-23-993-container-runtime-state-is-on-the-boxs-root-never-on-a-declared-volume.md) — §2's binding of a machine's `/var/lib/docker` and `/var/lib/containerd` from its data root: they are no longer declared volumes, and stay on the machine's root
 - **Date**: 2026-11-02; revised 2026-11-07, before it was accepted, onto the
   data-volume mounting `main` gained meanwhile (acf9ff62)
 - **Amends**:
