@@ -78,7 +78,7 @@ func (s *Store) sandboxDeleted(sandbox *model.Sandbox) {
 // the two axes.
 var sandboxEventColumns = []string{
 	"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "tags", "created_by_sandbox_id", "parent_sandbox_id",
-	"generation", "observed_generation", "repair_generation", "error_message", "event_seq",
+	"generation", "observed_generation", "repair_generation", "error_message", "event_seq", "power_down",
 }
 
 type pendingSandboxEvent struct {
@@ -313,6 +313,9 @@ func sandboxEventData(sandbox *model.Sandbox, at time.Time) model.SandboxEventDa
 	}
 	if sandbox.CreatedBySandboxID != nil {
 		data.CreatedBySandboxID = *sandbox.CreatedBySandboxID
+	}
+	if powerDown := sandbox.CurrentPowerDown(); powerDown != nil {
+		data.PowerDownReason = powerDown.Reason
 	}
 	switch {
 	case sandbox.DesiredState == model.DesiredStateArchived || sandbox.State == model.SandboxStateArchived || sandbox.State == model.SandboxStateDeleted:

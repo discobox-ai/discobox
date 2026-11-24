@@ -2186,6 +2186,13 @@ components:
                 createdBySandboxId:
                     description: The sandbox that created this one, when a sandbox did. It never changes.
                     type: string
+                powerDownReason:
+                    description: Why the sandbox is down, when it powered itself down - idle for its pool's idle timeout, sleep at an agent's request, or exit when its primary terminal's shell exited. Present only while runtimeState is stopping, stopped or suspended, and absent when it was stopped or suspended by an instruction, or went down any other way.
+                    enum:
+                        - idle
+                        - sleep
+                        - exit
+                    type: string
             required:
                 - projectId
                 - sandboxId
@@ -4957,6 +4964,32 @@ components:
             required:
                 - host
             type: object
+        SandboxPowerDown:
+            additionalProperties: false
+            description: |-
+                The power-down a sandbox asked for itself, and is down from: present only while its
+                runtimeState is stopping, stopped or suspended. Absent when it was stopped or
+                suspended by an instruction (a person's stop, an archive), or went down any other
+                way, a crash or a lost container among them. Cleared once it starts again.
+            properties:
+                reason:
+                    description: |-
+                        Why it powered down. idle: it reported itself idle for its pool's idle timeout. A changing screen,
+                        an attached client, or a keepalive lease taken inside it is activity.
+                        sleep: an agent in it asked it to sleep. exit: its primary terminal's shell exited.
+                    enum:
+                        - idle
+                        - sleep
+                        - exit
+                    type: string
+                at:
+                    description: When the control plane powered it down.
+                    format: date-time
+                    type: string
+            required:
+                - reason
+                - at
+            type: object
         SandboxAutomaticRepair:
             additionalProperties: false
             description: |-
@@ -5203,6 +5236,8 @@ components:
                     "$ref": "#/components/schemas/SandboxUpgrade"
                 automaticRepair:
                     "$ref": "#/components/schemas/SandboxAutomaticRepair"
+                powerDown:
+                    "$ref": "#/components/schemas/SandboxPowerDown"
             required:
                 - desiredState
                 - state

@@ -7564,6 +7564,42 @@ func (s SandboxFileType) Validate() error {
 	}
 }
 
+func (s *SandboxPowerDown) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Reason.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "reason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SandboxPowerDownReason) Validate() error {
+	switch s {
+	case "idle":
+		return nil
+	case "sleep":
+		return nil
+	case "exit":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SandboxProviderCatalogItem) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -7932,6 +7968,24 @@ func (s *SandboxRuntime) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "upgrade",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.PowerDown.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "powerDown",
 			Error: err,
 		})
 	}

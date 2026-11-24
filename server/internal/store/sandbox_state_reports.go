@@ -147,9 +147,19 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 			sandbox.StateReportedAt = &reportedAt
 			sandbox.StateReportBoot = batch.BootID
 			sandbox.StateReportSeq = batch.Sequence
+			columns := observedSandboxColumns
+			// A sandbox seen coming up again is no longer down from the
+			// power-down it asked for: cleared on the transition alone, since
+			// the power-down is recorded while the row still reads running,
+			// and a restamp of that running is not the sandbox coming back.
+			if sandbox.PowerDown != nil && previous != sandbox.RuntimeState &&
+				(sandbox.RuntimeState == model.SandboxRuntimeStateStarting || sandbox.RuntimeState == model.SandboxRuntimeStateRunning) {
+				sandbox.PowerDown = nil
+				columns = append(slices.Clip(columns), "power_down")
+			}
 			if err := tx.Model(&model.Sandbox{}).
 				Where("id = ?", sandbox.ID).
-				Select(observedSandboxColumns).
+				Select(columns).
 				Updates(sandbox).Error; err != nil {
 				return err
 			}

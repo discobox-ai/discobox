@@ -209,6 +209,7 @@ type SandboxHarnessSecretsResponse = apigen.SandboxHarnessSecretsResponse
 type SandboxInventoryEntry = apigen.SandboxInventoryEntry
 type SandboxMemoryConsumption = apigen.SandboxMemoryConsumption
 type SandboxMeta = apigen.SandboxMeta
+type SandboxPowerDown = apigen.SandboxPowerDown
 type SandboxProviderCatalogItem = apigen.SandboxProviderCatalogItem
 type SandboxProviderInstance = apigen.SandboxProviderInstance
 type SandboxProvisionPhase = apigen.SandboxProvisionPhase

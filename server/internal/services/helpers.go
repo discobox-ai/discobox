@@ -347,6 +347,9 @@ func SandboxToAPI(ctx context.Context, sandbox *model.Sandbox, basis SandboxUpgr
 	if sandbox.AutomaticRepair != nil {
 		runtime["automaticRepair"] = sandbox.AutomaticRepair
 	}
+	if powerDown := sandbox.CurrentPowerDown(); powerDown != nil {
+		runtime["powerDown"] = powerDown
+	}
 	if len(sandbox.AgentStatus) > 0 {
 		status := sandbox.AgentStatus
 		if sandbox.HarnessChangeID != "" && sandbox.HarnessConfigID != nil {

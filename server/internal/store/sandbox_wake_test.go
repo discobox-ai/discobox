@@ -71,7 +71,7 @@ func TestSpendSandboxWakeClearsOnlyTheWakeItRead(t *testing.T) {
 			}
 			// Nanoseconds: finer than Postgres keeps.
 			wrote := time.Date(2026, 11, 15, 3, 36, 40, 123456789, time.UTC)
-			if ok, err := s.SetSandboxWakeIfEpoch(ctx, "project-1", "sandbox-1", 0, &wrote); err != nil || !ok {
+			if ok, err := s.RecordSandboxPowerDownIfEpoch(ctx, "project-1", "sandbox-1", 0, model.SandboxPowerDown{Reason: model.SandboxPowerDownSleep}, &wrote); err != nil || !ok {
 				t.Fatalf("set wake = %v, %v", ok, err)
 			}
 			read, err := s.GetSandbox(ctx, "project-1", "sandbox-1")
@@ -124,7 +124,7 @@ func TestListSandboxIDsWithDueWake(t *testing.T) {
 					t.Fatal(err)
 				}
 				if sb.wake != nil {
-					if _, err := s.SetSandboxWakeIfEpoch(ctx, "project-1", sb.id, 0, sb.wake); err != nil {
+					if _, err := s.RecordSandboxPowerDownIfEpoch(ctx, "project-1", sb.id, 0, model.SandboxPowerDown{Reason: model.SandboxPowerDownSleep}, sb.wake); err != nil {
 						t.Fatal(err)
 					}
 				}

@@ -74,16 +74,21 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
 - Every writer of a column an event reports notes the sandbox on its
   transaction's `sandboxEventBatch` (`sandboxChanged`, `sandboxDeleted`):
   `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports` (every row it
-  writes), `UpdateSandboxAgentStatus`, `UpdateSandboxMeta`, `DeleteSandbox`.
+  writes), `UpdateSandboxAgentStatus`, `UpdateSandboxMeta`, `DeleteSandbox`,
+  and the `power_down` writers (`CancelSandboxWakeTx`,
+  `CompleteSandboxSuspendTx`, `RecordSandboxPowerDownIfEpoch`; see the wake
+  columns under Field Ownership).
   One called outside a transaction opens one (`inSandboxTx`). A new writer of
-  `desired_state`, `state`, `runtime_state`, `agent_status` or `tags` must do
+  `desired_state`, `state`, `runtime_state`, `agent_status`, `tags` or `power_down` must do
   the same. `parent_sandbox_id` is projected and written by adoption, release
   and purge cleanup. `created_by_sandbox_id` is projected too, and written only at
   create. `displayState` is `Sandbox.DisplayState` of the row, so its error
   and generations are read for it, and `UpdateSandbox`, their writer, notes
   them. Events also carry optional `errorMessage` (ADR 26-11-07-519): message
   appearance, replacement and clearing produce updates with otherwise identical
-  state. Absence clears the previous snapshot's message. Startup backfill appends
+  state. Absence clears the previous snapshot's message. `powerDownReason` is
+  `Sandbox.CurrentPowerDown`: the recorded power-down, only while the sandbox
+  is present and stopping, stopped or suspended. Startup backfill appends
   current snapshots where old JSON lacks the recorded message, retaining history
   and sequence numbers.
 - `Store.Transaction` records the batch just before the outermost transaction
@@ -162,12 +167,16 @@ save silently replays a stale value.
   the old level back, and the next egress push would deliver it. `UpdatePool`
   names its columns and writes the pool's level for the person's own update;
   `SetPoolEgress` is the copy's.
-- A sandbox's scheduled start (`wake_at`) and its guard (`wake_epoch`,
-  ADR 26-10-16-337 §6) have two writers — the power reconcile sets and claims
-  the wake, every outside power instruction cancels it — so `UpdateSandbox`
-  omits both (`sandboxWakeColumns`) and only `CancelSandboxWakeTx` and
-  `SetSandboxWakeIfEpoch` write them. The latter writes only on the epoch its
-  caller read, which every cancellation moves.
+- A sandbox's scheduled start (`wake_at`), the power-down it asked for
+  (`power_down`: why and when) and their guard (`wake_epoch`, ADR 26-10-16-337
+  §6) have two writers — the power reconcile sets and claims the wake, every
+  outside power instruction cancels it — so `UpdateSandbox` omits them
+  (`sandboxWakeColumns`) and only `CancelSandboxWakeTx`,
+  `CompleteSandboxSuspendTx` and `RecordSandboxPowerDownIfEpoch` write them.
+  The last writes only on the epoch its caller read, which every cancellation
+  moves. `ApplySandboxStateReports` clears `power_down` too, on a transition
+  to `starting` or `running` alone: it is recorded while the row still reads
+  `running`, and a restamp of that is not the sandbox coming back.
 - A sandbox's `event_seq` is written by the event recorder alone, and
   `UpdateSandbox` omits it (`sandboxEventSeqColumn`): a row saved back from a
   copy read before an event would point it at an older one.

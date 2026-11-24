@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -252,8 +253,12 @@ func TestAStopDuringThePowerDownCancelsTheWake(t *testing.T) {
 	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.load(t).WakeAt; got != nil {
+	sb := f.load(t)
+	if got := sb.WakeAt; got != nil {
 		t.Fatalf("wake = %v after a stop canceled it, want none", got)
+	}
+	if sb.PowerDown != nil {
+		t.Fatalf("power-down = %+v after a stop overtook it, want none: the stop is the person's", sb.PowerDown)
 	}
 }
 
@@ -339,7 +344,7 @@ func TestASuspendReachesTheRuntimeAndCancelsTheWake(t *testing.T) {
 	f := newPowerFixture(t)
 	f.setRuntime(t, model.SandboxRuntimeStateRunning)
 	at := f.now.Add(time.Hour)
-	if _, err := f.st.SetSandboxWakeIfEpoch(context.Background(), "project-1", f.sandboxID, 0, &at); err != nil {
+	if _, err := f.st.RecordSandboxPowerDownIfEpoch(context.Background(), "project-1", f.sandboxID, 0, model.SandboxPowerDown{Reason: model.SandboxPowerDownSleep}, &at); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.svc.SuspendSandbox(context.Background(), "project-1", f.sandboxID, services.SuspendSandboxBody{}); err != nil {
@@ -388,7 +393,7 @@ func TestARefusedSuspendKeepsTheWake(t *testing.T) {
 	f := newPowerFixture(t)
 	f.setRuntime(t, model.SandboxRuntimeStateStopped)
 	at := f.now.Add(time.Hour)
-	if _, err := f.st.SetSandboxWakeIfEpoch(context.Background(), "project-1", f.sandboxID, 0, &at); err != nil {
+	if _, err := f.st.RecordSandboxPowerDownIfEpoch(context.Background(), "project-1", f.sandboxID, 0, model.SandboxPowerDown{Reason: model.SandboxPowerDownSleep}, &at); err != nil {
 		t.Fatal(err)
 	}
 	f.provider.suspendErr = sandbox.ErrNotRunning
@@ -523,7 +528,7 @@ func TestSpendingAWakeKeepsALaterOne(t *testing.T) {
 	f.sleptWithDueWake(t)
 	later := f.now.Add(2 * time.Hour).UTC()
 	f.provider.duringStart = func() {
-		if _, err := f.st.SetSandboxWakeIfEpoch(context.Background(), "project-1", f.sandboxID, f.load(t).WakeEpoch, &later); err != nil {
+		if _, err := f.st.RecordSandboxPowerDownIfEpoch(context.Background(), "project-1", f.sandboxID, f.load(t).WakeEpoch, model.SandboxPowerDown{Reason: model.SandboxPowerDownSleep}, &later); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -608,5 +613,101 @@ func TestAWakeItsBootDeliveredIsNotSentAgain(t *testing.T) {
 	}
 	if f.provider.starts != 0 {
 		t.Fatalf("starts = %d for a wake already delivered, want none", f.provider.starts)
+	}
+}
+
+// A sandbox that powered itself down says why on its own row, so a listing
+// and the event stream can tell an idle stop from a crash. The row's record
+// is the control plane's, written with the confirmed power-down: the
+// sandbox's last agent status, which stays as it was after a person's stop
+// too, is never read for it.
+func TestAnIdlePowerDownIsRecordedOnTheSandbox(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"idle": true})
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.setRuntime(t, model.SandboxRuntimeStateStopped)
+	got := f.load(t).CurrentPowerDown()
+	if got == nil || got.Reason != model.SandboxPowerDownIdle || !got.At.Equal(f.now) {
+		t.Fatalf("the stopped sandbox's power-down = %+v, want idle at %v", got, f.now)
+	}
+	events, err := f.st.ListLatestSandboxEvents(context.Background(), "project-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || !strings.Contains(string(events[0].Data), `"powerDownReason":"idle"`) {
+		t.Fatalf("latest events = %+v, want the stopped sandbox's to say idle", events)
+	}
+}
+
+// The power-down is recorded while the row still reads running, ahead of the
+// pool's report of the stop: a restamp of that running keeps it, and it
+// answers only once the sandbox is down.
+func TestAPowerDownIsCurrentOnlyOnceTheSandboxIsDown(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"sleep": map[string]any{"requestedAt": f.now, "request": "agent"}})
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	sb := f.load(t)
+	if sb.PowerDown == nil {
+		t.Fatal("a restamp of running cleared the power-down recorded ahead of the stop")
+	}
+	if sb.CurrentPowerDown() != nil {
+		t.Fatalf("a running sandbox reads as down from %+v", sb.CurrentPowerDown())
+	}
+	f.setRuntime(t, model.SandboxRuntimeStateSuspended)
+	if got := f.load(t).CurrentPowerDown(); got == nil || got.Reason != model.SandboxPowerDownSleep {
+		t.Fatalf("the frozen sandbox's power-down = %+v, want sleep", got)
+	}
+}
+
+// Once the sandbox is seen coming up again, by use or by its wake, the
+// power-down is over: a later stop, a crash say, is not explained by it.
+func TestAPowerDownIsClearedWhenTheSandboxComesBack(t *testing.T) {
+	for _, state := range []string{model.SandboxRuntimeStateStarting, model.SandboxRuntimeStateRunning} {
+		t.Run(state, func(t *testing.T) {
+			f := newPowerFixture(t)
+			f.setRuntime(t, model.SandboxRuntimeStateRunning)
+			f.report(t, map[string]any{"idle": true})
+			if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+				t.Fatal(err)
+			}
+			f.setRuntime(t, model.SandboxRuntimeStateStopped)
+			f.setRuntime(t, state)
+			f.setRuntime(t, model.SandboxRuntimeStateStopped)
+			if got := f.load(t).PowerDown; got != nil {
+				t.Fatalf("power-down = %+v after the sandbox came back, want none", got)
+			}
+		})
+	}
+}
+
+// A person's instruction makes the state theirs: the stop it ends in is not
+// the sandbox's own.
+func TestAPersonsStopClearsThePowerDown(t *testing.T) {
+	f := newPowerFixture(t)
+	f.setRuntime(t, model.SandboxRuntimeStateRunning)
+	f.report(t, map[string]any{"idle": true})
+	if _, err := f.reconciler.Reconcile(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	f.setRuntime(t, model.SandboxRuntimeStateStopped)
+	if _, err := f.svc.StopSandbox(context.Background(), "project-1", f.sandboxID, services.StopSandboxBody{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.load(t).PowerDown; got != nil {
+		t.Fatalf("power-down = %+v after a person's stop, want none", got)
+	}
+	events, err := f.st.ListLatestSandboxEvents(context.Background(), "project-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || strings.Contains(string(events[0].Data), "powerDownReason") {
+		t.Fatalf("latest events = %+v, want no power-down reason after the person's stop", events)
 	}
 }
