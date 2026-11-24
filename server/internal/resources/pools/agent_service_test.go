@@ -957,6 +957,34 @@ func TestAReportThatAnAgentTakesWebSocketPlacesResendsItsSentinels(t *testing.T)
 	}
 }
 
+// An agent that now takes a body block's form places is recorded as taking
+// them, and sent its sandboxes' sentinels again, its form places with them
+// (#1577).
+func TestAReportThatAnAgentTakesFormPlacesResendsItsSentinels(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(form bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(true), SentinelGenerations: serverapi.NewOptBool(true),
+			SentinelBodyPlaces: serverapi.NewOptBool(true), SentinelWebSocket: serverapi.NewOptBool(true), SentinelFormPlaces: serverapi.NewOptBool(form),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	marked := len(recorded.sentinels)
+	report(true)
+	report(true)
+	if len(recorded.sentinels) != marked+1 {
+		t.Fatalf("marked %v, want pool-a's sentinels once more, when its agent first declared form places", recorded.sentinels)
+	}
+	if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || !pool.SentinelFormPlaces {
+		t.Fatalf("pool = %+v, %v; want it recorded as taking form places", pool, err)
+	}
+}
+
 // A ready report the agent marks as its process's first is told to the
 // upgrade watch, at the time the report was stored with; a heartbeat, and a
 // first report that is not ready, are not (ADR 26-11-15-602 §2).

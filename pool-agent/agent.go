@@ -406,6 +406,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			SentinelBodyPlaces:   true,
 			SourceDefaultBranch:  true,
 			SentinelWebSocket:    true,
+			SentinelFormPlaces:   true,
 			FirstReport:          first,
 			Ready:                true,
 			Schedulable:          status.schedulable,

@@ -158,9 +158,10 @@ func usage(w io.Writer) {
       any path. graphql= names the GraphQL operations allowed (query,
       mutation, subscription, or *) and optionally :FIELDS, the root fields
       they select; mcp= the MCP tools a tools/call may name. body= names
-      places in a JSON request body, JSON pointers joined by ,/: the
-      credential is sent there, as the whole string at one of them, and
-      nowhere else. ws= names places in the JSON messages sent on the
+      places in a request body, joined by commas: JSON pointers into a JSON
+      body, or form:NAME for a field of a URL-encoded form body. The
+      credential is sent there, as the whole string or field value at one
+      of them, and nowhere else. ws= names places in the JSON messages sent on the
       WebSocket connection the route's request upgrades, one JSON array of
       {"at": POINTER, "when": {MEMBER: VALUE}}: the credential is sent as the
       whole string at a pointer, in a message whose top-level members hold

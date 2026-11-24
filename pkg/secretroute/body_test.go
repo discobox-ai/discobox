@@ -16,6 +16,10 @@ func TestBodyRouteNormalizeParseFormat(t *testing.T) {
 		"app.boxd.sh body=/a~1b,/c~0d=blocked":                     "app.boxd.sh body=/a~1b,/c~0d=blocked",
 		"POST app.boxd.sh/api/v1/auth/token body=/odd,key=blocked": "POST app.boxd.sh/api/v1/auth/token body=/odd,key=blocked",
 		"POST app.boxd.sh/api/v1/auth/token body=/":                "POST app.boxd.sh/api/v1/auth/token body=/",
+		"POST api.x.test/oauth2/get_token body=form:client_secret": "POST api.x.test/oauth2/get_token body=form:client_secret",
+		"api.x.test body=form:b,/a,b,form:a[x]=blocked":            "api.x.test body=/a,b,form:a[x],form:b=blocked",
+		"api.x.test body=form:blocked":                             "api.x.test body=form:blocked",
+		"api.x.test body=form:form:x":                              "api.x.test body=form:form:x",
 	} {
 		route, err := Parse(text)
 		if err != nil {
@@ -32,6 +36,8 @@ func TestBodyRouteNormalizeParseFormat(t *testing.T) {
 	for text, wantErr := range map[string]string{
 		"app.boxd.sh body=":                 "JSON pointers",
 		"app.boxd.sh body=api_key":          "JSON pointers",
+		"app.boxd.sh body=form:":            "form field",
+		"app.boxd.sh body=form:a,form:":     "form field",
 		"app.boxd.sh body=/a~2":             "~0 or ~1",
 		"app.boxd.sh body=/a~":              "~0 or ~1",
 		"app.boxd.sh body=/a body=/b":       "one body=",
@@ -42,7 +48,7 @@ func TestBodyRouteNormalizeParseFormat(t *testing.T) {
 			t.Fatalf("Parse(%q) = %v, want %q", text, err, wantErr)
 		}
 	}
-	for _, place := range []string{"/a=b", "/a b", "/a\x01", "/a,/b"} {
+	for _, place := range []string{"/a=b", "/a b", "/a\x01", "/a,/b", "/a,form:b", "form:", "form:a=b", "form:a,b", "form:a b", "form:a\x01", "form:\xff", "client_secret"} {
 		if _, err := Normalize(Route{Hosts: []string{"x.test"}, Body: &Body{Places: []string{place}}}); err == nil {
 			t.Fatalf("Normalize accepted body place %q", place)
 		}
@@ -133,6 +139,30 @@ func TestDecideBodyPlaces(t *testing.T) {
 			reason: "refuses",
 		},
 		{
+			name:    "a form field a route names",
+			routes:  []string{"POST app.boxd.sh/api/v1/auth/token body=form:client_secret"},
+			req:     at(post, "form:client_secret"),
+			allowed: true,
+		},
+		{
+			name:   "a form route grants no JSON pointer of the same name",
+			routes: []string{"POST app.boxd.sh/api/v1/auth/token body=form:client_secret"},
+			req:    at(post, "/client_secret"),
+			reason: "does not name the body place /client_secret",
+		},
+		{
+			name:   "a JSON route grants no form field of the same name",
+			routes: []string{"POST app.boxd.sh/api/v1/auth/token body=/client_secret"},
+			req:    at(post, "form:client_secret"),
+			reason: "does not name the body place form:client_secret",
+		},
+		{
+			name:   "a blocked form route refuses its field",
+			routes: []string{"app.boxd.sh/api/v1/auth/token body=form:client_secret=blocked", "POST app.boxd.sh/api/** body=form:client_secret"},
+			req:    at(post, "form:client_secret"),
+			reason: "refuses",
+		},
+		{
 			name:    "a blocked body route leaves the headers alone",
 			routes:  []string{"app.boxd.sh/api/v1/auth/token body=/api_key=blocked", "app.boxd.sh"},
 			req:     post,
@@ -166,15 +196,15 @@ func TestBodyPlaces(t *testing.T) {
 	past := time.Now().Add(-time.Minute)
 	grants := []Grant{
 		{Lists: [][]Route{routes(t, "POST app.boxd.sh/api/v1/auth/token body=/api_key", "app.boxd.sh", "app.boxd.sh/api/v1/auth/token body=/x=blocked")}},
-		{Lists: [][]Route{routes(t, "app.boxd.sh/api/** body=/b,/api_key")}},
+		{Lists: [][]Route{routes(t, "app.boxd.sh/api/** body=/b,/api_key,form:client_secret")}},
 		{Lists: [][]Route{routes(t, "app.boxd.sh body=/expired")}, ExpiresAt: &past},
 	}
 	for _, tc := range []struct {
 		req  Request
 		want string
 	}{
-		{get("POST", boxdExchange), "/api_key /b"},
-		{get("GET", boxdExchange), "/api_key /b"},
+		{get("POST", boxdExchange), "/api_key /b form:client_secret"},
+		{get("GET", boxdExchange), "/api_key /b form:client_secret"},
 		{get("GET", "https://app.boxd.sh/other"), ""},
 		{get("POST", "https://other.test/api/v1/auth/token"), ""},
 	} {
@@ -195,6 +225,7 @@ func TestProveContainedBodyPlaces(t *testing.T) {
 		{[]string{"app.boxd.sh body=/api_key"}, []string{"app.boxd.sh"}, false},
 		{[]string{"app.boxd.sh"}, []string{"app.boxd.sh body=/api_key"}, false},
 		{[]string{"app.boxd.sh/x"}, []string{"app.boxd.sh"}, true},
+		{[]string{"app.boxd.sh body=form:api_key"}, []string{"app.boxd.sh body=/api_key,/token"}, false},
 	} {
 		err := ProveContained(secret, routes(t, tc.grant...), routes(t, tc.limit...))
 		if (err == nil) != tc.ok {

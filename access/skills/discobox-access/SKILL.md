@@ -126,8 +126,18 @@ discobox-access request \
     `POST app.boxd.sh/api/v1/auth/token body=/api_key`. Put the variable's
     value there as the whole JSON string; it is swapped there and nowhere
     else. Send it with `Content-Type: application/json` (plain `curl -d`
-    sends a form type, and a body that is not JSON is never swapped in), a
-    `Content-Length` and no compression, or it is refused.
+    sends a form type, and a body that is not JSON is never swapped in at a
+    JSON pointer), a
+    `Content-Length` and no compression, or it is refused. For an API that
+    takes its key as a URL-encoded form field (an OAuth token endpoint's
+    `client_secret`), name the field as `form:NAME`, such as
+    `POST oauth2.example.com/token body=form:client_secret`, and send the
+    variable's value as that field's whole value with
+    `Content-Type: application/x-www-form-urlencoded`, once, with a
+    `Content-Length` and no compression. Encode it as a form value
+    (`curl --data-urlencode "client_secret=$VAR"`, or `URLSearchParams`):
+    a placeholder can hold `+` or `/`, and `curl -d` sends a `+` as is,
+    which the form reads as a space, so nothing is swapped.
   - `ws=PLACES`: for a WebSocket service that takes its token in a message
     after the upgrade (Discord's Gateway IDENTIFY), one JSON array of
     `{"at": POINTER, "when": {MEMBER: VALUE}}`, such as

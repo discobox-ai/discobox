@@ -178,8 +178,8 @@ func TestHTTPProxySwapsASentinelAtABodyPlace(t *testing.T) {
 	}
 
 	// A body that does not say it is JSON — an upload, a form — is sent
-	// unread on the same route, however long or chunked: a place is in a
-	// JSON body.
+	// unread on the same route, however long or chunked: a JSON pointer is
+	// a place in a JSON body, and this route names no form place.
 	for i, contentType := range []string{"application/octet-stream", "application/x-www-form-urlencoded"} {
 		before := len(origin.requests())
 		upload := `{"api_key":"` + sentinel + `"}` + strings.Repeat("x", routeBodyLimit)

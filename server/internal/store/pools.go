@@ -301,6 +301,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		stored.SentinelGenerations = takes.Generations
 		stored.SentinelBodyPlaces = takes.BodyPlaces
 		stored.SentinelWebSocket = takes.WebSocket
+		stored.SentinelFormPlaces = takes.FormPlaces
 		stored.SourceDefaultBranch = takes.SourceDefaultBranch
 		stored.Ready = ready
 		// A pool whose agent does not declare the OS the pool names takes no
@@ -331,8 +332,8 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 // that it takes of what an older agent's decoder would refuse. An agent from
 // before a field declares it false, and is sent nothing it names.
 type AgentDeclarations struct {
-	// Grants, Generations and BodyPlaces are how it takes its sandboxes'
-	// sentinels (sentinelShapeChanged).
+	// Grants, Generations, BodyPlaces, WebSocket and FormPlaces are how it
+	// takes its sandboxes' sentinels (sentinelShapeChanged).
 	//
 	// Grants: it holds a sentinel to grants (ADR 26-11-03-329 §3).
 	Grants bool
@@ -344,6 +345,9 @@ type AgentDeclarations struct {
 	// WebSocket: it takes a route's WebSocket block, and its proxy swaps a
 	// sentinel at the message places it names (ADR 26-11-06-442).
 	WebSocket bool
+	// FormPlaces: it takes a body block's form places, and its proxy swaps
+	// a sentinel at the form fields they name (#1577).
+	FormPlaces bool
 	// SourceDefaultBranch: it takes a git source's defaultBranch (#245). It
 	// is read when a sandbox is created, so a change of it resends nothing.
 	SourceDefaultBranch bool
@@ -355,7 +359,8 @@ type AgentDeclarations struct {
 // resends nothing.
 func (d AgentDeclarations) sentinelShapeChanged(stored *model.Pool) bool {
 	return stored.SentinelGrants != d.Grants || stored.SentinelGenerations != d.Generations ||
-		stored.SentinelBodyPlaces != d.BodyPlaces || stored.SentinelWebSocket != d.WebSocket
+		stored.SentinelBodyPlaces != d.BodyPlaces || stored.SentinelWebSocket != d.WebSocket ||
+		stored.SentinelFormPlaces != d.FormPlaces
 }
 
 // RecordPoolProvisionProgress stores what a provider driver is doing to bring a

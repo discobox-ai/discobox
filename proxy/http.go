@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net"
 	"net/http"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/cache"
@@ -894,22 +896,37 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 
 // matchBody finds the client's sentinels at the body places its routes name
 // for req (secrets.Swapper.BodyPlaces), reading the body only when there are
-// any and the request says its body is JSON (a Content-Type naming /json or
-// +json): a place is in a JSON body, and an upload, a form, a stream or an
-// upgrade on the same route is sent unread, with nothing in it swapped. A
-// JSON body whose places cannot be read for a sentinel is refused here, never
-// sent with one: past routeBodyLimit, of undeclared length, in an encoding
-// the proxy cannot decode, holding a sentinel without being JSON a place can
-// be read in, or holding one at a place under a Content-Encoding, which the
-// proxy decodes to read but does not encode again.
+// any of the kind its Content-Type says it is: JSON pointers in a JSON body
+// (a Content-Type naming /json or +json), form places in a URL-encoded form
+// (every Content-Type application/x-www-form-urlencoded). Any other body —
+// an upload, a stream, an upgrade, or a body of the other kind — is sent
+// unread on the same route, with nothing in it swapped. A body whose places
+// cannot be read for a sentinel is refused here, never sent with one: past
+// routeBodyLimit, of undeclared length, in an encoding the proxy cannot
+// decode, holding a sentinel without being JSON or a form a place can be read
+// in, or holding one at a place under a Content-Encoding, which the proxy
+// decodes to read but does not encode again.
 func (h *httpProxy) matchBody(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, readBody func() ([]byte, bool)) (secrets.BodyUses, *http.Response) {
+	if headerContainsToken(req.Header, "Connection", "Upgrade") || req.Header.Get("Upgrade") != "" {
+		return secrets.BodyUses{}, nil
+	}
 	places := h.swapper.BodyPlaces(meta.ctx, secrets.PlacesRequest{
 		ClientID: client.ID,
 		Method:   req.Method,
 		Host:     req.Host,
 		URL:      preURL,
 	})
-	if len(places) == 0 || !jsonBody(req.Header) || headerContainsToken(req.Header, "Connection", "Upgrade") || req.Header.Get("Upgrade") != "" {
+	match := h.swapper.MatchBody
+	switch form := func(place string) bool { _, ok := secretroute.FormPlace(place); return ok }; {
+	case jsonBody(req.Header):
+		places = slices.DeleteFunc(places, form)
+	case formBody(req.Header):
+		places = slices.DeleteFunc(places, func(place string) bool { return !form(place) })
+		match = h.swapper.MatchForm
+	default:
+		places = nil
+	}
+	if len(places) == 0 {
 		return secrets.BodyUses{}, nil
 	}
 	body, ok := readBody()
@@ -917,7 +934,7 @@ func (h *httpProxy) matchBody(req *http.Request, meta *requestMeta, client clien
 		return secrets.BodyUses{}, h.refuseRoute(req, meta, client, preURL, preSwapHeader,
 			"a route names places in this request's body, which could not be read (too large, of undeclared length, or in an encoding the proxy cannot decode)")
 	}
-	uses, err := h.swapper.MatchBody(client.ID, body, places)
+	uses, err := match(client.ID, body, places)
 	if err != nil {
 		return secrets.BodyUses{}, h.refuseRoute(req, meta, client, preURL, preSwapHeader, err.Error())
 	}
@@ -929,11 +946,24 @@ func (h *httpProxy) matchBody(req *http.Request, meta *requestMeta, client clien
 }
 
 // jsonBody reports whether a request says its body is JSON, the only body a
-// place is read in.
+// JSON pointer place is read in.
 func jsonBody(header http.Header) bool {
 	return slices.ContainsFunc(header.Values("Content-Type"), func(value string) bool {
 		value = strings.ToLower(value)
 		return strings.Contains(value, "/json") || strings.Contains(value, "+json")
+	})
+}
+
+// formBody reports whether a request says its body is a URL-encoded form and
+// nothing else, the only body a form place is read in: it carries a
+// Content-Type, and every one it carries is application/x-www-form-urlencoded,
+// parameters aside. An untyped body, which some servers parse as a form and
+// others do not, is not read for one.
+func formBody(header http.Header) bool {
+	values := header.Values("Content-Type")
+	return len(values) > 0 && !slices.ContainsFunc(values, func(value string) bool {
+		mediaType, _, err := mime.ParseMediaType(value)
+		return err != nil || mediaType != "application/x-www-form-urlencoded"
 	})
 }
 

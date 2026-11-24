@@ -59,6 +59,25 @@ grants no body place. It answers only for what is certainly disjoint (hosts,
 methods); paths and blocks stay `Decide`'s. Callers run it against every list
 the grant will be held to.
 
+# Form places
+
+A body place is a JSON pointer or a form place, `form:NAME` (#1577): the
+field of a URL-encoded form body with that decoded name (`FormPlace`). They
+share `Body.Places`, so every rule above — containment, `PlacesAllowed`,
+`Decide`'s per-use split — compares them as strings and needs nothing of its
+own; a pointer is `""` or starts with `/`, so the two never collide, and a
+form place is never the pointer of the same name. Typed, places are joined by
+commas, a new one starting at `/` or `form:`; a pointer holds no `,/` or
+`,form:` and a form name no `,`, so `Format` reads back as itself. Which kind
+a body is read for is the proxy's, by Content-Type.
+
+A pointer holding `,form:` was valid before form places and is refused since,
+with no upgrade step: it names a member whose name holds `,form:`, which no
+API a body route was written for takes. A stored one stops normalizing and
+fails closed — the control plane refuses the write that would carry it, and
+the pool leaves an open one out and refuses a blocked one's list — never
+reading as a form place.
+
 # Any path
 
 `AnyPath` says whether a route's paths reach every path below the root — no

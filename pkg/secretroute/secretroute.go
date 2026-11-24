@@ -5,8 +5,9 @@
 // A route names hosts — exact names, `*.suffix` for the hosts strictly beneath
 // a suffix, or `*` alone for any host (ADR 26-10-27-939) — and, optionally,
 // the methods, the paths (segment globs) and the GraphQL operations or MCP
-// tools it allows, or the places in a JSON request body a credential is
-// swapped at (a body block, #1012; ADR 26-11-11-080 §9), or the places in the
+// tools it allows, or the places in a JSON or URL-encoded form request body a
+// credential is swapped at (a body block, #1012, #1577; ADR 26-11-11-080 §9),
+// or the places in the
 // messages a client sends on the WebSocket connection it upgrades (a
 // WebSocket block, ADR 26-11-06-442). A blocked route refuses what it is the most specific
 // candidate for: it is a carve-out inside a wider route of the same list, and
@@ -62,17 +63,31 @@ type Route struct {
 	Blocked   bool       `json:"blocked,omitempty"`
 }
 
-// Body holds a route to places in a JSON request body: the credential is
-// carried there, and swapped there, instead of in the request's headers or
-// query. A route with a body block grants those places and nothing else: it
-// is no route for a credential in the headers, and a route without one is no
-// route for a credential in the body. An open body route allows a credential
-// at a place it names, and only as the whole of the JSON string there; a
-// blocked one refuses it there.
+// Body holds a route to places in a request body: the credential is carried
+// there, and swapped there, instead of in the request's headers or query. A
+// route with a body block grants those places and nothing else: it is no
+// route for a credential in the headers, and a route without one is no route
+// for a credential in the body. An open body route allows a credential at a
+// place it names, and only as the whole of the value there — the JSON string
+// at a pointer, or the form field's value; a blocked one refuses it there.
 type Body struct {
-	// Places are RFC 6901 JSON pointers into the request body, such as
-	// "/api_key". None is refused: a body block names where.
+	// Places are RFC 6901 JSON pointers into a JSON body, such as
+	// "/api_key", and form fields of a URL-encoded form body, each
+	// FormPlacePrefix and the field's decoded name, such as
+	// "form:client_secret" (FormPlace). None is refused: a body block names
+	// where.
 	Places []string `json:"places"`
+}
+
+// FormPlacePrefix starts a body place that names a field of a URL-encoded
+// form body (application/x-www-form-urlencoded) rather than a JSON pointer.
+// A pointer is "" or starts with "/", so the two never read as each other.
+const FormPlacePrefix = "form:"
+
+// FormPlace is the form field a body place names, decoded, and whether it
+// names one at all: false is a JSON pointer.
+func FormPlace(place string) (string, bool) {
+	return strings.CutPrefix(place, FormPlacePrefix)
 }
 
 // GraphQL holds a route to the GraphQL documents a request executes: the
@@ -276,17 +291,26 @@ func normalizePath(routePath string) (string, error) {
 	return trimmed, nil
 }
 
-// validatePlace checks one body place: an RFC 6901 JSON pointer to a member
-// or element, so it starts with "/", and every "~" in it is "~0" or "~1". It
-// holds no space or control character, no "=" (the blocked suffix) and no
-// ",/" (the separator between places), so its typed form reads back as
-// itself. It is taken as written: a pointer names one exact place.
+// validatePlace checks one body place. A form place is FormPlacePrefix and a
+// field name of at least one rune, with no space or control character, no
+// "=" (the blocked suffix and the form's own separator) and no "," (the
+// separator between places). Any other is an RFC 6901 JSON pointer to a
+// member or element, so it starts with "/", and every "~" in it is "~0" or
+// "~1". It holds no space or control character, no "=", and no ",/" or
+// ",form:" (where the next place starts), so its typed form reads back as
+// itself. Either is taken as written: a place names one exact place.
 func validatePlace(place string) error {
-	if !strings.HasPrefix(place, "/") {
-		return fmt.Errorf("route body place %q must be a JSON pointer starting with /", place)
+	if name, ok := FormPlace(place); ok {
+		if name == "" || strings.ContainsAny(name, "=, \t") || hasControl(name) || !utf8.ValidString(name) {
+			return fmt.Errorf("route body place %s must name a form field without spaces, = or ,", Safe(place))
+		}
+		return nil
 	}
-	if strings.ContainsAny(place, "= \t") || strings.Contains(place, ",/") || hasControl(place) || !utf8.ValidString(place) {
-		return fmt.Errorf("route body place %q must be a JSON pointer without spaces, = or ,/", place)
+	if !strings.HasPrefix(place, "/") {
+		return fmt.Errorf("route body place %q must be a JSON pointer starting with /, or form:NAME", place)
+	}
+	if strings.ContainsAny(place, "= \t") || strings.Contains(place, ",/") || strings.Contains(place, ","+FormPlacePrefix) || hasControl(place) || !utf8.ValidString(place) {
+		return fmt.Errorf("route body place %q must be a JSON pointer with no spaces, =, ,/ or ,form: in it", place)
 	}
 	for i := 0; i < len(place); i++ {
 		if place[i] == '~' && (i+1 >= len(place) || (place[i+1] != '0' && place[i+1] != '1')) {
@@ -342,7 +366,9 @@ func sortedSet(list []string) []string {
 // joined by a "," immediately followed by "/". OPS is a comma list of
 // operation types, or `*` for any, and FIELDS a comma list of root fields;
 // TOOLS is a comma list of tool names, or `*` for any. PLACES is one or more
-// JSON pointers into the request body, joined like PATHS. The ws= PLACES
+// body places joined by commas: JSON pointers into a JSON body, each starting
+// with "/", and form fields of a URL-encoded form body, each form:NAME. A
+// comma followed by anything else is part of the pointer before it. The ws= PLACES
 // are one JSON array of message places, {"at": POINTER, "when": {NAME:
 // SCALAR}}, read as one JSON value whatever whitespace is inside it. The `=blocked` suffix
 // on the whole text blocks the route. The route is normalized. Any other word
@@ -452,15 +478,19 @@ func parseWords(text string) (Route, error) {
 			if route.Body != nil {
 				return Route{}, fmt.Errorf("a route has one body=")
 			}
-			if !strings.HasPrefix(value, "/") {
-				return Route{}, fmt.Errorf("body=PLACES needs JSON pointers, each starting with /")
+			starts := func(piece string) bool {
+				return strings.HasPrefix(piece, "/") || strings.HasPrefix(piece, FormPlacePrefix)
+			}
+			if !starts(value) {
+				return Route{}, fmt.Errorf("body=PLACES needs JSON pointers, each starting with /, or form fields, each form:NAME")
 			}
 			route.Body = &Body{}
-			for i, place := range strings.Split(value, ",/") {
-				if i > 0 {
-					place = "/" + place
+			for _, piece := range strings.Split(value, ",") {
+				if last := len(route.Body.Places) - 1; !starts(piece) {
+					route.Body.Places[last] += "," + piece
+					continue
 				}
-				route.Body.Places = append(route.Body.Places, place)
+				route.Body.Places = append(route.Body.Places, piece)
 			}
 		default:
 			return Route{}, fmt.Errorf("%q is not part of a route: a route is %s", word, Syntax)

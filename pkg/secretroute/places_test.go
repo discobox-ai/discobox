@@ -33,6 +33,8 @@ func TestPlacesAllowed(t *testing.T) {
 		{"another host", routes(exchange), routes("POST other.example body=/api_key"), false},
 		{"another method", routes(exchange), routes("PUT app.boxd.sh body=/api_key"), false},
 		{"a blocked route allows nothing", routes(exchange), routes("*", "app.boxd.sh body=/api_key=blocked"), false},
+		{"a form field is not the pointer of its name", routes("POST app.boxd.sh body=form:api_key"), routes(exchange), false},
+		{"the form field on the host", routes("POST app.boxd.sh body=form:api_key"), routes("app.boxd.sh body=/api_key,form:api_key"), true},
 		{"every place must be named", routes("POST app.boxd.sh body=/api_key,/secret"), routes("POST app.boxd.sh body=/api_key"), false},
 		{"header routes are not this check's", routes("api.github.com"), routes("app.boxd.sh body=/api_key"), true},
 		{"a blocked grant route grants nothing", routes("app.boxd.sh body=/api_key=blocked"), routes("*"), true},

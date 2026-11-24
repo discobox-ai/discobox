@@ -777,7 +777,15 @@ type Pool struct {
 	// agent has not declared it is sent no route with one: its decoder
 	// refuses a field it does not know, and it swaps nothing in a message, so
 	// leaving such a route out only narrows what its lists allow.
-	SentinelWebSocket     bool    `gorm:"column:sentinel_web_socket;not null;default:false" json:"-"`
+	SentinelWebSocket bool `gorm:"column:sentinel_web_socket;not null;default:false" json:"-"`
+	// SentinelFormPlaces is whether the pool's agent takes a sentinel route's
+	// form places (a body block's form:NAME, #1577) and its proxy swaps a
+	// sentinel at the form fields they name, declared on every status
+	// report. A pool whose agent has not declared it is sent its body routes
+	// without them: it would hold a route naming one as one it cannot read,
+	// dropping it or, blocked, refusing the list it is in, and it swaps
+	// nothing in a form, so leaving form places out only narrows.
+	SentinelFormPlaces    bool    `gorm:"column:sentinel_form_places;not null;default:false" json:"-"`
 	PublicKey             string  `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
 	KeyType               string  `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
 	Ready                 bool    `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`

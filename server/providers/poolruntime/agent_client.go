@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,18 +62,21 @@ type poolAgentClient struct {
 }
 
 // routeBlocks is which of a route's place blocks a pool's agent declared it
-// takes: its body block (model.Pool.SentinelBodyPlaces, #1012) and its
-// WebSocket block (model.Pool.SentinelWebSocket, ADR 26-11-06-442). An agent
-// is sent no route with a block it has not declared, since its decoder
-// refuses a field it does not know.
+// takes: its body block (model.Pool.SentinelBodyPlaces, #1012), the form
+// places in one (model.Pool.SentinelFormPlaces, #1577), and its WebSocket
+// block (model.Pool.SentinelWebSocket, ADR 26-11-06-442). An agent is sent no
+// route with a block it has not declared, since its decoder refuses a field
+// it does not know, and no form place it has not, since it holds a route
+// naming one as a route it cannot read.
 type routeBlocks struct {
 	bodyPlaces bool
+	formPlaces bool
 	webSocket  bool
 }
 
 // routeBlocksOf is what a pool's agent last declared it takes.
 func routeBlocksOf(pool *model.Pool) routeBlocks {
-	return routeBlocks{bodyPlaces: pool.SentinelBodyPlaces, webSocket: pool.SentinelWebSocket}
+	return routeBlocks{bodyPlaces: pool.SentinelBodyPlaces, formPlaces: pool.SentinelFormPlaces, webSocket: pool.SentinelWebSocket}
 }
 
 // newPoolAgentClient is a client of one pool's agent over lease, speaking
@@ -1395,10 +1399,12 @@ func poolSentinelRoutes(in map[string][]secretroute.Grant, takes routeBlocks) ma
 // poolRouteLists states route lists the way the pool agent reads them. An
 // agent that has not declared it takes body places is sent no route with a
 // body block, and one that has not declared it takes WebSocket places none
-// with a WebSocket block (takes). That only narrows: such an agent swaps
-// nothing in a body or message, so an open one allowed it nothing, and a
-// blocked one refuses a body or message place and no header use. A list left
-// with no route refuses everything, as an empty list does.
+// with a WebSocket block (takes). One that takes body places but has not
+// declared form places is sent each body route without its form places, and
+// not at all when it names nothing else. That only narrows: such an agent
+// swaps nothing in a body, form or message, so an open one allowed it
+// nothing, and a blocked one refuses a body or message place and no header
+// use. A list left with no route refuses everything, as an empty list does.
 func poolRouteLists(lists [][]secretroute.Route, takes routeBlocks) [][]poolclient.SentinelRoute {
 	poolLists := make([][]poolclient.SentinelRoute, 0, len(lists))
 	for _, routes := range lists {
@@ -1406,6 +1412,16 @@ func poolRouteLists(lists [][]secretroute.Route, takes routeBlocks) [][]poolclie
 		for _, route := range routes {
 			if route.Body != nil && !takes.bodyPlaces || route.WebSocket != nil && !takes.webSocket {
 				continue
+			}
+			if route.Body != nil && !takes.formPlaces {
+				places := slices.DeleteFunc(slices.Clone(route.Body.Places), func(place string) bool {
+					_, form := secretroute.FormPlace(place)
+					return form
+				})
+				if len(places) == 0 {
+					continue
+				}
+				route.Body = &secretroute.Body{Places: places}
 			}
 			item := poolclient.SentinelRoute{Hosts: route.Hosts, Methods: route.Methods, Paths: route.Paths}
 			if route.GraphQL != nil {

@@ -39,8 +39,9 @@ import (
 //
 // At is where in the request the credential is carried, each decided on its
 // own and every one needing to be allowed: InHeaders for its headers or
-// query, or a body place, the JSON pointer of a string in a JSON body that
-// is exactly the credential's sentinel. None is InHeaders alone.
+// query, or a body place: the JSON pointer of a string in a JSON body, or
+// the form place (FormPlace) of a field in a URL-encoded form body, that is
+// exactly the credential's sentinel. None is InHeaders alone.
 //
 // Message is set for a credential carried in a message a client sent on the
 // WebSocket connection the request upgraded (ADR 26-11-06-442): the request

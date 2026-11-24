@@ -3,6 +3,7 @@ package poolruntime
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -372,6 +373,34 @@ func TestPoolCreateRequestCarriesWebSocketPlacesOnlyToAnAgentThatTakesThem(t *te
 	place := sent[1].Websocket.Value.Places[0]
 	if when, _ := place.When.Get(); place.At != "/d/token" || string(when["op"]) != "2" {
 		t.Fatalf("place = %+v", place)
+	}
+}
+
+// A body block's form places go only to an agent that declared it takes
+// them: any other would hold a route naming one as a route it cannot read,
+// dropping it, or refusing its whole list when it is blocked. It is sent each
+// body route without its form places, and none that names nothing else.
+func TestPoolCreateRequestCarriesFormPlacesOnlyToAnAgentThatTakesThem(t *testing.T) {
+	headers := secretroute.Route{Hosts: []string{"api.x.test"}}
+	mixed := secretroute.Route{Hosts: []string{"api.x.test"}, Body: &secretroute.Body{Places: []string{"/api_key", "form:client_secret"}}}
+	form := secretroute.Route{Hosts: []string{"api.x.test"}, Body: &secretroute.Body{Places: []string{"form:client_secret"}}, Blocked: true}
+	opts := sandbox.CreateOptions{
+		Sentinels:      []string{"SENT"},
+		SentinelGrants: map[string][]secretroute.Grant{"SENT": {{Lists: [][]secretroute.Route{{headers, mixed, form}}}}},
+	}
+	old := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{bodyPlaces: true, webSocket: true}, false)
+	grants, _ := old.SentinelGrants.Get()
+	if got := grants["SENT"][0].Lists[0]; len(got) != 2 || got[0].Body.IsSet() || !slices.Equal(got[1].Body.Value.Places, []string{"/api_key"}) {
+		t.Fatalf("SENT = %+v, want its header route and its body route's JSON place alone", got)
+	}
+	if !slices.Equal(mixed.Body.Places, []string{"/api_key", "form:client_secret"}) {
+		t.Fatalf("the route sent was changed in place: %v", mixed.Body.Places)
+	}
+	current := poolCreateRequestFromOptions("sandbox-1", opts, true, true, routeBlocks{bodyPlaces: true, formPlaces: true, webSocket: true}, false)
+	grants, _ = current.SentinelGrants.Get()
+	sent := grants["SENT"][0].Lists[0]
+	if len(sent) != 3 || !slices.Equal(sent[1].Body.Value.Places, mixed.Body.Places) || !sent[2].Blocked.Or(false) {
+		t.Fatalf("SENT = %+v, want every route, the form places carried", sent)
 	}
 }
 

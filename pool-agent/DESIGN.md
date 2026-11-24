@@ -2478,7 +2478,12 @@ flowchart LR
   (`AuthorizeRequest.Message`) is held to each pointer it stands at in that
   message, in one grant, and `InspectsMessages` answers from the routes held
   here whether an upgrade's messages are read at all
-  (`secretroute.WebSocketCandidate`).
+  (`secretroute.WebSocketCandidate`). A body route's form places
+  (`form:NAME`, #1577) go the same way once more: the agent declares
+  `sentinelFormPlaces`, and a control plane sends an agent that did not each
+  body route without them. They stay in `bodyRoutes` on disk: an agent from
+  before them fails to normalize a route naming one, which leaves an open
+  one out and makes a blocked one's list refuse everything, never wider.
 - **Routes are written normalized** (`UpsertSandboxSentinels`,
   `secretroute.Normalize`). One that does not normalize — the control plane
   validates every route, so only a pool of another version meets one — fails
