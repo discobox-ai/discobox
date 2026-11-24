@@ -195,6 +195,64 @@ func TestOAuthSecretKeepsTheClientSecretItIsGiven(t *testing.T) {
 	}
 }
 
+// A token secret is the value the proxy swaps in for its sentinel. With no
+// value there is nothing to swap, so every use sends the sentinel itself:
+// the create is refused, as an empty refresh output already is.
+func TestTokenWithEmptyValueIsRefused(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc := newTestService(t)
+
+	for _, token := range []string{"", "   "} {
+		_, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
+			Name:  "empty " + strings.Repeat("x", len(token)),
+			Type:  serverapi.CreateSecretBodyTypeToken,
+			Value: serverapi.SecretValue{Token: serverapi.NewOptString(token)},
+		})
+		if err == nil {
+			t.Fatalf("accepted a token secret with value %q", token)
+		}
+		var status interface{ StatusCode() int }
+		if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
+			t.Fatalf("error = %v, want a 400", err)
+		}
+	}
+}
+
+// Replacing a token secret's value with nothing is refused the same way, and
+// leaves the value it had.
+func TestTokenUpdateToEmptyValueIsRefused(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc := newTestService(t)
+
+	sec, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
+		Name:  "real",
+		Type:  serverapi.CreateSecretBodyTypeToken,
+		Value: serverapi.SecretValue{Token: serverapi.NewOptString("real-value")},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for _, token := range []string{"", "   "} {
+		_, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{
+			Value: serverapi.NewOptSecretValue(serverapi.SecretValue{Token: serverapi.NewOptString(token)}),
+		})
+		if err == nil {
+			t.Fatalf("accepted an update to value %q", token)
+		}
+		var status interface{ StatusCode() int }
+		if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
+			t.Fatalf("error = %v, want a 400", err)
+		}
+	}
+	after, err := svc.GetSecret(ctx, "project-1", sec.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if after.ValueGeneration() != sec.ValueGeneration() {
+		t.Fatalf("value generation moved from %q to %q on a refused update", sec.ValueGeneration(), after.ValueGeneration())
+	}
+}
+
 // An oauth secret is one that renews itself. Without the material for that,
 // calling it oauth promises a refresh nothing can perform.
 func TestOAuthWithoutRefreshMaterialIsRefused(t *testing.T) {
