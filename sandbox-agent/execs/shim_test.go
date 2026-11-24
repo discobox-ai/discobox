@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/sandbox-agent/procio"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
+	"github.com/discobox-ai/discobox/sandbox-agent/shimruntime"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -955,4 +956,47 @@ func TestRunShimFindsTheCommandOnTheExecsPath(t *testing.T) {
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("run shim: %v", err)
 	}
+}
+
+// A shim's process is set by the start request while the attach stream and the
+// shutdown path read it from their own goroutines: a client already attached
+// may send a frame, and RunShim may be told to stop, before the start has
+// returned. Run under -race, this fails on any unsynchronized access to proc.
+func TestShimProcIsSynchronizedWithStart(t *testing.T) {
+	dir := shimDir(t)
+	logger, err := NewAsyncLogger(newFakeLogSink(), "exec_test", nil)
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+	r := &shimRuntime{
+		cfg: ShimConfig{
+			ExecID:      "exec_test",
+			Command:     []string{"sleep", "30"},
+			Workdir:     dir,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+		},
+		logger: logger,
+		done:   make(chan struct{}),
+		exited: make(chan struct{}),
+	}
+	r.stream = shimruntime.New("discobox-sandbox-exec", r.done, r.handleAttachFrame)
+	defer r.close()
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		if err := r.startCommand(); err != nil {
+			t.Errorf("start: %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		_ = r.handleAttachFrame(frame.Frame{Type: frame.Signal, Payload: []byte("SIGCONT")})
+	}()
+	go func() {
+		defer wg.Done()
+		r.terminate()
+	}()
+	wg.Wait()
 }
