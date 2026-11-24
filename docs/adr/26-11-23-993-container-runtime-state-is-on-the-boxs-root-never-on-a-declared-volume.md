@@ -1,7 +1,8 @@
 # 26-11-23-993 — Container-runtime state is on the box's root, never on a declared volume
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-23
+  Accepted by the owner by merging #1612, 2026-11-24
 - **Supersedes in part**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md)'s
   `/var/lib/docker` among the paths a sandbox persists through a declared
   volume; [26-11-02-023](26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
