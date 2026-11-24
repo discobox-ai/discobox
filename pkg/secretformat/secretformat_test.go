@@ -344,3 +344,84 @@ func mustParseChosen(t *testing.T, format string) *Template {
 	}
 	return tmpl
 }
+
+// A Stripe key's mode is part of its prefix: SDKs and code tell a test key
+// from a live one by sk_test_ / sk_live_ (rk_ for a restricted key), so a
+// sentinel that keeps only "sk_" reads as neither.
+func TestDescribeKeepsAStripeKeysMode(t *testing.T) {
+	cases := map[string]string{
+		"sk_test_" + strings.Repeat("A1b2", 24) + "xyz": "sk_test_",
+		"sk_live_" + strings.Repeat("A1b2", 24) + "xyz": "sk_live_",
+		"rk_test_" + strings.Repeat("A1b2", 24) + "xyz": "rk_test_",
+		"sk_test_" + strings.Repeat("A1b2", 6):          "sk_test_",
+	}
+	for value, prefix := range cases {
+		format := Describe(value)
+		tmpl, err := Parse(format)
+		if err != nil {
+			t.Fatalf("format %q does not parse: %v", format, err)
+		}
+		gen, err := tmpl.Generate()
+		if err != nil {
+			t.Fatalf("generate: %v", err)
+		}
+		if !strings.HasPrefix(gen, prefix) {
+			t.Errorf("Describe(%q…) = %q generates %q, want it to keep %q", value[:12], format, gen[:12], prefix)
+		}
+	}
+}
+
+// Choosing a Stripe key's shape by hand may name its mode: "sk_test_" is the
+// value's prefix, not credential bytes copied out of it.
+func TestCheckValueAcceptsAStripeKeysModeInAChosenFormat(t *testing.T) {
+	value := "sk_test_" + strings.Repeat("A1b2", 24) + "xyz"
+	if warn, err := CheckValue(mustParseChosen(t, "sk_test_{alnum:99}"), value); warn != "" || err != nil {
+		t.Errorf("CheckValue = %q, %v, want the mode accepted as the prefix", warn, err)
+	}
+}
+
+// Stripe keys come in more than one length, so its rows fix the mode prefix
+// and read the tail from the value: the sentinel has the value's own shape,
+// and the console does not warn that a value fails the format it was given.
+func TestDescribeReadsAStripeKeysTailFromTheValue(t *testing.T) {
+	for value, want := range map[string]string{
+		"sk_test_" + strings.Repeat("A1b2", 24) + "xyz": "sk_test_{alnum:99}",
+		"rk_live_" + strings.Repeat("A1b2", 6):          "rk_live_{alnum:24}",
+		"pk_test_" + strings.Repeat("a1", 12):           "pk_test_{alnum:24}",
+	} {
+		format := Describe(value)
+		if format != want {
+			t.Errorf("Describe(%q…) = %q, want %q", value[:12], format, want)
+			continue
+		}
+		tmpl, err := Parse(format)
+		if err != nil {
+			t.Fatalf("format %q does not parse: %v", format, err)
+		}
+		if !tmpl.Validate(value) {
+			t.Errorf("value %q… does not satisfy its own described format %q", value[:12], format)
+		}
+	}
+	if got := Describe("sk_test_"); got != Infer("sk_test_").String() {
+		t.Errorf(`Describe("sk_test_") = %q, want structural inference of a bare prefix`, got)
+	}
+}
+
+// Every seed row says its shape one way: a whole template, or a tail charset
+// that exists.
+func TestEverySeedProviderHasAShape(t *testing.T) {
+	for _, p := range providers {
+		switch {
+		case (p.Format == "") == (p.Tail == ""):
+			t.Errorf("%s: want exactly one of Format and Tail, got %q and %q", p.Name, p.Format, p.Tail)
+		case p.Tail != "":
+			if _, ok := charsets[p.Tail]; !ok {
+				t.Errorf("%s: tail charset %q is not a charset", p.Name, p.Tail)
+			}
+		default:
+			if _, err := Parse(p.Format); err != nil {
+				t.Errorf("%s: format %q does not parse: %v", p.Name, p.Format, err)
+			}
+		}
+	}
+}
