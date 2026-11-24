@@ -289,6 +289,11 @@ leaves the `discobox` command for your package manager to remove.
 Ask questions, share what you are building, and follow development on
 [Discord](https://discord.gg/BSFr7Fa7f2).
 
+## Security
+
+Report vulnerabilities privately, never as a public issue; see
+[SECURITY.md](SECURITY.md).
+
 ## License
 
 See [LICENSE](LICENSE).
