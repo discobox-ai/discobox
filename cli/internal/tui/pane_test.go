@@ -806,6 +806,43 @@ func TestTheFrameNeverWraps(t *testing.T) {
 	})
 }
 
+// A terminal that never answers the mode 2027 query — the Windows 10 console
+// — has Bubble Tea measure the frame rune by rune, so a line holding an emoji
+// sequence must measure its width that way too, or the border beside it
+// shifts and later frames' diffs land a cell off. That goes for the pane's
+// rows and for the chrome a box writes, its title in the border included.
+// Once the terminal answers, the frame is drawn by grapheme cluster, as the
+// renderer then measures.
+func TestTheFrameIsMeasuredTheWayTheRendererMeasures(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, term := openWorkspace(t, ds, "enter")
+
+		family := "\U0001f468\u200d\U0001f469\u200d\U0001f467"
+		term.send("\x1b]2;⚠️ deploy\x07⚠️ warn\r\n" + family + " kin\r\n1\ufe0f\u20e3 one")
+		d.wait("the emoji rows", func() bool { return strings.Contains(frameText(m), " one") })
+
+		for i, line := range strings.Split(rawFrame(m), "\n") {
+			if w := ansi.StringWidthWc(line); w != m.screenWidth {
+				t.Fatalf("under WcWidth line %d is %d cells, want %d: %q", i, w, m.screenWidth, ansi.Strip(line))
+			}
+		}
+
+		d.dispatch(tea.ModeReportMsg{Mode: ansi.ModeUnicodeCore, Value: ansi.ModeReset})
+		for _, want := range []string{"⚠️ deploy", "⚠️ warn", family + " kin", "1\ufe0f\u20e3 one"} {
+			if !strings.Contains(frameText(m), want) {
+				t.Fatalf("under grapheme width %q should be drawn as it came:\n%s", want, frameText(m))
+			}
+		}
+		for i, line := range strings.Split(rawFrame(m), "\n") {
+			if w := ansi.StringWidth(line); w != m.screenWidth {
+				t.Fatalf("under grapheme width line %d is %d cells, want %d: %q", i, w, m.screenWidth, ansi.Strip(line))
+			}
+		}
+	})
+}
+
 // A title an application sets is laid into the terminal's own top border: it
 // names the terminal rather than the window, and a border is a line the eye
 // already follows, so it costs no row.

@@ -2195,6 +2195,23 @@ transport's status appearing on the right does not shift it, and `spreadCenter`
 silently disappears at some widths is worse than a shortened one. The captions are indented to line up with the
 terminal's own output rather than with the border.
 
+**The frame is drawn for the renderer's width method** (`widthMethod`,
+`forWidthMethod`). Everything the window lays out is measured by grapheme
+cluster — lipgloss measures that way, and so does every pane's emulator — but
+Bubble Tea's renderer measures rune by rune (WcWidth) until the terminal
+answers the mode 2027 query, and the Windows 10 console never does. Where the
+two disagree (an emoji with VS16, a keycap, a ZWJ sequence) a line measures
+short or long to the renderer, the border beside it shifts, and later diffs
+land beside the cells they meant to overwrite. So `View`, the one place every
+frame leaves by, rewrites each such cluster as its first rune padded to the
+cells it was laid out with (blanks when that rune cannot stand for it), and
+does nothing once the window has read the same `tea.ModeReportMsg` Bubble Tea
+switches on. The pane rows, a title a box set and every label it wrote are
+covered alike, and no builder has to know; the cells keep their places, so
+the hit map and the cursor are untouched. Forcing the renderer to grapheme
+width instead would only move the disagreement onto the terminal, which is
+the one drawing the characters.
+
 **Where the work sits in git rides in the banner after the id**
 (`paneHeaderFields`): the position and its mark, the mark spelled out, and
 the diffstat — the list's own git columns, drawn by the list's own `gitStyle`
