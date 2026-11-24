@@ -1,6 +1,6 @@
 # 0099 — The CLI downloads the server it starts, staged by version and checked by digest
 
-- **Status**: Accepted
+- **Status**: Accepted (§8's condition for revisiting signatures superseded by [26-11-23-787](26-11-23-787-every-published-asset-carries-github-build-provenance-and-a-person-verifies-it-by-hand.md) §5; §8's deferral of automatic verification stands)
 - **Amends**: [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) §5 — the entitlement belongs on `discobox-server`, which is once again the only process that creates a VM. The rule §5 states, that signing is part of the build and never of packaging, is unchanged.
 - **Date**: 2026-09-09
 
