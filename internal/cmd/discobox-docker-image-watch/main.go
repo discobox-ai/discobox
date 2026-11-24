@@ -456,14 +456,14 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	if err := addTree(filepath.Join(repoRoot, baseDir), baseSeen); err != nil {
 		return nil, err
 	}
-	workerRoot := filepath.Join(repoRoot, "pool-agent")
-	workerFiles, err := goModuleFiles(ctx, workerRoot, repoRoot, "./cmd/discobox-pool-agent")
+	poolAgentRoot := filepath.Join(repoRoot, "pool-agent")
+	poolAgentFiles, err := goModuleFiles(ctx, poolAgentRoot, repoRoot, "./cmd/discobox-pool-agent")
 	if err != nil {
 		return nil, err
 	}
-	workerSeen := make(map[string]struct{}, len(workerFiles)+8)
-	for _, file := range workerFiles {
-		workerSeen[file] = struct{}{}
+	poolAgentSeen := make(map[string]struct{}, len(poolAgentFiles)+8)
+	for _, file := range poolAgentFiles {
+		poolAgentSeen[file] = struct{}{}
 	}
 	for _, rel := range []string{
 		"Dockerfile",
@@ -474,12 +474,12 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 		"../go.sum",
 		"../id/id.go",
 	} {
-		addFile(workerRoot, rel, workerSeen)
+		addFile(poolAgentRoot, rel, poolAgentSeen)
 	}
 	// The pool bundle is FROM scratch: the agent's build and the features it
 	// carries, and not the shared base.
-	poolAgentBundleSeen := workerSeen
-	if err := addTree(filepath.Join(workerRoot, "bundle", "features"), poolAgentBundleSeen); err != nil {
+	poolAgentBundleSeen := poolAgentSeen
+	if err := addTree(filepath.Join(poolAgentRoot, "bundle", "features"), poolAgentBundleSeen); err != nil {
 		return nil, err
 	}
 	sandboxRoot := filepath.Join(repoRoot, "sandbox-agent")

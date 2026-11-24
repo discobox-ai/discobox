@@ -31,10 +31,10 @@ cd "$workspace"
 # The ordinary build targets publish :local images consumed by the development
 # watcher. A verification build must not move those tags out from under a live
 # server, so the same targets are parameterized onto an isolated test namespace.
-export BASE_IMAGE="discobot-dockerfile-test:base"
-export POOL_AGENT_IMAGE="discobot-dockerfile-test:pool-agent"
-export PLATFORM_BUNDLE="discobot-dockerfile-test:platform"
-export HARNESS_BUNDLE="discobot-dockerfile-test:harness"
+export BASE_IMAGE="discobox-dockerfile-test:base"
+export POOL_AGENT_IMAGE="discobox-dockerfile-test:pool-agent"
+export PLATFORM_BUNDLE="discobox-dockerfile-test:platform"
+export HARNESS_BUNDLE="discobox-dockerfile-test:harness"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to test-build Dockerfiles" >&2
@@ -103,7 +103,7 @@ build_dockerfile() {
       echo "[dockerfile-test-builds] building $dockerfile with context $(dirname "$dockerfile")"
       DOCKER_BUILDKIT=1 docker build --pull=false \
         --build-arg "HARNESS_METADATA=$(jq -c . "$(dirname "$dockerfile")/image.json")" \
-        --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
+        --tag "discobox-dockerfile-test:$(tag_part "$dockerfile")" \
         --file "$dockerfile" "$(dirname "$dockerfile")"
       ;;
     vm-image/Dockerfile)
@@ -123,7 +123,7 @@ build_dockerfile() {
       # a build target rather than a branch here.
       echo "[dockerfile-test-builds] building $dockerfile with context $(dirname "$dockerfile")"
       DOCKER_BUILDKIT=1 docker build --pull=false \
-        --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
+        --tag "discobox-dockerfile-test:$(tag_part "$dockerfile")" \
         --file "$dockerfile" "$(dirname "$dockerfile")"
       ;;
   esac
