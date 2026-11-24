@@ -220,7 +220,13 @@ a dirty row no other reconcile returns over.
   which a Docker pool does, and a machine pool on a driver that can freeze
   ([ADR 26-11-21-395](../../../../docs/adr/26-11-21-395-a-machine-pool-freezes-a-sleeping-sandbox-where-its-driver-can-and-stops-it-where-it-cannot.md)):
   the sandbox then reports `suspended`, is not
-  running, and is not asked again on the status that froze it.
+  running, and is not asked again on the status that froze it. The confirmed
+  power-down's reason and time are recorded on the row (`PowerDown`) with the
+  wake, on the same epoch, so the API (`runtime.powerDown`), the event stream
+  (`powerDownReason`) and `discobox ls` can tell an idle stop from a person's
+  stop or a crash. They are read through `Sandbox.CurrentPowerDown`, which
+  answers only while the sandbox is down; an outside instruction or the pool
+  seeing it start again clears them.
 - **Suspend.** `SuspendSandbox` is a power instruction beside stop
   ([ADR 26-10-16-420](../../../../docs/adr/26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)):
   provider `Suspend`, never a use, never a stop in its place — a pool that

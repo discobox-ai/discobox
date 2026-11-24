@@ -98,7 +98,7 @@ func (r *sandboxPowerReconciler) Reconcile(ctx context.Context, id string) (reco
 }
 
 // powerDown sends the runtime a power-down for what the sandbox last reported,
-// and records the wake its confirmation carried, or that it carried none: the
+// and records why with the wake its confirmation carried, or that it carried none: the
 // confirmation is read from the sandbox's wake files at that moment, so a
 // wake already handed to a boot, or removed, is cleared from the row rather
 // than left to start the sandbox again. The stored status is a poll
@@ -136,15 +136,17 @@ func (r *sandboxPowerReconciler) powerDown(ctx context.Context, sb *model.Sandbo
 	if !wake.At.IsZero() {
 		confirmed := wake.At.UTC()
 		at = &confirmed
-	} else if sb.WakeAt == nil {
-		return nil
 	}
-	written, err := r.store.SetSandboxWakeIfEpoch(ctx, sb.ProjectID, sb.ID, epoch, at)
+	// Why it went down is recorded with the wake, so a listing and the event
+	// stream can tell this stop from a person's or a crash.
+	powerDown := model.SandboxPowerDown{Reason: string(reason), At: r.now().UTC()}
+	written, err := r.store.RecordSandboxPowerDownIfEpoch(ctx, sb.ProjectID, sb.ID, epoch, powerDown, at)
 	if err != nil {
 		return err
 	}
 	if written {
 		sb.WakeAt = at
+		sb.PowerDown = &powerDown
 	}
 	return nil
 }

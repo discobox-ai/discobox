@@ -15024,6 +15024,52 @@ func (o OptSandboxMetaTags) Or(d SandboxMetaTags) SandboxMetaTags {
 	return d
 }
 
+// NewOptSandboxPowerDown returns new OptSandboxPowerDown with value set to v.
+func NewOptSandboxPowerDown(v SandboxPowerDown) OptSandboxPowerDown {
+	return OptSandboxPowerDown{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxPowerDown is optional SandboxPowerDown.
+type OptSandboxPowerDown struct {
+	Value SandboxPowerDown
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxPowerDown was set.
+func (o OptSandboxPowerDown) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxPowerDown) Reset() {
+	var v SandboxPowerDown
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxPowerDown) SetTo(v SandboxPowerDown) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxPowerDown) Get() (v SandboxPowerDown, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxPowerDown) Or(d SandboxPowerDown) SandboxPowerDown {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxProviderInstance returns new OptSandboxProviderInstance with value set to v.
 func NewOptSandboxProviderInstance(v SandboxProviderInstance) OptSandboxProviderInstance {
 	return OptSandboxProviderInstance{
@@ -27757,6 +27803,91 @@ func (s *SandboxMetaTags) init() SandboxMetaTags {
 	return m
 }
 
+// The power-down a sandbox asked for itself, and is down from: present only while its
+// runtimeState is stopping, stopped or suspended. Absent when it was stopped or
+// suspended by an instruction (a person's stop, an archive), or went down any other
+// way, a crash or a lost container among them. Cleared once it starts again.
+// Ref: #/components/schemas/SandboxPowerDown
+type SandboxPowerDown struct {
+	// Idle: it reported itself idle for its pool's idle timeout. A changing screen,
+	// an attached client, or a keepalive lease taken inside it is activity.
+	// sleep: an agent in it asked it to sleep. exit: its primary terminal's shell exited.
+	Reason SandboxPowerDownReason `json:"reason"`
+	// When the control plane powered it down.
+	At time.Time `json:"at"`
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxPowerDown) GetReason() SandboxPowerDownReason {
+	return s.Reason
+}
+
+// GetAt returns the value of At.
+func (s *SandboxPowerDown) GetAt() time.Time {
+	return s.At
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxPowerDown) SetReason(val SandboxPowerDownReason) {
+	s.Reason = val
+}
+
+// SetAt sets the value of At.
+func (s *SandboxPowerDown) SetAt(val time.Time) {
+	s.At = val
+}
+
+// Idle: it reported itself idle for its pool's idle timeout. A changing screen,
+// an attached client, or a keepalive lease taken inside it is activity.
+// sleep: an agent in it asked it to sleep. exit: its primary terminal's shell exited.
+type SandboxPowerDownReason string
+
+const (
+	SandboxPowerDownReasonIdle  SandboxPowerDownReason = "idle"
+	SandboxPowerDownReasonSleep SandboxPowerDownReason = "sleep"
+	SandboxPowerDownReasonExit  SandboxPowerDownReason = "exit"
+)
+
+// AllValues returns all SandboxPowerDownReason values.
+func (SandboxPowerDownReason) AllValues() []SandboxPowerDownReason {
+	return []SandboxPowerDownReason{
+		SandboxPowerDownReasonIdle,
+		SandboxPowerDownReasonSleep,
+		SandboxPowerDownReasonExit,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxPowerDownReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxPowerDownReasonIdle:
+		return []byte(s), nil
+	case SandboxPowerDownReasonSleep:
+		return []byte(s), nil
+	case SandboxPowerDownReasonExit:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxPowerDownReason) UnmarshalText(data []byte) error {
+	switch SandboxPowerDownReason(data) {
+	case SandboxPowerDownReasonIdle:
+		*s = SandboxPowerDownReasonIdle
+		return nil
+	case SandboxPowerDownReasonSleep:
+		*s = SandboxPowerDownReasonSleep
+		return nil
+	case SandboxPowerDownReasonExit:
+		*s = SandboxPowerDownReasonExit
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxProviderCatalogItem
 type SandboxProviderCatalogItem struct {
 	// Provider capabilities/status.
@@ -28456,6 +28587,7 @@ type SandboxRuntime struct {
 	StateReportedAt OptDateTime               `json:"stateReportedAt"`
 	Upgrade         OptSandboxUpgrade         `json:"upgrade"`
 	AutomaticRepair OptSandboxAutomaticRepair `json:"automaticRepair"`
+	PowerDown       OptSandboxPowerDown       `json:"powerDown"`
 }
 
 // GetSourceDeliveries returns the value of SourceDeliveries.
@@ -28573,6 +28705,11 @@ func (s *SandboxRuntime) GetAutomaticRepair() OptSandboxAutomaticRepair {
 	return s.AutomaticRepair
 }
 
+// GetPowerDown returns the value of PowerDown.
+func (s *SandboxRuntime) GetPowerDown() OptSandboxPowerDown {
+	return s.PowerDown
+}
+
 // SetSourceDeliveries sets the value of SourceDeliveries.
 func (s *SandboxRuntime) SetSourceDeliveries(val OptSandboxRuntimeSourceDeliveries) {
 	s.SourceDeliveries = val
@@ -28686,6 +28823,11 @@ func (s *SandboxRuntime) SetUpgrade(val OptSandboxUpgrade) {
 // SetAutomaticRepair sets the value of AutomaticRepair.
 func (s *SandboxRuntime) SetAutomaticRepair(val OptSandboxAutomaticRepair) {
 	s.AutomaticRepair = val
+}
+
+// SetPowerDown sets the value of PowerDown.
+func (s *SandboxRuntime) SetPowerDown(val OptSandboxPowerDown) {
+	s.PowerDown = val
 }
 
 // Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting

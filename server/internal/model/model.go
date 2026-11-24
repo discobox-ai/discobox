@@ -1199,6 +1199,13 @@ type Sandbox struct {
 	// writing it. Every such instruction moves it, wake or no wake; the
 	// reconcile's writes are conditional on the value it read.
 	WakeEpoch int64 `gorm:"column:wake_epoch;not null;default:0" json:"-" doc:"Moved by every outside power instruction; guards WakeAt"`
+	// PowerDown is the last power-down the sandbox asked for itself and the
+	// runtime confirmed: why, and when. The power reconcile writes it with the
+	// wake, on the same epoch; every outside power instruction clears it, and
+	// so does the pool's report of the sandbox starting or running again, so
+	// it is never the reason for a later stop. Read it through
+	// CurrentPowerDown, which answers only while the sandbox is down.
+	PowerDown *SandboxPowerDown `gorm:"column:power_down;type:text;serializer:json" json:"-"`
 	// AutomaticRepair is the last repair nobody typed: the one recorded when an
 	// action found this sandbox failed with no container (ADR 26-10-12-711).
 	// Its generation is what bounds automatic repair to one. A sandbox that
@@ -1306,6 +1313,37 @@ type AutomaticRepair struct {
 	// and a sandbox can fail again on the same generation, when a container
 	// lost later cannot be rebuilt.
 	LandedAt *time.Time `json:"landedAt,omitempty" doc:"When the repair landed. Absent while it runs, and when it failed." format:"date-time"`
+}
+
+// Why a sandbox powered itself down: SandboxPowerDown.Reason, the runtime's
+// sandbox.PowerDownReason values.
+const (
+	SandboxPowerDownIdle  = "idle"
+	SandboxPowerDownSleep = "sleep"
+	SandboxPowerDownExit  = "exit"
+)
+
+// SandboxPowerDown is a power-down the sandbox asked for and the runtime
+// confirmed: idle for its pool's idle timeout, asleep at an agent's request,
+// or its primary terminal's shell exited.
+type SandboxPowerDown struct {
+	Reason string    `json:"reason" enum:"idle,sleep,exit"`
+	At     time.Time `json:"at"`
+}
+
+// CurrentPowerDown is the power-down the sandbox is down from: its recorded
+// one while it is present and stopping, stopped or suspended, and nil
+// otherwise. The record is written just before the pool reports the stop, so
+// a sandbox still read as running has not gone down yet.
+func (s *Sandbox) CurrentPowerDown() *SandboxPowerDown {
+	if s.PowerDown == nil || s.DesiredState != DesiredStatePresent {
+		return nil
+	}
+	switch s.RuntimeState {
+	case SandboxRuntimeStateStopping, SandboxRuntimeStateStopped, SandboxRuntimeStateSuspended:
+		return s.PowerDown
+	}
+	return nil
 }
 
 // AutomaticRepairAllowed reports whether using this sandbox, found to have no

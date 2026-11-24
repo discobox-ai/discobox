@@ -60,6 +60,10 @@ type SandboxEventData struct {
 	// It never changes.
 	CreatedBySandboxID string `json:"createdBySandboxId,omitempty"`
 	ParentSandboxID    string `json:"parentSandboxId,omitempty"`
+	// PowerDownReason is why the sandbox is down when it powered itself down
+	// (Sandbox.CurrentPowerDown): idle, sleep or exit. Absent while it is up,
+	// and when it was stopped from outside or went down on its own.
+	PowerDownReason string `json:"powerDownReason,omitempty" enum:"idle,sleep,exit"`
 }
 
 // SandboxEventProgram is the part of the primary session's OSC 7501 status an

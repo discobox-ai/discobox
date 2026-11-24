@@ -473,12 +473,13 @@ var sandboxSkillColumns = []string{"skills", "skill_names"}
 // SetSandboxEgress writes (see egressColumn).
 var sandboxEgressColumns = []string{egressColumn}
 
-// sandboxWakeColumns are the sandbox's scheduled start and its guard, which
-// two writers share — the power reconcile sets and claims the wake, and every
-// outside power instruction clears it — so only the guarded methods below
-// write them (ADR 26-10-16-337 §6). A whole-row save of a stale struct would
-// put back a wake a stop had canceled.
-var sandboxWakeColumns = []string{"wake_at", "wake_epoch"}
+// sandboxWakeColumns are the sandbox's scheduled start, the power-down it was
+// set by, and their guard, which two writers share — the power reconcile sets
+// and claims the wake, and every outside power instruction clears it — so
+// only the guarded methods below write them (ADR 26-10-16-337 §6), and the
+// state reports clear the power-down once the sandbox is up again. A
+// whole-row save of a stale struct would put back a wake a stop had canceled.
+var sandboxWakeColumns = []string{"wake_at", "wake_epoch", "power_down"}
 
 // sandboxDiscoboxAPIColumn is whether the sandbox may call the discobox API
 // (ADR 26-10-27-880 §9), which create and SetSandboxDiscoboxAPI alone write: a
@@ -503,27 +504,44 @@ var sandboxOmittedColumns = append(append(append(append(append(append(append([]s
 // it closes is usually one where the power reconcile has not written the wake
 // yet (ADR 26-10-16-337 §6). It runs in the caller's transaction, beside the
 // dirty mark that has the power reconcile drop its timer.
+//
+// It clears the power-down the sandbox asked for too: from here on, whatever
+// state the sandbox is in is the instruction's doing, not its own.
 func (s *Store) CancelSandboxWakeTx(ctx context.Context, tx *gorm.DB, projectID, sandboxID string) error {
-	return tx.WithContext(ctx).Model(&model.Sandbox{}).
+	if err := tx.WithContext(ctx).Model(&model.Sandbox{}).
 		Where("project_id = ? AND id = ?", projectID, sandboxID).
-		UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1")}).Error
+		UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1"), "power_down": nil}).Error; err != nil {
+		return err
+	}
+	s.sandboxChanged(sandboxID)
+	return nil
 }
 
-// SetSandboxWakeIfEpoch records the wake a confirmed power-down carried — nil
-// when it carried none — unless an outside power instruction has moved the
-// epoch since the caller read it. It reports whether it wrote.
-func (s *Store) SetSandboxWakeIfEpoch(ctx context.Context, projectID, sandboxID string, epoch int64, at *time.Time) (bool, error) {
-	write, err := s.getWrite(ctx)
+// RecordSandboxPowerDownIfEpoch records a confirmed power-down — why and when
+// — and the wake it carried, nil when it carried none, unless an outside power
+// instruction has moved the epoch since the caller read it. It reports whether
+// it wrote.
+func (s *Store) RecordSandboxPowerDownIfEpoch(ctx context.Context, projectID, sandboxID string, epoch int64, powerDown model.SandboxPowerDown, at *time.Time) (bool, error) {
+	// Encoded here: a map update does not run the column's serializer.
+	encoded, err := json.Marshal(powerDown)
 	if err != nil {
 		return false, err
 	}
-	result := write.WithContext(ctx).Model(&model.Sandbox{}).
-		Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).
-		UpdateColumn("wake_at", at)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
+	written := false
+	err = s.inSandboxTx(ctx, func(txStore *Store, tx *gorm.DB) error {
+		result := tx.Model(&model.Sandbox{}).
+			Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).
+			UpdateColumns(map[string]any{"wake_at": at, "power_down": string(encoded)})
+		if result.Error != nil {
+			return result.Error
+		}
+		written = result.RowsAffected > 0
+		if written {
+			txStore.sandboxChanged(sandboxID)
+		}
+		return nil
+	})
+	return written, err
 }
 
 // SpendSandboxWake clears the wake the power reconcile sent a start for, once
@@ -963,8 +981,12 @@ func (s *Store) CompleteSandboxSuspendTx(ctx context.Context, tx *gorm.DB, proje
 	if result.RowsAffected == 0 {
 		return false, nil
 	}
-	result = tx.WithContext(ctx).Model(&model.Sandbox{}).Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1")})
-	return result.RowsAffected > 0, result.Error
+	result = tx.WithContext(ctx).Model(&model.Sandbox{}).Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1"), "power_down": nil})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	s.sandboxChanged(sandboxID)
+	return result.RowsAffected > 0, nil
 }
 
 // RecordSandboxUpgradeProvenance is called by intent admission in its write
