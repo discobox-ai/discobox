@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,7 +60,7 @@ func copyRemote(t *testing.T) (*App, *api.Client, map[string]string, map[string]
 			}
 			m := copyarchive.Info(info)
 			w.Header().Set("Content-Type", "application/json")
-			stat := &api.SandboxFileStat{Path: requested, Name: filepath.Base(name), Type: typ, Size: info.Size(), Mode: int64(m.Mode), ModifiedAt: m.ModifiedAt, AccessedAt: api.NewOptDateTime(m.AccessedAt)}
+			stat := &api.SandboxFileStat{Path: path.Join("/", requested), Name: filepath.Base(name), Type: typ, Size: info.Size(), Mode: int64(m.Mode), ModifiedAt: m.ModifiedAt, AccessedAt: api.NewOptDateTime(m.AccessedAt)}
 			identity, err := copyarchive.FileIdentity(name, info)
 			if err != nil {
 				t.Error(err)
@@ -157,7 +158,7 @@ func TestCopyFilesBinaryEmptyLiteralAndBetweenBoxes(t *testing.T) {
 	if err := os.Chtimes(source, stamp, stamp); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{path: source}, {remote: true, reference: "one", path: "literal ; $.bin"}}, copyOptions{preserve: true}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{path: source}, {remote: true, reference: "one", path: "literal ; $.bin"}}, copyOptions{preserve: true}, nil); err != nil {
 		t.Fatal(err)
 	}
 	uploaded, err := os.Stat(filepath.Join(roots["one"], "literal ; $.bin"))
@@ -168,7 +169,7 @@ func TestCopyFilesBinaryEmptyLiteralAndBetweenBoxes(t *testing.T) {
 		t.Fatalf("upload precision lost: %+v", meta)
 	}
 	preserved := filepath.Join(local, "preserved")
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "literal ; $.bin"}, {path: preserved}}, copyOptions{preserve: true}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "literal ; $.bin"}, {path: preserved}}, copyOptions{preserve: true}, nil); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(preserved)
@@ -178,11 +179,11 @@ func TestCopyFilesBinaryEmptyLiteralAndBetweenBoxes(t *testing.T) {
 	if meta := copyarchive.Info(info); !meta.AccessedAt.Equal(stamp) || !meta.ModifiedAt.Equal(stamp) {
 		t.Fatalf("download precision lost: %+v", meta)
 	}
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "literal ; $.bin"}, {remote: true, reference: "two", path: "binary"}}, copyOptions{}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "literal ; $.bin"}, {remote: true, reference: "two", path: "binary"}}, copyOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	download := filepath.Join(local, "download")
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "two", path: "binary"}, {path: download}}, copyOptions{}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "two", path: "binary"}, {path: download}}, copyOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(download)
@@ -192,7 +193,7 @@ func TestCopyFilesBinaryEmptyLiteralAndBetweenBoxes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(roots["one"], "empty"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "empty"}, {path: download}}, copyOptions{}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "empty"}, {path: download}}, copyOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	info, _ = os.Stat(download)
@@ -211,7 +212,7 @@ func TestCopyTreeUsesBatchAndMerges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{path: source}, {remote: true, reference: "one", path: "tree"}}, copyOptions{recursive: true}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{path: source}, {remote: true, reference: "one", path: "tree"}}, copyOptions{recursive: true}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if calls["PUT archive"] != 1 || calls["PUT content"] != 0 {
@@ -220,11 +221,11 @@ func TestCopyTreeUsesBatchAndMerges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(roots["one"], "tree", "unrelated"), []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "tree"}, {remote: true, reference: "two", path: "copied"}}, copyOptions{recursive: true}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "one", path: "tree"}, {remote: true, reference: "two", path: "copied"}}, copyOptions{recursive: true}, nil); err != nil {
 		t.Fatal(err)
 	}
 	download := filepath.Join(t.TempDir(), "down")
-	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "two", path: "copied"}, {path: download}}, copyOptions{recursive: true}); err != nil {
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "two", path: "copied"}, {path: download}}, copyOptions{recursive: true}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(download, "empty")); err != nil {
@@ -247,7 +248,7 @@ func TestCopyRefusesAliasesAndMissingDescendantsOfSource(t *testing.T) {
 		t.Skip(err)
 	}
 	operands := []cpOperand{{remote: true, reference: "one", path: "source"}, {remote: true, reference: "one", path: "alias/missing/deeper"}}
-	if err := app.copyOperands(t.Context(), client, "project", operands, copyOptions{recursive: true}); err == nil || !strings.Contains(err.Error(), "into itself") {
+	if err := app.copyOperands(t.Context(), client, "project", operands, copyOptions{recursive: true}, nil); err == nil || !strings.Contains(err.Error(), "into itself") {
 		t.Fatalf("self copy: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(roots["one"], "source", "missing")); !os.IsNotExist(err) {
@@ -286,7 +287,7 @@ func TestCopyIncompleteBodyNeverPublishes(t *testing.T) {
 				t.Fatal(err)
 			}
 			app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
-			if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "box", path: "file"}, {path: target}}, copyOptions{}); err == nil {
+			if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{remote: true, reference: "box", path: "file"}, {path: target}}, copyOptions{}, nil); err == nil {
 				t.Fatal("unstable source reported success")
 			}
 			got, _ := os.ReadFile(target)
@@ -311,7 +312,7 @@ func TestCopyReportsMissingDestinationParent(t *testing.T) {
 		{path: source},
 		{remote: true, reference: "one", path: "/nonexistent/dir/a.txt"},
 	}
-	err := app.copyOperands(t.Context(), client, "project", operands, copyOptions{})
+	err := app.copyOperands(t.Context(), client, "project", operands, copyOptions{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "nonexistent") || strings.Contains(err.Error(), "upgrade") {
 		t.Fatalf("copy error = %v, want a missing destination error without upgrade advice", err)
 	}
@@ -334,5 +335,47 @@ func TestCopyRequestReportsUnavailableRoute(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "upgrade") {
 		t.Fatalf("copy error = %v, want upgrade advice for an unavailable route", err)
+	}
+}
+
+// TestCopyReportsWhereEachEndIs: a relative remote path is the discobox's to
+// resolve, against its user's home, so each copy says where both ends are,
+// absolute, a remote one as DISCOBOX_ID:PATH (#1548). Without a sink, as the
+// console's files pane calls it, nothing is said.
+func TestCopyReportsWhereEachEndIs(t *testing.T) {
+	app, client, roots, _ := copyRemote(t)
+	local := t.TempDir()
+	source := filepath.Join(local, "big.bin")
+	if err := os.WriteFile(source, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(local, "tree"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(roots["one"], "adir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	copied := func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+	for _, step := range []struct {
+		operands []cpOperand
+		want     string
+	}{
+		{[]cpOperand{{path: source}, {remote: true, reference: "one", path: "big.bin"}}, source + " -> one:/big.bin"},
+		{[]cpOperand{{path: source}, {remote: true, reference: "one", path: "adir"}}, source + " -> one:/adir/big.bin"},
+		{[]cpOperand{{remote: true, reference: "one", path: "adir/big.bin"}, {path: filepath.Join(local, "back.bin")}}, "one:/adir/big.bin -> " + filepath.Join(local, "back.bin")},
+		{[]cpOperand{{path: filepath.Join(local, "tree")}, {remote: true, reference: "one", path: "tree"}}, filepath.Join(local, "tree") + " -> one:/tree"},
+		{[]cpOperand{{remote: true, reference: "one", path: "big.bin"}, {remote: true, reference: "two", path: "copy.bin"}}, "one:/big.bin -> two:/copy.bin"},
+	} {
+		lines = nil
+		if err := app.copyOperands(t.Context(), client, "project", step.operands, copyOptions{recursive: true}, copied); err != nil {
+			t.Fatal(err)
+		}
+		if len(lines) != 1 || lines[0] != step.want {
+			t.Fatalf("reported %q, want %q", lines, step.want)
+		}
+	}
+	if err := app.copyOperands(t.Context(), client, "project", []cpOperand{{path: source}, {remote: true, reference: "one", path: "quiet.bin"}}, copyOptions{}, nil); err != nil {
+		t.Fatal(err)
 	}
 }

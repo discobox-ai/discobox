@@ -4509,15 +4509,20 @@ Examples:
 Copy files through the discobox files API, as the discobox's default user.
 
 Write a remote path as DISCOBOX:PATH, :PATH to select a discobox, or
-DISCOBOX_ADDRESS:PATH. Relative remote paths start at the user's home.
-Both ends may name discoboxes on the same server. Local paths follow the
-usual colon and Windows drive rules; use ./ before an ambiguous local name.
+DISCOBOX_ADDRESS:PATH. Relative remote paths start at the user's home, not at
+the directory "discobox exec" starts in (the discobox's source): write an
+absolute DISCOBOX:/PATH to reach anywhere else, or run a command at home with
+"discobox exec --workdir '~'". Both ends may name discoboxes on the same
+server. Local paths follow the usual colon and Windows drive rules; use ./
+before an ambiguous local name.
 
-Use -r for directories, -p to preserve ordinary permissions and access and
-modification times, and -q for quiet operation. Multiple sources need an
-existing destination directory. Existing directories receive each source's
-basename; a missing destination takes its content. A trailing slash requires
-a directory. Unrelated destination entries remain in place.
+Each copy prints SOURCE -> DESTINATION with both ends absolute, a remote one
+as DISCOBOX_ID:PATH. Use -r for directories, -p to preserve ordinary
+permissions and access and modification times, and -q to print nothing.
+Multiple sources need an existing destination directory. Existing directories
+receive each source's basename; a missing destination takes its content. A
+trailing slash requires a directory. Unrelated destination entries remain in
+place.
 
 Remote paths are literal: spaces, Unicode, colons and shell characters are
 filenames, without shell or glob expansion. -- ends options. Source links are
@@ -4607,6 +4612,14 @@ one, otherwise you are asked to pick. The command follows DISCOBOX; an optional 
 Use a leading -- to omit DISCOBOX and have it selected for you.
 CLI flags go before DISCOBOX; everything after it is passed to the command.
 
+The command starts in the discobox's source directory, where its agent works.
+--workdir starts it elsewhere: an absolute path, '~' or '~/PATH' for the
+discobox user's home (quoted, or this machine's shell expands it to your own
+home first), or a relative path, which is taken from the discobox's working
+root, the directory its sources are checked out under. "discobox cp" takes a
+relative remote path from the home instead, so --workdir '~' runs a command
+where a relative cp put its files.
+
 Without a command this starts a shell. In a terminal it is the one
 $DISCOBOX_SHELL names on this machine — or nu, when run from nushell, or else
 $SHELL — when the discobox has it: that path, or a shell of the same name on
@@ -4622,7 +4635,7 @@ so, and one more quits exec and leaves the command where it is.
 ~~~~
 
 ```text
-discobox exec [DISCOBOX] [--] [CMD...] [flags]
+discobox exec [--workdir DIR] [DISCOBOX] [--] [CMD...] [flags]
 ```
 
 Examples:
@@ -4633,6 +4646,7 @@ Examples:
   discobox exec mybox -- go test ./...
   discobox exec sbx_01hq ls -la
   discobox exec -- git log --oneline
+  discobox exec --workdir '~' mybox -- sha256sum big.bin
 ```
 
 | Flag | Type | Default | Description |
@@ -4643,6 +4657,7 @@ Examples:
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+| --workdir | string |  | Directory inside the discobox to start in, instead of its source directory; quote a leading ~ so it means the discobox user's home |
 
 ## discobox help
 

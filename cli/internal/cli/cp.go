@@ -23,15 +23,20 @@ func (a *App) newCPCommand() *cobra.Command {
 		Long: `Copy files through the discobox files API, as the discobox's default user.
 
 Write a remote path as DISCOBOX:PATH, :PATH to select a discobox, or
-DISCOBOX_ADDRESS:PATH. Relative remote paths start at the user's home.
-Both ends may name discoboxes on the same server. Local paths follow the
-usual colon and Windows drive rules; use ./ before an ambiguous local name.
+DISCOBOX_ADDRESS:PATH. Relative remote paths start at the user's home, not at
+the directory "discobox exec" starts in (the discobox's source): write an
+absolute DISCOBOX:/PATH to reach anywhere else, or run a command at home with
+"discobox exec --workdir '~'". Both ends may name discoboxes on the same
+server. Local paths follow the usual colon and Windows drive rules; use ./
+before an ambiguous local name.
 
-Use -r for directories, -p to preserve ordinary permissions and access and
-modification times, and -q for quiet operation. Multiple sources need an
-existing destination directory. Existing directories receive each source's
-basename; a missing destination takes its content. A trailing slash requires
-a directory. Unrelated destination entries remain in place.
+Each copy prints SOURCE -> DESTINATION with both ends absolute, a remote one
+as DISCOBOX_ID:PATH. Use -r for directories, -p to preserve ordinary
+permissions and access and modification times, and -q to print nothing.
+Multiple sources need an existing destination directory. Existing directories
+receive each source's basename; a missing destination takes its content. A
+trailing slash requires a directory. Unrelated destination entries remain in
+place.
 
 Remote paths are literal: spaces, Unicode, colons and shell characters are
 filenames, without shell or glob expansion. -- ends options. Source links are
@@ -84,7 +89,11 @@ func (a *App) runCP(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return target.app.copyOperands(cmd.Context(), target.client, target.projectID, operands, options)
+	var copied noteFunc
+	if !options.quiet {
+		copied = printedNotes(cmd.OutOrStdout())
+	}
+	return target.app.copyOperands(cmd.Context(), target.client, target.projectID, operands, options, copied)
 }
 
 // cpTarget is the server a copy runs against and what it took to decide: the

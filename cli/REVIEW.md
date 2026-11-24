@@ -108,6 +108,13 @@
   empty until set, so help prints no default; what leaving it out means goes
   in the usage. `Changed` alone is not "given" for a bool a `=false` can
   clear: `listCleared` reads the value.
+- **A `~` meant for the discobox is taught quoted.** Help, examples and hints
+  that show a remote home write `'~'` and `'~/PATH'`: a bare `~` word (and
+  `--flag=~` under zsh's `magic_equal_subst`) is expanded by the shell on this
+  machine, so the box is sent the local home and the command fails, or works
+  by accident where the two users share a name. `exec --workdir ~` was taught
+  that way first (#1548), and a test through `SetArgs` never sees a shell to
+  catch it.
 
 ## Command names and arguments
 
