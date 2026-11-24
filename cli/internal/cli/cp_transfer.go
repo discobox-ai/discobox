@@ -21,7 +21,13 @@ import (
 
 // copyOperands owns operand semantics; every remote byte stream uses the
 // ordinary authenticated API transport without a generated client's buffering.
-func (a *App) copyOperands(ctx context.Context, client *api.Client, project string, operands []cpOperand, options copyOptions) error {
+//
+// copied, when set, is told each source once it has landed, as SOURCE ->
+// DESTINATION with both ends absolute: a relative remote path is resolved by
+// the discobox against its user's home, which is not where an exec starts
+// (#1548), so the line says where the file is rather than leaving it to be
+// guessed. A caller drawing a window passes nil.
+func (a *App) copyOperands(ctx context.Context, client *api.Client, project string, operands []cpOperand, options copyOptions, copied noteFunc) error {
 	destination := operands[len(operands)-1]
 	dstInfo, dstErr := copyStat(ctx, client, project, destination, false)
 	if dstErr != nil && !errors.Is(dstErr, fs.ErrNotExist) {
@@ -38,6 +44,15 @@ func (a *App) copyOperands(ctx context.Context, client *api.Client, project stri
 		stat, err := copyStat(ctx, client, project, source, true)
 		if err != nil {
 			return err
+		}
+		// Where the source is, for the report, is read before anything is
+		// written: a failure to read it then stops a copy that has not begun,
+		// rather than failing one that has landed.
+		var from string
+		if copied != nil {
+			if from, err = copyOperandPath(ctx, client, project, source); err != nil {
+				return err
+			}
 		}
 		isDir := stat.Type == api.SandboxFileTypeDirectory
 		if trailingSlash(source.path) && !isDir {
@@ -99,16 +114,58 @@ func (a *App) copyOperands(ctx context.Context, client *api.Client, project stri
 		if e == nil && (existing.Type == api.SandboxFileTypeDirectory) != isDir {
 			return fmt.Errorf("source and destination types conflict")
 		}
+		var landed string
 		if isDir {
-			err = a.copyDirectory(ctx, project, source, dest, options.preserve)
+			landed, err = a.copyDirectory(ctx, project, source, dest, options.preserve)
 		} else {
-			err = a.copyFile(ctx, client, project, source, dest, stat, options.preserve)
+			landed, err = a.copyFile(ctx, client, project, source, dest, stat, options.preserve)
 		}
 		if err != nil {
 			return fmt.Errorf("copy %s: %w", terminalSafe(source.path), err)
 		}
+		if copied != nil {
+			copied("%s -> %s", terminalSafe(from), terminalSafe(copyLocation(dest, landed)))
+		}
 	}
 	return nil
+}
+
+// copyOperandPath is where operand is, absolute: a local path made so here,
+// a remote one as the discobox resolves it. The remote stat does not follow a
+// link, so the path is the one that was named, not where it leads.
+func copyOperandPath(ctx context.Context, client *api.Client, project string, operand cpOperand) (string, error) {
+	if !operand.remote {
+		return filepath.Abs(operand.path)
+	}
+	stat, err := copyStat(ctx, client, project, operand, false)
+	if err != nil {
+		return "", err
+	}
+	return copyLocation(operand, stat.Path), nil
+}
+
+// copyLocation writes an absolute path the way cp reads it back: a remote one
+// as DISCOBOX:PATH, by the discobox's ID, which every command takes.
+func copyLocation(operand cpOperand, absolute string) string {
+	if !operand.remote {
+		return absolute
+	}
+	return operand.reference + ":" + absolute
+}
+
+// copyLanded is the absolute path a write to dest landed at: the stat the
+// files API answers a write with, for a remote one.
+func copyLanded(resp *http.Response) (string, error) {
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	var stat api.SandboxFileStat
+	if err := stat.UnmarshalJSON(data); err != nil {
+		return "", fmt.Errorf("files API: the write's answer is not a file stat: %s", terminalSafe(err.Error()))
+	}
+	return stat.Path, nil
 }
 
 func trailingSlash(p string) bool {
@@ -227,7 +284,9 @@ func (a *App) copyRequest(ctx context.Context, project string, operand cpOperand
 	return resp, nil
 }
 
-func (a *App) copyDirectory(ctx context.Context, project string, source, dest cpOperand, preserve bool) error {
+// copyDirectory copies a tree, and says where it landed: the absolute path of
+// dest.
+func (a *App) copyDirectory(ctx context.Context, project string, source, dest cpOperand, preserve bool) (string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var body io.ReadCloser
@@ -236,7 +295,7 @@ func (a *App) copyDirectory(ctx context.Context, project string, source, dest cp
 		//nolint:bodyclose // The body is assigned below and closed on every exit.
 		resp, err := a.copyRequest(ctx, project, source, "archive", http.MethodGet, nil, nil)
 		if err != nil {
-			return err
+			return "", err
 		}
 		body = resp.Body
 	} else {
@@ -248,15 +307,18 @@ func (a *App) copyDirectory(ctx context.Context, project string, source, dest cp
 	}
 	defer body.Close()
 	var err error
+	var landed string
 	if dest.remote {
 		var resp *http.Response
 		resp, err = a.copyRequest(ctx, project, dest, "archive", http.MethodPut, body, url.Values{"preserve": {fmt.Sprint(preserve)}})
 		if err == nil {
-			_, err = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
+			landed, err = copyLanded(resp)
 		}
 	} else {
 		err = copyarchive.Import(ctx, body, dest.path, preserve)
+		if err == nil {
+			landed, err = filepath.Abs(dest.path)
+		}
 	}
 	cancel()
 	body.Close()
@@ -265,22 +327,24 @@ func (a *App) copyDirectory(ctx context.Context, project string, source, dest cp
 			err = e
 		}
 	}
-	return err
+	return landed, err
 }
 
-func (a *App) copyFile(ctx context.Context, client *api.Client, project string, source, dest cpOperand, stat *api.SandboxFileStat, preserve bool) error {
+// copyFile copies one file, and says where it landed: the absolute path of
+// dest.
+func (a *App) copyFile(ctx context.Context, client *api.Client, project string, source, dest cpOperand, stat *api.SandboxFileStat, preserve bool) (string, error) {
 	var body io.ReadCloser
 	if source.remote {
 		//nolint:bodyclose // The body is assigned below and closed on every exit.
 		resp, err := a.copyRequest(ctx, project, source, "content", http.MethodGet, nil, nil)
 		if err != nil {
-			return err
+			return "", err
 		}
 		body = resp.Body
 	} else {
 		file, err := copyarchive.OpenSourceFile(stat.Path)
 		if err != nil {
-			return err
+			return "", err
 		}
 		body = file
 	}
@@ -290,32 +354,35 @@ func (a *App) copyFile(ctx context.Context, client *api.Client, project string, 
 	if !dest.remote {
 		root, err := copyarchive.OpenDirectory(filepath.Dir(dest.path), false)
 		if err != nil {
-			return err
+			return "", err
 		}
 		defer root.Close()
-		return copyarchive.WriteFile(ctx, root, filepath.Base(dest.path), checked, meta, preserve)
+		if err := copyarchive.WriteFile(ctx, root, filepath.Base(dest.path), checked, meta, preserve); err != nil {
+			return "", err
+		}
+		return filepath.Abs(dest.path)
 	}
 	resp, err := a.copyRequest(ctx, project, dest, "content", http.MethodPut, checked, url.Values{"copy": {"true"}, "mode": {fmt.Sprint(stat.Mode & 0777)}})
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, err = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	landed, err := copyLanded(resp)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if preserve {
 		result, err := client.SetSandboxFileMetadata(ctx, &api.SandboxFileMetadataRequest{Path: dest.path, Mode: api.NewOptInt64(int64(meta.Mode)), AccessedAt: stat.AccessedAt, ModifiedAt: api.NewOptDateTime(meta.ModifiedAt)}, api.SetSandboxFileMetadataParams{ProjectId: project, SandboxId: dest.reference})
 		if err != nil {
-			return sandboxFileCallError(err)
+			return "", sandboxFileCallError(err)
 		}
 		if problem, ok := result.(*api.ErrorResponseStatusCode); ok && (problem.StatusCode == http.StatusNotImplemented || problem.StatusCode == http.StatusNotFound) {
-			return fmt.Errorf("metadata preservation is unavailable; upgrade the discobox, pool and server")
+			return "", fmt.Errorf("metadata preservation is unavailable; upgrade the discobox, pool and server")
 		}
-		_, err = sandboxFileResponse(result)
-		return err
+		if _, err := sandboxFileResponse(result); err != nil {
+			return "", err
+		}
 	}
-	return nil
+	return landed, nil
 }
 
 // Progress bounds setup and stalled content, while permitting arbitrarily long

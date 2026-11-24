@@ -100,7 +100,7 @@ func (d *apiDataSource) UploadFiles(ctx context.Context, sandboxID string, local
 		dest += "/"
 	}
 	operands = append(operands, cpOperand{remote: true, reference: sandboxID, path: dest})
-	return d.app.copyOperands(ctx, d.client, d.projectID, operands, copyOptions{recursive: true, quiet: true})
+	return d.app.copyOperands(ctx, d.client, d.projectID, operands, copyOptions{recursive: true}, nil)
 }
 
 // DownloadFile copies one path out of the discobox into this machine's
@@ -143,9 +143,9 @@ func (d *apiDataSource) DownloadFile(ctx context.Context, sandboxID, remote stri
 	}
 	dest := cpOperand{path: filepath.Join(dir, claimed)}
 	if isDir {
-		err = d.app.copyDirectory(ctx, d.projectID, source, dest, false)
+		_, err = d.app.copyDirectory(ctx, d.projectID, source, dest, false)
 	} else {
-		err = d.app.copyFile(ctx, d.client, d.projectID, source, dest, stat, false)
+		_, err = d.app.copyFile(ctx, d.client, d.projectID, source, dest, stat, false)
 	}
 	if err != nil {
 		// What was claimed is this download's alone, whole or partial.

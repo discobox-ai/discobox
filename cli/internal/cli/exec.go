@@ -17,8 +17,9 @@ import (
 // and an optional -- before the command (selectDiscoboxCommand). It was
 // `shell`, which still runs it, hidden (ADR 26-11-04-204 §1).
 func (a *App) newExecCommand() *cobra.Command {
+	var workdir string
 	cmd := &cobra.Command{
-		Use:   "exec [DISCOBOX] [--] [CMD...]",
+		Use:   "exec [--workdir DIR] [DISCOBOX] [--] [CMD...]",
 		Short: "Run a command in a discobox, or its login shell",
 		Long: `Run a command in a discobox and stream it to this terminal, or open its login
 shell.
@@ -28,6 +29,14 @@ Without it the discobox is taken from "discobox ls": the only one when there is
 one, otherwise you are asked to pick. The command follows DISCOBOX; an optional -- separates them explicitly.
 Use a leading -- to omit DISCOBOX and have it selected for you.
 CLI flags go before DISCOBOX; everything after it is passed to the command.
+
+The command starts in the discobox's source directory, where its agent works.
+--workdir starts it elsewhere: an absolute path, '~' or '~/PATH' for the
+discobox user's home (quoted, or this machine's shell expands it to your own
+home first), or a relative path, which is taken from the discobox's working
+root, the directory its sources are checked out under. "discobox cp" takes a
+relative remote path from the home instead, so --workdir '~' runs a command
+where a relative cp put its files.
 
 Without a command this starts a shell. In a terminal it is the one
 $DISCOBOX_SHELL names on this machine — or nu, when run from nushell, or else
@@ -45,7 +54,8 @@ so, and one more quits exec and leaves the command where it is.`,
   discobox exec mybox
   discobox exec mybox -- go test ./...
   discobox exec sbx_01hq ls -la
-  discobox exec -- git log --oneline`,
+  discobox exec -- git log --oneline
+  discobox exec --workdir '~' mybox -- sha256sum big.bin`,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,7 +73,7 @@ so, and one more quits exec and leaves the command where it is.`,
 			// says which one this machine's user would rather have — for a
 			// terminal only: a shell reading a script piped into it must be the
 			// one the script was written for, not whatever $SHELL says.
-			opts := sandboxExecCreateOptions{interactive: true, tty: tty, shell: len(cmdArgs) == 0}
+			opts := sandboxExecCreateOptions{workdir: workdir, interactive: true, tty: tty, shell: len(cmdArgs) == 0}
 			if opts.shell && tty {
 				opts.env = preferredShellEnv()
 			}
@@ -92,6 +102,7 @@ so, and one more quits exec and leaves the command where it is.`,
 		},
 	}
 	cmd.Flags().SetInterspersed(false)
+	cmd.Flags().StringVar(&workdir, "workdir", "", "Directory inside the discobox to start in, instead of its source directory; quote a leading ~ so it means the discobox user's home")
 	return cmd
 }
 

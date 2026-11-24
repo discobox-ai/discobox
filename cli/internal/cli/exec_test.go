@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -834,5 +835,58 @@ func TestMatchSandboxArgGivenNameMatchesUnderListedName(t *testing.T) {
 	}
 	if id, ok, err := matchSandboxArg("Reaper", sandboxes, configuredName); err != nil || ok {
 		t.Fatalf("matchSandboxArg(Reaper, configuredName): id=%q ok=%v err=%v, want no match", id, ok, err)
+	}
+}
+
+// TestExecWorkdirIsSentAndTheCommandKeepsItsOwn: --workdir goes before
+// DISCOBOX and asks the discobox to start there (#1548); the same flag after
+// DISCOBOX is the command's, untouched.
+func TestExecWorkdirIsSentAndTheCommandKeepsItsOwn(t *testing.T) {
+	const sandboxID = "sbx_23x11jnw03w11nf2"
+	for _, tc := range []struct {
+		name        string
+		args        []string
+		wantWorkdir any
+		wantCommand []any
+	}{
+		{name: "flag", args: []string{"exec", "--workdir", "~", sandboxID, "--", "ls"}, wantWorkdir: "~", wantCommand: []any{"ls"}},
+		{name: "without", args: []string{"exec", sandboxID, "ls", "--workdir", "x"}, wantWorkdir: nil, wantCommand: []any{"ls", "--workdir", "x"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var createBody map[string]any
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
+					if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+						t.Errorf("decode create body: %v", err)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"exec":{"id":"ex_1","status":"starting","command":["ls"],"workdir":"","tty":false,"createdAt":"2026-01-01T00:00:00Z"}}`))
+				case strings.HasSuffix(r.URL.Path, "/attach"):
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					_, _ = w.Write([]byte(`{"error":"sandbox exec ex_1 has ended with exit code 0 and its session is no longer available to attach"}`))
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			cmd := NewRootCommand()
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, tc.args...))
+			_ = cmd.Execute()
+			if createBody == nil {
+				t.Fatal("no exec was created")
+			}
+			if got := createBody["workdir"]; got != tc.wantWorkdir {
+				t.Fatalf("create body workdir = %#v, want %#v", got, tc.wantWorkdir)
+			}
+			if got, _ := createBody["command"].([]any); fmt.Sprint(got) != fmt.Sprint(tc.wantCommand) {
+				t.Fatalf("create body command = %v, want %v", got, tc.wantCommand)
+			}
+		})
 	}
 }

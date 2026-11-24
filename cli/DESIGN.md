@@ -1116,7 +1116,7 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`discobox exec [DISCOBOX] [--] [CMD...]` and the tool and exec-create
+`discobox exec [--workdir DIR] [DISCOBOX] [--] [CMD...]` and the tool and exec-create
 commands read the first positional as DISCOBOX and the remaining words as the
 command through `splitTargetCommand`. An optional `--` immediately after
 DISCOBOX separates it explicitly; a leading `--` omits DISCOBOX and selects
@@ -1214,7 +1214,11 @@ Global flags still belong before `cp`.
 
 Operands retain `configuredName` resolution, IDs, bare `:`, explicit addresses,
 one server per command, and local colon/Windows-drive rules. Remote paths are
-literal and relative to the default user's home. Existing destination directories
+literal and relative to the default user's home, while `exec` starts in the
+source directory (#1548); rather than move the files API's base, which the
+console and SSH share, each copy prints `SOURCE -> DESTINATION` with both ends
+absolute (the remote one from the stat a write answers with) unless `-q`, and
+`exec --workdir '~'` starts a command at that home. Existing destination directories
 receive the source basename; multiple sources require an existing directory.
 Type conflicts, same-path copies and copying a tree into itself fail.
 
