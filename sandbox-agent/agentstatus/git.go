@@ -18,6 +18,11 @@ const (
 	perSourceTimeout    = 2 * time.Second
 	totalSourcesBudget  = 8 * time.Second
 	maxPorcelainCapture = 64 * 1024
+	// gitWaitDelay bounds how long a git command's output is waited for once
+	// its deadline has killed it: a child git started (a submodule's status,
+	// a clean filter, a credential helper) keeps its output pipes open after
+	// the kill, and without the bound the read outlasts every timeout here.
+	gitWaitDelay = 500 * time.Millisecond
 )
 
 // ComputeGitStatus reports git status for every source, bounded so one huge
@@ -120,12 +125,10 @@ func runDiffShortstat(ctx context.Context, dir, base string, user *execs.User) (
 // gitOutput runs one git command in dir as the sandbox's user and returns its
 // trimmed stdout.
 func gitOutput(ctx context.Context, dir string, user *execs.User, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // args are fixed subcommands plus manifest-authored refs, passed as argv, never through a shell.
-	attr, err := execs.AgentSysProcAttr(user)
+	cmd, err := gitCommand(ctx, dir, user, args...)
 	if err != nil {
 		return "", err
 	}
-	cmd.SysProcAttr = attr
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {
@@ -137,13 +140,29 @@ func gitOutput(ctx context.Context, dir string, user *execs.User, args ...string
 // gitRun runs one git command in dir as the sandbox's user for its exit
 // status alone.
 func gitRun(ctx context.Context, dir string, user *execs.User, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // args are fixed subcommands plus manifest-authored refs, passed as argv, never through a shell.
-	attr, err := execs.AgentSysProcAttr(user)
+	cmd, err := gitCommand(ctx, dir, user, args...)
 	if err != nil {
 		return err
 	}
-	cmd.SysProcAttr = attr
 	return cmd.Run()
+}
+
+// gitCommand builds one git command in dir, run as the sandbox's user, for
+// the status poll. Every one carries --no-optional-locks: the poll is a
+// background reader that the deadline SIGKILLs, and git status otherwise takes
+// .git/index.lock to write its refreshed index back, a lock a killed git
+// cannot remove, which then fails the harness's next commit with "File
+// exists". git passes the setting on to the submodules it recurses into.
+// WaitDelay keeps the deadline a deadline (gitWaitDelay).
+func gitCommand(ctx context.Context, dir string, user *execs.User, args ...string) (*exec.Cmd, error) {
+	attr, err := execs.AgentSysProcAttr(user)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-optional-locks", "-C", dir}, args...)...) //nolint:gosec // args are fixed subcommands plus manifest-authored refs, passed as argv, never through a shell.
+	cmd.SysProcAttr = attr
+	cmd.WaitDelay = gitWaitDelay
+	return cmd, nil
 }
 
 // parseShortstat picks the counts out of git's summary line, which reads
@@ -182,12 +201,10 @@ func runGitStatus(ctx context.Context, dir string, user *execs.User) (output str
 	if !info.IsDir() {
 		return "", false, errors.New("source target is not a directory")
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain=v2", "--branch")
-	attr, err := execs.AgentSysProcAttr(user)
+	cmd, err := gitCommand(ctx, dir, user, "status", "--porcelain=v2", "--branch")
 	if err != nil {
 		return "", false, err
 	}
-	cmd.SysProcAttr = attr
 	stdout := &limitedBuffer{max: maxPorcelainCapture}
 	var stderr bytes.Buffer
 	cmd.Stdout = stdout
