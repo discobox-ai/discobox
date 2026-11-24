@@ -395,6 +395,31 @@ func (t sshTarget) within(dir, p string) bool {
 	return strings.HasPrefix(cleanPath, prefix)
 }
 
+// homeDir is the home directory of the ssh that reads the target's config, in
+// that ssh's spelling: the directory its ~/.ssh/config is in.
+func (t sshTarget) homeDir() string { return t.dir(t.dir(t.userConfig)).client }
+
+// homeRelative is a file under a Windows target's home spelled from ~ —
+// C:\Users\x\AppData\… as ~/AppData/… — and whether it has such a spelling.
+func (t sshTarget) homeRelative(filename string) (string, bool) {
+	home := t.homeDir()
+	if !t.windows || !t.within(home, filename) || t.samePathAs(home, filename) {
+		return "", false
+	}
+	return "~/" + t.clean(filename)[len(strings.TrimSuffix(t.clean(home), "/"))+1:], true
+}
+
+// includeFile is the file an Include path names, in the target's own spelling:
+// on a Windows target a path from ~ (includeSpellings) names the file under the
+// profile it was written for, so both lines of one managed file are recognized
+// as naming that file. Every other path is already spelled so.
+func (t sshTarget) includeFile(p string) string {
+	if !t.windows || len(p) < 2 || p[0] != '~' || (p[1] != '/' && p[1] != '\\') {
+		return p
+	}
+	return strings.TrimRight(t.homeDir(), `\`) + `\` + strings.ReplaceAll(p[2:], "/", `\`)
+}
+
 // shellQuote wraps a word so the shell reads it as one argument, whatever it
 // contains. ssh hands ProxyCommand to a shell rather than running it directly,
 // so a path with a space in it — the ordinary case on macOS and Windows —

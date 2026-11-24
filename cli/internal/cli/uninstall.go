@@ -709,7 +709,7 @@ func (target sshTarget) findSSHIncludes(owned func(string) bool) (uninstallSSHCo
 	}
 	_, edit.removed = cutSSHConfigLines(string(existing), func(line string) bool {
 		field, ok := target.includeField(line)
-		path := target.clean(unescapeSSHPercent(field))
+		path := target.clean(target.includeFile(unescapeSSHPercent(field)))
 		return ok && target.isManagedConfigPath(path) && owned(path)
 	})
 	return edit, nil

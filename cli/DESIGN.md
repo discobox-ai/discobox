@@ -2271,14 +2271,33 @@ level or layering on the attach transports above.
   `ssh/include-preference` records permission to edit the user's SSH config.
   On the first interactive sync, the CLI asks with Yes selected. A sync without
   a terminal leaves the preference unset and prints the opt-in command. Generated
-  files are refreshed regardless. With permission, the sync adds one `Include`
-  line to `~/.ssh/config` and normalizes the `Include` lines it owns
+  files are refreshed regardless. With permission, the sync adds an `Include`
+  of each project's file (two lines on Windows, below) to `~/.ssh/config` and normalizes the `Include` lines it owns
   (`normalizeManagedIncludes`, recognizing the
   `.../discobox/cli/ssh/<project>/config` shape it writes and nothing else
-  does): a stale one is removed, and the ones an older version wrote with an
+  does, a glob of that shape excepted — that is the user's own line): a stale one is removed, and the ones an older version wrote with an
   unescaped percent sign are rewritten rather than dropped, since the file they
   name is still the right one and the line may belong to a project this run
-  cannot re-add. Stale is narrow (`staleManagedInclude`): a line outside the
+  cannot re-add. **A Windows target's `ssh_config` is read by two OpenSSH
+  builds** — Windows' own and Git for Windows' MSYS build, which `git fetch`
+  from a box's `ssh://` remote runs and which reads an Include path not
+  starting with `/` or `~` as relative to `~/.ssh`. So a file under the
+  profile is included twice (`includeSpellings`): by its drive path, the line
+  Windows OpenSSH has always followed, and as `~/…`, which both builds expand
+  into the user's home. The drive-path line stays because Windows OpenSSH
+  expands `~` through `HOME` but reads its config from the profile. The MSYS
+  drive spelling `/c/…` is never written: Windows OpenSSH reads it from the
+  current drive's root, `C:\c\…`, which any local user can create. A file
+  outside the profile keeps its one line, which Git for Windows' ssh cannot
+  follow. Both lines are recognized as naming one file (`includeFile`); a line
+  this target owns (`ownsInclude`) missing its second spelling, or naming its
+  file more than once, is rewritten in place as the pair, while another
+  install's line keeps its own spelling for its owner to complete. A CLI from
+  before the `~/` line judges it by its stale rule, finds no file by that
+  literal path, and drops it; two installs of different versions sharing one
+  Windows `ssh_config` take it out and put it back by turns until both are
+  upgraded, and the drive-path line, which Windows OpenSSH reads, stays
+  throughout. Stale is narrow (`staleManagedInclude`): a line outside the
   current state directory whose file is gone — the rule `admin uninstall`
   follows. A line whose file is still there may be another install's (a dev
   build beside the release, each with its own `XDG_STATE_HOME`, sharing one
@@ -2286,7 +2305,7 @@ level or layering on the attach transports above.
   directory of this one, so it stays; so do other projects' lines under the
   current state directory, since one per project is
   the design, and the user's own `Include`s are never touched. Both files are scoped to the resolved project and server endpoint —
-  `<state>/ssh/<project-id>-<endpoint-hash>/{config,known_hosts}`, one `Include` each — because a run only knows
+  `<state>/ssh/<project-id>-<endpoint-hash>/{config,known_hosts}`, one `Include` of each — because a run only knows
   about the project it was given: a shared file would drop every other
   project's stanzas on each write, and two projects can live on different
   servers with different addresses and host keys. The ID is resolved first, so
@@ -2301,7 +2320,7 @@ level or layering on the attach transports above.
   ssh takes the first value obtained for each keyword and an `Include` placed
   after an existing `Host *` block would lose every setting that block sets. It
   is idempotent — re-running after creating a sandbox refreshes the stanzas and
-  leaves one `Include`. `admin ssh-config enable` saves consent and refreshes Includes from the
+  leaves one `Include` of the file. `admin ssh-config enable` saves consent and refreshes Includes from the
   configured servers.
   `admin ssh-config disable` removes the install's Includes and keeps them disabled.
   Include removal preserves all remaining SSH config bytes.

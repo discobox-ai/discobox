@@ -268,10 +268,14 @@ func TestSSHTargetIncludeIsIdempotentAcrossTheBoundary(t *testing.T) {
 		t.Fatalf("ensureUserConfigInclude: %v", err)
 	}
 	if !edits.added || len(edits.dropped) != 0 {
-		t.Fatalf("edits = %+v, want a single new line", edits)
+		t.Fatalf("edits = %+v, want the Include added and nothing else", edits)
 	}
 	first := readFile(t, target.userConfig.local)
-	if want := `Include "` + managed.client + `"` + "\n"; first != want {
+	// Once by its drive path for Windows OpenSSH and once from ~, which Git
+	// for Windows' ssh follows too.
+	want := `Include "` + managed.client + `"` + "\n" +
+		`Include ~/AppData/Local/discobox/cli/ssh/proj_1/config` + "\n"
+	if first != want {
 		t.Fatalf("user config = %q, want %q", first, want)
 	}
 
@@ -383,5 +387,176 @@ func TestSSHConfigFields(t *testing.T) {
 				t.Fatalf("sshConfigFields(%q) = %v, want %v", tc.line, got, tc.want)
 			}
 		})
+	}
+}
+
+// Git for Windows runs its own MSYS build of OpenSSH, which reads the same
+// %USERPROFILE%\.ssh\config as Windows OpenSSH but takes an Include path that
+// does not start with / or ~ as relative to ~/.ssh — so a drive-letter path
+// names ~/.ssh/C:\… and no file. The Include written for a Windows ssh has to
+// be one that build reaches the managed config through as well, or `git fetch`
+// from a box's ssh:// remote cannot resolve its host.
+func TestSSHTargetIncludeResolvesForGitForWindowsSSH(t *testing.T) {
+	wslTestWindowsTools(t)
+	target := wslTestTarget(t.TempDir())
+	managed := target.configPath("proj_1")
+	if _, err := target.ensureUserConfigInclude(t.Context(), managed); err != nil {
+		t.Fatalf("ensureUserConfigInclude: %v", err)
+	}
+	// MSYS spells C:\Users\Ada Lovelace as /c/Users/Ada Lovelace, and that is
+	// its HOME under Git for Windows.
+	msys := func(p string) string {
+		p = strings.ReplaceAll(p, `\`, "/")
+		if len(p) >= 2 && p[1] == ':' {
+			p = "/" + strings.ToLower(p[:1]) + p[2:]
+		}
+		return p
+	}
+	home := msys(`C:\Users\Ada Lovelace`)
+	want := msys(managed.client)
+	var resolved []string
+	for _, line := range strings.Split(readFile(t, target.userConfig.local), "\n") {
+		field, ok := target.includeField(line)
+		if !ok {
+			continue
+		}
+		// ssh judges the path as written; only what it then opens goes
+		// through MSYS's own spelling.
+		p := unescapeSSHPercent(field)
+		switch {
+		case strings.HasPrefix(p, "~/"):
+			p = home + msys(p[1:])
+		case !strings.HasPrefix(p, "/"):
+			p = home + "/.ssh/" + p
+		}
+		if p == want {
+			return
+		}
+		resolved = append(resolved, p)
+	}
+	t.Fatalf("no Include reaches %s for Git for Windows' ssh; it reads them as %q", want, resolved)
+}
+
+// A Windows CLI before the ~/ spelling wrote the drive-letter line alone.
+// Its next run adds the second spelling where that line is, rather than a
+// second pair at the top, and a file named more than once ends up named once
+// in each spelling — CRLF line endings kept, the user's lines untouched.
+func TestSSHTargetIncludeGainsItsSpellingFromHomeInPlace(t *testing.T) {
+	wslTestWindowsTools(t)
+	target := wslTestTarget(t.TempDir())
+	// This distribution's files, which are what this target owns.
+	managed := target.configPath("proj_1" + target.wslArtifactSuffix())
+	other := target.configPath("proj_2" + target.wslArtifactSuffix())
+	drive := func(p sshPath) string { return "Include " + sshConfigPath(p.client) + "\r\n" }
+	home := func(p sshPath) string {
+		spelled, ok := target.homeRelative(p.client)
+		if !ok {
+			t.Fatalf("no spelling from ~ for %s", p.client)
+		}
+		return "Include " + sshConfigPath(spelled) + "\r\n"
+	}
+	work := "Host work\r\n    HostName work.example.com\r\n"
+	existing := "Host first\r\n" + drive(other) + work + home(other) + drive(other) + drive(managed)
+	if err := os.MkdirAll(filepath.Dir(target.userConfig.local), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target.userConfig.local, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	edits, err := target.ensureUserConfigInclude(t.Context(), managed)
+	if err != nil {
+		t.Fatalf("ensureUserConfigInclude: %v", err)
+	}
+	if edits.added || len(edits.dropped) != 0 || len(edits.repaired) != 0 || len(edits.respelled) != 2 {
+		t.Fatalf("edits = %+v, want both files' lines rewritten and nothing added", edits)
+	}
+	want := "Host first\r\n" + drive(other) + home(other) + work + drive(managed) + home(managed)
+	if got := readFile(t, target.userConfig.local); got != want {
+		t.Fatalf("user config =\n%q\nwant\n%q", got, want)
+	}
+	edits, err = target.ensureUserConfigInclude(t.Context(), managed)
+	if err != nil {
+		t.Fatalf("ensureUserConfigInclude again: %v", err)
+	}
+	if !edits.none() {
+		t.Fatalf("a second run edited again: %+v", edits)
+	}
+}
+
+// A glob of the managed shape is how a user includes every project's file by
+// hand (the workaround for Git for Windows' ssh, before this CLI wrote a
+// spelling it follows itself). It is the user's line: not stale because no file is
+// literally called proj_*, and not rewritten.
+func TestSSHTargetLeavesAGlobIncludeAlone(t *testing.T) {
+	root := t.TempDir()
+	fakeWSLPath(t, wslTestWindowsTools(t), root)
+	target := wslTestTarget(root)
+	managed := target.configPath("proj_1")
+	glob := "Include \"/c/Users/Ada Lovelace/AppData/Local/discobox/cli/ssh/proj_*/config\"\n" +
+		"Include \"C:\\Users\\Ada Lovelace\\AppData\\Roaming\\discobox\\cli\\ssh\\proj_?\\config\"\n"
+	if err := os.MkdirAll(filepath.Dir(target.userConfig.local), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target.userConfig.local, []byte(glob), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	edits, err := target.ensureUserConfigInclude(t.Context(), managed)
+	if err != nil {
+		t.Fatalf("ensureUserConfigInclude: %v", err)
+	}
+	if !edits.added || len(edits.dropped) != 0 || len(edits.repaired) != 0 {
+		t.Fatalf("edits = %+v, want only this run's Include added", edits)
+	}
+	if got := readFile(t, target.userConfig.local); !strings.HasSuffix(got, "\n"+glob) {
+		t.Fatalf("the user's glob Includes were changed:\n%s", got)
+	}
+}
+
+// Disabling the Includes takes away both spellings of this install's line.
+func TestSSHTargetRemovesBothSpellingsOfItsInclude(t *testing.T) {
+	wslTestWindowsTools(t)
+	target := wslTestTarget(t.TempDir())
+	managed := target.configPath("proj_1" + target.wslArtifactSuffix())
+	if err := os.MkdirAll(filepath.Dir(target.userConfig.local), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target.userConfig.local, []byte("Host mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := target.ensureUserConfigInclude(t.Context(), managed); err != nil {
+		t.Fatalf("ensureUserConfigInclude: %v", err)
+	}
+	if err := target.removeOwnedIncludes(t.Context()); err != nil {
+		t.Fatalf("removeOwnedIncludes: %v", err)
+	}
+	if got := readFile(t, target.userConfig.local); got != "Host mine\n" {
+		t.Fatalf("user config after removal = %q, want only the user's own", got)
+	}
+}
+
+// Windows OpenSSH reads every Include line of the file, the one written for
+// Git for Windows' ssh included, and takes a path starting with / from the
+// root of the current drive: /c/Users/… is C:\c\Users\…, which any local user
+// can create. So no line written for a Windows ssh starts with one, and a
+// state directory outside the profile, with no spelling from ~, keeps its
+// drive-letter line alone.
+func TestSSHTargetIncludeNamesNoPathAnotherUserCanCreate(t *testing.T) {
+	wslTestWindowsTools(t)
+	target := wslTestTarget(t.TempDir())
+	target.state = target.join(sshPath{local: filepath.Join(t.TempDir(), "dev"), client: `D:\dev`}, "discobox", "cli")
+	managed := target.configPath("proj_1")
+	if _, err := target.ensureUserConfigInclude(t.Context(), managed); err != nil {
+		t.Fatalf("ensureUserConfigInclude: %v", err)
+	}
+	if got, want := readFile(t, target.userConfig.local), "Include "+managed.client+"\n"; got != want {
+		t.Fatalf("user config = %q, want %q", got, want)
+	}
+	for _, filename := range []string{managed.client, target.configPath("proj_2").client, `\\server\share\discobox\cli\ssh\proj_1\config`} {
+		for _, spelling := range target.includeSpellings(filename) {
+			if strings.HasPrefix(spelling, "/") || strings.HasPrefix(spelling, `\`) && !strings.HasPrefix(spelling, `\\`) {
+				t.Fatalf("an Include of %s is spelled %q, which Windows OpenSSH reads from the current drive's root", filename, spelling)
+			}
+		}
 	}
 }

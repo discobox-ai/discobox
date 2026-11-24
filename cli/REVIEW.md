@@ -328,6 +328,21 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   `~/.ssh/config`. Remove such a line only when `staleManagedInclude` finds
   its file gone, never for where it sits — "not under my state", or a named
   old directory another install's `XDG_STATE_HOME` can still point at.
+- **An Include of this target's own file is written, and every managed
+  Include matched and removed, in all of `includeSpellings`.** Git for
+  Windows' MSYS ssh reads the same `ssh_config` and cannot follow a
+  drive-letter Include; a writer or matcher that handles only `C:\…` breaks
+  `git fetch` from a box, or leaves the `~/…` line behind. Resolve a field
+  through `includeFile` before comparing it. Another install's line is not
+  respelled (the note above).
+- **Never write an Include path a Windows ssh reads from the current drive's
+  root.** Windows OpenSSH reads every line of the file, including one written
+  for another build: `/c/Users/…` is `C:\c\Users\…` to it, which any local
+  user can create, and a config there runs its `ProxyCommand` as the user.
+- **A new spelling of a managed Include is judged by every older CLI's stale
+  rule.** An older CLI sharing the `ssh_config` finds no file at the literal
+  new path and drops the line. Keep the spelling older CLIs read alongside
+  it, so the line they take away is never the only one.
 - **Every write of a project's managed config or known_hosts is restricted
   and locked.** Each is put through `target.restrict` once written — over an
   existing file `os.WriteFile` keeps the ACL an older CLI left, and an
