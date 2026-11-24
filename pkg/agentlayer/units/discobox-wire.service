@@ -22,7 +22,7 @@
 # A failure ends the container: sysinit.target requires this unit, so nothing
 # behind it starts, and the manager exits with a non-zero status. A sandbox
 # whose wiring failed would otherwise write its state -- the home,
-# /var/lib/docker -- into the image layer, which a rebuild discards. The pool
+# /var/lib/discobox -- into the image layer, which a rebuild discards. The pool
 # agent reports the exit and the tail of the console, which is why this logs
 # there as well as to the journal: the journal goes with the container.
 [Unit]

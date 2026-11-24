@@ -222,6 +222,21 @@ func (s ScalarToken) MarshalJSON() ([]byte, error) {
 	return json.Marshal(string(s))
 }
 
+// ContainerRuntimeStatePaths are the state directories of the container
+// runtimes a box can run: Docker's, containerd's, and Kubernetes' (kubelet,
+// etcd, k3s). None is a declared volume (ADR 26-11-23-993 §1): a machine's
+// data root can be FUSE, where the kernel refuses an overlay upper directory,
+// so they stay on the box's root -- the sandbox base image's VOLUMEs in a
+// container, the root disk on a machine. A box made before keeps an orphaned
+// tree for the first two under its data root, which an export leaves out.
+var ContainerRuntimeStatePaths = []string{
+	"/var/lib/docker",
+	"/var/lib/containerd",
+	"/var/lib/kubelet",
+	"/var/lib/etcd",
+	"/var/lib/rancher",
+}
+
 // VolumeRuntime carries the runtime identity used to expand volume tokens.
 type VolumeRuntime struct {
 	Home string

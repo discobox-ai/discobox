@@ -139,7 +139,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   # (discobox-sandbox-base:local can share an image ID with a developer's own dev
   # tag, so it would reap their running pools).
   for pool_id in $pool_ids; do
-    docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f >/dev/null 2>&1 || true
+    docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f -v >/dev/null 2>&1 || true
     docker network rm "discobox-sbnet-$pool_id" >/dev/null 2>&1 || true
   done
 }
@@ -329,8 +329,9 @@ sandbox_home() {
   [ -n "$home" ]
   docker exec "$(sandbox_container "$source_id")" sh -lc \
     "mkdir -p '$home/work/nested' && printf 'the-payload-42\n' > '$home/work/nested/keepsake.txt'"
-  # And state the sandbox base image declares stays behind (ADR 0129 §2): the nested Docker
-  # daemon's, written where the daemon keeps it, as root, the way it would be.
+  # And the nested Docker daemon's state stays behind: it is on the container's
+  # own volume, never in the tree (ADR 26-11-23-993 §2), written where the
+  # daemon keeps it, as root, the way it would be.
   docker exec "$(sandbox_container "$source_id")" sh -c \
     "printf 'rebuildable\n' > /var/lib/docker/transfer-marker"
 

@@ -117,8 +117,9 @@ d exec "$id" -- sh -c 'id; pwd; systemctl is-system-running'
 `docker run` inside a sandbox fails with `failed to mount
 /tmp/containerd-mountNNNN: ... invalid argument` only when that dockerd's data
 root is on the container's own overlay rootfs — overlayfs cannot stack on
-overlayfs. A real sandbox avoids it: `sandbox.json` puts `/var/lib/docker` and
-`/var/lib/containerd` on the ext4 `data` volume. In an ad-hoc probe container,
+overlayfs. A real sandbox avoids it: the sandbox base image declares
+`/var/lib/docker` and `/var/lib/containerd` as `VOLUME`s, so in a container each
+is an anonymous volume on the hosting daemon's filesystem. In an ad-hoc probe container,
 mount a real filesystem at the data root rather than concluding nesting is
 broken. Sandboxes may have no outbound DNS; `docker save <img> | docker exec -i
 <container> docker load` instead of pulling.
