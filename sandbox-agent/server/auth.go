@@ -255,7 +255,7 @@ func (a *SignedTokenAuthenticator) authorizeRequest(r *http.Request, claims Sign
 		return errors.New("sandbox-agent token identity does not match this sandbox")
 	}
 	if claims.PoolID != "" && claims.PoolID != a.identity.PoolID {
-		return errors.New("sandbox-agent token worker does not match this sandbox")
+		return errors.New("sandbox-agent token pool does not match this sandbox")
 	}
 	// Read from the escaped path, which is what the router matches and the
 	// handlers read their ids from. The decoded path is a different string once

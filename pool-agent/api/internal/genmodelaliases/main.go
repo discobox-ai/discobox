@@ -21,7 +21,7 @@ func main() {
 	outPath := flag.String("out", "", "output Go file")
 	genImport := flag.String("gen-import", "", "generated package import path")
 	genPackage := flag.String("gen-package", "poolagentapi", "generated package import name")
-	packageDoc := flag.String("package-doc", "Package model exposes stable aliases for generated worker-agent API schema types.", "generated package doc")
+	packageDoc := flag.String("package-doc", "Package model exposes stable aliases for generated pool-agent API schema types.", "generated package doc")
 	flag.Parse()
 	if *openAPIPath == "" || *schemasPath == "" || *outPath == "" || *genImport == "" {
 		fatalf("openapi, schemas, out, and gen-import are required")

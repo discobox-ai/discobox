@@ -473,7 +473,7 @@ type GitSource struct {
 	CacheKey       *string `json:"cacheKey,omitempty" doc:"The pool's Git cache this source is delivered into, set by the server for a cache-delivered source. It is the source's remote, normalized to host and path, or a key for the client's own directory when the source has no remote. Sources that share it share one object store on a pool, so a delivery sends only what the pool has not been sent before."`
 	Slug           *string `json:"slug,omitempty" doc:"Stable URL-safe source slug used to address the source as a sandbox Git repository"`
 	URL            *string `json:"url,omitempty" doc:"Remote Git source URL" format:"uri"`
-	LocalDirectory *string `json:"localDirectory,omitempty" doc:"Absolute local Git repository directory accessible to the worker"`
+	LocalDirectory *string `json:"localDirectory,omitempty" doc:"Absolute local Git repository directory accessible to the pool"`
 	// NoLocalRepository is a fact about the client's filesystem, not a claim
 	// about what this server can reach: the directory the source came from is
 	// in no repository, so there is nothing there to clone whatever the
