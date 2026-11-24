@@ -184,6 +184,13 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   - format strings, as `%d new keys` became `%d run keys` in a test's failure
     message.
 
+- **A check the CLI makes ahead of a server refusal tests the field the
+  server tests.** `attach` refuses an archived discobox before opening the
+  window because the server refuses it on its desired state; testing the
+  display state instead refused a discobox whose unarchive was recorded but
+  not yet carried out, and let through a failed archive the server then
+  refused with the window open (#1506).
+
 - **A state the CLI writes for a person goes through `stateWord`.** The API
   says `suspended` and the CLI says `paused` (ADR 26-10-20-317 §4): tables, the
   picker, completion, and every error or note that names a box's state in

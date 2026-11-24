@@ -67,19 +67,26 @@ draw a window on, attach is raw whether or not the flag was given.`,
 			if err != nil {
 				return err
 			}
+			// Read once for both ways in: the window is opened on the
+			// discobox as the server has it, so its header names the box, its
+			// branch and its diff from the first frame rather than filling in
+			// when the listing arrives.
+			res, err := client.GetSandbox(cmd.Context(), apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			if err != nil {
+				return err
+			}
+			sandbox, err := expectResponse[apimodel.Sandbox](res)
+			if err != nil {
+				return err
+			}
+			// The server refuses an attach to a discobox archived by intent,
+			// and would do so only once the window was open: refused here, on
+			// the field the server tests, it never opens. An unarchive not yet
+			// carried out is not refused, nor is a failed archive.
+			if sandbox.Runtime.DesiredState == apiclientgen.SandboxRuntimeDesiredStateArchived {
+				return fmt.Errorf("the discobox is archived; unarchive it first: discobox admin box unarchive %s", sandboxID)
+			}
 			if !raw && canOpenWindow(cmd) {
-				// The window is opened on the discobox as the server has it,
-				// so its header names the box, its branch and its diff from
-				// the first frame rather than filling in when the listing
-				// arrives.
-				res, err := client.GetSandbox(cmd.Context(), apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
-				if err != nil {
-					return err
-				}
-				sandbox, err := expectResponse[apimodel.Sandbox](res)
-				if err != nil {
-					return err
-				}
 				if err := sandboxcreate.CleanupConfirmedSources(cmd.Context(), a.serverURL, sandbox); err != nil {
 					return err
 				}
