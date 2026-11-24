@@ -12,7 +12,7 @@ factory. Work comes home through Git.
 - [Getting started](getting-started.md): install, configure an agent, run a task,
   and collect the work.
 - [Concepts](concepts.md): boxes and sources, harnesses, skills, boxes that
-  lead other boxes, providers, lifecycle and credentials.
+  lead other boxes, providers, lifecycle, disk use and credentials.
 - [Running boxes on boxd](boxd.md): set up a boxd provider, and what its key
   can reach.
 - [Console guide](console.md): workflows, navigation and keybindings.
