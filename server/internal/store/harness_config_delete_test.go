@@ -45,10 +45,10 @@ func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	stale := newConfig("stale")
 	newSandbox("sb-stale", stale.ID)
 	if err := db.Write.WithContext(ctx).Delete(&model.Sandbox{}, "id = ?", "sb-stale").Error; err != nil {
-		t.Fatalf("soft-delete sandbox: %v", err)
+		t.Fatalf("delete sandbox: %v", err)
 	}
 	if err := s.DeleteHarnessConfig(ctx, "project-1", stale.ID, nil); err != nil {
-		t.Fatalf("delete with only a soft-deleted sandbox = %v, want success", err)
+		t.Fatalf("delete with only a deleted sandbox = %v, want success", err)
 	}
 	if _, err := s.GetHarnessConfig(ctx, "project-1", stale.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("config should be gone, got %v", err)
