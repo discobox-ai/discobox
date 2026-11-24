@@ -369,7 +369,7 @@ tasks:
         mv "$staging" "$dest"
         trap - EXIT
         ls -l "$dest"
-        echo "staged {{.STAGE_WHAT}} artifacts in $dest; recreate a pool to boot them"
+        echo "staged {{.STAGE_WHAT}} artifacts in $dest; a pool boots them the next time it starts (restart or recreate one)"
 
   build:sandbox-base-image:
     desc: Build the Docker driver's Ubuntu sandbox base image, every sandbox container's and every Docker pool's

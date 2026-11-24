@@ -348,9 +348,6 @@ func TestGuestImageBuildSpecPointsAtTheGuestThisDriverBoots(t *testing.T) {
 	if !strings.HasPrefix(spec.Platform, "linux/") {
 		t.Errorf("Platform = %q, want a linux guest", spec.Platform)
 	}
-	if spec.Adopt == nil {
-		t.Error("no Adopt: the resolver memoizes for the life of the process, so a build would not be picked up")
-	}
 }
 
 // An override directory names the artifacts outright, so there is nothing for a

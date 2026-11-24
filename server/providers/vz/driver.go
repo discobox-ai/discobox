@@ -544,10 +544,6 @@ func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolL
 // inside a pool VM — a VM booted from the guest image being replaced. The
 // running guest builds its successor, the artifacts come back over the same
 // transport, and the next pool start boots them.
-//
-// Adopt drops the resolver's memo. It resolves once per process, so without
-// this the server would keep booting the guest it resolved before the build for
-// as long as it runs, and a developer would conclude the build did nothing.
 func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
 	destination := d.guest.LocalDir()
 	if destination == "" {
@@ -557,7 +553,6 @@ func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error)
 		Dockerfile:  guestImageDockerfile,
 		Platform:    guestImagePlatform(),
 		Destination: destination,
-		Adopt:       d.guest.Invalidate,
 	}, nil
 }
 

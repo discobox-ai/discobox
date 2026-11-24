@@ -1148,13 +1148,21 @@ Two properties are load-bearing rather than incidental:
 - Only the artifacts a driver names are extracted. The guest image is a release
   artifact, not a tree to search.
 
-The override directory is how a guest image built from local sources is booted.
+A guest built from local sources is booted from the resolver's local build
+directory, not the override directory: an override names the artifacts outright
+and is never built into. A complete local build wins over the published image,
+and the resolver looks for it on every `Resolve` rather than memoizing it, so a
+build made under a running server — by a pool, or `task build:vm-guest` — is
+what the next pool start boots, and deleting it goes back. Only the override
+and the published image are memoized for the life of the process; nothing
+changes those under a running server.
+
 `Engine.BuildGuestImage` (`sandbox.PoolRuntime.BuildGuestImage`, reached by
 `discobox admin pool build-guest`) produces one: it takes the Dockerfile,
 platform, and destination from the driver's `GuestImageBuildSpec`, builds on the
 pool's own Docker daemon through the same BuildKit session that carries
 development image builds (`dockerworker.BuildArtifacts`), and streams the final
-`FROM scratch` stage back to that host directory. That is what closes the
+`FROM scratch` stage back to the local build directory. That is what closes the
 bootstrap loop — the registry seeds the first VM on a machine, and from then on
 a pool VM is the builder for its own successor (ADR 0062 §6, §7).
 

@@ -592,7 +592,6 @@ func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error)
 		Dockerfile:  guestImageDockerfile,
 		Platform:    guestImagePlatform,
 		Destination: destination,
-		Adopt:       d.guest.Invalidate,
 	}, nil
 }
 

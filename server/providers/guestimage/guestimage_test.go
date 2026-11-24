@@ -359,6 +359,60 @@ func TestResolveFallsBackWhenTheLocalDirectoryIsIncomplete(t *testing.T) {
 	}
 }
 
+// A local build that lands after the published image was resolved is booted
+// from the next resolution on, and removing it goes back to the published image,
+// all within one resolver. The published image's memo must not hide a build
+// made under a running server, whether a pool built it or `task build:vm-guest`
+// staged it.
+func TestResolveAdoptsALocalBuildMadeAfterTheFirstResolution(t *testing.T) {
+	reference, requests := pushGuestImage(t, map[string][]byte{"vmlinux": []byte("published kernel")})
+	local := filepath.Join(t.TempDir(), "local")
+	resolver, err := New(Config{
+		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
+		LocalDir:  local,
+		CacheDir:  t.TempDir(),
+		Platform:  linuxAMD64(),
+		Artifacts: []Artifact{{Name: "vmlinux"}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kernel := func(want string) {
+		t.Helper()
+		bundle, err := resolver.Resolve(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		contents, err := os.ReadFile(bundle.Path("vmlinux"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(contents) != want {
+			t.Errorf("kernel = %q, want %q", contents, want)
+		}
+	}
+
+	kernel("published kernel")
+	fetched := requests.Load()
+
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "vmlinux"), []byte("locally built kernel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kernel("locally built kernel")
+
+	if err := os.RemoveAll(local); err != nil {
+		t.Fatal(err)
+	}
+	kernel("published kernel")
+	if requests.Load() != fetched {
+		t.Errorf("going back to the published image made %d more registry requests; it is memoized", requests.Load()-fetched)
+	}
+}
+
 // An explicitly configured directory is an assertion, not a preference: it must
 // not silently fall back to the registry when it is broken.
 func TestResolveDoesNotFallBackFromAConfiguredOverride(t *testing.T) {
