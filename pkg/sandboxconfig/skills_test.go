@@ -250,6 +250,12 @@ func TestValidateSourceDirectory(t *testing.T) {
 		{"skills unclean", "/workspace/../etc", true, []sandboxpath.Paths{linux}, "neither below home"},
 		{"skills unclean, no rules", "/workspace/../etc", true, nil, ""},
 		{"skills climbing out of home, no rules", "~/../etc", true, nil, "clean relative path below home"},
+		{"work with a tab", "/work\tspace", false, []sandboxpath.Paths{linux}, "below the sandbox's root"},
+		{"work with NUL", "/work\x00space", false, []sandboxpath.Paths{linux, windows}, "below the sandbox's root"},
+		{"work at the root", "/", false, []sandboxpath.Paths{linux}, "below the sandbox's root"},
+		{"work at a drive's root", `C:\`, false, []sandboxpath.Paths{windows}, "below the sandbox's root"},
+		{"skills at the root", "/", true, []sandboxpath.Paths{linux}, "below the sandbox's root"},
+		{"work with a tab, no rules", "/work\tspace", false, nil, ""},
 	} {
 		err := ValidateSourceDirectory(tc.directory, tc.skills, tc.rules...)
 		if tc.want == "" && err != nil {

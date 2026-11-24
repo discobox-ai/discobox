@@ -24,10 +24,12 @@
   `WorkingDir`. Removing the consumer removed the check and left a stored value
   unchecked (#234). Before deleting what reads a stored value, find what else
   the deletion stops refusing.
-- **Check a client-produced path with `Clean`, never `Rooted`.** `Rooted` is
-  the pool's placement reading: it refuses whitespace, so as a validity test it
-  refuses every repository whose path has a space in it, which the client
-  mirrors as is.
+- **Judge a directory the pool places by `Rooted`, never a copy of its
+  rules.** A source's directory, a reference key and a home are read by the
+  pool with `sandboxpath.Paths.Rooted`, which places what it refuses at the
+  working root (or drops the home) without an error. The create refuses
+  exactly what `Rooted` refuses (#1667), so the two cannot drift apart. Any
+  other client-produced path is checked with `Clean`.
 
 ## Power on a sandbox's own request
 
