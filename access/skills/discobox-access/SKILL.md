@@ -71,6 +71,13 @@ If a command *already works*, the credential is already in your environment —
 nothing here is needed. Ask only when something actually failed for want of
 one.
 
+**Git uses it on its own.** Every discobox's git asks `discobox-access
+git-credential` for an HTTPS host's login, which answers with the credential
+whose routes name that host (above, `github` for `github.com`). So `git clone`
+and `git push` over HTTPS need no token in the URL and no helper of your own.
+A push that fails with `403 blocked by proxy` is the credential's routes, not
+git: read `discobox-access audit --blocked`.
+
 ## 2. Ask for one
 
 ```bash

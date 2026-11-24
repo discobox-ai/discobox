@@ -30,3 +30,14 @@
 - A `--policy-arg` belongs to the `--policy` or `--delegate-policy` before it,
   which only holds because the flag package calls `Set` in command-line
   order: keep every policy flag on the one shared `policyScopes`.
+- `git-credential` reads a listed host only as the protocol documents it,
+  exact or `*.h` for the hosts beneath h, and ranks nothing: an overlap is a
+  tie git is not given. Which route wins is `pkg/secretroute`'s to decide,
+  and a ranking here would be a copy of it, which drifts when route host
+  semantics change. A helper that needs more than this asks the service,
+  through a protocol change, rather than growing a matcher.
+- `git-credential` is configured system-wide, ahead of every user's own
+  helper, and git sends every later helper the login that worked. What it
+  answers is marked `ephemeral` (a whole `credential`, since git never
+  treats a password as ephemeral) so a user's `store` or `cache` keeps no
+  placeholder; the test's user `store` helper holds it to that.

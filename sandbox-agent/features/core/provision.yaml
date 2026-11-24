@@ -23,6 +23,9 @@ steps:
     run: link-agent.sh
   - name: dirs
     run: make-dirs.sh
+  # git asks discobox-access for the credential the box holds for a host.
+  - name: git-credential
+    run: git-credential.sh
   # How a feature puts a command it installed in a prefix of its own on every
   # user's PATH, moving aside what the box had at the name (see the script).
   # Every feature that links one requires core for it.

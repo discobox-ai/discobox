@@ -187,6 +187,16 @@ and how long it lasts. Project, harness and box bindings serve different
 scopes. Raw credentials, when explicitly allowed, are a different grant:
 they are readable by the box.
 
+Git in a box uses a held credential on its own. When git asks for a login to
+an HTTPS host, a credential helper every box is configured with answers with
+the placeholder of the one credential whose routes name that host, exactly or
+under `*.host`. So with `github` bound as `GH_TOKEN` and routed to
+`github.com`, `git clone` and `git push` of a repository the token covers need
+no setup, and the proxy still refuses a path the routes don't allow. A
+credential routed to any host (`*`) is never offered to git, and neither is
+either of two credentials that name the same host. A user's own helpers are
+still asked when this one has no answer.
+
 An agent can request access it lacks. Review the destination, methods,
 paths, lifetime, and the routes behind any named role. A request may ask for
 use, delegation to children, or both. Decide each part; approving use does

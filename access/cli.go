@@ -93,6 +93,8 @@ func Run(args []string) int {
 		return runTrusts(ctx, rest)
 	case "audit":
 		return runAudit(ctx, rest)
+	case "git-credential":
+		return runGitCredential(ctx, rest, os.Stdin, os.Stdout, os.Stderr)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return exitOK
@@ -264,6 +266,14 @@ func usage(w io.Writer) {
       made it does not say why — the reason says whether to ask for a
       credential (request), ask for a host to be trusted (trust), or send the
       credential somewhere its routes allow.
+
+  %[1]s git-credential get|store|erase
+      A git credential helper, which git runs, not you: every discobox's git
+      is already configured with it. For an HTTPS host it gives git the
+      variable's placeholder of the one credential whose routes name that
+      host, exactly or under *.HOST, so git clone and git push of a
+      repository a credential you hold covers just work. A credential routed
+      to any host, or a host two credentials name, gets git nothing.
 
   %[1]s --debug COMMAND ...
       Before any command, print every call it makes to the credentials
