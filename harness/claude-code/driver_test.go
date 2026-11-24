@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -236,6 +237,8 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--continue"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// A conversation to continue, so a resume is one.
+			withConversation(t)
 			got := launchertest.RunLauncher(t, "claude", nil, tc.args)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("claude argv = %#v, want %#v", got, tc.want)
@@ -403,5 +406,70 @@ func TestLaunchInitializerPathsAreLiteral(t *testing.T) {
 	got := launchertest.RunLauncher(t, "claude", nil, []string{"fixture prompt"})
 	if !slices.Equal(got, []string{"fixture prompt"}) {
 		t.Fatalf("launcher argv = %#v", got)
+	}
+}
+
+// withConversation records a Claude Code conversation for the directory the
+// launcher runs in (the package's), under a CLAUDE_CONFIG_DIR of its own:
+// projects/<the cwd with every character outside [A-Za-z0-9] made "-">.
+func withConversation(t *testing.T) {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := t.TempDir()
+	project := filepath.Join(config, "projects", regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(cwd, "-"))
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "11111111-2222-3333-4444-555555555555.jsonl"), []byte(`{"type":"user"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", config)
+}
+
+// TestLaunchResumeWithNoConversationStartsFresh covers a relaunch of a primary
+// whose harness never had a conversation: signed in or not, nothing was sent,
+// so Claude Code has nothing to continue. `claude --continue` then prints
+// "No conversation found to continue" and exits 1 (Claude Code 2.1.331), which
+// leaves the user at a bare login shell. The launcher must start a fresh
+// session instead, with the prompt: no conversation means it was never sent.
+func TestLaunchResumeWithNoConversationStartsFresh(t *testing.T) {
+	// Where the launcher looks first; the caller's own (a box's real
+	// ~/.claude) must not decide the result.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	// The stub behaves as Claude Code does: --continue with no conversation
+	// recorded under ~/.claude/projects fails; anything else starts.
+	const claude = `#!/bin/sh
+printf 'claude %s\n' "$*"
+if [ "${1-}" = "--continue" ] && ! ls "$HOME"/.claude/projects/*/*.jsonl >/dev/null 2>&1; then
+	echo "No conversation found to continue" >&2
+	exit 1
+fi
+`
+	out, status := launchertest.Run(t, "claude", map[string]string{"claude": claude}, nil,
+		[]string{harness.ResumeFlag, "fix", "the", "tests"})
+	got := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if status != 0 || got[len(got)-1] != "claude fix the tests" {
+		t.Fatalf("launcher ran %#v and exited %d, want it to end in a fresh `claude` given the prompt that exits 0", got, status)
+	}
+}
+
+// TestLaunchResumeContinuesOnlyThisDirectorysConversation: a conversation
+// recorded for another directory is not one `claude --continue` would find
+// here, so the resume starts fresh, with the prompt, rather than failing on it.
+func TestLaunchResumeContinuesOnlyThisDirectorysConversation(t *testing.T) {
+	config := t.TempDir()
+	other := filepath.Join(config, "projects", "-workspace-other")
+	if err := os.MkdirAll(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "11111111-2222-3333-4444-555555555555.jsonl"), []byte(`{"type":"user"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", config)
+	if got := launchertest.RunLauncher(t, "claude", nil, []string{harness.ResumeFlag, "fix", "the", "tests"}); !slices.Equal(got, []string{"fix the tests"}) {
+		t.Fatalf("claude argv = %#v, want a fresh start given the prompt", got)
 	}
 }

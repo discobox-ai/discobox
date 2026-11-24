@@ -272,8 +272,9 @@ coding harnesses; shell carries no capture implementation.
   tested by running it under a POSIX shell with a stubbed agent
   (`internal/launchertest`).
 - **The prompt trails every launch**, relaunch included (ADR 0086 §4). A
-  wrapper resuming a session ignores it — both included launchers replace it
-  with their own resume flags — but because the command is *typed* (ADR 0027),
+  wrapper resuming a session ignores it — each included launcher replaces it
+  with its own resume flag, except that Claude Code's, finding no conversation
+  to continue, starts a fresh one with it — but because the command is *typed* (ADR 0027),
   a sandbox whose first launch failed still shows what it was asked to do, as
   an editable command line.
 - The resolved manifest is snapshotted onto the harness config at registration
@@ -731,6 +732,13 @@ so Claude Code never tries to rotate a sentinel.
   auto-mode nudge marker, and trust for the actual current directory into
   `.claude.json`, preserving other projects, preferences and newer local
   credentials. Malformed state is left intact and startup fails.
+- **A resume continues only a conversation there is.** `claude --continue`
+  with none for its directory exits 1, leaving the login shell, and a primary
+  relaunched before anyone sent a message has none. So the launcher continues
+  only when a conversation file exists where Claude Code looks for this
+  directory's (`launch.sh` says how it names them), and otherwise starts a
+  fresh session with the prompt, which no conversation means was never sent.
+  It never retries on exit 1, which would restart after real failures.
 - `.claude/settings.json` is exported as the user left it, and remains
   literal. The bundle defaults to bypass-permission mode and disables
   claude.ai connectors with `disableClaudeAiConnectors: true`. A saved or
@@ -812,6 +820,8 @@ machine.
   so no clock has to agree with another. Claude Code's launcher has none: a
   failed model request at its start leaves it on its screen, retrying the
   request itself.
+- Resume is `resume --last`, which starts a new session when there is none
+  (Codex 0.172.0).
 
 ### OpenCode
 
@@ -827,6 +837,8 @@ ChatGPT also has a headless sign-in, and the rest connect with a key.
   credentials helper. Without it opencode talks to a per-user background
   service, which outlives the terminal that started it and would run the hook
   plugin in that terminal's environment for every terminal after it.
+- Resume is `--continue`, which stays on a new session's home screen when
+  there is none.
 - **Credentials are rows in opencode's database**, read and written only
   through `opencode auth export` and `auth import`, opencode's own interchange
   format: `{id, integrationID, label, active, value}`, where `value` is

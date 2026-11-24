@@ -35,3 +35,12 @@
   release, so a new such key arrives with no change here. When touching a
   harness's settings, start a fresh box, give it no input, and check that
   `admin harness changes` reports `clean`.
+
+- A launcher's resume must still open a session when there is none to
+  resume, never fail to the login shell. A relaunch reaches a primary whose
+  harness never got a message (a re-attach after a stop, the tour's hand-off);
+  Claude Code's `--continue` exits 1 there (issue #1421), so its launcher checks
+  for a conversation and otherwise starts fresh with the prompt, which was
+  never sent. Check the vendor CLI's no-session behaviour when adding or
+  changing a harness's resume, and record it in that harness's `DESIGN.md`
+  section, as each built-in's is.
