@@ -57,7 +57,12 @@ type ShimConfig struct {
 }
 
 type shimRuntime struct {
-	cfg      ShimConfig
+	cfg ShimConfig
+	// proc is the command, nil until it starts. It, started and identity are
+	// set once, by startProcess, holding both startMu and mu; read them
+	// holding either. The start path and stop hold startMu, which waits out a
+	// start in flight; everything else (attach frames, status, wait, the
+	// shutdown path) takes mu, which never waits on a start.
 	proc     *procio.Process
 	logger   *AsyncLogger
 	server   *http.Server
@@ -72,7 +77,7 @@ type shimRuntime struct {
 	startMu   sync.Mutex
 	stream    *shimruntime.Runtime
 	// started is when proc was started, and identity the kernel's identity for
-	// it; guarded by startMu, like proc.
+	// it; guarded like proc.
 	started  time.Time
 	identity string
 	mu       sync.Mutex
@@ -142,7 +147,8 @@ const (
 // another command's. askSessionToStop and endSession settle which it is from
 // the start time recorded here.
 func (r *shimRuntime) stop() {
-	// startMu, not mu: it is what startProcess holds when it sets proc.
+	// startMu, not mu, so a stop that lands while the command is starting
+	// waits for it and stops it, rather than finding nothing to stop.
 	r.startMu.Lock()
 	proc, identity := r.proc, r.identity
 	r.startMu.Unlock()
@@ -288,11 +294,9 @@ func (r *shimRuntime) startProcess(opts procio.Options) error {
 	if err != nil {
 		return err
 	}
-	r.proc = proc
 	// Taken the moment the process exists, before anything is typed into it,
 	// which is what the exec records as its start.
-	r.started = time.Now().UTC()
-	r.status.PID = proc.PID()
+	started := time.Now().UTC()
 	// The kernel's identity for it, read while it is this process's unreaped
 	// child and so cannot be anything else: what a stop, or the supervisor
 	// collecting a dead shim, checks the pid against before signaling it
@@ -305,8 +309,13 @@ func (r *shimRuntime) startProcess(opts procio.Options) error {
 	if err != nil {
 		slog.Warn("read the exec's process identity", "execID", r.cfg.ExecID, "pid", proc.PID(), "error", err)
 	}
+	r.mu.Lock()
+	r.proc = proc
+	r.started = started
 	r.identity = identity
-	r.status.ProcessIdentity = r.identity
+	r.status.PID = proc.PID()
+	r.status.ProcessIdentity = identity
+	r.mu.Unlock()
 
 	if tty := proc.TTY(); tty != nil {
 		// Track the screen in memory at the PTY's real size so a late attacher
@@ -770,10 +779,13 @@ func (r *shimRuntime) closeInput() {
 }
 
 func (r *shimRuntime) wait() {
-	if r.proc == nil {
+	r.mu.Lock()
+	proc := r.proc
+	r.mu.Unlock()
+	if proc == nil {
 		return
 	}
-	exit := r.proc.Wait()
+	exit := proc.Wait()
 	r.closeInput()
 	now := time.Now().UTC()
 	r.mu.Lock()
@@ -844,8 +856,11 @@ func (r *shimRuntime) lingerThenFinish() {
 }
 
 func (r *shimRuntime) terminate() {
-	if r.proc != nil {
-		r.proc.Terminate()
+	r.mu.Lock()
+	proc := r.proc
+	r.mu.Unlock()
+	if proc != nil {
+		proc.Terminate()
 	}
 }
 
@@ -859,12 +874,15 @@ func (r *shimRuntime) close() {
 	if r.listener != nil {
 		_ = r.listener.Close()
 	}
-	if r.proc != nil {
+	r.mu.Lock()
+	proc := r.proc
+	r.mu.Unlock()
+	if proc != nil {
 		// The runtime holds the same PTY handle for resizes and the repaint
 		// jiggle. It gives it up first, so nothing is asking the file for its
 		// descriptor while this closes it.
 		r.stream.ReleaseTTY()
-		r.proc.Close()
+		proc.Close()
 	}
 	if r.logger != nil {
 		r.logger.Close()
