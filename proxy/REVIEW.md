@@ -284,3 +284,12 @@
 - Strip all userinfo from private upstream proxy URLs in responses, probe results
   and tunnel audit metadata. `url.URL.Redacted` retains the username, which is
   also a credential and must never reach sandbox diagnostics.
+
+- In `Server` and `Forwarder`, the listener, every `wg.Add` that `Close`
+  waits on (an accepted connection, the retention sweeper), and the tracking
+  of an accepted connection in `conns` happen under `connMu` after a check of
+  `closed`, which `Close` closes under that lock. Otherwise a `Close` racing
+  startup misses what started, and then a closed proxy keeps serving or its
+  `wg.Wait` races an `Add` at zero. A connection tracked later from inside an
+  already-counted goroutine (`Forwarder.trackConn` for the dialed side) needs
+  no check: `Close` closing the local side ends that goroutine, which closes it.
