@@ -306,20 +306,69 @@ Rules:
   `credential:broker`); user scopes come from the authenticator (`ScopeAll`
   for the default user, a narrower set for a project-layer SSH key).
 
+## Credential Flows
+
+Every key-based credential follows one shape:
+
+```text
+long-lived key identity -> proof or issuer use -> short-lived scoped token
+```
+
+Pool assertions are the root module's [`pkg/poolauth`](../../../pkg/poolauth/assertion.go),
+verified by `PoolAuthenticator`; pool enrollment is
+[`internal/resources/pools`](../resources/pools/DESIGN.md); pool-agent request
+tokens are [`poolagent`](poolagent/DESIGN.md) (package `poolagentauth`).
+
+### Pool Auth: Workload Identity
+
+Pools have their own identity. The pool private key stays on the pool host.
+It is enrolled by the pool's maker, over the channel it made the box with
+([ADR 26-10-24-953](../../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§4); no token is minted for it.
+
+```text
+1. When a runtime provider creates a pool's box, it places the agent bundle
+   there and runs `discobox-provision identity`, which generates an Ed25519
+   key on the box's durable storage (or keeps the one there) and prints its
+   public half.
+2. The provider records that public key as the pool's (EnrollPool, through
+   poolruntime's PoolMaker): the key and key type on the pool row.
+3. It places the bootstrap — control plane URL, project ID, pool ID and the
+   control plane's public key, no credential — and runs `discobox-provision
+   apply`, which fetches the pool's bundles with that key and starts the agent.
+4. The pool agent signs each pool-to-control-plane request with a poolauth
+   assertion (audience discobox-control-plane). Its first heartbeat stamps
+   the pool registered.
+5. PoolAuthenticator verifies it (Authentication, above).
+```
+
+Rules:
+
+- Only a pool's maker records its key, over the channel it made the box with,
+  each time it provisions the box: at create, at repair, and when it applies
+  moved bundles in the running box. `provision identity` keeps a key the box
+  already has, so each enrollment after the first records the same key, and
+  nothing else writes `Pool.PublicKey`.
+- Runtime assertions use PASETO v4.public with Ed25519, a 5-minute TTL, and
+  `iat`/`nbf` backdated 5 minutes for local VM clocks.
+- Pool authorization should be scoped to assigned work and provider/sandbox
+  scope.
+
+### Key Ownership
+
+| Flow | Private key owner | Purpose |
+| --- | --- | --- |
+| Pool auth | Pool | Proves workload identity to the control plane. |
+| Pool-agent requests | Control plane (`server_state`) | Signs control-plane requests to pool and sandbox agents. |
+
 ## Subpackages
 
-- [`sandbox`](sandbox/DESIGN.md) (`sandboxauth`): the per-project/user sandbox
-  access issuer key and the short-lived sandbox access tokens it signs.
 - `discobot`: verifies discobot's assertions of the person a request is for
   (`Verify`), and `Sign`, the format's reference. discobot's own signer is
   outside this repository.
-- `poolagent` (`poolagentauth`): the server-owned issuer key, stored in
-  `server_state` under `worker_agent_request_issuer`, that signs the
-  control plane's short-lived PASETO v4.public tokens to pool agents
-  (audience `pool-agent`) and sandbox agents (audience `sandbox-agent`), and
-  the operation scope names those tokens carry. Pool-to-control-plane
-  assertions are the root module's `pkg/poolauth`, verified by
-  `PoolAuthenticator`.
+- [`poolagent`](poolagent/DESIGN.md) (`poolagentauth`): the server-owned
+  issuer key that signs the control plane's requests to pool agents and
+  sandbox agents, and the operation scope names those tokens carry.
 
 ## Adoption (ADR 26-11-03-970)
 

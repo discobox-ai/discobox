@@ -96,10 +96,6 @@ func TestPrepareEncryptionResealsEveryStoredValueOnce(t *testing.T) {
 		EncryptedValue: legacySeal(t, oldKey, encryption.SecretValue("project-1", "sec-legacy"), legacyValue)}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := unsealed.CreateProjectUserKeyIfMissing(ctx, &model.ProjectUserKey{ProjectID: "project-1", UserID: "user-1", PublicKey: "pub", KeyType: "ed25519",
-		EncryptedPrivateKey: legacySeal(t, oldKey, encryption.SandboxAccessIssuerKey("project-1", "user-1"), []byte("private"))}); err != nil {
-		t.Fatal(err)
-	}
 
 	report, err := unsealed.PrepareEncryption(ctx)
 	if err == nil || !strings.Contains(err.Error(), "encryption.provider") {
@@ -111,15 +107,14 @@ func TestPrepareEncryptionResealsEveryStoredValueOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareEncryption: %v", err)
 	}
-	if report.Resealed != 5 {
-		t.Fatalf("Resealed = %d, want 5 (two secrets, a secret state, an inventory, an access key)", report.Resealed)
+	if report.Resealed != 4 {
+		t.Fatalf("Resealed = %d, want 4 (two secrets, a secret state, an inventory)", report.Resealed)
 	}
 	for _, raw := range [][]byte{
 		rawColumn(t, db, "secrets", "encrypted_value", "id = ?", "sec-plain"),
 		rawColumn(t, db, "secrets", "encrypted_value", "id = ?", "sec-legacy"),
 		rawColumn(t, db, "sandboxes", "secret_state", "id = ?", "sandbox-1"),
 		rawColumn(t, db, "sandbox_inventories", "document", "sandbox_id = ?", "sandbox-1"),
-		rawColumn(t, db, "sandbox_access_issuer_keys", "encrypted_private_key", "user_id = ?", "user-1"),
 	} {
 		if !encryption.Sealed(raw) {
 			t.Fatalf("a value is still %q after the re-seal", raw[:min(len(raw), 12)])

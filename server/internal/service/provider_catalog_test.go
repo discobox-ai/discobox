@@ -18,7 +18,6 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/platform"
-	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
@@ -211,12 +210,11 @@ func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 	}
 }
 
-func TestSandboxReconcileExecutorInjectsTrustKeyAndAddress(t *testing.T) {
+func TestSandboxReconcileExecutorInjectsAddress(t *testing.T) {
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
 	provider := &recordingSandboxProvider{}
-	auth := &recordingSandboxAuth{trustKey: "public-key"}
-	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth), sandboxes.WithServerPeerID("d1-server"))
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithServerPeerID("d1-server"))
 	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "prov-trust", ProjectID: projectID, Type: "recording", Name: "recording"}); err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
@@ -237,15 +235,6 @@ func TestSandboxReconcileExecutorInjectsTrustKeyAndAddress(t *testing.T) {
 	}
 	if _, err := executor.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile start: %v", err)
-	}
-	if auth.userID != service.DefaultUserID {
-		t.Fatalf("auth user id = %q, want %q", auth.userID, service.DefaultUserID)
-	}
-	if auth.projectID != projectID {
-		t.Fatalf("auth project id = %q, want %q", auth.projectID, projectID)
-	}
-	if got := provider.createOptions.Env["DISCOBOX_TRUST_KEY"]; got != "public-key" {
-		t.Fatalf("trust key env = %q, want public-key", got)
 	}
 	if got := provider.createOptions.Env["DISCOBOX_ADDRESS"]; got != "discobox://d1-server/sandbox-1" {
 		t.Fatalf("address env = %q, want discobox://d1-server/sandbox-1", got)
@@ -601,22 +590,6 @@ func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	if got := provider.Definition().Name; got != "DigitalOcean" {
 		t.Fatalf("definition name = %q", got)
 	}
-}
-
-type recordingSandboxAuth struct {
-	projectID string
-	userID    string
-	trustKey  string
-}
-
-func (a *recordingSandboxAuth) EnsureTrustKey(_ context.Context, projectID, userID string) (string, error) {
-	a.projectID = projectID
-	a.userID = userID
-	return a.trustKey, nil
-}
-
-func (a *recordingSandboxAuth) CreateToken(context.Context, sandboxauth.TokenClaims) (string, error) {
-	return "", nil
 }
 
 type recordingSandboxProvider struct {

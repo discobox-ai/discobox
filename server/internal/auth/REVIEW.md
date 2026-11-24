@@ -43,3 +43,6 @@
   segment. Check that the escaped segment decodes to `default` before
   replacing it, and preserve the escaped suffix. A separator within that
   segment can otherwise change the authorized route during dispatch.
+- Do not store pool private keys centrally: a workload's key lives with the workload, and only the issuer keys the control plane signs with live with it (`Credential Flows` in `DESIGN.md`).
+- Prefer short-lived, audience- and scope-bound tokens. Token validation checks expiry, audience and scope, resource ownership, and revocation where applicable.
+- Do not issue a credential nothing verifies. A key or token added without its verifier in the same change is a second trust root that nobody checks.

@@ -50,9 +50,6 @@ var sealedColumns = []sealedColumn{
 	{"sandbox_provider_instances", "encrypted_config", []string{"project_id", "id"}, func(k []string) encryption.Field {
 		return encryption.SandboxProviderSecrets(k[0], k[1])
 	}},
-	{"sandbox_access_issuer_keys", "encrypted_private_key", []string{"project_id", "user_id"}, func(k []string) encryption.Field {
-		return encryption.SandboxAccessIssuerKey(k[0], k[1])
-	}},
 }
 
 // PrepareEncryption brings what is stored up to the configured provider at

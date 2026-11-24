@@ -156,7 +156,9 @@ by what it is looking for and is idempotent:
    Each step is logged per row and finds nothing once done,
    dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows, and the pool bootstrap token table,
-   `dropPoolBootstrapTokens`, ADR 26-10-24-953 §4), moving pending `sandboxEgress` reconcile
+   `dropPoolBootstrapTokens`, ADR 26-10-24-953 §4, and the sandbox access
+   issuer key table, `dropSandboxAccessIssuerKeys`, whose keys signed tokens
+   nothing verified), moving pending `sandboxEgress` reconcile
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and
    gateways together (`renameSandboxEgressReconcile`, ADR 26-10-16-470 §5), the
    sandbox state split (ADR 0034), denying the open requests of a sandbox that

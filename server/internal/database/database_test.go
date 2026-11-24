@@ -65,7 +65,7 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 			t.Fatalf("schema missing table %s", table)
 		}
 	}
-	for _, table := range []string{"organizations", "project_events"} {
+	for _, table := range []string{"organizations", "project_events", "sandbox_access_issuer_keys"} {
 		if db.Write.Migrator().HasTable(table) {
 			t.Fatalf("schema unexpectedly has %s table", table)
 		}
@@ -332,6 +332,61 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	}
 	if fk != 1 {
 		t.Fatalf("foreign_keys pragma = %d, want 1", fk)
+	}
+}
+
+// A database from before the sandbox trust key was retired has a
+// sandbox_access_issuer_keys row per (project, user) that ever created a
+// sandbox. Migrating drops the table and its sealed keys; the project the
+// rows referenced survives.
+func TestMigrateDropsSandboxAccessIssuerKeys(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	// The table as AutoMigrate made it from the retired model.
+	for _, stmt := range []string{
+		"CREATE TABLE `sandbox_access_issuer_keys` (`project_id` text, `user_id` text, `public_key` text NOT NULL, " +
+			"`encrypted_private_key` blob NOT NULL, `key_type` text NOT NULL DEFAULT 'ed25519', `rotated_at` datetime, " +
+			"`revoked_at` datetime, `created_at` datetime, `updated_at` datetime, PRIMARY KEY (`project_id`,`user_id`), " +
+			"CONSTRAINT `fk_sandbox_access_issuer_keys_project` FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`))",
+		"CREATE INDEX `idx_sandbox_access_issuer_keys_revoked_at` ON `sandbox_access_issuer_keys`(`revoked_at`)",
+		"INSERT INTO `sandbox_access_issuer_keys` (`project_id`, `user_id`, `public_key`, `encrypted_private_key`, `key_type`) " +
+			"VALUES ('project-1', 'user-1', 'public-key', x'00', 'ed25519')",
+	} {
+		if err := db.Write.Exec(stmt).Error; err != nil {
+			t.Fatalf("recreate legacy sandbox_access_issuer_keys %q: %v", stmt, err)
+		}
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+	if db.Write.Migrator().HasTable("sandbox_access_issuer_keys") {
+		t.Fatal("sandbox_access_issuer_keys survived the migration")
+	}
+	if err := db.Write.First(&model.Project{}, "id = ?", project.ID).Error; err != nil {
+		t.Fatalf("project lost with its issuer keys: %v", err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate again: %v", err)
 	}
 }
 

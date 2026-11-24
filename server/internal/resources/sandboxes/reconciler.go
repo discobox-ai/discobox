@@ -17,7 +17,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
-	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -128,7 +127,6 @@ type SandboxReconciler struct {
 	store    *store.Store
 	provider Provider
 	manager  *ProviderManager
-	auth     SandboxAuthenticator
 	engine   *reconcile.Engine
 	// archiveRetention is the server-wide default a project follows until it
 	// sets its own. Zero means unconfigured, not "purge immediately", so the
@@ -199,15 +197,6 @@ func WithArchiveRetention(retention time.Duration) SandboxReconcilerOption {
 func WithServerPeerID(id string) SandboxReconcilerOption {
 	return func(reconciler *SandboxReconciler) {
 		reconciler.serverPeerID = id
-	}
-}
-
-// WithSandboxAuthenticator injects trust-key authentication into sandbox
-// creation. When configured, sandbox starts ensure the creating user has a
-// public trust key and pass it to the runtime as DISCOBOX_TRUST_KEY.
-func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption {
-	return func(reconciler *SandboxReconciler) {
-		reconciler.auth = auth
 	}
 }
 
@@ -477,11 +466,6 @@ var (
 	ErrNoWorkerCapacity  = ErrNoSandboxCapacity
 )
 
-type SandboxAuthenticator interface {
-	EnsureTrustKey(ctx context.Context, projectID, userID string) (string, error)
-	CreateToken(ctx context.Context, claims sandboxauth.TokenClaims) (string, error)
-}
-
 // createSandbox brings the sandbox's container into existence and parks it if
 // its source has not arrived yet. It never starts anything: power is not this
 // reconciler's business (ADR 0017 §9).
@@ -538,9 +522,6 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 				break
 			}
 		}
-	}
-	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
-		return secretState, err
 	}
 	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
@@ -620,24 +601,6 @@ func (r *SandboxReconciler) resolveProvider(ctx context.Context, sb *model.Sandb
 		return r.manager.ResolveForSandbox(ctx, sb)
 	}
 	return r.provider, nil
-}
-
-func (r *SandboxReconciler) applyTrustKey(ctx context.Context, sb *model.Sandbox, opts *CreateOptions) error {
-	if r == nil || r.auth == nil {
-		return nil
-	}
-	trustKey, err := r.auth.EnsureTrustKey(ctx, sb.ProjectID, sb.CreatedByUserID)
-	if err != nil {
-		return err
-	}
-	if trustKey == "" {
-		return nil
-	}
-	if opts.Env == nil {
-		opts.Env = map[string]string{}
-	}
-	opts.Env["DISCOBOX_TRUST_KEY"] = trustKey
-	return nil
 }
 
 func sandboxRefFromSandbox(sb *model.Sandbox) SandboxRef {

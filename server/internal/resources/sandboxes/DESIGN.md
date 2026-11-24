@@ -1,8 +1,7 @@
 # Sandboxes Design
 
 `internal/resources/sandboxes` owns sandbox API behavior, sandbox lifecycle
-reconciliation, sandbox provider catalog access, and sandbox runtime trust
-integration.
+reconciliation, and sandbox provider catalog access.
 
 ## Boundaries
 
@@ -14,7 +13,6 @@ flowchart LR
     engine[internal/reconcile] --> reconciler[SandboxReconciler]
     reconciler --> store
     reconciler --> providers
-    reconciler --> auth[internal/auth/sandbox]
     agent[pool agent] -->|"observed state"| service
     hc[resources/harnessconfigs] -->|"bundle digest moved"| service
 ```
@@ -1275,7 +1273,7 @@ dialed over nothing else (ADR 0116 §1), and ADR 0117 keeps an always-present ID
 from being handed out as an address. It overrides a caller-set value of the
 same name.
 
-Like the trust key it is outside the spec fingerprint, and a container's env is
+It is outside the spec fingerprint, and a container's env is
 fixed when the container is built. A sandbox that existed before the server
 began listening on iroh — or before this variable existed — has none until
 something else rebuilds its container; stop and start reuse it. The reverse holds too:

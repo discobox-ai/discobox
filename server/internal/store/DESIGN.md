@@ -18,7 +18,7 @@ flowchart LR
     resources["internal/resources/{resource}"] --> store[internal/store]
     service[internal/service] --> store
     services[internal/services] --> store
-    auth["internal/auth, auth/sandbox, auth/poolagent"] --> store
+    auth["internal/auth, auth/poolagent"] --> store
     sshd[internal/sshd] --> store
     router[internal/server] -. "store.New(write, read, WithKeyring)" .-> store
     store --> db[(GORM write/read handles)]

@@ -20,7 +20,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
-	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/handlers"
@@ -243,9 +242,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*ch
 		WSLCCommand:                    opts.WSLCCommand,
 		AssetDir:                       opts.AssetDir,
 	})
-	if opts.Keyring != nil {
-		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.Keyring))
-	}
 	appServices.SetWorkerAgentAuthManager(poolAgentAuth)
 	if _, err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
 		return nil, services.Services{}, nil, nil, err

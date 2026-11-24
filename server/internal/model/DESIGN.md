@@ -22,7 +22,6 @@ completion timestamp and require no backfill (ADR 26-10-23-948).
 | `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. Records its bundle and the manifest composed from it — never a platform or an image kind, which are its pool's (ADR 26-11-01-122) — the egress hosts the bundle declares, and the egress level a person set (ADR 26-10-01-032). The included harnesses are seeded as `builtIn` configs; every config can run (ADR 26-11-02-152 §1), and what discoboxes save back to it overlays its bundle's defaults (`configuredFiles`, `configuredSecretIds`). |
 | `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
 | `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, the pool's size: CPU, memory, storage, and the immutable OS its sandboxes run, `SandboxOS`, empty on a pool from before pools named one; ADR 26-11-11-963 §1); carries the runtime lifecycle, the one platform its agent declares it hosts — held to `SandboxOS` when the pool names one, a declaration of another OS not recorded — agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, heartbeat, and its egress level (ADR 26-10-01-032). Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
-| `SandboxAccessIssuerKey` | Per-project, per-user issuer key used by the control plane to sign sandbox access tokens. `ProjectUserKey` is a type alias for it. |
 | `Secret` | Project-scoped encrypted credential (`token` or `oauth`), and its `Routes`: where it may be sent, each route open or blocked (ADR 26-10-27-880). `SecretRoute` is `secretroute.Route`, stored as that package encodes it (hosts, methods, paths, a GraphQL or MCP block); `NormalizeRoutes` is the one write-side reading of a list. |
 | `SecretBinding` | The authorization (ADR 26-10-27-880 §1): a secret bound on a sandbox, harness config or project, for `use` in a variable, to `delegate`, or both, with routes that narrow the secret's, an expiry, and the delegate binding it was handed on under (`ParentID`). An addition (`Adds`, ADR 26-11-03-329) is a use on a sandbox, by sentinel, with or without expiry (ADR 26-11-04-270), that stacks on the plain binding of its variable. One plain use binding per target and variable beside any number of additions, one delegate binding per target and secret. |
 | `SecretBindingEvent` | Append-only history of a binding: created, updated, deleted or expired, by whom and why, with a snapshot (§6). |
@@ -132,14 +131,12 @@ erDiagram
     USER ||--o{ PROJECT : owns
     USER ||--o{ PROJECT_MEMBER : joins
     USER ||--o{ SANDBOX : creates
-    USER ||--o{ SANDBOX_ACCESS_ISSUER_KEY : has
 
     PROJECT ||--o{ PROJECT_MEMBER : grants
     PROJECT ||--o{ SANDBOX : contains
     PROJECT ||--o{ SANDBOX_PROVIDER_INSTANCE : configures
     PROJECT ||--o{ POOL : contains
     PROJECT ||--o{ HARNESS_CONFIG : configures
-    PROJECT ||--o{ SANDBOX_ACCESS_ISSUER_KEY : has
     PROJECT ||--o{ SECRET : stores
     PROJECT ||--o{ SECRET_REQUEST : queues
     PROJECT ||--o{ SSH_KEY : authorizes
@@ -239,16 +236,6 @@ erDiagram
     }
 
 
-    SANDBOX_ACCESS_ISSUER_KEY {
-        string project_id
-        string user_id
-        string public_key
-        bytes encrypted_private_key
-        string key_type
-        datetime rotated_at
-        datetime revoked_at
-    }
-
     SECRET {
         string id
         string project_id
@@ -260,7 +247,7 @@ erDiagram
 ```
 
 Auth flows are documented in
-[`server/internal/auth/sandbox/DESIGN.md`](../auth/sandbox/DESIGN.md).
+[`server/internal/auth/DESIGN.md`](../auth/DESIGN.md).
 Database resolution and migration are documented in
 [`server/internal/database/DESIGN.md`](../database/DESIGN.md).
 
