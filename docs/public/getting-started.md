@@ -6,6 +6,9 @@ these commands, install that release by its tag.
 
 ## Install
 
+Discobox runs on Linux, Windows 11, and macOS on Apple Silicon. Windows 10 and
+Intel Macs are not supported, and the installers refuse them.
+
 On macOS or Linux, install the stable channel with Homebrew:
 
 ```sh
@@ -23,6 +26,21 @@ On Windows 11, run this in PowerShell:
 ```powershell
 irm https://discobox.ai/install.ps1 | iex
 ```
+
+If `discobox.ai` does not resolve where you are (some network resolvers block
+newly registered domains), use Homebrew, which downloads from GitHub, or fetch
+the same stable installer from the GitHub release:
+
+```sh
+curl -sSfL https://github.com/discobox-ai/discobox/releases/latest/download/install.sh | sh
+```
+
+```powershell
+irm https://github.com/discobox-ai/discobox/releases/latest/download/install.ps1 | iex
+```
+
+Both installers, and the CLI's first-use server download, fall back to GitHub
+when the Discobox download mirror cannot be reached.
 
 The edge installer includes release candidates and other prereleases. To
 choose a particular published version, pass its tag explicitly, replacing
@@ -42,10 +60,10 @@ build with `curl -sSfL https://main.discobox.ai | sh`; main builds are kept for
 fourteen days. Every channel shares local state, so two installs cannot run
 their servers simultaneously.
 
-Discobox supports macOS, Linux and Windows 11; Windows 10 is not supported, and
-the installer refuses it. On Linux, the built-in provider needs Docker installed
-and accessible to the server user. First use can download the server, images and
-agent bundles, so allow time and network access. A remote server runs its pools on the server side.
+On Linux, the built-in provider
+needs Docker installed and accessible to the server user. First use can
+download the server, images and agent bundles, so allow time and network
+access. A remote server runs its pools on the server side.
 
 Discobox stores generated SSH aliases in its local state directory. Adding
 Includes to your SSH config is optional. The first interactive SSH config sync
