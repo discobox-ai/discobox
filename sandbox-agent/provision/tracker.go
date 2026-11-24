@@ -43,6 +43,10 @@ type Tracker struct {
 	rerunning     bool
 	reprovisioned chan struct{}
 	automatic     automaticRetry
+	// observe, when set, is handed the document after every change, steps
+	// included: what a snapshot build streams to its taker (ADR 26-11-23-004
+	// §1).
+	observe func(provisionspec.Status)
 }
 
 // NewTracker is a tracker writing path, or nothing when path is empty. Its
@@ -65,6 +69,15 @@ func (t *Tracker) Reprovisioned() <-chan struct{} {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.reprovisioned
+}
+
+// Observe has observe handed the document after every change, a step's
+// included, under the tracker's lock: it must not block for long, nor call
+// back into the tracker. Set it before a run starts.
+func (t *Tracker) Observe(observe func(provisionspec.Status)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.observe = observe
 }
 
 // SetLogger sets where a failed write of the document is logged.
@@ -373,6 +386,9 @@ func (t *Tracker) updateLocked(change func(*provisionspec.Status)) {
 	close(t.changed)
 	t.changed = make(chan struct{})
 	t.writeLocked()
+	if t.observe != nil {
+		t.observe(t.statusLocked())
+	}
 	moved := state != t.status.State || ready != t.status.Ready || len(features) != len(t.status.Features)
 	for name, feature := range t.status.Features {
 		if previous, ok := features[name]; !ok || previous != feature.State {

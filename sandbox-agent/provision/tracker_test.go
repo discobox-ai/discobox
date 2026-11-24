@@ -123,3 +123,29 @@ func TestDefaultFeatureWaitOutlastsReadinessFailure(t *testing.T) {
 		t.Fatalf("completed failed run: %v", err)
 	}
 }
+
+// An observer is handed every change, a step within a feature included,
+// which the status wait's signal does not move for: a snapshot build streams
+// them all (ADR 26-11-23-004 §1).
+func TestAnObserverSeesEveryChangeStepsIncluded(t *testing.T) {
+	tracker := NewTracker("")
+	var seen []provisionspec.Status
+	tracker.Observe(func(status provisionspec.Status) { seen = append(seen, status) })
+	tracker.update(func(s *provisionspec.Status) {
+		tracker.running = true
+		s.Features = map[string]provisionspec.FeatureStatus{"docker": {State: provisionspec.StatePending}}
+	})
+	tracker.step("docker", "install")
+	tracker.step("docker", "configure")
+	if len(seen) != 3 {
+		t.Fatalf("observed %d changes, want 3", len(seen))
+	}
+	if got := seen[2].Features["docker"]; got.State != provisionspec.StateProvisioning || got.Step != "configure" {
+		t.Fatalf("last observed docker = %+v", got)
+	}
+	// What it was handed is a copy: a later change does not reach it.
+	tracker.step("docker", "verify")
+	if seen[2].Features["docker"].Step != "configure" {
+		t.Fatal("an observed status changed after it was handed over")
+	}
+}
