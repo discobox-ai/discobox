@@ -353,6 +353,11 @@ type StatusRequest struct {
 	// Always true from an agent that has it; one from before sends none, and
 	// is sent no defaultBranch, which its decoder would refuse.
 	SourceDefaultBranch bool `json:"sourceDefaultBranch"`
+	// PoolSyncListAge declares that this agent takes a pool-sync's
+	// knownPoolsAgeMs and spares what was made on its host after the pool set
+	// was read (#1643). Always true from an agent that has it; one from before
+	// sends none, and is sent the bare set, as its decoder refuses the age.
+	PoolSyncListAge bool `json:"poolSyncListAge"`
 	// SentinelWebSocket declares that this agent takes a sentinel route's
 	// WebSocket block, and its proxy swaps a sentinel at the message places
 	// it names (ADR 26-11-06-442). Always true from an agent that has them;

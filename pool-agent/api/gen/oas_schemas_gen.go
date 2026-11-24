@@ -7324,6 +7324,11 @@ type PoolSyncRequest struct {
 	Schema OptURI `json:"$schema"`
 	// IDs of the pools that should exist on this host.
 	KnownPoolIds []string `json:"knownPoolIds"`
+	// How long before this request was sent, in milliseconds, the control plane began reading
+	// knownPoolIds. A pool created after that read is missing from the set through no fault of its own,
+	// so the agent spares any container or pool directory made since, judged on its own clock. Omitted,
+	// everything the set does not name is reaped.
+	KnownPoolsAgeMs OptInt64 `json:"knownPoolsAgeMs"`
 }
 
 // GetSchema returns the value of Schema.
@@ -7336,6 +7341,11 @@ func (s *PoolSyncRequest) GetKnownPoolIds() []string {
 	return s.KnownPoolIds
 }
 
+// GetKnownPoolsAgeMs returns the value of KnownPoolsAgeMs.
+func (s *PoolSyncRequest) GetKnownPoolsAgeMs() OptInt64 {
+	return s.KnownPoolsAgeMs
+}
+
 // SetSchema sets the value of Schema.
 func (s *PoolSyncRequest) SetSchema(val OptURI) {
 	s.Schema = val
@@ -7344,6 +7354,11 @@ func (s *PoolSyncRequest) SetSchema(val OptURI) {
 // SetKnownPoolIds sets the value of KnownPoolIds.
 func (s *PoolSyncRequest) SetKnownPoolIds(val []string) {
 	s.KnownPoolIds = val
+}
+
+// SetKnownPoolsAgeMs sets the value of KnownPoolsAgeMs.
+func (s *PoolSyncRequest) SetKnownPoolsAgeMs(val OptInt64) {
+	s.KnownPoolsAgeMs = val
 }
 
 // How a raw binding's value is delivered in its sandbox (ADR 26-10-27-840).

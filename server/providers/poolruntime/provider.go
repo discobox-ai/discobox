@@ -254,7 +254,13 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 // authority for a reaper that scans project-scoped host trees. Narrowing it to
 // this provider instance would make a sibling instance's live pools look like
 // orphans, and the reaper would delete their data and proxy material.
+//
+// The read's start goes with it, because the retries below can hold the set for
+// seconds while a sibling pool's row commits and that pool starts making things
+// on the host. The agent spares what was made after the read (pool-sync in
+// pool-agent/DESIGN.md).
 func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManager, provider *model.SandboxProviderInstance, pool *model.Pool) (int, error) {
+	listedAt := time.Now()
 	pools, err := manager.ListPools(ctx, provider.ProjectID)
 	if err != nil {
 		return 0, err
@@ -277,14 +283,40 @@ func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManag
 		// reconcile. The mark is rejected (reconcile.ErrSelfMark), which then
 		// stands in for the real reason the agent could not be reached, on
 		// every attempt.
-		lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+		//
+		// What the agent takes is read again each attempt, from the primary
+		// (PoolManager.GetPool), not off the row this reconcile loaded: that
+		// row predates the agent EnsurePool just started, and for a new pool
+		// says it declares nothing. Sent the bare set, the new pool's first
+		// sync would reap a sibling made in its own boot, which is when the set
+		// is likeliest to be stale. A pool that has no report at all is not
+		// synced, and the attempt is retried, until it has one.
+		//
+		// The re-read is the latest report, not necessarily the new agent's:
+		// an agent replaced in place (an upgrade onto the age) may be judged
+		// by its predecessor's, and sent the bare set for one more sync. That
+		// is the old behaviour and fails safe, so this does not wait for the
+		// new agent's own report as the upgrade watch does (agentReported in
+		// resources/pools), which needs the start this reconcile recorded.
+		current, err := manager.GetPool(ctx, pool.ProjectID, pool.ID)
 		if err != nil {
 			return err
 		}
-		client := newPoolAgentClient(pool, p.manager, lease)
-		return client.SyncKnownPools(ctx, provider.ProjectID, known)
+		if current.StatusReportedAt == nil {
+			return errPoolAgentNotReported
+		}
+		lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, current)
+		if err != nil {
+			return err
+		}
+		client := newPoolAgentClient(current, p.manager, lease)
+		return client.SyncKnownPools(ctx, provider.ProjectID, known, listedAt)
 	})
 }
+
+// errPoolAgentNotReported is a pool-sync attempt that found the pool's agent
+// had not yet sent its first status report, so what it takes is unknown.
+var errPoolAgentNotReported = errors.New("the pool's agent has not reported its status yet")
 
 // poolSyncRetryBackoff is how long to keep trying a pool-sync, and how long to
 // wait between attempts.

@@ -6708,6 +6708,9 @@ components:
                 sourceDefaultBranch:
                     description: "The agent takes a git source's defaultBranch and hands it to the sandbox, whose origin/HEAD names it. Declared on every report; an agent from before it sends none, and is sent no defaultBranch."
                     type: boolean
+                poolSyncListAge:
+                    description: "The agent takes a pool-sync's knownPoolsAgeMs, and spares what was made on its host after the control plane read the pool set. Declared on every report; an agent from before it sends none, and is sent the bare set."
+                    type: boolean
             required:
                 - ready
                 - schedulable

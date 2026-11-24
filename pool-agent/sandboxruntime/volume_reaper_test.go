@@ -194,7 +194,7 @@ func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
 	now := time.Now()
 
 	// First pass: orphan is tombstoned, nothing deleted.
-	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, retention, now, quietLogger())
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, time.Time{}, retention, now, quietLogger())
 	for _, pool := range []string{"pool_known", "pool_orphan"} {
 		if _, err := os.Stat(filepath.Join(dataRoot, pool)); err != nil {
 			t.Fatalf("%s data removed too early: %v", pool, err)
@@ -202,7 +202,7 @@ func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
 	}
 
 	// Past retention: only the orphan's data, cache, and proxy subtrees are reaped.
-	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, retention, now.Add(retention+time.Minute), quietLogger())
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, time.Time{}, retention, now.Add(retention+time.Minute), quietLogger())
 	if _, err := os.Stat(filepath.Join(dataRoot, "pool_orphan")); !os.IsNotExist(err) {
 		t.Fatalf("orphan pool data not reaped: %v", err)
 	}
@@ -228,12 +228,110 @@ func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cacheRoot, "pool_gone", "cache"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{}, 24*time.Hour, time.Now(), quietLogger())
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{}, time.Time{}, 24*time.Hour, time.Now(), quietLogger())
 	if _, err := os.Stat(filepath.Join(proxyRoot, "pool_gone")); !os.IsNotExist(err) {
 		t.Fatalf("proxy-only leftover not reaped immediately: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cacheRoot, "pool_gone")); !os.IsNotExist(err) {
 		t.Fatalf("cache-only leftover not reaped immediately: %v", err)
+	}
+}
+
+// A sibling pool on a shared host whose row commits after the control plane
+// read the pool list is missing from that list, through no fault of its own.
+// Anything it made on the host after that read is not an orphan's leftover:
+// its cache and proxy subtrees must survive the sync that list drives.
+func TestReapUnknownPoolsSparesAPoolCreatedAfterTheListWasRead(t *testing.T) {
+	dataRoot := t.TempDir()
+	cacheRoot := t.TempDir()
+	proxyRoot := t.TempDir()
+	known := map[string]struct{}{"pool_a": {}} // the control plane's read
+	listReadAt := time.Now()
+
+	// pool_new's row commits now; it boots and stages its proxy material and
+	// cache before pool_a's agent gets to scan. It has no data subtree yet.
+	for _, root := range []string{cacheRoot, proxyRoot} {
+		if err := os.MkdirAll(filepath.Join(root, "pool_new", "sandboxes"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, listReadAt, 24*time.Hour, listReadAt.Add(10*time.Second), quietLogger())
+
+	for _, root := range []string{cacheRoot, proxyRoot} {
+		if _, err := os.Stat(filepath.Join(root, "pool_new")); err != nil {
+			t.Errorf("subtree of a pool created after the list was read was reaped: %v", err)
+		}
+	}
+}
+
+// The same new pool's data subtree is not even tombstoned, so its retention
+// does not start on a sync that could not have known it; an orphan whose
+// directories predate the read is judged as it always was.
+func TestReapUnknownPoolsJudgesOnlyWhatPredatesTheList(t *testing.T) {
+	dataRoot := t.TempDir()
+	cacheRoot := t.TempDir()
+	proxyRoot := t.TempDir()
+	old := time.Now().Add(-time.Hour)
+	for _, root := range []string{dataRoot, cacheRoot, proxyRoot} {
+		for _, pool := range []string{"pool_new", "pool_orphan"} {
+			if err := os.MkdirAll(filepath.Join(root, pool, "sandboxes"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chtimes(filepath.Join(root, "pool_orphan"), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A cache-only leftover of a long-gone pool, too.
+	if err := os.MkdirAll(filepath.Join(cacheRoot, "pool_gone"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(cacheRoot, "pool_gone"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	listReadAt := time.Now()
+
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{}, listReadAt, 24*time.Hour, listReadAt, quietLogger())
+
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_new", poolDataTombstone)); !os.IsNotExist(err) {
+		t.Errorf("a pool made after the list was read was tombstoned: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_orphan", poolDataTombstone)); err != nil {
+		t.Errorf("an orphan that predates the list was not tombstoned: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheRoot, "pool_gone")); !os.IsNotExist(err) {
+		t.Errorf("a cache-only leftover that predates the list was not reaped: %v", err)
+	}
+}
+
+// A pool missed by one sync and known by the next loses its tombstone. Kept,
+// it would still be counting when the pool was next missed, and a pool missed
+// once a day ago would lose its data at once.
+func TestReapUnknownPoolsClearsAKnownPoolsTombstone(t *testing.T) {
+	dataRoot := t.TempDir()
+	cacheRoot := t.TempDir()
+	proxyRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataRoot, "pool_back", "sandboxes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	retention := 24 * time.Hour
+	missedAt := time.Now().Add(-2 * retention)
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{}, time.Time{}, retention, missedAt, quietLogger())
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_back", poolDataTombstone)); err != nil {
+		t.Fatalf("the missed pool was not tombstoned: %v", err)
+	}
+
+	now := time.Now()
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{"pool_back": {}}, time.Time{}, retention, now, quietLogger())
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_back", poolDataTombstone)); !os.IsNotExist(err) {
+		t.Fatalf("a known pool kept its tombstone: %v", err)
+	}
+
+	// Missed again: its retention starts now, so its data stays.
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{}, time.Time{}, retention, now, quietLogger())
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_back", "sandboxes")); err != nil {
+		t.Fatalf("a pool missed again lost its data on a tombstone it had been cleared of: %v", err)
 	}
 }
 
@@ -266,7 +364,7 @@ func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
 			agentA.poolsRoot(),
 			agentA.cachePoolsRoot(),
 			proxyagent.PoolsRoot(state, "proj_a"),
-			known, 24*time.Hour, at, quietLogger(),
+			known, time.Time{}, 24*time.Hour, at, quietLogger(),
 		)
 	}
 

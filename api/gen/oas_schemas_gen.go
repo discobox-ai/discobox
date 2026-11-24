@@ -34625,6 +34625,10 @@ type UpdatePoolStatusBody struct {
 	// The agent takes a git source's defaultBranch and hands it to the sandbox, whose origin/HEAD names
 	// it. Declared on every report; an agent from before it sends none, and is sent no defaultBranch.
 	SourceDefaultBranch OptBool `json:"sourceDefaultBranch"`
+	// The agent takes a pool-sync's knownPoolsAgeMs, and spares what was made on its host after the
+	// control plane read the pool set. Declared on every report; an agent from before it sends none, and
+	// is sent the bare set.
+	PoolSyncListAge OptBool `json:"poolSyncListAge"`
 }
 
 // GetSchema returns the value of Schema.
@@ -34707,6 +34711,11 @@ func (s *UpdatePoolStatusBody) GetSourceDefaultBranch() OptBool {
 	return s.SourceDefaultBranch
 }
 
+// GetPoolSyncListAge returns the value of PoolSyncListAge.
+func (s *UpdatePoolStatusBody) GetPoolSyncListAge() OptBool {
+	return s.PoolSyncListAge
+}
+
 // SetSchema sets the value of Schema.
 func (s *UpdatePoolStatusBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -34785,6 +34794,11 @@ func (s *UpdatePoolStatusBody) SetSentinelGrants(val OptBool) {
 // SetSourceDefaultBranch sets the value of SourceDefaultBranch.
 func (s *UpdatePoolStatusBody) SetSourceDefaultBranch(val OptBool) {
 	s.SourceDefaultBranch = val
+}
+
+// SetPoolSyncListAge sets the value of PoolSyncListAge.
+func (s *UpdatePoolStatusBody) SetPoolSyncListAge(val OptBool) {
+	s.PoolSyncListAge = val
 }
 
 // Ref: #/components/schemas/UpdateProjectBody

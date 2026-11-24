@@ -771,6 +771,11 @@ type Pool struct {
 	// declared on every status report. A pool whose agent has not declared
 	// it is sent none: its decoder refuses a field it does not know.
 	SourceDefaultBranch bool `gorm:"column:source_default_branch;not null;default:false" json:"-"`
+	// PoolSyncListAge is whether the pool's agent takes a pool-sync's
+	// knownPoolsAgeMs (#1643), declared on every status report. A pool whose
+	// agent has not declared it is sent the bare set: its decoder refuses a
+	// field it does not know.
+	PoolSyncListAge bool `gorm:"column:pool_sync_list_age;not null;default:false" json:"-"`
 	// SentinelWebSocket is whether the pool's agent takes a sentinel route's
 	// WebSocket block and its proxy swaps a sentinel at the message places it
 	// names (ADR 26-11-06-442), declared on every status report. A pool whose

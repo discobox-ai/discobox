@@ -294,7 +294,11 @@ type Runtime interface {
 	// is not in knownPoolIDs. It is how a shared-daemon (local docker) setup
 	// reclaims whole orphaned pools; the caller is the control plane, which owns
 	// the authoritative pool set.
-	SyncKnownPools(ctx context.Context, knownPoolIDs []string) error
+	//
+	// listedAt is when, on this agent's clock, the control plane began reading
+	// that set: a pool whose row committed after it is missing through no fault
+	// of its own, so anything made since is spared. Zero spares nothing.
+	SyncKnownPools(ctx context.Context, knownPoolIDs []string, listedAt time.Time) error
 	// ClearCache stops every running sandbox on this pool, empties the pool's
 	// caches — the sandbox cache, the build cache, the registry, the proxy's
 	// response cache and unused images — and returns the sandboxes it stopped.
@@ -2356,7 +2360,12 @@ func (r *DockerSandboxRuntime) reclaimImages(ctx context.Context, logger *slog.L
 // containers are ephemeral and removed immediately; the persistent data subtree
 // is kept for the retention window (via a tombstone), as an unheld sandbox tree
 // is.
-func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs []string) error {
+//
+// The set was read before this scan, so a sibling pool created in between is
+// missing from it while already owning containers and directories here. What
+// was made since listedAt is spared (madeSinceList); the next sync, with a
+// newer list, judges it.
+func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs []string, listedAt time.Time) error {
 	logger := slog.Default()
 	known := make(map[string]struct{}, len(knownPoolIDs)+1)
 	for _, id := range knownPoolIDs {
@@ -2379,6 +2388,9 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 		if _, ok := known[poolID]; ok {
 			continue
 		}
+		if madeSinceList(time.Unix(ctr.Created, 0), listedAt) {
+			continue
+		}
 		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			logger.Warn("remove orphan pool sandbox container", "poolID", poolID, "container", ctr.ID, "error", err)
 		}
@@ -2393,6 +2405,9 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 		if _, ok := known[poolID]; ok || poolID == "" {
 			continue
 		}
+		if madeSinceList(time.Unix(ctr.Created, 0), listedAt) {
+			continue
+		}
 		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			logger.Warn("remove orphan pool snapshot build", "poolID", poolID, "container", ctr.ID, "error", err)
 		}
@@ -2402,22 +2417,63 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 		r.poolsRoot(),
 		r.cachePoolsRoot(),
 		proxyagent.PoolsRoot(r.root, r.projectID),
-		known, sandboxVolumeRetention, time.Now(), logger,
+		known, listedAt, sandboxVolumeRetention, time.Now(), logger,
 	)
 	return nil
+}
+
+// poolSyncListMargin widens "made since the list was read" backwards. It
+// covers the request's transit, which the control plane's age cannot include,
+// a container's creation time being whole seconds, and file timestamps taken
+// from a coarse kernel clock. Sparing an orphan made just before the read
+// costs only a wait for the next sync.
+const poolSyncListMargin = 10 * time.Second
+
+// madeSinceList reports whether something made at t may postdate the read of
+// the known set listed at listedAt, so that its pool's absence from the set
+// says nothing. A zero listedAt (a control plane that sends no age) spares
+// nothing. A container's time is its daemon's clock: pool-sync reaps only on
+// a shared daemon, the agent's own host's, so that clock is the agent's.
+func madeSinceList(t, listedAt time.Time) bool {
+	return !listedAt.IsZero() && t.After(listedAt.Add(-poolSyncListMargin))
+}
+
+// dirMadeSinceList is madeSinceList for a pool directory, judged by its
+// modification time: a directory made after the read was modified after it.
+func dirMadeSinceList(dir string, listedAt time.Time) bool {
+	if listedAt.IsZero() {
+		return false
+	}
+	info, err := os.Stat(dir)
+	return err == nil && madeSinceList(info.ModTime(), listedAt)
 }
 
 // reapUnknownPools reclaims the data, cache, and proxy subtrees of pools not in the
 // known set. Data subtrees hold persistent sandbox data, so they get the same
 // retention as an unheld sandbox tree; cache and proxy material
 // are regenerable, so their subtrees are reaped once no retained data subtree
-// remains.
-func reapUnknownPools(dataPoolsRoot, cachePoolsRoot, proxyPoolsRoot string, known map[string]struct{}, retention time.Duration, now time.Time, logger *slog.Logger) {
+// remains. A subtree made since listedAt is spared (SyncKnownPools).
+//
+// A known pool's data subtree loses any tombstone an earlier sync left: the
+// pool was missing then and is not now, so if it is ever missed again its
+// retention starts afresh rather than having already run out.
+func reapUnknownPools(dataPoolsRoot, cachePoolsRoot, proxyPoolsRoot string, known map[string]struct{}, listedAt time.Time, retention time.Duration, now time.Time, logger *slog.Logger) {
+	for poolID := range known {
+		tombstone := filepath.Join(dataPoolsRoot, poolID, poolDataTombstone)
+		if err := os.Remove(tombstone); err != nil && !os.IsNotExist(err) {
+			logger.Warn("clear a known pool's orphan tombstone", "poolID", poolID, "error", err)
+		}
+	}
 	for _, poolID := range unknownPoolDirs(dataPoolsRoot, known, logger) {
 		dir := filepath.Join(dataPoolsRoot, poolID)
 		tombstone := filepath.Join(dir, poolDataTombstone)
 		diedAt, ok := readSandboxTombstone(tombstone)
 		if !ok {
+			// Judged by the directory only while it has no tombstone: writing
+			// one modifies it, and an earlier sync already found it old enough.
+			if dirMadeSinceList(dir, listedAt) {
+				continue
+			}
 			writeSandboxTombstone(tombstone, now, logger)
 			continue
 		}
@@ -2438,6 +2494,9 @@ func reapUnknownPools(dataPoolsRoot, cachePoolsRoot, proxyPoolsRoot string, know
 		for _, poolID := range unknownPoolDirs(root, known, logger) {
 			if _, err := os.Stat(filepath.Join(dataPoolsRoot, poolID)); err == nil {
 				continue // its retention is tracked on the data side above
+			}
+			if dirMadeSinceList(filepath.Join(root, poolID), listedAt) {
+				continue
 			}
 			_ = os.RemoveAll(filepath.Join(root, poolID))
 		}
@@ -3296,7 +3355,7 @@ func emptyTarArchive() []byte {
 	return buf.Bytes()
 }
 
-func (r *MemorySandboxRuntime) SyncKnownPools(context.Context, []string) error {
+func (r *MemorySandboxRuntime) SyncKnownPools(context.Context, []string, time.Time) error {
 	return nil
 }
 

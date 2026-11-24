@@ -11680,11 +11680,18 @@ func (s *PoolSyncRequest) encodeFields(e *jx.Encoder) {
 		}
 		e.ArrEnd()
 	}
+	{
+		if s.KnownPoolsAgeMs.Set {
+			e.FieldStart("knownPoolsAgeMs")
+			s.KnownPoolsAgeMs.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfPoolSyncRequest = [2]string{
+var jsonFieldsNameOfPoolSyncRequest = [3]string{
 	0: "$schema",
 	1: "knownPoolIds",
+	2: "knownPoolsAgeMs",
 }
 
 // Decode decodes PoolSyncRequest from json.
@@ -11725,6 +11732,16 @@ func (s *PoolSyncRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"knownPoolIds\"")
+			}
+		case "knownPoolsAgeMs":
+			if err := func() error {
+				s.KnownPoolsAgeMs.Reset()
+				if err := s.KnownPoolsAgeMs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"knownPoolsAgeMs\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

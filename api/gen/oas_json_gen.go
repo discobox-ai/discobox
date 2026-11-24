@@ -58636,9 +58636,15 @@ func (s *UpdatePoolStatusBody) encodeFields(e *jx.Encoder) {
 			s.SourceDefaultBranch.Encode(e)
 		}
 	}
+	{
+		if s.PoolSyncListAge.Set {
+			e.FieldStart("poolSyncListAge")
+			s.PoolSyncListAge.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfUpdatePoolStatusBody = [16]string{
+var jsonFieldsNameOfUpdatePoolStatusBody = [17]string{
 	0:  "$schema",
 	1:  "availableCpuVcpus",
 	2:  "availableMemoryBytes",
@@ -58655,6 +58661,7 @@ var jsonFieldsNameOfUpdatePoolStatusBody = [16]string{
 	13: "sentinelGenerations",
 	14: "sentinelGrants",
 	15: "sourceDefaultBranch",
+	16: "poolSyncListAge",
 }
 
 // Decode decodes UpdatePoolStatusBody from json.
@@ -58662,7 +58669,7 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode UpdatePoolStatusBody to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -58839,6 +58846,16 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sourceDefaultBranch\"")
 			}
+		case "poolSyncListAge":
+			if err := func() error {
+				s.PoolSyncListAge.Reset()
+				if err := s.PoolSyncListAge.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"poolSyncListAge\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -58848,9 +58865,10 @@ func (s *UpdatePoolStatusBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b00101110,
 		0b00000110,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

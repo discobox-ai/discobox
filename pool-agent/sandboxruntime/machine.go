@@ -1766,7 +1766,9 @@ func (r *MachineSandboxRuntime) ImportTree(context.Context, string, io.Reader) e
 
 // SyncKnownPools reaps nothing: a machine pool shares no host with another
 // pool.
-func (r *MachineSandboxRuntime) SyncKnownPools(context.Context, []string) error { return nil }
+func (r *MachineSandboxRuntime) SyncKnownPools(context.Context, []string, time.Time) error {
+	return nil
+}
 
 // ClearCache empties the caches of this pool: its proxy's response cache,
 // each running sandbox's own, which is on that sandbox's disk and which its

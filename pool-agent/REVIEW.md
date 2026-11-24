@@ -851,12 +851,13 @@ the old one (`sandboxconfig.LegacyAPIVersion`, #250).
 
 The pool API's request bodies are just as strict: their schemas in
 `api/openapi/pool.yaml`, `GitSource` among them, are `additionalProperties:
-false`, so a field the server adds to a create or update request fails every
-such request to an older agent. Send a new request field only to an agent
-that declared it takes it on its status report (`sentinelBodyPlaces`,
-`sourceDefaultBranch`), recorded on the pool and checked in
-`server/providers/poolruntime`'s `poolAgentClient`. `upstreamUrl` went out
-ungated once, and `defaultBranch` nearly did (#245).
+false`, so a field the server adds to any request body (a create, an update,
+a pool-sync) fails every such request to an older agent. Send a new request
+field only to an agent that declared it takes it on its status report
+(`sentinelBodyPlaces`, `sourceDefaultBranch`, `poolSyncListAge`), recorded on
+the pool and checked in `server/providers/poolruntime`'s `poolAgentClient`.
+`upstreamUrl` went out ungated once, and `defaultBranch` and a pool-sync's
+`knownPoolsAgeMs` nearly did (#245, #1643).
 
 ## Image reclamation (`imagereap`)
 

@@ -1044,3 +1044,32 @@ func TestAPoolReportHandsOnItsReadinessForDueWakes(t *testing.T) {
 		t.Fatalf("handed %v, want %v", recorded.wakes, want)
 	}
 }
+
+// An agent's declaration that it takes a pool-sync's list age is recorded
+// from every report, both ways, and resends no sentinels: it is read on each
+// pool-sync (#1643).
+func TestAReportRecordsWhetherAnAgentTakesAPoolSyncsListAge(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(takes bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(true), SentinelGenerations: serverapi.NewOptBool(true),
+			SentinelBodyPlaces: serverapi.NewOptBool(true), PoolSyncListAge: serverapi.NewOptBool(takes),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	marked := len(recorded.sentinels)
+	for _, takes := range []bool{true, false} {
+		report(takes)
+		if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || pool.PoolSyncListAge != takes {
+			t.Fatalf("pool = %+v, %v; want it recorded as taking a list age: %v", pool, err, takes)
+		}
+	}
+	if len(recorded.sentinels) != marked {
+		t.Fatalf("marked %v, want no sentinels sent again for a pool-sync declaration", recorded.sentinels)
+	}
+}
