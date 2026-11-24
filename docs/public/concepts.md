@@ -212,6 +212,11 @@ client is connected; the console shows where to reach them.
 Tools under `.discobox/tools` open editors or other programs for a box.
 `discobox tools ls` lists available tools. Repository tools run inside the
 box; only user-owned tools may request execution on the user's host.
+A tool that runs on your machine, such as `discobox tools vscode` or
+`discobox tools zed`, reaches the box over SSH and is not a client that
+forwards its ports: a dev server started in the box is not on `localhost`
+until you forward its port from the editor (VS Code's Ports panel) or run
+`discobox proxy` alongside it.
 
 ## Private Git sources
 

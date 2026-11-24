@@ -6370,6 +6370,12 @@ DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one;
 without it the only discobox there is, or a pick. Arguments after DISCOBOX,
 with an optional -- separator, are
 passed to the tool untouched. CLI flags go before DISCOBOX.
+
+It runs on this machine, and running it forwards none of the discobox's ports
+here: a server started in the discobox is not on localhost unless the tool
+forwards its port itself (VS Code's Remote-SSH does, from its Ports panel) or
+"discobox proxy DISCOBOX" runs alongside it, forwarding every port the discobox
+listens on for as long as it runs.
 ~~~~
 
 ```text
@@ -6396,6 +6402,12 @@ DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one;
 without it the only discobox there is, or a pick. Arguments after DISCOBOX,
 with an optional -- separator, are
 passed to the tool untouched. CLI flags go before DISCOBOX.
+
+It runs on this machine, and running it forwards none of the discobox's ports
+here: a server started in the discobox is not on localhost unless the tool
+forwards its port itself (VS Code's Remote-SSH does, from its Ports panel) or
+"discobox proxy DISCOBOX" runs alongside it, forwarding every port the discobox
+listens on for as long as it runs.
 ~~~~
 
 ```text

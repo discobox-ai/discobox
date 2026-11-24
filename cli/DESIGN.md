@@ -1295,7 +1295,10 @@ flowchart LR
   sandbox's working root, by its platform (`sandboxpath.Paths.WorkingRoot`), and `{git.url}` an
   error (ADR 0141). The args are expanded before "opening" is printed, so a
   tool that asked for what the box cannot give never claims to open. Nothing is
-  held open afterwards (ADR 0057).
+  held open afterwards (ADR 0057), so no port of the box is forwarded either: a
+  host tool's help (`hostToolPortsHelp`) and the note printed after "opening"
+  (`hostToolPortsNote`) say so and point at the tool's own forwarding and
+  `discobox proxy`. The console prints neither: it forwards ports while open.
 - **The builtins** (`builtin-tools/`): `vscode` passes a `vscode-remote://`
   folder URI and `zed` an `ssh://` URL, never a bare path — started from WSL,
   either editor is normally the Windows build and would resolve a path on the

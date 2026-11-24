@@ -275,6 +275,10 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 		return err
 	}
 	fmt.Fprintf(stderr, "opening %s in %s\n", remote.describe(), launch.program)
+	// A note, never a line on stderr: the console runs this too, with notes
+	// that go nowhere, since it forwards the discobox's ports while it is open
+	// and a full-screen program would be drawn over (cli/REVIEW.md).
+	notes(hostToolPortsNote, launch.program, target.sandboxID)
 	// No token: the CLI a tool runs is authorized by its transport, and
 	// clearing an inherited one keeps the primary's off another server.
 	return launch.run(ctx, target.app.childCLIEnv(""), handed, expanded, args, stdin, stdout, stderr)

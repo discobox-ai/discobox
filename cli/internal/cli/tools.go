@@ -144,7 +144,7 @@ see the new tool, and why it cannot run if it cannot.`,
 			}
 			// A tool this machine does not declare: build its command now and
 			// run it on the arguments the lookup did not consume.
-			tool := a.newToolRunCommand(args[0], "")
+			tool := a.newToolRunCommand(tools.Definition{ID: args[0]})
 			tool.SetContext(cmd.Context())
 			tool.SetArgs(args[1:])
 			tool.SetIn(cmd.InOrStdin())
@@ -171,7 +171,7 @@ see the new tool, and why it cannot run if it cannot.`,
 		if reservedToolIDs[def.ID] {
 			continue
 		}
-		cmd.AddCommand(a.newToolRunCommand(def.ID, def.Description))
+		cmd.AddCommand(a.newToolRunCommand(def))
 	}
 	return cmd
 }
@@ -185,9 +185,27 @@ func userToolsDirHelp() string {
 	return dir
 }
 
+// hostToolPortsHelp is what the help of a tool that runs on this machine adds:
+// running it forwards none of the discobox's ports, so a server started there is
+// not on localhost here unless the tool forwards it itself or something else
+// does (discobox-ai/discobox#1636). It is worded for any host tool, a user's
+// script included, and names VS Code only as the example.
+const hostToolPortsHelp = `
+
+It runs on this machine, and running it forwards none of the discobox's ports
+here: a server started in the discobox is not on localhost unless the tool
+forwards its port itself (VS Code's Remote-SSH does, from its Ports panel) or
+"discobox proxy DISCOBOX" runs alongside it, forwarding every port the discobox
+listens on for as long as it runs.`
+
+// hostToolPortsNote is the note a tool that runs on this machine leaves once it
+// opens, saying the same as hostToolPortsHelp where someone running it reads.
+const hostToolPortsNote = "ports in the discobox are not forwarded here unless %s forwards them (VS Code: the Ports panel); \"discobox proxy %s\" forwards them all"
+
 // newToolRunCommand is `discobox tools <id>`, for any declared tool.
-func (a *App) newToolRunCommand(id, short string) *cobra.Command {
+func (a *App) newToolRunCommand(def tools.Definition) *cobra.Command {
 	var source, program string
+	id, short := def.ID, def.Description
 	if short == "" {
 		short = "Run the " + id + " tool"
 	}
@@ -196,15 +214,19 @@ func (a *App) newToolRunCommand(id, short string) *cobra.Command {
 	if r, size := utf8.DecodeRuneInString(short); r != utf8.RuneError {
 		short = string(unicode.ToUpper(r)) + short[size:]
 	}
-	cmd := &cobra.Command{
-		Use:   id + " [flags] [DISCOBOX] [--] [ARG...]",
-		Short: short,
-		Long: short + `.
+	long := short + `.
 
 DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one;
 without it the only discobox there is, or a pick. Arguments after DISCOBOX,
 with an optional -- separator, are
-passed to the tool untouched. CLI flags go before DISCOBOX.`,
+passed to the tool untouched. CLI flags go before DISCOBOX.`
+	if def.Runs == tools.RunsHost {
+		long += hostToolPortsHelp
+	}
+	cmd := &cobra.Command{
+		Use:               id + " [flags] [DISCOBOX] [--] [ARG...]",
+		Short:             short,
+		Long:              long,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -160,6 +160,35 @@ func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	}
 }
 
+// An editor on this machine forwards none of the box's ports, so a dev server
+// the agent started there looks dead from the host unless someone says how to
+// reach it: the help says so, and so does the run (discobox-ai/discobox#1636).
+func TestToolsVSCodeSaysPortsAreNotForwarded(t *testing.T) {
+	cmd, _, err := NewRootCommand().Find([]string{"tools", "vscode"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Ports panel", `"discobox proxy DISCOBOX"`} {
+		if !strings.Contains(cmd.Long, want) {
+			t.Errorf("tools vscode --help does not mention %s:\n%s", want, cmd.Long)
+		}
+	}
+	inBox := (&App{}).newToolRunCommand(tools.Definition{ID: "diff", Runs: tools.RunsSandbox})
+	if strings.Contains(inBox.Long, "Ports panel") {
+		t.Errorf("a tool that runs in the discobox carries the host tool's ports paragraph:\n%s", inBox.Long)
+	}
+
+	sshFixture := vscodeFakeServer()
+	fakeVSCode(t)
+	_, _, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
+	if err != nil {
+		t.Fatalf("execute tools vscode: %v", err)
+	}
+	if !strings.Contains(stderr, `"discobox proxy sbx_devbox00000001" forwards them all`) {
+		t.Fatalf("the run does not say how to reach the box's ports:\n%s", stderr)
+	}
+}
+
 // TestToolsVSCodeSilencesTheWSLInstallPrompt: VS Code's launcher asks whether to
 // continue when it finds itself installed inside WSL, and nothing is typing at
 // the stdin it asks on — so without this the command hangs, or takes the
