@@ -145,7 +145,8 @@ not a remote backup.
 Use `discobox stop BOX` when you want to stop it, and `discobox start BOX` to
 return. `discobox rm BOX` archives it and removes it from the normal list;
 purge destroys its stored data. Collect your work before archiving and do
-not rely on an archived box as your only copy.
+not rely on an archived box as your only copy. [Disk use](concepts.md#disk-use)
+says how much space boxes take and how to get it back.
 
 ## If something does not work
 

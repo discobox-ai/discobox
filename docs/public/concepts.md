@@ -178,6 +178,79 @@ recover it while retained; purge permanently destroys its data. Push useful
 work to a remote before discarding a box. Shared caches are performance
 storage, not trusted copies or backups. Never place a secret in a cache.
 
+### Disk use
+
+A box's own disk is its workspace and home, its container's writable layer
+(whatever it installed outside its workspace, such as system packages), and
+the traffic the pool's proxy recorded for it. A fresh box holds little more
+than its source. One that has installed its dependencies and built its
+project commonly holds several GB, since its packages, build output and
+language toolchains are its own. Stopping a box keeps all of it. Archiving
+removes the container, and with it the writable layer, but keeps the
+workspace, home, config and secrets until the box is purged.
+
+What boxes share is counted once per pool, not once per box: the images every
+box runs from (the sandbox base and each harness, a few GB together), the
+pool's package and build caches, its build store, its registry of images boxes
+pushed, and its proxy's cache of downloads. These grow with use.
+
+`discobox admin pool resources` shows the real figures: each box's disk, what
+the pool shares, and what is not attributed to either.
+`discobox admin box resources BOX_ID` shows one box. See the
+[CLI reference](cli.md#discobox-admin-pool-resources).
+
+**Where the disk lives.** Each built-in pool is a virtual machine with its own
+disk files on your machine:
+
+| OS | Files, per pool |
+| --- | --- |
+| macOS | `data.raw` and `cache.raw` in `~/Library/Application Support/discobox/vz/pools/POOL_ID/` |
+| Linux | `data.raw` and `cache.raw` in `~/.local/share/discobox/libkrun/POOL_ID/`, or `local-vm/POOL_ID/` there on a machine that ran a release from before the provider was named libkrun |
+| Windows | `storage.vhdx` in `%LOCALAPPDATA%\discobox\wslc\POOL_ID\` |
+
+On macOS and Linux, `$XDG_DATA_HOME` replaces `~/Library/Application Support`
+or `~/.local/share` when it is set, and a provider configured with its own
+state or storage directory keeps its pools' disks there instead.
+
+Each disk has a ceiling (100 GiB of data and 50 GiB of cache on macOS and
+Linux, 100 GiB on Windows) but is sparse, so a file takes only what the pool
+has written. The files grow as boxes and images are added, and do not shrink
+when boxes or images are removed: the space is freed inside the pool, where
+new boxes reuse it, but the files on your disk stay at their largest size. A
+Linux pool that runs on Docker, because the host cannot run libkrun, keeps its
+boxes, images and caches in Docker's own storage instead.
+
+**Reclaiming space.**
+
+1. Push or collect the work you want to keep from each box first.
+2. `discobox rm BOX` archives a box. Its data stays until the archive
+   retention runs out: the project's, set with
+   `discobox admin project update --archive-retention`, or else the server's,
+   24 hours unless the server is configured otherwise.
+3. `discobox admin box purge BOX_ID` destroys a box's data now, archived or
+   not, and returns once it is gone. In the console, `P` purges the selected
+   archived box, after asking.
+4. `discobox admin pool clear-cache POOL` stops the pool's running boxes and
+   empties its caches, its build cache and its registry: an image a box pushed
+   there is gone until the box pushes it again. It also removes the images no
+   box uses, except the sandbox base image, the newest image of each
+   repository a box still uses, and any that arrived in the last hour. The boxes start again
+   the next time they are used.
+5. On a pool with disk files, that frees space inside the pool but not on your
+   disk. To shrink the files, replace the pool with a new one on the same
+   provider, then delete the old one. A pool that still has boxes, archived
+   ones included, cannot be deleted, so purge them all first:
+
+   ```sh
+   discobox admin pool create NEW_POOL --provider PROVIDER
+   discobox admin pool set-default NEW_POOL
+   discobox admin pool rm OLD_POOL
+   ```
+
+   PROVIDER is the built-in provider, named `macOS`, `libkrun` or `Windows`
+   (`discobox admin provider ls` lists them). The old pool's files are
+   removed shortly after it is deleted.
+
 ## Credentials
 
 Managed secrets stay outside the sandbox. A box receives a placeholder
