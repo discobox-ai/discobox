@@ -14,6 +14,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
@@ -292,16 +293,14 @@ func (r *DockerSandboxRuntime) removeSnapshotBuild(ctx context.Context, id strin
 // wrong from one starts from scratch next.
 func (r *DockerSandboxRuntime) clearSnapshots(ctx context.Context) error {
 	forgetErr := r.forgetSnapshotFailures()
-	images, err := r.client.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.
-		Add("reference", snapshotRepository).
-		Add("label", sandboxLabelPool+"="+r.poolID)})
+	images, err := r.poolSnapshotImages(ctx)
 	if err != nil {
 		return errors.Join(forgetErr, err)
 	}
 	errs := []error{forgetErr}
-	for _, image := range images.Items {
+	for _, img := range images {
 		// Not forced: one a container runs is refused, and kept.
-		if _, err := r.client.ImageRemove(ctx, image.ID, client.ImageRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
+		if _, err := r.client.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
 			errs = append(errs, err)
 		}
 	}
@@ -314,11 +313,9 @@ func (r *DockerSandboxRuntime) clearSnapshots(ctx context.Context) error {
 // from the image it runs (ADR 26-11-17-316 §§2, 5) — around the builds and
 // failures every runtime reports alike.
 func (r *DockerSandboxRuntime) Snapshots(ctx context.Context) (*SnapshotReport, error) {
-	images, err := r.client.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.
-		Add("reference", snapshotRepository).
-		Add("label", sandboxLabelPool+"="+r.poolID)})
+	images, err := r.poolSnapshotImages(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list the pool's snapshots: %w", err)
+		return nil, err
 	}
 	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters("")})
 	if err != nil {
@@ -331,16 +328,16 @@ func (r *DockerSandboxRuntime) Snapshots(ctx context.Context) (*SnapshotReport, 
 		}
 	}
 	held := []HeldSnapshot{}
-	for _, image := range images.Items {
-		for _, tag := range image.RepoTags {
+	for _, img := range images {
+		for _, tag := range img.RepoTags {
 			key, ok := strings.CutPrefix(tag, snapshotRepository+":")
 			if !ok || key == "" {
 				continue
 			}
-			size := image.Size
-			entry := HeldSnapshot{Key: key, BuiltAt: time.Unix(image.Created, 0).UTC(), SizeBytes: &size, Boxes: boxes[key]}
+			size := img.Size
+			entry := HeldSnapshot{Key: key, BuiltAt: time.Unix(img.Created, 0).UTC(), SizeBytes: &size, Boxes: boxes[key]}
 			var plan SnapshotPlanName
-			if raw := image.Labels[snapshotPlanLabel]; raw != "" && json.Unmarshal([]byte(raw), &plan) == nil {
+			if raw := img.Labels[snapshotPlanLabel]; raw != "" && json.Unmarshal([]byte(raw), &plan) == nil {
 				entry.Plan = &plan
 			}
 			held = append(held, entry)
@@ -348,6 +345,22 @@ func (r *DockerSandboxRuntime) Snapshots(ctx context.Context) (*SnapshotReport, 
 	}
 	slices.SortFunc(held, func(a, b HeldSnapshot) int { return b.BuiltAt.Compare(a.BuiltAt) })
 	return r.snapshotReport(held)
+}
+
+// poolSnapshotImages lists this pool's snapshot images: the snapshot
+// repository's, on a daemon its pools may share, kept by their pool label
+// here. The daemon is asked by reference alone, never by label: a label
+// filter makes a containerd image store read every image's config on the
+// daemon, so the list would cost as much as the host's images, not the
+// pool's snapshots, and outlast the resource report's deadline (#1686).
+func (r *DockerSandboxRuntime) poolSnapshotImages(ctx context.Context) ([]image.Summary, error) {
+	list, err := r.client.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("reference", snapshotRepository)})
+	if err != nil {
+		return nil, fmt.Errorf("list the pool's snapshots: %w", err)
+	}
+	return slices.DeleteFunc(list.Items, func(img image.Summary) bool {
+		return img.Labels[sandboxLabelPool] != r.poolID
+	}), nil
 }
 
 // snapshotBuildFilters finds this project's build containers, on a daemon

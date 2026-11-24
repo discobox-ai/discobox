@@ -938,3 +938,18 @@ sleeps or a `vz` pool's VM is suspended, while the control plane checks `exp`
 against its own wall clock. Timed by a 20-minute ticker, a token that expired
 across a nap was held for up to 20 more minutes of waking time, and every
 resolve in that window was refused (#1282).
+
+## Image lists on a shared daemon
+
+Narrow an image list that runs under a deadline by `reference` (one
+repository) and check labels on the returned summaries; do not hand the
+daemon a `label` filter for it. A containerd image store reads every image's
+config to check a label filter, even with `reference` also set, so the call
+costs as much as the host has images, not as much as it returns, and a local
+Docker pool's agent talks to the host daemon, with every image on it. Why: the
+snapshot list took ~40s on a host with ~2,300 images and outlasted the
+resource report's 30s deadline on every pass (#1686). `imagereap`'s
+`labeledImages` still breaks this rule, under the cache clear's
+`imageReclaimTimeout`, which `clearSnapshots` shares: it filters by its reclaim
+label alone because its images span several repositories. That is known debt
+tracked in #1699, not a pattern to copy.
