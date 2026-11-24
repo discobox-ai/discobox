@@ -8,6 +8,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
+	github.com/discobox-ai/hooks v0.0.0-20261106181846-3ae3f1405a2b
 	github.com/discobox-ai/iroh-go v0.4.0
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/ebitengine/purego v0.11.1
@@ -129,7 +130,6 @@ require (
 	github.com/dave/dst v0.28.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
-	github.com/discobox-ai/hooks v0.0.0-20261106181846-3ae3f1405a2b // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.4.0 // indirect
