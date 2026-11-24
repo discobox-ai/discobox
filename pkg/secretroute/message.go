@@ -25,25 +25,65 @@ import (
 const MaxMessageDepth = 64
 
 // Message is one client-to-server WebSocket text message read as a JSON
-// object (ParseMessage): what a route's message places are matched in.
+// object (ParseMessage): what a route's message places are matched in. It
+// keeps only what is matched, recorded while the message is read: no tree of
+// its values is built, so reading costs what it keeps, not a node per value.
 type Message struct {
-	raw  []byte
-	root *jsonNode
+	raw []byte
+	// object is whether the message is a JSON object, not another value.
+	object bool
 	// top is each top-level member's canonical scalar (canonicalScalar), for
 	// conditions; a member whose value is an object or array is absent.
 	top map[string]string
 	// strings are every member name and string value, in document order.
 	strings []MessageString
+	// pointers are the steps of every string's JSON pointer, each naming the
+	// step it is under, so a string keeps one step and not a copy of its
+	// whole pointer: a long member name over many strings is kept once.
+	pointers []pointerStep
 }
 
 // MessageString is one string in a message: a string value, or a member
-// name. At is the JSON pointer of the value, or of the member a name names.
-// Start and End are its bytes in the message, quotes included.
+// name. Start and End are its bytes in the message, quotes included.
 type MessageString struct {
-	At         string
 	Value      string
 	Name       bool
 	Start, End int
+	message    *Message
+	// at is the string's last step in message.pointers, -1 at the root.
+	at int32
+}
+
+// pointerStep is one step of a JSON pointer under the step at parent (-1
+// for the root): a member, at its name's index in Message.strings, or an
+// element, at its index in its array.
+type pointerStep struct {
+	parent, at int32
+	member     bool
+}
+
+// At is the JSON pointer of the string's value, or of the member a name
+// names. It is built when asked, not kept: a caller asks it of the few
+// strings it matches.
+func (s MessageString) At() string {
+	if s.message == nil {
+		return ""
+	}
+	var steps []int32
+	for at := s.at; at >= 0; at = s.message.pointers[at].parent {
+		steps = append(steps, at)
+	}
+	var b []byte
+	for i := len(steps) - 1; i >= 0; i-- {
+		step := s.message.pointers[steps[i]]
+		b = append(b, '/')
+		if step.member {
+			b = appendPointerSegment(b, s.message.strings[step.at].Value)
+		} else {
+			b = strconv.AppendInt(b, int64(step.at), 10)
+		}
+	}
+	return string(b)
 }
 
 // ErrNotMessage is a message that is not exactly one JSON object a place can
@@ -56,7 +96,7 @@ func ParseMessage(data []byte) (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	if m.root.kind != kindObject {
+	if !m.object {
 		return nil, ErrNotMessage
 	}
 	return m, nil
@@ -64,26 +104,30 @@ func ParseMessage(data []byte) (*Message, error) {
 
 // ParseDocument reads data as one JSON value of any kind, as strictly as
 // ParseMessage: what a typed route's ws= array is checked with.
+//
+// It reads data twice. The first read refuses what is no message and counts
+// the strings and pointer steps there are; the second records them in slices
+// of that size. So a refused document records nothing, and an accepted one
+// allocates what it keeps, never room for strings it turns out not to hold.
 func ParseDocument(data []byte) (*Message, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("%w: invalid UTF-8", ErrNotMessage)
 	}
-	p := &jsonParser{data: data}
-	root, err := p.value(0)
+	count := &jsonParser{data: data}
+	kind, err := count.document()
 	if err != nil {
 		return nil, err
 	}
-	p.space()
-	if p.pos != len(data) {
-		return nil, fmt.Errorf("%w: more than one value", ErrNotMessage)
+	m := &Message{
+		raw:      data,
+		object:   kind == kindObject,
+		top:      map[string]string{},
+		strings:  make([]MessageString, 0, count.strings),
+		pointers: make([]pointerStep, 0, count.steps),
 	}
-	m := &Message{raw: data, root: root, top: map[string]string{}}
-	for _, member := range root.members {
-		if scalar, ok := member.value.canonical(); ok {
-			m.top[member.name] = scalar
-		}
+	if _, err := (&jsonParser{data: data, record: m, decoded: count.decoded}).document(); err != nil {
+		return nil, err
 	}
-	m.collect(root, "")
 	return m, nil
 }
 
@@ -101,27 +145,26 @@ func (m *Message) holds(name, scalar string) bool {
 	return ok && value == scalar
 }
 
-func (m *Message) collect(node *jsonNode, at string) {
-	switch node.kind {
-	case kindObject:
-		for _, member := range node.members {
-			child := at + "/" + EscapePointer(member.name)
-			m.strings = append(m.strings, MessageString{At: child, Value: member.name, Name: true, Start: member.start, End: member.end})
-			m.collect(member.value, child)
-		}
-	case kindArray:
-		for i, elem := range node.elems {
-			m.collect(elem, at+"/"+strconv.Itoa(i))
-		}
-	case kindString:
-		m.strings = append(m.strings, MessageString{At: at, Value: node.text, Start: node.start, End: node.end})
-	}
-}
-
 // EscapePointer is a member name as one segment of a JSON pointer (RFC 6901):
 // "~" is "~0" and "/" is "~1".
 func EscapePointer(name string) string {
-	return strings.NewReplacer("~", "~0", "/", "~1").Replace(name)
+	return string(appendPointerSegment(nil, name))
+}
+
+// appendPointerSegment appends name to b as one JSON pointer segment
+// (EscapePointer).
+func appendPointerSegment(b []byte, name string) []byte {
+	for i := 0; i < len(name); i++ {
+		switch c := name[i]; c {
+		case '~':
+			b = append(b, '~', '0')
+		case '/':
+			b = append(b, '~', '1')
+		default:
+			b = append(b, c)
+		}
+	}
+	return b
 }
 
 type jsonKind uint8
@@ -133,35 +176,6 @@ const (
 	kindNumber
 	kindLiteral // true, false, null
 )
-
-// jsonNode is one value read strictly. text is a string's decoded value, a
-// number's canonical decimal, or a literal as written.
-type jsonNode struct {
-	kind       jsonKind
-	text       string
-	start, end int
-	members    []jsonMember
-	elems      []*jsonNode
-}
-
-type jsonMember struct {
-	name       string
-	start, end int
-	value      *jsonNode
-}
-
-// canonical is a scalar node as a condition compares it: a string JSON-encoded
-// from its decoded value, a number in its canonical decimal, a literal as it
-// is. Objects and arrays are no scalar.
-func (n *jsonNode) canonical() (string, bool) {
-	switch n.kind {
-	case kindString:
-		return encodeJSONString(n.text), true
-	case kindNumber, kindLiteral:
-		return n.text, true
-	}
-	return "", false
-}
 
 // encodeJSONString is s as a JSON string, the one spelling every equal string
 // has: HTML characters are not escaped.
@@ -176,9 +190,76 @@ func encodeJSONString(s string) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
+// jsonParser reads one value strictly. It builds no tree: when record is set
+// it appends each string, with where it is, and each canonical scalar of the
+// root object's members, to record as it reads them; either way it counts
+// the strings and pointer steps it would record.
 type jsonParser struct {
-	data []byte
-	pos  int
+	data   []byte
+	pos    int
+	record *Message
+	// path is where the value being read is, one step per container it is
+	// in. A step's node is its index among the pointer steps once a string
+	// under it has been kept, -1 until then, so a container holding no string
+	// keeps no step.
+	path []pathStep
+	// strings and steps count the strings and pointer steps kept so far.
+	strings, steps int32
+	// decoded is the string being read, decoded: one buffer for them all.
+	decoded []byte
+}
+
+// pathStep is one step of path: a member, at its name's index among the
+// strings, or an element, at its index (pointerStep).
+type pathStep struct {
+	at, node int32
+	member   bool
+}
+
+// document reads data as one value and nothing after it but whitespace.
+func (p *jsonParser) document() (jsonKind, error) {
+	kind, _, err := p.value(0, false)
+	if err != nil {
+		return 0, err
+	}
+	p.space()
+	if p.pos != len(p.data) {
+		return 0, fmt.Errorf("%w: more than one value", ErrNotMessage)
+	}
+	return kind, nil
+}
+
+// keep records s, a string read where path says, when there is a record.
+func (p *jsonParser) keep(s MessageString) {
+	at := p.pointer()
+	p.strings++
+	if p.record != nil {
+		s.message, s.at = p.record, at
+		p.record.strings = append(p.record.strings, s)
+	}
+}
+
+// pointer keeps the steps of path not yet kept and returns the last one's
+// index, -1 at the root. A step kept once is shared by every string under it.
+func (p *jsonParser) pointer() int32 {
+	i := len(p.path)
+	for i > 0 && p.path[i-1].node < 0 {
+		i--
+	}
+	parent := int32(-1)
+	if i > 0 {
+		parent = p.path[i-1].node
+	}
+	for ; i < len(p.path); i++ {
+		step := &p.path[i]
+		if p.record != nil {
+			p.record.pointers = append(p.record.pointers, pointerStep{parent: parent, at: step.at, member: step.member})
+		}
+		step.node = p.steps
+		p.steps++
+		parent = step.node
+	}
+	return parent
 }
 
 func (p *jsonParser) space() {
@@ -196,133 +277,159 @@ func (p *jsonParser) fail(what string) error {
 	return fmt.Errorf("%w: %s at byte %d", ErrNotMessage, what, p.pos)
 }
 
-// value reads one value at depth containers deep.
-func (p *jsonParser) value(depth int) (*jsonNode, error) {
+// value reads one value at depth containers deep and returns its kind. When
+// canonical is set and the value is a scalar, scalar is its canonical
+// spelling (canonicalScalar): a string JSON-encoded from its decoded value, a
+// number in its canonical decimal, a literal as it is.
+func (p *jsonParser) value(depth int, canonical bool) (kind jsonKind, scalar string, err error) {
 	p.space()
 	if p.pos >= len(p.data) {
-		return nil, p.fail("unexpected end")
+		return 0, "", p.fail("unexpected end")
 	}
 	start := p.pos
 	switch c := p.data[p.pos]; {
 	case c == '{' || c == '[':
 		if depth >= MaxMessageDepth {
-			return nil, p.fail("nested too deeply")
+			return 0, "", p.fail("nested too deeply")
 		}
 		if c == '{' {
-			return p.object(depth + 1)
+			return kindObject, "", p.object(depth + 1)
 		}
-		return p.array(depth + 1)
+		return kindArray, "", p.array(depth + 1)
 	case c == '"':
-		text, err := p.str()
+		text, err := p.str(p.record != nil || canonical)
 		if err != nil {
-			return nil, err
+			return 0, "", err
 		}
-		return &jsonNode{kind: kindString, text: text, start: start, end: p.pos}, nil
+		p.keep(MessageString{Value: text, Start: start, End: p.pos})
+		if canonical {
+			scalar = encodeJSONString(text)
+		}
+		return kindString, scalar, nil
 	case c == '-' || c >= '0' && c <= '9':
-		text, err := p.number()
+		scalar, err := p.number(canonical)
 		if err != nil {
-			return nil, err
+			return 0, "", err
 		}
-		return &jsonNode{kind: kindNumber, text: text, start: start, end: p.pos}, nil
+		return kindNumber, scalar, nil
 	default:
 		for _, literal := range []string{"true", "false", "null"} {
 			if bytes.HasPrefix(p.data[p.pos:], []byte(literal)) {
 				p.pos += len(literal)
-				return &jsonNode{kind: kindLiteral, text: literal, start: start, end: p.pos}, nil
+				return kindLiteral, literal, nil
 			}
 		}
-		return nil, p.fail("invalid value")
+		return 0, "", p.fail("invalid value")
 	}
 }
 
-func (p *jsonParser) object(depth int) (*jsonNode, error) {
-	node := &jsonNode{kind: kindObject, start: p.pos}
+// object reads an object at depth containers deep; at depth 1 it is the root,
+// whose members' scalars are recorded for conditions.
+func (p *jsonParser) object(depth int) error {
 	p.pos++
 	seen := map[string]struct{}{}
 	p.space()
 	if p.pos < len(p.data) && p.data[p.pos] == '}' {
 		p.pos++
-		node.end = p.pos
-		return node, nil
+		return nil
 	}
+	p.path = append(p.path, pathStep{member: true, node: -1})
+	defer func() { p.path = p.path[:len(p.path)-1] }()
+	top := depth == 1 && p.record != nil
 	for {
 		p.space()
 		if p.pos >= len(p.data) || p.data[p.pos] != '"' {
-			return nil, p.fail("expected a member name")
+			return p.fail("expected a member name")
 		}
 		nameStart := p.pos
-		name, err := p.str()
+		name, err := p.str(true)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, twice := seen[name]; twice {
-			return nil, p.fail("a member named twice")
+			return p.fail("a member named twice")
 		}
 		seen[name] = struct{}{}
-		member := jsonMember{name: name, start: nameStart, end: p.pos}
+		p.path[len(p.path)-1] = pathStep{member: true, at: p.strings, node: -1}
+		p.keep(MessageString{Value: name, Name: true, Start: nameStart, End: p.pos})
 		p.space()
 		if p.pos >= len(p.data) || p.data[p.pos] != ':' {
-			return nil, p.fail("expected :")
+			return p.fail("expected :")
 		}
 		p.pos++
-		if member.value, err = p.value(depth); err != nil {
-			return nil, err
+		kind, scalar, err := p.value(depth, top)
+		if err != nil {
+			return err
 		}
-		node.members = append(node.members, member)
+		if top && kind != kindObject && kind != kindArray {
+			p.record.top[name] = scalar
+		}
 		p.space()
 		if p.pos >= len(p.data) {
-			return nil, p.fail("unexpected end")
+			return p.fail("unexpected end")
 		}
 		switch p.data[p.pos] {
 		case ',':
 			p.pos++
 		case '}':
 			p.pos++
-			node.end = p.pos
-			return node, nil
+			return nil
 		default:
-			return nil, p.fail("expected , or }")
+			return p.fail("expected , or }")
 		}
 	}
 }
 
-func (p *jsonParser) array(depth int) (*jsonNode, error) {
-	node := &jsonNode{kind: kindArray, start: p.pos}
+func (p *jsonParser) array(depth int) error {
 	p.pos++
 	p.space()
 	if p.pos < len(p.data) && p.data[p.pos] == ']' {
 		p.pos++
-		node.end = p.pos
-		return node, nil
+		return nil
 	}
-	for {
-		elem, err := p.value(depth)
-		if err != nil {
-			return nil, err
+	p.path = append(p.path, pathStep{node: -1})
+	defer func() { p.path = p.path[:len(p.path)-1] }()
+	for i := 0; ; i++ {
+		p.path[len(p.path)-1] = pathStep{at: int32(i), node: -1}
+		if _, _, err := p.value(depth, false); err != nil {
+			return err
 		}
-		node.elems = append(node.elems, elem)
 		p.space()
 		if p.pos >= len(p.data) {
-			return nil, p.fail("unexpected end")
+			return p.fail("unexpected end")
 		}
 		switch p.data[p.pos] {
 		case ',':
 			p.pos++
 		case ']':
 			p.pos++
-			node.end = p.pos
-			return node, nil
+			return nil
 		default:
-			return nil, p.fail("expected , or ]")
+			return p.fail("expected , or ]")
 		}
 	}
 }
 
-// str reads a string, decoding its escapes. A raw control character, an
-// unknown escape, and a surrogate escape not part of a pair are refused.
-func (p *jsonParser) str() (string, error) {
+// str reads a string, decoding its escapes into p.decoded, and returns it
+// when keep is set: one read only to refuse or count allocates nothing for
+// it. A raw control character, an unknown escape, and a surrogate escape not
+// part of a pair are refused.
+func (p *jsonParser) str(keep bool) (string, error) {
 	p.pos++ // the opening quote
-	var b strings.Builder
+	// Decoded, a string is no longer than it is written, so one buffer that
+	// long holds it without growing.
+	end := p.pos
+	for end < len(p.data) && p.data[end] != '"' {
+		if p.data[end] == '\\' {
+			end++
+		}
+		end++
+	}
+	if cap(p.decoded) < end-p.pos {
+		p.decoded = make([]byte, 0, end-p.pos)
+	}
+	b := p.decoded[:0]
+	defer func() { p.decoded = b }()
 	for {
 		if p.pos >= len(p.data) {
 			return "", p.fail("unterminated string")
@@ -331,11 +438,14 @@ func (p *jsonParser) str() (string, error) {
 		switch {
 		case c == '"':
 			p.pos++
-			return b.String(), nil
+			if !keep {
+				return "", nil
+			}
+			return string(b), nil
 		case c < 0x20:
 			return "", p.fail("control character in a string")
 		case c != '\\':
-			b.WriteByte(c)
+			b = append(b, c)
 			p.pos++
 			continue
 		}
@@ -346,17 +456,17 @@ func (p *jsonParser) str() (string, error) {
 		p.pos += 2
 		switch e {
 		case '"', '\\', '/':
-			b.WriteByte(e)
+			b = append(b, e)
 		case 'b':
-			b.WriteByte('\b')
+			b = append(b, '\b')
 		case 'f':
-			b.WriteByte('\f')
+			b = append(b, '\f')
 		case 'n':
-			b.WriteByte('\n')
+			b = append(b, '\n')
 		case 'r':
-			b.WriteByte('\r')
+			b = append(b, '\r')
 		case 't':
-			b.WriteByte('\t')
+			b = append(b, '\t')
 		case 'u':
 			r, ok := p.hex4()
 			if !ok {
@@ -376,7 +486,7 @@ func (p *jsonParser) str() (string, error) {
 			case utf16.IsSurrogate(r):
 				return "", p.fail("unpaired surrogate escape")
 			}
-			b.WriteRune(r)
+			b = utf8.AppendRune(b, r)
 		default:
 			return "", p.fail("invalid escape")
 		}
@@ -395,9 +505,10 @@ func (p *jsonParser) hex4() (rune, bool) {
 	return rune(v), true
 }
 
-// number reads a number by JSON's grammar and returns its canonical decimal
-// (canonicalNumber).
-func (p *jsonParser) number() (string, error) {
+// number reads a number by JSON's grammar and, when canonical is set, returns
+// its canonical decimal (canonicalNumber). A number whose exponent is beyond
+// maxExponent either way is refused whether or not it is kept.
+func (p *jsonParser) number(canonical bool) (string, error) {
 	start := p.pos
 	negative := p.data[p.pos] == '-'
 	if negative {
@@ -410,59 +521,61 @@ func (p *jsonParser) number() (string, error) {
 		}
 		return from
 	}
-	from := digitsFrom()
-	integer := string(p.data[from:p.pos])
-	if integer == "" || len(integer) > 1 && integer[0] == '0' {
+	intFrom := digitsFrom()
+	integer := p.data[intFrom:p.pos]
+	if len(integer) == 0 || len(integer) > 1 && integer[0] == '0' {
 		return "", p.fail("invalid number")
 	}
-	fraction := ""
+	var fraction []byte
 	if p.pos < len(p.data) && p.data[p.pos] == '.' {
 		p.pos++
-		from = digitsFrom()
-		fraction = string(p.data[from:p.pos])
-		if fraction == "" {
+		from := digitsFrom()
+		fraction = p.data[from:p.pos]
+		if len(fraction) == 0 {
 			return "", p.fail("invalid number")
 		}
 	}
-	exponent := "0"
+	var exponent int64
 	if p.pos < len(p.data) && (p.data[p.pos] == 'e' || p.data[p.pos] == 'E') {
 		p.pos++
-		sign := ""
+		negativeExponent := false
 		if p.pos < len(p.data) && (p.data[p.pos] == '+' || p.data[p.pos] == '-') {
-			sign = string(p.data[p.pos])
+			negativeExponent = p.data[p.pos] == '-'
 			p.pos++
 		}
-		from = digitsFrom()
+		from := digitsFrom()
 		if from == p.pos {
 			return "", p.fail("invalid number")
 		}
-		exponent = sign + string(p.data[from:p.pos])
+		for _, c := range p.data[from:p.pos] {
+			if exponent = exponent*10 + int64(c-'0'); exponent > maxExponent {
+				p.pos = start
+				return "", p.fail("number out of range")
+			}
+		}
+		if negativeExponent {
+			exponent = -exponent
+		}
 	}
-	text, ok := canonicalNumber(negative, integer+fraction, len(fraction), exponent)
-	if !ok {
-		p.pos = start
-		return "", p.fail("number out of range")
+	if !canonical {
+		return "", nil
 	}
-	return text, nil
+	return canonicalNumber(negative, string(integer)+string(fraction), len(fraction), exponent), nil
 }
 
 // maxExponent bounds a number's exponent, so its canonical form is small.
 const maxExponent = 1 << 20
 
 // canonicalNumber is the one spelling of an exact decimal value: digits
-// (integer and fraction digits, run together) times ten to the exponent less
-// the fraction's length. Leading and trailing zeros are dropped into the
+// (integer and fraction digits, run together) times ten to exp less the
+// fraction's length, exp within maxExponent (number refuses one beyond it). Leading and trailing zeros are dropped into the
 // exponent, so equal values have equal digits and exponent, and the spelling
 // chosen from those two is unique: plain for a modest exponent, scientific
 // otherwise. Zero is "0" whatever its sign.
-func canonicalNumber(negative bool, digits string, fractionLen int, exponent string) (string, bool) {
-	exp, err := strconv.ParseInt(strings.TrimPrefix(exponent, "+"), 10, 64)
-	if err != nil || exp > maxExponent || exp < -maxExponent {
-		return "", false
-	}
+func canonicalNumber(negative bool, digits string, fractionLen int, exp int64) string {
 	digits = strings.TrimLeft(digits, "0")
 	if digits == "" {
-		return "0", true
+		return "0"
 	}
 	e := exp - int64(fractionLen)
 	trimmed := strings.TrimRight(digits, "0")
@@ -490,7 +603,7 @@ func canonicalNumber(negative bool, digits string, fractionLen int, exponent str
 		b.WriteByte('e')
 		b.WriteString(strconv.FormatInt(e, 10))
 	}
-	return b.String(), true
+	return b.String()
 }
 
 // canonicalScalar reads raw as one JSON scalar, strictly, and returns its
@@ -501,7 +614,7 @@ func canonicalScalar(raw []byte) (string, error) {
 		return "", fmt.Errorf("invalid UTF-8")
 	}
 	p := &jsonParser{data: raw}
-	node, err := p.value(0)
+	kind, scalar, err := p.value(0, true)
 	if err != nil {
 		return "", err
 	}
@@ -509,8 +622,7 @@ func canonicalScalar(raw []byte) (string, error) {
 	if p.pos != len(raw) {
 		return "", fmt.Errorf("more than one value")
 	}
-	scalar, ok := node.canonical()
-	if !ok {
+	if kind == kindObject || kind == kindArray {
 		return "", fmt.Errorf("an object or array is no condition: a condition is a string, number, true, false or null")
 	}
 	return scalar, nil
