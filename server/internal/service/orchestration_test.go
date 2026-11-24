@@ -33,7 +33,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	ctx := context.Background()
 	svc, executor, _, projectID := newSandboxTestService(t, nil)
 
-	sandbox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	sandbox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")})})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	svc, _, _, projectID := newSandboxTestService(t, nil)
 	svc.RegisterSandboxProvider("test", noopSandboxProvider{})
 
-	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")})})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")})})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestCreateSandboxRecordsOriginAndDerivesKey(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")}),
 		Origin: serverapi.NewOptOrigin(serverapi.Origin{
 			HostId:   "host_aaaaaaaaaaaaaaaa",
 			Hostname: serverapi.NewOptString("laptop"),
@@ -143,7 +143,7 @@ func TestCreateSandboxWithoutOriginLeavesKeyUnset(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -159,8 +159,8 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config: serverapi.SandboxCreateConfig{
-			Name: "alpha",
+		Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
+			Name: serverapi.NewOptString("alpha"),
 			Source: serverapi.NewOptGitSource(serverapi.GitSource{
 				Kind: serverapi.GitSourceKindGit,
 			}),
@@ -176,7 +176,7 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 					Slug: serverapi.NewOptString("custom-tools"),
 				},
 			}),
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -234,12 +234,12 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 				HarnessName: serverapi.NewOptString("shell"),
-				Config: serverapi.SandboxCreateConfig{
+				Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
 					// Distinct per case: sandbox names are unique within a
 					// project, and both cases create one in the same project.
-					Name:   "alpha-" + strings.ReplaceAll(tc.name, " ", "-"),
+					Name:   serverapi.NewOptString("alpha-" + strings.ReplaceAll(tc.name, " ", "-")),
 					Source: serverapi.NewOptGitSource(tc.source),
-				},
+				}),
 			})
 			if err != nil {
 				t.Fatalf("create sandbox: %v", err)
@@ -252,7 +252,7 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "sourceless"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("sourceless")}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox without source: %v", err)
@@ -293,7 +293,7 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 
 	// With no explicit harness selector, the sandbox pins the project default so its
 	// required-secret gate and binding materialization resolve at create time.
-	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")})})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 		}
 	})
 
-	_, err = svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	_, err = svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")})})
 	var statusErr apperrors.StatusError
 	if !errors.As(err, &statusErr) {
 		t.Fatalf("create sandbox error = %v, want status error", err)
@@ -400,7 +400,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		}
 	})
 
-	sandbox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	sandbox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{HarnessName: serverapi.NewOptString("shell"), Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")})})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -599,6 +599,11 @@ func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, ap
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create test pool: %v", err)
 	}
+	// Declared as a Linux pool's agent declares it on its first report: a
+	// create naming no user waits for it (ADR 26-11-19-859).
+	if _, _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatalf("declare test pool platform: %v", err)
+	}
 	project, err := appStore.GetProject(ctx, projectID)
 	if err != nil {
 		t.Fatalf("get default project: %v", err)
@@ -760,7 +765,7 @@ func TestCompleteSandboxSourcePushRecordsCommitAndResumes(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -802,7 +807,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -855,7 +860,7 @@ func TestCompleteSandboxSourcePushRejectsMismatchedCommit(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("alpha")}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)

@@ -94,12 +94,32 @@ func SandboxUserToModel(value OptSandboxUser) SandboxUserFields {
 	}
 }
 
-// ValidateAccount refuses a user no sandbox on goos may be created with: where
-// the guest gives accounts ids, an account named without its uid, or an id
-// that guest does not give one (ADR 0141, ADR 26-11-12-060); elsewhere
-// anything but the sandbox's one account, by name (ADR 0145 §5). The rule is
-// sandboxuser's; this is only the conversion to it.
-func (f SandboxUserFields) ValidateAccount(goos string) error {
+// SandboxUserFieldsFrom is account as the fields a sandbox records.
+func SandboxUserFieldsFrom(account sandboxuser.User) SandboxUserFields {
+	fields := SandboxUserFields{AdditionalGroups: append([]string(nil), account.AdditionalGroups...)}
+	if account.Name != "" {
+		fields.Name = &account.Name
+	}
+	if account.GroupName != "" {
+		fields.GroupName = &account.GroupName
+	}
+	if account.HomeDirectory != "" {
+		fields.HomeDirectory = &account.HomeDirectory
+	}
+	if account.UID != nil {
+		uid := int(*account.UID)
+		fields.UID = &uid
+	}
+	if account.GID != nil {
+		gid := int(*account.GID)
+		fields.GID = &gid
+	}
+	return fields
+}
+
+// User is the fields as the sandboxuser.User whose rules judge them: whether
+// they name anything (sandboxuser.Named), and which accounts a guest takes.
+func (f SandboxUserFields) User() *sandboxuser.User {
 	user := &sandboxuser.User{AdditionalGroups: f.AdditionalGroups}
 	if f.Name != nil {
 		user.Name = *f.Name
@@ -116,7 +136,16 @@ func (f SandboxUserFields) ValidateAccount(goos string) error {
 	if f.GID != nil {
 		user.GID = sandboxuser.ID(int64(*f.GID))
 	}
-	if err := user.ValidateAccount(goos); err != nil {
+	return user
+}
+
+// ValidateAccount refuses a user no sandbox on goos may be created with: where
+// the guest gives accounts ids, an account named without its uid, or an id
+// that guest does not give one (ADR 0141, ADR 26-11-12-060); elsewhere
+// anything but the sandbox's one account, by name (ADR 0145 §5). The rule is
+// sandboxuser's; this is only the conversion to it.
+func (f SandboxUserFields) ValidateAccount(goos string) error {
+	if err := f.User().ValidateAccount(goos); err != nil {
 		return apperrors.NewStatusError(http.StatusBadRequest, "sandbox user: "+err.Error())
 	}
 	return nil

@@ -246,8 +246,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		return nil, err
 	}
 	if taken {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("a discobox named %q already exists in this project; import it under another name", name))
+		return nil, importNameTaken(name)
 	}
 	poolID := strings.TrimSpace(opts.PoolID)
 	if poolID == "" {
@@ -415,6 +414,10 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	sb.PoolID = landedPool
 
 	created, err := s.createSandboxIntent(ctx, sb, nil, bindings, resourcesecrets.SandboxBindings{})
+	if errors.Is(err, store.ErrSandboxNameTaken) {
+		// Taken since the check above, by a create or import that raced this one.
+		return nil, importNameTaken(sb.Name)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -423,6 +426,13 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		bound = append(bound, binding.EnvName+": "+binding.SecretName)
 	}
 	return &services.SandboxImportResult{Sandbox: created, Bound: bound, Warnings: warnings}, nil
+}
+
+// importNameTaken is the 409 an import under a name another sandbox in the
+// project holds is refused with.
+func importNameTaken(name string) error {
+	return apperrors.NewStatusError(http.StatusConflict,
+		fmt.Sprintf("a discobox named %q already exists in this project; import it under another name", name))
 }
 
 // importedAt is the moment the sources count as delivered. The export's own

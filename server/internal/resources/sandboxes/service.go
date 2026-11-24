@@ -16,7 +16,9 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/randomname"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 
@@ -154,8 +156,14 @@ func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot strin
 	return matchingTags(sandboxes, tags), nil
 }
 
+// generatedNameAttempts bounds the handles a create that names none draws
+// before giving up with 503: each is refused only by a sandbox already holding
+// it, which is rare even in a crowded project (ADR 26-11-19-859).
+const generatedNameAttempts = 8
+
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
-	config := input.Config
+	// An omitted config is an empty one (ADR 26-11-19-859).
+	config := input.Config.Value
 	// The name, description and tags the sandbox is created with are its meta
 	// file's first content, so they are checked as a meta change is, the name
 	// normalized as a change's is, before anything is created (ADR 0136,
@@ -201,21 +209,27 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, err
 	}
 
-	if strings.TrimSpace(config.Name) == "" {
-		return nil, fmt.Errorf("sandbox name is required")
-	}
 	// Names are unique within a project (idx_sandbox_project_name) because they
 	// are an addressable handle, not just a label: `discobox admin ssh-config` emits
 	// one as an ssh_config Host alias, and ssh applies the first matching block,
 	// so a second sandbox answering to the same name would silently take the
-	// first one's connections.
-	taken, err := s.store.SandboxNameTaken(ctx, projectID, config.Name)
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("a sandbox named %q already exists in this project", config.Name))
+	// first one's connections. A create that names none is given one the
+	// server draws, and draws again when the index refuses it (ADR
+	// 26-11-19-859); a named one is kept as given.
+	name, named := config.Name.Get()
+	if named {
+		if strings.TrimSpace(name) == "" {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox name must not be blank; omit it to have one drawn")
+		}
+		taken, err := s.store.SandboxNameTaken(ctx, projectID, name)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, sandboxNameTaken(name)
+		}
+	} else if name, err = randomname.Generate(); err != nil {
+		return nil, fmt.Errorf("draw sandbox name: %w", err)
 	}
 	// A discobox a sandbox creates is created as the user who created that
 	// sandbox (ADR 0140 §4).
@@ -296,6 +310,22 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		accountOS = platform.Linux
 	}
 	user := services.SandboxUserToModel(config.User)
+	if !sandboxuser.Named(user.User()) {
+		// No account named, or one naming nothing (empty, or only blank
+		// strings, which boot reads as no user): an ordinary account, never the
+		// image's own user, which is root on the built-in image (ADR
+		// 26-11-19-859). Which one is the guest's, so a pool that has not said
+		// what its sandboxes run is waited for rather than judged as Linux:
+		// a Linux account recorded on a box placed on another platform would
+		// be refused there.
+		if sandboxPlatform.OS == "" {
+			return nil, apperrors.NewStatusError(http.StatusServiceUnavailable,
+				"the pool has not yet said which operating system its sandboxes run, which decides the account a sandbox with no user is given; try again shortly, or name the user")
+		}
+		if account, ok := sandboxuser.DefaultAccount(sandboxPlatform.OS); ok {
+			user = services.SandboxUserFieldsFrom(account)
+		}
+	}
 	if err := user.ValidateAccount(accountOS); err != nil {
 		return nil, err
 	}
@@ -335,7 +365,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CreatedBySandboxID: createdBySandboxID,
 		PoolID:             pool.ID,
 		Platform:           sandboxPlatform,
-		Name:               config.Name,
+		Name:               name,
 		Description:        services.OptStringPtr(config.Description),
 		// Recorded from the start, so the first listing and the created event
 		// carry them. Left unobserved, which the sandbox's first report of its
@@ -432,7 +462,34 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			sandbox.SourceDeliveries[*entry.source.Slug] = sourcecache.Delivery{Status: "pending"}
 		}
 	}
-	return s.createSandboxIntent(ctx, sandbox, inlineSecrets, inline, prepared)
+	for attempt := 1; ; attempt++ {
+		// Each attempt records its own copy: a refused one rolled back its
+		// transaction but not what it did to the row it was handed (its
+		// generation).
+		row := *sandbox
+		created, err := s.createSandboxIntent(ctx, &row, inlineSecrets, inline, prepared)
+		if !errors.Is(err, store.ErrSandboxNameTaken) {
+			return created, err
+		}
+		if named {
+			// Taken since the check above, by a create that raced this one.
+			return nil, sandboxNameTaken(sandbox.Name)
+		}
+		if attempt == generatedNameAttempts {
+			return nil, apperrors.NewStatusError(http.StatusServiceUnavailable,
+				"every sandbox name drawn for this sandbox is taken in this project; try again, or name it")
+		}
+		if sandbox.Name, err = randomname.Generate(); err != nil {
+			return nil, fmt.Errorf("draw sandbox name: %w", err)
+		}
+	}
+}
+
+// sandboxNameTaken is the 409 a create naming a handle another sandbox in
+// the project holds is refused with.
+func sandboxNameTaken(name string) error {
+	return apperrors.NewStatusError(http.StatusConflict,
+		fmt.Sprintf("a sandbox named %q already exists in this project", name))
 }
 
 // createHarnessPins is what a sandbox created on config is pinned to: its

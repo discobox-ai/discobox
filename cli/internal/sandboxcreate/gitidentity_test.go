@@ -58,7 +58,7 @@ func TestResolveGitIdentityLeavesUnsetFieldsAbsent(t *testing.T) {
 func TestSetCreateSandboxGitOmitsAnEmptyIdentity(t *testing.T) {
 	body := &apimodel.CreateSandboxBody{}
 	setCreateSandboxGit(body, apimodel.SandboxGitIdentity{})
-	if body.Config.Git.Set {
+	if body.Config.Value.Git.Set {
 		t.Fatal("git object was sent for an unconfigured machine, want it omitted entirely")
 	}
 }
@@ -69,7 +69,7 @@ func TestSetCreateSandboxGitAttachesAPartialIdentity(t *testing.T) {
 	identity.SetUserEmail(apiclientgen.NewOptString("ada@example.com"))
 
 	setCreateSandboxGit(body, identity)
-	git, ok := body.Config.Git.Get()
+	git, ok := body.Config.Value.Git.Get()
 	if !ok {
 		t.Fatal("git object omitted, want it attached when either field is set")
 	}

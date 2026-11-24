@@ -109,7 +109,7 @@ func TestBuildPromptSandboxBodyFilesSkillsRepositoriesInOrder(t *testing.T) {
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	toolsKey, sharedKey := "~/.discobox/skill-sources/tools", "~/.discobox/skill-sources/shared"
 	if len(references) != 2 {
 		t.Fatalf("references = %v, want one per repository", references)
@@ -131,10 +131,10 @@ func TestBuildPromptSandboxBodyFilesSkillsRepositoriesInOrder(t *testing.T) {
 		{Source: sharedKey, Directory: "."},
 		{Source: toolsKey, Directory: "extra"},
 	}
-	if !reflect.DeepEqual(body.Config.SkillsSources, want) {
-		t.Fatalf("skills sources = %+v, want %+v", body.Config.SkillsSources, want)
+	if !reflect.DeepEqual(body.Config.Value.SkillsSources, want) {
+		t.Fatalf("skills sources = %+v, want %+v", body.Config.Value.SkillsSources, want)
 	}
-	if _, ok := body.Config.Skills.Get(); ok {
+	if _, ok := body.Config.Value.Skills.Get(); ok {
 		t.Fatal("a skills repository was read as content")
 	}
 }
@@ -156,7 +156,7 @@ func TestBuildPromptSandboxBodyKeysSkillsBelowHomeOnEveryPlatform(t *testing.T) 
 			t.Fatalf("%s: build prompt sandbox body: %v", sandbox.OS, err)
 		}
 		local.Close()
-		references, _ := body.Config.SourceCodeReferences.Get()
+		references, _ := body.Config.Value.SourceCodeReferences.Get()
 		reference, ok := references["~/.discobox/skill-sources/tools"]
 		if !ok || len(references) != 1 {
 			t.Fatalf("%s: references = %v, want one keyed ~/.discobox/skill-sources/tools", sandbox.OS, references)
@@ -192,7 +192,7 @@ func TestAddSkillsSourcesFilesBesideTheGivenReferences(t *testing.T) {
 	given := apiclientgen.GitSource{Kind: apiclientgen.GitSourceKindGit}
 	given.SetSlug(apiclientgen.NewOptString("tools"))
 
-	config := apimodel.SandboxCreateConfig{Name: "box"}
+	config := apimodel.SandboxCreateConfig{Name: apiclientgen.NewOptString("box")}
 	config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(
 		apiclientgen.SandboxCreateConfigSourceCodeReferences{"/srv/given": given}))
 	args, err := SplitSkills([]string{tools + "//skills"})
@@ -215,7 +215,7 @@ func TestAddSkillsSourcesFilesBesideTheGivenReferences(t *testing.T) {
 		t.Fatalf("skills sources = %+v, want %+v", config.SkillsSources, want)
 	}
 
-	config = apimodel.SandboxCreateConfig{Name: "box"}
+	config = apimodel.SandboxCreateConfig{Name: apiclientgen.NewOptString("box")}
 	config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(
 		apiclientgen.SandboxCreateConfigSourceCodeReferences{key: given}))
 	if err := AddSkillsSources(context.Background(), &config, args.Repositories); err == nil {
@@ -245,8 +245,8 @@ func TestBuildPromptSandboxBodyFilesProjectSkillsFirst(t *testing.T) {
 		{Source: "~/.discobox/skill-sources/shared", Directory: "skills"},
 		{Source: "~/.discobox/skill-sources/tools", Directory: "."},
 	}
-	if !reflect.DeepEqual(body.Config.SkillsSources, want) {
-		t.Fatalf("skills sources = %+v, want %+v", body.Config.SkillsSources, want)
+	if !reflect.DeepEqual(body.Config.Value.SkillsSources, want) {
+		t.Fatalf("skills sources = %+v, want %+v", body.Config.Value.SkillsSources, want)
 	}
 }
 

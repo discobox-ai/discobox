@@ -137,10 +137,10 @@ func TestParseRunUserIdentityIsAlwaysAnAccountTheAPIAccepts(t *testing.T) {
 }
 
 func TestRunUserIdentitySetsSandboxCreateUserFields(t *testing.T) {
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run"}}
+	body := &apimodel.CreateSandboxBody{Config: apiclientgen.NewOptSandboxCreateConfig(apimodel.SandboxCreateConfig{Name: apiclientgen.NewOptString("run")})}
 	runUserIdentity{Name: "darren", UID: 1000, GID: 1001, HomeDirectory: "/home/darren"}.setCreateSandboxUser(body)
 
-	sandboxUser, ok := body.Config.User.Get()
+	sandboxUser, ok := body.Config.Value.User.Get()
 	if !ok {
 		t.Fatal("sandbox user was not set")
 	}
@@ -170,10 +170,10 @@ func TestWindowsRunUserIsAUsableSandboxIdentity(t *testing.T) {
 }
 
 func TestWindowsRunUserSetsSandboxCreateUserFields(t *testing.T) {
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run"}}
+	body := &apimodel.CreateSandboxBody{Config: apiclientgen.NewOptSandboxCreateConfig(apimodel.SandboxCreateConfig{Name: apiclientgen.NewOptString("run")})}
 	windowsRunUser(accountIDs(t, "linux")).setCreateSandboxUser(body)
 
-	sandboxUser, ok := body.Config.User.Get()
+	sandboxUser, ok := body.Config.Value.User.Get()
 	if !ok {
 		t.Fatal("sandbox user was not set")
 	}

@@ -21,11 +21,11 @@ func TestCreateKeepsItsFeatures(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
 	create := func(name string, features serverapi.SandboxCreateConfigFeatures) (*model.Sandbox, error) {
-		config := serverapi.SandboxCreateConfig{Name: name}
+		config := serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name)}
 		config.SetFeatures(serverapi.NewOptSandboxCreateConfigFeatures(features))
 		return svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
-			Config:      config,
+			Config:      serverapi.NewOptSandboxCreateConfig(config),
 		})
 	}
 	created, err := create("featured", serverapi.SandboxCreateConfigFeatures{"brew": {Enabled: false}, "nix": {Enabled: true}})

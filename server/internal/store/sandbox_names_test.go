@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -107,6 +108,35 @@ func TestSandboxNameTaken(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("SandboxNameTaken(%q, %q) = %v, want %v", tc.projectID, tc.sandbox, got, tc.want)
+			}
+		})
+	}
+}
+
+// CreateSandbox names the index's refusal of a taken handle, so a create that
+// drew its handle can draw another (ADR 26-11-19-859); any other refusal is
+// left as the database gave it. Each database words the refusal its own way,
+// so it runs on each (wakeStores).
+func TestCreateSandboxNamesATakenHandle(t *testing.T) {
+	for engine, open := range wakeStores() {
+		t.Run(engine, func(t *testing.T) {
+			st := open(t)
+			ctx := context.Background()
+			provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"}
+			if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.CreatePool(ctx, &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.CreateSandbox(ctx, newNamedSandbox("sbx_first0", "project-1", "twin")); err != nil {
+				t.Fatalf("create first sandbox: %v", err)
+			}
+			if err := st.CreateSandbox(ctx, newNamedSandbox("sbx_second", "project-1", "twin")); !errors.Is(err, store.ErrSandboxNameTaken) {
+				t.Fatalf("create with a taken handle err = %v, want ErrSandboxNameTaken", err)
+			}
+			if err := st.CreateSandbox(ctx, newNamedSandbox("sbx_first0", "project-1", "other")); err == nil || errors.Is(err, store.ErrSandboxNameTaken) {
+				t.Fatalf("create with a taken id err = %v, want the database's own refusal", err)
 			}
 		})
 	}

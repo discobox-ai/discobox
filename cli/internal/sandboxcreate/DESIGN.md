@@ -74,9 +74,11 @@ sandbox create requests.
   macOS. Windows has no POSIX identity to capture and instead sends a fixed
   one: `discobox`, uid/gid the guest's first account id (1000 on Linux, 501 on
   macOS), home left to the sandbox. Translating a SID and a `C:\Users`
-  home yields nothing usable, and sending nothing means the image's own user
-  ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
-  §5) — root on the sandbox base image. A stated identity is not a guess about the
+  home yields nothing usable. Sending nothing gets the server's default account
+  instead, which on Linux is this same `discobox` account
+  ([ADR 26-11-19-859](../../../docs/adr/26-11-19-859-sandbox-create-supplies-an-account-and-a-handle.md)),
+  but a server from before that default gives the image's own user, which is
+  root on the sandbox base image. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
 - Every identity sent carries both ids, because sandbox create refuses an account
   named without its uid and an id its guest does not give an account
@@ -354,7 +356,10 @@ sandbox create requests.
   clock.
 - The sandbox name is generated here (`randomname`), and sandbox names are
   unique within a project, so `CreatePromptSandbox` retries a 409 with a fresh
-  name a bounded number of times. A draw that repeats an attempted name gets a
+  name a bounded number of times. The server draws one itself for a create
+  that names none (ADR 26-11-19-859), but a server from before that refuses
+  such a create, and `run` works against both, so the prompt path keeps its
+  own draw; `admin box create` without `--name` relies on the server's. A draw that repeats an attempted name gets a
   numeric suffix so no rejected name is sent again. Only a generated name is replaced this way: a
   name the user typed is theirs, so `discobox admin box create --name` reports
   the conflict instead of quietly creating something else.

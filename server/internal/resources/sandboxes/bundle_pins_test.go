@@ -69,7 +69,7 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	create := func(name string) (*model.Sandbox, error) {
 		return svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
-			Config:      serverapi.SandboxCreateConfig{Name: name},
+			Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name)}),
 		})
 	}
 	created, err := create("pinned")
@@ -162,7 +162,7 @@ func TestCreateRefusesAHarnessItCannotPin(t *testing.T) {
 			}
 			_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 				HarnessName: serverapi.NewOptString("codex"),
-				Config:      serverapi.SandboxCreateConfig{Name: "refused"},
+				Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("refused")}),
 			})
 			var status interface{ StatusCode() int }
 			if !errors.As(err, &status) || status.StatusCode() != tc.status || !strings.Contains(err.Error(), tc.says) {
@@ -187,8 +187,8 @@ func TestASignedOutHarnessCreatesAndPinsItsBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.SetReleaseBundles(release(platformOld))
-	body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "signed-out"}}
-	body.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
+	body := services.CreateSandboxBody{Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("signed-out")})}
+	body.Config.Value.SetHarnessConfigId(serverapi.NewOptString(config.ID))
 	created, err := svc.CreateSandbox(ctx, "project-1", body)
 	if err != nil {
 		t.Fatalf("create a box on a signed-out harness: %v", err)

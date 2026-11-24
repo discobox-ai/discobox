@@ -25,7 +25,7 @@ func TestBuildPromptSandboxBodyPlacesAnIncludedDirectoryAtItsOwnPath(t *testing.
 	}
 	defer local.Close()
 
-	references, ok := body.Config.SourceCodeReferences.Get()
+	references, ok := body.Config.Value.SourceCodeReferences.Get()
 	if !ok || len(references) != 1 {
 		t.Fatalf("source code references = %v, want the one included source", references)
 	}
@@ -52,7 +52,7 @@ func TestBuildPromptSandboxBodyPlacesAnIncludedDirectoryAtItsOwnPath(t *testing.
 		t.Fatalf("checkout = %v, want the commit resolved at create", checkout)
 	}
 	// The primary source is still the server's to name.
-	primarySource, _ := body.Config.Source.Get()
+	primarySource, _ := body.Config.Value.Source.Get()
 	if slug, ok := primarySource.Slug.Get(); ok {
 		t.Fatalf("primary source claimed the slug %q; the server names it", slug)
 	}
@@ -71,7 +71,7 @@ func TestBuildPromptSandboxBodySeparatesIncludedSourcesWithTheSameName(t *testin
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	slugs := map[string]struct{}{}
 	for _, source := range references {
 		slugs[source.Slug.Or("")] = struct{}{}
@@ -158,7 +158,7 @@ func TestBuildPromptSandboxBodyIncludesTheRepositoryHoldingASubdirectory(t *test
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	source, ok := references[wantSandboxPath(t, reference)]
 	if !ok {
 		t.Fatalf("references are keyed %v, want the repository root %s", references, reference)
@@ -187,7 +187,7 @@ func TestBuildPromptSandboxBodySnapshotsEachIncludedSourceOnItsOwn(t *testing.T)
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	sandboxPath := wantSandboxPath(t, reference)
 	workspace, _ := references[sandboxPath].Workspace.Get()
 	if workspace.Mode.Or("") != "dirty" || workspace.SnapshotRef.Or("") == "" {
@@ -195,7 +195,7 @@ func TestBuildPromptSandboxBodySnapshotsEachIncludedSourceOnItsOwn(t *testing.T)
 	}
 	// The primary source is clean, and its own snapshot is unaffected by the
 	// reference's.
-	primary, _ := body.Config.Source.Get()
+	primary, _ := body.Config.Value.Source.Get()
 	primaryWorkspace, _ := primary.Workspace.Get()
 	if primaryWorkspace.SnapshotRef.Or("") != "" {
 		t.Fatalf("primary workspace = %v, want a clean checkout", primaryWorkspace)
@@ -227,7 +227,7 @@ func TestBuildPromptSandboxBodyIncludesADirectoryWithNoRepository(t *testing.T) 
 		t.Fatalf("build prompt sandbox body: %v", err)
 	}
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	source := references[wantSandboxPath(t, reference)]
 	if !source.NoLocalRepository.Or(false) || source.LocalDirectory.Or("") != reference {
 		t.Fatalf("source = %v, want %s recorded as a directory with no repository", source, reference)
@@ -282,7 +282,7 @@ func TestBuildPromptSandboxBodyPlacesARemotePrimaryByItsName(t *testing.T) {
 	}
 	defer local.Close()
 
-	source, _ := body.Config.Source.Get()
+	source, _ := body.Config.Value.Source.Get()
 	destination, _ := source.Destination.Get()
 	if destination.Directory.Or("") != "/workspace/app" || destination.WorkingDirectory.Or("") != "/workspace/app" {
 		t.Fatalf("destination = %v, want the repository's name under the working root", destination)
@@ -311,11 +311,11 @@ func TestBuildPromptSandboxBodyMovesARemotePrimaryOffAnIncludedSourcesName(t *te
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	if _, ok := references["/workspace/app"]; !ok || len(references) != 1 {
 		t.Fatalf("references = %v, want the included source at /workspace/app", references)
 	}
-	source, _ := body.Config.Source.Get()
+	source, _ := body.Config.Value.Source.Get()
 	destination, _ := source.Destination.Get()
 	if destination.Directory.Or("") != "/workspace/source" || destination.WorkingDirectory.Or("") != "/workspace/source/sub" {
 		t.Fatalf("destination = %v, want the primary moved to /workspace/source, starting in sub", destination)
@@ -354,11 +354,11 @@ func TestBuildPromptSandboxBodyIncludesTheRemotePrimarysOwnRepository(t *testing
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	if _, ok := references["/workspace/app"]; !ok || len(references) != 1 {
 		t.Fatalf("references = %v, want the included checkout at /workspace/app", references)
 	}
-	source, _ := body.Config.Source.Get()
+	source, _ := body.Config.Value.Source.Get()
 	if destination, _ := source.Destination.Get(); destination.Directory.Or("") != "/workspace/source" {
 		t.Fatalf("destination = %v, want the primary moved to /workspace/source", destination)
 	}

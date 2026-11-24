@@ -30,7 +30,7 @@ func (f *fakeCreator) GetSecret(_ context.Context, params apiclientgen.GetSecret
 }
 
 func (f *fakeCreator) CreateSandbox(_ context.Context, body *apimodel.CreateSandboxBody, _ apiclientgen.CreateSandboxParams) (apiclientgen.CreateSandboxRes, error) {
-	f.names = append(f.names, body.Config.Name)
+	f.names = append(f.names, body.Config.Value.Name.Value)
 	if f.conflicts > 0 {
 		f.conflicts--
 		status := f.status
@@ -115,10 +115,10 @@ func TestNoSourceCreatesWithNothingToMaterialize(t *testing.T) {
 	}
 	defer local.Close()
 
-	if _, ok := body.Config.Source.Get(); ok {
+	if _, ok := body.Config.Value.Source.Get(); ok {
 		t.Fatal("a sandbox with no source must send none")
 	}
-	if _, ok := body.Config.SourceCodeReferences.Get(); ok {
+	if _, ok := body.Config.Value.SourceCodeReferences.Get(); ok {
 		t.Fatal("nothing was included, so there is nothing to reference")
 	}
 	// The origin names the client and nothing about a directory (ADR 0111): a
@@ -141,7 +141,7 @@ func TestAWindowsSandboxIsSentNoUser(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	local.Close()
-	if user, ok := body.Config.User.Get(); ok {
+	if user, ok := body.Config.Value.User.Get(); ok {
 		t.Fatalf("user = %+v, want none", user)
 	}
 }
@@ -166,7 +166,7 @@ func TestAMacOSSandboxIsSentThisMachinesAccount(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	local.Close()
-	sent, ok := body.Config.User.Get()
+	sent, ok := body.Config.Value.User.Get()
 	if !ok || !sent.UID.Set || !sent.Gid.Set {
 		t.Fatalf("user = %+v, want this machine's account with both ids", sent)
 	}
@@ -196,10 +196,10 @@ func TestNoSourceStillTakesIncludes(t *testing.T) {
 	}
 	defer local.Close()
 
-	if _, ok := body.Config.Source.Get(); ok {
+	if _, ok := body.Config.Value.Source.Get(); ok {
 		t.Fatal("a sandbox with no source must send none")
 	}
-	references, ok := body.Config.SourceCodeReferences.Get()
+	references, ok := body.Config.Value.SourceCodeReferences.Get()
 	if !ok || len(references) != 1 {
 		t.Fatalf("references = %+v, want the one -i named", references)
 	}
@@ -226,7 +226,7 @@ func TestDeclinedDirectoryCopyCreatesWithNoSource(t *testing.T) {
 	}
 	defer local.Close()
 
-	if _, ok := body.Config.Source.Get(); ok {
+	if _, ok := body.Config.Value.Source.Get(); ok {
 		t.Fatal("the directory was declined, so there is no source to send")
 	}
 	if len(local.sources) != 0 {
@@ -258,10 +258,10 @@ func TestDeclinedIncludeIsLeftOut(t *testing.T) {
 	}
 	defer local.Close()
 
-	if _, ok := body.Config.Source.Get(); !ok {
+	if _, ok := body.Config.Value.Source.Get(); !ok {
 		t.Fatal("the primary source is a repository and must still be sent")
 	}
-	if references, ok := body.Config.SourceCodeReferences.Get(); ok {
+	if references, ok := body.Config.Value.SourceCodeReferences.Get(); ok {
 		t.Fatalf("references = %+v, want the declined include left out", references)
 	}
 }

@@ -45,18 +45,18 @@ func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
 	}
-	if body.HarnessName.Value != "Codex" || body.Config.Model.Value != "gpt-5.1-codex-max" ||
-		len(body.Config.Prompt) != 1 || body.Config.Prompt[0] != "implement this" {
+	if body.HarnessName.Value != "Codex" || body.Config.Value.Model.Value != "gpt-5.1-codex-max" ||
+		len(body.Config.Value.Prompt) != 1 || body.Config.Value.Prompt[0] != "implement this" {
 		t.Fatalf("harness fields = %#v", body)
 	}
-	env, ok := body.Config.Env.Get()
+	env, ok := body.Config.Value.Env.Get()
 	if !ok {
 		t.Fatal("expected env")
 	}
 	if env["EXPLICIT"] != "value" || env["SANDBOX_ENV_FROM_SHELL"] != "from-shell" {
 		t.Fatalf("env = %#v, want explicit and shell values", env)
 	}
-	source, ok := body.Config.Source.Get()
+	source, ok := body.Config.Value.Source.Get()
 	if !ok {
 		t.Fatal("expected source")
 	}
@@ -70,14 +70,14 @@ func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 	if destination.Directory.Value != "/workspace/repo" || destination.WorkingDirectory.Value != "/workspace/repo" {
 		t.Fatalf("directories = source %q working %q", destination.Directory.Value, destination.WorkingDirectory.Value)
 	}
-	sandboxUser, ok := body.Config.User.Get()
+	sandboxUser, ok := body.Config.Value.User.Get()
 	if !ok {
 		t.Fatal("expected user")
 	}
 	if sandboxUser.Name.Value != "darren" || sandboxUser.UID.Value != 1000 || sandboxUser.Gid.Value != 1000 || sandboxUser.HomeDirectory.Value != "/home/darren" {
 		t.Fatalf("user = %s %d/%d home %s, want darren 1000/1000 /home/darren", sandboxUser.Name.Value, sandboxUser.UID.Value, sandboxUser.Gid.Value, sandboxUser.HomeDirectory.Value)
 	}
-	ref, ok := body.Config.SourceCodeReferences.Value["lib"]
+	ref, ok := body.Config.Value.SourceCodeReferences.Value["lib"]
 	if !ok {
 		t.Fatal("expected lib source reference")
 	}

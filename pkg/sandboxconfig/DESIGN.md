@@ -63,7 +63,8 @@ control plane's resolved harness config.
   `GitIdentity.Configured` is the one "was any given" test.
   `User` (an alias of `sandboxuser.User`) records the
   request verbatim — every field optional, names unresolved, a wholly empty
-  `User` meaning the image's own account — because only the sandbox can resolve
+  `User` meaning the image's own account (which sandbox create never records
+  on Linux: it records its default account there, ADR 26-11-19-859) — because only the sandbox can resolve
   it ([ADR 0025](../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)). Its `Image` is the
   resolved image identity the pool host launched, not the mutable reference it
   was asked for; `Effective` drops it, so it survives only in `_provenance` as

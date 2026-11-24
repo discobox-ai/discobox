@@ -1582,8 +1582,8 @@ type CreateSandboxBody struct {
 	DiscoboxApi OptBool `json:"discoboxApi"`
 	// Harness config to resolve at create time, by slug, name or ID.
 	HarnessName OptString `json:"harnessName"`
-	// Desired sandbox configuration.
-	Config SandboxCreateConfig `json:"config"`
+	// Desired sandbox configuration. Omitted, it is an empty one.
+	Config OptSandboxCreateConfig `json:"config"`
 	// Client host and project directory this sandbox is created from.
 	Origin OptOrigin `json:"origin"`
 	// Pool to schedule the sandbox into. Defaults to the project's default pool.
@@ -1610,7 +1610,7 @@ func (s *CreateSandboxBody) GetHarnessName() OptString {
 }
 
 // GetConfig returns the value of Config.
-func (s *CreateSandboxBody) GetConfig() SandboxCreateConfig {
+func (s *CreateSandboxBody) GetConfig() OptSandboxCreateConfig {
 	return s.Config
 }
 
@@ -1645,7 +1645,7 @@ func (s *CreateSandboxBody) SetHarnessName(val OptString) {
 }
 
 // SetConfig sets the value of Config.
-func (s *CreateSandboxBody) SetConfig(val SandboxCreateConfig) {
+func (s *CreateSandboxBody) SetConfig(val OptSandboxCreateConfig) {
 	s.Config = val
 }
 
@@ -14104,6 +14104,52 @@ func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeRefere
 	return d
 }
 
+// NewOptSandboxCreateConfig returns new OptSandboxCreateConfig with value set to v.
+func NewOptSandboxCreateConfig(v SandboxCreateConfig) OptSandboxCreateConfig {
+	return OptSandboxCreateConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfig is optional SandboxCreateConfig.
+type OptSandboxCreateConfig struct {
+	Value SandboxCreateConfig
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfig was set.
+func (o OptSandboxCreateConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfig) Reset() {
+	var v SandboxCreateConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfig) SetTo(v SandboxCreateConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfig) Get() (v SandboxCreateConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfig) Or(d SandboxCreateConfig) SandboxCreateConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxCreateConfigEnv returns new OptSandboxCreateConfigEnv with value set to v.
 func NewOptSandboxCreateConfigEnv(v SandboxCreateConfigEnv) OptSandboxCreateConfigEnv {
 	return OptSandboxCreateConfigEnv{
@@ -24882,8 +24928,10 @@ type SandboxCreateConfig struct {
 	// not be unique, and is not name, the handle. Empty or absent gives no name.
 	MetaName OptString `json:"metaName"`
 	// The sandbox's handle, unique in the project, which commands and ssh resolve it by. It is not the
-	// name a listing shows, which is the meta name (metaName).
-	Name string `json:"name"`
+	// name a listing shows, which is the meta name (metaName). Omitted, the server draws one that no
+	// other sandbox in the project holds; given, it is kept as given, and one already taken in the
+	// project is refused with 409. A blank one is refused with 400.
+	Name OptString `json:"name"`
 	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
 	Prompt []string `json:"prompt"`
 	// Secrets to inject into the sandbox as sentinel placeholders that the proxy resolves to real values
@@ -24963,7 +25011,7 @@ func (s *SandboxCreateConfig) GetMetaName() OptString {
 }
 
 // GetName returns the value of Name.
-func (s *SandboxCreateConfig) GetName() string {
+func (s *SandboxCreateConfig) GetName() OptString {
 	return s.Name
 }
 
@@ -25058,7 +25106,7 @@ func (s *SandboxCreateConfig) SetMetaName(val OptString) {
 }
 
 // SetName sets the value of Name.
-func (s *SandboxCreateConfig) SetName(val string) {
+func (s *SandboxCreateConfig) SetName(val OptString) {
 	s.Name = val
 }
 
@@ -30415,11 +30463,16 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 	}
 }
 
-// Run identity and group membership. Every field is optional; omitting the
-// whole object means the image's own user. On sandbox create
-// this defines the sandbox.json default user, and on exec create it
+// Run identity and group membership. Every field is optional. On sandbox
+// create this defines the sandbox.json default user, and on exec create it
 // overrides that user for one exec — the same fields mean the same thing at
-// both layers.
+// both layers. Omitted on exec create, the exec runs as the sandbox's user.
+// Omitted on sandbox create, or sent with no fields, the sandbox gets an
+// ordinary account rather than the image's own user: on Linux, `discobox`
+// with uid and gid 1000 and home /home/discobox; on macOS and Windows, the
+// template's own account. A sandbox runs as root only when asked to, with
+// uid 0. A create that needs this default on a pool that has not yet said
+// which operating system its sandboxes run is refused with 503, to retry.
 // Sandbox create is stricter, because it names the account the sandbox
 // creates: a user that gives name or homeDirectory must give uid, and each
 // id must be one the sandbox's guest gives an ordinary account. On Linux,

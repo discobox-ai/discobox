@@ -182,7 +182,7 @@ func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceR
 func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	config := input.Config
+	config := input.Config.Value
 
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
@@ -199,12 +199,14 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 		source = &converted
 	}
 	user := services.SandboxUserToModel(config.User)
+	sandboxID := id.NewString(id.PrefixProject)
 	sandbox := model.Sandbox{
-		ID:                id.NewString(id.PrefixProject),
-		ProjectID:         s.project.ID,
-		CreatedByUserID:   s.user.ID,
-		PoolID:            input.PoolId.Or(""),
-		Name:              config.Name,
+		ID:              sandboxID,
+		ProjectID:       s.project.ID,
+		CreatedByUserID: s.user.ID,
+		PoolID:          input.PoolId.Or(""),
+		// The real service draws a name for a create that gives none.
+		Name:              config.Name.Or(sandboxID),
 		Description:       services.OptStringPtr(config.Description),
 		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending, Generation: 1},
 		CreatedAt:         now,

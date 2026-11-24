@@ -8655,11 +8655,16 @@ func (s *SandboxToolsResponse) SetTools(val []SandboxTool) {
 	s.Tools = val
 }
 
-// Run identity and group membership. Every field is optional; omitting the
-// whole object means the image's own user. On sandbox create
-// this defines the sandbox.json default user, and on exec create it
+// Run identity and group membership. Every field is optional. On sandbox
+// create this defines the sandbox.json default user, and on exec create it
 // overrides that user for one exec — the same fields mean the same thing at
-// both layers.
+// both layers. Omitted on exec create, the exec runs as the sandbox's user.
+// Omitted on sandbox create, or sent with no fields, the sandbox gets an
+// ordinary account rather than the image's own user: on Linux, `discobox`
+// with uid and gid 1000 and home /home/discobox; on macOS and Windows, the
+// template's own account. A sandbox runs as root only when asked to, with
+// uid 0. A create that needs this default on a pool that has not yet said
+// which operating system its sandboxes run is refused with 503, to retry.
 // Sandbox create is stricter, because it names the account the sandbox
 // creates: a user that gives name or homeDirectory must give uid, and each
 // id must be one the sandbox's guest gives an ordinary account. On Linux,

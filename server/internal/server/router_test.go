@@ -1068,3 +1068,26 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 		t.Fatal("expected default project flag")
 	}
 }
+
+func TestNewRouterCreateSandboxAllowsAnOmittedHandle(t *testing.T) {
+	router := newStubRouterForTest()
+	harness := httptest.NewRecorder()
+	router.ServeHTTP(harness, jsonRequest(http.MethodPost, "/projects/"+testDefaultProjectID+"/harness-configs",
+		`{"name":"shell","bundle":"discobox-harness-shell:local"}`))
+	if harness.Code != http.StatusOK {
+		t.Fatalf("POST /harness-configs status = %d, body = %s", harness.Code, harness.Body.String())
+	}
+	for _, body := range []string{
+		`{}`,
+		`{"harnessName":"shell"}`,
+		`{"harnessName":"shell","config":{}}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, jsonRequest(http.MethodPost, "/projects/"+testDefaultProjectID+"/sandboxes", body))
+			if resp.Code != http.StatusAccepted {
+				t.Fatalf("POST /sandboxes status = %d, want 202, body = %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}

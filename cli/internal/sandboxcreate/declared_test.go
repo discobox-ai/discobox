@@ -31,7 +31,7 @@ func TestBuildPromptSandboxBodyPrefersACheckoutOfADeclaredSource(t *testing.T) {
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	source, ok := references[wantSandboxPath(t, reference)]
 	if !ok {
 		t.Fatalf("references are keyed %v, want the local checkout %s", references, reference)
@@ -76,7 +76,7 @@ func TestBuildPromptSandboxBodyClonesADeclaredSourceToTheSamePath(t *testing.T) 
 	defer local.Close()
 
 	want := filepath.Join(workspace, "foo")
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	source, ok := references[wantSandboxPath(t, want)]
 	if !ok {
 		t.Fatalf("references are keyed %v, want the sibling path %s a checkout would have used", references, want)
@@ -159,7 +159,7 @@ func TestBuildPromptSandboxBodyLetsIncludeOverrideADeclaredSource(t *testing.T) 
 	}
 	defer local.Close()
 
-	references, _ := body.Config.SourceCodeReferences.Get()
+	references, _ := body.Config.Value.SourceCodeReferences.Get()
 	if len(references) != 1 {
 		t.Fatalf("references = %v, want the one source, not it and its declaration", references)
 	}
@@ -186,7 +186,7 @@ func TestBuildPromptSandboxBodySkipsDeclaredSourcesWhenAsked(t *testing.T) {
 	}
 	defer local.Close()
 
-	if references, ok := body.Config.SourceCodeReferences.Get(); ok && len(references) > 0 {
+	if references, ok := body.Config.Value.SourceCodeReferences.Get(); ok && len(references) > 0 {
 		t.Fatalf("references = %v, want none once declared sources are skipped", references)
 	}
 }
@@ -662,10 +662,10 @@ func TestARemotePrimaryDeclaringItselfKeepsItsName(t *testing.T) {
 	}
 	defer local.Close()
 
-	if references, ok := body.Config.SourceCodeReferences.Get(); ok && len(references) > 0 {
+	if references, ok := body.Config.Value.SourceCodeReferences.Get(); ok && len(references) > 0 {
 		t.Fatalf("references = %v, want the self-declaration skipped as the primary itself", references)
 	}
-	source, _ := body.Config.Source.Get()
+	source, _ := body.Config.Value.Source.Get()
 	destination, _ := source.Destination.Get()
 	if destination.Directory.Or("") != "/workspace/app" {
 		t.Fatalf("destination = %v, want the primary kept at /workspace/app", destination)
