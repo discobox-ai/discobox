@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -474,5 +476,54 @@ func TestComposeBundleMetadataRefusesAPlatformKindAccountOrShell(t *testing.T) {
 	}
 	if !inspected.ImageKind.IsZero() || !inspected.Platform.IsZero() {
 		t.Errorf("a bundle's kind = %v platform = %v, want neither: both are its pool's", inspected.ImageKind, inspected.Platform)
+	}
+}
+
+// Container-runtime state stays on the box's root filesystem, never on a
+// declared volume, in the base layer or in a harness manifest (ADR
+// 26-11-23-993 §1). A machine's data root can be a FUSE disk (an archil
+// machine's is fuse.archil), and the kernel refuses an overlayfs upperdir
+// there, so every nested `docker run` fails to mount its rootfs.
+func TestBaseLayerKeepsContainerRuntimeStateOffDeclaredVolumes(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..", "..")
+	manifests, err := filepath.Glob(filepath.Join(repoRoot, "harness", "*", "image.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range append([]string{filepath.Join(repoRoot, "sandbox-agent", "image.json")}, manifests...) {
+		var metadata harness.ImageMetadata
+		if err := json.Unmarshal([]byte(compactFile(t, file)), &metadata); err != nil {
+			t.Fatal(err)
+		}
+		for _, volume := range metadata.Volumes {
+			if slices.Contains(harness.ContainerRuntimeStatePaths, path.Clean(volume.Path)) {
+				t.Errorf("%s declares %s as a %s volume; container-runtime state must stay on the root filesystem", file, volume.Path, volume.Volume)
+			}
+		}
+	}
+}
+
+// The sandbox base image's VOLUME line is the other copy of the runtime-state
+// list (ADR 26-11-23-993 §2), and a Dockerfile cannot import it: a path added
+// to one and not the other is a runtime whose state either lands on a
+// container's overlay root or travels as a declared volume would.
+func TestSandboxBaseImageDeclaresEveryContainerRuntimeStatePathAsAVolume(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..", "..")
+	data, err := os.ReadFile(filepath.Join(repoRoot, "server", "providers", "dockerworker", "sandbox-image", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var volumes [][]string
+	for _, line := range strings.Split(string(data), "\n") {
+		if rest, ok := strings.CutPrefix(line, "VOLUME "); ok {
+			var paths []string
+			if err := json.Unmarshal([]byte(rest), &paths); err != nil {
+				t.Fatalf("VOLUME %s is not the JSON form: %v", rest, err)
+			}
+			volumes = append(volumes, paths)
+		}
+	}
+	if len(volumes) != 1 || !slices.Equal(volumes[0], harness.ContainerRuntimeStatePaths) {
+		t.Fatalf("VOLUME lines = %v, want one naming %v", volumes, harness.ContainerRuntimeStatePaths)
 	}
 }

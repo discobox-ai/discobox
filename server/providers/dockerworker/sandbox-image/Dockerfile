@@ -259,12 +259,11 @@ RUN set -eux \
 # maintenance (apt, dpkg, fstrim, e2scrub) is masked so neither a pool nor a
 # sandbox ever wakes up and mutates packages or filesystems behind the user.
 #
-# udev is masked, and nested Docker does not depend on it. A sandbox with the
-# data volumes wired (image.json declares /var/lib/docker and
-# /var/lib/containerd on `data`, without which nested Docker fails on
-# overlay-on-overlay for reasons unrelated to udev) runs `docker run`, `docker
-# build`, and HTTPS from inside a nested container with udev fully masked,
-# reaching is-system-running=running with zero failed units.
+# udev is masked, and nested Docker does not depend on it. A sandbox with its
+# runtime state off the overlay root (the VOLUMEs below, without which nested
+# Docker fails on overlay-on-overlay for reasons unrelated to udev) runs
+# `docker run`, `docker build`, and HTTPS from inside a nested container with
+# udev fully masked, reaching is-system-running=running with zero failed units.
 #
 # What udev would cost: systemd-udev-trigger replays a uevent for every device
 # already in /sys, which in a container is the host's hardware — 786 of them
@@ -356,5 +355,20 @@ RUN systemctl mask \
 # at first boot, and no SSH host keys for a second box to share.
 RUN : > /etc/machine-id \
     && rm -f /var/lib/dbus/machine-id /etc/ssh/ssh_host_*
+
+# Each container runtime's state directory (ADR 26-11-23-993 §2). Docker and
+# containerd refuse a data root on overlayfs, which a container's own root is,
+# so in a container each is an anonymous volume of the hosting daemon, on its
+# filesystem, and goes with the container: every path that removes one passes
+# RemoveVolumes. On a machine, which boots this image as its root filesystem,
+# VOLUME means nothing and they sit on the machine's root disk, as an archil
+# machine needs: its data root is FUSE, which no overlay upperdir takes. None
+# is a declared volume. Last, since a later RUN's change under a VOLUME is
+# discarded. The list is harness.ContainerRuntimeStatePaths, which a test holds
+# this line to.
+RUN install -d -m 0711 /var/lib/docker /var/lib/containerd \
+    && install -d -m 0700 /var/lib/etcd \
+    && install -d -m 0755 /var/lib/kubelet /var/lib/rancher
+VOLUME ["/var/lib/docker", "/var/lib/containerd", "/var/lib/kubelet", "/var/lib/etcd", "/var/lib/rancher"]
 
 STOPSIGNAL SIGRTMIN+3

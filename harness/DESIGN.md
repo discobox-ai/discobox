@@ -361,10 +361,13 @@ coding harnesses; shell carries no capture implementation.
     pinned to one while the pool moves on; `~/.npm-global` is deliberately
     *not* cached, because npm's global tree is unversioned and is ahead of
     `/usr/local/bin`'s shims on PATH.
-  - `/var/lib/docker` and `/var/lib/containerd` on `data`, `excludeFromExport`:
-    the nested daemon's images, containers and volumes are rebuildable, and
-    its snapshot store cannot be carried faithfully by a plain tar.
-    `/var/lib/discobox` travels — it is the sandbox agent's own state.
+  - No container runtime's state (`/var/lib/docker`, `/var/lib/containerd`,
+    and Kubernetes'): it stays on the box's root, a container's anonymous
+    volume or a machine's root disk, never a declared volume, since a
+    machine's data root can be FUSE, which no overlay upper directory takes
+    ([ADR 26-11-23-993](../docs/adr/26-11-23-993-container-runtime-state-is-on-the-boxs-root-never-on-a-declared-volume.md)).
+    It is not exported. `/var/lib/discobox` travels — it is the sandbox
+    agent's own state.
   - `features`: `desktop` and `docker`, because the base image's filesystem
     ships both, and a manifest that leaves a feature out has not got it.
   - The rest of the persistent and cached paths, the `brew`, `docker`, and

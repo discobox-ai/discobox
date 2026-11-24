@@ -618,10 +618,9 @@ user waits on every single start.
   file synced, renamed, directory synced): boot refuses a record it cannot
   read rather than guess, so an empty one left by a crash fails every boot.
 - **A machine's path is bound, never overlaid, and what it held is moved in
-  first** (`moveIn`, ADR 26-11-02-023 §2). A boxd machine's `/var/lib/docker`
-  and `/var/lib/containerd` always hold content by its first mount, and
-  Docker's `overlay2` and containerd's snapshotter refuse a data root on
-  overlayfs; a bind over content not moved hides it. Move an entry at a time
+  first** (`moveIn`, ADR 26-11-02-023 §2). A machine's declared path (the home,
+  `/var/lib/discobox`) can hold content by its first mount, and a bind over
+  content not moved hides it. Move an entry at a time
   and record the layout only after the last, so a boot cut short resumes; a
   copy across filesystems goes through names of its own (`finishCopy`),
   never `mv`, whose cut-short copy is a partial entry every later boot
@@ -637,6 +636,19 @@ user waits on every single start.
   first (`sortVolumesByDepth`), so a cache path in the home moves out of the
   home's volume at its own turn; a path that is its volume directory
   already, reached through a parent's bind, moves nothing.
+- **No container runtime's state directory is a declared volume**
+  (`/var/lib/docker`, `/var/lib/containerd`, `/var/lib/kubelet`,
+  `/var/lib/etcd`, `/var/lib/rancher`; ADR 26-11-23-993 §1). A machine's data
+  root can be FUSE (an archil machine's is), where the kernel refuses an
+  overlayfs upper directory, so every nested `docker run` fails. They stay on
+  the box's root: a machine's root disk, or a container's anonymous volume
+  from the sandbox base image's `VOLUME`. One list names them,
+  `harness.ContainerRuntimeStatePaths`. A box made before keeps an orphaned
+  tree and layout record for them under the data root; boot reads a record
+  only for a declared volume, so leave that alone rather than reclaiming it.
+  An export still leaves it out (`runtimeStateExportExclusions`): undeclared,
+  nothing else excludes it, and an export that judges only what is declared
+  now carries every tree an older declaration left behind.
 - **An older agent's unrecorded paths are adopted once, before anything
   moves; and only a boot moves.** An agent from before ADR 26-11-02-023
   bound a data volume's cache paths and sources every boot without

@@ -1077,13 +1077,13 @@ unit, its `sysinit.target.requires` link, the drop-in and a bootstrap, and
 docker run -d --name mwire --privileged --cgroupns=private --tmpfs /run \
   --tmpfs /run/lock discobox-sandbox-base:dev-<tag> /sbin/init
 # boxd's state, and an account a pre-ADR machine already has
-docker exec mwire sh -c 'mkdir -p /var/lib/docker/overlay2 && echo boxd > /var/lib/docker/engine-id && useradd -m -u 1000 dev'
+docker exec mwire sh -c 'mkdir -p /var/lib/discobox/state && echo boxd > /var/lib/discobox/engine-id && useradd -m -u 1000 dev'
 # docker cp: the agent (CGO_ENABLED=0 go build ./cmd/discobox-sandbox-agent) to
 # /opt/discobox/current/features/core/, the unit, the drop-in to
 # /etc/systemd/system/discobox-wire.service.d/, and /etc/discobox/sandbox.json
 # with `user` (name, uid, gid; never gid and groupName both) and top-level `volumes`
 docker restart mwire
-docker exec mwire sh -c 'systemctl show discobox-wire -p Result; findmnt --mountpoint /var/lib/docker; cat /.discobox/data/.layouts/*'
+docker exec mwire sh -c 'systemctl show discobox-wire -p Result; findmnt --mountpoint /var/lib/discobox; cat /.discobox/data/.layouts/*'
 ```
 
 - A failure powers it off: the container exits with nothing in `docker logs`

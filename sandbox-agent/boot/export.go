@@ -96,6 +96,9 @@ func exportExclusions() (func(string) bool, error) {
 		return nil, fmt.Errorf("resolve volumes: %w", err)
 	}
 	excluded := exportExcludedNames(volumes, id.uid)
+	for name := range runtimeStateExportExclusions(volumes, id.uid) {
+		excluded[name] = struct{}{}
+	}
 	for name := range captureExportExclusions(volumes, id.uid, config.CaptureRecoveryDir(effective.AgentRuntime.DatabasePath)) {
 		excluded[name] = struct{}{}
 	}
@@ -149,6 +152,30 @@ func exportExcludedNames(volumes []harness.ResolvedVolume, uid int) map[string]s
 		}
 	}
 	return excluded
+}
+
+// runtimeStateExportExclusions maps each container runtime's state path that
+// no volume declares to the archive names of its tree under the data root and
+// its layout record. A box from before ADR 26-11-23-993 keeps both there,
+// orphaned (§5): no longer declared, they are no longer excluded as a declared
+// volume's, and the nested daemon's store would otherwise travel -- without
+// its whiteouts, which the tree format drops. A path still declared is the
+// declaration's to say.
+func runtimeStateExportExclusions(volumes []harness.ResolvedVolume, uid int) map[string]struct{} {
+	declared := map[string]bool{}
+	for _, v := range volumes {
+		declared[path.Clean(v.Path)] = true
+	}
+	out := map[string]struct{}{}
+	for _, p := range harness.ContainerRuntimeStatePaths {
+		if declared[p] {
+			continue
+		}
+		v := harness.ResolvedVolume{Path: p, Kind: harness.VolumeData, Scope: harness.VolumeScopeUser}
+		out[path.Join(sandboxtree.Data, strings.TrimPrefix(volumeDir(v, uid), dataMountPath))] = struct{}{}
+		out[path.Join(sandboxtree.Data, strings.TrimPrefix(layoutRecordPath(v), dataMountPath))] = struct{}{}
+	}
+	return out
 }
 
 // A previous image's manifest may have only /var/lib/discobox. Explicitly

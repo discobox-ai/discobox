@@ -66,6 +66,34 @@ func TestExportExcludedNamesIncludeANestedVolumesLayoutRecord(t *testing.T) {
 	}
 }
 
+// A box made before container-runtime state left the declared volumes keeps
+// its old Docker and containerd trees, and their layout records, under the
+// data root (ADR 26-11-23-993 §5). Undeclared now, they still stay behind; a
+// path still declared is left to its declaration.
+func TestRuntimeStateExportExclusionsCoverAnOldBoxsOrphanedTrees(t *testing.T) {
+	got := runtimeStateExportExclusions([]harness.ResolvedVolume{
+		{Path: "/home/ada", Kind: harness.VolumeData},
+		{Path: "/var/lib/rancher", Kind: harness.VolumeData},
+	}, 1500)
+	for _, name := range []string{
+		"data/var/lib/docker",
+		"data/.layouts/%2Fvar%2Flib%2Fdocker",
+		"data/var/lib/containerd",
+		"data/.layouts/%2Fvar%2Flib%2Fcontainerd",
+		"data/var/lib/kubelet",
+		"data/var/lib/etcd",
+	} {
+		if _, ok := got[name]; !ok {
+			t.Errorf("%s is exported; excluded = %v", name, got)
+		}
+	}
+	for _, name := range []string{"data/var/lib/rancher", "data/home/ada"} {
+		if _, ok := got[name]; ok {
+			t.Errorf("%s is excluded, though a volume declares it", name)
+		}
+	}
+}
+
 // A declaration of "/" would name the data root and export no home at all.
 func TestExportExcludedNamesNeverTheDataRoot(t *testing.T) {
 	got := exportExcludedNames([]harness.ResolvedVolume{

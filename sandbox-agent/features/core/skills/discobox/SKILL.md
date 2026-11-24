@@ -420,13 +420,14 @@ echo 'check CI' > ~/.discobox/wake/.ci && touch -d '+45 min' ~/.discobox/wake/.c
 
 | Path | Lifetime |
 | --- | --- |
-| home, the source trees, `/var/lib/docker`, `/var/lib/containerd`, `/var/lib/discobox` | this box's own; survives stop/start, dies with the box |
+| home, the source trees, `/var/lib/discobox` | this box's own; survives stop/start, dies with the box |
+| `/var/lib/docker`, `/var/lib/containerd`, `/var/lib/kubelet`, `/var/lib/etcd`, `/var/lib/rancher` (container runtimes' state) | this box's own, on its root, not `/.discobox/data`; survives stop/start and sleep, but not anything that gives the box a new container or machine: a rebuild, a spec or image change, an archive and restore, an export, a move to another pool. Bind a Docker volume you care about from your home |
 | `~/.cache`, `~/go/pkg/mod`, `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup`, `~/.vscode-server`, `~/.local/share/pnpm` | pool cache, partitioned by the uid you run as: shared with pool boxes running the same uid, invisible to the rest |
 | `/nix` (the store) | pool cache, shared with every box in the pool whoever it runs as — the one path that declares that |
 | `/nix/var/nix/profiles`, `/nix/var/nix/gcroots`, `/nix/var/nix/daemon-socket` | carved back out of the shared store; this box's own — your profile and roots, and the socket of this box's own `nix-daemon` |
 | `/home/linuxbrew/.linuxbrew` (what `brew install` puts there) | this box's own; the image's own tree shows through underneath it |
 
-Each path is backed by `/.discobox/data` (this box's own) or `/.discobox/cache`
+Each path above but the container runtimes' is backed by `/.discobox/data` (this box's own) or `/.discobox/cache`
 (the cache rows), container or machine alike. In a machine pool (one VM per
 box) nothing is shared: the cache rows are this box's own too, on its own
 disk or cache volume, and the pool's clear-cache empties them in place.
