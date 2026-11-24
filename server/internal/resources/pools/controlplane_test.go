@@ -105,3 +105,55 @@ func removePoolOnFirstReadAfterIntent(ctx context.Context, t *testing.T, db *dat
 	}
 	return func() bool { return armed.CompareAndSwap(true, false) }
 }
+
+// The pool lists providers judge orphans by are read from the primary: a
+// replica that has not yet seen a new pool's row would have the drift watcher
+// remove that pool's fresh container (#1473), or pool-sync tell the agent to
+// reap it.
+func TestControlPlanePoolListsReadThePrimary(t *testing.T) {
+	ctx := context.Background()
+	open := func() *database.DB {
+		db, err := database.New(database.Config{DSN: ":memory:"})
+		if err != nil {
+			t.Fatalf("open db: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatalf("migrate db: %v", err)
+		}
+		return db
+	}
+	// The replica is a separate, empty database: one lagging every write.
+	primary, replica := open(), open()
+	appStore := store.New(primary.Write, replica.Read)
+	if err := appStore.UpsertProject(ctx, &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "project-1"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "test", Name: "Test"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID}}
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if stale, err := appStore.ListPoolsForProviderInstance(ctx, "project-1", provider.ID); err != nil || len(stale) != 0 {
+		t.Fatalf("replica read = %d pools, %v; want the replica to lag with none", len(stale), err)
+	}
+
+	controlPlane := NewControlPlane(appStore, nil)
+	byProvider, err := controlPlane.ListPoolsForProviderInstance(ctx, "project-1", provider.ID)
+	if err != nil {
+		t.Fatalf("list provider pools: %v", err)
+	}
+	if len(byProvider) != 1 || byProvider[0].ID != pool.ID {
+		t.Fatalf("provider pools = %+v, want only %s from the primary", byProvider, pool.ID)
+	}
+	inProject, err := controlPlane.ListPools(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("list project pools: %v", err)
+	}
+	if len(inProject) != 1 || inProject[0].ID != pool.ID {
+		t.Fatalf("project pools = %+v, want only %s from the primary", inProject, pool.ID)
+	}
+}

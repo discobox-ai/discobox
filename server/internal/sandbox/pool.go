@@ -21,11 +21,14 @@ type PoolManager interface {
 	// original persisted deadline. Unlike display telemetry, failure stops dispatch.
 	ReportPoolBootstrap(context.Context, string, string, int64, model.BootstrapEvidence) (*model.PoolBootstrap, error)
 	GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
+	// ListPoolsForProviderInstance reads the authoritative database, never a
+	// replica: a pool missing from it is taken for an orphan.
 	ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error)
 	// ListPools returns every pool in the project, across provider instances.
 	// pool-sync needs this wider set: a pool agent reaps by scanning
 	// project-scoped host trees, so anything narrower would report another
-	// provider instance's live pools as orphans.
+	// provider instance's live pools as orphans. It reads the authoritative
+	// database for the same reason: a replica's lag would too.
 	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	// SchedulablePoolForSandbox gates placement: the sandbox's pool must be
 	// present, unrevoked, active, ready, and schedulable. It checks no
