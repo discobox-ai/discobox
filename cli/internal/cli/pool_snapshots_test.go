@@ -129,7 +129,7 @@ func TestSandboxGetNamesThePlanItStartedFrom(t *testing.T) {
 		"/projects/project-1/sandboxes/sandbox-1": box,
 		"/projects/project-1/pools/pool-1":        pool.String(),
 	})
-	out := runCLI(t, server.URL, "admin", "box", "get", "sandbox-1")
+	out := runCLI(t, server.URL, "admin", "box", "get", "one")
 	if want := "started from snapshot 3f2a91c0e4d1aaaaaaaaaaaa: discobox-platform@aaaaaaaaaaaa discobox-harness-shell@bbbbbbbbbbbb off: docker,brew"; !strings.Contains(out, want) {
 		t.Errorf("box details lack %q:\n%s", want, out)
 	}
@@ -140,7 +140,7 @@ func TestSandboxGetNamesThePlanItStartedFrom(t *testing.T) {
 		"/projects/project-1/sandboxes/sandbox-1": gone,
 		"/projects/project-1/pools/pool-1":        pool.String(),
 	})
-	if out := runCLI(t, server.URL, "admin", "box", "get", "sandbox-1"); strings.Contains(out, "started from snapshot") || !strings.Contains(out, "snapshot ffffffffffff") {
+	if out := runCLI(t, server.URL, "admin", "box", "get", "one"); strings.Contains(out, "started from snapshot") || !strings.Contains(out, "snapshot ffffffffffff") {
 		t.Errorf("a snapshot its pool no longer lists:\n%s", out)
 	}
 }

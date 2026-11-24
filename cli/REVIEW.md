@@ -122,8 +122,22 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   where one server is all there is): the NAME `discobox ls` prints, an ID or a
   short ID, on every server; a full ID nothing lists is taken on the primary
   as it stands, which is what keeps a deleted discobox's audit readable.
-  `resolveSandboxID` is the raw `admin box` forms' rule. `selectSandbox` once
-  resolved IDs only, so `attach mybox` sent a name to the server as an ID.
+  `resolveSandboxID` is the rule of `admin box rm`, `unarchive` and `purge`
+  alone. `selectSandbox` once resolved IDs only, so `attach mybox` sent a
+  name to the server as an ID; the other raw `admin box` forms and `admin
+  harness changes` refused a name as no such short ID until they called
+  `selectSandbox` too.
+- **A blank DISCOBOX reaches the picker.** `selectSandbox` takes `""` as no
+  argument and picks, and with one discobox listed the pick needs no answer,
+  so a script's unset `"$BOX"` acts on whatever box is there; `cobra.ExactArgs`
+  accepts `""`. The `admin box` and `admin harness` forms refuse it with
+  `requiredDiscobox` around their `Args`, since `resolveSandboxID`, which they
+  called before, refused it too. Every other `selectSandbox` caller does not
+  refuse it yet (#1674, which moves the rule into `selectSandbox`): among
+  them the destructive `admin service stop|restart` and `admin terminal rm`,
+  and `admin terminal`, `admin exec logs`, `admin audit get`, `adopt` and
+  `release`. A command moved off `resolveSandboxID` keeps the refusal only
+  by adding `requiredDiscobox`.
 - **A listed name never beats an ID-shaped reference.** The box writes its
   listed name (its meta name, its terminal's title), so a box named `01hq`
   would take what was meant for the discobox whose ID begins that way: `push` the user's source, `exec` their keystrokes.

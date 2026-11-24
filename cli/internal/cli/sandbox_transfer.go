@@ -48,7 +48,7 @@ type sandboxImportResponse struct {
 func (a *App) newSandboxExportCommand() *cobra.Command {
 	var stop bool
 	cmd := &cobra.Command{
-		Use:   "export DISCOBOX_ID [FILE]",
+		Use:   "export DISCOBOX [FILE]",
 		Short: "Write a discobox to a portable archive",
 		Long: `Write a discobox to a .dbox archive that can be imported on another server.
 
@@ -77,7 +77,7 @@ writes it to stdout.`,
 		Example: `  discobox admin box export my-box
   discobox admin box export my-box ~/backups/my-box.dbox --stop
   discobox admin box export my-box - | gzip > my-box.dbox.gz`,
-		Args: cobra.RangeArgs(1, 2),
+		Args: requiredDiscobox(cobra.RangeArgs(1, 2)),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveDefault
@@ -85,7 +85,7 @@ writes it to stdout.`,
 			return a.completeSandboxes(cmd, args, toComplete)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -167,7 +167,7 @@ func (a *App) newSandboxTransferCommand() *cobra.Command {
 	var to string
 	var keep bool
 	cmd := &cobra.Command{
-		Use:   "transfer DISCOBOX_ID --to SERVER",
+		Use:   "transfer DISCOBOX --to SERVER",
 		Short: "Move a discobox to another server",
 		Long: `Move a discobox to another registered server.
 
@@ -188,7 +188,7 @@ far side are the same as for "export" and "import"; see those.
 		Example: `  discobox admin box transfer my-box --to lab
   discobox admin box transfer my-box --to lab --keep
   discobox admin box transfer my-box --to lab --name my-box-2 --pool big-pool`,
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target, err := a.transferTarget(to)
@@ -494,7 +494,7 @@ func (a *App) importSandbox(ctx context.Context, projectID string, archive io.Re
 func (a *App) transferSandbox(cmd *cobra.Command, sandboxArg string, target *server, opts sandboxImportOptions, keep bool) error {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
-	projectID, sandboxID, client, err := a.sandboxRequest(ctx, sandboxArg)
+	a, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
 		return err
 	}

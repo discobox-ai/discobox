@@ -90,6 +90,24 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 	return target.app, projectID, sandboxID, client, nil
 }
 
+// requiredDiscobox is the Args rule of a command whose first positional is a
+// DISCOBOX it requires: args, and that first argument not blank. selectSandbox
+// takes a blank argument as none given and picks, and with one discobox the
+// pick needs no answer, so `admin box stop "$BOX"` with BOX unset would stop
+// whichever box is there; an argument given is the discobox (ADR 26-10-24-254
+// §1), and a blank one names none.
+func requiredDiscobox(args cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, positional []string) error {
+		if err := args(cmd, positional); err != nil {
+			return err
+		}
+		if strings.TrimSpace(positional[0]) == "" {
+			return errors.New("DISCOBOX is blank; name a discobox as `discobox ls` lists it")
+		}
+		return nil
+	}
+}
+
 // discoboxArg is a `[DISCOBOX]` positional for selectSandbox: the argument
 // when one was given, and empty, which picks, when none was.
 func discoboxArg(args []string) string {

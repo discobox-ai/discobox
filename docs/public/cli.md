@@ -840,7 +840,7 @@ writes it to stdout.
 ~~~~
 
 ```text
-discobox admin box export DISCOBOX_ID [FILE] [flags]
+discobox admin box export DISCOBOX [FILE] [flags]
 ```
 
 Examples:
@@ -868,7 +868,7 @@ Show a discobox
 ~~~~
 
 ```text
-discobox admin box get DISCOBOX_ID [flags]
+discobox admin box get DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -954,7 +954,7 @@ cancels the wake its agent asked for.
 ~~~~
 
 ```text
-discobox admin box pause DISCOBOX_ID [flags]
+discobox admin box pause DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1015,7 +1015,7 @@ but not started: it is left waiting for its source, and attaching to it or
 ~~~~
 
 ```text
-discobox admin box repair DISCOBOX_ID [flags]
+discobox admin box repair DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1046,7 +1046,7 @@ is rebuilt. Inside a discobox, "discobox-provision retry" does the same.
 ~~~~
 
 ```text
-discobox admin box reprovision DISCOBOX_ID [flags]
+discobox admin box reprovision DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1078,7 +1078,7 @@ in the pool, so it is accounted once against the pool; see
 ~~~~
 
 ```text
-discobox admin box resources DISCOBOX_ID [flags]
+discobox admin box resources DISCOBOX [flags]
 ```
 
 Aliases: top.
@@ -1105,7 +1105,7 @@ Restart a discobox
 ~~~~
 
 ```text
-discobox admin box restart DISCOBOX_ID [flags]
+discobox admin box restart DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1158,7 +1158,7 @@ Start a discobox
 ~~~~
 
 ```text
-discobox admin box start DISCOBOX_ID [flags]
+discobox admin box start DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1178,7 +1178,7 @@ Stop a discobox
 ~~~~
 
 ```text
-discobox admin box stop DISCOBOX_ID [flags]
+discobox admin box stop DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1213,7 +1213,7 @@ far side are the same as for "export" and "import"; see those.
 ~~~~
 
 ```text
-discobox admin box transfer DISCOBOX_ID --to SERVER [flags]
+discobox admin box transfer DISCOBOX --to SERVER [flags]
 ```
 
 Examples:
@@ -1335,7 +1335,7 @@ moves a running one, and any discobox in a project set to "manual" with
 ~~~~
 
 ```text
-discobox admin box upgrade DISCOBOX_ID [flags]
+discobox admin box upgrade DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1603,7 +1603,7 @@ Preview portable settings and logins changed in a discobox
 ~~~~
 
 ```text
-discobox admin harness changes SANDBOX [flags]
+discobox admin harness changes DISCOBOX [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1647,7 +1647,7 @@ Discard a pending candidate without changing local files or shared defaults
 ~~~~
 
 ```text
-discobox admin harness discard SANDBOX CANDIDATE [flags]
+discobox admin harness discard DISCOBOX CANDIDATE [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1733,7 +1733,7 @@ Create a new candidate against current defaults, retaining only selected local c
 ~~~~
 
 ```text
-discobox admin harness reconsider SANDBOX CANDIDATE [flags]
+discobox admin harness reconsider DISCOBOX CANDIDATE [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -1829,7 +1829,7 @@ Save a reviewed candidate as the harness defaults and shared credentials
 ~~~~
 
 ```text
-discobox admin harness save SANDBOX CANDIDATE [flags]
+discobox admin harness save DISCOBOX CANDIDATE [flags]
 ```
 
 | Flag | Type | Default | Description |

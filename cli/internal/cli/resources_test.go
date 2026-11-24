@@ -154,7 +154,7 @@ func TestSandboxResourcesRanksProcessesAndSplitsMemory(t *testing.T) {
 		"/projects/project-1/sandboxes/sandbox-1": sandboxRuntime("sandbox-1", "fix-login", busySandboxResources),
 	})
 
-	out := runCLI(t, server.URL, "admin", "box", "resources", "sandbox-1")
+	out := runCLI(t, server.URL, "admin", "box", "resources", "fix-login")
 
 	for _, want := range []string{
 		"3.71 vCPU",
@@ -184,7 +184,7 @@ func TestSandboxResourcesExplainsADiscoboxThatHasNotReported(t *testing.T) {
 		"/projects/project-1/sandboxes/sandbox-3": sandboxRuntime("sandbox-3", "cold", ""),
 	})
 
-	out := runCLI(t, server.URL, "admin", "box", "resources", "sandbox-3")
+	out := runCLI(t, server.URL, "admin", "box", "resources", "cold")
 
 	if !strings.Contains(out, "no resource report yet") {
 		t.Errorf("a discobox with no report did not say so:\n%s", out)
@@ -373,7 +373,7 @@ func TestSandboxResourcesNamesTheLayerAndRecordings(t *testing.T) {
 		"/projects/project-1/sandboxes/sandbox-1": sandboxRuntime("sandbox-1", "fix-login", layeredSandboxResources),
 	})
 
-	out := runCLI(t, server.URL, "admin", "box", "resources", "sandbox-1")
+	out := runCLI(t, server.URL, "admin", "box", "resources", "fix-login")
 
 	for _, want := range []string{"3.5GiB total", "container layer 1.0GiB", "proxy recordings 512.0MiB"} {
 		if !strings.Contains(out, want) {

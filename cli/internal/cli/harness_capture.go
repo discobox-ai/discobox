@@ -185,8 +185,8 @@ func unifiedRange(start, count int) string {
 // The candidate ID is mandatory on writes: saving never silently captures a
 // different login from the immutable candidate a person reviewed.
 func (a *App) newHarnessChangesCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "changes SANDBOX", Short: "Preview portable settings and logins changed in a discobox", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		project, box, client, err := a.sandboxRequest(cmd.Context(), args[0])
+	cmd := &cobra.Command{Use: "changes DISCOBOX", Short: "Preview portable settings and logins changed in a discobox", Args: requiredDiscobox(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
+		a, project, box, client, err := a.selectSandbox(cmd, args[0])
 		if err != nil {
 			return err
 		}
@@ -239,8 +239,8 @@ func (a *App) newHarnessChangesCommand() *cobra.Command {
 	return cmd
 }
 func (a *App) newHarnessSaveCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "save SANDBOX CANDIDATE", Short: "Save a reviewed candidate as the harness defaults and shared credentials", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
-		project, box, client, err := a.sandboxRequest(cmd.Context(), args[0])
+	cmd := &cobra.Command{Use: "save DISCOBOX CANDIDATE", Short: "Save a reviewed candidate as the harness defaults and shared credentials", Args: requiredDiscobox(cobra.ExactArgs(2)), RunE: func(cmd *cobra.Command, args []string) error {
+		a, project, box, client, err := a.selectSandbox(cmd, args[0])
 		if err != nil {
 			return err
 		}
@@ -261,8 +261,8 @@ func (a *App) newHarnessSaveCommand() *cobra.Command {
 	return cmd
 }
 func (a *App) newHarnessDiscardCommand() *cobra.Command {
-	return &cobra.Command{Use: "discard SANDBOX CANDIDATE", Short: "Discard a pending candidate without changing local files or shared defaults", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
-		project, box, client, err := a.sandboxRequest(cmd.Context(), args[0])
+	return &cobra.Command{Use: "discard DISCOBOX CANDIDATE", Short: "Discard a pending candidate without changing local files or shared defaults", Args: requiredDiscobox(cobra.ExactArgs(2)), RunE: func(cmd *cobra.Command, args []string) error {
+		_, project, box, client, err := a.selectSandbox(cmd, args[0])
 		if err != nil {
 			return err
 		}
@@ -279,8 +279,8 @@ func (a *App) newHarnessDiscardCommand() *cobra.Command {
 }
 func (a *App) newHarnessReconsiderCommand() *cobra.Command {
 	var files, credentials []string
-	cmd := &cobra.Command{Use: "reconsider SANDBOX CANDIDATE", Short: "Create a new candidate against current defaults, retaining only selected local changes", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
-		project, box, client, err := a.sandboxRequest(cmd.Context(), args[0])
+	cmd := &cobra.Command{Use: "reconsider DISCOBOX CANDIDATE", Short: "Create a new candidate against current defaults, retaining only selected local changes", Args: requiredDiscobox(cobra.ExactArgs(2)), RunE: func(cmd *cobra.Command, args []string) error {
+		_, project, box, client, err := a.selectSandbox(cmd, args[0])
 		if err != nil {
 			return err
 		}
