@@ -206,13 +206,15 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 // `ssh` to the discobox they just made. A caller the server refuses it (403) —
 // a discobox creating another, which may not enroll a key that would reach
 // every discobox in the project — has no use for it, and the create stands
-// (ADR 26-09-24-630 §4). `admin ssh-config --write` calls writeProjectSSHConfig
-// directly: there the sync is what was asked for, and a refusal is its answer.
+// (ADR 26-09-24-630 §4). What it says then is that expected skip, not the
+// server's authorization error: relayed verbatim, that reads as a failed
+// create. `admin ssh-config --write` calls writeProjectSSHConfig directly:
+// there the sync is what was asked for, and a refusal is its answer.
 func (a *App) syncSSHConfigAfterCreate(ctx context.Context, client *apiclientgen.Client, projectID string, prompt sshIncludePrompt, notes noteFunc) error {
 	err := a.writeProjectSSHConfig(ctx, client, projectID, "", prompt, notes)
 	var refused *plainStatusError
 	if errors.As(err, &refused) && refused.code == http.StatusForbidden {
-		notes("SSH config not synced: the server refused it (%s)", refused.body)
+		notes("SSH config not synced: a discobox can't enroll SSH keys; the new discobox is unaffected")
 		return nil
 	}
 	if err != nil {
