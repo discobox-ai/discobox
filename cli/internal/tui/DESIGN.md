@@ -654,10 +654,10 @@ scope chosen, a different lifetime selected — starts the reading over,
 and a form decision is refused when the form changed since the frame that was
 read (`reviewState`). A card that fits its window opens on its first frame,
 so this keeps consequences from being sent from below the fold; it does not
-stop a key typed ahead of a card that fits. The API access,
-adoption, trust and refresh cards use it as they are; the request dialog's
-summary and part cards use it, so neither a part's add/replace line nor the
-part card's "this replaces" is sent from below the fold (ADR 26-11-04-616 §4). The API
+stop a key typed ahead of a card that fits. Credential, API access,
+adoption, trust and refresh cards use this gate. The credential card shows
+binding consequences for the selected choices before either decision (ADR
+26-11-04-616 §4). The API
 access card says what turning the discobox API on gives (discovery, the
 boxes it leads, and its limits) and grants no credential.
 

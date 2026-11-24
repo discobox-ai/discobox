@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,35 @@ import (
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
+
+func TestApprovalBindingReadFailureStillAllowsDenyOrNewCredential(t *testing.T) {
+	for _, chooseNew := range []bool{false, true} {
+		t.Run(strconv.FormatBool(chooseNew), func(t *testing.T) {
+			m, ds := sourceWithRequest(t)
+			ds.bindingsErr = errors.New("bindings unavailable")
+			openApproval(t, m, "sec_gh")
+			answerApproval(t, m, "accept")
+			if !onRequestCard(m) || len(ds.approvals) != 0 || !strings.Contains(plainFrame(m), "Cannot preview existing bindings") {
+				t.Fatal("saved credential approval was not blocked with an explanation")
+			}
+			if !chooseNew {
+				answerApproval(t, m, "deny")
+				if len(ds.denials) != 1 {
+					t.Fatal("binding read failure blocked denial")
+				}
+				return
+			}
+			selectApprovalCredential(t, m, "new")
+			m.dialog.form.set("value", fakeGitHubToken)
+			m.dialog.form.moveTo(2)
+			send(t, m, keyPress("enter"))
+			answerApproval(t, m, "accept")
+			if len(ds.createdSecrets) != 1 || len(ds.approvals) != 1 {
+				t.Fatalf("binding read failure blocked new credential approval: %s, created %d, approvals %d", describe(m.dialog), len(ds.createdSecrets), len(ds.approvals))
+			}
+		})
+	}
+}
 
 // The approval card shows routes, binding effects, and all consent controls.
 
@@ -47,6 +77,7 @@ func selectApprovalCredential(t *testing.T, m *Model, id string) {
 		readRequestEnd(t, m, "pgdown")
 		for i, row := range m.dialog.form.rows {
 			if row.key == "new" {
+				m.dialog.formActionAt = -1
 				m.dialog.form.moveTo(i)
 				send(t, m, keyPress("enter"))
 				return
@@ -688,7 +719,7 @@ func TestAnywhereShowsEveryCeilingOfTheCredential(t *testing.T) {
 	req := waitingRequest()
 	req.Use.Routes = []secretroute.Route{ghRoute("/repos/o/pulls")}
 	s.ID = "sec"
-	m.credentialApproval(req, []Secret{s}, nil, nil, time.Hour)
+	m.credentialApproval(req, []Secret{s}, nil, nil, nil, time.Hour)
 	toggleApprovalAdvanced(t, m)
 	m.dialog.form.choose("use-scope", "anywhere")
 	text := plainFrame(m)

@@ -1787,8 +1787,8 @@ type SecretBinding struct {
 // BindingFilter narrows a listing of bindings. Empty is every binding the
 // server holds for the project.
 type BindingFilter struct {
-	// SecretID is the bindings of one secret.
-	SecretID string
+	// SandboxID limits the result to bindings on one box.
+	SandboxID string
 }
 
 // NewSecret is a credential typed into the window: from the approval dialog,

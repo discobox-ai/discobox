@@ -22,11 +22,7 @@ type approvalBindingsMsg struct {
 func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
 	ttl := defaultRequestTTL(req)
 	done := func(bindings []SecretBinding, err error) tea.Cmd {
-		if err != nil {
-			m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read the box's bindings: %v", err))
-			return nil
-		}
-		return m.credentialApproval(req, secrets, held, bindings, ttl)
+		return m.credentialApproval(req, secrets, held, bindings, err, ttl)
 	}
 	if req.SandboxID == "" {
 		return done(nil, nil)
@@ -35,12 +31,12 @@ func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, h
 	m.dialog = wait
 	ctx, ds := m.ctx, m.ds
 	return func() tea.Msg {
-		bindings, err := ds.Bindings(ctx, req.Server, BindingFilter{})
+		bindings, err := ds.Bindings(ctx, req.Server, BindingFilter{SandboxID: req.SandboxID})
 		return approvalBindingsMsg{wait: wait, bindings: bindings, err: err, done: done}
 	}
 }
 
-func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, bindings []SecretBinding, ttl time.Duration) tea.Cmd {
+func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, bindings []SecretBinding, bindingErr error, ttl time.Duration) tea.Cmd {
 	holder, pinned := heldBy(held)
 	answers := map[string]requestAnswer{}
 	var credentials []choice
@@ -188,6 +184,8 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		switch {
 		case !ok:
 			return ans, "Choose a credential to accept."
+		case bindingErr != nil && !ans.fresh && (ans.use == PartApprove || ans.delegate == PartApprove):
+			return ans, fmt.Sprintf("Cannot preview existing bindings: %v. Reopen the request to try again.", bindingErr)
 		case err != nil:
 			return ans, err.Error()
 		case !withinLimit(ans.secret, ans.ttl):
