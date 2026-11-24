@@ -20,6 +20,12 @@ pgrep -af 'discobox-dev-lock (server|docker-image-watch)'   # both halves
 curl -fsS http://127.0.0.1:8080/openapi.yaml >/dev/null && echo up
 ```
 
+On an archil box (Docker's storage on `fuse.archil`) the loop is not running on
+purpose. The service exits at once, and its output says why: the first container
+create there crashes the machine (#1639). The Dockerfile test-build hook skips
+itself there too. Don't start either by hand there, and don't run anything else
+that creates a container.
+
 A service that exits stays exited; nothing restarts it and there is no in-box
 command to. Only when both checks fail, read `go tool task check:dev-build`
 for why it stopped, then start it the way the box does — the service script,

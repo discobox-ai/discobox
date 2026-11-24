@@ -36,6 +36,17 @@ export POOL_AGENT_IMAGE="discobot-dockerfile-test:pool-agent"
 export PLATFORM_BUNDLE="discobot-dockerfile-test:platform"
 export HARNESS_BUNDLE="discobot-dockerfile-test:harness"
 
+# Not where a build's RUN step, a container on the same overlay storage, crashes
+# the machine (#1639). Said, and passed rather than failed, so the hook and
+# `check:dockerfile-builds` don't take an archil box down; the Dockerfiles go
+# untested there, so test them on a box whose Docker can run.
+# shellcheck source=scripts/docker-storage-unsupported.sh
+. scripts/docker-storage-unsupported.sh
+if reason=$(docker_storage_unsupported); then
+  echo "[dockerfile-test-builds] skipped: $reason"
+  exit 0
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to test-build Dockerfiles" >&2
   exit 1

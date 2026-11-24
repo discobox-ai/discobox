@@ -7,6 +7,17 @@
 
 set -euo pipefail
 
+# Not where creating a container crashes the machine (#1639): `task dev`'s
+# image watcher creates them, and so does the default Docker pool the dev
+# server seeds when libkrun is unavailable, so the whole loop stays off rather
+# than only the watcher. Exit 0: it reads as exited, not failed.
+# shellcheck source=scripts/docker-storage-unsupported.sh
+. scripts/docker-storage-unsupported.sh
+if reason=$(docker_storage_unsupported); then
+	echo "Discobox API not started: $reason"
+	exit 0
+fi
+
 export PORT="${PORT:-8080}"
 # The endpoint is named here rather than declared: `task dev` binds only the
 # local socket, which nothing outside this container can reach. It reads this

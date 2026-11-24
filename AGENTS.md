@@ -56,7 +56,7 @@
   older than fourteen days),
   `discobox-vm-pins` (the release's refusal of a pool VM guest or kernel pin older
   than `vm-image/`).
-- `scripts`: shell and Node helpers the Taskfile and hooks run.
+- `scripts`: shell and Node helpers the Taskfile, hooks and `.discobox/services` run.
 - `.agents/skills` (`.claude/skills` links to it): this repository's own skills
   (`add-harness`, `release`, `verify-recipes`). The shared SDLC skills
   (`commit`, `develop`, `deliver-issue`, `triage-issue`, `orchestrate-issues`,

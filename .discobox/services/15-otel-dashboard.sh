@@ -14,6 +14,15 @@
 
 set -euo pipefail
 
+# Not where creating a container crashes the machine (#1639). Exit 0: it reads
+# as exited, not failed.
+# shellcheck source=scripts/docker-storage-unsupported.sh
+. scripts/docker-storage-unsupported.sh
+if reason=$(docker_storage_unsupported); then
+	echo "OTEL Metrics Dashboard not started: $reason"
+	exit 0
+fi
+
 container="discobox-otel-dashboard"
 volume="discobox-otel-dashboard"
 dashboard_uid="1654"
