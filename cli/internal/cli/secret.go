@@ -259,7 +259,7 @@ it none, so it is sent nowhere.
 }
 
 func (a *App) newSecretDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm SECRET...", Aliases: []string{"delete", "remove"}, Short: "Delete secrets", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm SECRET...", Aliases: []string{"delete", "remove"}, Short: "Delete secrets", Long: "Delete secrets.\n\n" + actionManyJSONHelp, Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -268,7 +268,7 @@ func (a *App) newSecretDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "secret", "delete", "deleted", func(arg string) (string, error) {
+		return a.runActionMany(cmd, args, "secret", "delete", "deleted", func(arg string) (string, error) {
 			secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err

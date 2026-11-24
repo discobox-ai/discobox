@@ -99,9 +99,11 @@ func (a *App) newSkillsCommand() *cobra.Command {
 	add := &cobra.Command{
 		Use:   "add URL[@REF][//PATH]|OWNER/REPO[@REF][//PATH]|DIR...",
 		Short: "Add a skills repository to the project, or a directory to client.yaml",
-		Args:  cobra.MinimumNArgs(1),
+		Long: "Add a skills repository to the project, or a directory to client.yaml.\n\n" +
+			actionManyJSONHelp + "\n\nA directory's \"id\" is the directory as client.yaml keeps it.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runActionMany(cmd, args, "skills value", "add", "added", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "skills value", "add", "added", func(arg string) (string, error) {
 				return a.addSkills(cmd.Context(), arg)
 			})
 		},
@@ -110,9 +112,11 @@ func (a *App) newSkillsCommand() *cobra.Command {
 		Use:     "rm URL[@REF][//PATH]|OWNER/REPO[@REF][//PATH]|ID|DIR...",
 		Aliases: []string{"delete", "remove"},
 		Short:   "Remove a skills repository from the project, or a directory from client.yaml",
-		Args:    cobra.MinimumNArgs(1),
+		Long: "Remove a skills repository from the project, or a directory from client.yaml.\n\n" +
+			actionManyJSONHelp + "\n\nA directory's \"id\" is the directory as client.yaml kept it.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runActionMany(cmd, args, "skills value", "remove", "removed", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "skills value", "remove", "removed", func(arg string) (string, error) {
 				return a.removeSkills(cmd.Context(), arg)
 			})
 		},
@@ -201,6 +205,10 @@ func (a *App) projectClient() (*apiclientgen.Client, string, error) {
 	return client, projectID, nil
 }
 
+// addSkills and removeSkills return what runActionMany reports one value
+// as: a project entry's ID, and a directory of client.yaml's with the file it
+// is kept in. Under -o json that is the "id" a script hands back to rm, so a
+// directory is the value client.yaml keeps, and the file is left to the text.
 func (a *App) addSkills(ctx context.Context, arg string) (string, error) {
 	added, err := addSkills(ctx, a.projectClient, arg)
 	if err != nil {
@@ -208,6 +216,9 @@ func (a *App) addSkills(ctx context.Context, arg string) (string, error) {
 	}
 	if added.Project {
 		return added.ID, nil
+	}
+	if a.output == "json" {
+		return added.Value, nil
 	}
 	return added.Value + " (" + added.File + ")", nil
 }
@@ -219,6 +230,9 @@ func (a *App) removeSkills(ctx context.Context, arg string) (string, error) {
 	}
 	if removed.Project {
 		return removed.ID, nil
+	}
+	if a.output == "json" {
+		return removed.Value, nil
 	}
 	return removed.Value + " (" + removed.File + ")", nil
 }

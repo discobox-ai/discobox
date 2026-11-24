@@ -109,7 +109,10 @@ transport helpers where OpenAPI does not model the stream.
   was answered by something that is not a Discobox server, since something is
   there; or for a build with nothing to stage from, where "stage it" would send
   somebody to a command that fails. The client's line is written first, before
-  the server is asked. The
+  the server is asked. Under `-o json` the answer is one object written once
+  the server has answered, `{"client": …, "server": …}`, with `server` null
+  when none did (and no hint) and left out under `--client`; any other `-o`
+  value is the text, since the root's validation of it is skipped (below). The
   wait for the server's is bounded at five seconds around the whole attempt
   rather than the request alone, because over iroh preparing this machine's
   identity and binding the transport happens on a context of its own and is most
@@ -1037,7 +1040,16 @@ with `--copy` selecting what comes across and `--copy none` taking nothing.
 same DELETE — which archives rather than destroys
 ([ADR 0022](../docs/adr/0022-sandbox-deletion-is-archive-then-confirmed-purge.md) §2)
 — and both report each argument independently through `runActionMany`, so one
-failure neither stops nor hides the rest. What the root command adds is the
+failure neither stops nor hides the rest. Under `-o json` it writes one object
+once every argument has run, `{"results": [...]}`, an entry per argument in
+order: its `argument`, then `id` and `result` (the done word) or `error`. A
+failure is also said on stderr and still fails the command, so the exit status
+means the same under either format. Every caller of `runActionMany` writes
+that shape — `rm`, `start|stop|restart|pause`, and under `admin` the box
+archive, unarchive and purge, the skills add and remove, and every other
+multi-argument delete, remove and revoke — and its help says so
+(`actionManyJSONHelp`). `id` is what names the resource back to the CLI: for a
+directory of client.yaml's skills, the directory as the file keeps it. What the root command adds is the
 reference rule (`resolveSandboxReference`): an argument is a name from the
 listing `discobox ls` shows, or an ID. Its candidates are that whole listing, archived
 discoboxes included, rather than the runtime candidates a picker offers —

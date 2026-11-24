@@ -186,3 +186,53 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 		t.Fatalf("client.yaml skills = %v (%v), want none", cfg.Run.Skills, err)
 	}
 }
+
+// Under -o json a directory's entry names it by the value client.yaml keeps,
+// which `rm` takes back: not the text form's "DIR (FILE)", which names nothing.
+func TestSkillsAddWritesTheDirectoryItKeptUnderOutputJSON(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	configFile := filepath.Join(t.TempDir(), "client.yaml")
+	t.Setenv(clientconfig.FileVar, configFile)
+	dir := filepath.Join(home, "team-skills")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		http.Error(w, "no", http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
+	t.Chdir(home)
+
+	run := func(args ...string) string {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		cmd := NewRootCommand()
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "-o", "json", "admin", "skills"}, args...))
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, errOut.String())
+		}
+		var got struct {
+			Results []map[string]string `json:"results"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil || len(got.Results) != 1 {
+			t.Fatalf("%v wrote %q (%v), want one result", args, out.String(), err)
+		}
+		return got.Results[0]["id"]
+	}
+
+	id := run("add", dir)
+	cfg, err := clientconfig.Load()
+	if err != nil || len(cfg.Run.Skills) != 1 || cfg.Run.Skills[0] != id {
+		t.Fatalf("add wrote id %q; client.yaml skills = %q (%v), want that one value", id, cfg.Run.Skills, err)
+	}
+	if got := run("rm", id); got != id {
+		t.Fatalf("rm %q wrote id %q, want the same value", id, got)
+	}
+	if cfg, err := clientconfig.Load(); err != nil || len(cfg.Run.Skills) != 0 {
+		t.Fatalf("client.yaml skills = %q (%v), want none after rm", cfg.Run.Skills, err)
+	}
+}

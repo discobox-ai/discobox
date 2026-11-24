@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -290,6 +291,28 @@ func TestAdminCommandsRefuseABlankDiscobox(t *testing.T) {
 			_, _, err := runRM(t, server.URL, args...)
 			if err == nil || !strings.Contains(err.Error(), "DISCOBOX is blank") {
 				t.Fatalf("%v: err = %v, want a blank DISCOBOX refused", args, err)
+			}
+		})
+	}
+}
+
+// Under -o json a lifecycle command writes JSON naming each discobox it acted
+// on, not the table form's "<id> stopped" lines a script cannot parse.
+func TestLifecycleCommandsWriteJSONUnderOutputJSON(t *testing.T) {
+	for _, verb := range []string{"start", "stop", "restart", "pause"} {
+		t.Run(verb, func(t *testing.T) {
+			var posted []string
+			server := lifecycleTestServer(t, &posted)
+
+			out, errOut, err := runRM(t, server.URL, "-o", "json", verb, rmDocsID)
+			if err != nil {
+				t.Fatalf("execute %s: %v\n%s", verb, err, errOut)
+			}
+			if !json.Valid([]byte(out)) {
+				t.Fatalf("stdout under -o json is not JSON: %q", out)
+			}
+			if !strings.Contains(out, rmDocsID) {
+				t.Fatalf("stdout = %q, want it to name %s", out, rmDocsID)
 			}
 		})
 	}

@@ -142,14 +142,14 @@ func (a *App) newPeerRemoveCommand() *cobra.Command {
 		Long: "Revoke enrolled peers, by full peer ID or by an unambiguous prefix.\n\n" +
 			"A revoked ID is refused on its next connection; connections it already has\n" +
 			"are not torn down. This cannot remove an entry from the server's\n" +
-			"authorized_ids file, which is not API-managed.",
+			"authorized_ids file, which is not API-managed.\n\n" + actionManyJSONHelp,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := a.apiClient()
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "peer", "revoke", "revoked", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "peer", "revoke", "revoked", func(arg string) (string, error) {
 				res, err := client.DeletePeer(cmd.Context(), apiclientgen.DeletePeerParams{PeerId: arg})
 				if err != nil {
 					return "", err

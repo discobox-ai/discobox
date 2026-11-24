@@ -315,7 +315,7 @@ func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm POOL...", Aliases: []string{"delete", "remove"}, Short: "Delete pools", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm POOL...", Aliases: []string{"delete", "remove"}, Short: "Delete pools", Long: "Delete pools.\n\n" + actionManyJSONHelp, Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -324,7 +324,7 @@ func (a *App) newPoolDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "pool", "delete", "deleted", func(arg string) (string, error) {
+		return a.runActionMany(cmd, args, "pool", "delete", "deleted", func(arg string) (string, error) {
 			poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err

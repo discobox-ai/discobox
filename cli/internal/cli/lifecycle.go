@@ -93,7 +93,9 @@ func (a *App) newLifecycleCommand(action sandboxLifecycle) *cobra.Command {
 Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
 listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
 IDs to choose between. Every argument is acted on independently, so one that
-fails does not hide the rest.`,
+fails does not hide the rest.
+
+` + actionManyJSONHelp,
 		Example:           fmt.Sprintf("  discobox %[1]s mybox\n  discobox %[1]s sbx_9qk5 sbx_2f7p", action.verb),
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
@@ -113,7 +115,7 @@ fails does not hide the rest.`,
 					return err
 				}
 			}
-			return runActionMany(cmd, args, "discobox", action.verb, action.done, func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "discobox", action.verb, action.done, func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxReference(cmd.Context(), client, projectID, arg, sandboxes, listedName)
 				if err != nil {
 					return "", err

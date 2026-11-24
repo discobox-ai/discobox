@@ -307,7 +307,9 @@ See "discobox admin project update --archive-retention".
 This takes discobox IDs. "discobox rm" is the same archive named the way you
 read it off "discobox ls", by name as well as by ID.
 
-To destroy a discobox and its data now, use "discobox admin box purge".`,
+To destroy a discobox and its data now, use "discobox admin box purge".
+
+` + actionManyJSONHelp,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -319,7 +321,7 @@ To destroy a discobox and its data now, use "discobox admin box purge".`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "archive", "archived", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "discobox", "archive", "archived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -344,7 +346,9 @@ func (a *App) newSandboxUnarchiveCommand() *cobra.Command {
 		Long: `Restore archived discoboxes.
 
 The container is recreated against the data that was kept and left stopped; it
-starts on first use, the same as any other stopped discobox.`,
+starts on first use, the same as any other stopped discobox.
+
+` + actionManyJSONHelp,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -356,7 +360,7 @@ starts on first use, the same as any other stopped discobox.`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "unarchive", "unarchived", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "discobox", "unarchive", "unarchived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -387,7 +391,9 @@ other lifecycle commands it
 waits for the pool agent to confirm the removal, so when it returns the data is
 actually gone.
 
-To keep the data, use "discobox rm", which archives instead.`,
+To keep the data, use "discobox rm", which archives instead.
+
+` + actionManyJSONHelp,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -399,7 +405,7 @@ To keep the data, use "discobox rm", which archives instead.`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "purge", "purged", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "discobox", "purge", "purged", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err

@@ -170,7 +170,7 @@ func splitHeaderFlag(flag string) (string, string, error) {
 }
 
 func (a *App) newGatewayDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm NAME...", Aliases: []string{"delete", "remove"}, Short: "Remove gateways", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm NAME...", Aliases: []string{"delete", "remove"}, Short: "Remove gateways", Long: "Remove gateways.\n\n" + actionManyJSONHelp, Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -179,7 +179,7 @@ func (a *App) newGatewayDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "gateway", "remove", "removed", func(name string) (string, error) {
+		return a.runActionMany(cmd, args, "gateway", "remove", "removed", func(name string) (string, error) {
 			res, err := client.DeleteProjectGateway(cmd.Context(), apiclientgen.DeleteProjectGatewayParams{ProjectId: projectID, GatewayName: name})
 			if err != nil {
 				return "", err

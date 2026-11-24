@@ -2279,6 +2279,68 @@ func TestVersionReportsTheServerVersion(t *testing.T) {
 	}
 }
 
+// Under -o json, version writes the client and server versions as JSON, not
+// the "client version …" lines.
+func TestVersionWritesJSONUnderOutputJSON(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("client-only version contacted the server")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "-o", "json", "version", "--client"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(out.Bytes()) {
+		t.Fatalf("stdout under -o json is not JSON: %q", out.String())
+	}
+	if !strings.Contains(out.String(), version.String()) {
+		t.Fatalf("stdout = %q, want it to name client version %s", out.String(), version.String())
+	}
+}
+
+// Under -o json, version names the server's version beside the client's, and
+// a server that does not answer is null rather than the text's "unavailable",
+// which no script should mistake for a version.
+func TestVersionWritesServerVersionUnderOutputJSON(t *testing.T) {
+	answering := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","version":"v9.8.7"}`))
+	}))
+	t.Cleanup(answering.Close)
+	gone := httptest.NewServer(http.NotFoundHandler())
+	goneURL := gone.URL
+	gone.Close()
+
+	for _, tc := range []struct {
+		server string
+		want   map[string]any
+	}{
+		{answering.URL, map[string]any{"client": version.String(), "server": "v9.8.7"}},
+		{goneURL, map[string]any{"client": version.String(), "server": nil}},
+	} {
+		cmd := NewRootCommand()
+		var out, errOut bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs([]string{"--server", tc.server, "-o", "json", "version"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute version against %s: %v\n%s", tc.server, err, errOut.String())
+		}
+		var got map[string]any
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+			t.Fatalf("stdout under -o json is not JSON: %v\n%q", err, out.String())
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("version against %s = %v, want %v", tc.server, got, tc.want)
+		}
+	}
+}
+
 // Only the bare word is the version. `discobox version bump the go modules` is
 // not a prompt and not a version either — it is words after a command that
 // takes none, which is what it says.

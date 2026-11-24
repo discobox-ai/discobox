@@ -407,7 +407,7 @@ disabling that harness. With no default set, it changes nothing.`, Args: cobra.N
 }
 
 func (a *App) newHarnessDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm HARNESS...", Aliases: []string{"delete", "remove"}, Short: "Delete harness configs", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm HARNESS...", Aliases: []string{"delete", "remove"}, Short: "Delete harness configs", Long: "Delete harness configs.\n\n" + actionManyJSONHelp, Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -416,7 +416,7 @@ func (a *App) newHarnessDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "harness config", "delete", "deleted", func(arg string) (string, error) {
+		return a.runActionMany(cmd, args, "harness config", "delete", "deleted", func(arg string) (string, error) {
 			harnessID, err := a.resolveHarnessConfigID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err
