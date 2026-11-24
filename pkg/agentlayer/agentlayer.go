@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -200,6 +201,21 @@ func ParsePins(data []byte) (Pins, error) {
 		return nil, fmt.Errorf("%s: %w", PinsFile, err)
 	}
 	return pins, nil
+}
+
+// ReadPins reads the pins at path (PinsFile, but for a test), which the box's
+// maker placed, and false when it placed none. A box applies its bundles, and
+// so has its trees fetched after boot, exactly when this returns pins.
+func ReadPins(path string) (Pins, bool, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	pins, err := ParsePins(data)
+	return pins, err == nil, err
 }
 
 // ErrNotAgentLayer is a layer that is not the agent's alone.

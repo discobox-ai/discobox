@@ -322,3 +322,26 @@ func TestRunningLayerIsTheLayerTheAgentRunsFrom(t *testing.T) {
 		})
 	}
 }
+
+// ReadPins is what decides whether a box fetches its bundles: none placed is
+// no fetch and no error, and pins it cannot use are an error, not a fetch.
+func TestReadPins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pins.json")
+	if pins, ok, err := ReadPins(path); err != nil || ok || pins != nil {
+		t.Fatalf("ReadPins(missing) = %v, %t, %v; want none, false, nil", pins, ok, err)
+	}
+	if err := os.WriteFile(path, []byte("[]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := ReadPins(path); err == nil || ok {
+		t.Fatalf("ReadPins(empty list) = %t, %v; want false and an error", ok, err)
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	if err := os.WriteFile(path, []byte(`[{"name":"discobox-platform","digest":"`+digest+`"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins, ok, err := ReadPins(path)
+	if err != nil || !ok || len(pins) != 1 || pins[0].Name != "discobox-platform" || pins[0].Digest != digest {
+		t.Fatalf("ReadPins(valid) = %v, %t, %v", pins, ok, err)
+	}
+}

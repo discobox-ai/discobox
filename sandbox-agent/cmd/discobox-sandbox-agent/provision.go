@@ -198,7 +198,7 @@ func applyPlacedBundles(ctx context.Context) int {
 	} else {
 		return fail(err)
 	}
-	pins, ok, err := placedPins()
+	pins, ok, err := agentlayer.ReadPins(agentlayer.PinsFile)
 	if err != nil {
 		return fail(err)
 	}
@@ -240,7 +240,7 @@ func applyPlacedBundles(ctx context.Context) int {
 // runtime-config document. A box systemd is not running has nothing to start:
 // it boots on the units it was placed.
 func applyDeliveredBundles(ctx context.Context, wait bool) int {
-	requested, _, err := placedPins()
+	requested, _, err := agentlayer.ReadPins(agentlayer.PinsFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

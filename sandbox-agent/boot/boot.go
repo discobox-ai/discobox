@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
@@ -121,7 +122,38 @@ func JoinFeatureGroups(logger *slog.Logger, path string) error {
 	}
 	b := newBooter()
 	b.wireFeatures(logger, bootstrap.Features)
-	return b.ensureAdditionalGroups(id, bootstrap.SandboxGroups())
+	skipped, err := b.ensureAdditionalGroups(id, bootstrap.SandboxGroups())
+	// The trees are in place, so a group still missing is not coming.
+	logSkippedGroups(logger, id.name, skipped, true)
+	return err
+}
+
+// pinsPath is agentlayer.PinsFile. A variable so a test does not read the
+// machine's own.
+var pinsPath = agentlayer.PinsFile
+
+// bundlesFollow reports whether the agent fetches the box's bundle trees after
+// boot, and so calls JoinFeatureGroups: its pool placed pins it can apply
+// (provisionBox). Pins it cannot read fail that fetch, so nothing follows.
+func bundlesFollow() bool {
+	_, ok, _ := agentlayer.ReadPins(pinsPath)
+	return ok
+}
+
+// logSkippedGroups says which declared groups the sandbox user was not added
+// to because the OS has no such group, so a user missing one is explained in
+// the boot log (#1471). final is whether nothing will try again: a warning
+// then, since the image or a feature names a group nothing created; info
+// while a feature fetched later may still make it.
+func logSkippedGroups(logger *slog.Logger, user string, skipped []string, final bool) {
+	if len(skipped) == 0 {
+		return
+	}
+	if final {
+		logger.Warn("sandbox user not added to groups the OS does not have", "user", user, "groups", skipped)
+		return
+	}
+	logger.Info("sandbox user not added to groups not present yet; joined once the box's features are fetched", "user", user, "groups", skipped)
 }
 
 // provisionMachine provisions a Linux machine for the bootstrap at path, or,
@@ -322,9 +354,14 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err := b.ensureUser(id); err != nil {
 		return false, fmt.Errorf("ensure user: %w", err)
 	}
-	if err := b.ensureAdditionalGroups(id, bootstrap.SandboxGroups()); err != nil {
+	skipped, err := b.ensureAdditionalGroups(id, bootstrap.SandboxGroups())
+	if err != nil {
 		return false, fmt.Errorf("ensure additional groups: %w", err)
 	}
+	// A box its pool placed pins on fetches its trees after this, and
+	// JoinFeatureGroups joins the groups only a feature makes (`brew`'s)
+	// then; on any other box this is the last chance.
+	logSkippedGroups(logger, id.name, skipped, !bundlesFollow())
 	if mode == wireContainer {
 		if err := b.wireConfig(); err != nil {
 			return false, fmt.Errorf("wire config: %w", err)
