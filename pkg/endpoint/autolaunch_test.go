@@ -420,17 +420,21 @@ func TestWaitReadyOnASilentServerSaysItIsNotAnswering(t *testing.T) {
 // server last reported. When it answers again with that same step, the line
 // goes back to it rather than staying on the wait: on a loaded host a pool
 // upgrade answers late now and then for minutes.
+//
+// The probe timeout is one a loaded runner's answer meets, and the slow probe
+// never answers: its handler waits until the client gives up and closes the
+// connection, so the timeout is the only thing that ends it (and what lets
+// server.Close return). A fast probe that ran past a short timeout on a
+// loaded Windows runner went unreported, and the redraw with it (#1637).
 func TestWaitReadyRedrawsTheStepAfterASlowProbe(t *testing.T) {
 	var probes atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch probes.Add(1) {
 		case 1, 3:
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
 		case 2:
-			time.Sleep(100 * time.Millisecond)
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"upgrading_pools","poolsUpgrading":1}`))
+			<-r.Context().Done()
 		default:
 			_, _ = w.Write([]byte(`{"status":"ready"}`))
 		}
@@ -438,7 +442,7 @@ func TestWaitReadyRedrawsTheStepAfterASlowProbe(t *testing.T) {
 	defer server.Close()
 	var lines []string
 	opts := LaunchOptions{
-		Endpoint: server.URL, ProbeTimeout: 20 * time.Millisecond, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond,
+		Endpoint: server.URL, ProbeTimeout: 2 * time.Second, UpgradeTimeout: time.Minute, ProbeInterval: time.Millisecond,
 		OnProgress: func(status health.Status) { lines = append(lines, status.Status+"/"+status.Phase) },
 	}
 	if _, err := waitReady(context.Background(), opts, time.Now().Add(time.Minute)); err != nil {
