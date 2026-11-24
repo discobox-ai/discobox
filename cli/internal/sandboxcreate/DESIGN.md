@@ -153,6 +153,17 @@ sandbox create requests.
   ssh asks on the terminal itself and is looked up in its turn. One that failed only because it could not ask is
   looked up again in its turn, so a credential is still asked for, alone; any
   other failure is the answer.
+- A lookup in its turn runs before any discobox exists, so before the pool's
+  Git credentials choice can be offered, while the create's window or status
+  line owns the terminal. Git asks there only through the frontend's terminal
+  handoff (`PromptOptions.RunGit`: the window's `ExecProcess`, the inline
+  status line paused — what lending's `credential fill` takes; `admin box
+  create`, which draws neither, runs git on the terminal as it is), and only
+  after looking without asking anything (ssh in batch mode) failed for want of
+  asking. With no handoff git's own prompt is off (`sandboxgit.NoPromptEnv`);
+  ssh, whose questions are its own, is in batch mode only in an operation that
+  asks nothing. A remote that wants a credential fails naming it and how to
+  give git one (ADR 26-11-04-253 §4).
 - Every source argument — `run`'s SOURCE, `-i`, `--skills`, a `.discobox/settings.json`
   `sources` entry — is `LOCATION[@REF][//PATH]`, read by `sourceref` and settled here
   (`ParseSource`; ADR 26-10-15-664). A GitHub repository may be named short —

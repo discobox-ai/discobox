@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 )
 
 type sandboxCreateOptions struct {
@@ -56,8 +58,11 @@ type sandboxCreateOptions struct {
 	// built (ADR 26-10-14-894 §2).
 	noProjectSkills bool
 	projectSkills   []sandboxcreate.SkillsRepository
-	wait            bool
-	waitTimeout     time.Duration
+	// runGit runs a skills repository's lookup that must ask
+	// (sandboxcreate.AddSkillsSources); with nil, git's own prompt is off.
+	runGit      func(context.Context, *exec.Cmd) error
+	wait        bool
+	waitTimeout time.Duration
 }
 
 type sandboxUpdateOptions struct {
@@ -192,6 +197,14 @@ discobox's own egress level.
 				if opts.projectSkills, err = projectSkills(cmd.Context(), client, projectID); err != nil {
 					return err
 				}
+			}
+			// No window or status line holds the terminal here, so a skills
+			// repository git cannot look up without asking asks on it as git
+			// always has, whatever stderr is: unlike run's, this handoff has no
+			// status line to pause, so it does not wait on canAskInline. An
+			// operation that asks nothing has no handoff.
+			if !sandboxgit.Noninteractive(cmd.Context()) {
+				opts.runGit = inlineGitHandoff(cmd, nil)
 			}
 			body, err := createSandboxBody(cmd.Context(), opts, func(warning string) {
 				fmt.Fprintln(cmd.ErrOrStderr(), warningLine(warning))
@@ -730,7 +743,7 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions, warn func
 	}
 	sandboxcreate.SetCreateSandboxSkills(config, skills)
 	repos := append(slices.Clone(opts.projectSkills), skillsArgs.Repositories...)
-	if err := sandboxcreate.AddSkillsSources(ctx, config, repos); err != nil {
+	if err := sandboxcreate.AddSkillsSources(ctx, config, repos, opts.runGit); err != nil {
 		return nil, err
 	}
 	return body, nil

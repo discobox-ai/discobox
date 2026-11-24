@@ -3,8 +3,10 @@ package sandboxcreate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net/url"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -36,11 +38,18 @@ import (
 // source names into an ssh one, which is how many people reach GitHub.
 //
 // One that failed only because it could not ask is looked up again in its
-// turn, prompt and all, so a remote that needs a credential typed in still
-// gets it asked for — once, and alone (lookInTurn). Any other failure is the
-// answer: looking again would wait out a dead host's timeout twice.
+// turn, so a remote that needs a credential typed in still gets it asked for —
+// once, and alone (lookInTurn). Any other failure is the answer: looking again
+// would wait out a dead host's timeout twice.
+//
+// Asking in its turn still needs the terminal, and a create's window or status
+// line owns it. So git asks there only through runGit, the frontend's handoff
+// of the terminal (the one lending's `credential fill` takes); with none, git's
+// own prompt is off (ssh's questions are its own: see lookNow), and a remote
+// that wants a credential fails naming the way to give git one.
 type remoteRefs struct {
 	ctx     context.Context
+	runGit  func(context.Context, *exec.Cmd) error
 	mu      sync.Mutex
 	lookups map[remoteRefKey]*remoteRefLookup
 }
@@ -68,8 +77,10 @@ type remoteRef struct {
 }
 
 // newRemoteRefs starts no lookups yet. Every one it starts ends with ctx.
-func newRemoteRefs(ctx context.Context) *remoteRefs {
-	return &remoteRefs{ctx: ctx, lookups: map[remoteRefKey]*remoteRefLookup{}}
+// runGit, when not nil, runs a lookup made in its turn with the terminal handed
+// to it (PromptOptions.RunGit).
+func newRemoteRefs(ctx context.Context, runGit func(context.Context, *exec.Cmd) error) *remoteRefs {
+	return &remoteRefs{ctx: ctx, runGit: runGit, lookups: map[remoteRefKey]*remoteRefLookup{}}
 }
 
 // prefetch starts the lookup a source argument will need, if it names a
@@ -98,17 +109,20 @@ func (r *remoteRefs) prefetch(arg string) {
 			lookup.err = errAsksItself
 			return
 		}
-		lookup.ref, lookup.err = resolveRemoteGitRef(r.ctx, key.url, key.ref, key.explicit, prefetchEnv)
+		lookup.ref, lookup.err = resolveRemoteGitRef(r.ctx, key.url, key.ref, key.explicit, prefetchEnv, nil)
 	}()
 }
 
 // resolve is the ref a remote source is pinned to: the prefetched answer, or
 // its error, unless the lookup is one to make in its turn (lookInTurn), and a
-// lookup made now, prompt and all, when there was none. A nil remoteRefs only
-// ever looks up now.
+// lookup made now (lookNow) when there was none. A nil remoteRefs only ever
+// looks up now, with nobody to hand the terminal to.
 func (r *remoteRefs) resolve(ctx context.Context, url, ref string, explicit bool) (remoteRef, error) {
 	key := remoteLookupKey(url, ref, explicit)
+	var runGit func(context.Context, *exec.Cmd) error
+	var prefetched error
 	if r != nil {
+		runGit = r.runGit
 		r.mu.Lock()
 		lookup := r.lookups[key]
 		r.mu.Unlock()
@@ -118,12 +132,91 @@ func (r *remoteRefs) resolve(ctx context.Context, url, ref string, explicit bool
 				if !lookInTurn(lookup.err) {
 					return lookup.ref, lookup.err
 				}
+				prefetched = lookup.err
 			case <-ctx.Done():
 				return remoteRef{}, ctx.Err()
 			}
 		}
 	}
-	return resolveRemoteGitRef(ctx, key.url, key.ref, key.explicit, nil)
+	return lookNow(ctx, key, prefetched, runGit)
+}
+
+// lookNow makes a lookup in its turn. With nobody to hand the terminal to
+// (runGit nil, or an operation that asks nothing), git's own prompt is off:
+// what a helper or askpass gives without asking is all it gets
+// (sandboxgit.NoPromptEnv). ssh's questions are its own, on /dev/tty, and are
+// not turned off here: a frontend that owns the terminal always has a
+// handoff, and an operation that asks nothing has ssh in batch mode
+// (sandboxgit.Environment). With a handoff it first looks without asking
+// anything at all — ssh in batch mode, which an agent's key answers, so the
+// screen is not handed away for nothing — unless the prefetch already did that
+// and failed for want of asking; and only for want of asking does git get the
+// terminal, its environment as the person left it. Either way, a remote that
+// still wants a credential fails saying how to give git one (needsCredential).
+//
+// The lookups made without the terminal read their failure in English
+// (quietEnv), so that a failure for want of asking can be told from any other.
+// The handed one keeps the person's language, since git asks them in it; it
+// only ever follows a failure for want of asking, so its own failure is taken
+// for one.
+func lookNow(ctx context.Context, key remoteRefKey, prefetched error, runGit func(context.Context, *exec.Cmd) error) (remoteRef, error) {
+	if runGit == nil || sandboxgit.Noninteractive(ctx) {
+		pinned, err := resolveRemoteGitRef(ctx, key.url, key.ref, key.explicit, quietEnv(sandboxgit.NoPromptEnv), nil)
+		if wantedAsking(err) {
+			err = needsCredential(key.url, err)
+		}
+		return pinned, err
+	}
+	if prefetched == nil || errors.Is(prefetched, errAsksItself) {
+		pinned, err := resolveRemoteGitRef(sandboxgit.WithNoninteractive(ctx), key.url, key.ref, key.explicit, quietEnv(nil), nil)
+		if !wantedAsking(err) {
+			return pinned, err
+		}
+	}
+	pinned, err := resolveRemoteGitRef(ctx, key.url, key.ref, key.explicit, nil, runGit)
+	if err != nil && ctx.Err() == nil {
+		err = needsCredential(key.url, err)
+	}
+	return pinned, err
+}
+
+// quietEnv is env with git's and ssh's messages in English (wantedAsking).
+func quietEnv(env map[string]string) map[string]string {
+	env = maps.Clone(env)
+	if env == nil {
+		env = map[string]string{}
+	}
+	env["LC_ALL"] = "C"
+	return env
+}
+
+// wantedAsking reports whether a lookup failed for want of asking somebody:
+// git's prompt turned off, or ssh in batch mode refused for want of a key's
+// passphrase or a host key's confirmation. The messages are git's and ssh's in
+// English, which prefetchEnv and quietEnv ask for.
+func wantedAsking(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	for _, want := range []string{"terminal prompts disabled", "could not read Username", "could not read Password", "Authentication failed", "Permission denied (", "Host key verification failed"} {
+		if strings.Contains(message, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// needsCredential is err, a failure for want of a credential, saying which
+// remote wants one and how to give git one. Before a discobox exists there is
+// no Git credentials choice to offer for it: git on this machine is what pins
+// the commit.
+func needsCredential(remote string, err error) error {
+	name := networkRemoteURL(remote)
+	if name == "" {
+		name = remote
+	}
+	return fmt.Errorf("%s needs a Git credential this machine did not give: set up a Git credential helper (for GitHub, `gh auth setup-git`) or an SSH key for it, then try again: %w", name, err)
 }
 
 // remoteLookupKey is the lookup a remote source makes: a source that names no
@@ -182,9 +275,8 @@ func prefetchable(location string) bool {
 
 // lookInTurn reports whether a prefetched lookup is to be made again in its
 // turn, where somebody can answer: one never started because its transport
-// asks for itself, and one that failed because prefetchEnv kept git from
-// asking for a credential.
+// asks for itself, and one that failed for want of asking (wantedAsking),
+// which prefetchEnv keeps git from doing.
 func lookInTurn(err error) bool {
-	return errors.Is(err, errAsksItself) ||
-		(err != nil && strings.Contains(err.Error(), "terminal prompts disabled"))
+	return errors.Is(err, errAsksItself) || wantedAsking(err)
 }

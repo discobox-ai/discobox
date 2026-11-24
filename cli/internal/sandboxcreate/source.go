@@ -1,11 +1,13 @@
 package sandboxcreate
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -937,7 +939,10 @@ func networkRemoteURL(value string) string {
 // default branch (defaultRemoteBranch) when the source named none. The same
 // run asks for the remote's HEAD, which names its default branch whatever ref
 // is pinned: the sandbox's origin/HEAD names it, as a clone's would.
-func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bool, env map[string]string) (remoteRef, error) {
+//
+// runGit, when not nil, runs it with the terminal handed to git, which asks on
+// /dev/tty; its output and messages are still captured here.
+func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bool, env map[string]string, runGit func(context.Context, *exec.Cmd) error) (remoteRef, error) {
 	refs := []string{ref}
 	if explicitRef {
 		refs = append(refs, "refs/heads/"+ref, "refs/tags/"+ref)
@@ -945,7 +950,20 @@ func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bo
 	if ref != defaultRemoteBranch {
 		refs = append(refs, defaultRemoteBranch)
 	}
-	out, err := sandboxgit.Output(ctx, "", nil, env, append([]string{"ls-remote", "--symref", "--", source}, refs...)...)
+	args := append([]string{"ls-remote", "--symref", "--", source}, refs...)
+	var out string
+	var err error
+	if runGit == nil {
+		out, err = sandboxgit.Output(ctx, "", nil, env, args...)
+	} else {
+		cmd := sandboxgit.Command(ctx, "", env, args...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err = runGit(ctx, cmd); err != nil {
+			err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		out = stdout.String()
+	}
 	if err != nil {
 		return remoteRef{}, fmt.Errorf("resolve remote git ref %q: %w", ref, err)
 	}

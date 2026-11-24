@@ -30,7 +30,15 @@
   go through git (`prefetchable`) — judging the URL as written let an https
   GitHub URL rewritten to ssh through — and only a failure to ask is looked up
   again in its turn (`lookInTurn`): retrying every failure waited out a dead
-  host twice. Noninteractive cache delivery uses the same no-question executor, including
+  host twice. A lookup in its turn never runs git with its prompt on except
+  through `PromptOptions.RunGit`: under a create's window git's `Username for`
+  prompt was drawn into the window, with every key, Ctrl-C included, going to
+  the window rather than to git (#1543). `sandboxgit.NoPromptEnv` quiets git,
+  not ssh: ssh asks on `/dev/tty` itself unless it is in batch mode
+  (`sandboxgit.WithNoninteractive`), so a doc or comment saying "git asks
+  nothing" there is true of https only. A failure judged by its message
+  (`wantedAsking`) needs git's messages in English (`LC_ALL=C`), or a
+  non-English locale reads every one as some other failure. Noninteractive cache delivery uses the same no-question executor, including
   its best-effort fetch from the pool cache; an expired pool API token can
   trigger Git askpass there too.
 

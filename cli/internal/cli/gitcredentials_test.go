@@ -3,12 +3,16 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
@@ -144,5 +148,66 @@ func TestBareHelpIgnoresInvalidGitConfiguration(t *testing.T) {
 	root.SetErr(&bytes.Buffer{})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("help read config: %v", err)
+	}
+}
+
+// The window's create pins a private remote source before any discobox exists,
+// so before the pool's Git credentials choice can be offered. git's lookup in
+// its turn is handed the terminal through the window's own runner (the one
+// lending's credential fill takes), never left to ask on a terminal the window
+// is drawn on; and nothing is created for a source that could not be pinned.
+func TestWindowCreateHandsTheTerminalToALookupThatMustAsk(t *testing.T) {
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(remote.Close)
+	serveSettings := preparePromptCreateSSHSync(t)
+	api := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && serveSettings(w, r) {
+			return
+		}
+		t.Errorf("unexpected API request %s %s for a source that was never pinned", r.Method, r.URL.Path)
+	}))
+	t.Cleanup(api.Close)
+	configFile := filepath.Join(t.TempDir(), "client.yaml")
+	if err := os.WriteFile(configFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)
+	t.Setenv("GIT_ASKPASS", "")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	client, err := apiclientgen.NewClient(api.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stray strings.Builder
+	ds := &apiDataSource{app: &App{serverURL: api.URL, errOut: &stray}, client: client, projectID: "project-1"}
+	url := remote.URL + "/o/r.git"
+	var handed []string
+	credentials := tui.CredentialUI{
+		Run: func(_ context.Context, cmd *exec.Cmd) error {
+			handed = append(handed, strings.Join(cmd.Args, " "))
+			_, _ = cmd.Stderr.Write([]byte("fatal: Authentication failed for '" + url + "/'\n"))
+			return errors.New("exit status 128")
+		},
+		Confirm: func(context.Context, string) (bool, error) {
+			t.Fatal("the pool's Git credentials question was asked before any discobox exists")
+			return false, nil
+		},
+	}
+	_, err = ds.Run(t.Context(), tui.RunRequest{Source: url, Prompt: []string{"x"}, Credentials: credentials}, nil, nil, nil)
+	if err == nil {
+		t.Fatal("run of a source nobody gave a credential for succeeded")
+	}
+	if len(handed) != 1 || !strings.Contains(handed[0], "ls-remote") || !strings.Contains(handed[0], url) {
+		t.Fatalf("terminal handed to %q, want the ls-remote of %s alone (run: %v)", handed, url, err)
+	}
+	if !strings.Contains(err.Error(), "gh auth setup-git") {
+		t.Fatalf("run error = %v, want how to give git a credential", err)
+	}
+	if stray.Len() > 0 {
+		t.Fatalf("the create wrote to the terminal the window is drawn on: %q", stray.String())
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -108,6 +109,13 @@ type PromptOptions struct {
 	// in no repository has no commit to start from instead: the only real
 	// choices are its content or nothing.
 	CopyDirectory *bool
+	// RunGit runs a git command that may ask on the terminal, with the
+	// terminal handed to it: the window's ExecProcess, or the inline status
+	// line paused. It is what a remote source's ref lookup made in its turn
+	// runs through when no helper answers without asking (remoteRefs). Leave
+	// it nil when the frontend cannot hand the terminal over, or the operation
+	// asks nothing: git's own prompt is then off.
+	RunGit func(context.Context, *exec.Cmd) error
 }
 
 // ParsePromptOptions adds positional prompt arguments and normalizes the source.
@@ -223,7 +231,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	// (setSourceCodeReferences). The lookups end with the request built.
 	lookupCtx, endLookups := context.WithCancel(ctx)
 	defer endLookups()
-	remote := newRemoteRefs(lookupCtx)
+	remote := newRemoteRefs(lookupCtx, opts.RunGit)
 	if !opts.NoSource {
 		remote.prefetch(sourceArg)
 	}
