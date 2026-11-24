@@ -14,7 +14,9 @@
   [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md),
   [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md),
   [26-11-16-619](26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md)
-  §4, discobox-ai/vm#218, discobox-ai/vm#219, #1060.
+  §4,
+  [26-11-23-993](26-11-23-993-container-runtime-state-is-on-the-boxs-root-never-on-a-declared-volume.md),
+  discobox-ai/vm#218, discobox-ai/vm#219, #1060.
 
 ## Context
 
@@ -173,3 +175,8 @@ cannot is placed and restarted as before.
   at every boot after the first placement.
 - `pool-agent/DESIGN.md` (Machine Sandboxes) and `sandbox-agent/DESIGN.md`
   describe placement as one start, with mounting in place.
+- Once 26-11-23-993 takes `/var/lib/docker` and `/var/lib/containerd` out of
+  the declared volumes, Docker and containerd hold no path apply mounts.
+  §3's stop and start then protect nothing, and the implementation drops
+  them rather than restart two services for no reason. A machine's mount in
+  place then stops no service at all.
