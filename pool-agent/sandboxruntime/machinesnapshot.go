@@ -252,7 +252,7 @@ func (r *MachineSandboxRuntime) snapshotState(ctx context.Context, key string) (
 // and writes the record. A failure stops it at the step it reached; the VM it
 // made is destroyed unless the record names it, and what the pool laid for
 // the build goes once the VM is gone or committed.
-func (r *MachineSandboxRuntime) buildMachineSnapshot(ctx context.Context, plan snapshotPlan) (err error) {
+func (r *MachineSandboxRuntime) buildMachineSnapshot(ctx context.Context, plan snapshotPlan, build *snapshotBuild) (err error) {
 	key, id := plan.Key(), plan.buildID()
 	name := snapshotMachineName(key)
 	// Unpublished first, so no create takes it from here; one already
@@ -298,7 +298,7 @@ func (r *MachineSandboxRuntime) buildMachineSnapshot(ctx context.Context, plan s
 	if err != nil {
 		return err
 	}
-	if err := runSnapshotCommand(ctx, guest, agent, plan.Pins, data); err != nil {
+	if err := r.runSnapshotCommand(ctx, build, key, name, guest, agent, plan.Pins, data); err != nil {
 		return err
 	}
 	if err := r.engine.Stop(ctx, inst, snapshotStopTimeout); err != nil {

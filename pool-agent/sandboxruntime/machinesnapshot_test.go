@@ -369,7 +369,7 @@ func TestAMachinePoolsCacheClearDropsItsSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForSnapshotBuilds(t, r)
-	if err := r.recordSnapshotFailure("other", time.Now(), "it failed", nil); err != nil {
+	if err := r.recordSnapshotFailure("other", time.Now(), "it failed", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.ClearCache(ctx); err != nil {
@@ -419,7 +419,7 @@ func TestABuildLeavesASnapshotACreateHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	release := r.holdSnapshot(key)
-	if err := r.buildMachineSnapshot(ctx, plan); !errors.Is(err, errSnapshotHeld) {
+	if err := r.buildMachineSnapshot(ctx, plan, newSnapshotBuild(plan.name(), func() {})); !errors.Is(err, errSnapshotHeld) {
 		t.Fatalf("a build of a held snapshot = %v, want errSnapshotHeld", err)
 	}
 	if inst, err := f.owner.Instance(ctx, snapshotMachineName(key)); err != nil || inst.ID != record.Instance {

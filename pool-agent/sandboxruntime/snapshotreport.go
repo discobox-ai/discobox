@@ -2,13 +2,18 @@ package sandboxruntime
 
 import (
 	"context"
+	"io"
+	"maps"
 	"time"
+
+	"github.com/discobox-ai/vm/pkg/machine"
 )
 
 // What the pool reports of its snapshots (ADR 26-11-17-316). Every figure is
 // the pool's own record — its images or done records, its failure records,
 // its builds in memory, and the containers or machines it made — never what a
-// box says of itself. The JSON is the resource report's `snapshots` and the
+// box says of itself, but for a build's progress: the build's own word, which
+// nothing acts on (ADR 26-11-23-004 §3). The JSON is the resource report's `snapshots` and the
 // state channel's `startedFrom` as server.yaml has them.
 
 // SnapshotReport is what the pool holds, builds and has failed to build. Its
@@ -43,6 +48,39 @@ type BuildingSnapshot struct {
 	RequestedAt time.Time        `json:"requestedAt"`
 	// StartedAt is absent while it waits for another build to end.
 	StartedAt *time.Time `json:"startedAt,omitempty"`
+	// Box is what it runs in, as its runtime names it: a container's name
+	// or a machine's. Absent until its box is up.
+	Box string `json:"box,omitempty"`
+	// Progress is the latest status it reported. Absent until it has, and
+	// from a build whose agent reports none.
+	Progress *SnapshotProgress `json:"progress,omitempty"`
+}
+
+// SnapshotProgress is a build's provisioning status, as it reported it (ADR
+// 26-11-23-004 §1): the build's own word, which the pool and the server
+// only show. Every string in it was written by the build's box.
+type SnapshotProgress struct {
+	State    string                             `json:"state"`
+	Error    string                             `json:"error,omitempty"`
+	Features map[string]SnapshotFeatureProgress `json:"features,omitempty"`
+}
+
+// SnapshotFeatureProgress is one feature's line of a build's progress.
+type SnapshotFeatureProgress struct {
+	State string `json:"state"`
+	// Step is the step running now.
+	Step  string `json:"step,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+// clone is a copy of p that shares nothing with it.
+func (p *SnapshotProgress) clone() *SnapshotProgress {
+	if p == nil {
+		return nil
+	}
+	out := *p
+	out.Features = maps.Clone(p.Features)
+	return &out
 }
 
 // FailedSnapshot is a plan whose last build failed within
@@ -54,6 +92,10 @@ type FailedSnapshot struct {
 	FailedAt   time.Time         `json:"failedAt"`
 	RetryAfter time.Time         `json:"retryAfter"`
 	Error      string            `json:"error,omitempty"`
+	// Progress is the last status the build reported before it failed:
+	// which feature failed, and at which step. Absent from a failure
+	// recorded before it was kept, and from a build that reported none.
+	Progress *SnapshotProgress `json:"progress,omitempty"`
 }
 
 // StartedFrom is what a sandbox's current container or machine was made
@@ -80,4 +122,14 @@ func (r *sandboxCore) snapshotReport(held []HeldSnapshot) (*SnapshotReport, erro
 // Snapshots of an in-memory pool: it builds none.
 func (r *MemorySandboxRuntime) Snapshots(context.Context) (*SnapshotReport, error) {
 	return &SnapshotReport{Held: []HeldSnapshot{}, Building: []BuildingSnapshot{}, Failed: []FailedSnapshot{}}, nil
+}
+
+// SnapshotBuildLogs of an in-memory pool: it builds none.
+func (r *MemorySandboxRuntime) SnapshotBuildLogs(context.Context, string, SnapshotLogsRequest, io.Writer) error {
+	return ErrSnapshotBuildNotFound
+}
+
+// SnapshotBuildExec of an in-memory pool: it builds none.
+func (r *MemorySandboxRuntime) SnapshotBuildExec(context.Context, string, machine.ExecRequest) (machine.Process, context.Context, error) {
+	return nil, nil, ErrSnapshotBuildNotFound
 }

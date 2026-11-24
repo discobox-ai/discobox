@@ -1924,7 +1924,9 @@ flowchart LR
   `provisioner.ContainerGuest`). The taker starts its box, places the agent,
   its units and its pins, and runs the agent's `snapshot` command as one
   blocking exec with the plan on its stdin, whose exit status and stderr are
-  the build's result. The
+  the build's result. Its stdout is the build's progress
+  (`agentlayer.SnapshotProgressLine`), read as it comes
+  ([Reaching a build](#reaching-a-build)). The
   command refuses to seal a box with any feature not done or failed (as
   `discobox-provision wait` reads it), so no snapshot is committed that is
   not provisioned whole. The guest never powers itself off: the taker stops
@@ -1982,9 +1984,11 @@ flowchart LR
 - **A plan whose build failed waits an hour** before a create asks again. Its
   failure is kept in the pool's tree (`snapshot-failures/<key>`), not in
   memory, so an agent that keeps restarting does not keep building: a JSON
-  record of when, why (the build's error, bounded, its middle elided) and the
-  plan. A bare time, as a pool before it wrote, reads as a failure with no
-  reason and no plan.
+  record of when, why (the build's error, bounded, its middle elided), the
+  plan and the last progress the build reported, with the end of each feature
+  log beside it (`snapshot-failures/<key>.logs/`), which goes with it. A bare
+  time, as a pool before it wrote, reads as a failure with no reason and no
+  plan.
 - **A create with no `provisionEgress`** — from a server before it — starts
   from the base and builds nothing, rather than building unrestricted.
 - **The snapshot** is tagged `discobox-snapshot:<key>` and labelled with the
@@ -2013,7 +2017,10 @@ flowchart LR
 ### Reporting
 
 The pool reports its snapshots read-only ([ADR 26-11-17-316](../docs/adr/26-11-17-316-a-pool-reports-its-snapshots-and-each-box-what-it-started-from.md);
-`snapshotreport.go`), from its own records alone, never a box's word:
+`snapshotreport.go`), from its own records alone, never a box's word — but
+for a build's progress, the build's own word, which nothing acts on
+([ADR 26-11-23-004](../docs/adr/26-11-23-004-a-snapshot-build-reports-its-progress-and-an-admin-reaches-it-through-its-pool.md)
+§3):
 
 - **What it holds, builds and failed to build** rides every resource report
   as `snapshots` (`Runtime.Snapshots`): each held snapshot by key with its
@@ -2021,8 +2028,9 @@ The pool reports its snapshots read-only ([ADR 26-11-17-316](../docs/adr/26-11-1
   image's; none for a committed VM), when a create last used it where the
   pool keeps that (a machine pool's done record), and how many boxes were
   made from it; each build asked for (`snapshotBuilds.active`: its plan,
-  when it was asked for, and when it took the build lock — none while
-  queued); each plan failed within the retry, with its error. A machine
+  when it was asked for, when it took the build lock — none while queued —
+  the box it runs in, and its latest progress); each plan failed within the
+  retry, with its error and its last progress. A machine
   snapshot dropped because a box made from it never came up is a failed
   plan. A listing that fails leaves `snapshots` out, which reads as not
   reported, never as none.
@@ -2038,6 +2046,44 @@ The pool reports its snapshots read-only ([ADR 26-11-17-316](../docs/adr/26-11-1
   the container. A container made before the label says nothing, never
   guessed as `base`; nor does a destroy event or a power operation's own
   report, and the control plane keeps what it last heard.
+
+### Reaching a build
+
+A build is visible and reachable through its pool, on every runtime, with no
+provider credential
+([ADR 26-11-23-004](../docs/adr/26-11-23-004-a-snapshot-build-reports-its-progress-and-an-admin-reaches-it-through-its-pool.md);
+`snapshotbuild.go`, `server/snapshot_builds.go`):
+
+- **Progress is streamed.** The snapshot command writes a progress line
+  (`agentlayer.SnapshotProgressPrefix` and the whole `provisionspec.Status`
+  as JSON) on each change of its tracker, steps included. `runSnapshotCommand`
+  reads its stdout as it comes (`provisioner.Plan.Stdout`), keeps each
+  feature's state, step and error (`SnapshotProgress`) on the build, and
+  drops a line it cannot read. No exec or poll of the guest.
+- **A build holds its box** while its command runs: its name and its
+  `machine.Guest` (`attachSnapshotBuild`). When the command ends the guest
+  is let go and `snapshotBuild.ended` ends every session in the box
+  (`detachSnapshotBuild`).
+- **Logs** (`GET .../snapshot-builds/{key}/logs`, scope
+  `snapshot-build:read`): a fixed `tail` of `provisionspec.LogDir/<feature>.log`
+  for the features the build reported, run through its guest, never a
+  command the caller names; followed, it ends with the build. A key with no
+  build under way reads what its failure kept.
+- **Exec** (`GET .../snapshot-builds/{key}/exec`, scope
+  `snapshot-build:exec`): a WebSocket of execstream frames to a command, or a
+  login shell on a terminal, started through the guest. The first marks the
+  build opened, under the lock its end takes, and an opened build ends with
+  `errSnapshotOpened`: not committed, no failure record and no kept logs,
+  whatever its command's outcome, and the next create asks again. Whatever
+  was typed would be in every box of the plan. It is not audited, as the
+  pool host's console is not.
+- **Once its command ends** its box is being stopped and committed: it is
+  still listed as building, and its logs and exec refuse it as such
+  (`ErrSnapshotBuildProvisioned`), not as queued. A key that is not a plan's
+  (64 lower-case hex) names no build and is never made a path.
+- **A failure keeps its logs, not its box**: before the box goes, the end of
+  each feature log is copied out with `CopyFrom` (`keepSnapshotLogs`,
+  bounded per feature). The box is removed as before.
 
 ### On a machine pool
 

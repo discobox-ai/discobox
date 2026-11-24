@@ -953,3 +953,17 @@ resource report's 30s deadline on every pass (#1686). `imagereap`'s
 `imageReclaimTimeout`, which `clearSnapshots` shares: it filters by its reclaim
 label alone because its images span several repositories. That is known debt
 tracked in #1699, not a pattern to copy.
+
+## A snapshot build's exec is held to the console's rules
+
+The build exec's pump (`server/snapshot_builds.go`) ends every session it
+started with an `Exit` frame that says how (a refusal before it starts is an
+`Error` frame): the command's code, or `failed` with why, an
+output error or the build ending included, as `server/REVIEW.md` asks of the
+pool console. A run in the box marks the build opened before the command
+starts, under the lock the build's end takes (`SnapshotBuildExec`), and a
+build's key is checked as a plan's, by logs and exec alike, before anything
+is looked up by it or made a path. Why:
+a session that ends silently reads to the admin as the shell exiting, and an
+exec that marks the build after it starts can race the commit, which would
+hand every box of the plan whatever was typed (ADR 26-11-23-004 §5).

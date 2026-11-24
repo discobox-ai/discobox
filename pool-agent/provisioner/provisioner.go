@@ -37,6 +37,10 @@ type Plan struct {
 	// command may read, and nothing may keep, goes here rather than in the
 	// tree, which is written to the machine's disk.
 	Stdin io.Reader
+	// Stdout, when set, is handed the command's standard output as it comes,
+	// besides the tail its Result keeps: a caller that reads the command's
+	// progress reads it here.
+	Stdout io.Writer
 }
 
 // Result is what the command reported: its exit code and the last
@@ -84,7 +88,11 @@ func Provision(ctx context.Context, guest machine.Guest, plan Plan) (Result, err
 		return Result{}, fmt.Errorf("place the tree in %s: %w", plan.Dir, err)
 	}
 	var stdout, stderr tailBuffer
-	code, err := machine.Run(ctx, guest, plan.Command, plan.Stdin, &stdout, &stderr)
+	var out io.Writer = &stdout
+	if plan.Stdout != nil {
+		out = io.MultiWriter(&stdout, plan.Stdout)
+	}
+	code, err := machine.Run(ctx, guest, plan.Command, plan.Stdin, out, &stderr)
 	result := Result{ExitCode: code, Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
 	if err != nil {
 		result.ExitCode = -1
