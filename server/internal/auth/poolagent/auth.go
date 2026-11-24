@@ -49,6 +49,11 @@ const (
 	// ScopePoolCacheClear authorizes stopping every sandbox on a pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
+	// ScopeSnapshotBuildRead authorizes reading a snapshot build's feature
+	// logs, and ScopeSnapshotBuildExec running a command in its box (ADR
+	// 26-11-23-004 §§4-5).
+	ScopeSnapshotBuildRead = "snapshot-build:read"
+	ScopeSnapshotBuildExec = "snapshot-build:exec"
 	// ScopePoolControlPlaneChannel authorizes opening a pool's control-plane
 	// channel (ADR 26-10-30-875 §1).
 	ScopePoolControlPlaneChannel = "pool:control-plane-channel"

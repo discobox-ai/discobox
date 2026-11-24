@@ -418,9 +418,16 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 				}),
 			},
 			Snapshots: serverapi.NewOptPoolSnapshots(serverapi.PoolSnapshots{
-				Held:     []serverapi.PoolSnapshot{{Key: "k1", BuiltAt: reportedAt, Boxes: 1, Plan: serverapi.NewOptPoolSnapshotPlan(serverapi.PoolSnapshotPlan{Base: "sha256:base"})}},
-				Building: []serverapi.PoolSnapshotBuild{},
-				Failed:   []serverapi.PoolSnapshotFailure{{Key: "k2", FailedAt: reportedAt, RetryAfter: reportedAt.Add(time.Hour), Error: serverapi.NewOptString("feature go failed")}},
+				Held: []serverapi.PoolSnapshot{{Key: "k1", BuiltAt: reportedAt, Boxes: 1, Plan: serverapi.NewOptPoolSnapshotPlan(serverapi.PoolSnapshotPlan{Base: "sha256:base"})}},
+				Building: []serverapi.PoolSnapshotBuild{{
+					Key: "k3", Plan: serverapi.PoolSnapshotPlan{Base: "sha256:base"}, RequestedAt: reportedAt,
+					Box: serverapi.NewOptString("snap-k3"),
+					Progress: serverapi.NewOptPoolSnapshotProgress(serverapi.PoolSnapshotProgress{
+						State:    "provisioning",
+						Features: serverapi.NewOptPoolSnapshotProgressFeatures(serverapi.PoolSnapshotProgressFeatures{"docker": {State: "provisioning", Step: serverapi.NewOptString("install")}}),
+					}),
+				}},
+				Failed: []serverapi.PoolSnapshotFailure{{Key: "k2", FailedAt: reportedAt, RetryAfter: reportedAt.Add(time.Hour), Error: serverapi.NewOptString("feature go failed")}},
 			}),
 		},
 		Sandboxes: []serverapi.SandboxResourceConsumption{{
@@ -474,6 +481,11 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 	snapshots, ok := report.Snapshots.Get()
 	if !ok || len(snapshots.Held) != 1 || snapshots.Held[0].Key != "k1" || len(snapshots.Failed) != 1 || snapshots.Failed[0].Error.Or("") != "feature go failed" {
 		t.Errorf("snapshots = %+v (present=%v)", snapshots, ok)
+	}
+	// A build's box and progress ride with it (ADR 26-11-23-004 §2).
+	if len(snapshots.Building) != 1 || snapshots.Building[0].Box.Or("") != "snap-k3" ||
+		snapshots.Building[0].Progress.Value.Features.Value["docker"].Step.Or("") != "install" {
+		t.Errorf("building = %+v", snapshots.Building)
 	}
 
 	sandboxModel, err := svc.store.GetSandbox(ctx, "project-1", "sandbox-a")

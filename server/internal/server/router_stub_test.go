@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -55,6 +56,13 @@ type routerTestServices struct {
 	importResult    *services.SandboxImportResult
 	exportStream    io.ReadCloser
 	poolLogErr      error
+	// snapshotBuild answers the snapshot build routes: a log body, or an
+	// exec that echoes, and what each was asked.
+	snapshotBuildLog  string
+	snapshotBuildErr  error
+	snapshotBuildKey  string
+	snapshotBuildLogs sandbox.SnapshotBuildLogOptions
+	snapshotBuildExec sandbox.ConsoleOptions
 
 	guestImageBuild    *sandbox.GuestImageBuild
 	guestImageBuildErr error
@@ -794,6 +802,32 @@ func (s *routerTestServices) OpenPoolLogs(_ context.Context, projectID, poolID s
 	s.poolLog.poolID = poolID
 	s.poolLog.openOpts = opts
 	return &sandbox.PoolLogStream{Source: s.poolLog.source, ReadCloser: s.poolLog}, nil
+}
+
+// OpenSnapshotBuildLogs answers with the stub build log, recording what was
+// asked.
+func (s *routerTestServices) OpenSnapshotBuildLogs(_ context.Context, _, _, key string, opts sandbox.SnapshotBuildLogOptions) (io.ReadCloser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.snapshotBuildErr != nil {
+		return nil, s.snapshotBuildErr
+	}
+	s.snapshotBuildKey, s.snapshotBuildLogs = key, opts
+	return io.NopCloser(strings.NewReader(s.snapshotBuildLog)), nil
+}
+
+// DialSnapshotBuildExec answers with a connection that echoes each frame,
+// recording what was asked.
+func (s *routerTestServices) DialSnapshotBuildExec(_ context.Context, _, _, key string, opts sandbox.ConsoleOptions) (net.Conn, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.snapshotBuildErr != nil {
+		return nil, s.snapshotBuildErr
+	}
+	s.snapshotBuildKey, s.snapshotBuildExec = key, opts
+	near, far := net.Pipe()
+	go func() { _, _ = io.Copy(far, far) }()
+	return near, nil
 }
 
 func (s *routerTestServices) SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {

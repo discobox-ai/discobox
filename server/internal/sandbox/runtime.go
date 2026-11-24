@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"io"
+	"net"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
@@ -606,6 +607,18 @@ type PoolRuntime interface {
 	// came up — and it is the one of the two that answers on a host with no
 	// shell to attach to at all.
 	OpenLogs(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts PoolLogOptions) (*PoolLogStream, error)
+	// OpenSnapshotBuildLogs streams the feature logs of the pool's snapshot
+	// build keyed key, through the pool agent, which reads them through the
+	// build's box on every runtime, or serves what a failed build kept (ADR
+	// 26-11-23-004 §§4, 6). The server keeps nothing of a build. A key that
+	// names no build is ErrNotFound; an agent too old for the route is
+	// ErrPoolAgentUnsupported.
+	OpenSnapshotBuildLogs(ctx context.Context, pool *model.Pool, key string, opts SnapshotBuildLogOptions) (io.ReadCloser, error)
+	// DialSnapshotBuildExec opens a command, or a shell, in the box of the
+	// pool's snapshot build keyed key, through the pool agent: the returned
+	// connection carries execstream frames, as a console's does. A build an
+	// admin ran a command in is never committed (ADR 26-11-23-004 §5).
+	DialSnapshotBuildExec(ctx context.Context, pool *model.Pool, key string, opts ConsoleOptions) (net.Conn, error)
 	// BuildGuestImage rebuilds the guest image this backend boots, on the pool
 	// host that is already running it, and writes the artifacts where the
 	// backend looks for a local build (ADR 0062 §7).
@@ -685,6 +698,16 @@ type PoolLogOptions struct {
 type PoolLogStream struct {
 	Source string
 	io.ReadCloser
+}
+
+// SnapshotBuildLogOptions is what of a snapshot build's feature logs is
+// read: one feature's or every feature's (Feature empty), the last Tail
+// lines of each (zero is the pool agent's default), and whether to follow
+// them until the build ends.
+type SnapshotBuildLogOptions struct {
+	Feature string
+	Tail    int
+	Follow  bool
 }
 
 // ConsoleOptions configures a pool host console. With no Command it attaches
