@@ -420,6 +420,11 @@ decrypted leaves the summary empty rather than failing the read.
 URL is refused: what has been handed over is a token that will expire and stay
 expired, and the type would promise a refresh nothing can perform.
 
+A `token` secret with an empty (or blank) value is refused at create and at
+update: the value is what the proxy swaps in for the sentinel, and with none
+the resolve stays pending, so every use would send the sentinel itself. Rows
+already holding an empty token (a retired exchange) are left as they are.
+
 A refresh is the client's to authenticate, as the code exchange was (RFC 6749
 §6). A public client (PKCE, no secret) refreshes with its client id alone; a
 confidential one also needs its client secret, which whoever ran the sign-in

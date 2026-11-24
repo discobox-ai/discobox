@@ -180,6 +180,9 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	if err := checkOAuthValue(secretType, input.Value); err != nil {
 		return nil, err
 	}
+	if err := checkTokenValue(secretType, input.Value); err != nil {
+		return nil, err
+	}
 	format, formatSet, err := sentinelFormat(input.Format)
 	if err != nil {
 		return nil, err
@@ -279,6 +282,9 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			}
 		}
 		if valueVal, ok := input.Value.Get(); ok {
+			if err := checkTokenValue(sec.Type, valueVal); err != nil {
+				return err
+			}
 			valueBytes, err := marshalSecretValue(valueVal)
 			if err != nil {
 				return apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
@@ -1311,6 +1317,23 @@ func checkOAuthValue(secretType string, val apigen.SecretValue) error {
 	if strings.TrimSpace(val.RefreshToken.Or("")) == "" || strings.TrimSpace(val.TokenUrl.Or("")) == "" {
 		return apperrors.NewStatusError(http.StatusBadRequest,
 			"an oauth secret is one that renews itself: give it a refreshToken and a tokenUrl, or store it as a token")
+	}
+	return nil
+}
+
+// checkTokenValue refuses a token secret with no value. The value is what the
+// proxy swaps in for the sentinel a sandbox holds; with none there is nothing
+// to swap, the resolve answers pending, and the proxy sends the request with
+// the sentinel in place (proxy/DESIGN.md "Sentinel Secret Swapping"). Refused
+// at create and at update alike, as an empty refresh output already is. Rows
+// already holding an empty token (a retired exchange secret) are left alone.
+func checkTokenValue(secretType string, val apigen.SecretValue) error {
+	if secretType != model.SecretTypeToken {
+		return nil
+	}
+	if strings.TrimSpace(val.Token.Or("")) == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest,
+			"a token secret needs a value: give the token, or use a refresh command that prints it")
 	}
 	return nil
 }
