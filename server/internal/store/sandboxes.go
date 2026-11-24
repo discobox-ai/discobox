@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -319,11 +320,30 @@ func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error
 			}
 		}
 		if err := tx.Create(persisted).Error; err != nil {
+			if isSandboxNameViolation(err) {
+				return ErrSandboxNameTaken
+			}
 			return err
 		}
 		txStore.sandboxChanged(persisted.ID)
 		return nil
 	})
+}
+
+// ErrSandboxNameTaken is CreateSandbox's refusal of a handle another sandbox
+// in the project holds, by idx_sandbox_project_name: the authority on a
+// handle's uniqueness, two concurrent creates included (ADR 26-11-19-859).
+// The transaction it was refused in is spent, on Postgres for good, so a
+// caller that tries another handle does so in a new one.
+var ErrSandboxNameTaken = errors.New("a sandbox in this project already holds that name")
+
+// isSandboxNameViolation reports whether err is idx_sandbox_project_name
+// refusing an insert, as each database the server runs on words it: SQLite by
+// the index's columns, Postgres by the index's name.
+func isSandboxNameViolation(err error) bool {
+	text := err.Error()
+	return strings.Contains(text, "UNIQUE constraint failed: sandboxes.project_id, sandboxes.name") ||
+		strings.Contains(text, `unique constraint "idx_sandbox_project_name"`)
 }
 
 // GetSandboxByID looks a sandbox up by its globally unique ID alone, for
@@ -891,10 +911,10 @@ func (s *Store) GetSandboxByName(ctx context.Context, projectID, name string) (*
 }
 
 // SandboxNameTaken reports whether a sandbox already holds name in the project.
-// It backs the friendly conflict the API returns before the
-// idx_sandbox_project_name unique index would reject the insert with a driver
-// error. The index remains the authority — two concurrent creates can both pass
-// this check — but the race is narrow and the loser still fails safely.
+// It backs the readable conflict the API returns for a name a create or an
+// import gives. The idx_sandbox_project_name unique index remains the
+// authority — two concurrent creates can both pass this check — and
+// CreateSandbox answers its loser with ErrSandboxNameTaken.
 func (s *Store) SandboxNameTaken(ctx context.Context, projectID, name string) (bool, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

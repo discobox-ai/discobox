@@ -52,7 +52,7 @@ func TestADiscoboxIsCreatedWithTheSecretsItIsGiven(t *testing.T) {
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "worker"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("worker")}),
 		Bindings:    []serverapi.SandboxBindingInput{githubBinding(secret.ID)},
 	})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsBindingsAreTheSandboxs(t *tes
 
 	created, err := svc.CreateSandbox(lead, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "worker"},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("worker")}),
 		Bindings:    []serverapi.SandboxBindingInput{githubBinding(secret.ID)},
 	})
 	if err != nil {
@@ -153,9 +153,9 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsBindingsAreTheSandboxs(t *tes
 
 	_, err = svc.CreateSandbox(lead, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config: serverapi.SandboxCreateConfig{Name: "leaky", Secrets: []serverapi.SandboxSecretInput{{
+		Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("leaky"), Secrets: []serverapi.SandboxSecretInput{{
 			Env: "GH_TOKEN", Value: "ghp_inline",
-		}}},
+		}}}),
 	})
 	requireStatus(t, err, http.StatusForbidden)
 }
@@ -186,7 +186,7 @@ func TestACreateThatCannotMakeItsBindingsCreatesNothing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 				HarnessName: serverapi.NewOptString("shell"),
-				Config:      serverapi.SandboxCreateConfig{Name: "worker"},
+				Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("worker")}),
 				Bindings:    tc.bindings,
 			})
 			requireStatus(t, err, tc.want)
@@ -240,14 +240,14 @@ func TestASandboxsSourceIsDeliveredAsAPersonsIs(t *testing.T) {
 		return services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("shell"),
 			Origin:      serverapi.NewOptOrigin(serverapi.Origin{HostId: "host-user"}),
-			Config: serverapi.SandboxCreateConfig{
-				Name: name,
+			Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
+				Name: serverapi.NewOptString(name),
 				Source: serverapi.NewOptGitSource(serverapi.GitSource{
 					Kind:           serverapi.GitSourceKindGit,
 					LocalDirectory: serverapi.NewOptString(directory),
 					Checkout:       serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{Commit: serverapi.NewOptString("abc123")}),
 				}),
-			},
+			}),
 		}
 	}
 
@@ -270,7 +270,7 @@ func TestASandboxsSourceIsDeliveredAsAPersonsIs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remote.Config.Source = serverapi.NewOptGitSource(serverapi.GitSource{Kind: serverapi.GitSourceKindGit, URL: serverapi.NewOptURI(*u)})
+	remote.Config.Value.Source = serverapi.NewOptGitSource(serverapi.GitSource{Kind: serverapi.GitSourceKindGit, URL: serverapi.NewOptURI(*u)})
 	created, err := svc.CreateSandbox(lead, projectID, remote)
 	if err != nil {
 		t.Fatalf("create from a network URL: %v", err)
@@ -294,7 +294,7 @@ func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 	create := func(as context.Context, name string) error {
 		_, err := svc.CreateSandbox(as, projectID, services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("shell"),
-			Config:      serverapi.SandboxCreateConfig{Name: name},
+			Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name)}),
 			Bindings:    []serverapi.SandboxBindingInput{githubBinding(secret.ID)},
 		})
 		return err
@@ -335,7 +335,7 @@ func TestTheDiscoboxAPIIsGivenAtCreateAndChangedByAPerson(t *testing.T) {
 	create := func(as context.Context, name string, api bool) (*model.Sandbox, error) {
 		return svc.CreateSandbox(as, projectID, services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("shell"),
-			Config:      serverapi.SandboxCreateConfig{Name: name},
+			Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name)}),
 			DiscoboxApi: serverapi.NewOptBool(api),
 		})
 	}
@@ -389,7 +389,7 @@ func TestARestrictedDiscoboxCannotCreateAWiderOne(t *testing.T) {
 	}
 	leadBox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
-		Config:      serverapi.SandboxCreateConfig{Name: "lead", Egress: restricted("github.com")},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("lead"), Egress: restricted("github.com")}),
 	})
 	if err != nil {
 		t.Fatalf("create lead: %v", err)
@@ -400,7 +400,7 @@ func TestARestrictedDiscoboxCannotCreateAWiderOne(t *testing.T) {
 	create := func(ctx context.Context, name string, egress serverapi.OptEgressPolicy) error {
 		_, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("shell"),
-			Config:      serverapi.SandboxCreateConfig{Name: name, Egress: egress},
+			Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name), Egress: egress}),
 		})
 		return err
 	}

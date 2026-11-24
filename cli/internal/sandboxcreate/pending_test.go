@@ -37,7 +37,7 @@ func pendingFixture(t *testing.T, empty, bind bool) (*LocalSources, *model.Sandb
 	}
 	t.Cleanup(local.Close)
 	sb := &model.Sandbox{ID: "sbx_1", ProjectId: "project-1", Origin: body.Origin, Runtime: model.SandboxRuntime{State: api.SandboxRuntimeStateAwaitingSource}}
-	source := body.Config.Source.Value
+	source := body.Config.Value.Source.Value
 	source.Delivery = api.NewOptGitSourceDelivery(api.GitSourceDeliveryPush)
 	source.Slug = api.NewOptString("primary")
 	sb.Config.Source = api.NewOptGitSource(source)
@@ -226,7 +226,7 @@ func TestPendingSourcesPrecedeCreateAndCacheDeliveryPrecedesBoot(t *testing.T) {
 	if err := local.stagePending(t.Context(), pool.server.URL, "p", body); err != nil {
 		t.Fatal(err)
 	}
-	source := body.Config.Source.Value
+	source := body.Config.Value.Source.Value
 	source.Slug = api.NewOptString("primary")
 	source.Delivery = api.NewOptGitSourceDelivery(api.GitSourceDeliveryCache)
 	sb := cacheSandbox("sbx-one", source)
@@ -281,14 +281,14 @@ func TestPartialMultiSourceDeliveryRetainsWholePendingSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer local.Close()
-	source := body.Config.Source.Value
+	source := body.Config.Value.Source.Value
 	source.Slug = api.NewOptString("primary")
 	source.Delivery = api.NewOptGitSourceDelivery(api.GitSourceDeliveryPush)
 	sb := parkedWithPushSource(source.Checkout.Value.Commit.Value)
 	sb.Origin = body.Origin
 	sb.Config.Source = api.NewOptGitSource(source)
 	refs := api.SandboxConfigSourceCodeReferences{}
-	for key, ref := range body.Config.SourceCodeReferences.Value {
+	for key, ref := range body.Config.Value.SourceCodeReferences.Value {
 		ref.Delivery = api.NewOptGitSourceDelivery(api.GitSourceDeliveryPush)
 		refs[key] = ref
 	}
@@ -448,7 +448,7 @@ type lostCreateResponse struct {
 func (f *lostCreateResponse) CreateSandbox(_ context.Context, body *model.CreateSandboxBody, params api.CreateSandboxParams) (api.CreateSandboxRes, error) {
 	f.project = params.ProjectId
 	f.sandbox = &model.Sandbox{ID: "sbx_1", ProjectId: params.ProjectId, Origin: body.Origin, Runtime: model.SandboxRuntime{State: api.SandboxRuntimeStateAwaitingSource}}
-	source := body.Config.Source.Value
+	source := body.Config.Value.Source.Value
 	source.Slug = api.NewOptString("primary")
 	source.Delivery = api.NewOptGitSourceDelivery(api.GitSourceDeliveryPush)
 	f.sandbox.Config.Source = api.NewOptGitSource(source)

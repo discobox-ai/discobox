@@ -147,3 +147,22 @@ func TestDefaultGIDIsTheGuests(t *testing.T) {
 		t.Errorf("darwin DefaultGID(501) = %d, want 20", got)
 	}
 }
+
+func TestDefaultAccountIsAnOrdinaryLinuxAccount(t *testing.T) {
+	account, ok := DefaultAccount("linux")
+	if !ok {
+		t.Fatal("linux has no default account")
+	}
+	if account.Name != "discobox" || account.HomeDirectory != "/home/discobox" ||
+		account.UID == nil || *account.UID != 1000 || account.GID == nil || *account.GID != 1000 {
+		t.Fatalf("default account = %+v, want discobox 1000:1000 /home/discobox", account)
+	}
+	if err := account.ValidateAccount("linux"); err != nil {
+		t.Fatalf("default account refused on linux: %v", err)
+	}
+	for _, goos := range []string{"darwin", "windows"} {
+		if _, ok := DefaultAccount(goos); ok {
+			t.Errorf("%s has a default account, want its template's own", goos)
+		}
+	}
+}

@@ -164,7 +164,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 	var opts sandboxCreateOptions
 	var egressOpts egressFlags
 	cmd := &cobra.Command{
-		Use:   "create --name NAME",
+		Use:   "create [--name NAME]",
 		Short: "Create a discobox",
 		Long: `Create a discobox.
 
@@ -205,7 +205,7 @@ discobox's own egress level.
 			if level, ok, err := egressOpts.create(cmd); err != nil {
 				return err
 			} else if ok {
-				body.Config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
+				body.Config.Value.SetEgress(apiclientgen.NewOptEgressPolicy(level))
 			}
 			sandboxRes, err := client.CreateSandbox(cmd.Context(), body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 			if err != nil {
@@ -218,7 +218,7 @@ discobox's own egress level.
 			// Where each value stored as a secret of its own is sent, so an @
 			// read as a host is seen rather than discovered (cli/REVIEW.md);
 			// said only now, since a create that failed stored nothing.
-			for _, secret := range body.Config.Secrets {
+			for _, secret := range body.Config.Value.Secrets {
 				fmt.Fprintln(cmd.ErrOrStderr(), terminalSafe(sandboxcreate.InlineSecretLine(secret)))
 			}
 			if opts.wait {
@@ -671,8 +671,10 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 }
 
 func createSandboxBody(ctx context.Context, opts sandboxCreateOptions, warn func(string)) (*apimodel.CreateSandboxBody, error) {
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: opts.name}}
-	config := &body.Config
+	body := &apimodel.CreateSandboxBody{Config: apiclientgen.NewOptSandboxCreateConfig(apimodel.SandboxCreateConfig{})}
+	config := &body.Config.Value
+	// With no --name, the server draws the handle.
+	config.SetName(optString(opts.name))
 	config.SetDescription(optString(opts.description))
 	body.SetPoolId(optString(opts.poolID))
 	body.SetHarnessName(optString(opts.harnessName))

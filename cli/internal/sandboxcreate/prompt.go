@@ -162,9 +162,9 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate discobox name: %w", err)
 	}
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: name}}
+	body := &apimodel.CreateSandboxBody{Config: apiclientgen.NewOptSandboxCreateConfig(apimodel.SandboxCreateConfig{Name: apiclientgen.NewOptString(name)})}
 	if len(opts.Prompt) > 0 {
-		body.Config.SetPrompt(append([]string(nil), opts.Prompt...))
+		body.Config.Value.SetPrompt(append([]string(nil), opts.Prompt...))
 	}
 	if strings.TrimSpace(opts.Harness) != "" {
 		body.SetHarnessName(optionalString(opts.Harness))
@@ -172,23 +172,23 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	// The meta name goes only when given: a server from before it refuses
 	// the field.
 	if opts.Name != "" {
-		body.Config.SetMetaName(apiclientgen.NewOptString(opts.Name))
+		body.Config.Value.SetMetaName(apiclientgen.NewOptString(opts.Name))
 	}
 	if opts.Description != "" {
-		body.Config.SetDescription(apiclientgen.NewOptString(opts.Description))
+		body.Config.Value.SetDescription(apiclientgen.NewOptString(opts.Description))
 	}
 	if len(opts.Tags) > 0 {
-		body.Config.SetTags(apiclientgen.NewOptSandboxCreateConfigTags(apiclientgen.SandboxCreateConfigTags(maps.Clone(opts.Tags))))
+		body.Config.Value.SetTags(apiclientgen.NewOptSandboxCreateConfigTags(apiclientgen.SandboxCreateConfigTags(maps.Clone(opts.Tags))))
 	}
 	env, secrets, err := EnvAndSecretsFromOptions(opts.Env, opts.Secret)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(env) > 0 {
-		body.Config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
+		body.Config.Value.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
 	}
 	if len(secrets) > 0 {
-		body.Config.SetSecrets(secrets)
+		body.Config.Value.SetSecrets(secrets)
 	}
 	body.Bindings = opts.Bindings
 	if opts.DiscoboxAPI {
@@ -202,7 +202,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if err != nil {
 		return nil, nil, err
 	}
-	SetCreateSandboxSkills(&body.Config, skills)
+	SetCreateSandboxSkills(&body.Config.Value, skills)
 	if poolID := strings.TrimSpace(opts.PoolID); poolID != "" {
 		body.SetPoolId(apiclientgen.NewOptString(poolID))
 	}
@@ -272,7 +272,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 			local.Close()
 			return nil, nil, err
 		}
-		body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
+		body.Config.Value.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	}
 	resolvedOrigin, err := origin.Resolve()
 	if err != nil {
@@ -325,7 +325,7 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		for name, feature := range settings.Features {
 			features[name] = apiclientgen.SandboxFeature{Enabled: feature.Enabled}
 		}
-		body.Config.SetFeatures(apiclientgen.NewOptSandboxCreateConfigFeatures(features))
+		body.Config.Value.SetFeatures(apiclientgen.NewOptSandboxCreateConfigFeatures(features))
 	}
 	declared := settings.Sources
 	if len(opts.Include) == 0 && len(declared) == 0 && len(skillsRepos) == 0 {
@@ -404,13 +404,13 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		}
 	}
 	if len(references) > 0 {
-		body.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
+		body.Config.Value.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
 	}
 	// A skills source is placed under its own directory, never by name beside
 	// the primary, so what the primary holds against it is what it holds
 	// against any other repository.
 	held := primary.heldAgainst(opts.Platform, false)
-	if err := setSkillsSources(ctx, &body.Config, references, local, skillsRepos, sourceOptions, used, func(key string) bool {
+	if err := setSkillsSources(ctx, &body.Config.Value, references, local, skillsRepos, sourceOptions, used, func(key string) bool {
 		return taken(references, held, key)
 	}); err != nil {
 		return err
@@ -546,9 +546,9 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 	// retained snapshot is published, including for ambiguous create outcomes.
 	if projectID == "default" {
 		for _, entry := range local.sources {
-			source := body.Config.Source.Value
+			source := body.Config.Value.Source.Value
 			if entry.key != "" {
-				source = body.Config.SourceCodeReferences.Value[entry.key]
+				source = body.Config.Value.SourceCodeReferences.Value[entry.key]
 			}
 			if !source.NoLocalRepository.Or(false) {
 				continue
@@ -574,7 +574,7 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 	report.step(StepCreating)
 	attemptedNames := make(map[string]struct{}, nameConflictAttempts)
 	for attempt := 1; ; attempt++ {
-		attemptedNames[body.Config.Name] = struct{}{}
+		attemptedNames[body.Config.Value.Name.Value] = struct{}{}
 		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 		if err != nil {
 			local.Close()
@@ -587,7 +587,7 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 			}
 			// Said only now: a create that failed stored nothing.
 			if opts.ReportInlineSecret != nil {
-				for _, secret := range body.Config.Secrets {
+				for _, secret := range body.Config.Value.Secrets {
 					opts.ReportInlineSecret(InlineSecretLine(secret))
 				}
 			}
@@ -612,7 +612,7 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 			}
 			candidate = fmt.Sprintf("%s_%d", name, suffix)
 		}
-		body.Config.Name = candidate
+		body.Config.Value.Name = apiclientgen.NewOptString(candidate)
 	}
 }
 

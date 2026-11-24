@@ -62,6 +62,14 @@ flowchart LR
   narrower than macOS's; its gids are not quite (root's 0, which macOS
   refuses), so root in group 0 passes here and is refused on a macOS guest. An account that lands on a guest whose rule it breaks is
   refused inside the sandbox as it resolves (ADR 0145 §5), never ignored.
+- A create that names no account, or an empty one, is given its guest's
+  default (`sandboxuser.DefaultAccount`, ADR 26-11-19-859): on Linux the
+  ordinary `discobox` account, recorded like a client's and provisioned by
+  boot under the same rules, never the image's own user (root on the built-in
+  image); on macOS and Windows nothing, so the template's one account. Which
+  default is the guest's, so here a pool that has not declared its platform is
+  not judged as Linux: the create is refused with a retryable 503 until it has.
+  Only fresh creates default; import, rebuild and exec keep their accounts.
 - A source's placement is checked at create and at import, by the sandbox's
   platform's path rules or, before its pool declares one, by each it may be
   (`sandboxPathRules`): a working directory is an absolute path inside its
@@ -128,9 +136,15 @@ flowchart LR
   like a pool's or a harness config's. It is an addressable handle, not a
   label: the CLI takes it wherever it takes a discobox, so a second sandbox
   answering to the same name would make that name mean either. (It is not an
-  `ssh_config` `Host` alias: stanzas are keyed by the ID.) `CreateSandbox`
-  checks the name and returns 409 so the common case is a readable error; the
-  index is the authority that closes the race between two concurrent creates.
+  `ssh_config` `Host` alias: stanzas are keyed by the ID.) A create that gives
+  a name keeps it verbatim: `CreateSandbox` checks it and returns 409 so the
+  common case is a readable error, and the index, which closes the race
+  between two concurrent creates, answers its loser with the same 409
+  (`store.ErrSandboxNameTaken`). A create that gives none is given a
+  `randomname` draw, never pre-checked: the index refuses a taken one, and the
+  create draws again in a new transaction (the refused one is rolled back, and
+  spent on Postgres) up to `generatedNameAttempts` times, then answers 503
+  (ADR 26-11-19-859). A blank name is refused with 400.
   Names free up on delete, since deletes are hard deletes (ADR 0010).
 - Existence and spec intent goes through `recordSandboxIntent`: generation bump,
   desired state, and dirty mark in one transaction.

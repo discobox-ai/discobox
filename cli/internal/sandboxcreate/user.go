@@ -185,7 +185,7 @@ func setCreateSandboxGit(body *apimodel.CreateSandboxBody, git apimodel.SandboxG
 	if !git.UserName.Set && !git.UserEmail.Set {
 		return
 	}
-	body.Config.SetGit(apiclientgen.NewOptSandboxGitIdentity(git))
+	body.Config.Value.SetGit(apiclientgen.NewOptSandboxGitIdentity(git))
 }
 
 func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) {
@@ -194,5 +194,5 @@ func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) 
 	sandboxUser.SetHomeDirectory(optionalString(u.HomeDirectory))
 	sandboxUser.SetUID(apiclientgen.NewOptInt64(u.UID))
 	sandboxUser.SetGid(apiclientgen.NewOptInt64(u.GID))
-	body.Config.SetUser(apiclientgen.NewOptSandboxUser(sandboxUser))
+	body.Config.Value.SetUser(apiclientgen.NewOptSandboxUser(sandboxUser))
 }

@@ -134,9 +134,9 @@ func (s *LocalSources) stagePending(ctx context.Context, endpoint, project strin
 	sort.SliceStable(s.sources, func(i, j int) bool { return s.sources[i].key < s.sources[j].key })
 	for i := range s.sources {
 		local := &s.sources[i]
-		source := body.Config.Source.Value
+		source := body.Config.Value.Source.Value
 		if local.key != "" {
-			source = body.Config.SourceCodeReferences.Value[local.key]
+			source = body.Config.Value.SourceCodeReferences.Value[local.key]
 		}
 		if !source.NoLocalRepository.Or(false) {
 			continue

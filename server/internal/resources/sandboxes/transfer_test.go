@@ -99,6 +99,11 @@ func transferFixture(t *testing.T) (context.Context, *Service, *store.Store, *tr
 	}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
+	// Declared as a Linux pool's agent declares it on its first report: a
+	// create naming no user waits for it (ADR 26-11-19-859).
+	if _, _, err := appStore.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatalf("declare pool platform: %v", err)
+	}
 	provider := &treeProvider{recordingProvider: &recordingProvider{}}
 	provider.countRows = func() int {
 		sandboxes, err := appStore.ListSandboxes(ctx, "project-1", "", nil, "")

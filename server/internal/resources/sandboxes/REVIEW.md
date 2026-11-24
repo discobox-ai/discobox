@@ -208,3 +208,12 @@
 - When first registration ends an initial-bootstrap wait, reset the ordinary
   readiness stall clock once. A silent bounded apply can outlast its old clock
   without changing display telemetry; registration need not report ready yet.
+
+## The account a create defaults
+
+- **Whether a create's user names anything is `sandboxuser.Named`'s answer,
+  never a check of which fields were sent.** A user of blank strings is sent
+  but names nothing, and boot reads it as no user, so the image's own (root
+  on the built-in image). A first cut counted the fields set and let
+  `{"user":{"name":""}}` past the default account onto root (ADR
+  26-11-19-859). Convert with `SandboxUserFields.User` and ask `Named`.

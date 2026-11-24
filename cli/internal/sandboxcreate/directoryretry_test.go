@@ -36,7 +36,7 @@ func TestDirectorySourceCanBeDeliveredAfterInitialPushFails(t *testing.T) {
 	sandbox.Config.SetSource(apiclientgen.NewOptGitSource(*source))
 	sandbox.Origin = apiclientgen.NewOptOrigin(apiclientgen.Origin{HostId: "host-1"})
 	body := &apimodel.CreateSandboxBody{Origin: sandbox.Origin}
-	body.Config.Source = sandbox.Config.Source
+	body.Config.Value.Source = sandbox.Config.Source
 	if err := local.stagePending(t.Context(), "http://example.test", "project-1", body); err != nil {
 		t.Fatal(err)
 	}

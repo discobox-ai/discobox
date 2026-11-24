@@ -213,14 +213,14 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
 	defer local.Close()
-	if len(body.Config.Prompt) != 2 || body.Config.Prompt[0] != "hello" || body.Config.Prompt[1] != "world" {
-		t.Fatalf("prompt = %#v, want [hello world]", body.Config.Prompt)
+	if len(body.Config.Value.Prompt) != 2 || body.Config.Value.Prompt[0] != "hello" || body.Config.Value.Prompt[1] != "world" {
+		t.Fatalf("prompt = %#v, want [hello world]", body.Config.Value.Prompt)
 	}
-	env, ok := body.Config.Env.Get()
+	env, ok := body.Config.Value.Env.Get()
 	if !ok || env["RUN_BODY_ENV"] != "value" {
 		t.Fatalf("env = %#v ok=%t, want RUN_BODY_ENV", env, ok)
 	}
-	source, ok := body.Config.Source.Get()
+	source, ok := body.Config.Value.Source.Get()
 	if !ok {
 		t.Fatal("expected source")
 	}
@@ -245,15 +245,15 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
 	defer local.Close()
-	env, ok := body.Config.Env.Get()
+	env, ok := body.Config.Value.Env.Get()
 	if !ok || env["PLAIN"] != "value" {
 		t.Fatalf("env = %#v ok=%t, want PLAIN", env, ok)
 	}
-	if len(body.Config.Secrets) != 2 {
-		t.Fatalf("secrets = %#v, want 2 entries", body.Config.Secrets)
+	if len(body.Config.Value.Secrets) != 2 {
+		t.Fatalf("secrets = %#v, want 2 entries", body.Config.Value.Secrets)
 	}
 	byEnv := map[string]apimodel.SandboxSecretInput{}
-	for _, s := range body.Config.Secrets {
+	for _, s := range body.Config.Value.Secrets {
 		byEnv[s.Env] = s
 	}
 	if got := byEnv["OPENAI_API_KEY"]; got.Value != "sk-secret" || got.Host.Set {

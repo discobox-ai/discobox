@@ -23,11 +23,11 @@ func TestCreateKeepsItsSkillsAndRefusesBadOnes(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
 	create := func(name string, skills serverapi.SandboxCreateConfigSkills) (*model.Sandbox, error) {
-		config := serverapi.SandboxCreateConfig{Name: name}
+		config := serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name)}
 		config.SetSkills(serverapi.NewOptSandboxCreateConfigSkills(skills))
 		return svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
-			Config:      config,
+			Config:      serverapi.NewOptSandboxCreateConfig(config),
 		})
 	}
 

@@ -3,6 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-08-07
 - **Partially superseded by**: [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md) — §5's name-only request, for sandbox create only.
+- **Amended by**: [26-11-19-859](26-11-19-859-sandbox-create-supplies-an-account-and-a-handle.md) — §5 for Linux sandbox create: an omitted account defaults to an ordinary `discobox` account, not the image's user.
 
 ## Context
 

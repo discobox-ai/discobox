@@ -8,6 +8,7 @@
   §4, which made a rename the only way to set the meta name from outside: a
   create may now set it too. Its §3 is unchanged: `config.name` stays the
   generated handle.
+- **Amended by**: [26-11-19-859](26-11-19-859-sandbox-create-supplies-an-account-and-a-handle.md) — §1 for a create with no handle: the server draws it.
 
 ## Context
 

@@ -81,7 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [26-11-19-859](26-11-19-859-sandbox-create-supplies-an-account-and-a-handle.md) | Sandbox create supplies an account and a handle | Proposed |
+| [26-11-19-859](26-11-19-859-sandbox-create-supplies-an-account-and-a-handle.md) | Sandbox create supplies an account and a handle | Accepted (amends 0025 §5 for Linux sandbox create, and 26-11-16-207 §1 for a create with no handle) |
 | [26-11-19-219](26-11-19-219-a-person-can-keep-a-login-in-discobox.md) | A person can keep a login in Discobox | Proposed |
 | [26-11-19-075](26-11-19-075-a-boxs-name-never-holds-what-its-program-is-doing.md) | A box's name never holds what its program is doing, and its handle is called a handle | Proposed (would supersede [26-10-31-618](26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md) §1's `title: msg` display name and §3; would amend [26-10-12-026](26-10-12-026-a-sandboxs-name-is-meta-and-renaming-it-is-a-meta-write.md) §3 and [26-11-16-207](26-11-16-207-a-box-is-named-at-creation-by-seeding-its-meta-name.md): `config.name` becomes `handle`) |
 | [26-11-19-797](26-11-19-797-a-box-reprovisions-its-failed-features-on-its-own-a-few-times-and-shows-what-still-failed.md) | A box reprovisions its failed features on its own, a few times, and shows what still failed | Accepted (supersedes [26-11-11-560](26-11-11-560-reprovision-reruns-a-running-boxs-failed-features-in-place.md)'s Deferred automatic reprovision, and narrows its §5 "No console surface": a running row with a feature still failed is marked) |

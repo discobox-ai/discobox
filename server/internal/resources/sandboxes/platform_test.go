@@ -25,12 +25,30 @@ func TestCreateTakesThePoolsPlatform(t *testing.T) {
 		var err error
 		created, err = svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
-			Config:      serverapi.SandboxCreateConfig{Name: name},
+			Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString(name)}),
 		})
 		return err
 	}
 
-	if err := create("undeclared"); err != nil {
+	// A create naming its user, since one naming none waits for the pool's
+	// platform (ADR 26-11-19-859).
+	if err := st.CreatePool(ctx, &model.Pool{
+		ID: "pool-undeclared", ProjectID: "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-undeclared", ProviderInstanceID: "provider-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	undeclared := serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("undeclared")}
+	undeclared.SetUser(serverapi.NewOptSandboxUser(serverapi.SandboxUser{
+		Name: serverapi.NewOptString("ada"), UID: serverapi.NewOptInt64(1000), Gid: serverapi.NewOptInt64(1000),
+	}))
+	var err error
+	created, err = svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+		HarnessName: serverapi.NewOptString("codex"),
+		PoolId:      serverapi.NewOptString("pool-undeclared"),
+		Config:      serverapi.NewOptSandboxCreateConfig(undeclared),
+	})
+	if err != nil {
 		t.Fatalf("create on a pool that has not declared a platform: %v", err)
 	}
 	if !created.Platform.IsZero() {
@@ -76,7 +94,7 @@ func TestCreateTakesThePoolsImageKind(t *testing.T) {
 		created, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("shell"),
 			PoolId:      serverapi.NewOptString(pool),
-			Config:      serverapi.SandboxCreateConfig{Name: "on-" + pool},
+			Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("on-" + pool)}),
 		})
 		if err != nil {
 			t.Fatalf("create on %s: %v", pool, err)
@@ -102,10 +120,10 @@ func TestCreateJudgesTheUserByThePoolsPlatform(t *testing.T) {
 	create := func(name string) error {
 		_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
-			Config: serverapi.SandboxCreateConfig{
-				Name: name,
+			Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
+				Name: serverapi.NewOptString(name),
 				User: serverapi.NewOptSandboxUser(macAccount),
-			},
+			}),
 		})
 		return err
 	}

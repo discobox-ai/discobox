@@ -63,11 +63,15 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
+	// Declared as its agent would: a create naming no user waits for it.
+	if _, _, err := st.UpdatePoolStatus(ctx, poolID, platform.Pool(), platform.OCI, store.AgentDeclarations{}, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString(bundleHarnessConfig(ctx, t, st, projectID)),
 		PoolId:      serverapi.NewOptString(poolID),
-		Config: serverapi.SandboxCreateConfig{
-			Name: "sandbox-1",
+		Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
+			Name: serverapi.NewOptString("sandbox-1"),
 			Source: serverapi.NewOptGitSource(serverapi.GitSource{
 				Kind: serverapi.GitSourceKindGit,
 				URL:  serverapi.NewOptURI(sourceURL),
@@ -76,7 +80,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 					Commit:  serverapi.NewOptString(parkedCommit),
 				}),
 			}),
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -194,7 +198,7 @@ func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 	}
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString(harnessSlug), PoolId: serverapi.NewOptString(poolID),
-		Config: serverapi.SandboxCreateConfig{Name: "waiting-for-pool"},
+		Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("waiting-for-pool")}),
 	})
 	if err != nil {
 		t.Fatalf("create rejected unknown pool: %v", err)

@@ -25,11 +25,11 @@ func TestCreateRecordsItsDescriptionAndTags(t *testing.T) {
 	tags := map[string]string{"repo": "a/b", "job": "deliver", "wip": ""}
 	created, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("codex"),
-		Config: serverapi.SandboxCreateConfig{
-			Name:        "tagged",
+		Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
+			Name:        serverapi.NewOptString("tagged"),
 			Description: serverapi.NewOptString("deliver 700"),
 			Tags:        serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags(tags)),
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -83,12 +83,12 @@ func TestCreateRecordsItsMetaName(t *testing.T) {
 	for _, handle := range []string{"brave-otter", "calm-heron"} {
 		created, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
-			Config: serverapi.SandboxCreateConfig{
-				Name: handle,
+			Config: serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{
+				Name: serverapi.NewOptString(handle),
 				// An ideographic space and space around it, as an input
 				// method or a paste gives them.
 				MetaName: serverapi.NewOptString(" Fix\u3000login flake "),
-			},
+			}),
 		})
 		if err != nil {
 			t.Fatalf("create %s: %v", handle, err)
@@ -116,7 +116,7 @@ func TestCreateRecordsItsMetaName(t *testing.T) {
 	// No meta name is none, not an empty one.
 	created, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("codex"),
-		Config:      serverapi.SandboxCreateConfig{Name: "plain", MetaName: serverapi.NewOptString("  ")},
+		Config:      serverapi.NewOptSandboxCreateConfig(serverapi.SandboxCreateConfig{Name: serverapi.NewOptString("plain"), MetaName: serverapi.NewOptString("  ")}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -133,15 +133,15 @@ func TestCreateRefusesMetaAChangeWouldRefuse(t *testing.T) {
 	configuredHarness(t, st, "codex", "Codex")
 	svc.SetReleaseBundles(release(platformOld))
 	for name, config := range map[string]serverapi.SandboxCreateConfig{
-		"a key with a space":   {Name: "a", Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"bad key": "x"})},
-		"a value with a comma": {Name: "b", Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"k": "a,b"})},
-		"a control character":  {Name: "c", Description: serverapi.NewOptString("a\x07b")},
-		"an empty key":         {Name: "d", Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"": "x"})},
-		"a name of two lines":  {Name: "e", MetaName: serverapi.NewOptString("one\ntwo")},
-		"a name too long":      {Name: "f", MetaName: serverapi.NewOptString(strings.Repeat("n", sandboxmeta.MaxNameLength+1))},
+		"a key with a space":   {Name: serverapi.NewOptString("a"), Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"bad key": "x"})},
+		"a value with a comma": {Name: serverapi.NewOptString("b"), Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"k": "a,b"})},
+		"a control character":  {Name: serverapi.NewOptString("c"), Description: serverapi.NewOptString("a\x07b")},
+		"an empty key":         {Name: serverapi.NewOptString("d"), Tags: serverapi.NewOptSandboxCreateConfigTags(serverapi.SandboxCreateConfigTags{"": "x"})},
+		"a name of two lines":  {Name: serverapi.NewOptString("e"), MetaName: serverapi.NewOptString("one\ntwo")},
+		"a name too long":      {Name: serverapi.NewOptString("f"), MetaName: serverapi.NewOptString(strings.Repeat("n", sandboxmeta.MaxNameLength+1))},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{HarnessName: serverapi.NewOptString("codex"), Config: config})
+			_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{HarnessName: serverapi.NewOptString("codex"), Config: serverapi.NewOptSandboxCreateConfig(config)})
 			var status interface{ StatusCode() int }
 			if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
 				t.Fatalf("err = %v, want a 400", err)

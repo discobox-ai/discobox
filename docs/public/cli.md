@@ -765,7 +765,7 @@ may set only to hosts its own passthrough covers. On an update,
 ~~~~
 
 ```text
-discobox admin box create --name NAME [flags]
+discobox admin box create [--name NAME] [flags]
 ```
 
 | Flag | Type | Default | Description |

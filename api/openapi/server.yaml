@@ -861,7 +861,7 @@ components:
                     type: string
                 config:
                     $ref: '#/components/schemas/SandboxCreateConfig'
-                    description: Desired sandbox configuration.
+                    description: Desired sandbox configuration. Omitted, it is an empty one.
                 origin:
                     $ref: '#/components/schemas/Origin'
                     description: Client host and project directory this sandbox is created from
@@ -873,8 +873,6 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxBindingInput'
                     type: array
-            required:
-                - config
             type: object
         CreateSandboxProviderInstanceBody:
             additionalProperties: false
@@ -4057,7 +4055,7 @@ components:
                     description: The sandbox's first name, the one a listing shows it by, checked as a meta change's name is. It is recorded with the sandbox from its creation and seeds the meta file inside it before its harness starts, as the description does; that file holds the name from then on. It is display text, need not be unique, and is not name, the handle. Empty or absent gives no name.
                     type: string
                 name:
-                    description: The sandbox's handle, unique in the project, which commands and ssh resolve it by. It is not the name a listing shows, which is the meta name (metaName).
+                    description: The sandbox's handle, unique in the project, which commands and ssh resolve it by. It is not the name a listing shows, which is the meta name (metaName). Omitted, the server draws one that no other sandbox in the project holds; given, it is kept as given, and one already taken in the project is refused with 409. A blank one is refused with 400.
                     maxLength: 200
                     type: string
                 prompt:
@@ -4086,8 +4084,6 @@ components:
                 user:
                     $ref: '#/components/schemas/SandboxUser'
                     description: User identity and home directory to use inside the sandbox
-            required:
-                - name
             type: object
         SandboxSecretInput:
             additionalProperties: false
@@ -5337,11 +5333,17 @@ components:
         SandboxUser:
             additionalProperties: false
             description: |-
-                Run identity and group membership. Every field is optional; omitting the
-                whole object means the image's own user. On sandbox create
-                this defines the sandbox.json default user, and on exec create it
+                Run identity and group membership. Every field is optional. On sandbox
+                create this defines the sandbox.json default user, and on exec create it
                 overrides that user for one exec — the same fields mean the same thing at
-                both layers.
+                both layers. Omitted on exec create, the exec runs as the sandbox's user.
+
+                Omitted on sandbox create, or sent with no fields, the sandbox gets an
+                ordinary account rather than the image's own user: on Linux, `discobox`
+                with uid and gid 1000 and home /home/discobox; on macOS and Windows, the
+                template's own account. A sandbox runs as root only when asked to, with
+                uid 0. A create that needs this default on a pool that has not yet said
+                which operating system its sandboxes run is refused with 503, to retry.
 
                 Sandbox create is stricter, because it names the account the sandbox
                 creates: a user that gives name or homeDirectory must give uid, and each
