@@ -318,6 +318,12 @@ missing — so it survives review easily. Rules, and why each exists:
   drops it from the credential, the same way boot's `ensureAdditionalGroups`
   skips it, so the two cannot disagree about the same image. A harness Dockerfile
   that forgot to install a package must not break every process in the sandbox.
+  Boot logs each group it skipped, so a user missing one says why: a warning
+  when nothing will try again (`JoinFeatureGroups`, or provision on a box with
+  no pins), info only from provision on a box with pins, whose later
+  `JoinFeatureGroups` joins a group a fetched feature makes. That call runs
+  only when `fetchBundles` fetched, so never log at info on the assumption
+  that it follows.
 
 Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),
 [ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md).

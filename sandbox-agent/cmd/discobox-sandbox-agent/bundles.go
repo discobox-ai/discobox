@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"runtime"
@@ -79,7 +78,7 @@ func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig
 // the box's first runtime-config document, which brings up the bridge every
 // fetch from assets.discobox.internal goes through.
 func fetchBundles(ctx context.Context, runtimeConfig *intake.Intake) (bool, error) {
-	pins, ok, err := placedPins()
+	pins, ok, err := agentlayer.ReadPins(agentlayer.PinsFile)
 	if err != nil || !ok {
 		return false, err
 	}
@@ -88,20 +87,6 @@ func fetchBundles(ctx context.Context, runtimeConfig *intake.Intake) (bool, erro
 	}
 	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.HTTPFetcher{}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
 	return true, applyBundles(ctx, pins, store)
-}
-
-// placedPins is agentlayer.PinsFile, which the box's maker placed, and false
-// when it placed none.
-func placedPins() (agentlayer.Pins, bool, error) {
-	data, err := os.ReadFile(agentlayer.PinsFile)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	pins, err := agentlayer.ParsePins(data)
-	return pins, err == nil, err
 }
 
 // applyBundles brings pins into the box's content store from

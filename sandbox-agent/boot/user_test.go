@@ -1,7 +1,9 @@
 package boot
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,8 +39,12 @@ func newFakeGroupsBooter(present ...string) (*booter, *fakeGroups) {
 
 func TestEnsureAdditionalGroupsAddsPresentGroups(t *testing.T) {
 	b, f := newFakeGroupsBooter("docker")
-	if err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker"}); err != nil {
+	skipped, err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker"})
+	if err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v, want none", skipped)
 	}
 	want := []string{"usermod", "--append", "--groups", "docker", "dev"}
 	if len(f.runs) != 1 || !slices.Equal(f.runs[0], want) {
@@ -48,17 +54,39 @@ func TestEnsureAdditionalGroupsAddsPresentGroups(t *testing.T) {
 
 func TestEnsureAdditionalGroupsSkipsMissingGroup(t *testing.T) {
 	b, f := newFakeGroupsBooter() // "docker" group doesn't exist on this image
-	if err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker"}); err != nil {
+	skipped, err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker"})
+	if err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	if len(f.runs) != 0 {
 		t.Fatalf("runs = %v, want none: a missing group must not fail boot", f.runs)
 	}
+	// Reported, so boot can log why the user lacks it instead of saying nothing.
+	if !slices.Equal(skipped, []string{"docker"}) {
+		t.Fatalf("skipped = %v, want [docker]", skipped)
+	}
+}
+
+// The present groups are still joined when another is missing, and only the
+// missing one is reported.
+func TestEnsureAdditionalGroupsJoinsPresentAndReportsMissing(t *testing.T) {
+	b, f := newFakeGroupsBooter("docker")
+	skipped, err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, []string{"docker", "brew"})
+	if err != nil {
+		t.Fatalf("ensureAdditionalGroups: %v", err)
+	}
+	want := []string{"usermod", "--append", "--groups", "docker", "dev"}
+	if len(f.runs) != 1 || !slices.Equal(f.runs[0], want) {
+		t.Fatalf("runs = %v, want [%v]", f.runs, want)
+	}
+	if !slices.Equal(skipped, []string{"brew"}) {
+		t.Fatalf("skipped = %v, want [brew]", skipped)
+	}
 }
 
 func TestEnsureAdditionalGroupsSkipsRoot(t *testing.T) {
 	b, f := newFakeGroupsBooter("docker")
-	if err := b.ensureAdditionalGroups(identity{uid: 0, name: "root"}, []string{"docker"}); err != nil {
+	if _, err := b.ensureAdditionalGroups(identity{uid: 0, name: "root"}, []string{"docker"}); err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	if len(f.runs) != 0 {
@@ -68,7 +96,7 @@ func TestEnsureAdditionalGroupsSkipsRoot(t *testing.T) {
 
 func TestEnsureAdditionalGroupsNoGroups(t *testing.T) {
 	b, f := newFakeGroupsBooter("docker")
-	if err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, nil); err != nil {
+	if _, err := b.ensureAdditionalGroups(identity{uid: 1000, name: "dev"}, nil); err != nil {
 		t.Fatalf("ensureAdditionalGroups: %v", err)
 	}
 	if len(f.runs) != 0 {
@@ -442,5 +470,52 @@ func TestEnsureUserKeepsTheSandboxsOwnAccount(t *testing.T) {
 	}
 	if want := [][]string{{"visudo", "-cf", sudoersPath}}; !slices.EqualFunc(f.runs, want, slices.Equal) {
 		t.Fatalf("runs = %v, want %v", f.runs, want)
+	}
+}
+
+// A skipped group is in the boot log, and at warning level whenever nothing
+// will join it later: on a box with no pins JoinFeatureGroups never runs, so
+// provision's line is the only one (#1471).
+func TestLogSkippedGroupsLevel(t *testing.T) {
+	for _, tc := range []struct {
+		final bool
+		want  slog.Level
+	}{{final: true, want: slog.LevelWarn}, {final: false, want: slog.LevelInfo}} {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logSkippedGroups(logger, "dev", []string{"docker"}, tc.final)
+		line := buf.String()
+		if !strings.Contains(line, "level="+tc.want.String()) || !strings.Contains(line, "docker") {
+			t.Errorf("final %t: logged %q, want a %s line naming docker", tc.final, line, tc.want)
+		}
+	}
+	var buf bytes.Buffer
+	logSkippedGroups(slog.New(slog.NewTextHandler(&buf, nil)), "dev", nil, true)
+	if buf.Len() != 0 {
+		t.Fatalf("logged %q with nothing skipped", buf.String())
+	}
+}
+
+func TestBundlesFollowOnlyWithPins(t *testing.T) {
+	old := pinsPath
+	t.Cleanup(func() { pinsPath = old })
+	pinsPath = filepath.Join(t.TempDir(), "pins.json")
+	if bundlesFollow() {
+		t.Fatal("bundlesFollow() = true with no pins placed")
+	}
+	// Pins the agent cannot apply fail its fetch, so JoinFeatureGroups does
+	// not follow them either.
+	if err := os.WriteFile(pinsPath, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if bundlesFollow() {
+		t.Fatal("bundlesFollow() = true with pins that do not parse")
+	}
+	pins := `[{"name":"discobox-platform","digest":"sha256:` + strings.Repeat("a", 64) + `"}]`
+	if err := os.WriteFile(pinsPath, []byte(pins), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !bundlesFollow() {
+		t.Fatal("bundlesFollow() = false with pins placed")
 	}
 }

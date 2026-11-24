@@ -367,12 +367,13 @@ var mountInfoUnescaper = strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, 
 // sandbox.json — unlike group/account creation, this can't happen any earlier
 // in provision. A group the image names but the base OS doesn't have (e.g. a
 // harness Dockerfile forgetting to install the package that creates it) is
-// skipped rather than failing sandbox boot over a foreseeable image mistake.
-// Root already has every access these groups would grant, so it has none of
-// this to do.
-func (b *booter) ensureAdditionalGroups(id identity, groups []string) error {
+// skipped rather than failing sandbox boot over a foreseeable image mistake,
+// and returned so the caller can log it: whether a missing group is final is
+// the caller's to say, since a feature's group may not exist yet. Root already
+// has every access these groups would grant, so it has none of this to do.
+func (b *booter) ensureAdditionalGroups(id identity, groups []string) (skipped []string, err error) {
 	if id.uid == 0 || len(groups) == 0 {
-		return nil
+		return nil, nil
 	}
 	present := make([]string, 0, len(groups))
 	for _, group := range groups {
@@ -381,14 +382,15 @@ func (b *booter) ensureAdditionalGroups(id identity, groups []string) error {
 			continue
 		}
 		if _, ok := b.lookup("getent", "group", group); !ok {
+			skipped = append(skipped, group)
 			continue
 		}
 		present = append(present, group)
 	}
 	if len(present) == 0 {
-		return nil
+		return skipped, nil
 	}
-	return b.run("usermod", "--append", "--groups", strings.Join(present, ","), id.name)
+	return skipped, b.run("usermod", "--append", "--groups", strings.Join(present, ","), id.name)
 }
 
 // proxyEnvKeep are the variables sudo must carry from the sandbox user to
