@@ -434,6 +434,9 @@ func validateImageMetadata(metadata harness.ImageMetadata, source string) error 
 		if !services.EnvVarNamePattern.MatchString(name) {
 			return fmt.Errorf("%s has invalid secret environment variable %q", source, secret.Name)
 		}
+		if err := services.RefuseRuntimeEnvVar(name); err != nil {
+			return fmt.Errorf("%s secret: %w", source, err)
+		}
 		if _, ok := seen[name]; ok {
 			return fmt.Errorf("%s has duplicate secret %q", source, name)
 		}

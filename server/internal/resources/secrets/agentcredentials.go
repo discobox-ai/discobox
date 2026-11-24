@@ -182,6 +182,11 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	case use.Asked && !services.EnvVarNamePattern.MatchString(envName):
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name to use it")
 	}
+	if use.Asked {
+		if err := services.RefuseRuntimeEnvVar(envName); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		}
+	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether
 	// its limit is raised to meet the ask.

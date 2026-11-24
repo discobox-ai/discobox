@@ -60,6 +60,12 @@ flowchart LR
   and the others stack on it. One beside a variable another secret delivers,
   or one whose binding hands over the value itself, which nothing stacks on,
   does not apply but stands (`EffectiveBindings.Unapplied`, listed with why).
+  So does a use, plain or added, in a variable the discobox runs on, stored
+  before such a variable was refused: it is never delivered, and a sentinel
+  row still held for one resolves nothing (`standingBinding`). Upgrading
+  marks the sentinel delivery of every present discobox holding such a row
+  (`database.markRuntimeEnvHolders`), so the row goes without a restart. A
+  delegation it carries still applies.
   A sentinel is then held to a grant for each, any one of which may allow a
   request (`store.SentinelGrants`, `secretroute.DecideGrants`): one binding's
   blocked routes never cut into another's, and an addition lapsing takes only
@@ -77,7 +83,11 @@ flowchart LR
   endpoint, under one live delegation; it cannot inspect or take over other
   bindings (ADR 26-11-04-389).
 - **Shaped for what it does** (`checkBindingShape`): a use names a variable
-  matching `services.EnvVarNamePattern`, a delegation alone names none, and an
+  matching `services.EnvVarNamePattern` and not one the discobox runs on
+  (`services.RefuseRuntimeEnvVar` over `sandboxconfig.RuntimeEnvVar`: `PATH`,
+  `HOME`, `LD_*`, the proxy variables and the like, #1545; a discobox's ask,
+  an inline create secret, an import and a harness's declared secret hold
+  it too), a delegation alone names none, and an
   addition is a use alone, on a sandbox, by sentinel, with or without expiry, however
   it is written. One plain use binding per target and variable, any number of
   additions beside it, one delegate binding per target and secret — unique

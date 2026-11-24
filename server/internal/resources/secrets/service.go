@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -1175,8 +1176,8 @@ func (s *Service) handOut(ctx context.Context, r resolved) (*model.SandboxSecret
 
 // standingBinding is the binding a sentinel was delivered under and its
 // parent, when it still stands for the sandbox at now: present, a use of the
-// sentinel's secret, on a level covering the sandbox, live, and under a live
-// parent when it has one.
+// sentinel's secret, on a level covering the sandbox, live, in a variable the
+// discobox does not run on, and under a live parent when it has one.
 func (s *Service) standingBinding(ctx context.Context, sandbox *model.Sandbox, assignment *model.SandboxSecret, now time.Time) (*model.SecretBinding, *model.SecretBinding, bool, error) {
 	if assignment.BindingID == "" {
 		return nil, nil, false, nil
@@ -1188,7 +1189,11 @@ func (s *Service) standingBinding(ctx context.Context, sandbox *model.Sandbox, a
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if !binding.Use || binding.SecretID != assignment.SecretID || !binding.Live(now) || !store.Covers(store.SandboxBindingTargets(sandbox), binding, false) {
+	// A binding in a variable the discobox runs on, stored before one was
+	// refused, never applies (#1545): a row a discobox still holds for one
+	// resolves nothing while it waits to be materialized away.
+	if !binding.Use || binding.SecretID != assignment.SecretID || !binding.Live(now) || !store.Covers(store.SandboxBindingTargets(sandbox), binding, false) ||
+		sandboxconfig.RuntimeEnvVar(binding.EnvName) {
 		return nil, nil, false, nil
 	}
 	if binding.ParentID == "" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -110,5 +111,19 @@ func TestRegistrationRefusesAnEgressHostTheProxyCouldNotMatch(t *testing.T) {
 	}
 	if err := validateImageMetadata(declaring("api.anthropic.com:443"), "test image"); err == nil {
 		t.Fatal("a host with a port was accepted")
+	}
+}
+
+// A harness may not declare a secret in a variable the discobox runs on
+// (#1545): every program it starts would see the sentinel there.
+func TestRegistrationRefusesASecretInAVariableTheDiscoboxRunsOn(t *testing.T) {
+	declaring := func(name string) harness.ImageMetadata {
+		return harness.ImageMetadata{Harness: &harness.Image{Secrets: []harness.Secret{{Name: name}}}}
+	}
+	if err := validateImageMetadata(declaring("ANTHROPIC_API_KEY"), "test image"); err != nil {
+		t.Fatalf("a credential's variable refused: %v", err)
+	}
+	if err := validateImageMetadata(declaring("LD_PRELOAD"), "test image"); err == nil || !strings.Contains(err.Error(), "runs on") {
+		t.Fatalf("LD_PRELOAD = %v, want refused", err)
 	}
 }

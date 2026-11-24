@@ -46,6 +46,9 @@ func inlineSandboxBindings(ctx context.Context, projectID string, sandbox *model
 		if !services.EnvVarNamePattern.MatchString(env) {
 			return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox secret requires a valid environment variable name")
 		}
+		if err := services.RefuseRuntimeEnvVar(env); err != nil {
+			return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		}
 		if _, dup := seen[env]; dup {
 			return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("duplicate sandbox secret for environment variable %q", env))
 		}

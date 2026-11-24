@@ -238,7 +238,7 @@ over its harness config's, and that over the project's.
 	}
 	cmd.Flags().Var(&policyValue{references: &policies}, "policy", "A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file")
 	cmd.Flags().Var(&policyValue{references: &policies, argument: true}, "policy-arg", "An argument NAME=VALUE for the preceding --policy; repeat for more")
-	cmd.Flags().StringVar(&as, "as", "", "The environment variable to deliver it in (default the secret's name upper-snaked)")
+	cmd.Flags().StringVar(&as, "as", "", "The environment variable to deliver it in (default the secret's name upper-snaked); never one the discobox runs on, such as PATH, HOME or LD_PRELOAD")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(lasts, "for", bindingLifetimeFlagUsage)
 	cmd.Flags().Var(&raw, "raw", "Hand over the value itself: env (in the variable) or file (a file whose path is in it); left out, a sentinel")
@@ -504,22 +504,41 @@ func writeBoundSecrets(w io.Writer, bound []apimodel.BoundSecret, names map[stri
 	}
 	for _, b := range bound {
 		if why := b.NotApplied.Or(""); why != "" {
-			fmt.Fprintf(w, "addition %s does not apply: %s\n", b.BindingId, terminalSafe(why))
+			fmt.Fprintf(w, "%s\n", notAppliedLine(b, terminalSafe(why)))
 		}
 	}
 	return nil
 }
 
 // boundAddition marks an addition beside its variable, and one that does
-// not apply (ADR 26-11-03-329 §2).
+// not apply (ADR 26-11-03-329 §2), as it does a plain binding that does not:
+// one stored in a variable the discobox runs on, whose use is not applied
+// while what it delegates still is.
 func boundAddition(b apimodel.BoundSecret) string {
+	notApplied := b.NotApplied.Or("") != ""
 	switch {
-	case !b.Adds.Or(false):
-		return ""
-	case b.NotApplied.Or("") != "":
+	case b.Adds.Or(false) && notApplied:
 		return " (+ added, not applied)"
+	case b.Adds.Or(false):
+		return " (+ added)"
+	case notApplied && b.Delegate:
+		return " (use not applied)"
+	case notApplied:
+		return " (not applied)"
 	}
-	return " (+ added)"
+	return ""
+}
+
+// notAppliedLine says why a binding that does not apply does not, and, for
+// one that delegates too, that its delegation still stands.
+func notAppliedLine(b apimodel.BoundSecret, why string) string {
+	switch {
+	case b.Adds.Or(false):
+		return fmt.Sprintf("addition %s does not apply: %s", b.BindingId, why)
+	case b.Delegate:
+		return fmt.Sprintf("binding %s delivers nothing here: %s; what it delegates still applies", b.BindingId, why)
+	}
+	return fmt.Sprintf("binding %s does not apply: %s", b.BindingId, why)
 }
 
 // boundVariable is the variable a bound secret is delivered in, as the

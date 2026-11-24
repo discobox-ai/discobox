@@ -545,6 +545,34 @@ func TestBoundListsAdditionsAfterWhatTheyStackOn(t *testing.T) {
 	}
 }
 
+// A plain binding that does not apply, one stored in a variable the discobox
+// runs on (#1545), is marked and its reason given as a binding's; one that
+// delegates as well is marked as delegating still.
+func TestBoundListsAPlainBindingThatDoesNotApply(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	bound := []apimodel.BoundSecret{{BindingId: "sbd_path", SecretId: "sec_1", SecretName: apiclientgen.NewOptString("github"), From: apiclientgen.BoundSecretFromSandbox, FromId: "sbx-1", Use: true,
+		EnvVar: apiclientgen.NewOptString("PATH"), NotApplied: apiclientgen.NewOptString("PATH is a variable the discobox runs on, so no credential is delivered in it")}}
+	var out bytes.Buffer
+	if err := writeBoundSecrets(&out, bound, map[string]string{"sbx-1": "box"}, now); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "PATH (not applied)") || !strings.Contains(text, "binding sbd_path does not apply: PATH is a variable the discobox runs on") {
+		t.Fatalf("listing:\n%s\nwant the binding marked not applied, with why", text)
+	}
+
+	// One that delegates too says only its use is not applied.
+	bound[0].Delegate = true
+	out.Reset()
+	if err := writeBoundSecrets(&out, bound, map[string]string{"sbx-1": "box"}, now); err != nil {
+		t.Fatal(err)
+	}
+	text = out.String()
+	if !strings.Contains(text, "PATH (+ delegate) (use not applied)") || !strings.Contains(text, "binding sbd_path delivers nothing here: PATH is a variable the discobox runs on, so no credential is delivered in it; what it delegates still applies") {
+		t.Fatalf("listing:\n%s\nwant the use alone marked not applied, its delegation standing", text)
+	}
+}
+
 // Explicit forever must be sent as zero, rather than omitted (which defaults
 // to a finite grant), for either an explicit addition or the request's default.
 func TestApproveAdditionForeverSendsExplicitZero(t *testing.T) {

@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // fakeGroups backs a booter's lookup/run for ensureAdditionalGroups tests: the
@@ -442,5 +444,15 @@ func TestEnsureUserKeepsTheSandboxsOwnAccount(t *testing.T) {
 	}
 	if want := [][]string{{"visudo", "-cf", sudoersPath}}; !slices.EqualFunc(f.runs, want, slices.Equal) {
 		t.Fatalf("runs = %v, want %v", f.runs, want)
+	}
+}
+
+// Every variable sudo carries to root is one the discobox runs on, so no
+// credential may be delivered in it (#1545).
+func TestEveryVariableSudoKeepsIsOneTheDiscoboxRunsOn(t *testing.T) {
+	for _, name := range proxyEnvKeep {
+		if !sandboxconfig.RuntimeEnvVar(name) {
+			t.Errorf("sudo keeps %s, which sandboxconfig.RuntimeEnvVar does not name", name)
+		}
 	}
 }

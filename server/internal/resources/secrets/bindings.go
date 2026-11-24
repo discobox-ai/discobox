@@ -159,9 +159,9 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 }
 
 // checkBindingShape refuses a binding that does not hold together: one that
-// does nothing, a use with no valid variable, a delegation alone naming one,
-// or an addition that is not a use on a discobox, by sentinel
-// (ADR 26-11-03-329 §1, amended by 26-11-04-270).
+// does nothing, a use with no valid variable or one the discobox runs on, a
+// delegation alone naming one, or an addition that is not a use on a
+// discobox, by sentinel (ADR 26-11-03-329 §1, amended by 26-11-04-270).
 func checkBindingShape(binding *model.SecretBinding) error {
 	switch {
 	case !binding.Use && !binding.Delegate:
@@ -170,6 +170,11 @@ func checkBindingShape(binding *model.SecretBinding) error {
 		return apperrors.NewStatusError(http.StatusBadRequest, "a binding for use names the environment variable the credential is delivered in")
 	case !binding.Use && binding.EnvName != "":
 		return apperrors.NewStatusError(http.StatusBadRequest, "a binding for delegation alone delivers nothing, so it names no environment variable")
+	}
+	if binding.Use {
+		if err := services.RefuseRuntimeEnvVar(binding.EnvName); err != nil {
+			return apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		}
 	}
 	if !binding.Adds {
 		return nil
@@ -430,7 +435,8 @@ func (s *Service) ListSecretBindingEvents(ctx context.Context, projectID string,
 // per variable the use binding on the narrowest level that has one, followed
 // by each addition stacking on it (ADR 26-11-03-329 §2), and every live
 // delegate binding, each with the route lists a request carrying it must
-// pass; then the additions that do not apply, with why.
+// pass; then the bindings that do not apply, with why: additions beside
+// another secret or a raw value, and uses in a variable the discobox runs on.
 func (s *Service) ListBoundSecrets(ctx context.Context, projectID, targetKind, target string) ([]services.BoundSecret, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
@@ -458,16 +464,21 @@ func (s *Service) ListBoundSecrets(ctx context.Context, projectID, targetKind, t
 	}
 	listed = append(listed, effective.Delegate...)
 	var out []services.BoundSecret
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	add := func(applied store.EffectiveBinding, notApplied string) {
-		if seen[applied.Binding.ID] {
+		if at, ok := seen[applied.Binding.ID]; ok {
+			// A delegate binding in a variable the discobox runs on is
+			// listed once, delegating, with why its use does not apply.
+			if notApplied != "" {
+				out[at].NotApplied = notApplied
+			}
 			return
 		}
-		seen[applied.Binding.ID] = true
 		secret, err := s.store.GetSecret(ctx, projectID, applied.Binding.SecretID)
 		if err != nil {
 			return
 		}
+		seen[applied.Binding.ID] = len(out)
 		out = append(out, services.BoundSecret{Binding: applied.Binding, SecretName: secret.Name,
 			RouteLists: store.RouteLists(secret, &applied.Binding, applied.Parent),
 			ExpiresAt:  store.BindingExpiry(&applied.Binding, applied.Parent),

@@ -322,6 +322,8 @@ func TestImportBindsSecretsByNameAndWarnsAboutTheRest(t *testing.T) {
 		m.Sandbox.Secrets = []sandboxexport.SecretBinding{
 			{Env: "GITHUB_TOKEN", Secret: "github"},
 			{Env: "OPENAI_API_KEY", Secret: "openai"},
+			// Exported by a server that did not refuse it (#1545).
+			{Env: "PATH", Secret: "github"},
 		}
 	}, nil)
 
@@ -341,8 +343,8 @@ func TestImportBindsSecretsByNameAndWarnsAboutTheRest(t *testing.T) {
 	}
 	// The one that could not be matched is reported rather than silently
 	// dropped, and does not fail the import.
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "openai") {
-		t.Fatalf("warnings = %v, want one naming the missing secret", result.Warnings)
+	if len(result.Warnings) != 2 || !strings.Contains(result.Warnings[0], "openai") || !strings.Contains(result.Warnings[1], "PATH is a variable the discobox runs on") {
+		t.Fatalf("warnings = %v, want one naming the missing secret and one the variable the discobox runs on", result.Warnings)
 	}
 }
 

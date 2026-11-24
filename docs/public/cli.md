@@ -5405,7 +5405,7 @@ Examples:
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| --as | string |  | The environment variable to deliver it in (default the secret's name upper-snaked) |
+| --as | string |  | The environment variable to deliver it in (default the secret's name upper-snaked); never one the discobox runs on, such as PATH, HOME or LD_PRELOAD |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --delegate | bool | false | Let the discobox give the secret to the discoboxes it leads; a person's to set Value when passed without an argument: true. |

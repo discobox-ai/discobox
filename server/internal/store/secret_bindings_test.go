@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,6 +203,44 @@ func TestAdditionsStackOnTheBindingOfTheirVariable(t *testing.T) {
 	}
 	if len(stale["S"]) != 1 {
 		t.Fatalf("grants = %+v, want the row's own binding's alone", stale["S"])
+	}
+}
+
+// A use binding in a variable the discobox runs on, stored before one was
+// refused (#1545), stands and is listed with why, but delivers nothing: no
+// sentinel replaces the discobox's PATH. What it delegates still applies.
+func TestABindingInAVariableTheDiscoboxRunsOnIsNotApplied(t *testing.T) {
+	ctx := context.Background()
+	s, sb1, _, secret := bindingFixture(t)
+	now := time.Now().UTC()
+	hour := now.Add(time.Hour)
+	path := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: "hc-1", Use: true, EnvName: "PATH"})
+	added := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID,
+		Use: true, Adds: true, EnvName: "PATH", ExpiresAt: &hour})
+	both := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Use: true, Delegate: true, EnvName: "LD_PRELOAD"})
+	token := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Use: true, EnvName: "GH_TOKEN"})
+
+	effective, err := s.ResolveSandboxBindings(ctx, sb1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(effective.Use) != 1 || effective.Use[0].Binding.ID != token.ID {
+		t.Fatalf("use = %+v, want GH_TOKEN alone", effective.Use)
+	}
+	if len(effective.Delegate) != 1 || effective.Delegate[0].Binding.ID != both.ID {
+		t.Fatalf("delegate = %+v, want the LD_PRELOAD binding's delegation", effective.Delegate)
+	}
+	got := map[string]string{}
+	for _, unapplied := range effective.Unapplied {
+		got[unapplied.Binding.ID] = unapplied.NotApplied
+	}
+	for _, binding := range []*model.SecretBinding{path, added, both} {
+		if !strings.Contains(got[binding.ID], "runs on") {
+			t.Errorf("binding in %s: not applied = %q, want why", binding.EnvName, got[binding.ID])
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("unapplied = %+v, want the three in variables the discobox runs on", effective.Unapplied)
 	}
 }
 

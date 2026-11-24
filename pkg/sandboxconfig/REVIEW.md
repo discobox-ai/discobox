@@ -17,3 +17,9 @@
   that is never ready. Warn on the client (`UnknownKeys`) instead; a check on
   the file's shape belongs to the reader whose keys it is about, and must not
   count `$schema`, which every file is told to carry.
+
+- A variable the pool or the sandbox agent starts setting in every discobox
+  joins `RuntimeEnvVar` in the same change. A credential's sentinel in a
+  variable the discobox runs on breaks every process it starts (#1545); the
+  guard tests catch what the pool sets and what sudo keeps, not variables set
+  anywhere else.

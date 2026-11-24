@@ -507,6 +507,10 @@ func (s *Service) importSecretBindings(ctx context.Context, projectID string, sb
 			}
 			continue
 		}
+		if err := services.RefuseRuntimeEnvVar(env); err != nil {
+			warnings = append(warnings, err.Error()+"; the discobox starts without it")
+			continue
+		}
 		if _, dup := seen[env]; dup {
 			continue
 		}

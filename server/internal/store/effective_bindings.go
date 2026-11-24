@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -23,7 +24,7 @@ type EffectiveBinding struct {
 	// addition that lapses last and Additions are the others.
 	Additions []EffectiveBinding
 	// NotApplied is, for an entry of EffectiveBindings.Unapplied, why the
-	// addition does not apply.
+	// binding does not apply.
 	NotApplied string
 }
 
@@ -41,7 +42,10 @@ type EffectiveBindings struct {
 	// variable is delivered by a binding of another secret, or by one that
 	// hands over the value itself, which nothing stacks on (ADR 26-11-03-329
 	// Deferred). They stand, and apply again should that change within their
-	// expiry.
+	// expiry. With them are the use bindings, plain or added, in a variable
+	// the discobox runs on (sandboxconfig.RuntimeEnvVar), stored before one
+	// was refused: they never apply, and a delegate one among them is in
+	// Delegate as well.
 	Unapplied []EffectiveBinding
 }
 
@@ -119,6 +123,18 @@ func resolveBindings(bindings []model.SecretBinding, parents map[string]model.Se
 			parent = &p
 		}
 		effective := EffectiveBinding{Binding: binding, Parent: parent, Level: at}
+		if binding.Use && sandboxconfig.RuntimeEnvVar(binding.EnvName) {
+			// Stored before such a variable was refused (#1545): it stands
+			// and is listed, but nothing is delivered in it. What it hands
+			// on still is, since a delegation delivers nothing here.
+			unapplied := effective
+			unapplied.NotApplied = binding.EnvName + " is a variable the discobox runs on, so no credential is delivered in it"
+			out.Unapplied = append(out.Unapplied, unapplied)
+			if binding.Delegate && !binding.Adds && !useOnly {
+				out.Delegate = append(out.Delegate, effective)
+			}
+			continue
+		}
 		if binding.Adds {
 			// Only a sandbox holds an addition, and only for use; the writes
 			// refuse any other, so one that is not is read as nothing.

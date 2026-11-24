@@ -215,7 +215,8 @@ func TestResolveSandboxSecretHarnessConfigGrantReturnsValue(t *testing.T) {
 
 // A sentinel exists because a binding does: one whose binding is gone, or
 // lapsed, or that never had one, resolves to nothing and asks nobody for
-// anything (ADR 26-10-27-880 §1).
+// anything (ADR 26-10-27-880 §1). Nor does one a discobox still holds for a
+// binding in a variable it runs on, stored before one was refused (#1545).
 func TestResolveSandboxSecretDeniedWithoutABinding(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newResolveFixture(t)
@@ -230,7 +231,9 @@ func TestResolveSandboxSecretDeniedWithoutABinding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, sentinel := range []string{"SENTINEL-B", "SENTINEL-L"} {
+	mustDeliver(t, st, "sb-1", sec.ID, "PATH", "SENTINEL-P")
+
+	for _, sentinel := range []string{"SENTINEL-B", "SENTINEL-L", "SENTINEL-P"} {
 		res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", sentinel, "api.example.com")
 		if err != nil {
 			t.Fatalf("resolve: %v", err)
