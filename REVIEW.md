@@ -108,6 +108,13 @@ Global review expectations:
   Those jobs have no Nix devShell (ADR 26-11-02-173), so a target reaching for
   jq, shellcheck, bats or node works in a developer's shell and fails, or finds
   the image's own version, in CI.
+- A CI script that needs root calls `sudo -n` when it has no terminal, and
+  plain `sudo` when it has one. The fix it prints for a refused step must work
+  when followed word for word: run in a terminal, as the user it names. A
+  macOS job can land on a self-hosted Mac without passwordless sudo
+  (`scripts/darwin-sandbox-dirs.sh`). There a bare `sudo` fails the job on its
+  password prompt, and a `sudo -n` probe would refuse the hand run meant to
+  prepare the Mac.
 - A check added to CI that reads anything under `docs/` (a Markdown lint, a
   link check, a test of `docs/public`) is added to `ci:docs` too. A pull
   request that changes only `docs/` runs `ci:docs` and skips every other job,
