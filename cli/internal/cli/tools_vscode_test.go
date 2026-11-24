@@ -138,13 +138,9 @@ func TestEditorsOpenDefaultPrimarySourceDirectory(t *testing.T) {
 func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	sshFixture := vscodeFakeServer()
 	record := fakeVSCode(t)
-	_, state, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
+	_, state, _, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
-	}
-	wantNote := "note: the discobox runs Linux; if VS Code asks for the remote platform, choose Linux\n"
-	if !strings.Contains(stderr, wantNote) {
-		t.Fatalf("tools vscode stderr = %q, want remote platform note %q", stderr, wantNote)
 	}
 
 	configPath, _ := managedPaths(t, state)
@@ -265,6 +261,21 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	if _, _, _, err := runToolsVSCodeCmd(t, sshFixture,
 		"--program", "not-an-editor", "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
+	}
+}
+
+// A discobox is always Linux, but Remote-SSH, when it cannot tell, asks for the
+// remote platform, and a wrong answer fails with only "Resolver error". The
+// launch is the one place this CLI can say which answer is right.
+func TestToolsVSCodeNamesTheRemotePlatform(t *testing.T) {
+	sshFixture := vscodeFakeServer()
+	fakeVSCode(t)
+	_, _, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
+	if err != nil {
+		t.Fatalf("execute tools vscode: %v", err)
+	}
+	if !strings.Contains(stderr, "Linux") {
+		t.Fatalf("tools vscode stderr = %q, want it to say the discobox is Linux", stderr)
 	}
 }
 
