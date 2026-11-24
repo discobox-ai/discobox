@@ -543,6 +543,13 @@ func (r *shimRuntime) startCommand() error {
 		return nil
 	}
 	r.mu.Unlock()
+	select {
+	case <-r.exited:
+		// Already ended without a process: the command could not be run
+		// (exitNotRunnable).
+		return nil
+	default:
+	}
 
 	env := append(os.Environ(), "DISCOBOX_EXEC_ID="+r.cfg.ExecID)
 	userEnv, err := userEnvDefaults(r.cfg.User)
@@ -572,8 +579,8 @@ func (r *shimRuntime) startCommand() error {
 	// whatever PATH the unit manager started the shim with.
 	program, err := lookPath(r.cfg.Command[0], env)
 	if err != nil {
-		r.markStartFailed(err)
-		return err
+		r.exitNotRunnable(procio.NotFoundExit, r.cfg.Command[0]+": command not found")
+		return nil
 	}
 	command := append([]string{program}, r.cfg.Command[1:]...)
 	if err := r.startProcess(procio.Options{
@@ -583,6 +590,10 @@ func (r *shimRuntime) startCommand() error {
 		SysProcAttr: sysProcAttr,
 		TTY:         r.cfg.TTY,
 	}); err != nil {
+		if notRunnable, ok := errors.AsType[*procio.NotRunnableError](err); ok {
+			r.exitNotRunnable(notRunnable.Code, r.cfg.Command[0]+": "+notRunnable.Reason)
+			return nil
+		}
 		r.markStartFailed(err)
 		return err
 	}
@@ -625,6 +636,37 @@ func (r *shimRuntime) writeStartupCommand() error {
 	}
 	r.logger.Record(LogStreamInput, payload)
 	return nil
+}
+
+// exitNotRunnable ends an exec whose command could not be run with the exit
+// status a shell gives it (procio.NotRunnableError): the reason on its stderr
+// and a non-zero exit with code, not a failed start. A command name typed
+// wrong is the user's error, and every client then sees what it sees for any
+// command that ran and failed (#1542).
+//
+// No process ran, so the exec records no StartedAt or PID: what tells a launch
+// that never ran apart from one that ran and ended (the primary terminal's
+// exit, ADR 26-11-16-372 §1). The caller holds startMu.
+func (r *shimRuntime) exitNotRunnable(code int64, message string) {
+	stream, line := LogStreamStderr, message+"\n"
+	if r.cfg.TTY {
+		// A terminal has one stream, and its line discipline would have
+		// turned the newline into CRLF.
+		stream, line = LogStreamStdout, message+"\r\n"
+	}
+	r.logger.Record(stream, []byte(line))
+	r.stream.Broadcast(attachFrameType(stream), []byte(line))
+	now := time.Now().UTC()
+	r.mu.Lock()
+	// Failed with its code, as wait records a process that exited non-zero;
+	// the error is the reason, since there is no process's status to give.
+	r.status.Status = StatusFailed
+	r.status.Error = message
+	r.status.ExitCode = &code
+	r.status.ExitedAt = &now
+	status := r.status
+	r.mu.Unlock()
+	r.publishExit(status)
 }
 
 func (r *shimRuntime) markStartFailed(err error) {
@@ -803,6 +845,12 @@ func (r *shimRuntime) wait() {
 	// PTY/pipes and the asynchronous audit log has drained. Callers use terminal
 	// status as the signal that output and logs are complete.
 	r.outputWG.Wait()
+	r.publishExit(status)
+}
+
+// publishExit records the exec's terminal status once its output is complete,
+// hands every attacher the exit frame, and keeps it for those still to come.
+func (r *shimRuntime) publishExit(status Exec) {
 	r.logger.Close()
 	_ = r.writeStatusValue(status)
 	payload, _ := frame.EncodeExit(string(status.Status), status.ExitCode, status.Error)

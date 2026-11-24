@@ -4616,7 +4616,8 @@ it is the discobox user's login shell, from that user's passwd entry.
 
 Stdin is always attached, and a PTY is allocated only when this terminal is one,
 so piping and redirecting behave like a local command. Signals are forwarded to
-the remote process, and exec exits with its exit code. If an interrupt stops
+the remote process, and exec exits with its exit code: 127 for a command the
+discobox does not have and 126 for one it cannot execute, as a shell's. If an interrupt stops
 getting through — the discobox or the server has gone quiet — Ctrl-C again says
 so, and one more quits exec and leaves the command where it is.
 ~~~~

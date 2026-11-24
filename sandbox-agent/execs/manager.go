@@ -947,6 +947,16 @@ func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 	}
 	current := mergeExecStatus(exec, started)
 	_ = m.writeRecord(ctx, current)
+	if current.StartedAt == nil && current.ExitedAt != nil {
+		// The shim ended it without running anything: its command could not
+		// be run, which the exec reports as that command's exit (#1542).
+		details := map[string]any{"unit": current.Unit, "error": current.Error}
+		if current.ExitCode != nil {
+			details["exitCode"] = *current.ExitCode
+		}
+		_ = m.recordEvent(ctx, current, "exec.start.failed", "start failed ("+current.Error+")", details)
+		return cloneExec(current), nil
+	}
 	_ = m.recordEvent(ctx, current, "exec.started", "started", map[string]any{"unit": current.Unit, "pid": current.PID})
 	return cloneExec(current), nil
 }
