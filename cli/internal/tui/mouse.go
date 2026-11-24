@@ -329,6 +329,13 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 
 	case hitFormAction:
 		if d := m.dialog; d != nil && d.kind == dlgForm && what.idx >= 0 && what.idx < len(d.formActions) {
+			if d.decisionsBlocked {
+				d.scroll(max(d.page-1, 1))
+				return nil, true
+			}
+			if !d.formActions[what.idx].enabled {
+				return nil, true
+			}
 			d.form.closeList()
 			d.formActionAt = what.idx
 			return m.updateKey(keyPress("enter")), true

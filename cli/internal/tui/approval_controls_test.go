@@ -120,6 +120,107 @@ func TestApprovalCardsFitCompactWindow(t *testing.T) {
 	}
 }
 
+func TestFormActionMouseHoverAndClickFollowTheDrawnButtons(t *testing.T) {
+	for _, key := range []string{"accept", "deny", "other"} {
+		t.Run(key, func(t *testing.T) {
+			m := newTestModel(t, newFakeSource())
+			send(t, m, sizeMsg(48, 24))
+			m.st.hover = lipgloss.NewStyle().Underline(true)
+			var selected string
+			var d *dialog
+			d = approvalDialog("Review access", newForm(), func(*form) tea.Cmd {
+				selected = d.formActions[d.formActionAt].key
+				return nil
+			})
+			d.formActions = append(d.formActions, action{key: "other", label: "Choose what to grant", enabled: true})
+			m.dialog = d
+			x, y := at(t, m, "[ Accept ]")
+			tap(t, m, x-1, y)
+			if selected != "" {
+				t.Fatal("clicking outside the buttons submitted the form")
+			}
+			label := map[string]string{"accept": "Accept", "deny": "Deny", "other": "Choose what to grant"}[key]
+			button := "[ " + label + " ]"
+			x, y = at(t, m, button)
+			send(t, m, tea.MouseMotionMsg{X: x + 1, Y: y})
+			if got := m.View().Content; !strings.Contains(got, m.st.hover.Render(button)) {
+				t.Fatalf("button %q did not highlight on hover", button)
+			}
+			tap(t, m, x+1, y)
+			if selected != key {
+				t.Fatalf("click selected %q, want %q", selected, key)
+			}
+		})
+	}
+}
+
+func TestClickOnGatedFormActionScrollsWithoutSubmitting(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	send(t, m, sizeMsg(80, 24))
+	called := false
+	d := approvalDialog("Review access", newForm(), func(*form) tea.Cmd {
+		called = true
+		return nil
+	})
+	d.sections = []section{{lines: []line{{text: strings.Repeat("Review these permissions carefully. ", 100)}}}}
+	m.dialog = d
+	x, y := at(t, m, "[ Accept ]")
+	tap(t, m, x+1, y)
+	if called || m.dialog != d || d.offset == 0 {
+		t.Fatal("clicking the gated button must scroll the explanation without approving")
+	}
+	readRequestEnd(t, m, "pgdown")
+	x, y = at(t, m, "[ Accept ]")
+	tap(t, m, x+1, y)
+	if !called {
+		t.Fatal("clicking Accept after reading did not submit")
+	}
+}
+
+func TestApprovalButtonsAnswerByMouse(t *testing.T) {
+	for _, kind := range []string{"credential", "API access", "adoption", "trust"} {
+		for _, approve := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/%t", kind, approve), func(t *testing.T) {
+				m, ds := sourceWithRequest(t)
+				req := waitingRequest()
+				switch kind {
+				case "credential":
+					openApproval(t, m, "sec_gh")
+				case "API access":
+					req.APIAccess = true
+					m.askAboutAPIAccess(req)
+				case "adoption":
+					req.Adoption = &AdoptionAsk{ChildID: "child", RequesterID: "requester", CurrentParentID: "parent"}
+					m.askAboutAdoption(req)
+				case "trust":
+					m.askAboutTrust(waitingTrust())
+				}
+				readRequestEnd(t, m, "pgdown")
+				label := "Deny"
+				if approve {
+					label = "Accept"
+				}
+				x, y := at(t, m, "[ "+label+" ]")
+				tap(t, m, x+1, y)
+				switch kind {
+				case "credential":
+					if (len(ds.approvals) == 1) != approve || (len(ds.denials) == 1) == approve {
+						t.Fatalf("%s produced approvals %v and denials %v", label, ds.approvals, ds.denials)
+					}
+				case "trust":
+					if (len(ds.trustApprovals) == 1) != approve || (len(ds.trustDenials) == 1) == approve {
+						t.Fatalf("%s produced trust approvals %v and denials %v", label, ds.trustApprovals, ds.trustDenials)
+					}
+				default:
+					if want := fmt.Sprintf("%s=%t", req.ID, approve); len(ds.adoptionDecisions) != 1 || ds.adoptionDecisions[0] != want {
+						t.Fatalf("click recorded %v, want %s", ds.adoptionDecisions, want)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestApprovalCardsOnlyNameAServerWhenKnown(t *testing.T) {
 	for _, server := range []string{"", "production"} {
 		for _, kind := range []string{"use", "api", "trust"} {
