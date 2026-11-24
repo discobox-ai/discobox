@@ -122,11 +122,17 @@ func TestLauncherHandsTheLoginShellOverUntouched(t *testing.T) {
 
 // A shell that runs /etc/profile itself is found the same way, but starts from
 // the environment it was given, for the reason the fallback does.
+//
+// The client's path must not exist on the host running the test: an existing
+// path wins over the name on PATH (see the test below), and a macOS runner has
+// Homebrew's bash at /opt/homebrew/bin/bash, which then ran for real and, with
+// no input, printed nothing.
 func TestLauncherStartsAProfileReadingShellUntouched(t *testing.T) {
 	b := newLauncherBox(t)
 	bash := filepath.Join(b.late, "bash")
 	b.writeShell(bash, "other-bash")
-	if got, want := b.run("/opt/homebrew/bin/bash", b.fallback, "-l"), "other-bash -l SHELL="+bash+" FROM_PROFILE=no"; got != want {
+	client := filepath.Join(t.TempDir(), "client-machine", "bin", "bash")
+	if got, want := b.run(client, b.fallback, "-l"), "other-bash -l SHELL="+bash+" FROM_PROFILE=no"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
