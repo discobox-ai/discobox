@@ -31,7 +31,7 @@ var reprovisionPoll = time.Second
 func (a *App) newSandboxReprovisionCommand() *cobra.Command {
 	var noWait bool
 	cmd := &cobra.Command{
-		Use:   "reprovision DISCOBOX_ID",
+		Use:   "reprovision DISCOBOX",
 		Short: "Run a discobox's failed provisioning again, in place",
 		Long: `Run the provisioning of every feature that failed in a running discobox
 again, in place, and follow it until it is done.
@@ -46,11 +46,11 @@ provisions it anyway.
 It exits non-zero when a feature it ran failed again, naming each with its
 error and its log in the discobox. Unlike "discobox admin box repair", nothing
 is rebuilt. Inside a discobox, "discobox-provision retry" does the same.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			projectID, sandboxID, client, err := a.sandboxRequest(ctx, args[0])
+			_, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}

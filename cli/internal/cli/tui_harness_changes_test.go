@@ -15,6 +15,7 @@ import (
 
 	api "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 func TestHarnessPreviewEscapesUntrustedDisplayData(t *testing.T) {
@@ -145,7 +146,7 @@ func TestHarnessChangesAcceptsProjectAndServerFlags(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "changes SANDBOX") {
+	if !strings.Contains(output.String(), "changes DISCOBOX") {
 		t.Fatalf("wrong command: %s", output.String())
 	}
 }
@@ -320,5 +321,36 @@ func TestMarkHarnessChangesExplainedUpdatesTheProject(t *testing.T) {
 	}
 	if len(got) != 1 || got["harnessChangesExplained"] != true {
 		t.Fatalf("body = %v, want harnessChangesExplained set and nothing else", got)
+	}
+}
+
+// `admin harness changes` takes its discobox as every command acting on one
+// does: the NAME `discobox ls` prints, not only an ID.
+func TestHarnessChangesResolvesADiscoboxByName(t *testing.T) {
+	const id = "sbx_9qk5n25t2hh2rv00"
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+	t.Chdir(t.TempDir())
+	var asked string
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		const collection = "/projects/project-1/sandboxes"
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == collection:
+			_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON(id, "brave_aryabhata", "brave_aryabhata", "present") + `]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api"+collection+"/") && strings.HasSuffix(r.URL.Path, "/harness-config-changes"):
+			asked = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api"+collection+"/"), "/harness-config-changes")
+			_, _ = w.Write([]byte(`{"candidateId":"","harnessConfigId":"harness","configRevision":1,"state":"none","files":[],"credentials":[]}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	if _, _, err := runRM(t, server.URL, "admin", "harness", "changes", "brave_aryabhata"); err != nil {
+		t.Fatalf("admin harness changes by name: %v", err)
+	}
+	if asked != id {
+		t.Fatalf("changes asked of %q, want %q", asked, id)
 	}
 }

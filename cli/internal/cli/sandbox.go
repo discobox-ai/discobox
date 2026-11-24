@@ -128,12 +128,12 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 
 func (a *App) newSandboxGetCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:               "get DISCOBOX_ID",
+		Use:               "get DISCOBOX",
 		Short:             "Show a discobox",
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -259,7 +259,7 @@ sandbox role, acting only on the discoboxes it leads; --discobox-api=false
 takes that away. It is a person's to change.
 
 ` + egressHelp,
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
@@ -420,12 +420,12 @@ To keep the data, use "discobox rm", which archives instead.`,
 func (a *App) newSandboxStartCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:               "start DISCOBOX_ID",
+		Use:               "start DISCOBOX",
 		Short:             "Start a discobox",
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -453,12 +453,12 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 func (a *App) newSandboxStopCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:               "stop DISCOBOX_ID",
+		Use:               "stop DISCOBOX",
 		Short:             "Stop a discobox",
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -486,16 +486,16 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 // API's suspend. `discobox start`, or any use, thaws it.
 func (a *App) newSandboxPauseCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "pause DISCOBOX_ID",
+		Use:   "pause DISCOBOX",
 		Short: "Pause a discobox, keeping its memory",
 		Long: `Pause a running discobox: freeze everything in it, its memory kept, until it
 is started again or used, which resumes it where it left off. A pool that
 cannot freeze it refuses, and the discobox keeps running. Like a stop, a pause
 cancels the wake its agent asked for.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -515,12 +515,12 @@ cancels the wake its agent asked for.`,
 func (a *App) newSandboxRestartCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:               "restart DISCOBOX_ID",
+		Use:               "restart DISCOBOX",
 		Short:             "Restart a discobox",
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -545,7 +545,7 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 
 func (a *App) newSandboxRepairCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "repair DISCOBOX_ID",
+		Use:   "repair DISCOBOX",
 		Short: "Repair a discobox by rebuilding it on the current image",
 		Long: `Repair a discobox by rebuilding it in place.
 
@@ -562,10 +562,10 @@ re-pin costs, and a stale image is itself a way for a discobox to be wedged.
 A discobox still owed its source — its create never delivered it — is rebuilt
 but not started: it is left waiting for its source, and attaching to it or
 "discobox push" from where it was created delivers it, which starts it.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -586,7 +586,7 @@ but not started: it is left waiting for its source, and attaching to it or
 
 func (a *App) newSandboxUpgradeCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "upgrade DISCOBOX_ID",
+		Use:   "upgrade DISCOBOX",
 		Short: "Upgrade a discobox to its harness config's current image",
 		Long: "Rebuild the discobox on the image its harness config resolves to now.\n\n" +
 			"The discobox keeps its ID, its workspace and sources, its caches, and its\n" +
@@ -597,10 +597,10 @@ func (a *App) newSandboxUpgradeCommand() *cobra.Command {
 			"it where it rests, so its next start is already on the image. This is what\n" +
 			"moves a running one, and any discobox in a project set to \"manual\" with\n" +
 			"\"discobox admin project update --sandbox-upgrade-policy\".",
-		Args:              cobra.ExactArgs(1),
+		Args:              requiredDiscobox(cobra.ExactArgs(1)),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -615,19 +615,6 @@ func (a *App) newSandboxUpgradeCommand() *cobra.Command {
 			return a.writeSandbox(cmd, sandbox)
 		},
 	}
-}
-
-func (a *App) sandboxRequest(ctx context.Context, sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {
-	projectID, err = a.projectIDValue()
-	if err != nil {
-		return projectID, sandboxID, nil, err
-	}
-	client, err = a.apiClient()
-	if err != nil {
-		return projectID, sandboxID, nil, err
-	}
-	sandboxID, err = a.resolveSandboxID(ctx, client, projectID, sandboxArg)
-	return projectID, sandboxID, client, err
 }
 
 func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {

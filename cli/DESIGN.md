@@ -1036,7 +1036,7 @@ not an everyday verb, and stays `admin box purge`.
 
 `discobox start|stop|restart|pause DISCOBOX...` (`internal/cli/lifecycle.go`) are the
 everyday power commands, and `admin box start|stop|restart|pause` stay the raw forms
-that take an ID, accept `--force` (all but pause), and print the record the API answered with.
+that take one `DISCOBOX` (`selectSandbox`), accept `--force` (all but pause), and print the record the API answered with.
 They resolve arguments by `rm`'s rule over the same listing, and report through
 `runActionMany`. A discobox driving the ones it created runs them under the
 sandbox role (ADR 26-10-02-478 §1, ADR 26-10-27-880 §9); when every argument
@@ -1359,7 +1359,8 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,
   `HARNESS`, `SECRET` or `PROVIDER` where a name resolves as well as an ID
   (`resolvePoolID`, `resolveListedSandbox`, …). It is `X_ID` where only an ID
-  or a short ID does: the raw `admin box` and `admin binding` forms, requests,
+  or a short ID does: `admin box rm`, `unarchive` and `purge`, the
+  `admin binding` forms, requests,
   jobs, execs, terminals, keys, peers and audit records. Arguments are written
   `UPPER`, never `<lower>`.
 - **Short help is a sentence** starting with a capital letter. A declared
@@ -1902,7 +1903,7 @@ instead (below).
 ## Resource Views
 
 `discobox admin pool resources [POOL]` and `discobox admin box resources
-DISCOBOX_ID` read the accounting the pool agent reports (ADR 0071). Both are
+DISCOBOX` read the accounting the pool agent reports (ADR 0071). Both are
 plain reads of `pool.resources` and `discobox.runtime.resources` — the CLI
 computes no rates of its own, because the figures are only comparable when one
 agent differenced them over one tick.

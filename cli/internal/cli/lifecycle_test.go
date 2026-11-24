@@ -219,3 +219,78 @@ func TestAdminBoxPauseAndItsOldSpellingPostSuspend(t *testing.T) {
 		t.Fatalf("admin box help = %q, want pause taught and suspend not", help)
 	}
 }
+
+// The raw `admin box` forms take their DISCOBOX as every command acting on one
+// does: the NAME `discobox ls` prints resolves to the ID the request carries.
+func TestAdminBoxCommandsResolveADiscoboxByName(t *testing.T) {
+	const id = "sbx_9qk5n25t2hh2rv00"
+	for _, verb := range []string{"get", "start", "stop", "pause", "restart", "upgrade", "resources"} {
+		t.Run(verb, func(t *testing.T) {
+			t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+			t.Chdir(t.TempDir())
+			var asked []string
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+				const collection = "/projects/project-1/sandboxes"
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				path := strings.TrimPrefix(r.URL.Path, "/api")
+				switch {
+				case r.Method == http.MethodGet && path == collection:
+					_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON(id, "brave_aryabhata", "brave_aryabhata", "present") + `]}`))
+				case strings.HasPrefix(path, collection+"/"):
+					asked = append(asked, r.Method+" "+strings.TrimPrefix(path, collection+"/"))
+					if r.Method == http.MethodPost {
+						w.WriteHeader(http.StatusAccepted)
+					}
+					_, _ = w.Write([]byte(namedSandboxJSON(id, "brave_aryabhata", "brave_aryabhata", "present")))
+				default:
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			if _, _, err := runRM(t, server.URL, "-o", "json", "admin", "box", verb, "brave_aryabhata"); err != nil {
+				t.Fatalf("admin box %s by name: %v", verb, err)
+			}
+			if len(asked) == 0 {
+				t.Fatalf("admin box %s asked nothing of the discobox", verb)
+			}
+			for _, request := range asked {
+				if path := strings.SplitN(request, " ", 2)[1]; path != id && !strings.HasPrefix(path, id+"/") {
+					t.Fatalf("admin box %s asked %q, want discobox %s", verb, request, id)
+				}
+			}
+		})
+	}
+}
+
+// A DISCOBOX given blank names no discobox, so it is refused rather than taken
+// as none given: the pick that follows needs no answer when one box is listed,
+// and `admin box stop "$BOX"` with BOX unset would stop it.
+func TestAdminCommandsRefuseABlankDiscobox(t *testing.T) {
+	for _, args := range [][]string{
+		{"admin", "box", "stop", ""},
+		{"admin", "box", "transfer", " ", "--to", "lab"},
+		{"admin", "harness", "discard", "", "candidate"},
+	} {
+		t.Run(args[2], func(t *testing.T) {
+			t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+			t.Chdir(t.TempDir())
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				if r.Method == http.MethodGet && strings.TrimPrefix(r.URL.Path, "/api") == "/projects/project-1/sandboxes" {
+					_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON("sbx_9qk5n25t2hh2rv00", "only", "only", "present") + `]}`))
+					return
+				}
+				t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			t.Cleanup(server.Close)
+
+			_, _, err := runRM(t, server.URL, args...)
+			if err == nil || !strings.Contains(err.Error(), "DISCOBOX is blank") {
+				t.Fatalf("%v: err = %v, want a blank DISCOBOX refused", args, err)
+			}
+		})
+	}
+}
