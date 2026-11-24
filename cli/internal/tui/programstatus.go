@@ -47,8 +47,10 @@ const (
 // protocol, and then for its primary device attributes, which every terminal
 // answers. A terminal answers in order, so one that knows the protocol has
 // said so before its attributes arrive, and attributes with no answer before
-// them are a terminal that does not.
-func probeProgramStatus() tea.Cmd {
+// them are a terminal that does not. The DA1 is counted as the way out's are
+// (attributesQuery), since its answer is owed on the window's input too.
+func (m *Model) probeProgramStatus() tea.Cmd {
+	m.attributesOwed++
 	return tea.Raw(programstatus.QuerySequence + ansi.RequestPrimaryDeviceAttributes)
 }
 

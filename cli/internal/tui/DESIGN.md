@@ -2857,6 +2857,23 @@ name it; a saved server no longer registered opens as every server. A create's
 card is answered with where that one discobox is cut from (`askHowToCreate`),
 and answering it leaves the view where it was.
 
+**The window does not end until its terminal has answered**
+(`queryreplies.go`). The probe's DA1, Bubble Tea's own DECRQM 2026/2027 and
+its kitty keyboard query are answered on the window's input; a window that
+ends first — an attach refused at once, against a terminal behind WSL — leaves
+the answers for the shell to read as typed input. So every way out
+(`closeWindow`) closes the window (`m.quit`, after which `Update` reads only
+the terminal's answers) and ends the program only once a DA1 asked after the
+window's last query is answered: answers come in order, so everything owed has
+arrived by then. That takes two: Bubble Tea writes a query ahead of the frame
+on the same beat, so a first frame drawn beside the first DA1 asks its
+keyboard query after it. `exitSettleLimit` bounds the wait for a terminal
+that answers no DA1, and is well over two slow links' round trips, since one
+that lapsed with answers in flight would leak them all the same. Draining the
+input after `Run` returns was the alternative, and it misses what arrives
+after the drain: the slow terminal this is for. A window ended by its context
+or a signal skips the wait, as it skips the draft.
+
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
 is written through `DataSource.SaveDraft`, one draft per machine, and
 `Session.Draft` is what the next window opens holding, wherever it is opened. Closing a

@@ -75,6 +75,11 @@ type Model struct {
 	statusTerminal statusSupport
 	statusSent     string
 
+	// attributesOwed is the DA1 requests the terminal has not answered yet,
+	// and exitRounds how many the way out has asked; see queryreplies.go.
+	attributesOwed int
+	exitRounds     int
+
 	// The three things the window re-reads on the beat, each one at a time:
 	// the listing, the machine readout, and the credential inbox. See poll.
 	//
@@ -629,7 +634,7 @@ func (m *Model) made() *Sandbox {
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.loadPools(), m.tick(), m.startShimmer()}
+	cmds := []tea.Cmd{textarea.Blink, m.probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.loadPools(), m.tick(), m.startShimmer()}
 	// An attach opens on its workspace rather than on the prompt, from the row
 	// the command already has: waiting for the listing to come back would hold
 	// the attach behind a request it does not need. The listing is still read,
@@ -938,6 +943,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// whatever this message did, on whichever way out of here, a drop the
 	// panel no longer has the keys for is let go (syncFilesDrop).
 	defer m.syncFilesDrop()
+	// Every DA1 the window asks is counted, and every answer settles one,
+	// whichever asked it (queryreplies.go).
+	if isProbeSettled(msg) && m.attributesOwed > 0 {
+		m.attributesOwed--
+	}
+	// A window on its way out waits only for its terminal's answers.
+	if m.quit {
+		return m, m.updateExiting(msg)
+	}
 	// The terminal's answers to the program-status probe are the window's,
 	// not input for anything on screen.
 	if isProgramStatusReply(msg) {

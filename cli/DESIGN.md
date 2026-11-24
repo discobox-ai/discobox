@@ -154,10 +154,12 @@ transport helpers where OpenAPI does not model the stream.
   window on gets (`canOpenWindow`), and
   what `-d` implies — it prints the discobox on stdout, which a window would be
   sitting on.
-- `discobox attach`'s window is opened on the sandbox record the command
-  fetches rather than on its id, so the attach starts without waiting for a
-  listing to come back. The window follows the server from there
-  (`Model.currentBox`).
+- `discobox attach` fetches the sandbox record before either way in, and
+  refuses a discobox archived by intent there, naming `discobox admin box
+  unarchive`: the server would refuse the attach only once the window was
+  open. The window is opened on that record rather than on the id, so the
+  attach starts without waiting for a listing to come back. The window follows
+  the server from there (`Model.currentBox`).
 - `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
   be a character you could never type; `alt+` (or `meta+`, `option+`) a letter
@@ -1740,7 +1742,8 @@ session, `pkg/execstream/client`.
   reconnecting forever — the stop is observable, so the client acts on it instead
   of looping against a runtime that is gone. No attach restarts the sandbox;
   `discobox attach --raw` (`internal/cli/attach.go`) is deliberately a thin wrapper
-  over `attachSandboxTerminal` with the virtual primary id and nothing else, and
+  over `attachSandboxTerminal` with the virtual primary id, after only the
+  refusal of an archived discobox, and
   the client never starts a sandbox to keep an attach alive.
 - The way out of a terminal attach is the leader then `d` (`detachFilter`,
   `internal/cli/sandbox_terminals.go`), matched over the raw input bytes and

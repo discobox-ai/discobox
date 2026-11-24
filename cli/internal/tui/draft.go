@@ -110,11 +110,12 @@ func (m *Model) draftToSave() (prompt string, ok bool) {
 }
 
 // closeWindow ends the program, with whatever is in the composer saved first.
-// Every key that closes the window goes through here.
+// Every key that closes the window goes through here. The program ends once
+// the terminal has answered what the window asked it (beginExit).
 func (m *Model) closeWindow() tea.Cmd {
 	m.saveDraftNow()
 	m.saveViewNow()
 	m.closeParked()
 	m.quit = true
-	return tea.Quit
+	return m.beginExit()
 }

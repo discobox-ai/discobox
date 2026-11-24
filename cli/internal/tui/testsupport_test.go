@@ -2337,3 +2337,25 @@ func (f *fakeSource) downloadsSoFar() []string {
 	defer f.mu.Unlock()
 	return append([]string(nil), f.downloads...)
 }
+
+// runtimeUpdate is the window's Update under the real runtime: its timers and
+// listeners run as the runtime runs them, not handed back as the test seams
+// (TestMain) hand them. A test that runs the window in a tea.Program wraps it
+// in a model whose Update is this.
+func runtimeUpdate(m *Model, msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case timerMsg:
+		return tea.Tick(msg.after, msg.fire)
+	case listenerMsg:
+		return msg.run
+	}
+	_, cmd := m.Update(msg)
+	return cmd
+}
+
+// realRuntime is the window under the real runtime; see runtimeUpdate.
+type realRuntime struct{ *Model }
+
+func (r realRuntime) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	return r, runtimeUpdate(r.Model, msg)
+}
