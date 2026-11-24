@@ -3054,7 +3054,7 @@ options.
 Examples:
   discobox admin provider update --help
   discobox admin provider update --help=docker
-  discobox admin provider update my-provider --min-workers 1 --max-workers 2
+  discobox admin provider update my-docker --network discobox --privileged
   discobox admin provider update my-boxd --secret driver.apiKey=@new-key
 ~~~~
 

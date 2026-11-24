@@ -35,7 +35,7 @@ func TestManagerCreatesTrustKeyAndScopedToken(t *testing.T) {
 
 	signed, err := manager.CreateToken(ctx, TokenClaims{
 		ProjectID: "project-1",
-		PoolID:    "worker-1",
+		PoolID:    "pool-1",
 		SandboxID: "sandbox-1",
 		Scopes:    []string{ScopeSandboxRead},
 	})
@@ -55,8 +55,8 @@ func TestManagerCreatesTrustKeyAndScopedToken(t *testing.T) {
 	if projectID, _ := parsed.GetString("project_id"); projectID != "project-1" {
 		t.Fatalf("project_id = %q", projectID)
 	}
-	if workerID, _ := parsed.GetString("pool_id"); workerID != "worker-1" {
-		t.Fatalf("worker_id = %q", workerID)
+	if poolID, _ := parsed.GetString("pool_id"); poolID != "pool-1" {
+		t.Fatalf("pool_id = %q", poolID)
 	}
 	if sandboxID, _ := parsed.GetString("sandbox_id"); sandboxID != "sandbox-1" {
 		t.Fatalf("sandbox_id = %q", sandboxID)
@@ -74,7 +74,7 @@ func TestManagerCreatesTrustKeyAndScopedToken(t *testing.T) {
 		t.Fatalf("use = %q on a token minted with none", use)
 	}
 	marked, err := manager.CreateToken(ctx, TokenClaims{
-		ProjectID: "project-1", PoolID: "worker-1", SandboxID: "sandbox-1",
+		ProjectID: "project-1", PoolID: "pool-1", SandboxID: "sandbox-1",
 		Scopes: []string{ScopeSandboxRead}, Use: "action",
 	})
 	if err != nil {

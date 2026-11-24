@@ -180,7 +180,7 @@ func (m *Manager) CreateSandboxAgentToken(ctx context.Context, claims TokenClaim
 
 func (m *Manager) createToken(ctx context.Context, audience string, claims TokenClaims) (string, error) {
 	if claims.ProjectID == "" || claims.PoolID == "" {
-		return "", fmt.Errorf("projectID and workerID are required")
+		return "", fmt.Errorf("projectID and poolID are required")
 	}
 	privateKey, err := m.IssuerKey(ctx)
 	if err != nil {

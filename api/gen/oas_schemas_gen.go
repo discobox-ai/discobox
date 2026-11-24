@@ -3832,7 +3832,7 @@ type GitSource struct {
 	Destination OptGitSourceDestination `json:"destination"`
 	// Source kind. Currently only git is supported.
 	Kind GitSourceKind `json:"kind"`
-	// Absolute local Git repository directory accessible to the worker.
+	// Absolute local Git repository directory accessible to the pool.
 	LocalDirectory OptString `json:"localDirectory"`
 	// Whether the repository at localDirectory has no commits, so a clone of it yields nothing and the
 	// base commit this source was resolved against exists only as objects the client holds. The client
