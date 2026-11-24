@@ -1682,7 +1682,13 @@ flowchart TD
   collection. After a pin or a push the namespace's `HEAD` is pointed at a
   branch it holds, and for a project member's delivery the namespace's
   `refs/remotes/origin/*` and tags are copied to `refs/cache/heads/` and
-  `refs/cache/tags/` (`Delivered`).
+  `refs/cache/tags/` (`Delivered`). Every write of `refs/cache/*`, and every
+  ref delete (which takes `packed-refs.lock`) outside the sweep, runs alone
+  per cache (`Store.writeShared`): concurrent deliveries of one remote share
+  those lock files, and git waits on a held one only briefly before failing
+  the write. The sweep holds the cache exclusively instead. A namespace's
+  refs are not serialised: deliveries into different namespaces share no
+  lock file.
 - **A sandbox delivering to a discobox it created**
   ([ADR 26-09-24-630](../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md),
   [ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §9)

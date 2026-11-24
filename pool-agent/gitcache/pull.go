@@ -63,8 +63,17 @@ func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, repor
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
 		refs, _ := git(cleanup, path, nil, nil, "for-each-ref", "--format=%(refname)", prefix)
+		var deletes bytes.Buffer
 		for _, r := range strings.Fields(refs) {
-			_, _ = git(cleanup, path, nil, nil, "update-ref", "-d", r)
+			fmt.Fprintf(&deletes, "delete %s\n", r)
+		}
+		if deletes.Len() > 0 {
+			// One transaction: a delete takes packed-refs.lock, which every
+			// user of the cache shares.
+			_ = s.writeShared(path, func() error {
+				_, err := git(cleanup, path, deletes.Bytes(), nil, "update-ref", "--stdin")
+				return err
+			})
 		}
 	}()
 	env := []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=" + os.DevNull}
@@ -101,7 +110,10 @@ func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, repor
 		}
 	}
 	if remoteUpdates.Len() > 0 {
-		if _, err = git(ctx, path, remoteUpdates.Bytes(), nil, "update-ref", "--stdin"); err != nil {
+		if err = s.writeShared(path, func() error {
+			_, err := git(ctx, path, remoteUpdates.Bytes(), nil, "update-ref", "--stdin")
+			return err
+		}); err != nil {
 			return result, err
 		}
 	}

@@ -647,3 +647,70 @@ func TestSweepRemovesAMarkersLeftoverStagedWrite(t *testing.T) {
 		t.Fatal("a cache whose only entry was a leftover staged write was kept past its retention")
 	}
 }
+
+func TestConcurrentMembersDeliveriesOfOneRemoteAllRecordIt(t *testing.T) {
+	s := New(filepath.Join(t.TempDir(), "caches"))
+	path := use(t, s, "github.com/acme/widget")
+	w := newWork(t)
+	tip := w.commit("a")
+	var refspecs []string
+	refspecs = append(refspecs, tip+":refs/heads/main", tip+":refs/remotes/origin/main")
+	for i := range 1500 {
+		w.git("tag", fmt.Sprintf("backup/v%d", i))
+		refspecs = append(refspecs, fmt.Sprintf("refs/tags/backup/v%d", i))
+	}
+	// A record a newer delivery drops, packed, so dropping it locks packed-refs.
+	if out, err := w.push(s, path, "sbx-seed", "widget", "", append(refspecs, tip+":refs/remotes/origin/gone")...); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	if _, err := git(context.Background(), path, nil, nil, "pack-refs", "--all"); err != nil {
+		t.Fatal(err)
+	}
+	const deliveries = 8
+	errs := make(chan error, deliveries)
+	for i := range deliveries {
+		go func() {
+			sandboxID := fmt.Sprintf("sbx-%d", i)
+			before, err := s.Receiving(context.Background(), path, sandboxID, "widget")
+			if err == nil {
+				// What a pin of refs the cache already holds writes, straight
+				// into the namespace, before Delivered settles it.
+				var updates strings.Builder
+				for _, spec := range refspecs {
+					src, dst, _ := strings.Cut(spec, ":")
+					if dst == "" {
+						dst = src
+						src = tip
+					}
+					fmt.Fprintf(&updates, "update %s %s\n", namespaceRef(Namespace(sandboxID, "widget"), dst), src)
+				}
+				_, err = git(context.Background(), path, []byte(updates.String()), nil, "update-ref", "--stdin")
+			}
+			if err == nil {
+				err = s.Delivered(context.Background(), path, sandboxID, "widget", true, before)
+			}
+			errs <- err
+		}()
+	}
+	for range deliveries {
+		if err := <-errs; err != nil {
+			t.Errorf("delivery: %v", err)
+		}
+	}
+	if got := resolve(context.Background(), path, remoteHeads+"gone"); got != "" {
+		t.Errorf("record still holds the branch the deliveries dropped: %s", got)
+	}
+	recorded, err := git(context.Background(), path, nil, nil, "for-each-ref", "--format=%(objectname) %(refname)", RemoteRefPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(recorded, "\n")
+	if len(lines) != 1501 {
+		t.Errorf("record holds %d refs, want main and 1500 tags", len(lines))
+	}
+	for _, line := range lines {
+		if object, _, _ := strings.Cut(line, " "); object != tip {
+			t.Errorf("record %q is not at %s", line, tip)
+		}
+	}
+}

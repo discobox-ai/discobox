@@ -109,7 +109,7 @@ func (s *Store) Sweep(ctx context.Context, held Held, opts SweepOptions, now tim
 }
 
 func (s *Store) sweepCache(ctx context.Context, path string, held map[string]struct{}, heldKnown bool, opts SweepOptions, now time.Time, logger *slog.Logger) {
-	lock := s.lock(path)
+	lock := &s.lock(path).use
 	lock.Lock()
 	defer lock.Unlock()
 
