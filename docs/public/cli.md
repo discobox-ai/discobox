@@ -4567,6 +4567,12 @@ Print a line each time a discobox in the project is created, archived or
 deleted, powers up or down, or the program in it starts or stops working,
 finishes, or is blocked on a person.
 
+A discobox that powered itself down says why after its power, in the server's
+words as power= is: why=idle when it was idle for its pool's idle timeout,
+why=sleep when an agent in it went to sleep, why=exit when its primary
+terminal's shell exited. A discobox stopped by a person, or one that went
+down any other way, a crash among them, has none.
+
 It begins with each discobox's state now, then follows. A dropped connection is
 resumed where it left off: no event is printed twice and none is skipped. When
 the server no longer has the events since then, it says so ("reset") and
@@ -4684,6 +4690,18 @@ discobox help [command] [flags]
 ~~~~text
 List every discobox in the project, whichever directory and machine it was
 created from, with what each was cut from in the SOURCE column.
+
+STATE says why a discobox that powered itself down is down: "stopped (idle)"
+is one that was idle for its pool's idle timeout, "paused (asleep)" or
+"stopped (asleep)" one an agent in it put to sleep, and "stopped (shell
+exited)" one whose primary terminal's shell exited. A plain "stopped" was
+stopped by a person, or went down any other way, a crash among them.
+
+A discobox is idle while nothing is using it: its screen not changing, no
+client attached, and no keepalive lease taken inside it ("discobox-power
+keepalive"). A background program alone does not keep it up. Its pool sets
+how long it may stay idle before it is stopped; starting or attaching to it
+again resumes it.
 
 Three filters narrow the list, and a discobox is listed when it passes every
 one given:

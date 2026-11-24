@@ -125,3 +125,23 @@ func TestCursorNotifiesPendingHarnessCapture(t *testing.T) {
 		t.Fatalf("capture displaced blocking question: %s", out)
 	}
 }
+
+// Under the cursor, a box that powered itself down says why in its name's
+// place; off the cursor it keeps its name.
+func TestCursorSaysWhyABoxPoweredItselfDown(t *testing.T) {
+	boxes := agentBoxes()
+	boxes[5].State = StateStopped
+	boxes[5].Agent = programstatus.Status{}
+	boxes[5].PowerDown = "stopped while idle"
+	l := listForTest(Session{}, boxes)
+	l.width = 150
+	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
+	if !strings.Contains(out, "quiet-box") || strings.Contains(out, "stopped while idle") {
+		t.Fatalf("a row off the cursor lost its name:\n%s", out)
+	}
+	l.moveTo(5)
+	out = ansi.Strip(l.view(newStyles(true), &zones{}, true))
+	if !strings.Contains(out, "stopped while idle") {
+		t.Fatalf("the cursor row does not say why it is down:\n%s", out)
+	}
+}

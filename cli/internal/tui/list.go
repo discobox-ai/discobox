@@ -1300,6 +1300,9 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	} else if (s.Agent.State == programstatus.Blocked || s.Agent.State == programstatus.Error) && s.Agent.Msg != "" && atCursor {
 		// And to what an agent blocked on a person, or failed, said about it.
 		name = s.Agent.Msg
+	} else if s.PowerDown != "" && s.startable() && atCursor {
+		// And to why a box that powered itself down is down.
+		name = s.PowerDown
 	} else if s.Provisioning != "" && atCursor {
 		// And to what the box is still provisioning, or failed to.
 		name = s.Provisioning

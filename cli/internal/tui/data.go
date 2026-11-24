@@ -393,6 +393,12 @@ type Sandbox struct {
 	ProvisionFailed bool
 	// HarnessConfigPending reports a captured local settings or credential change.
 	HarnessConfigPending bool
+
+	// PowerDown says why a stopped or paused discobox is down, when it powered
+	// itself down ("stopped while idle"):
+	// what the row says under the cursor in place of its name. Empty for one a
+	// person stopped, or that went down any other way.
+	PowerDown string
 	// HarnessConfigCandidate is that change's candidate ID, as the box reports
 	// it: what names the occurrence the harness-changes band is about, so
 	// dismissing it holds only until the box captures a different change.

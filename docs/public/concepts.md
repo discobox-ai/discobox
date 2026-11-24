@@ -172,6 +172,10 @@ from stopping: the box and its sessions keep running.
 Idle boxes stop automatically. Active terminal output, connections and
 explicit keepalive leases affect idleness; a background server alone does
 not guarantee that a box stays awake. The pool determines the idle timeout.
+A box that stopped itself says why in `discobox ls`: `stopped (idle)`,
+`paused (asleep)` after an agent put it to sleep, or `stopped (shell exited)`;
+`discobox events` says `why=idle`, `why=sleep` or `why=exit`. A plain
+`stopped` was stopped by a person, or went down some other way.
 
 Archiving hides a box and starts its retention lifecycle. Unarchive can
 recover it while retained; purge permanently destroys its data. Push useful

@@ -42,6 +42,18 @@ func (a *App) newListCommand() *cobra.Command {
 		Long: `List every discobox in the project, whichever directory and machine it was
 created from, with what each was cut from in the SOURCE column.
 
+STATE says why a discobox that powered itself down is down: "stopped (idle)"
+is one that was idle for its pool's idle timeout, "paused (asleep)" or
+"stopped (asleep)" one an agent in it put to sleep, and "stopped (shell
+exited)" one whose primary terminal's shell exited. A plain "stopped" was
+stopped by a person, or went down any other way, a crash among them.
+
+A discobox is idle while nothing is using it: its screen not changing, no
+client attached, and no keepalive lease taken inside it ("discobox-power
+keepalive"). A background program alone does not keep it up. Its pool sets
+how long it may stay idle before it is stopped; starting or attaching to it
+again resumes it.
+
 Three filters narrow the list, and a discobox is listed when it passes every
 one given:
 
