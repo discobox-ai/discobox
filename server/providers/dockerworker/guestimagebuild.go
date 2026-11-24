@@ -39,11 +39,9 @@ type GuestImageBuildSpec struct {
 	Platform string
 	// Destination is where the finished artifacts are published, replacing
 	// whatever is there. It is the directory the driver's guest resolver
-	// prefers over the published image.
+	// prefers over the published image; the resolver looks there on every
+	// pool start, so publishing is the whole of adopting the build.
 	Destination string
-	// Adopt is called once the artifacts are in place, for a driver that caches
-	// what it resolved. Optional.
-	Adopt func()
 }
 
 // BuildGuestImage builds a driver's guest image on the pool's own Docker daemon
@@ -144,9 +142,6 @@ func solveGuestImage(ctx context.Context, bk *bkclient.Client, source string, sp
 
 	if err := publishGuestImage(staging, spec.Destination); err != nil {
 		return err
-	}
-	if spec.Adopt != nil {
-		spec.Adopt()
 	}
 	_, _ = fmt.Fprintf(out, "guest image artifacts written to %s\n", spec.Destination)
 	return nil

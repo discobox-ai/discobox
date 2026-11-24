@@ -337,10 +337,9 @@ Three things make it work rather than merely run:
   kernel underneath a VM reading it. A build that exports nothing is refused
   rather than published, because an incomplete local build is one the resolver
   skips in silence.
-- **The resolver's memo is dropped on adoption.** It resolves once per process,
-  which is right for a value nothing can change under a running server — except
-  this. Without it the server keeps booting the guest it resolved first for as
-  long as it runs, and the build appears to have done nothing.
+- **Publishing is adopting.** The resolver looks for a local build on every
+  pool start (see `server/providers/DESIGN.md`, Guest Image Artifacts), so the
+  next start boots the new guest with nothing to notify.
 
 A running VM keeps the artifacts it started with, so adopting a new guest means
 restarting the pool's host. `discobox admin pool build-guest --restart` does it

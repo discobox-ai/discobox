@@ -241,19 +241,6 @@ func (r *Resolver) LocalDir() string {
 	return r.cfg.LocalDir
 }
 
-// Invalidate drops the memoized bundle, so the next Resolve looks at the disk
-// again.
-//
-// Resolution is memoized for the life of the process, which is right for a
-// value that cannot change under a running server — except when this server is
-// what changed it. A build that publishes a new local guest calls this, or the
-// server keeps booting the guest it resolved first for as long as it runs.
-func (r *Resolver) Invalidate() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.resolved = nil
-}
-
 // Reference reports the configured guest image reference, or "" when an
 // override directory is in use. A LocalDir does not clear it: whether the local
 // build is usable is only known once it is inspected.
@@ -267,10 +254,20 @@ func (r *Resolver) Reference() string {
 // Resolve returns the artifact bundle, pulling and extracting the guest image
 // the first time it is needed on this host.
 //
+// A complete local build is looked for on every call, and wins whenever it is
+// there: it is what a developer changes under a running server, from a pool's
+// own build or `task build:vm-guest` alike, and deleting it goes back to the
+// published image. Everything else — an override directory, the published
+// image — is resolved once and memoized for the life of the process, because
+// nothing changes it under a running server.
+//
 // report, when set, narrates the pull. It is only ever called for a fetch that
 // actually moves bytes: an override directory, a local build, and a cache hit
 // all resolve without touching the network and have nothing to narrate.
 func (r *Resolver) Resolve(ctx context.Context, report ProgressFunc) (*Bundle, error) {
+	if bundle := r.localBuild(ctx); bundle != nil {
+		return bundle, nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.resolved != nil {
@@ -284,6 +281,25 @@ func (r *Resolver) Resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 	return bundle, nil
 }
 
+// localBuild returns the complete local build, or nil when there is none: no
+// local directory, an override directory in use, or a build that is absent or
+// half-written. Reporting why one was skipped matters: otherwise a developer
+// who built a guest and is quietly running the published image has no way to
+// tell.
+func (r *Resolver) localBuild(ctx context.Context) *Bundle {
+	dir := r.LocalDir()
+	if dir == "" {
+		return nil
+	}
+	bundle, err := r.collect(dir, "local")
+	if err != nil {
+		slog.DebugContext(ctx, "no locally built guest image artifacts", "dir", dir, "reason", err)
+		return nil
+	}
+	slog.InfoContext(ctx, "using locally built guest image artifacts", "dir", dir)
+	return bundle
+}
+
 func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, error) {
 	if r.cfg.OverrideDir != "" {
 		bundle, err := r.collect(r.cfg.OverrideDir, "override")
@@ -292,19 +308,6 @@ func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 		}
 		slog.InfoContext(ctx, "using configured guest image artifacts", "dir", r.cfg.OverrideDir)
 		return bundle, nil
-	}
-	// A locally built guest image wins over the published one, and an absent or
-	// half-built one is simply not there. Reporting why it was skipped matters:
-	// otherwise a developer who built a guest and is quietly running the
-	// published image has no way to tell.
-	if r.cfg.LocalDir != "" {
-		bundle, err := r.collect(r.cfg.LocalDir, "local")
-		if err == nil {
-			slog.InfoContext(ctx, "using locally built guest image artifacts", "dir", r.cfg.LocalDir)
-			return bundle, nil
-		}
-		slog.DebugContext(ctx, "no locally built guest image artifacts",
-			"dir", r.cfg.LocalDir, "reason", err)
 	}
 
 	ref, err := name.ParseReference(r.cfg.Reference)
