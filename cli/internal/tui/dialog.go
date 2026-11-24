@@ -1209,21 +1209,31 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		}
 
 		if len(d.formActions) > 0 {
+			column := 0
 			for i, a := range d.formActions {
-				if i > 0 {
-					b.WriteString("  ")
+				text := "[ " + truncate(a.label, max(inner-4, 1)) + " ]"
+				width := lipgloss.Width(text)
+				if column > 0 {
+					if column+2+width > inner {
+						b.WriteByte('\n')
+						column = 0
+					} else {
+						b.WriteString("  ")
+						column += 2
+					}
 				}
-				text := "[ " + a.label + " ]"
+				x, y := dialogPadLeft+column, row()
 				style := st.name
 				if d.decisionsBlocked || !a.enabled {
 					style = st.dimText
+				} else if z.hovering(x, y, width, 1) {
+					style = st.hover
 				} else if i == d.formActionAt {
 					style = st.cursorName.Background(lipgloss.Color(colHighlightBG))
 				}
-				last := b.String()
-				column := lipgloss.Width(last[strings.LastIndex(last, "\n")+1:])
-				z.mark(hit{kind: hitFormAction, idx: i}, dialogPadLeft+column, row(), lipgloss.Width(text), 1)
+				z.mark(hit{kind: hitFormAction, idx: i}, x, y, width, 1)
 				b.WriteString(style.Render(text))
+				column += width
 			}
 			b.WriteString("\n")
 		}
