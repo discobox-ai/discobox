@@ -155,7 +155,7 @@ NestedInstallerFiles:
   PortableCommandAlias: discobox
 Commands:
 - discobox
-MinimumOSVersion: 10.0.0.0
+MinimumOSVersion: 10.0.22000.0
 ReleaseDate: "$released"
 Installers:
 ${installers}ManifestType: installer

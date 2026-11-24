@@ -306,7 +306,21 @@ function Install-Discobox {
             '^arm64$' { $arch = 'arm64' }
             default { throw "discobox is not released for $arch" }
         }
-        if ($onWindows) { return @{ OS = 'windows'; Arch = $arch; Exe = '.exe' } }
+        if ($onWindows) {
+            # Windows 10 is not supported: build 22000 is the first Windows 11.
+            # Read from the registry, which no compatibility shim rewrites, and
+            # asked only of a client edition, whose builds are the ones that
+            # name Windows 10 or 11.
+            $nt = $null
+            try { $nt = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' } catch { }
+            if ($nt -and ($nt.PSObject.Properties.Name -contains 'InstallationType') -and ($nt.InstallationType -eq 'Client')) {
+                $build = 0
+                if ([int]::TryParse("$($nt.CurrentBuildNumber)", [ref]$build) -and $build -lt 22000) {
+                    throw "discobox needs Windows 11; it is not supported on Windows 10 (build $build)"
+                }
+            }
+            return @{ OS = 'windows'; Arch = $arch; Exe = '.exe' }
+        }
         if ($IsMacOS) {
             if ($arch -eq 'amd64') {
                 # A shell running under Rosetta reports x64 on Apple Silicon.
@@ -355,7 +369,6 @@ function Install-Discobox {
     }
 
     function Install-DiscoboxRelease {
-        $platform = Get-DiscoboxPlatform
         $asset = "discobox-$($platform.OS)-$($platform.Arch)$($platform.Exe)"
         if (-not $checksums.ContainsKey($asset)) { throw "$release has no build for $($platform.OS) on $($platform.Arch)" }
 
@@ -469,6 +482,11 @@ function Install-Discobox {
     if ($Channel -and @('stable', 'beta', 'edge', 'main') -notcontains $Channel) {
         throw "there is no channel called ${Channel}: choose stable, beta, edge, or main"
     }
+
+    # Before any lookup or hand-over, so that a machine no release runs on is
+    # refused here, whichever release it asked for: an older release's
+    # installer may not know to refuse it.
+    $platform = Get-DiscoboxPlatform
 
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('discobox-install-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
