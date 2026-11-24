@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -204,6 +205,29 @@ func TestRawSecretIsWatchedForAndKeptOutOfTheAudit(t *testing.T) {
 		if got := status(send(method, tc.path, tc.header, reader, int64(len(tc.body)))); got != http.StatusForbidden {
 			t.Errorf("%s: status = %d, want 403", tc.name, got)
 		}
+	}
+
+	// The refusal is answered as a route refusal is: in JSON, whose message
+	// a client such as gh shows.
+	refusedReq, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL+"/off-route", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusedReq.Header.Set("X-Api-Key", rawValue)
+	refusedResp, err := client.Do(refusedReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refusal struct {
+		Message string `json:"message"`
+	}
+	decodeErr := json.NewDecoder(refusedResp.Body).Decode(&refusal)
+	_ = refusedResp.Body.Close()
+	if refusedResp.Header.Get("Content-Type") != "application/json" || decodeErr != nil || !strings.HasPrefix(refusal.Message, "blocked by proxy: ") {
+		t.Fatalf("raw refusal = %s %q (%v), want a JSON message carrying the reason", refusedResp.Header.Get("Content-Type"), refusal.Message, decodeErr)
+	}
+	if strings.Contains(refusal.Message, rawValue) {
+		t.Fatal("the raw refusal's message carries the raw value")
 	}
 
 	// A streaming body is cut off before the value is whole.

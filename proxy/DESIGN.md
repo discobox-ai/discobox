@@ -656,6 +656,16 @@ Key properties:
 - **A request the proxy refuses is its own answer** (`requestMeta.answered`):
   it is audited once, as blocked, and the response path neither records it
   again nor reads it as the upstream's word on a credential.
+- **A route refusal is answered in JSON** (`refusalResponse`): a 403 whose
+  body is `{"message": "blocked by proxy: <reason>"}`, the field API
+  clients such as `gh` print an error from. The sandbox's caller is almost
+  always one, and it shows a plain-text body as nothing. It is the answer
+  whenever a credential's routes refuse a request, whether it carries a
+  sentinel (`refuseRoute`) or a raw secret (`watchRaw`). The proxy's other
+  refusals stay plain text: a host the policy denies, the gate, a pool host,
+  a gateway, the 503 of an unresolved credential, and the 502 of an upgrade
+  that cannot be inspected (`refuseUpgrade`), which answers a handshake, not
+  an API call.
 - **Scope is headers, plus query parameters when `Secrets.ScanQuery` is set**
   (pool-agent leaves it off), plus the **body places** a route names (below).
   The rest of a body is never scanned or swapped. When a value is swapped into

@@ -311,8 +311,13 @@ func TestHTTPProxyRouteRefusesASwappedRequest(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), reason) {
-		t.Fatalf("response = %d %q, want 403 carrying the refusal's reason", resp.StatusCode, body)
+	// A JSON client (gh) shows an error's message field, never a text body.
+	var refusal struct {
+		Message string `json:"message"`
+	}
+	if resp.StatusCode != http.StatusForbidden || resp.Header.Get("Content-Type") != "application/json" ||
+		json.Unmarshal(body, &refusal) != nil || refusal.Message != "blocked by proxy: "+reason {
+		t.Fatalf("response = %d %s %q, want 403 with a JSON message carrying the refusal's reason", resp.StatusCode, resp.Header.Get("Content-Type"), body)
 	}
 	if reached {
 		t.Fatal("a refused request reached the upstream")

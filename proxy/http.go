@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -958,7 +959,24 @@ func (h *httpProxy) refuseRoute(req *http.Request, meta *requestMeta, client cli
 		reason: "route: " + reason,
 		status: status,
 	})
-	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+reason)
+	return refusalResponse(req, status, "blocked by proxy: "+reason)
+}
+
+// refusalResponse is the answer to a request its credentials' routes refuse:
+// a JSON object whose message is the refusal, the shape API clients read an
+// error's text from (gh prints message; #1746). A plain-text body is shown by
+// none of them, and the sandbox's program is almost always an API client.
+func refusalResponse(req *http.Request, status int, message string) *http.Response {
+	var body bytes.Buffer
+	encoder := json.NewEncoder(&body)
+	// A reason quotes paths and names with <, > and &; escaped they would be
+	// unreadable in the raw body a client that does not decode it shows.
+	encoder.SetEscapeHTML(false)
+	//nolint:errchkjson // A struct of one string field; encoding cannot fail.
+	_ = encoder.Encode(struct {
+		Message string `json:"message"`
+	}{message})
+	return goproxy.NewResponse(req, "application/json", status, body.String())
 }
 
 // authorizeSwap asks whether a request may carry the credentials its sentinels
