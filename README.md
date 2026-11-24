@@ -13,7 +13,7 @@ commits back to your machine or push them as a pull request.
 
 Claude Code, Codex, OpenCode, GitHub Copilot, omp, and pi are included; other terminal
 agents can be packaged in an image. Discobox supports macOS, Linux, and Windows
-and is under active development.
+11 (not Windows 10) and is under active development.
 
 Public documentation: [the manual](docs/public/index.md).
 
@@ -31,7 +31,7 @@ Or with the install script:
 curl -sSfL https://discobox.ai | sh
 ```
 
-On Windows, from PowerShell:
+On Windows 11, from PowerShell:
 
 ```powershell
 irm https://discobox.ai/install.ps1 | iex

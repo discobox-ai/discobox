@@ -18,7 +18,7 @@ Or use the stable installer on macOS or Linux:
 curl -sSfL https://discobox.ai | sh
 ```
 
-On Windows, run this in PowerShell:
+On Windows 11, run this in PowerShell:
 
 ```powershell
 irm https://discobox.ai/install.ps1 | iex
@@ -42,10 +42,10 @@ build with `curl -sSfL https://main.discobox.ai | sh`; main builds are kept for
 fourteen days. Every channel shares local state, so two installs cannot run
 their servers simultaneously.
 
-Discobox supports macOS, Linux and Windows. On Linux, the built-in provider
-needs Docker installed and accessible to the server user. First use can
-download the server, images and agent bundles, so allow time and network
-access. A remote server runs its pools on the server side.
+Discobox supports macOS, Linux and Windows 11; Windows 10 is not supported, and
+the installer refuses it. On Linux, the built-in provider needs Docker installed
+and accessible to the server user. First use can download the server, images and
+agent bundles, so allow time and network access. A remote server runs its pools on the server side.
 
 Discobox stores generated SSH aliases in its local state directory. Adding
 Includes to your SSH config is optional. The first interactive SSH config sync

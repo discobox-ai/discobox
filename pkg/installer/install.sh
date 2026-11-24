@@ -295,6 +295,11 @@ main() {
 		*) die "there is no channel called $channel: choose stable, beta, edge, or main" ;;
 	esac
 
+	# Before any lookup or hand-over, so that a machine no release runs on is
+	# refused here, whichever release it asked for: an older release's
+	# installer may not know to refuse it.
+	platform
+
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
 	trap 'exit 1' HUP INT TERM
@@ -549,7 +554,6 @@ platform() {
 }
 
 install_release() {
-	platform
 	asset=discobox-$os-$arch
 	expected=$(printf '%s\n' "$checksums" | awk -v asset="$asset" '$2 == asset { print $1 }')
 	[ -n "$expected" ] || die "$release has no build for $os on $arch"

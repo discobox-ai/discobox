@@ -47,6 +47,19 @@ flowchart TD
   (ADR 0106). A main build's version (`-main.` in it) is fetched from
   `discobox-ai/discobox-main`'s release URL alone; a missing one says main
   builds are deleted after fourteen days and to install `--channel main`.
+- **Platform refusals** run first, before a channel lookup or a hand-over,
+  so a release's own installer refuses a machine even when it was asked for an
+  older release whose installer did not know to: an Intel Mac, a musl Linux,
+  an unreleased architecture, and Windows 10. The owner does not support
+  Windows 10 and does not plan to (#1578), although the CLI's ConPTY use alone
+  would run from build 17763 (ADR 0065); the floor is enforced by the installer
+  only, and a binary taken from a release by hand is not checked. Windows 10 is
+  a client edition below build 22000, the first Windows 11, read from the
+  registry, which no compatibility shim rewrites; a Server edition is not
+  asked. `install.sh` sends every Windows shell to `install.ps1`, so the
+  Windows refusal is that script's alone. The winget manifest's
+  `MinimumOSVersion` is the same build, but winget cannot tell editions apart,
+  so winget also refuses Server 2019 and 2022, which the script accepts.
 - **Verification** runs `discobox version --client`, checking the installed
   binary without contacting or starting the server.
 - **The server is not part of the install.** Both scripts close by saying what
