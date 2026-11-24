@@ -144,11 +144,14 @@
   for its box would stay on the user's tab, claiming the box is working long
   after the window that knew is gone.
 
-- **The window's terminal is asked for DA1 once, by the program-status
-  probe, and every DA1 answer is taken as that probe settling** (`Update` →
-  `isProbeSettled`). A second DA1 request from the window, or from a newer
-  Bubble Tea, never sees its answer: the probe swallows it. Anything else that
-  needs DA1 shares the probe's.
+- **Every DA1 the window asks is counted in `attributesOwed`, and every DA1
+  answer settles one** (`Update` → `isProbeSettled`), whichever asked it. The
+  program-status probe asks one at startup and takes the first answer as its
+  own; the way out (`beginExit`, then `settleExit`) asks the rest, only once
+  the window is closed (`m.quit`), where no answer reaches the probe. A DA1
+  asked anywhere else would settle the probe early, or be swallowed by it:
+  anything else that needs DA1 shares the probe's. A DA1 written without counting it ends
+  the window before its answer is read, leaking it to the shell (#1506).
 
 - **Every console `Model` frame is on the alternate screen.** Nothing is printed inline: rows
   left on the primary screen surface again on the way out or around a
