@@ -753,6 +753,18 @@ without dismissing the candidate. See [the data-source flow](../cli/DESIGN.md#ha
 and last: an offer, not a problem, with nothing waiting on it. Its occurrence is
 the candidate, so a dismissal holds until the box captures a different change.
 A press, or leader+`H`, opens the review card, where Save takes it. The card
+opens on a title and one sentence naming the box (`harnessChangesHeading`),
+with no state or revision line, so what Save would share is above the fold of
+a 24-row terminal: the login and the first file's name, if not every line of
+its diff or every file after it. A pending change Save can take is titled with the
+question Save answers (a login when the change carries one, else settings), and
+the sentence says what Save and Discard each do; a saved change still being
+handed back to the box says so, offering Save as a retry only when Save is
+enabled; anything else says why there is nothing to save. The words come from
+the same `saveable` that enables Save. Beneath it the short sections come
+first, credentials then diagnostics, and the files' diffs last: a sign-in's
+credentials file is a dozen lines of JSON, and the login under it would be
+below the fold. The card
 labels a file at a path a person overrode "shadowed by your override, which
 boxes keep getting" (`HarnessChangedFile.Shadowed`, from the server's preview):
 a save keeps that change beneath the person's file (ADR 26-11-04-711 §2).

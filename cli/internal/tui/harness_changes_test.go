@@ -71,7 +71,7 @@ func TestWorkspaceLeaderOpensHarnessReview(t *testing.T) {
 		d, m, term := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("H")
-		d.wait("harness review", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Harness changes") })
+		d.wait("harness review", func() bool { return m.dialog != nil && strings.HasSuffix(m.dialog.title, "for future boxes?") })
 		if got := term.typed("H"); strings.Contains(got, "H") {
 			t.Fatalf("review key reached harness: %q", got)
 		}
@@ -177,7 +177,7 @@ func TestPressingTheHarnessChangesBandOpensTheReview(t *testing.T) {
 	m.viewBanner(140)
 
 	drain(t, m, m.pressBanner(), 0)
-	if m.dialog == nil || !strings.Contains(m.dialog.title, "Harness changes") {
+	if m.dialog == nil || !strings.HasSuffix(m.dialog.title, "for future boxes?") {
 		t.Fatalf("dialog = %s, want the review", describe(m.dialog))
 	}
 	send(t, m, keyPress("s"))
@@ -237,7 +237,7 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 	pastKeyQuiet(m)
 	send(t, m, keyPress("r"))
 
-	if m.dialog == nil || !strings.Contains(m.dialog.title, "Harness changes") {
+	if m.dialog == nil || !strings.HasSuffix(m.dialog.title, "for future boxes?") {
 		t.Fatalf("dialog = %s, want the review", describe(m.dialog))
 	}
 	send(t, m, keyPress("s"))
@@ -437,6 +437,103 @@ func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {
 		}
 		if len(m.dismissed) != 0 {
 			t.Fatal("checking current diff dismissed the immutable candidate")
+		}
+	}
+}
+
+// A review of one short file and the login it carries is all on a 24-row
+// card when it opens, so nobody has to page down to find out what Save would
+// share. (A real sign-in's file is longer: see the 80x24 test below.)
+func TestASignInReviewShowsEverythingItSavesWithoutScrolling(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(pendingSandboxes()...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "cand_1", State: "pending",
+		Files:       []HarnessChangedFile{{Path: ".claude/.credentials.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{\"claudeAiOauth\":\"<redacted>\"}"}},
+		Credentials: []string{"anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)"}}
+	m := newTestModel(t, ds)
+	m.explainHarnessChanges = true
+	send(t, m, tickMsg{})
+	pastKeyQuiet(m)
+	send(t, m, keyPress("r"))
+
+	frame := ansi.Strip(draw(m.dialog))
+	for _, want := range []string{"add .claude/.credentials.json", "── credentials", "anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("review at 100x24 is missing %q without scrolling:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "PgUp/PgDn to scroll") {
+		t.Errorf("a one-file review needs scrolling at 100x24:\n%s", frame)
+	}
+}
+
+// The review opens on the question Save answers, naming what it would share,
+// and says in one sentence what each answer does; a card Save cannot take
+// says why instead. The candidate's state and revision are not a line of
+// their own.
+func TestTheHarnessReviewAsksWhatItSaves(t *testing.T) {
+	t.Parallel()
+	named := pendingSandboxes()[0]
+	unnamed := named
+	unnamed.HarnessName, unnamed.Harness = "", ""
+	login := []string{"anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)"}
+	settings := []HarnessChangedFile{{Path: ".claude/settings.json", Action: "update"}}
+	for _, tc := range []struct {
+		box     Sandbox
+		changes HarnessChanges
+		title   string
+		body    string
+		save    bool
+	}{
+		{named, HarnessChanges{CandidateID: "c", State: "pending", Files: []HarnessChangedFile{{Path: ".claude/.credentials.json", Action: "add"}}, Credentials: login},
+			"Save this Claude Code login for future boxes?", "Save gives it to new boxes; Discard keeps it there.", true},
+		{named, HarnessChanges{CandidateID: "c", State: "pending", Files: settings},
+			"Save these Claude Code settings for future boxes?", "Save gives it to new boxes; Discard keeps it there.", true},
+		{unnamed, HarnessChanges{CandidateID: "c", State: "pending", Credentials: login},
+			"Save this harness login for future boxes?", "Save gives it to new boxes; Discard keeps it there.", true},
+		{named, HarnessChanges{CandidateID: "c", State: "saved-handoff-pending"},
+			"Claude Code changes saved", "discobox keeps retrying. Save retries now.", true},
+		{named, HarnessChanges{State: "saved-handoff-pending"},
+			"Claude Code changes saved", "discobox keeps retrying.", false},
+		{named, HarnessChanges{CandidateID: "c", State: "pending", Diagnostics: []string{"unsupported local configuration"}},
+			"Claude Code changes", "No saveable settings or credentials.", false},
+		{unnamed, HarnessChanges{State: "unavailable", Files: settings},
+			"Harness changes", "Nothing to save: this change is unavailable.", false},
+	} {
+		m := newTestModel(t, newFakeSource(pendingSandboxes()...))
+		m.showHarnessChanges(harnessChangesLoadedMsg{box: tc.box, changes: tc.changes})
+		if m.dialog == nil || m.dialog.title != tc.title {
+			t.Errorf("title = %s, want %q", describe(m.dialog), tc.title)
+			continue
+		}
+		if !strings.HasPrefix(m.dialog.body, "From the box \""+tc.box.Name+"\". ") || !strings.HasSuffix(m.dialog.body, tc.body) {
+			t.Errorf("body = %q, want the box named and %q", m.dialog.body, tc.body)
+		}
+		if strings.Contains(m.dialog.body, "revision") {
+			t.Errorf("body = %q, want no revision", m.dialog.body)
+		}
+		if save := m.dialog.items[0]; save.key != "s" || save.enabled != tc.save {
+			t.Errorf("%q: Save enabled = %v, want %v", tc.title, save.enabled, tc.save)
+		}
+	}
+}
+
+// A real sign-in's credentials file is a dozen lines of pretty-printed JSON.
+// The login it carries is still on an 80x24 card when it opens, with the
+// file's name: the short sections come before the long diff.
+func TestARealSignInsLoginIsAboveItsFileOnASmallTerminal(t *testing.T) {
+	t.Parallel()
+	diff := "@@ -0,0 +1,13 @@\n+{\n+  \"claudeAiOauth\": {\n+    \"accessToken\": {\n+      \"$secret\": \"CLAUDE_CODE_OAUTH_TOKEN\"\n+    },\n" +
+		"+    \"refreshToken\": \"discobox-refresh-happens-in-the-control-plane\",\n+    \"expiresAt\": 4102444800000,\n+    \"scopes\": [\n+      \"user:inference\"\n+    ],\n+    \"subscriptionType\": \"max\"\n+  }\n+}"
+	m := newTestModel(t, newFakeSource(pendingSandboxes()...))
+	m.showHarnessChanges(harnessChangesLoadedMsg{box: pendingSandboxes()[0], changes: HarnessChanges{CandidateID: "c", State: "pending",
+		Files:       []HarnessChangedFile{{Path: ".claude/.credentials.json", Action: "add", Diff: diff}},
+		Credentials: []string{"anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)"}}})
+
+	frame := ansi.Strip(m.dialog.view(newStyles(false), &zones{}, 80, 24))
+	for _, want := range []string{"Save this Claude Code login for future boxes?", "── credentials", "anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)", "add .claude/.credentials.json"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("review at 80x24 is missing %q without scrolling:\n%s", want, frame)
 		}
 	}
 }
