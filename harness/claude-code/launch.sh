@@ -7,9 +7,58 @@ set -eu
 # The prompt trails a resume too (ADR 0086 §4), so a user whose first launch
 # failed can still see what the sandbox was asked to do. This session already
 # contains it, so `--continue` replaces it rather than sending it a second time.
+#
+# A primary relaunched before anyone sent its harness a message (a re-attach
+# after a stop, the tour's hand-off) has no conversation, and `claude
+# --continue` then prints "No conversation found to continue" and exits 1,
+# leaving the user at the login shell (issue #1421). So a resume continues only
+# when Claude Code would find a conversation for this directory, and otherwise
+# starts a fresh session with the prompt. The first launch hands Claude Code the
+# prompt as its first message, which is what records a conversation, so none
+# means the prompt never reached it (the launch failed, or stopped at sign-in):
+# the case ADR 0086 §4 carries the prompt for, and it cannot be sent twice.
+#
+# Claude Code keeps a directory's conversations as projects/<name>/*.jsonl,
+# where the name is the cwd with every character outside [A-Za-z0-9] made "-",
+# and a name over 200 characters is its first 200, "-" and a hash, found by
+# that prefix (Claude Code 2.1.331). A conversation file is written with its
+# first message. The name is computed in JavaScript, as Claude Code does, so a
+# non-ASCII path counts characters, not bytes.
+has_conversation() {
+	node -e '
+const fs = require("fs");
+const path = require("path");
+const projects = process.argv[1];
+const name = process.cwd().replace(/[^a-zA-Z0-9]/g, "-");
+let dirs = [name];
+if (name.length > 200) {
+	const prefix = name.slice(0, 200) + "-";
+	try {
+		dirs = fs.readdirSync(projects).filter((dir) => dir.startsWith(prefix));
+	} catch {
+		dirs = [];
+	}
+}
+const found = dirs.some((dir) => {
+	try {
+		return fs.readdirSync(path.join(projects, dir)).some((file) => file.endsWith(".jsonl"));
+	} catch {
+		return false;
+	}
+});
+process.exit(found ? 0 : 1);
+' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+}
+
+resume=
 if [ "${1-}" = "--resume" ]; then
-	set -- --continue
-else
+	shift
+	if has_conversation; then
+		resume=1
+		set -- --continue
+	fi
+fi
+if [ -z "$resume" ]; then
 	# A prompt is one prompt, however many words the shell split it into: the
 	# command is typed, so `discobox run . fix the failing tests` arrives here
 	# as four arguments. Joining everything after the flags back together with
