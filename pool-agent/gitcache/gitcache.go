@@ -74,12 +74,29 @@ type Store struct {
 	root string
 
 	mu    sync.Mutex
-	locks map[string]*sync.RWMutex
+	locks map[string]*cacheLocks
+}
+
+// cacheLocks are what one cache is held by, in process: only one pool agent
+// writes a pool's caches.
+type cacheLocks struct {
+	// use is held shared by everything that reads or writes the cache, and
+	// exclusively by Sweep (Use).
+	use sync.RWMutex
+	// shared is held by every write of a ref the cache's users share, while
+	// use is held shared: the remote's record under refs/cache/, and any
+	// delete, which takes packed-refs.lock. Concurrent deliveries of one
+	// remote otherwise race on those lock files, and git waits for one only
+	// briefly before it fails the write. Sweep's deletes need it not: it
+	// holds use exclusively. A namespace's refs are not shared: deliveries
+	// into different namespaces never meet on a lock file, and two at once
+	// into one namespace are not serialised here.
+	shared sync.Mutex
 }
 
 // New returns the store rooted at root, which need not exist yet.
 func New(root string) *Store {
-	return &Store{root: root, locks: map[string]*sync.RWMutex{}}
+	return &Store{root: root, locks: map[string]*cacheLocks{}}
 }
 
 // Namespace is the Git namespace of one source of one sandbox.
@@ -98,15 +115,25 @@ func (s *Store) path(key string) string {
 	return filepath.Join(s.root, id(key)+".git")
 }
 
-func (s *Store) lock(path string) *sync.RWMutex {
+func (s *Store) lock(path string) *cacheLocks {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	lock := s.locks[path]
 	if lock == nil {
-		lock = &sync.RWMutex{}
+		lock = &cacheLocks{}
 		s.locks[path] = lock
 	}
 	return lock
+}
+
+// writeShared runs write, which writes refs every user of the cache at path
+// shares, alone among such writes (cacheLocks.shared). The caller holds the
+// cache (Use).
+func (s *Store) writeShared(path string, write func() error) error {
+	lock := s.lock(path)
+	lock.shared.Lock()
+	defer lock.shared.Unlock()
+	return write()
 }
 
 // Use returns the cache for key, made if it does not exist, held against
@@ -119,12 +146,12 @@ func (s *Store) Use(ctx context.Context, key string) (path string, release func(
 	}
 	path = s.path(key)
 	lock := s.lock(path)
-	lock.RLock()
+	lock.use.RLock()
 	if err := s.ensure(ctx, path, key); err != nil {
-		lock.RUnlock()
+		lock.use.RUnlock()
 		return "", nil, err
 	}
-	return path, lock.RUnlock, nil
+	return path, lock.use.RUnlock, nil
 }
 
 func (s *Store) ensure(ctx context.Context, path, key string) error {
@@ -523,13 +550,14 @@ func (s *Store) Delivered(ctx context.Context, path, sandboxID, slug string, mem
 	if err != nil || after == before {
 		return err
 	}
-	return recordRemote(ctx, path, namespace)
+	return s.writeShared(path, func() error { return recordRemote(ctx, path, namespace) })
 }
 
 // recordRemote makes the cache's record of its remote what namespace was
 // just delivered: the remote's branches exactly — one the remote no longer
 // has is dropped, which is also what lets a branch be replaced by branches
-// beneath its name — and every tag delivered, added to those it has.
+// beneath its name — and every tag delivered, added to those it has. It reads
+// the record and rewrites it, so it runs under writeShared.
 func recordRemote(ctx context.Context, path, namespace string) error {
 	prefix := "refs/namespaces/" + namespace + "/"
 	out, err := git(ctx, path, nil, nil, "for-each-ref", "--format=%(objectname) %(refname)",

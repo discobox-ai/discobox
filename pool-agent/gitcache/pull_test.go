@@ -70,6 +70,9 @@ func TestPullPinsOnlyTheRemoteAndLendsForOneRequest(t *testing.T) {
 	if got := resolve(t.Context(), path, namespaceRef(Namespace("sbx-one", "primary"), "refs/heads/main")); got != commit {
 		t.Fatalf("branch=%s", got)
 	}
+	if refs, err := git(t.Context(), path, nil, nil, "for-each-ref", "--format=%(refname)", "refs/discobox-pulls/"); err != nil || refs != "" {
+		t.Fatalf("pull left its own refs behind: %q, %v", refs, err)
+	}
 	if _, err := git(t.Context(), path, nil, nil, "update-ref", "-d", RemoteRefPrefix+"heads/main"); err != nil {
 		t.Fatal(err)
 	}

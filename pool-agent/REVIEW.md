@@ -153,6 +153,12 @@ reasons.
 - **Hold the cache for the whole request.** Everything that reads or writes a
   cache takes it through `gitcache.Store.Use` and releases it when the
   response is finished. A read outside it can meet the sweep's prune.
+- **Write shared refs through `writeShared`.** Every write of `refs/cache/*`
+  and every ref delete (a delete takes `packed-refs.lock`) in a cache held by
+  `Use` goes through `gitcache.Store.writeShared`; only the sweep, holding
+  the cache exclusively, writes them without it. Git waits on a held ref lock
+  for about 100 ms and on `packed-refs.lock` for 1 s, so concurrent
+  deliveries of one remote fail with "File exists" otherwise (#1505).
 - **A sandbox's push needs both halves.** `receive.hideRefs` limits what it is
   told; the pre-receive hook, with `receive.unpackLimit=1`, limits what it can
   name. Unpacked, an object the store already holds is not written again, and
