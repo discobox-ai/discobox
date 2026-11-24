@@ -591,7 +591,7 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout 
 		// by the deadline rather than by its own error.
 		wait := min(dockerReadyPollDelay, time.Until(deadline))
 		if wait <= 0 {
-			return nil, false, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
+			return nil, false, fmt.Errorf("pool %s docker daemon not ready: %w", poolID, lastErr)
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -601,7 +601,7 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout 
 		case <-timer.C:
 		}
 		if !time.Now().Before(deadline) {
-			return nil, false, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
+			return nil, false, fmt.Errorf("pool %s docker daemon not ready: %w", poolID, lastErr)
 		}
 	}
 }
@@ -1208,7 +1208,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		Container:      created.ID,
 		EndpointConfig: &network.EndpointSettings{Aliases: []string{proxyagent.ServerName}},
 	}); err != nil {
-		return nil, poolruntime.BoxRecord{}, fmt.Errorf("connect worker to sandbox network: %w", err)
+		return nil, poolruntime.BoxRecord{}, fmt.Errorf("connect pool to sandbox network: %w", err)
 	}
 	// A new container runs no agent until it is provisioned, so the pool's
 	// agent counts as started from just before it starts (ADR 26-11-15-294

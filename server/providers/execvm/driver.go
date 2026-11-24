@@ -228,7 +228,7 @@ func (d *Driver) Check(ctx context.Context) error {
 
 func (d *Driver) run(ctx context.Context, op, poolID string, extraEnv ...string) ([]byte, error) {
 	if op != opCheck && strings.TrimSpace(poolID) == "" {
-		return nil, errors.New("worker ID is required")
+		return nil, errors.New("pool ID is required")
 	}
 	cmd := d.newCommand(ctx, op, poolID, extraEnv...)
 	var stdout, stderr bytes.Buffer

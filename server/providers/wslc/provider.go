@@ -209,7 +209,7 @@ func Definition() sandbox.ProviderDefinition {
 		// Each pool VM is sized from the pool's own size first (see vmsize).
 		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image that every sandbox runs with its platform delivered, and the pool's own container runs provisioned as a pool.", Advanced: true},
 			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().VCPUs), Description: "Defaults to every host CPU. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().MemoryMiB), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "maxStorageMiB", Label: "Max /var/lib/docker (MiB)", Type: "number", Placeholder: strconv.FormatInt(defaultMaxStgMiB, 10)},
