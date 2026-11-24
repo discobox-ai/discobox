@@ -359,7 +359,9 @@ with observation timestamps. The existing stream artifact route serves either
 format; the console renders WebSocket messages from that artifact.
 
 Capture observes RFC 6455 version 13 on the HTTP/1.1 upgrade path, including
-masking, fragmentation, and interleaved control frames. Negotiated RFC 7692
+masking, fragmentation, and interleaved control frames. It reads frame headers
+through `internal/wsframe`, the proxy's one frame reader, which enforcement
+(below) uses too; what a frame that does not read means is each caller's. Negotiated RFC 7692
 `permessage-deflate` is decoded per direction, including context takeover.
 Application protocols remain opaque: messages are not paired into requests
 and responses. HTTP/2 and HTTP/3 WebSocket establishment are outside this path.
@@ -700,7 +702,8 @@ Key properties:
     502 and recorded blocked. Every other connection is copied byte for byte
     and has no message swapped.
   - On an inspected connection the client's frames are parsed by the
-    enforcing side itself, never by the fail-open audit capture: masked,
+    enforcing side itself (through `internal/wsframe`), never by the
+    fail-open audit capture: masked,
     RSV-free, ordered frames, reassembled into complete messages before any
     of a message is sent. A message is bounded to 64 KiB payload, 80 KiB of
     frames and 1024 frames, and so is everything held at once; past that the

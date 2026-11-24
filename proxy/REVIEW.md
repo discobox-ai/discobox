@@ -190,9 +190,10 @@
 - An inspected WebSocket connection sends nothing of a message before the
   whole of it is decided, and never falls back to copying: an oversized
   message, a frame it cannot read, or an unsupported extension ends the
-  connection rather than streaming past the scan. Enforcement parses frames
-  itself (`internal/wsframe`); the audit capture stops on what it cannot
-  read while traffic goes on, which permission must never do.
+  connection rather than streaming past the scan. Frames are read only
+  through `internal/wsframe`, by enforcement and the audit capture alike;
+  each owns its failure: enforcement closes, while the audit capture stops
+  on what it cannot read and traffic goes on, which permission must never do.
 - A message is decided again when it is sent (`Swapper.Decide`), and read
   again after any configuration change while it waited: a value resolved
   under one configuration must not go out under another, and a sentinel
