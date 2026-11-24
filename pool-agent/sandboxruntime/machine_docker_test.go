@@ -134,7 +134,7 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 	if err != nil || !record.DataOnVolume {
 		t.Fatalf("machine record = %+v, %v; want its data on its volume read from it", record, err)
 	}
-	r.remakeOnNewRoot(ctx, inst, &record, nil)
+	r.remakeOnNewRoot(ctx, inst, "sbx_docker", &record, snapshotInputs{})
 	if !record.NewRoot {
 		t.Fatal("a machine with a data volume was not asked a new root")
 	}

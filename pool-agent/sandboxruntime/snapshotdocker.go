@@ -93,12 +93,13 @@ func startedFromLabels(labels map[string]string) *StartedFrom {
 // sandbox base image and no key, with the snapshot asked for behind it.
 // baseID is the base's ID.
 func (r *DockerSandboxRuntime) deliveredImage(ctx context.Context, baseID string, req *workerapimodel.PoolSandboxCreateRequest) (image, snapshot string) {
-	if !req.ProvisionEgress.Set {
+	in := snapshotInputsOf(req)
+	if in.provision == nil {
 		// A server that sends no build policy gets no snapshot: built
 		// without one, it would run unrestricted.
 		return baseID, ""
 	}
-	plan, err := r.newSnapshotPlan(baseID, req)
+	plan, err := r.newSnapshotPlan(baseID, in)
 	if err != nil {
 		slog.WarnContext(ctx, "plan a snapshot; starting from the sandbox base image", "error", err)
 		return baseID, ""

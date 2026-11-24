@@ -15,8 +15,6 @@ import (
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 
-	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
-
 	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/layout"
 )
@@ -167,19 +165,20 @@ func (r *MachineSandboxRuntime) snapshotBase() string {
 	return r.engine.Driver.Name() + ":" + r.base
 }
 
-// snapshotFor is the snapshot a new sandbox machine for req is made from:
-// its VM's name and its plan's key, held until release is called so nothing
-// removes it while the create reads it. None is a machine made fresh, and
-// asks for the plan's snapshot to be built behind it — unless the driver does
-// not commit, or the server sent no build policy.
-func (r *MachineSandboxRuntime) snapshotFor(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (from, key string, release func()) {
+// snapshotFor is the snapshot a new root or a new machine for sandboxID,
+// planned from in, is made from: its VM's name and its plan's key, held
+// until release is called so nothing removes it while the caller reads it.
+// None is a root made fresh, and asks for the plan's snapshot to be built
+// behind it — unless the driver does not commit, in has no build policy, or
+// in is what the pool kept (snapshotInputs.kept).
+func (r *MachineSandboxRuntime) snapshotFor(ctx context.Context, sandboxID string, in snapshotInputs) (from, key string, release func()) {
 	release = func() {}
-	if req == nil || !req.ProvisionEgress.Set || !r.commits() {
+	if in.provision == nil || !r.commits() {
 		// A server that sends no build policy gets no snapshot: built
 		// without one, it would run unrestricted.
 		return "", "", release
 	}
-	plan, err := r.newSnapshotPlan(r.snapshotBase(), req)
+	plan, err := r.newSnapshotPlan(r.snapshotBase(), in)
 	if err != nil {
 		slog.WarnContext(ctx, "plan a snapshot; making the sandbox's machine fresh", "error", err)
 		return "", "", release
@@ -202,11 +201,13 @@ func (r *MachineSandboxRuntime) snapshotFor(ctx context.Context, req *workerapim
 				slog.WarnContext(ctx, "record a snapshot's use", "snapshot", name, "error", err)
 			}
 		}
-		slog.InfoContext(ctx, "making a sandbox machine from a snapshot", "snapshot", name, "sandboxId", req.SandboxId)
+		slog.InfoContext(ctx, "making a sandbox machine from a snapshot", "snapshot", name, "sandboxId", sandboxID)
 		return name, key, held
 	}
 	held()
-	r.requestSnapshot(plan, r.buildMachineSnapshot)
+	if !in.kept {
+		r.requestSnapshot(plan, r.buildMachineSnapshot)
+	}
 	return "", "", release
 }
 

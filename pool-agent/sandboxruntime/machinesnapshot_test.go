@@ -33,7 +33,7 @@ func machineSnapshotCreate(sandboxID string) *workerapimodel.PoolSandboxCreateRe
 // machineSnapshotKey is the key of req's plan on f's runtime.
 func machineSnapshotKey(t *testing.T, f *machineFixture, req *workerapimodel.PoolSandboxCreateRequest) string {
 	t.Helper()
-	plan, err := f.runtime.newSnapshotPlan(f.runtime.snapshotBase(), req)
+	plan, err := f.runtime.newSnapshotPlan(f.runtime.snapshotBase(), snapshotInputsOf(req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestABuildLeavesASnapshotACreateHolds(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("no snapshot was built: %v", err)
 	}
-	plan, err := r.newSnapshotPlan(r.snapshotBase(), req)
+	plan, err := r.newSnapshotPlan(r.snapshotBase(), snapshotInputsOf(req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestASnapshotBuildReachesItsPoolByTheSandboxesHop(t *testing.T) {
 		f := newMachineFixture(t, nil)
 		r := f.runtime
 		r.poolEndpoints = endpoints
-		plan, err := r.newSnapshotPlan(r.snapshotBase(), machineSnapshotCreate("sbx_1"))
+		plan, err := r.newSnapshotPlan(r.snapshotBase(), snapshotInputsOf(machineSnapshotCreate("sbx_1")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -543,7 +543,7 @@ func TestASnapshotBuildBehindAnEdgeCarriesThePoolsEdge(t *testing.T) {
 		held := edge
 		return &held
 	}
-	plan, err := r.newSnapshotPlan(r.snapshotBase(), machineSnapshotCreate("sbx_1"))
+	plan, err := r.newSnapshotPlan(r.snapshotBase(), snapshotInputsOf(machineSnapshotCreate("sbx_1")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +585,7 @@ func TestASnapshotBuildBehindAnEdgeWithoutItsAddressOrCredentialIsRefused(t *tes
 			held := edge
 			return &held
 		}
-		plan, err := r.newSnapshotPlan(r.snapshotBase(), machineSnapshotCreate("sbx_1"))
+		plan, err := r.newSnapshotPlan(r.snapshotBase(), snapshotInputsOf(machineSnapshotCreate("sbx_1")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -640,6 +640,112 @@ func TestAMachineKeptOnItsVolumeIsRebuiltOnItsPlansSnapshot(t *testing.T) {
 	}
 	if !guestHas(t, f, "sbx_7", "/provisioned") {
 		t.Error("the rebuilt machine's new root does not hold what its plan's snapshot provisioned: it was given a fresh root from the base")
+	}
+}
+
+// A machine that keeps its data on its volume, rebuilt by the status poll for
+// a project layer its primary source now declares, is given a root from its
+// plan's snapshot as a create's rebuild is, and keeps its data and cache
+// volumes: the poll has no create in hand, but the pool kept the plan.
+func TestAMachineRebuiltForAProjectLayerIsRebuiltOnItsPlansSnapshot(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_7")
+	source := "primary"
+	if err := r.writeProjectLayerRecord("sbx_7", projectLayerRecord{
+		Project: &sandboxconfig.ProjectLayer{WorkingDirectorySubpath: "app"},
+		Source:  &source,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.rebuildForProjectLayer(ctx, &Sandbox{SandboxID: "sbx_7"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want one", f.driver.upgrades)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+	if record, _, _ := r.readMachineRecord("sbx_7"); record.Snapshot != key {
+		t.Errorf("the rebuilt machine's record names snapshot %q, want its plan's %s", record.Snapshot, key)
+	}
+	if !guestHas(t, f, "sbx_7", "/provisioned") {
+		t.Error("the machine rebuilt for its project layer does not hold what its plan's snapshot provisioned: it was given a fresh root from the base")
+	}
+}
+
+// A machine rebuilt by the status poll for a project layer while its plan has
+// no published snapshot is given a fresh root, and no build is asked for: the
+// build policy the pool kept is its last create's, which the server may have
+// narrowed since, and only a create starts a build.
+func TestAMachineRebuiltForAProjectLayerWithNoSnapshotAsksForNoBuild(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_7")
+	if err := os.Remove(r.snapshotRecordPath(key)); err != nil {
+		t.Fatal(err)
+	}
+	source := "primary"
+	if err := r.writeProjectLayerRecord("sbx_7", projectLayerRecord{
+		Project: &sandboxconfig.ProjectLayer{WorkingDirectorySubpath: "app"},
+		Source:  &source,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.rebuildForProjectLayer(ctx, &Sandbox{SandboxID: "sbx_7"}); err != nil {
+		t.Fatal(err)
+	}
+	if building := r.buildingSnapshots(); len(building) != 0 {
+		t.Errorf("snapshot builds under way after the poll's rebuild: %v, want none asked for", building)
+	}
+	waitForSnapshotBuilds(t, r)
+	if _, ok, _ := r.readSnapshotRecord(key); ok {
+		t.Error("the poll's rebuild built its plan's snapshot again, want no build asked for")
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_7")
+}
+
+// A machine whose record an older pool wrote, before the build policy was
+// kept in it, rebuilt by the status poll for a project layer, is given a
+// fresh root as a create with no build policy is: its plan cannot be known,
+// and nothing is built for a plan it guessed.
+func TestAMachineRecordedWithoutItsBuildPolicyIsRebuiltForAProjectLayerFresh(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	key := snapshotMachineWithFiles(t, f, "sbx_7")
+	record, _, err := r.readMachineRecord("sbx_7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.ProvisionEgress == nil {
+		t.Fatal("the create recorded no build policy")
+	}
+	record.ProvisionEgress = nil
+	if err := r.writeMachineRecord("sbx_7", record); err != nil {
+		t.Fatal(err)
+	}
+	source := "primary"
+	if err := r.writeProjectLayerRecord("sbx_7", projectLayerRecord{
+		Project: &sandboxconfig.ProjectLayer{WorkingDirectorySubpath: "app"},
+		Source:  &source,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.rebuildForProjectLayer(ctx, &Sandbox{SandboxID: "sbx_7"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want one", f.driver.upgrades)
+	}
+	assertFreshRootKeptVolumes(t, f, "sbx_7")
+	if _, ok, _ := r.readSnapshotRecord(key); !ok {
+		t.Error("the plan's snapshot is gone after a fresh rebuild, want it kept")
 	}
 }
 
