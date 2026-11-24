@@ -23,7 +23,7 @@ import (
 func TestSocketAccessHintNamesTheGroupAndTheCommand(t *testing.T) {
 	hint := describeSocketAccess("/var/run/docker.sock", 986, false, 0o660)
 
-	for _, want := range []string{"/var/run/docker.sock", "986", "usermod -aG", "wsl.exe --shutdown"} {
+	for _, want := range []string{"/var/run/docker.sock", "986", "usermod -aG", "discobox admin server shutdown --wait", "wsl.exe --shutdown"} {
 		if !strings.Contains(hint, want) {
 			t.Fatalf("hint %q is missing %q", hint, want)
 		}
@@ -167,5 +167,18 @@ func TestDescribeSocketAccessRequiresGroupReadAndWrite(t *testing.T) {
 				t.Errorf("mode %#o, member %t: unexpected hint %q", mode, member, hint)
 			}
 		}
+	}
+}
+
+// A process's groups are fixed when it starts, so a server autolaunched before
+// usermod keeps refusing after the user logs in again, and the running server
+// is reused. The hint has to say to stop it.
+func TestSocketAccessHintTellsNewGroupMemberToStopRunningServer(t *testing.T) {
+	hint := describeSocketAccess("/var/run/docker.sock", 986, false, 0o660)
+
+	login := strings.Index(hint, "new login session")
+	shutdown := strings.Index(hint, "discobox admin server shutdown")
+	if login < 0 || shutdown < login {
+		t.Fatalf("hint %q must tell users to stop the running Discobox server after starting a new login session", hint)
 	}
 }
