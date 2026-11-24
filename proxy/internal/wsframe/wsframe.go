@@ -1,8 +1,10 @@
-// Package wsframe reads and writes RFC 6455 WebSocket frames for the proxy's
-// enforcement of credentials in messages (ADR 26-11-06-442 §3). What to do
-// when a frame does not read is the caller's: enforcement closes the
-// connection. The audit capture still reads frames with its own decoder,
-// which stops recording while traffic goes on.
+// Package wsframe is the proxy's one reader of RFC 6455 WebSocket frames, and
+// writes the frames enforcement sends (ADR 26-11-06-442 §3). It judges what
+// every reader shares: length encoding, opcodes and control frames. Reserved
+// bits, masking direction and size limits are each caller's, and so is what
+// happens when a frame does not read: enforcement of credentials in messages
+// closes the connection, while the audit capture stops recording and never
+// touches the traffic.
 package wsframe
 
 import (
