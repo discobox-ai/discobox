@@ -979,6 +979,10 @@ waits for the pool agent to confirm the removal, so when it returns the data is
 actually gone.
 
 To keep the data, use "discobox rm", which archives instead.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -1134,6 +1138,10 @@ This takes discobox IDs. "discobox rm" is the same archive named the way you
 read it off "discobox ls", by name as well as by ID.
 
 To destroy a discobox and its data now, use "discobox admin box purge".
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -1245,6 +1253,10 @@ Restore archived discoboxes.
 
 The container is recreated against the data that was kept and left stopped; it
 starts on first use, the same as any other stopped discobox.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -1513,7 +1525,11 @@ Aliases: list.
 ## discobox admin gateway rm
 
 ~~~~text
-Remove gateways
+Remove gateways.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -1804,7 +1820,11 @@ discobox admin harness reset HARNESS [flags]
 ## discobox admin harness rm
 
 ~~~~text
-Delete harness configs
+Delete harness configs.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -2202,6 +2222,10 @@ Revoke enrolled peers, by full peer ID or by an unambiguous prefix.
 A revoked ID is refused on its next connection; connections it already has
 are not torn down. This cannot remove an entry from the server's
 authorized_ids file, which is not API-managed.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -2558,7 +2582,11 @@ Examples:
 ## discobox admin pool rm
 
 ~~~~text
-Delete pools
+Delete pools.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -2772,6 +2800,10 @@ Delete projects.
 A project with discoboxes or pools is refused: those own runtime hosts and
 containers that have to be torn down through their own commands first. The
 default project is refused too; make another project the default first.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -3024,7 +3056,11 @@ Aliases: list.
 ## discobox admin provider rm
 
 ~~~~text
-Delete provider instances
+Delete provider instances.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -3600,7 +3636,13 @@ discobox admin skills [flags]
 ## discobox admin skills add
 
 ~~~~text
-Add a skills repository to the project, or a directory to client.yaml
+Add a skills repository to the project, or a directory to client.yaml.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
+
+A directory's "id" is the directory as client.yaml keeps it.
 ~~~~
 
 ```text
@@ -3641,7 +3683,13 @@ Aliases: list.
 ## discobox admin skills rm
 
 ~~~~text
-Remove a skills repository from the project, or a directory from client.yaml
+Remove a skills repository from the project, or a directory from client.yaml.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
+
+A directory's "id" is the directory as client.yaml kept it.
 ~~~~
 
 ```text
@@ -3809,7 +3857,11 @@ Aliases: list.
 ## discobox admin ssh-key rm
 
 ~~~~text
-Revoke SSH keys
+Revoke SSH keys.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -4764,6 +4816,10 @@ Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
 listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
 IDs to choose between. Every argument is acted on independently, so one that
 fails does not hide the rest.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -4999,6 +5055,10 @@ Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
 listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
 IDs to choose between. Every argument is acted on independently, so one that
 fails does not hide the rest.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -5041,6 +5101,10 @@ retention runs out: the project's own if it set one, otherwise the server's
 default -- 24h, though a development server commonly sets a far shorter one.
 
 To destroy a discobox and its data now, use "discobox admin box purge".
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -5844,7 +5908,11 @@ Aliases: list.
 ## discobox secret rm
 
 ~~~~text
-Delete secrets
+Delete secrets.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -6076,6 +6144,10 @@ Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
 listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
 IDs to choose between. Every argument is acted on independently, so one that
 fails does not hide the rest.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -6109,6 +6181,10 @@ Each argument names one of the discoboxes "discobox ls" shows: the NAME it is
 listed under, its ID, or a short prefix of that ID. An argument that names more than one discobox is refused, with the
 IDs to choose between. Every argument is acted on independently, so one that
 fails does not hide the rest.
+
+With -o json it writes one object, {"results": [...]}, with an entry per
+argument in the order given: the "argument", and either the "id" it was acted
+on as and its "result", or its "error". A failure still makes the command fail.
 ~~~~
 
 ```text
@@ -6616,7 +6692,13 @@ Aliases: revoke, delete, remove.
 ## discobox version
 
 ~~~~text
-Print the client and server versions
+Print this client's version and the version of the server --server names.
+The server is asked, never started; one that does not answer is reported as
+unavailable, and the command still succeeds.
+
+With -o json it writes one object, {"client": ..., "server": ...}: "server" is
+the version the server reported, or null when none answered, and --client
+leaves it out.
 ~~~~
 
 ```text

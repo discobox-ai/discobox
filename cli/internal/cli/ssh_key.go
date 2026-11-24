@@ -93,7 +93,7 @@ func (a *App) newSSHKeyAddCommand() *cobra.Command {
 }
 
 func (a *App) newSSHKeyDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "rm SSH_KEY_ID...", Aliases: []string{"delete", "remove"}, Short: "Revoke SSH keys", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "rm SSH_KEY_ID...", Aliases: []string{"delete", "remove"}, Short: "Revoke SSH keys", Long: "Revoke SSH keys.\n\n" + actionManyJSONHelp, Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -102,7 +102,7 @@ func (a *App) newSSHKeyDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "SSH key", "delete", "deleted", func(arg string) (string, error) {
+		return a.runActionMany(cmd, args, "SSH key", "delete", "deleted", func(arg string) (string, error) {
 			keyID, err := a.resolveSSHKeyID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err

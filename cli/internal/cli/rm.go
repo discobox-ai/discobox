@@ -50,7 +50,9 @@ with its work intact. Archived discoboxes are purged automatically once the
 retention runs out: the project's own if it set one, otherwise the server's
 default -- 24h, though a development server commonly sets a far shorter one.
 
-To destroy a discobox and its data now, use "discobox admin box purge".`,
+To destroy a discobox and its data now, use "discobox admin box purge".
+
+` + actionManyJSONHelp,
 		Example: `  discobox rm mybox
   discobox rm sbx_9qk5 sbx_2f7p
   discobox rm 'Fixing the flaky test'
@@ -75,7 +77,7 @@ To destroy a discobox and its data now, use "discobox admin box purge".`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "archive", "archived", func(arg string) (string, error) {
+			return a.runActionMany(cmd, args, "discobox", "archive", "archived", func(arg string) (string, error) {
 				// listedName: every argument here is a discobox, so the NAME
 				// `discobox ls` prints can be typed back. Two discoboxes under
 				// one window title make that argument ambiguous, and it is

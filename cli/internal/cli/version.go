@@ -30,7 +30,14 @@ func (a *App) newVersionCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the client and server versions",
-		Args:  cobra.NoArgs,
+		Long: `Print this client's version and the version of the server --server names.
+The server is asked, never started; one that does not answer is reported as
+unavailable, and the command still succeeds.
+
+With -o json it writes one object, {"client": ..., "server": ...}: "server" is
+the version the server reported, or null when none answered, and --client
+leaves it out.`,
+		Args: cobra.NoArgs,
 		// The root's hook resolves the leader key and starts the parent watch,
 		// and a version needs neither. What somebody diagnosing a broken
 		// environment asks first is what they are running, so an environment
@@ -58,29 +65,55 @@ func (a *App) newVersionCommand() *cobra.Command {
 // a machine with none staged — to answer a question about what is there. When
 // nothing answers, the server's line says "unavailable" and the command still
 // succeeds: an unreachable server is often why somebody is asking.
+//
+// Under -o json it writes one object, {"client": …, "server": …}: "server" is
+// what the server reported, "" for one that answered without saying, and
+// null for none answering; --client leaves the key out. Any other format is
+// the text, since the version is what is read when an environment is broken
+// (newVersionCommand).
 func (a *App) printVersion(cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
-	// The client's line first, on a write of its own. This half was known
-	// before the process started, and holding it back for a peer that is
-	// switched off would put five seconds of silence in front of the answer
-	// somebody diagnosing a broken environment came for.
-	if _, err := fmt.Fprintf(out, "client version %s\n", version.String()); err != nil {
-		return err
+	clientOnly, _ := cmd.Flags().GetBool("client")
+	asJSON := a.output == "json"
+	value := map[string]any{"client": version.String()}
+	if !asJSON {
+		// The client's line first, on a write of its own. This half was known
+		// before the process started, and holding it back for a peer that is
+		// switched off would put five seconds of silence in front of the
+		// answer somebody diagnosing a broken environment came for. JSON is
+		// one object, so it waits for the server's half.
+		if _, err := fmt.Fprintf(out, "client version %s\n", version.String()); err != nil {
+			return err
+		}
 	}
-	if clientOnly, _ := cmd.Flags().GetBool("client"); clientOnly {
+	if !clientOnly {
+		// The server is whichever the root's hook would have settled on, but
+		// a registry that does not parse is not a reason to withhold the
+		// answer: the server named as it was is asked instead.
+		_ = a.resolveServerName(serverChosen(cmd))
+		answered, reported, hint := a.serverVersion(cmd.Context())
+		if !asJSON {
+			_, err := fmt.Fprintf(out, "server version %s%s\n", serverVersionText(answered, reported), hint)
+			return err
+		}
+		value["server"] = nil
+		if answered {
+			value["server"] = strings.TrimSpace(reported)
+		}
+	}
+	if !asJSON {
 		return nil
 	}
-	// The server is whichever the root's hook would have settled on, but a
-	// registry that does not parse is not a reason to withhold the answer: the
-	// server named as it was is asked instead.
-	_ = a.resolveServerName(serverChosen(cmd))
-	_, err := fmt.Fprintf(out, "server version %s\n", a.serverVersion(cmd.Context()))
-	return err
+	// A server's version is the server's text, not this binary's, so it goes
+	// to the terminal escaped.
+	return writeTerminalSafeJSON(out, value)
 }
 
-// serverVersion is the version the server at --server reports on its health
-// endpoint, reached over the transport every other command uses — relays and
-// all — with autolaunch off.
+// serverVersion is whether the server at --server answered, and the version
+// it reports on its health endpoint, reached over the transport every other
+// command uses — relays and all — with autolaunch off. hint is
+// localServerHint's, for a local endpoint nothing is listening on; only the
+// text form writes it.
 //
 // The deadline covers the whole attempt rather than the request alone. Building
 // the client is what dials: over iroh it prepares this machine's identity and
@@ -88,28 +121,33 @@ func (a *App) printVersion(cmd *cobra.Command) error {
 // cancel, so a deadline around the request would be a deadline around the fast
 // part. A dial that outlasts the deadline is left to a goroutine this process
 // is about to exit out from under, which is why the channel is buffered.
-func (a *App) serverVersion(ctx context.Context) string {
+func (a *App) serverVersion(ctx context.Context) (answered bool, reported, hint string) {
 	ctx, cancel := context.WithTimeout(ctx, versionServerTimeout)
 	defer cancel()
-	answered := make(chan string, 1)
+	type answer struct {
+		answered bool
+		reported string
+		hint     string
+	}
+	answers := make(chan answer, 1)
 	go func() {
 		baseURL, client, err := a.httpClientWithAutoStart(false)
 		if err != nil {
-			answered <- serverVersionText(false, "")
+			answers <- answer{}
 			return
 		}
 		status, err := endpoint.ProbeHealth(ctx, baseURL, client)
 		if err != nil && endpoint.ListenerGone(err) {
-			answered <- serverVersionText(false, "") + a.localServerHint(ctx)
+			answers <- answer{hint: a.localServerHint(ctx)}
 			return
 		}
-		answered <- serverVersionText(err == nil, status.Version)
+		answers <- answer{answered: err == nil, reported: status.Version}
 	}()
 	select {
-	case text := <-answered:
-		return text
+	case got := <-answers:
+		return got.answered, got.reported, got.hint
 	case <-ctx.Done():
-		return serverVersionText(false, "")
+		return false, "", ""
 	}
 }
 

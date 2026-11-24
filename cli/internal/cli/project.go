@@ -254,12 +254,14 @@ func (a *App) newProjectDeleteCommand() *cobra.Command {
 
 A project with discoboxes or pools is refused: those own runtime hosts and
 containers that have to be torn down through their own commands first. The
-default project is refused too; make another project the default first.`, Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+default project is refused too; make another project the default first.
+
+` + actionManyJSONHelp, Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "project", "delete", "deleted", func(arg string) (string, error) {
+		return a.runActionMany(cmd, args, "project", "delete", "deleted", func(arg string) (string, error) {
 			projectID, err := a.resolveProjectID(cmd.Context(), client, arg)
 			if err != nil {
 				return "", err

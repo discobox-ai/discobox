@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -182,5 +184,45 @@ func TestRemoveCommandRefusesAnAmbiguousName(t *testing.T) {
 		if !strings.Contains(errOut, want) {
 			t.Fatalf("stderr = %q, want it to contain %q", errOut, want)
 		}
+	}
+}
+
+// Under -o json, rm writes one object with an entry per argument, in the order
+// given: a failure is an entry carrying its error, the arguments beside it
+// still run, and the command still fails.
+func TestRemoveCommandWritesJSONUnderOutputJSON(t *testing.T) {
+	var archived []string
+	server := rmTestServer(t, &archived)
+
+	out, errOut, err := runRM(t, server.URL, "-o", "json", "rm", "docs", "no-such-box", "sbx_2f7p")
+	if err == nil {
+		t.Fatal("execute rm error = nil, want the failed argument reported")
+	}
+	if got, want := err.Error(), "failed to archive 1 discobox"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	if want := `failed to archive discobox "no-such-box"`; !strings.Contains(errOut, want) {
+		t.Fatalf("stderr = %q, want %q", errOut, want)
+	}
+	var got struct {
+		Results []map[string]string `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout under -o json is not JSON: %v\n%q", err, out)
+	}
+	// The failure's entry is the error stderr says, whatever its wording.
+	if len(got.Results) == 3 && strings.HasPrefix(got.Results[1]["error"], `no discobox named "no-such-box"`) {
+		got.Results[1]["error"] = "…"
+	}
+	want := []map[string]string{
+		{"argument": "docs", "id": rmDocsID, "result": "archived"},
+		{"argument": "no-such-box", "error": "…"},
+		{"argument": "sbx_2f7p", "id": rmAPIID, "result": "archived"},
+	}
+	if !reflect.DeepEqual(got.Results, want) {
+		t.Fatalf("results = %v, want %v", got.Results, want)
+	}
+	if got, want := strings.Join(archived, ","), rmDocsID+","+rmAPIID; got != want {
+		t.Fatalf("archived = %q, want %q", got, want)
 	}
 }
