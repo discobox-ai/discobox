@@ -37,6 +37,12 @@ func (a *App) newEventsCommand() *cobra.Command {
 deleted, powers up or down, or the program in it starts or stops working,
 finishes, or is blocked on a person.
 
+A discobox that powered itself down says why after its power, in the server's
+words as power= is: why=idle when it was idle for its pool's idle timeout,
+why=sleep when an agent in it went to sleep, why=exit when its primary
+terminal's shell exited. A discobox stopped by a person, or one that went
+down any other way, a crash among them, has none.
+
 It begins with each discobox's state now, then follows. A dropped connection is
 resumed where it left off: no event is printed twice and none is skipped. When
 the server no longer has the events since then, it says so ("reset") and
@@ -98,6 +104,7 @@ type sandboxEventData struct {
 	Tags               map[string]string `json:"tags,omitempty"`
 	ParentSandboxID    string            `json:"parentSandboxId,omitempty"`
 	CreatedBySandboxID string            `json:"createdBySandboxId,omitempty"`
+	PowerDownReason    string            `json:"powerDownReason,omitempty"`
 }
 
 type sandboxEventProgram struct {
@@ -248,6 +255,9 @@ func (a *App) writeSandboxEvent(cmd *cobra.Command, event sandboxEvent) error {
 		power = "-"
 	}
 	fields = append(fields, "power="+terminalSafe(power))
+	if data.PowerDownReason != "" {
+		fields = append(fields, "why="+terminalSafe(data.PowerDownReason))
+	}
 	if program := data.Program; program != nil {
 		agent := program.State
 		if program.Kind != "" {

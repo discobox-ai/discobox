@@ -256,11 +256,57 @@ func sandboxMessage(sandbox apimodel.Sandbox) string {
 // sandboxDisplayState is a sandbox's displayState in the CLI's words, for a
 // person to read: tables, the picker, completion and the console. -o json and
 // events print the API's record instead, which keeps the API's word.
+//
+// A sandbox down from a power-down it asked for itself says why, so an idle
+// stop reads differently from a person's stop or a crash: "stopped (idle)".
 func sandboxDisplayState(sandbox apimodel.Sandbox) string {
-	if state, ok := sandbox.Runtime.DisplayState.Get(); ok {
-		return stateWord(state)
+	state, ok := sandbox.Runtime.DisplayState.Get()
+	if !ok {
+		return "-"
 	}
-	return "-"
+	word := stateWord(state)
+	switch state {
+	case "stopping", "stopped", "suspended":
+		if powerDown, ok := sandbox.Runtime.PowerDown.Get(); ok {
+			if why := powerDownWord(powerDown.Reason); why != "" {
+				word += " (" + why + ")"
+			}
+		}
+	}
+	return word
+}
+
+// powerDownSentence is why a sandbox powered itself down, for the console's
+// row under the cursor, where it takes the name's place and so is kept as
+// short as a name: "" when it did not, or for a reason this CLI does not know.
+func powerDownSentence(sandbox apimodel.Sandbox) string {
+	powerDown, ok := sandbox.Runtime.PowerDown.Get()
+	if !ok {
+		return ""
+	}
+	switch powerDown.Reason {
+	case "idle":
+		return "stopped while idle"
+	case "sleep":
+		return "put to sleep"
+	case "exit":
+		return "stopped: shell exited"
+	}
+	return ""
+}
+
+// powerDownWord is why a sandbox powered itself down, in the CLI's words: ""
+// for a reason this CLI does not know, which is then left unsaid.
+func powerDownWord[S ~string](reason S) string {
+	switch reason {
+	case "idle":
+		return "idle"
+	case "sleep":
+		return "asleep"
+	case "exit":
+		return "shell exited"
+	}
+	return ""
 }
 
 // stateWord turns a state the API names into the word the CLI shows a person.

@@ -877,6 +877,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// (ADR 26-11-07-519); presence also includes stopped containers.
 		HasRuntime: sb.Runtime.RuntimeState.IsSet(),
 		Message:    sandboxMessage(sb),
+		PowerDown:  powerDownSentence(sb),
 		Created:    sb.CreatedAt,
 	}
 	row.PoolID = sb.PoolId.Or("")

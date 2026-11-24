@@ -1052,6 +1052,14 @@ state for a person — tables, the picker, completion, the console — the API's
 `tui.StatePaused`). `-o json` and `discobox events` print the API's
 record and keep `suspended`.
 
+A box down from a power-down it asked for itself says why beside that state
+(`runtime.powerDown`): `stopped (idle)`, `paused (asleep)`, `stopped (shell
+exited)` in tables, the picker and completion (`sandboxDisplayState`), and a
+sentence in place of the name under the console's cursor
+(`tui.Sandbox.PowerDown`); there a reason this CLI does not know is left
+unsaid. `discobox events` keeps the API's word, `why=idle|sleep|exit` after
+`power=`, as it does for the state.
+
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: `title: msg`, where the title is the name the discobox
