@@ -6,12 +6,13 @@
 #   $env:DISCOBOX_CHANNEL = 'beta'; irm https://discobox.ai/install.ps1 | iex
 #   & ([scriptblock]::Create((irm https://discobox.ai/install.ps1))) -Version v0.7.1
 #
-# The copy a release uploads is stamped with that release and the SHA-256 of
-# every binary it uploaded, and run with no arguments installs exactly that
-# release. Asked for any other version or channel, it downloads the installer
-# that release uploaded and hands over to it, so the code installing a release
-# is always the code that release shipped (ADR 0110). install.sh is the same
-# installer for sh: the two take the same options and follow the same rules.
+# The copy a release uploads is stamped with that release and the SHA-256 and
+# size of every binary it uploaded, and run with no arguments installs exactly
+# that release. Asked for any other version or channel, it downloads the
+# installer that release uploaded and hands over to it, so the code installing
+# a release is always the code that release shipped (ADR 0110). install.sh is
+# the same installer for sh: the two take the same options and follow the same
+# rules.
 #
 #   -Channel CHANNEL   stable  the newest release marked stable
 #                      beta    the newest vX.Y.Z release, stable or not
@@ -55,14 +56,18 @@ function Install-Discobox {
     Set-StrictMode -Version 3.0
     $ErrorActionPreference = 'Stop'
     # Invoke-WebRequest in 5.1 downloads many times slower while it draws
-    # progress.
+    # progress, so it draws none, and the step line naming the download's size
+    # is what says it has not frozen. PowerShell 7 draws it at no cost, so
+    # there the release's own download shows it, as the caller would have it.
+    $callerProgress = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'
 
     # Stamped by internal/cmd/discobox-installers into the copy a release
-    # uploads. Empty here in the source tree, where this script can only hand
-    # over to a release's own installer.
+    # uploads: each binary's SHA-256 and size in bytes. Empty here in the
+    # source tree, where this script can only hand over to a release's own
+    # installer.
     $release = ''
-    $checksums = @{}
+    $assets = @{}
 
     # Where release assets come from, tried in order as <base>/<tag>/<asset>:
     # the mirror first and the release itself last, every one checked against
@@ -274,8 +279,10 @@ function Install-Discobox {
     }
 
     # Downloads <tag>/<asset> from the first source that has it and, given a
-    # digest, whose bytes match it.
-    function Get-DiscoboxFile([string]$Tag, [string]$Name, [string]$OutFile, [string]$Sha256) {
+    # digest, whose bytes match it. With -Progress, PowerShell 7 shows the
+    # download's progress while it runs.
+    function Get-DiscoboxFile([string]$Tag, [string]$Name, [string]$OutFile, [string]$Sha256, [switch]$Progress) {
+        if ($Progress -and $PSVersionTable.PSEdition -eq 'Core') { $ProgressPreference = $callerProgress }
         $from = $sources
         if ($Tag -like '*-main.*') { $from = $mainSources }
         foreach ($base in $from) {
@@ -370,15 +377,18 @@ function Install-Discobox {
 
     function Install-DiscoboxRelease {
         $asset = "discobox-$($platform.OS)-$($platform.Arch)$($platform.Exe)"
-        if (-not $checksums.ContainsKey($asset)) { throw "$release has no build for $($platform.OS) on $($platform.Arch)" }
+        if (-not $assets.ContainsKey($asset)) { throw "$release has no build for $($platform.OS) on $($platform.Arch)" }
+        # In MB of 1024 * 1024 bytes, the unit curl, PowerShell's progress and
+        # Windows all count in, with a point whatever the culture.
+        $size = [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.0} MB', $assets[$asset].Size / 1MB)
 
         Show-DiscoboxLogo
         # The name of the thing being installed, under its own mark. No symbol:
         # a tick here would claim something finished before anything has.
         if ($style.Depth -gt 0) { Write-Host "$($style.Mark)$([char]27)[1mdiscobox $release$($style.Reset)`n" }
-        Write-DiscoboxStep "downloading discobox $release for $($platform.OS)/$($platform.Arch)"
+        Write-DiscoboxStep "downloading discobox $release for $($platform.OS)/$($platform.Arch) ($size)"
         $downloaded = Join-Path $tmp $asset
-        if (-not (Get-DiscoboxFile $release $asset $downloaded $checksums[$asset])) {
+        if (-not (Get-DiscoboxFile $release $asset $downloaded $assets[$asset].SHA256 -Progress)) {
             throw "could not download $asset for $release from any source with the SHA-256 it was released with"
         }
 
