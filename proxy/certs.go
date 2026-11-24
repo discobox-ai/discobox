@@ -255,7 +255,7 @@ func ensureBundle(dir string, serverHosts []string, validity, renewBefore time.D
 			Usage:      []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			Validity:   validity,
 		}); err != nil {
-			return nil, fmt.Errorf("generate worker proxy server certificate: %w", err)
+			return nil, fmt.Errorf("generate pool proxy server certificate: %w", err)
 		}
 	}
 

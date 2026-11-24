@@ -57,9 +57,9 @@ type ControlClient struct {
 }
 
 // NewControlClient returns a client for the control API at baseURL. projectID
-// and workerID are the claims the proxy's Control config checks when it sets
+// and poolID are the claims the proxy's Control config checks when it sets
 // them. A nil httpClient uses a default with a timeout.
-func NewControlClient(baseURL string, key ed25519.PrivateKey, projectID, workerID string, httpClient *http.Client) *ControlClient {
+func NewControlClient(baseURL string, key ed25519.PrivateKey, projectID, poolID string, httpClient *http.Client) *ControlClient {
 	if httpClient == nil {
 		// No overall timeout: an artifact is a body or a stream of unbounded
 		// length, and a whole-request timeout would cut one off part way. The
@@ -69,7 +69,7 @@ func NewControlClient(baseURL string, key ed25519.PrivateKey, projectID, workerI
 	return &ControlClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		key:     key,
-		claims:  ControlTokenClaims{ProjectID: projectID, WorkerID: workerID, Scopes: []string{ScopeAuditRead}},
+		claims:  ControlTokenClaims{ProjectID: projectID, PoolID: poolID, Scopes: []string{ScopeAuditRead}},
 		http:    httpClient,
 	}
 }

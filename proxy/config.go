@@ -126,7 +126,7 @@ type ControlConfig struct {
 	ListenAddress  string
 	TrustPublicKey string
 	ProjectID      string
-	WorkerID       string
+	PoolID         string
 }
 
 // CacheConfig controls disk-backed response caching.

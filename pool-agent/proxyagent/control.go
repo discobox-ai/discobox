@@ -152,7 +152,7 @@ func controlConfig(projectID, poolID string, key ed25519.PrivateKey) (proxy.Cont
 		ListenAddress:  ControlListenAddress,
 		TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 		ProjectID:      projectID,
-		WorkerID:       poolID,
+		PoolID:         poolID,
 	}, nil
 }
 
