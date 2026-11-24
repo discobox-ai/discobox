@@ -137,3 +137,21 @@ func (r AccountIDs) refuse(goos, field string, id, other int64, otherName string
 	return fmt.Errorf("%s %d is outside the ids a %s sandbox account may use: %d (%s) or %d-%d",
 		field, id, goos, other, otherName, r.Min, r.Max)
 }
+
+// DefaultAccount is the account a sandbox on goos is created with when its
+// create names none (ADR 26-11-19-859): on Linux an ordinary account,
+// `discobox` with uid and gid 1000, the first ids the guest gives one, so a
+// sandbox runs as root only when asked to. ok is false where the guest's
+// template provides the sandbox's one account itself, macOS and Windows,
+// whose create names none and so takes it (ADR 0145 §5).
+func DefaultAccount(goos string) (account User, ok bool) {
+	if goos != "linux" {
+		return User{}, false
+	}
+	return User{
+		Name:          "discobox",
+		UID:           ID(linuxAccountIDs.Min),
+		GID:           ID(linuxAccountIDs.Min),
+		HomeDirectory: "/home/discobox",
+	}, true
+}
