@@ -36,6 +36,15 @@ jobs:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 15
     steps:
+      # The attestations publish makes name the ref this run is from, and the
+      # documented check accepts only the release's tag or main: a run
+      # dispatched from any other branch would publish assets nobody can
+      # verify, so it stops here, before anything is built, pushed or
+      # attested (the source ref ADR 26-11-23-787 left to its implementation).
+      - if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::a release is dispatched from main, not $GITHUB_REF: its attestations name the ref it ran from"
+          exit 1
       - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
@@ -111,6 +120,11 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      # The attest step's alone: the Sigstore certificate is issued for this
+      # job's OIDC identity, and the attestation is stored with it. No job
+      # that builds a binary holds either (ADR 26-11-23-787 §1).
+      id-token: write
+      attestations: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Read only to decide whether the refresh step runs; the step that uses it
@@ -131,7 +145,18 @@ jobs:
           path: build/release/notes
       - uses: ./.github/actions/task
         with:
-          target: release:publish
+          target: release:stage
+      # Every file about to go up gets a build-provenance attestation before any
+      # of it is uploaded, so no release is ever visible with an unattested
+      # asset; a failed attestation fails the job here. A workflow step rather
+      # than a Taskfile target because its input is this job's OIDC token,
+      # which exists only in Actions; what it covers is still the Taskfile's,
+      # whatever release:stage left in build/release/bin (ADR 26-11-23-787 §1).
+      - uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: build/release/bin/*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix develop -c go tool task release:publish
       # Nix is installed by the step above. Asked here rather than decided in
       # YAML so the rule stays the Taskfile's (ADR 0066 §1). A dot release joins
       # the beta channel the moment it is cut; an explicit prerelease exists

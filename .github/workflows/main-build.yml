@@ -182,6 +182,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # The attest step's alone, as in release.yml (ADR 26-11-23-787 §1).
+      id-token: write
+      attestations: write
     env:
       RELEASE_TAG: ${{ needs.version.outputs.tag }}
       GH_TOKEN: ${{ secrets.MAIN_RELEASE_TOKEN }}
@@ -201,5 +204,19 @@ jobs:
           path: build/release/notes
       - uses: ./.github/actions/task
         with:
-          target: release:publish
+          target: release:stage
+      # Every file about to go up gets a build-provenance attestation before any
+      # of it is uploaded, so no release or main build is ever visible with an
+      # unattested asset; a failed attestation fails the job here. A workflow
+      # step rather than a Taskfile target because its input is this job's OIDC
+      # token, which exists only in Actions; what it covers is still the
+      # Taskfile's, whatever release:stage left in build/release/bin
+      # (ADR 26-11-23-787 §1). It writes with this job's own token, so a main
+      # build's attestations live with discobox-ai/discobox, not the
+      # repository it publishes to (§2).
+      - uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: build/release/bin/*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix develop -c go tool task release:publish
       - run: nix develop -c go tool task release:prune-main

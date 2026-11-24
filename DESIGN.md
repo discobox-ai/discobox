@@ -468,6 +468,16 @@ build's. The channels' names are ADR 26-11-16-249's: `latest` is no channel's
 name, only GitHub's and the mirror's alias for the newest blessed release and
 ghcr's tag for the newest dot release.
 
+Every file a release or main build uploads also carries a GitHub
+build-provenance attestation, made in the `publish` job between `release:stage`
+(the manifest and stamped installers) and `release:publish` (the upload), so no
+asset is ever up unattested (ADR 26-11-23-787). Only that job can attest; no
+job that builds a binary holds a signing identity. The attestations live with `discobox-ai/discobox` for both channels, and
+the signing workflow (`release.yml` or `main-build.yml`) and the ref it ran
+from (the release's tag, or `main`) tell them apart. They
+are an independent check a person runs by hand with `gh attestation verify`, on
+top of the stamped digests; nothing in the installers or the CLI verifies them.
+
 Windows is the one platform whose asset is an archive rather than a bare binary.
 winget resolves a portable package's command from the file name whenever it
 cannot create a symlink, so `release:windows-zip` repackages the same binary as
