@@ -787,7 +787,7 @@ echo "--- egress" >&2
 # The discobox's own level: it may reach the one allowed host, and the
 # harness's own (its model API), and nothing else. It is set only now, so the
 # harness above answered while the box was open: a box made with its level
-# already narrowed (admin box create takes the flags, run does not) would
+# already narrowed (run and admin box create both take the flags) would
 # provision under it, as the plan's first box does from the base, and fail.
 box_narrowed=0
 if dcout out 0 '' admin box update "$box_id" --egress-deny-by-default --egress-allow "$allow_host"; then

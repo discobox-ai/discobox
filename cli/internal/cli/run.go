@@ -51,6 +51,11 @@ type runCommandOptions struct {
 	delegate    []string
 	bindings    []apimodel.SandboxBindingInput
 	discoboxAPI bool
+	// egressFlags are --egress-allow, --egress-deny-by-default and
+	// --egress-passthrough, and egress the discobox's own level they, or the
+	// request's "egress", make: nil for none given.
+	egressFlags egressFlags
+	egress      *apimodel.EgressPolicy
 	// tags are --tag as given, KEY or KEY=VALUE, which prompt.Tags is parsed
 	// from; a --from-json request gives prompt.Tags itself.
 	tags []string
@@ -242,6 +247,14 @@ binds only what it may delegate, and delegates nothing.
 acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the new
+discobox's own egress level as part of its create, so it holds from the
+box's first request; "discobox admin box update" changes it afterwards. A
+request a restricted discobox makes to a host its levels do not allow is
+answered 403, naming the host. The levels:
+
+` + egressHelp + `
+
 --name NAME names the new discobox, as "discobox rename" would afterwards:
 it is the name "discobox ls" and the console show it by. It is not the
 discobox's handle, which is still generated, stays unique, and is what ssh
@@ -272,6 +285,7 @@ its handle. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "egress": {"denyByDefault": true, "allow": ["github.com", "*.pypi.org"]},
     "name": "Fix the pkg/foo tests",
     "tags": {"ticket": "ENG-12", "wip": ""},
     "description": "Fix the failing tests in pkg/foo",
@@ -302,6 +316,7 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
   discobox run -d --bind npm-token --delegate github . 'fan out the issues'
   discobox run -d --tag ticket=ENG-12 --tag wip --description 'Fix the flaky test' . 'fix the flaky test'
   discobox run -d --name 'Fix login flake' . 'fix the flaky login test'
+  discobox run --egress-deny-by-default --egress-allow github.com,pypi.org,files.pythonhosted.org . 'fix the failing tests'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -343,6 +358,11 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		}
 		if opts.flags.Changed("user-skills") {
 			opts.userSkills = &opts.userSkillsFlag
+		}
+		if level, ok, err := opts.egressFlags.create(cmd); err != nil {
+			return err
+		} else if ok {
+			opts.egress = &level
 		}
 	}
 	// What client.yaml says about skills is settled here, whether or not a
@@ -451,6 +471,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	}
 	parsedOpts.Bindings = opts.bindings
 	parsedOpts.DiscoboxAPI = opts.discoboxAPI
+	parsedOpts.Egress = opts.egress
 	if err := a.newSandboxSettings(cmd.Context(), client, projectID, opts.pool, !opts.noProjectSkills, &parsedOpts); err != nil {
 		return err
 	}
@@ -522,6 +543,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Tag the new discobox from its creation, as KEY=VALUE, or KEY for a plain label; repeat for more. The same tags \"discobox tag\" sets and \"discobox ls --tag\" lists by")
 	flags.StringVar(&opts.prompt.Name, "name", "", "Name the new discobox from its creation, as \"discobox rename\" would afterwards: the name it is listed by, not its handle")
 	flags.StringVar(&opts.prompt.Description, "description", "", "Describe the new discobox from its creation, as \"discobox tag --description\" would afterwards")
+	addEgressFlags(flags, &opts.egressFlags, "the discobox")
 	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
@@ -803,6 +825,10 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		NoProjectSkills:     opts.noProjectSkills,
 		SkipDeclaredSources: !opts.declaredSources,
 		Pool:                opts.pool,
+	}
+	if opts.egress != nil {
+		egress := windowEgress(*opts.egress)
+		req.Egress = &egress
 	}
 	// The flag is an answer already given, either way, so the window does not
 	// ask about uncommitted work and hands it to the create for every source

@@ -15,17 +15,10 @@ func (d *apiDataSource) BoxSettings(ctx context.Context, sandboxID string) (tui.
 	if err != nil {
 		return tui.BoxSettings{}, err
 	}
-	egress := sandbox.Egress.Value
-	allow, _ := egress.Allow.Get()
-	passthrough, _ := egress.Passthrough.Get()
 	return tui.BoxSettings{
-		Name:      sandbox.Config.Name,
-		HarnessID: sandbox.Config.HarnessConfigId.Or(""),
-		Egress: tui.Egress{
-			DenyByDefault: egress.DenyByDefault.Or(false),
-			Allow:         allow,
-			Passthrough:   passthrough,
-		},
+		Name:        sandbox.Config.Name,
+		HarnessID:   sandbox.Config.HarnessConfigId.Or(""),
+		Egress:      windowEgress(sandbox.Egress.Value),
 		DiscoboxAPI: sandbox.DiscoboxApi.Or(false),
 	}, nil
 }

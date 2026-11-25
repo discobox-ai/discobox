@@ -5181,6 +5181,30 @@ binds only what it may delegate, and delegates nothing.
 acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the new
+discobox's own egress level as part of its create, so it holds from the
+box's first request; "discobox admin box update" changes it afterwards. A
+request a restricted discobox makes to a host its levels do not allow is
+answered 403, naming the host. The levels:
+
+Egress is decided per discobox from four levels: its project, its pool, its
+harness, and its own. A discobox is restricted when any level sets
+--egress-deny-by-default, and then reaches only the union of every level's
+--egress-allow entries and the hosts its harness image declares; an allow list
+alone restricts nothing. An entry is a host ("github.com" is that host alone),
+a wildcard ("*.github.com", "registry.*", "*"), an IP, or a CIDR, never a port.
+--egress-allow replaces this level's list; on an update, --clear-egress-allow
+empties it.
+
+--egress-passthrough names hosts whose HTTPS proxy CONNECT is spliced to the
+origin unread instead of intercepted, so TLS stays end to end: for a client that pins its certificate, or a protocol the proxy
+does not read. It never admits a host, and nothing inside such a tunnel is read:
+no credential is swapped into it, and only the connection, its TLS hello, and
+its byte counts are audited. A discobox a person creates passes through every
+level's hosts; one a discobox created, only its own level's, which a discobox
+may set only to hosts its own passthrough covers. On an update,
+--clear-egress-passthrough empties this level's list.
+
 --name NAME names the new discobox, as "discobox rename" would afterwards:
 it is the name "discobox ls" and the console show it by. It is not the
 discobox's handle, which is still generated, stays unique, and is what ssh
@@ -5211,6 +5235,7 @@ its handle. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "egress": {"denyByDefault": true, "allow": ["github.com", "*.pypi.org"]},
     "name": "Fix the pkg/foo tests",
     "tags": {"ticket": "ENG-12", "wip": ""},
     "description": "Fix the failing tests in pkg/foo",
@@ -5251,6 +5276,7 @@ Examples:
   discobox run -d --bind npm-token --delegate github . 'fan out the issues'
   discobox run -d --tag ticket=ENG-12 --tag wip --description 'Fix the flaky test' . 'fix the flaky test'
   discobox run -d --name 'Fix login flake' . 'fix the flaky login test'
+  discobox run --egress-deny-by-default --egress-allow github.com,pypi.org,files.pythonhosted.org . 'fix the failing tests'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -5268,6 +5294,9 @@ Examples:
 | --description | string |  | Describe the new discobox from its creation, as "discobox tag --description" would afterwards |
 | --detach, -d | bool | false | Create the discobox and print it without attaching to its terminal Value when passed without an argument: true. |
 | --discobox-api | bool | false | Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself Value when passed without an argument: true. |
+| --egress-allow | stringSlice | [] | Destinations the discobox adds to a restricted discobox's allow list (repeatable or comma-separated) |
+| --egress-deny-by-default | bool | false | Restrict the discobox's discoboxes to the allow lists of their levels; --egress-deny-by-default=false lifts this level's restriction Value when passed without an argument: true. |
+| --egress-passthrough | stringSlice | [] | Hosts whose HTTPS CONNECT the discobox passes through unread instead of intercepting (repeatable or comma-separated) |
 | --env, -e | stringArray | [] | Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable |
 | --from-json | bool | false | Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON Value when passed without an argument: true. |
 | --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |

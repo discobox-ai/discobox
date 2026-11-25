@@ -320,6 +320,7 @@ func (c *createCard) requestFrom(source string) RunRequest {
 	if c.base != nil {
 		req.Prompt = append([]string(nil), c.base.Prompt...)
 		req.Bind, req.Delegate, req.DiscoboxAPI = c.base.Bind, c.base.Delegate, c.base.DiscoboxAPI
+		req.Egress = c.base.Egress
 		req.Name, req.Description, req.Tags = c.base.Name, c.base.Description, c.base.Tags
 		req.SkipDeclaredSources = c.base.SkipDeclaredSources
 	}

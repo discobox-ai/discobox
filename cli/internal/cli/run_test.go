@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
@@ -403,6 +404,10 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	opts.prompt.Include = []string{"../bar"}
 	opts.bind = []string{"github:GH_TOKEN@github.com"}
 	opts.delegate = []string{"npm"}
+	opts.egress = &apimodel.EgressPolicy{
+		Allow:         apiclientgen.NewOptNilStringArray([]string{"github.com"}),
+		DenyByDefault: apiclientgen.NewOptBool(true),
+	}
 
 	req := app.runWindowRequest(&opts, []string{"fix", "the", "tests"})
 
@@ -419,6 +424,12 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	}
 	if !req.SkipDeclaredSources {
 		t.Fatal("--declared-sources=false should reach the window")
+	}
+	if req.Egress == nil || !req.Egress.DenyByDefault || !slices.Equal(req.Egress.Allow, []string{"github.com"}) || req.Egress.Passthrough != nil {
+		t.Fatalf("egress = %+v, want the discobox's own level", req.Egress)
+	}
+	if back := egressLevel(*req.Egress); back.Passthrough.Set {
+		t.Fatalf("egress back = %+v, want no passthrough sent when none was given", back)
 	}
 }
 

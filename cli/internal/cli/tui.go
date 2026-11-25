@@ -1288,6 +1288,10 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		return tui.Sandbox{}, err
 	}
 	opts.DiscoboxAPI = req.DiscoboxAPI
+	if req.Egress != nil {
+		level := egressLevel(*req.Egress)
+		opts.Egress = &level
+	}
 	if err := d.app.newSandboxSettings(ctx, d.client, d.projectID, req.Pool, !req.NoProjectSkills, &opts); err != nil {
 		return tui.Sandbox{}, err
 	}
