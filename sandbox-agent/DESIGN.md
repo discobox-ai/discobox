@@ -310,11 +310,16 @@ absent.
   (`rawsecrets`' memory check is Linux's alone).
 - **Absent, and declared absent**: nested Docker and `runc`, and the
   desktop. Their code builds for darwin and finds no subject; the agent
-  fetches no pinned bundles there. 0145 §7 also lists the nix and Homebrew
-  seeds as absent; the darwin platform entry departs from that by the
-  owner's decision on #63: it carries the nix and brew features and
-  `image.darwin.json` their env. Their steps are Linux's, so they install
-  nothing on darwin.
+  fetches no pinned bundles there.
+- **nix and Homebrew, carried but not installed**: neither is declared
+  absent on a macOS sandbox
+  ([ADR 26-11-24-780](../docs/adr/26-11-24-780-a-macos-sandbox-has-nix-and-homebrew-installed-on-its-own-disk.md),
+  superseding 0145 §7's clause for them). The
+  darwin platform entry carries the nix and brew features, and
+  `image.darwin.json` their env (Homebrew at `/opt/homebrew`,
+  `NIX_REMOTE=daemon`, nix's profiles on PATH). Their steps are Linux's
+  alone, so nothing installs either on darwin: a macOS sandbox has
+  their env and no `nix` or `brew`.
 - **Its bundles are pinned as Linux's** (ADR 26-11-11-963 §9): the agent
   bundle and the platform bundle each carry a darwin/arm64 entry, under the
   same names and pins, served by the same asset routes. The agent's entry is

@@ -1,9 +1,12 @@
 # 26-11-24-780 — A macOS sandbox has nix and Homebrew, installed on its own disk
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+
+  Accepted by the owner by merging #1652, 2026-11-25.
+
 - **Issue**: #1414
-- **Would supersede**: [0145](0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)
+- **Supersedes**: [0145](0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)
   §7's "and the nix and Homebrew seeds" in the absent list. Nothing else in
   §7 changes: nested Docker, the runc wrapper, the pool-shared build path and
   the desktop stay absent.
