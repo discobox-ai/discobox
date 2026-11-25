@@ -129,9 +129,11 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
   (`UpdateSecret`, `UpdateSecretValueIfUnchanged`). Checks
   compare it, never a timestamp: a coarse clock (Windows) stamps two writes in
   one tick alike.
-- A binding's events carry a per-binding `seq` beside their clock time `at`,
+- A binding's events carry a per-history `seq` beside their clock time `at`,
   and listings order by `at`, then `seq`: one binding's history stays in order
-  when a coarse clock stamps two of its changes alike. Events of different
+  when a coarse clock stamps two of its changes alike. A history includes the
+  rebounds that replaced the binding, so an event's `seq` follows the last of
+  every history it joins (a rebound's, both bindings'). Events of unrelated
   bindings in one tick (a cascade) have no order beyond a stable one.
 
 ## Field Ownership on Whole-Row Writes
