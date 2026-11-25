@@ -7313,6 +7313,56 @@ func (s *PoolSourcePullRequest) SetCredential(val OptGitCredential) {
 	s.Credential = val
 }
 
+// Ref: #/components/schemas/PoolSourceRefreshRequest
+type PoolSourceRefreshRequest struct {
+	Key    string `json:"key"`
+	Remote string `json:"remote"`
+	// Refresh only this branch of the remote, and its tags. Absent refreshes every branch and tag, and
+	// drops the namespace's branches the remote no longer has.
+	Branch     OptString        `json:"branch"`
+	Credential OptGitCredential `json:"credential"`
+}
+
+// GetKey returns the value of Key.
+func (s *PoolSourceRefreshRequest) GetKey() string {
+	return s.Key
+}
+
+// GetRemote returns the value of Remote.
+func (s *PoolSourceRefreshRequest) GetRemote() string {
+	return s.Remote
+}
+
+// GetBranch returns the value of Branch.
+func (s *PoolSourceRefreshRequest) GetBranch() OptString {
+	return s.Branch
+}
+
+// GetCredential returns the value of Credential.
+func (s *PoolSourceRefreshRequest) GetCredential() OptGitCredential {
+	return s.Credential
+}
+
+// SetKey sets the value of Key.
+func (s *PoolSourceRefreshRequest) SetKey(val string) {
+	s.Key = val
+}
+
+// SetRemote sets the value of Remote.
+func (s *PoolSourceRefreshRequest) SetRemote(val string) {
+	s.Remote = val
+}
+
+// SetBranch sets the value of Branch.
+func (s *PoolSourceRefreshRequest) SetBranch(val OptString) {
+	s.Branch = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *PoolSourceRefreshRequest) SetCredential(val OptGitCredential) {
+	s.Credential = val
+}
+
 // PoolSyncNoContent is response for PoolSync operation.
 type PoolSyncNoContent struct{}
 
@@ -8530,4 +8580,105 @@ func (s *SourceDelivery) SetHost(val OptString) {
 // SetPath sets the value of Path.
 func (s *SourceDelivery) SetPath(val OptString) {
 	s.Path = val
+}
+
+// Ref: #/components/schemas/SourceRefUpdate
+type SourceRefUpdate struct {
+	// The ref's name in the namespace, refs/remotes/origin/<branch> or refs/tags/<tag>.
+	Ref string `json:"ref"`
+	// What it named before; absent for a ref the refresh created.
+	Old OptString `json:"old"`
+	// What it names now; absent for a ref the refresh deleted.
+	New OptString `json:"new"`
+}
+
+// GetRef returns the value of Ref.
+func (s *SourceRefUpdate) GetRef() string {
+	return s.Ref
+}
+
+// GetOld returns the value of Old.
+func (s *SourceRefUpdate) GetOld() OptString {
+	return s.Old
+}
+
+// GetNew returns the value of New.
+func (s *SourceRefUpdate) GetNew() OptString {
+	return s.New
+}
+
+// SetRef sets the value of Ref.
+func (s *SourceRefUpdate) SetRef(val string) {
+	s.Ref = val
+}
+
+// SetOld sets the value of Old.
+func (s *SourceRefUpdate) SetOld(val OptString) {
+	s.Old = val
+}
+
+// SetNew sets the value of New.
+func (s *SourceRefUpdate) SetNew(val OptString) {
+	s.New = val
+}
+
+// Ref: #/components/schemas/SourceRefresh
+type SourceRefresh struct {
+	// Refreshed, needs_credential, unreachable, or missing_branch.
+	Status   string    `json:"status"`
+	Protocol OptString `json:"protocol"`
+	Host     OptString `json:"host"`
+	Path     OptString `json:"path"`
+	// The refs a refresh moved in the source's namespace.
+	Updates []SourceRefUpdate `json:"updates"`
+}
+
+// GetStatus returns the value of Status.
+func (s *SourceRefresh) GetStatus() string {
+	return s.Status
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *SourceRefresh) GetProtocol() OptString {
+	return s.Protocol
+}
+
+// GetHost returns the value of Host.
+func (s *SourceRefresh) GetHost() OptString {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SourceRefresh) GetPath() OptString {
+	return s.Path
+}
+
+// GetUpdates returns the value of Updates.
+func (s *SourceRefresh) GetUpdates() []SourceRefUpdate {
+	return s.Updates
+}
+
+// SetStatus sets the value of Status.
+func (s *SourceRefresh) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *SourceRefresh) SetProtocol(val OptString) {
+	s.Protocol = val
+}
+
+// SetHost sets the value of Host.
+func (s *SourceRefresh) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SourceRefresh) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetUpdates sets the value of Updates.
+func (s *SourceRefresh) SetUpdates(val []SourceRefUpdate) {
+	s.Updates = val
 }

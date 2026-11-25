@@ -10,7 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 )
 
 const (
@@ -19,6 +22,9 @@ const (
 	PreReceiveCommand = "git-cache-pre-receive"
 	// CallerEnv names, to the hook, the sandbox whose push is being received.
 	CallerEnv = "DISCOBOX_GIT_CACHE_CALLER"
+	// MemberEnv tells the hook a push is a project member's. A push that
+	// names neither a caller nor a member cannot be checked, and is refused.
+	MemberEnv = "DISCOBOX_GIT_CACHE_MEMBER"
 
 	hooksDir = ".hooks"
 )
@@ -62,9 +68,16 @@ func (s *Store) SandboxReceiveConfig(path, caller, sandboxID, slug string) (conf
 }
 
 // MemberReceiveConfig is what a project member's push is received under, on
-// top of ReceiveConfig: no hook runs.
-func MemberReceiveConfig() []string {
-	return []string{"-c", "core.hooksPath=" + os.DevNull}
+// top of ReceiveConfig. The hook runs for the ref names alone: no delete but a
+// refresh's, and a refresh writing nothing but the remote's refs. What a
+// member's push reaches is not checked: members are trusted with what a cache
+// holds.
+func (s *Store) MemberReceiveConfig() (config, env []string, err error) {
+	hooks, err := s.hooksPath()
+	if err != nil {
+		return nil, nil, err
+	}
+	return []string{"-c", "core.hooksPath=" + hooks}, []string{MemberEnv + "=1"}, nil
 }
 
 // hooksPath is the directory holding the pre-receive hook, written on each
@@ -91,10 +104,12 @@ func (s *Store) hooksPath() (string, error) {
 	return dir, os.Rename(tmp, hook)
 }
 
-// RunPreReceive is a cache's pre-receive hook for a sandbox's push. Git runs
-// it with the pushed objects still in quarantine, which is the one moment
-// what arrived can be told from what the cache already held. It reads the ref
-// updates from stdin and returns the hook's exit status.
+// RunPreReceive is a cache's pre-receive hook, for every push. It holds the
+// ref names to what the push may write (checkRefNames), and a sandbox's push
+// to what it sent: Git runs it with the pushed objects still in quarantine,
+// which is the one moment what arrived can be told from what the cache
+// already held. It reads the ref updates from stdin and returns the hook's
+// exit status.
 func RunPreReceive(stdin io.Reader, stderr io.Writer) int {
 	if err := preReceive(stdin); err != nil {
 		fmt.Fprintf(stderr, "discobox: %v\n", err)
@@ -104,33 +119,47 @@ func RunPreReceive(stdin io.Reader, stderr io.Writer) int {
 }
 
 func preReceive(stdin io.Reader) error {
-	caller := strings.TrimSpace(os.Getenv(CallerEnv))
-	quarantine := os.Getenv("GIT_QUARANTINE_PATH")
-	if caller == "" || quarantine == "" {
-		return errors.New("this push cannot be checked, so it is refused")
-	}
-	gitDir, err := hookGit(nil, nil, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return err
-	}
-	var revisions bytes.Buffer
+	var updates [][3]string
 	scanner := bufio.NewScanner(stdin)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) != 3 {
 			return errors.New("malformed ref update")
 		}
-		if strings.Trim(fields[1], "0") == "" {
-			continue
-		}
-		revisions.WriteString(fields[1])
-		revisions.WriteByte('\n')
+		updates = append(updates, [3]string{fields[0], fields[1], fields[2]})
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
+	if err := checkRefNames(updates, refreshPush()); err != nil {
+		return err
+	}
+	caller := strings.TrimSpace(os.Getenv(CallerEnv))
+	switch {
+	case caller == "" && os.Getenv(MemberEnv) == "1":
+		// A project member's push: its ref names were all there was to check.
+		return nil
+	case caller == "":
+		return errors.New("this push cannot be checked, so it is refused")
+	}
+	var revisions bytes.Buffer
+	for _, update := range updates {
+		if strings.Trim(update[1], "0") == "" {
+			continue
+		}
+		revisions.WriteString(update[1])
+		revisions.WriteByte('\n')
+	}
 	if revisions.Len() == 0 {
 		return nil
+	}
+	quarantine := os.Getenv("GIT_QUARANTINE_PATH")
+	if quarantine == "" {
+		return errors.New("this push cannot be checked, so it is refused")
+	}
+	gitDir, err := hookGit(nil, nil, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return err
 	}
 	// What the caller was told the cache holds, and so what its push leaves
 	// out: its own namespaces, and the one it is pushing into. That one is
@@ -182,6 +211,46 @@ func preReceive(stdin io.Reader) error {
 	}
 	if strings.Contains(arrived, " missing") {
 		return errors.New("this push names objects it did not send; a discobox delivers only what it sends and what its own sources hold")
+	}
+	return nil
+}
+
+// refreshPush reports whether the push carries sourcecache.RefreshPushOption.
+func refreshPush() bool {
+	count, err := strconv.Atoi(os.Getenv("GIT_PUSH_OPTION_COUNT"))
+	if err != nil {
+		return false
+	}
+	for i := range count {
+		if os.Getenv("GIT_PUSH_OPTION_"+strconv.Itoa(i)) == sourcecache.RefreshPushOption {
+			return true
+		}
+	}
+	return false
+}
+
+// checkRefNames refuses a delete, which nothing legitimate makes in a
+// namespace (ADR 0058 §1), but a refresh's of a branch the remote no longer
+// has; and a refresh that writes anything but the remote's branches and tags,
+// since the namespace's own branches are the box's (ADR 26-11-24-142 §1).
+func checkRefNames(updates [][3]string, refresh bool) error {
+	for _, update := range updates {
+		ref := update[2]
+		if rest, ok := strings.CutPrefix(ref, "refs/namespaces/"); ok {
+			// receive-pack names a ref as the client did; a namespaced name
+			// is read the same, past its namespace.
+			if _, inner, found := strings.Cut(rest, "/"); found {
+				ref = inner
+			}
+		}
+		remote := strings.HasPrefix(ref, "refs/remotes/origin/")
+		deleted := strings.Trim(update[1], "0") == ""
+		switch {
+		case refresh && !remote && !strings.HasPrefix(ref, "refs/tags/"):
+			return fmt.Errorf("a refresh writes only the remote's branches and tags, not %s", ref)
+		case deleted && !(refresh && remote):
+			return fmt.Errorf("deleting %s is refused: only a refresh drops a branch, and only one the remote no longer has", ref)
+		}
 	}
 	return nil
 }

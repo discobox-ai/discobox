@@ -112,6 +112,13 @@ type Handler interface {
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/sources/{slug}/pull
 	PoolPullSandboxSource(ctx context.Context, req *PoolSourcePullRequest, params PoolPullSandboxSourceParams) (*SourceDelivery, error)
+	// PoolRefreshSandboxSource implements pool-refresh-sandbox-source operation.
+	//
+	// Refresh a delivered source's namespace from its remote over HTTPS, its remote-tracking branches
+	// and tags only. A credential, when lent, is used inside this request and never persisted.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/sources/{slug}/refresh
+	PoolRefreshSandboxSource(ctx context.Context, req *PoolSourceRefreshRequest, params PoolRefreshSandboxSourceParams) (*SourceRefresh, error)
 	// PoolRestartSandbox implements pool-restart-sandbox operation.
 	//
 	// Restart pool sandbox.
