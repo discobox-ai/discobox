@@ -99,9 +99,9 @@ working-root stash of ADR 26-11-14-302) and caught in review.
 A machine is the exception, and only for what it boots on: a machine can be
 copied into only while it runs, so `MachineSandboxRuntime.place` copies
 sandbox.json, the agent's TLS keypair where it serves TLS, the agent layer,
-its units and its pins into a running machine at every start, and restarts it
-when what it boots on moved (ADR 26-10-24-953 §2, ADR 26-10-27-345, ADR
-26-10-29-481 §3). The keypair is no part of what moved: the agent reads it
+its units and its pins into a running machine at every start, and restarts its
+agent when what it boots on moved (ADR 26-10-24-953 §2, ADR 26-10-27-345, ADR
+26-10-29-481 §3, ADR 26-11-23-458 §4). The keypair is no part of what moved: the agent reads it
 afresh for every handshake. Nothing else is written into a machine either: no
 record of the pool's, and nothing into the sandbox's own files.
 
@@ -517,23 +517,31 @@ changed. A step added that lays a binary needs it there too.
 
 ## A machine's placement
 
+- **A machine is never restarted to be provisioned, unless its agent
+  cannot wire it in place.** A placement that moved is applied on the
+  running machine (`apply --restart-agent`, ADR 26-11-23-458); only an agent
+  that answers `can-mount-in-place` with a failure has the machine restarted
+  onto it (§6). Ask the agent placed, after the copy, never the one running:
+  the placed one is what apply runs. Do not add a service to the restart
+  around the mounts: Docker and containerd were its only candidates, and
+  hold no declared path since ADR 26-11-23-993; another service on a
+  declared path is deferred (the ADR's Deferred).
 - **A placement the machine restarts onto applies nothing, before or after.**
-  `place` decides whether the machine restarts (a first placement in the
-  instance, or a moved agent, pins or bootstrap) before it applies, and then
-  only copies. `discobox-provision apply` starts the agent on the running
-  machine, and an agent there mounts the machine's volumes under the
-  provider's dockerd and containerd, already running on those paths, and
-  moves their data out from under them (ADR 26-11-02-023 §3). The review of
-  the mounting found the restart decided after apply, which started the new
-  agent on every machine provisioned before it. The placement after the
-  restart (`restarted`) applies nothing either: the agent started at boot,
-  and an apply racing it would run `systemctl` under the identity re-exec of
-  a box made from a snapshot, and wait on a boot's long first move.
+  On §6's path `place` decides whether the machine restarts before it
+  applies, and then only copies: an older agent's apply mounts the machine's
+  volumes under services already running on those paths (ADR 26-11-02-023
+  §3). The review of the mounting found the restart decided after apply,
+  which started the new agent on every machine provisioned before it. The
+  placement after the restart (`restarted`) applies nothing either: the
+  agent started at boot, and an apply racing it would run `systemctl` under
+  the identity re-exec of a box made from a snapshot, and wait on a boot's
+  long first move.
 - **The placement record is written only once the machine runs what was
-  placed.** A placement the machine restarts onto records nothing; the one
-  after the restart does. Recorded before the restart, a pool agent gone in
-  between leaves a running machine whose record says current, no agent, and
-  every request a 502.
+  placed.** An apply in place records it once apply returns; one that fails
+  records nothing, so the next start applies again. A placement the machine
+  restarts onto records nothing; the one after the restart does. Recorded
+  before the restart, a pool agent gone in between leaves a running machine
+  whose record says current, no agent, and every request a 502.
 - **What runs in a machine straight after `engine.Start` does not assume
   systemd has settled.** At disco-vm be1c6f74 boxd's `Start` returns once
   boxd says the machine runs, so a placement, `provision apply` or a

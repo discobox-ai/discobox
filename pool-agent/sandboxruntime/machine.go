@@ -1210,14 +1210,19 @@ func (r *MachineSandboxRuntime) agentListenAddress(ctx context.Context, inst mac
 
 // place puts in the running machine what its agent boots on — sandbox.json,
 // and the agent layer when it is not there yet, its units and its pins — and
-// runs `discobox-provision apply`, which starts the agent. It reports moved
-// when the machine must be restarted to boot on this, and then applies
-// nothing and records nothing: it was never placed in this instance, or was
-// placed before with something else, which the agent started on at boot. A
-// machine's own services — boxd's dockerd and containerd — are already
-// running on the paths its volumes are mounted onto, which only
+// runs `discobox-provision apply`, which wires the running machine in place
+// and starts the agent (ADR 26-11-23-458). Where it was placed before with
+// the same, apply mounts nothing and starts the agent its boot did not. Where
+// it was never placed in this instance, or was placed with something else, it
+// asks the agent it placed whether that agent wires a machine in place, and
+// applies with the agent restarted onto what was placed (§4): the machine is
+// started once, and provisioned while it runs.
+//
+// An agent too old to wire in place (§6) would mount the machine's volumes
+// under the services already running on those paths, which only
 // discobox-wire.service at a boot, before them, may mount (ADR 26-11-02-023
-// §3); an agent started here would mount them under those services.
+// §3). For it place reports moved, and then applies nothing and records
+// nothing, and the caller restarts the machine onto it.
 //
 // after is how the machine came to boot on this. Restarted, it is the
 // placement after that restart: the machine booted on what was placed, its
@@ -1295,31 +1300,39 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 		writer.CloseWithError(agentlayer.Archive(writer, agent, restarted || had && placed.Layer == agent.Digest, pins, agentlayer.MachineUnits))
 	}()
 	defer reader.Close()
-	// A machine that is restarted onto this starts nothing first: its agent,
-	// started by apply on the running machine, would mount its volumes under
-	// the provider's services already running on those paths, and move their
-	// data out from under them (ADR 26-11-02-023 §3). The unit mounts them at
-	// the boot the restart makes, and the placement after it applies.
 	moved := !restarted && (!had || placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
-	if moved || restarted {
+	var result provisioner.Result
+	switch {
+	case moved || restarted:
 		if err := guest.CopyTo(ctx, "/", reader); err != nil {
 			return false, nil, fmt.Errorf("place sandbox %s's agent: %w", sandboxID, err)
 		}
-	} else {
-		result, err := provisioner.Provision(ctx, guest, provisioner.Plan{
+		if restarted {
+			break
+		}
+		var inPlace bool
+		if inPlace, err = mountsInPlace(ctx, guest); err != nil {
+			return false, nil, fmt.Errorf("ask sandbox %s's agent whether it wires its machine in place: %w", sandboxID, err)
+		}
+		if !inPlace {
+			// The unit mounts at the boot the restart makes, and the
+			// placement after it applies.
+			slog.InfoContext(ctx, "the agent placed in a sandbox machine cannot wire it in place; restarting the machine onto it", "sandboxId", sandboxID)
+			return true, nil, nil
+		}
+		result, err = provisioner.Run(ctx, guest, machine.ExecRequest{Argv: applyInPlaceCommand}, nil)
+	default:
+		result, err = provisioner.Provision(ctx, guest, provisioner.Plan{
 			Dir:     "/",
 			Tree:    reader,
-			Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply"}},
+			Command: machine.ExecRequest{Argv: applyCommand},
 		})
-		if err != nil {
-			if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
-				err = fmt.Errorf("%w: %s", err, tail)
-			}
-			return false, nil, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
-		}
 	}
-	if moved {
-		return true, nil, nil
+	if err != nil {
+		if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
+			err = fmt.Errorf("%w: %s", err, tail)
+		}
+		return false, nil, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
 	}
 	placement := placedRecord{Container: inst.ID, Layer: agent.Digest, Pins: pins, Bootstrap: bootstrapDigest}
 	// How the pool reaches the agent is what the bootstrap just placed says.
@@ -1334,6 +1347,32 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 		return false, &placement, nil
 	}
 	return false, nil, r.writePlaced(sandboxID, placement)
+}
+
+// applyCommand is `discobox-provision apply` on a machine placed before with
+// what it is placed now: it mounts nothing, and starts the agent its boot
+// did not.
+var applyCommand = []string{agentlayer.AgentPath, "provision", "apply"}
+
+// applyInPlaceCommand is apply on a machine whose placement moved: it wires
+// the running machine in place, and restarts an agent running on what was
+// placed before onto what was placed now (ADR 26-11-23-458 §§2, 4).
+var applyInPlaceCommand = []string{agentlayer.AgentPath, "provision", "apply", "--restart-agent"}
+
+// mountsInPlaceCommand asks the placed agent whether its apply wires a
+// running machine in place (ADR 26-11-23-458 §6): it exits 0 where it does,
+// and an agent from before answers its usage, a failure.
+var mountsInPlaceCommand = []string{agentlayer.AgentPath, "provision", "can-mount-in-place"}
+
+// mountsInPlace asks the agent placed in guest whether it wires a running
+// machine in place. Any exit but 0 is no; only a command that could not be
+// run is an error.
+func mountsInPlace(ctx context.Context, guest machine.Guest) (bool, error) {
+	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: mountsInPlaceCommand}, nil, io.Discard, io.Discard)
+	if err != nil {
+		return false, err
+	}
+	return code == 0, nil
 }
 
 // placeAfter is how a machine came to boot on what place puts in it.

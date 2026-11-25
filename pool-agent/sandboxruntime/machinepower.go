@@ -359,8 +359,10 @@ func (r *MachineSandboxRuntime) powerTarget(ctx context.Context, sandboxID strin
 }
 
 // startLocked boots the sandbox's machine, places what its agent boots on and
-// starts the agent, restarting the machine when it had booted on something
-// else or on nothing placed, then waits for the agent and delivers its runtime-config document
+// starts the agent, wiring the running machine in place where it had booted
+// on something else or on nothing placed (ADR 26-11-23-458) -- restarting it
+// only where the agent placed cannot (place) -- then waits for the agent and
+// delivers its runtime-config document
 // (finishBoot). A machine the pool froze is thawed rather than booted (ADR
 // 26-11-21-395 §5), and is then a running machine like any other: started
 // already once what it boots on is placed. The caller holds the sandbox's
@@ -412,6 +414,10 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	// its guest writes out what it holds.
 	running := sb.Status == StatusRunning
 	resumed := false
+	// thawed is a machine the pool froze, resumed here onto a placement
+	// that moved while it was frozen: its agent is told it resumed once it
+	// answers on what was placed (below).
+	thawed := false
 	if (sb.Status == StatusPaused || sb.Status == StatusSuspended) && !record.NewRoot {
 		if err := r.resumeLocked(ctx, sandboxID, record); err != nil {
 			// A resume that left the machine stopped (its host restarted,
@@ -455,9 +461,13 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			}
 			return err
 		}
-		// Restarted onto what moved, a frozen machine boots, and its boot
-		// hands over the wakes due: it is no longer frozen.
+		// Placed onto what moved, a frozen machine is no longer frozen: its
+		// agent is restarted onto the placement in place (ADR 26-11-23-458
+		// §4), and told it resumed once it answers, which hands over the
+		// wakes due as the thaw would have. On §6's path the machine is
+		// restarted instead, and its boot hands them over.
 		if record.Frozen {
+			thawed = true
 			record.Frozen = false
 			if err := r.writeMachineRecord(sandboxID, record); err != nil {
 				return err
@@ -550,10 +560,10 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		return fail(err)
 	}
 	if moved {
-		// Its agent started at boot on what was placed before, or nothing
-		// started, it never having been placed: restarted, it boots on what
-		// was placed now, its volumes wired before anything else starts, as
-		// a container placed before its start does (ADR 26-11-02-023 §3).
+		// The agent placed cannot wire the running machine in place (ADR
+		// 26-11-23-458 §6): restarted, it boots on what was placed now, its
+		// volumes wired before anything else starts, as a container placed
+		// before its start does (ADR 26-11-02-023 §3).
 		slog.InfoContext(ctx, "restarting a sandbox machine onto what was placed in it", "sandboxId", sandboxID)
 		after := restartedInOrder
 		if err := r.engine.Stop(ctx, inst, machineStopTimeout); err != nil {
@@ -588,6 +598,14 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			return err
 		}
 	}
+	if thawed && !moved {
+		// A restarted agent hands over nothing within a boot (its handover
+		// marker is this boot's); the thaw's news does. Detached, and not the
+		// start's to fail, as afterThaw's is not.
+		if err := r.tellResumed(context.WithoutCancel(ctx), sandboxID); err != nil {
+			slog.WarnContext(ctx, "tell a thawed sandbox placed in place that it resumed", "sandboxId", sandboxID, "error", err)
+		}
+	}
 	// The agent is up, so its provisioning has wired what it wires this
 	// start.
 	if err := r.recordDataOnVolume(ctx, sandboxID, inst); err != nil {
@@ -604,7 +622,8 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 // what the pause owes where the machine holds what it boots on now (a
 // provider's pause its runtime-config document, deliverAfterResume; the
 // pool's freeze its after-thaw steps, thawedLocked), and otherwise places it
-// as a running machine, restarting it onto what moved while it was paused. A
+// as a running machine, its agent restarted onto what moved while it was
+// paused (ADR 26-11-23-458 §4). A
 // resume that fails reports the machine as the driver has it, unless the
 // machine runs: then something else resumed it in between (Archil, for a
 // request with its port token), and it is resumed. The caller holds the

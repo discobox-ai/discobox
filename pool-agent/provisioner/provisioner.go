@@ -83,15 +83,29 @@ func Provision(ctx context.Context, guest machine.Guest, plan Plan) (Result, err
 	if err := guest.CopyTo(ctx, plan.Dir, plan.Tree); err != nil {
 		return Result{}, fmt.Errorf("place the tree in %s: %w", plan.Dir, err)
 	}
+	return Run(ctx, guest, plan.Command, plan.Stdin)
+}
+
+// Run runs command in the machine, with stdin as its standard input (nil is
+// none), and reports as Provision does: a non-zero exit is its Result with an
+// *ExitError, and one that never reported an exit code is what it wrote
+// until then, with ExitCode -1. The command must not ask for a TTY.
+func Run(ctx context.Context, guest machine.Guest, command machine.ExecRequest, stdin io.Reader) (Result, error) {
+	if len(command.Argv) == 0 {
+		return Result{}, errors.New("run in a machine: no command to run")
+	}
+	if command.TTY {
+		return Result{}, errors.New("run in a machine: the command cannot run on a TTY")
+	}
 	var stdout, stderr tailBuffer
-	code, err := machine.Run(ctx, guest, plan.Command, plan.Stdin, &stdout, &stderr)
+	code, err := machine.Run(ctx, guest, command, stdin, &stdout, &stderr)
 	result := Result{ExitCode: code, Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
 	if err != nil {
 		result.ExitCode = -1
-		return result, fmt.Errorf("run %s: %w", strings.Join(plan.Command.Argv, " "), err)
+		return result, fmt.Errorf("run %s: %w", strings.Join(command.Argv, " "), err)
 	}
 	if code != 0 {
-		return result, &ExitError{Argv: plan.Command.Argv, ExitCode: code}
+		return result, &ExitError{Argv: command.Argv, ExitCode: code}
 	}
 	return result, nil
 }

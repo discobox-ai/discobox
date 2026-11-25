@@ -251,20 +251,21 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	}
 }
 
-// A machine boots before anything is placed in it, its provider's services
-// with it, so its first placement starts nothing and restarts it: the wiring
-// runs at that boot, before those services and the agent (ADR 26-11-02-023
-// §3). It is placed the wire unit's machine drop-in. A start after that
-// places and starts the agent at the boot it has, with no restart.
-func TestAMachinesFirstPlacementRestartsItBeforeAnythingRuns(t *testing.T) {
+// A machine boots before anything is placed in it, so its first placement
+// is applied in place: apply wires the running machine and starts the agent,
+// and the machine is started once (ADR 26-11-23-458 §1). It is placed the
+// wire unit's machine drop-in, which mounts at every boot after, and the
+// unit apply wires in place with. A start after that places and starts the
+// agent at the boot it has, applying with nothing to mount.
+func TestAMachinesFirstPlacementIsAppliedInPlace(t *testing.T) {
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
-		t.Fatalf("create = %v, want %v: a restart before anything is applied", got, want)
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("create = %v, want %v: one start, provisioned while it runs", got, want)
 	}
 	inst, err := f.owner.Instance(ctx, "sbx-9")
 	if err != nil {
@@ -277,6 +278,7 @@ func TestAMachinesFirstPlacementRestartsItBeforeAnythingRuns(t *testing.T) {
 	if conf := readMachineFile(t, guest, "/etc/systemd/system/discobox-wire.service.d/discobox-machine.conf"); !strings.Contains(conf, "ConditionPathExists=/etc/discobox/sandbox.json") {
 		t.Fatalf("the wire unit's machine drop-in:\n%s", conf)
 	}
+	readMachineFile(t, guest, "/etc/systemd/system/"+agentlayer.WireInPlaceUnit)
 
 	if err := r.StopSandbox(ctx, "sbx_9", nil); err != nil {
 		t.Fatal(err)
@@ -287,31 +289,101 @@ func TestAMachinesFirstPlacementRestartsItBeforeAnythingRuns(t *testing.T) {
 	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "apply"}; !slices.Equal(got, want) {
 		t.Fatalf("start = %v, want %v", got, want)
 	}
+}
 
-	// A machine placed before with another agent -- one provisioned before
-	// its volumes were mounted, given the agent that mounts them -- starts
-	// nothing on the running machine either: that agent would mount them
-	// under the provider's services already running on those paths.
-	placed, ok, err := r.readPlaced("sbx_9")
-	if err != nil || !ok {
-		t.Fatalf("placement record: %v %v", ok, err)
-	}
-	placed.Layer = "sha256:an-older-agent"
-	if err := r.writePlaced("sbx_9", placed); err != nil {
+// A running machine whose placement moved -- here onto a newer agent layer
+// -- is placed and applied in place, its agent restarted onto the new layer,
+// and the machine is not restarted (ADR 26-11-23-458 §4). A start with
+// nothing moved applies with nothing to restart.
+func TestARunningMachineMovedOntoANewAgentIsNotRestarted(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_m")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.StopSandbox(ctx, "sbx_9", nil); err != nil {
+	f.driver.takeEvents("sbx-m")
+	newer := "sha256:" + strings.Repeat("d", 64)
+	r.agentLayers = &fakeAgentLayers{digest: newer, layer: gzippedAgentLayer(t, "agent-v2")}
+	if err := r.EnsureSandboxRunning(ctx, "sbx_m"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.StartSandbox(ctx, "sbx_9", nil); err != nil {
+	if got, want := f.driver.takeEvents("sbx-m"), []string{"apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("a request after the agent moved = %v, want %v: placed while it runs", got, want)
+	}
+	if got := f.agents.get(t, "sbx_m").layer; got != newer {
+		t.Fatalf("the agent runs from %s, want %s: restarted onto what was placed", got, newer)
+	}
+	if placed, ok, err := r.readPlaced("sbx_m"); err != nil || !ok || placed.Layer != newer {
+		t.Fatalf("placement record = %+v, %v, %v; want layer %s", placed, ok, err, newer)
+	}
+	if err := r.EnsureSandboxRunning(ctx, "sbx_m"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
-		t.Fatalf("start onto a new agent = %v, want %v: a restart before anything is applied", got, want)
+	if got := f.driver.takeEvents("sbx-m"); len(got) != 0 {
+		t.Fatalf("a request with nothing moved = %v, want nothing", got)
 	}
 }
 
-// A machine moved onto a new agent layer is restarted onto it; one whose
+// An apply in place cut short fails the start, which stops the machine and
+// records no placement; the next start boots it and applies in place again,
+// which finishes it (ADR 26-11-23-458 §5): nothing needs a further restart.
+func TestAnApplyInPlaceCutShortIsFinishedByTheNextStart(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	f.driver.inPlaceFailures.Store(1)
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_c")); err == nil || !strings.Contains(err.Error(), "cut short") {
+		t.Fatalf("create = %v, want the apply's failure", err)
+	}
+	if got, want := f.driver.takeEvents("sbx-c"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("create = %v, want %v", got, want)
+	}
+	if _, ok, err := r.readPlaced("sbx_c"); err != nil || ok {
+		t.Fatalf("placement record = %v, %v; want none for an apply cut short", ok, err)
+	}
+	if sb, err := r.GetSandbox(ctx, "sbx_c"); err != nil || sb.Status != StatusStopped {
+		t.Fatalf("sandbox after the failed start = %+v, %v; want it stopped", sb, err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_c", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-c"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("the next start = %v, want %v", got, want)
+	}
+	if _, ok, err := r.readPlaced("sbx_c"); err != nil || !ok {
+		t.Fatalf("placement record = %v, %v; want it once the apply finished", ok, err)
+	}
+}
+
+// An agent too old to wire a running machine in place is placed and the
+// machine restarted onto it, as before (ADR 26-11-23-458 §6): its apply would
+// mount the volumes under the services already running on those paths
+// (ADR 26-11-02-023 §3).
+func TestAMachinePlacedAnAgentThatCannotMountInPlaceIsRestartedOntoIt(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	f.driver.cannotMountInPlace = true
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_o")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-o"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+		t.Fatalf("create = %v, want %v: a restart before anything is applied", got, want)
+	}
+	if err := r.StopSandbox(ctx, "sbx_o", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_o", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-o"), []string{"boot", "apply"}; !slices.Equal(got, want) {
+		t.Fatalf("start = %v, want %v", got, want)
+	}
+}
+
+// A machine moved onto a new agent layer that cannot wire it in place is
+// restarted onto it; one whose
 // orderly shutdown times out is forced off, and the copy made before the
 // restart may never have reached its disk. The older agent, still on that
 // disk, boots and answers. The pool must not then record the new layer as
@@ -322,6 +394,9 @@ func TestAMachineForcedOffOntoANewAgentLayerIsNotRecordedAsPlacedOnIt(t *testing
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
+	// Only a machine whose agent cannot wire it in place is restarted
+	// onto a placement (ADR 26-11-23-458 §6).
+	f.driver.cannotMountInPlace = true
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_6")); err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +454,8 @@ func TestAMachineForcedOffOntoANewAgentLayerIsNotRecordedAsPlacedOnIt(t *testing
 	}
 }
 
-// On a first placement an agent answering after a forced restart proves the
+// On a first placement of an agent that cannot wire the machine in place,
+// restarted onto it, an agent answering after a forced restart proves the
 // layer, since a lost copy would leave none to answer: an agent too old to
 // name its layer is recorded there all the same, so its machine is not
 // restarted at every request.
@@ -387,6 +463,7 @@ func TestAForcedFirstPlacementIsRecordedThoughItsAgentNamesNoLayer(t *testing.T)
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
+	f.driver.cannotMountInPlace = true
 	f.driver.shutdownRefused.Store(true)
 	f.agents.unnamed = true
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_8")); err != nil {
@@ -1103,6 +1180,13 @@ type agentDriver struct {
 	noVolumes bool
 	// noSystemd is a driver whose base carries no systemd.
 	noSystemd bool
+	// cannotMountInPlace is an agent from before ADR 26-11-23-458, which
+	// does not wire a running machine in place: asked, it answers its
+	// usage, and the pool restarts the machine onto it.
+	cannotMountInPlace bool
+	// inPlaceFailures is how many applies in place to fail, as one cut short
+	// part way through its mounts fails.
+	inPlaceFailures atomic.Int32
 	// rootData is an agent that keeps the sandbox's data on the machine's
 	// root, as one that predates wiring a data volume does: it records
 	// nothing on the volume (sandboxconfig.MachineDataWiredFile).
@@ -1326,10 +1410,25 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 		}
 		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
 	}
-	if !slices.Equal(req.Argv, []string{agentlayer.AgentPath, "provision", "apply"}) {
+	if slices.Equal(req.Argv, mountsInPlaceCommand) {
+		if m.driver.cannotMountInPlace {
+			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "exit 2"}})
+		}
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
+	}
+	// Apply on a placement that moved restarts the agent onto it: the fake
+	// agent started below replaces the one running.
+	switch {
+	case slices.Equal(req.Argv, applyCommand):
+		m.driver.record(m.inst.Name, "apply")
+	case slices.Equal(req.Argv, applyInPlaceCommand):
+		m.driver.record(m.inst.Name, "apply in place")
+		if m.driver.inPlaceFailures.Add(-1) >= 0 {
+			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo 'wire sandbox in place: cut short' >&2; exit 1"}})
+		}
+	default:
 		return m.Machine.Exec(ctx, req)
 	}
-	m.driver.record(m.inst.Name, "apply")
 	process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", m.agentCheck()}})
 	if err != nil {
 		return nil, err
@@ -1982,6 +2081,7 @@ func TestAPlacementAfterAForcedRestartIsRecordedOnceItsAgentAnswers(t *testing.T
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
+	f.driver.cannotMountInPlace = true
 	f.driver.shutdownRefused.Store(true)
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
 		t.Fatal(err)
