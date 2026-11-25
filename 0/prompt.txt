@@ -1,0 +1,9 @@
+can we do some math, if I'm running an ec2 m8/c8 class of machine if I was to equally limit the network ratioed to the vcpu. how many mbps per vcpu
+
+---
+
+oh and a metal instance
+
+---
+
+no i'm trynig to figure out on an archil instance why I'm getting only 3mb/s scp. but I'm reading a file from the disk which is network based, so maybe 6mb/s fullduplex  thats megabytes

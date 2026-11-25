@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M88E6CZS559ZDHMW9J33THHV",
+  "strategy": "manual-commit",
+  "branch": "fix/pool-audit-skips-engine",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "pool-agent/DESIGN.md",
+    "pool-agent/proxyagent/proxyagent.go",
+    "proxy/DESIGN.md",
+    "proxy/config.go",
+    "proxy/internal/audit/audit.go",
+    "proxy/internal/audit/audit_test.go",
+    "proxy/server.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 24744,
+    "cache_read_tokens": 134829,
+    "output_tokens": 3890,
+    "api_call_count": 3
+  },
+  "redaction": {
+    "replacements": 7,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 7,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
