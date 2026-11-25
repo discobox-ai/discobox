@@ -324,6 +324,9 @@ COPY vm-image/discobox-vsock-lifecycle.service /etc/systemd/system/discobox-vsoc
 COPY --chmod=0755 vm-image/discobox-sync-clock /usr/local/sbin/discobox-sync-clock
 COPY vm-image/discobox-timesync.service /etc/systemd/system/discobox-timesync.service
 COPY vm-image/discobox-timesync.timer /etc/systemd/system/discobox-timesync.timer
+COPY --chmod=0755 vm-image/discobox-trim-storage /usr/local/sbin/discobox-trim-storage
+COPY vm-image/discobox-trim-storage.service /etc/systemd/system/discobox-trim-storage.service
+COPY vm-image/discobox-trim-storage.timer /etc/systemd/system/discobox-trim-storage.timer
 COPY vm-image/docker.service.d/10-discobox.conf /etc/systemd/system/docker.service.d/10-discobox.conf
 COPY vm-image/docker-daemon.json /etc/docker/daemon.json
 COPY vm-image/systemd-networkd-wait-online.service.d/10-discobox.conf /etc/systemd/system/systemd-networkd-wait-online.service.d/10-discobox.conf
@@ -348,6 +351,7 @@ RUN mkdir -p \
         discobox-vsock-docker.service \
         discobox-vsock-lifecycle.service \
         discobox-timesync.timer \
+        discobox-trim-storage.timer \
         docker.service \
         docker.socket \
         systemd-networkd.service \

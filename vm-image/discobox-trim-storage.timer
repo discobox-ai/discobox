@@ -1,0 +1,12 @@
+[Unit]
+Description=Return the space freed on the Discobox data and cache disks to the host
+
+# Often, so a removed box's or image's space is back on the host within minutes
+# rather than days (util-linux's own fstrim.timer is weekly). A repeat is cheap:
+# ext4 skips the block groups that freed nothing since they were last trimmed.
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
