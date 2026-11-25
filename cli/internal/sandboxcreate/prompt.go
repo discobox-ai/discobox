@@ -88,6 +88,11 @@ type PromptOptions struct {
 	// DiscoboxAPI lets the new discobox call the discobox API through its
 	// pool (ADR 26-10-27-880 §9).
 	DiscoboxAPI bool
+	// CPUVCPUs and MemoryBytes are --cpu-vcpus and --memory: the discobox's
+	// size, each overriding its pool's; zero leaves it to the pool (ADR
+	// 26-11-23-445 §1).
+	CPUVCPUs    float64
+	MemoryBytes int64
 	Harness     string
 	// IncludeDirty decides what happens to uncommitted work on top of a
 	// local source's checked-out commit. Asking is the frontend's, before it
@@ -194,6 +199,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if opts.DiscoboxAPI {
 		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
 	}
+	SetCreateSandboxSize(&body.Config, opts.CPUVCPUs, opts.MemoryBytes)
 	skillsArgs, err := SplitSkills(opts.SkillDirs)
 	if err != nil {
 		return nil, nil, err
@@ -656,4 +662,16 @@ func optionalString(value string) apiclientgen.OptString {
 		return apiclientgen.OptString{}
 	}
 	return apiclientgen.NewOptString(value)
+}
+
+// SetCreateSandboxSize puts a discobox's size in its create, each field only
+// when given: a server from before sizes refuses the fields, and one left
+// out takes the pool's.
+func SetCreateSandboxSize(config *apimodel.SandboxCreateConfig, cpuVCPUs float64, memoryBytes int64) {
+	if cpuVCPUs != 0 {
+		config.SetCpuVcpus(apiclientgen.NewOptFloat64(cpuVCPUs))
+	}
+	if memoryBytes != 0 {
+		config.SetMemoryBytes(apiclientgen.NewOptInt64(memoryBytes))
+	}
 }

@@ -1284,6 +1284,10 @@ type RunRequest struct {
 	Bind        []string
 	Delegate    []string
 	DiscoboxAPI bool
+	// CPUVCPUs and MemoryBytes are `--cpu-vcpus` and `--memory`, carried from
+	// `discobox run`'s own request as Bind is.
+	CPUVCPUs    float64
+	MemoryBytes int64
 
 	// Name, Description and Tags are `--name`, `--description` and `--tag`:
 	// the discobox's first meta name, description and tags, recorded with it

@@ -52,6 +52,10 @@ type runCommandOptions struct {
 	delegate    []string
 	bindings    []apimodel.SandboxBindingInput
 	discoboxAPI bool
+	// cpuVCPUs and memory are --cpu-vcpus and --memory, or the request's
+	// "cpuVcpus" and "memory": the discobox's size.
+	cpuVCPUs float64
+	memory   byteSizeFlag
 	// tags are --tag as given, KEY or KEY=VALUE, which prompt.Tags is parsed
 	// from; a --from-json request gives prompt.Tags itself.
 	tags []string
@@ -273,6 +277,8 @@ its handle. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "cpuVcpus": 4,
+    "memory": "8g",
     "name": "Fix the pkg/foo tests",
     "tags": {"ticket": "ENG-12", "wip": ""},
     "description": "Fix the failing tests in pkg/foo",
@@ -475,6 +481,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	}
 	parsedOpts.Bindings = opts.bindings
 	parsedOpts.DiscoboxAPI = opts.discoboxAPI
+	parsedOpts.CPUVCPUs, parsedOpts.MemoryBytes = opts.cpuVCPUs, opts.memory.bytes
 	if err := a.newSandboxSettings(cmd.Context(), client, projectID, opts.pool, !opts.noProjectSkills, getProject, &parsedOpts); err != nil {
 		return err
 	}
@@ -547,6 +554,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringVar(&opts.prompt.Name, "name", "", "Name the new discobox from its creation, as \"discobox rename\" would afterwards: the name it is listed by, not its handle")
 	flags.StringVar(&opts.prompt.Description, "description", "", "Describe the new discobox from its creation, as \"discobox tag --description\" would afterwards")
 	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself")
+	addSizeFlags(flags, &opts.cpuVCPUs, &opts.memory)
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
 	opts.flags = flags
@@ -853,6 +861,8 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Bind:                opts.bind,
 		Delegate:            opts.delegate,
 		DiscoboxAPI:         opts.discoboxAPI,
+		CPUVCPUs:            opts.cpuVCPUs,
+		MemoryBytes:         opts.memory.bytes,
 		Name:                opts.prompt.Name,
 		Description:         opts.prompt.Description,
 		Tags:                opts.prompt.Tags,

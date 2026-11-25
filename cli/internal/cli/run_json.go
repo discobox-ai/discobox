@@ -26,6 +26,10 @@ type runJSONRequest struct {
 	Bindings []runJSONBinding `json:"bindings"`
 	// DiscoboxAPI is --discobox-api.
 	DiscoboxAPI bool `json:"discoboxApi"`
+	// CPUVCPUs and Memory are --cpu-vcpus and --memory, the memory written
+	// as the flag takes it ("8g").
+	CPUVCPUs float64 `json:"cpuVcpus"`
+	Memory   string  `json:"memory"`
 	// Name is --name, the meta name: not the API's config.name, the handle,
 	// which a request cannot set (ADR 26-11-16-207 §6).
 	Name string `json:"name"`
@@ -96,6 +100,12 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	}
 	opts.bindings = bindings
 	opts.discoboxAPI = req.DiscoboxAPI
+	opts.cpuVCPUs = req.CPUVCPUs
+	if req.Memory != "" {
+		if err := opts.memory.Set(req.Memory); err != nil {
+			return fmt.Errorf("--from-json: \"memory\": %w", err)
+		}
+	}
 	opts.prompt.Name = req.Name
 	opts.prompt.Tags = req.Tags
 	opts.prompt.Description = req.Description

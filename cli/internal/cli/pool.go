@@ -308,8 +308,8 @@ func (a *App) defaultPoolID(ctx context.Context, client *apiclientgen.Client, pr
 }
 
 func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
-	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "vCPUs for the pool's VM, on providers that size a VM per pool (0 = provider and host default)")
-	cmd.Flags().Var(&opts.memory, "memory", "Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default)")
+	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "On providers that size one VM per pool, the VM's vCPUs, which its discoboxes share; on other providers that size discoboxes, each one's default vCPUs, which its own --cpu-vcpus overrides (0 = the provider's and host's default VM, and no limit on a discobox)")
+	cmd.Flags().Var(&opts.memory, "memory", "On providers that size one VM per pool, the VM's memory, such as 8g or 512m, which its discoboxes share; on other providers that size discoboxes, each one's default memory, which its own --memory overrides (0 = the provider's and host's default VM, and no limit on a discobox)")
 	cmd.Flags().Var(&opts.storage, "storage", "Storage for the pool, such as 100g; no provider accepts it today (0 = unset)")
 	cmd.Flags().BoolVar(&opts.disableAgentEndpointTLS, "disable-agent-endpoint-tls", false, "Reach the pool's discoboxes' agents over plain HTTP instead of TLS; a discobox takes a change when its box is next made (a VM discobox at its next start, a container when it is replaced)")
 }

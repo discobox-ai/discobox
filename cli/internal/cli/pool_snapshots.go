@@ -82,8 +82,8 @@ func writePoolSnapshots(w io.Writer, snapshots apimodel.PoolSnapshots, now time.
 	return tw.Flush()
 }
 
-// formatSnapshotPlan names a plan by its bundles and the features it leaves
-// off, each bundle by its name and the start of its digest. The base and the
+// formatSnapshotPlan names a plan by its bundles, the features it leaves
+// off and the size a machine snapshot was built at, each bundle by its name and the start of its digest. The base and the
 // agent are the same for every plan of a pool but across an upgrade, so they
 // are left to the JSON output.
 func formatSnapshotPlan(plan apimodel.PoolSnapshotPlan, known bool) string {
@@ -99,6 +99,18 @@ func formatSnapshotPlan(plan apimodel.PoolSnapshotPlan, known bool) string {
 	}
 	if len(plan.Off) > 0 {
 		parts = append(parts, "off: "+strings.Join(plan.Off, ","))
+	}
+	if size, ok := plan.Size.Get(); ok {
+		var sized []string
+		if cpus := size.Cpus.Or(0); cpus > 0 {
+			sized = append(sized, fmt.Sprintf("%d vCPU", cpus))
+		}
+		if memory := size.MemoryBytes.Or(0); memory > 0 {
+			sized = append(sized, formatBytes(memory))
+		}
+		if len(sized) > 0 {
+			parts = append(parts, "size: "+strings.Join(sized, ","))
+		}
 	}
 	return strings.Join(parts, " ")
 }
