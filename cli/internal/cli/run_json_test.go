@@ -108,8 +108,8 @@ func TestRunGivesItsBindings(t *testing.T) {
 	if !strings.Contains(out.String(), runJSONSandboxID) {
 		t.Fatalf("output = %q, want the created discobox", out.String())
 	}
-	if !strings.Contains(errOut.String(), "SSH config not synced") {
-		t.Fatalf("stderr = %q, want the skipped sync noted", errOut.String())
+	if !strings.Contains(errOut.String(), "SSH config not synced: a discobox can't enroll SSH keys; the new discobox is unaffected") {
+		t.Fatalf("stderr = %q, want the skipped sync noted as expected", errOut.String())
 	}
 }
 
@@ -469,5 +469,32 @@ func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "skils") || !strings.Contains(err.Error(), configFile) {
 		t.Fatalf("execute error = %v, want one naming skils and %s", err, configFile)
+	}
+}
+
+// A discobox making another is refused the SSH sync by design: there is no
+// person on the creating side to ssh from. What the create says about it reads
+// as the expected skip it is, not as the server's authorization error relayed
+// verbatim.
+func TestRunFromADiscoboxSkipsTheSSHSyncWithoutAnError(t *testing.T) {
+	setHome(t, t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Chdir(newRunSourceTestRepo(t))
+	var posted map[string]any
+	server := runJSONServer(t, &posted)
+
+	cmd := NewRootCommand()
+	var errOut bytes.Buffer
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader(`{"prompt": "hello", "noSource": true}`))
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--from-json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute run --from-json: %v", err)
+	}
+	for _, alarming := range []string{"refused", "not in the sandbox role"} {
+		if strings.Contains(errOut.String(), alarming) {
+			t.Fatalf("stderr = %q, want the skipped SSH sync noted as expected, without %q", errOut.String(), alarming)
+		}
 	}
 }
