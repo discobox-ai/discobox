@@ -1,7 +1,8 @@
 # 26-11-24-142 — A push refreshes a remote source's pool copy of its remote
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+  Accepted by the owner by merging #1733, 2026-11-25.
 - **Issue**: [#1730](https://github.com/discobox-ai/discobox/issues/1730)
 - **Extends**:
   [26-10-23-948](26-10-23-948-a-pool-pulls-a-cached-source-first-and-a-client-supplies-what-the-pull-could-not.md)
