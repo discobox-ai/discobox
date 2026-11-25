@@ -1,5 +1,8 @@
 # Harness Review Notes
 
+These apply to every harness; a harness's own pitfalls are in its
+`harness/<id>/REVIEW.md` ([codex-cli](codex-cli/REVIEW.md)).
+
 - There is no setup step (ADR 26-11-02-152). A launcher must reach the CLI's
   sign-in with no credential delivered, and treat a missing credential file as
   signed out, never as an error: every box on a harness with nothing saved
@@ -22,12 +25,6 @@
   quotes and dollar signs in a checkout path can change the command before the
   tested program sees it. Exercise a path with shell metacharacters locally.
 
-- Prove Codex folder trust with an untrusted control against the pinned
-  binary, without explicit approval/sandbox policy masking onboarding.
-  A prompt reached with those policies alone does not prove folder trust.
-  Check direct starts after the launcher and retain earlier system trust
-  entries when a later launch runs in a different folder.
-
 - A settings key a harness CLI writes by itself, before any input, is local
   bookkeeping and goes in its manifest's `saveBack.settings` exclude. Otherwise
   every fresh box opens the save-back prompt (Codex: `tui.model_availability_nux`,
@@ -42,5 +39,5 @@
   Claude Code's `--continue` exits 1 there (issue #1421), so its launcher checks
   for a conversation and otherwise starts fresh with the prompt, which was
   never sent. Check the vendor CLI's no-session behaviour when adding or
-  changing a harness's resume, and record it in that harness's `DESIGN.md`
-  section, as each built-in's is.
+  changing a harness's resume, and record it in that harness's own
+  `harness/<id>/DESIGN.md`, as each built-in's is.
