@@ -141,7 +141,7 @@ func TestControlPlanePoolListsReadThePrimary(t *testing.T) {
 		t.Fatalf("replica read = %d pools, %v; want the replica to lag with none", len(stale), err)
 	}
 
-	controlPlane := NewControlPlane(appStore, nil)
+	controlPlane := NewControlPlane(appStore, nil, nil)
 	byProvider, err := controlPlane.ListPoolsForProviderInstance(ctx, "project-1", provider.ID)
 	if err != nil {
 		t.Fatalf("list provider pools: %v", err)
