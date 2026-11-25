@@ -1,6 +1,9 @@
 # 26-11-23-458 — A machine sandbox is provisioned in place, and only Docker and containerd restart around its mounts
 
-- **Status**: Proposed
+- **Status**: Proposed (would supersede in part [26-11-02-023](26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
+  §3's first-placement restart and its rejection of mounting on the running
+  machine, and [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)
+  §1's restart of a machine onto what was placed)
 - **Date**: 2026-11-23
 - **Issue**: #1602
 - **Would supersede in part**
