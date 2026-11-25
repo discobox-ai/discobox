@@ -609,11 +609,11 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 	})
 }
 
-// A request for a sandbox is filed under the project lock and refused once the
-// sandbox is archived, being deleted or gone, as an API access request is: the
-// archive or delete that closes its open requests (DenySandboxOpenRequestsTx)
-// takes the same lock, so no request is filed after it to wait on an agent
-// that is gone.
+// CreateSecretRequest files a request. One for a sandbox is filed under the
+// project lock and refused once the sandbox is archived, being deleted or gone,
+// as an API access request is: the archive or delete that closes its open
+// requests (DenySandboxOpenRequestsTx) takes the same lock, so no request is
+// filed after it to wait on an agent that is gone.
 func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretRequest) error {
 	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		if req.SandboxID != "" {
