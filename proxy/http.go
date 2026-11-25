@@ -320,6 +320,13 @@ func (h *httpProxy) setupMITM() {
 	h.rejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject}
 }
 
+// deniedHostResponse is the 403 for a host the client's egress policy
+// denies, over CONNECT or plain HTTP alike, saying why as the audit does.
+func deniedHostResponse(req *http.Request, authority string) *http.Response {
+	return goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden,
+		"blocked by proxy: host denied: "+authorityHostname(authority)+" is not allowed by this sandbox's egress policy\n")
+}
+
 func (h *httpProxy) setupHandlers() {
 	h.proxy.OnRequest().HandleConnectFunc(func(host string, proxyCtx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 		ctx := context.Background()
@@ -360,6 +367,14 @@ func (h *httpProxy) setupHandlers() {
 				Blocked:       true,
 				BlockedReason: "host denied",
 			})
+			// goproxy writes Resp before it closes a rejected CONNECT; without
+			// one it hangs up, and the program sees only a closed connection.
+			// The connection still closes after it, so the answer says so.
+			if proxyCtx != nil && proxyCtx.Req != nil {
+				//nolint:bodyclose // Handed to goproxy, which writes it to the client and closes it.
+				proxyCtx.Resp = deniedHostResponse(proxyCtx.Req, host)
+				proxyCtx.Resp.Close = true
+			}
 			return h.rejectConnect, host
 		}
 		// A host the client's passthrough names is spliced unread (ADR
@@ -468,7 +483,7 @@ func (h *httpProxy) setupHandlers() {
 				RequestHeaders: req.Header,
 			})
 			span.End()
-			return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "blocked by proxy")
+			return req, deniedHostResponse(req, req.Host)
 		}
 		// A raw secret is judged on the request as the sandbox sent it, before
 		// a cache may answer it or a gateway forward it (ADR 26-10-27-840).
