@@ -62,7 +62,7 @@ func TestDetachedRunWithoutDefaultHarness(t *testing.T) {
 			cmd.SetOut(&out)
 			cmd.SetErr(&errOut)
 			cmd.SetIn(strings.NewReader(""))
-			cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "discobox-ai/tour"})
+			cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--no-source"})
 			if !interactive {
 				err := cmd.Execute()
 				if err == nil || !strings.Contains(err.Error(), "-H <harness>") || !strings.Contains(err.Error(), "discobox admin harness set-default <harness>") {
