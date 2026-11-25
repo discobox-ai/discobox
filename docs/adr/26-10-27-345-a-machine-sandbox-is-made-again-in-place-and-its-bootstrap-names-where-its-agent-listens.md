@@ -3,6 +3,7 @@
 - **Status**: Accepted (decided by the maintainer on 2026-10-27, delivering
   #124)
 - **Superseded in part by**: [26-11-11-963](26-11-11-963-one-vm-provider-type-every-pool-runs-a-linux-pool-agent-in-a-machine-its-driver-makes.md) — §2's "A local driver's vsock stays behind the machine seam (551 §3)"; §2's "Only TCP is taken" narrowed by it for the pool agent too
+- **Superseded in part by**: [26-11-23-458](26-11-23-458-a-machine-sandbox-is-provisioned-in-place-and-only-docker-and-containerd-restart-around-its-mounts.md) — §1's restart of a machine with no volumes so that its agent boots on what was placed: its agent is restarted onto it in place
 - **Date**: 2026-10-27
 - **Narrows**:
   [26-10-08-127](26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md)
