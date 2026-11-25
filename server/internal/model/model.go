@@ -2224,7 +2224,9 @@ type SecretBindingEvent struct {
 	Replaced          *SecretBinding `gorm:"column:replaced;type:text;serializer:json" json:"replaced,omitempty" doc:"For rebound, the binding replaced, as it stood before"`
 	ReplacedBindingID string         `gorm:"column:replaced_binding_id;not null;type:text;default:'';index" json:"-"`
 	ReplacedSecretID  string         `gorm:"column:replaced_secret_id;not null;type:text;default:'';index" json:"-"`
-	// Seq orders a binding's events among themselves, where At ties.
+	// Seq orders the events of one binding's history, where At ties: the
+	// binding's own and the rebounds that replaced it. A rebound's follows
+	// both bindings' histories.
 	Seq int64     `gorm:"column:seq;not null;default:0" json:"-"`
 	At  time.Time `gorm:"column:at;not null;index" json:"at" doc:"When it happened" format:"date-time"`
 }

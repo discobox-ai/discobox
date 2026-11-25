@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -339,5 +340,66 @@ func TestBindingEventsKeepTheirOrderWithinOneClockTick(t *testing.T) {
 	events, err := s.ListSecretBindingEvents(ctx, "project-1", store.SecretBindingEventFilter{BindingID: binding.ID})
 	if err != nil || len(events) != 2 || events[0].Event != model.SecretBindingEventDeleted || !events[0].At.Equal(tick) {
 		t.Fatalf("events = %+v, %v; want the delete first, at the clock's own time", events, err)
+	}
+}
+
+// A rebound is in the replaced binding's history as well as its own, and
+// keeps its place there within one clock tick: after the replaced binding's
+// creation and split, before a later change to it, whatever order the two
+// bindings' own sequences and the events' IDs would give.
+func TestARebindKeepsItsPlaceInTheReplacedBindingsHistory(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, false)
+	createSecret(t, s, "sec-old", "old")
+	createSecret(t, s, "sec-new", "new")
+	// Each event gets an ID sorting below the one before, so the IDs order
+	// them backwards.
+	label := 9
+	relabel := func() {
+		t.Helper()
+		if err := db.Write.WithContext(ctx).Model(&model.SecretBindingEvent{}).Where("id NOT LIKE 'bev_tick_%'").
+			Update("id", fmt.Sprintf("bev_tick_%d", label)).Error; err != nil {
+			t.Fatal(err)
+		}
+		label--
+	}
+	old := &model.SecretBinding{ProjectID: "project-1", SecretID: "sec-old", TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, Delegate: true, EnvName: "TICK"}
+	if err := s.CreateSecretBinding(ctx, old, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	relabel()
+	replaced := *old
+	// The rebind splits it: it loses its use and keeps its delegation.
+	old.Use, old.EnvName = false, ""
+	if err := s.UpdateSecretBinding(ctx, old, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	relabel()
+	made := &model.SecretBinding{ProjectID: "project-1", SecretID: "sec-new", TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "TICK"}
+	if err := s.CreateSecretBinding(ctx, made, store.BindingChange{Actor: "user-1", Replaced: &replaced}); err != nil {
+		t.Fatal(err)
+	}
+	relabel()
+	old.Use, old.EnvName = true, "TOCK"
+	if err := s.UpdateSecretBinding(ctx, old, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	relabel()
+	// All in one tick, as a coarse clock would have it.
+	if err := db.Write.WithContext(ctx).Model(&model.SecretBindingEvent{}).Where("project_id = ?", "project-1").
+		Update("at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.ListSecretBindingEvents(ctx, "project-1", store.SecretBindingEventFilter{BindingID: old.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, event := range events {
+		kinds = append(kinds, event.Event)
+	}
+	want := []string{model.SecretBindingEventUpdated, model.SecretBindingEventRebound, model.SecretBindingEventUpdated, model.SecretBindingEventCreated}
+	if fmt.Sprint(kinds) != fmt.Sprint(want) {
+		t.Fatalf("replaced binding's history = %v, want %v, newest first", kinds, want)
 	}
 }

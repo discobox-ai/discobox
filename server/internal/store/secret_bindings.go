@@ -478,12 +478,20 @@ func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event strin
 	if err := name(&snapshot); err != nil {
 		return err
 	}
-	// Within a binding, a sequence orders its events where the clock does
-	// not: a coarse clock (Windows) stamps two changes in one tick alike.
-	// Every change to an existing binding writes or deletes its row in this
-	// transaction, which serializes them, so two cannot read the same last.
+	// Within a binding's history, a sequence orders its events where the
+	// clock does not: a coarse clock (Windows) stamps two changes in one
+	// tick alike. A history holds the binding's own events and the rebounds
+	// that replaced it (ListSecretBindingEvents), so an event's seq follows
+	// the last of every history it joins: its binding's and, for a rebound,
+	// the replaced binding's. Every change to an existing binding writes or
+	// deletes its row in this transaction, and a rebind locks the binding
+	// it replaces, which serializes them, so two cannot read the same last.
+	histories := []string{binding.ID}
+	if replaced != nil {
+		histories = append(histories, replaced.ID)
+	}
 	var last []model.SecretBindingEvent
-	if err := tx.Select("seq").Where("project_id = ? AND binding_id = ?", binding.ProjectID, binding.ID).
+	if err := tx.Select("seq").Where("project_id = ? AND (binding_id IN ? OR replaced_binding_id IN ?)", binding.ProjectID, histories, histories).
 		Order("seq DESC").Limit(1).Find(&last).Error; err != nil {
 		return err
 	}
