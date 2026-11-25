@@ -307,8 +307,9 @@ use part's `replaces`, granted as a replacement). Both go through `rebind`
   names its secret (`Secret.ValueGeneration`), so the pool drops A's cached
   value and a late report about A is not judged against B.
 
-Deleting a sandbox closes its open requests as denied, each part with it: the
-agent waiting on the answer is gone. A discobox sees and answers only the
+Archiving or deleting a sandbox closes its open requests as denied, each part
+with it, and an archived or deleting sandbox files none: the agent waiting on
+the answer is gone. A discobox sees and answers only the
 requests filed by a discobox it leads: the sandbox role decides that for one
 request by its ID, and `ListSecretRequests` filters the listing with
 `store.OwnedBy`
@@ -408,7 +409,9 @@ credential path reads them.
   decides who the sandbox's credentials for that host are handed to.
 - **A trust is one sandbox's and always lapses.** Its routes are under the
   sandbox, it is deleted with the sandbox (`deleteSandboxHostTrustsTx`), and
-  its lifetime runs from an hour by default to thirty days at most.
+  its lifetime runs from an hour by default to thirty days at most. An
+  archived or deleting sandbox asks for none, and its open asks close as
+  denied when it is archived, as its credential requests do.
 - **`ListPoolHostTrusts`** is what a pool's proxy enforces: the live trusts of
   every sandbox on it. A revoked or lapsed trust leaves it, and a poll of the
   request that minted it answers `denied`, as a removed binding does.

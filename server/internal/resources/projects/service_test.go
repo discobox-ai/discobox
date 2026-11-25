@@ -607,7 +607,9 @@ func TestDeleteProjectNamesRemainingReference(t *testing.T) {
 		SandboxID: "purged-sandbox",
 		Host:      "example.com:443",
 	}
-	if err := st.CreateHostTrustRequest(ctx, request); err != nil {
+	// Left by a server from before a sandbox's purge deleted its asks: none
+	// can be filed for a sandbox that is gone, so it is written directly.
+	if err := st.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error { return tx.Create(request).Error }); err != nil {
 		t.Fatalf("record host trust request: %v", err)
 	}
 	err = svc.DeleteProject(ctx, project.ID)

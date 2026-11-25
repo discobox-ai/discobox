@@ -96,6 +96,16 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 	}
 	var recorded *model.Sandbox
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		// An archive or a delete removes the runtime, so the agent that asked
+		// a person for something is gone: its open requests close with the
+		// intent rather than wait for an answer nothing reads. First: it locks
+		// the project and then this sandbox's row before any request, the
+		// order the deciders of those requests keep (store/REVIEW.md).
+		if desiredState != model.DesiredStatePresent {
+			if err := store.DenySandboxOpenRequestsTx(txDB, projectID, sandboxID); err != nil {
+				return err
+			}
+		}
 		sandbox, err := txStore.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
 			return err

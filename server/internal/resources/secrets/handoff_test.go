@@ -177,6 +177,12 @@ func TestHandoffRefusesTargetsOutsideCurrentAuthority(t *testing.T) {
 				secret := createBearerSecret(ctx, t, svc)
 				p := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
 				target := testSandboxID
+				// The ask is filed before the fault: once its discobox is
+				// archived, none can be filed.
+				var req *model.SecretRequest
+				if door != "direct" {
+					req = createAgentRequest(ctx, t, svc)
+				}
 				switch fault {
 				case "unled":
 					if err := st.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
@@ -210,7 +216,6 @@ func TestHandoffRefusesTargetsOutsideCurrentAuthority(t *testing.T) {
 				if door == "direct" {
 					_, err = svc.CreateSandboxSecretBinding(asLead(), "project-1", target, services.CreateSandboxSecretBindingBody{Secret: secret.ID, EnvVar: apigen.NewOptString("GH")})
 				} else {
-					req := createAgentRequest(ctx, t, svc)
 					if target != testSandboxID {
 						if err := st.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
 							return tx.Model(&model.SecretRequest{}).Where("id = ?", req.ID).Update("sandbox_id", target).Error

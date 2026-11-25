@@ -25,6 +25,17 @@
   can otherwise insert a child after cleanup, leaving a dangling parent. Recheck
   the creator's existence under that lock before inserting.
 
+- A new writer of a sandbox's request rows (secret, host trust, API access,
+  adoption) keeps the order of every decider of each kind, checked against
+  each, as `DenySandboxOpenRequestsTx` does: project lock, then the sandbox
+  row, then the requests. Why: the deciders differ. API access and adoption
+  decisions lock project, request, sandbox; a person's secret approval takes
+  no project lock and locks the sandbox before it writes the request; a host
+  trust approval inserts the trust and then writes only the request row. Closing a sandbox's
+  requests on archive deadlocked on Postgres against one or the other twice:
+  written after the intent locked the sandbox, against an API access
+  approval; then before the sandbox, against a secret approval (#1786 review).
+
 - Every harness relationship writer, including project copy, takes the project
   lock through `HarnessConfigsTransaction` before reading the destination parent
   and inserting or converting its child. A cached parent snapshot can become

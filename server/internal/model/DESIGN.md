@@ -309,7 +309,8 @@ itself.
 
 `Sandbox.ParentSandboxID` is current, one-level authority; `CreatedBySandboxID`
 is immutable creation history. Neither belongs in the manifest fingerprint.
-`AdoptionRequest` is the person's decision record, kept after sandbox purge;
+`AdoptionRequest` is the person's decision record, kept after sandbox purge,
+and denied by `system` if still open when either sandbox is archived or deleted;
 its current parent, display names and read-only warning are unmigrated read fields.
 
 `Sandbox.DisplayState` projects a running agent whose reported provisioning is
@@ -348,7 +349,8 @@ credential material. Nullable additive columns preserve existing records.
 ## API access consent
 
 `APIAccessRequest` retains requester, reason, status, deciding person and time
-after sandbox purge. It is a separate consent record; the current permission
+after sandbox purge; one still open when its sandbox is archived or deleted is
+denied by `system`. It is a separate consent record; the current permission
 remains `Sandbox.DiscoboxAPI`. Adding its table through `AllModels` preserves
 existing sandboxes and their settings without a backfill.
 

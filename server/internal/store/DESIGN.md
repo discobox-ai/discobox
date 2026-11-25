@@ -335,7 +335,8 @@ config and opaque candidate ID; it retains no exported credential material.
 `adoptions.go` owns parent writes and adoption-request persistence. Filing,
 approval, release and purge cleanup take the project's row lock before sandbox
 locks, which are taken in ID order. This serializes ancestor walks against every
-parent change. Requests remain after purge as audit records. `UpdateSandbox`
+parent change. Requests remain after purge as audit records, closed if still
+open ([A sandbox's open requests](#a-sandboxs-open-requests)). `UpdateSandbox`
 omits both parent and creator; create starts with the creator as parent.
 The secret request owner filter reads `parent_sandbox_id`.
 
@@ -410,8 +411,20 @@ give old rows no wait entitlement until normal upgrade admission proves it.
 request and sandbox rows locked before writes. Filing returns the existing
 pending request unchanged. Approval rechecks sandbox existence and lifecycle,
 then sets `discobox_api` and records the person's decision in one transaction.
-Denial changes no setting and remains possible after purge. Records are retained
-with consent history and deleted only with their project.
+Denial changes no setting. Records are retained with consent history and
+deleted only with their project.
+
+## A sandbox's open requests
+
+Archiving or deleting a sandbox closes its open secret, host trust, API access
+and adoption requests (as requester or as child) as denied by system, in the same
+transaction (`DenySandboxOpenRequestsTx`, run by the intent before it writes
+the sandbox row, and by purge): its runtime is gone, so nothing would read an
+answer. It locks the project, then the sandbox row, before any request row:
+filing every kind, and deciding an API access or adoption request, take the
+project lock first, and a person's secret approval locks the sandbox before it
+writes the request. Every kind is filed under the project lock and refused for
+a sandbox archived, being deleted or gone, so none is filed after it.
 
 ## Pool outbound intent
 

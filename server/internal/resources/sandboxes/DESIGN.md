@@ -487,6 +487,13 @@ reach those routes for the discoboxes they lead
 §2). `archive.go` holds the archive branch and retention; `reconciler.go` holds
 the rest.
 
+An archive or delete intent also closes the sandbox's open secret, host trust,
+API access and adoption requests as denied by system, first in its transaction
+(`store.DenySandboxOpenRequestsTx`, which locks the project, then the sandbox,
+before any request row): the agent that asked goes with the runtime, so a
+person is not left an answer nothing reads, and unarchiving does not reopen
+them.
+
 An archive or a repair's teardown the pool did not answer —
 `ErrPoolNotReachable`, an agent older than the server
 (`ErrPoolAgentUnsupported`), or the reconcile's context ended — is not

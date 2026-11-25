@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -13,12 +15,24 @@ import (
 // person approved from them. Both belong to one sandbox and are deleted with
 // it (deleteSandboxHostTrustsTx).
 
+// CreateHostTrustRequest files an ask under the project lock and refuses it
+// once its sandbox is archived, being deleted or gone, as CreateSecretRequest
+// does: the archive or delete that closes the sandbox's open asks
+// (DenySandboxOpenRequestsTx) takes the same lock.
 func (s *Store) CreateHostTrustRequest(ctx context.Context, req *model.HostTrustRequest) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	return write.Create(req).Error
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		if err := lockProject(tx, req.ProjectID); err != nil {
+			return err
+		}
+		box, err := firstByID[model.Sandbox](tx.Where("project_id = ?", req.ProjectID), "id", req.SandboxID)
+		if err != nil {
+			return err
+		}
+		if box.DesiredState == model.DesiredStateDeleted || box.DesiredState == model.DesiredStateArchived {
+			return apperrors.NewStatusError(http.StatusConflict, "an archived or deleting sandbox cannot ask to trust a host")
+		}
+		return tx.Create(req).Error
+	})
 }
 
 // FindPendingHostTrustRequest returns the sandbox's open ask for host, or
@@ -164,4 +178,13 @@ func deleteSandboxHostTrustsTx(tx *gorm.DB, sandboxID string) error {
 		return err
 	}
 	return tx.Where("sandbox_id = ?", sandboxID).Delete(&model.HostTrustRequest{}).Error
+}
+
+// denySandboxHostTrustRequestsTx closes a sandbox's open host trust asks as
+// denied (DenySandboxOpenRequestsTx). The trusts approved before stay until
+// purge: an unarchived sandbox keeps them.
+func denySandboxHostTrustRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
+	return tx.Model(&model.HostTrustRequest{}).
+		Where("project_id = ? AND sandbox_id = ? AND status = ?", projectID, sandboxID, model.HostTrustRequestStatusPending).
+		Updates(map[string]any{"status": model.HostTrustRequestStatusDenied, "updated_at": time.Now().UTC()}).Error
 }

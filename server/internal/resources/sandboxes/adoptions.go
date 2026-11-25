@@ -87,7 +87,7 @@ func (s *Service) describeAdoption(ctx context.Context, req *model.AdoptionReque
 			return nil
 		}
 		return err
-	} // The pending request remains deniable after purge.
+	} // A request outlives its sandboxes' purge as a record, closed if it was open.
 	req.CurrentParentSandboxID = child.ParentSandboxID
 	req.ChildName = services.SandboxDisplayName(child)
 	requester, err := s.store.GetSandbox(ctx, req.ProjectID, req.RequesterSandboxID)
