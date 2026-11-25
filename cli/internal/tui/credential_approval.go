@@ -19,10 +19,12 @@ type approvalBindingsMsg struct {
 	done     func([]SecretBinding, error) tea.Cmd
 }
 
-func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
+// askCredentialApproval asks which credential answers req, and how. ghLogin
+// is this machine's gh login command when it can answer (asksOnlyGitHub).
+func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, ghLogin []string) tea.Cmd {
 	ttl := defaultRequestTTL(req)
 	done := func(bindings []SecretBinding, err error) tea.Cmd {
-		return m.credentialApproval(req, secrets, held, bindings, err, ttl)
+		return m.credentialApproval(req, secrets, held, ghLogin, bindings, err, ttl)
 	}
 	if req.SandboxID == "" {
 		return done(nil, nil)
@@ -36,7 +38,7 @@ func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, h
 	}
 }
 
-func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, bindings []SecretBinding, bindingErr error, ttl time.Duration) tea.Cmd {
+func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, ghLogin []string, bindings []SecretBinding, bindingErr error, ttl time.Duration) tea.Cmd {
 	holder, pinned := heldBy(held)
 	answers := map[string]requestAnswer{}
 	var credentials []choice
@@ -58,7 +60,8 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		answers[secret.ID] = ans
 		credentials = append(credentials, choice{key: secret.ID, label: secret.Name})
 	}
-	if len(credentials) == 0 {
+	noneFits := len(credentials) == 0
+	if noneFits {
 		credentials = append(credentials, choice{label: "No compatible saved credential"})
 	}
 	durations := lifetimeChoices(req.AskedTTL)
@@ -95,10 +98,15 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 			return ok && f.chosen("use-decision") == PartApprove && ans.canAdd() && ans.replaceUnavailable() == ""
 		}
 	}
-	if req.Use == nil || !pinned {
-		rows = append(rows, formRow{key: "new", label: "New credential", show: func(*form) string { return "Enter a value…" }, open: func() tea.Cmd {
+	// A variable held by a secret takes only that secret, which a new one
+	// never is.
+	newAllowed := req.Use == nil || !pinned
+	// enterNew opens the new-credential card; ghLogin fills it in with this
+	// machine's gh login. Either way what comes back is the one new answer.
+	enterNew := func(command []string) func() tea.Cmd {
+		return func() tea.Cmd {
 			back := func() tea.Cmd { m.dialog = d; return nil }
-			return m.enterNewCredential(req, secrets, held, holder.SecretID, back, func(ans requestAnswer) tea.Cmd {
+			return m.enterNewCredential(req, secrets, held, holder.SecretID, command, back, func(ans requestAnswer) tea.Cmd {
 				answers["new"] = ans
 				options := slices.DeleteFunc(slices.Clone(credentials), func(c choice) bool { return c.key == "" })
 				d.form.rows[0].choices = append(options, choice{key: "new", label: ans.credential + " (new)"})
@@ -106,7 +114,16 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 				d.reviewState = ""
 				return back()
 			})
-		}})
+		}
+	}
+	// The gh login is a new credential too, offered by name because nothing
+	// else on this card says it can be used.
+	offerGH := newAllowed && len(ghLogin) > 0
+	if offerGH {
+		rows = append(rows, formRow{key: "gh", label: "gh login", show: func(*form) string { return "Use this machine's gh login (gh auth token)…" }, open: enterNew(ghLogin)})
+	}
+	if newAllowed {
+		rows = append(rows, formRow{key: "new", label: "New credential", show: func(*form) string { return "Enter a value…" }, open: enterNew(nil)})
 	}
 	parts := []struct {
 		key, label string
@@ -171,6 +188,10 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 	}
 	f := newForm(rows...)
 	f.choose("ttl", lifetime.Label(ttl))
+	// With no saved secret that fits, the gh login is the likeliest answer.
+	if offerGH && noneFits {
+		f.moveTo(slices.IndexFunc(f.rows, func(r formRow) bool { return r.key == "gh" }))
+	}
 	if req.Use != nil && req.Use.Add {
 		f.choose("binding", string(bindingplan.Add))
 	}

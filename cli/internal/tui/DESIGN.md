@@ -581,6 +581,7 @@ leaves it waiting when pressed on the approval itself.
 ```mermaid
 flowchart LR
   C[Credential approval] -->|New credential| N[Enter new credential] --> C
+  C -->|gh login| N
   C -->|Accept| D{Placement consent needed?}
   C -->|Deny| X((denied))
   D -->|No| A((approved))
@@ -596,6 +597,14 @@ flowchart LR
   it from the held grant. Lifetime defaults to the requested duration or
   one hour. Presets and Custom edit it in place. A lifetime above the
   selected credential's limit disables Accept and explains the limit.
+- **The gh login.** A request whose every host is GitHub's
+  (`asksOnlyGitHub`: `github.com`, `api.github.com`, no pattern) also offers
+  a "gh login" row beside "New credential", when `DataSource.GitHubLogin`
+  finds gh logged in here (`github.LoginCommand` prints a token; it is not
+  asked for a refresh request): without it, that a gh login can answer was
+  nowhere on the card. It is the new-credential card filled in (the command,
+  a "GitHub (gh)" name), not a path of its own, and the cursor starts on it
+  when no saved credential fits.
 - **Existing bindings.** The card shows whether approving appends routes
   or replaces the box's rules for the credential across all variables.
   Binding losses, route diffs, and shortened lifetimes are shown before
@@ -609,6 +618,7 @@ flowchart LR
 
 - **New credential.** Name (the one asked for, or the first free one), then
   "Paste a value" or "Output of a command" (`gh auth token` its example).
+  Pasting for a GitHub request says, under the value, which token to make.
   The sentinel row shows, dimmed, the format the value would be read as
   (`secretformat.Describe`), and Enter on it opens a card listing the syntax
   and every charset (`secretformat.Charsets`) with a live sample. A typed

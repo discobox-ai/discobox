@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -150,6 +151,111 @@ func TestApprovalListsCompatibleCredentials(t *testing.T) {
 		if got := m.dialog.form.chosen("credential"); got != "sec_gh" {
 			t.Fatalf("incompatible credential %q selected", got)
 		}
+	}
+}
+
+// A request for GitHub alone offers this machine's gh login when gh is logged
+// in, with the cursor on it when no saved secret can answer. Chosen, it is the
+// new credential card filled in to run gh auth token, stored with that command.
+func TestApprovalOffersTheGHLoginForAGitHubRequest(t *testing.T) {
+	t.Parallel()
+	for _, loggedIn := range []bool{true, false} {
+		t.Run(strconv.FormatBool(loggedIn), func(t *testing.T) {
+			t.Parallel()
+			m, ds := sourceWithRequest(t)
+			ds.projectSecrets = ds.projectSecrets[1:]
+			ds.ghLogin = loggedIn
+			send(t, m, keyPress("tab"), keyPress(credentialsKey))
+			if !onRequestCard(m) {
+				t.Fatalf("dialog = %s, want the approval card", describe(m.dialog))
+			}
+			f := m.dialog.form
+			at := slices.IndexFunc(f.rows, func(r formRow) bool { return r.key == "gh" })
+			if (at >= 0) != loggedIn {
+				t.Fatalf("gh row at %d, want it offered = %v", at, loggedIn)
+			}
+			if !loggedIn {
+				if !strings.Contains(plainFrame(m), "New credential") {
+					t.Fatal("new credential row missing without gh")
+				}
+				return
+			}
+			if f.cursor != at || !strings.Contains(plainFrame(m), "Use this machine's gh login (gh auth token)") {
+				t.Fatalf("cursor on row %d, want the gh login (%d) drawn and chosen", f.cursor, at)
+			}
+			readRequestEnd(t, m, "pgdown")
+			m.dialog.formActionAt = -1
+			m.dialog.form.moveTo(at)
+			send(t, m, keyPress("enter"))
+			nf := m.dialog.form
+			if !onStep(m, "new credential") || nf.chosen("source") != "command" || nf.value("command") != "gh auth token --hostname github.com" || nf.value("name") != "GitHub (gh)" {
+				t.Fatalf("dialog = %s, want the new credential card filled in for gh", describe(m.dialog))
+			}
+			send(t, m, keyPress("enter"))
+			if !onRequestCard(m) || m.dialog.form.chosen("credential") != "new" {
+				t.Fatalf("dialog = %s, want the approval card with the gh credential chosen", describe(m.dialog))
+			}
+			grantFor(t, m, time.Hour)
+			if len(ds.createdSecrets) != 1 || strings.Join(ds.createdSecrets[0].RefreshCommand, " ") != "gh auth token --hostname github.com" {
+				t.Fatalf("stored = %#v, want the gh command", ds.createdSecrets)
+			}
+		})
+	}
+}
+
+// The gh login is offered only where a github.com token answers the whole
+// request, and gh is not asked otherwise.
+func TestTheGHLoginIsNotOfferedBeyondGitHub(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.ghLogin = true
+	req := waitingRequest()
+	req.Use.Routes = append(req.Use.Routes, secretroute.Route{Hosts: []string{"api.openai.com"}})
+	ds.requests = []CredentialRequest{req}
+	send(t, m, tickMsg{}, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the approval card", describe(m.dialog))
+	}
+	if slices.ContainsFunc(m.dialog.form.rows, func(r formRow) bool { return r.key == "gh" }) || ds.ghChecks != 0 {
+		t.Fatalf("gh asked %d times; want no gh login for a request beyond GitHub", ds.ghChecks)
+	}
+	for _, hosts := range [][]string{{"github.com", "API.github.com"}, {"github.com"}} {
+		req.Use.Routes = []secretroute.Route{{Hosts: hosts}}
+		if !asksOnlyGitHub(req) {
+			t.Fatalf("%v: want it GitHub's", hosts)
+		}
+	}
+	for _, hosts := range [][]string{{"*.github.com"}, {"github.com", "gitlab.com"}, nil} {
+		req.Use.Routes = []secretroute.Route{{Hosts: hosts}}
+		if asksOnlyGitHub(req) {
+			t.Fatalf("%v: want it not GitHub's alone", hosts)
+		}
+	}
+}
+
+// Pasting a value for a GitHub request says where to make the token, whole
+// on an 80-column window.
+func TestPastingForAGitHubRequestSaysWhichToken(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+	send(t, m, sizeMsg(80, 24))
+	openApproval(t, m, "new")
+	text := strings.Join(strings.Fields(plainFrame(m)), " ")
+	for _, want := range []string{"github.com/settings/personal-access-tokens/new", "fine-grained", "asked for"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("card = %q, want %q", text, want)
+		}
+	}
+}
+
+// A refresh request renews a secret it names: gh is not asked about it.
+func TestARefreshRequestDoesNotAskGH(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.ghLogin = true
+	m.openCredentialRequest(CredentialRequest{ID: "sreq_r", Refresh: &RefreshAsk{}, Use: waitingRequest().Use})()
+	if ds.ghChecks != 0 {
+		t.Fatalf("gh asked %d times for a refresh request", ds.ghChecks)
 	}
 }
 
@@ -719,7 +825,7 @@ func TestAnywhereShowsEveryCeilingOfTheCredential(t *testing.T) {
 	req := waitingRequest()
 	req.Use.Routes = []secretroute.Route{ghRoute("/repos/o/pulls")}
 	s.ID = "sec"
-	m.credentialApproval(req, []Secret{s}, nil, nil, nil, time.Hour)
+	m.credentialApproval(req, []Secret{s}, nil, nil, nil, nil, time.Hour)
 	toggleApprovalAdvanced(t, m)
 	m.dialog.form.choose("use-scope", "anywhere")
 	text := plainFrame(m)

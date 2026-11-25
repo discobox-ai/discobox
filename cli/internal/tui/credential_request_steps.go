@@ -16,6 +16,19 @@ import (
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
+// gitHubHosts are the hosts a github.com token from gh is for.
+var gitHubHosts = []string{"github.com", "api.github.com"}
+
+// asksOnlyGitHub is whether every host req may reach is GitHub's, so a
+// github.com token answers the whole of it. A pattern is not a GitHub host:
+// it can match others.
+func asksOnlyGitHub(req CredentialRequest) bool {
+	hosts := secretroute.OpenRouteHosts(req.routes())
+	return len(hosts) > 0 && !slices.ContainsFunc(hosts, func(h string) bool {
+		return !slices.Contains(gitHubHosts, strings.ToLower(h))
+	})
+}
+
 // Why a secret cannot answer a request (cannotAnswer).
 const (
 	notCovered = "routes" // its routes do not cover what is asked
@@ -63,9 +76,15 @@ func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
 
 // enterNewCredential is step 2 for a credential the project does not hold
 // yet: its name, filled from the request, and its value. back returns to approval.
-// Nothing is stored here; the value is held only by this card.
-func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, back func() tea.Cmd, done func(requestAnswer) tea.Cmd) tea.Cmd {
-	name := textRow("name", "Name", "what you'll know it by", freeSecretName(secrets, credentialName(req)))
+// Nothing is stored here; the value is held only by this card. ghLogin, the
+// gh login's command, opens it already filled in to get the value from it:
+// the same card, so what is stored, and the approval after it, are the same.
+func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held []HeldGrant, holderID string, ghLogin []string, back func() tea.Cmd, done func(requestAnswer) tea.Cmd) tea.Cmd {
+	named := credentialName(req)
+	if len(ghLogin) > 0 {
+		named = "GitHub (gh)"
+	}
+	name := textRow("name", "Name", "what you'll know it by", freeSecretName(secrets, named))
 	name.required = "give it a name"
 	source := pickRow("source", "Get it by",
 		choice{key: "paste", label: "Paste a value"},
@@ -73,6 +92,12 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 	value := textRow("value", "Value", "paste it here", "")
 	value.masked = true
 	value.required = "paste the credential's value"
+	// A value pasted for a GitHub request is a token a person makes, and
+	// where to make it is not something to know beforehand. What it may do
+	// is the request's routes, so the hint names no permissions of its own.
+	if asksOnlyGitHub(req) {
+		value.hint = "make one at github.com/settings/personal-access-tokens/new: fine-grained, for the repository, with the access asked for"
+	}
 	value.when = func(f *form) bool { return f.chosen("source") == "paste" }
 	command := textRow("command", "Command", "gh auth token", "")
 	command.required = "say which command prints it, such as gh auth token"
@@ -162,6 +187,11 @@ func (m *Model) enterNewCredential(req CredentialRequest, secrets []Secret, held
 		}
 	}
 	f.moveTo(2)
+	if len(ghLogin) > 0 {
+		f.choose("source", "command")
+		f.set("command", refreshcmd.Join(ghLogin))
+		f.moveTo(3)
+	}
 	d = formDialog("Credential request", f, func(f *form) tea.Cmd {
 		n := strings.TrimSpace(f.value("name"))
 		if secretNameTaken(secrets, n) {

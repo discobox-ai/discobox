@@ -1221,7 +1221,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.dialog = nil
 			return m.report(false, "that request is no longer waiting")
 		}
-		return m.askAboutCredential(req, msg.secrets, msg.held)
+		return m.askAboutCredential(req, msg.secrets, msg.held, msg.ghLogin)
 
 	case credentialAnsweredMsg:
 		return m.credentialAnswered(msg)

@@ -103,7 +103,28 @@ func LocalToken(ctx context.Context) string {
 			return token
 		}
 	}
-	out, err := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", "github.com").Output()
+	return loginToken(ctx)
+}
+
+// LoginCommand is the command that prints the token this machine's gh is
+// logged in to github.com with.
+func LoginCommand() []string {
+	return []string{"gh", "auth", "token", "--hostname", "github.com"}
+}
+
+// LoggedIn says whether LoginCommand prints a token, and nothing of what it
+// printed. It reads the token rather than asking `gh auth status`, which
+// checks the token against the network and so fails offline or slowly for a
+// login that is there.
+func LoggedIn(ctx context.Context) bool {
+	return loginToken(ctx) != ""
+}
+
+// loginToken is what LoginCommand prints, trimmed, or "" when it fails.
+func loginToken(ctx context.Context) string {
+	login := LoginCommand()
+	//nolint:gosec // G204: LoginCommand is a constant argv, never input.
+	out, err := exec.CommandContext(ctx, login[0], login[1:]...).Output()
 	if err != nil {
 		return ""
 	}

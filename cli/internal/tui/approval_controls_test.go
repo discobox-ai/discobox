@@ -88,7 +88,7 @@ func TestApprovalCardsFitCompactWindow(t *testing.T) {
 				if kind == "delegate" {
 					req.Delegate, req.Use = req.Use, nil
 				}
-				send(t, m, m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub", Routes: req.routes()}}, nil)())
+				send(t, m, m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub", Routes: req.routes()}}, nil, nil)())
 			case "adoption":
 				req.Adoption = &AdoptionAsk{ChildID: "child", RequesterID: "requester", CurrentParentID: "parent"}
 				m.askAboutAdoption(req)
@@ -230,7 +230,7 @@ func TestApprovalCardsOnlyNameAServerWhenKnown(t *testing.T) {
 				req.Server = server
 				switch kind {
 				case "use":
-					send(t, m, m.askAboutCredential(req, nil, nil)())
+					send(t, m, m.askAboutCredential(req, nil, nil, nil)())
 				case "api":
 					m.askAboutAPIAccess(req)
 				case "trust":
@@ -367,7 +367,7 @@ func TestStepOneFitsACompactWindowAndTheMouseReachesItsLastRow(t *testing.T) {
 	for i := range 50 {
 		secrets = append(secrets, Secret{ID: fmt.Sprintf("sec_%d", i), Name: fmt.Sprintf("Credential %d", i), Routes: waitingRequest().Use.Routes})
 	}
-	send(t, m, m.askAboutCredential(waitingRequest(), secrets, nil)())
+	send(t, m, m.askAboutCredential(waitingRequest(), secrets, nil, nil)())
 	text := plainFrame(m)
 	if strings.Count(text, "\n")+1 > 24 {
 		t.Fatalf("step 1 overflows: %s", text)
@@ -386,7 +386,7 @@ func TestStepOneFitsACompactWindowAndTheMouseReachesItsLastRow(t *testing.T) {
 func TestTheNewCredentialFormFitsACompactWindow(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	send(t, m, sizeMsg(80, 24))
-	send(t, m, m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil)())
+	send(t, m, m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil, nil)())
 	selectApprovalCredential(t, m, "new")
 	text := plainFrame(m)
 	if strings.Count(text, "\n")+1 > 24 || !strings.Contains(text, "Sentinel") || !strings.Contains(text, "Enter continues") {
