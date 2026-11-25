@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-11
+- **Superseded in part by**: [26-11-24-806](26-11-24-806-a-declared-port-may-name-its-transport-and-the-services-api-reports-each-ports.md) — §2's "a declaration names one transport for all its ports": a declared port may carry a `/udp` or `/tcp` suffix, and `protocol:` is the default for ports without one. The rest of 0109 stands.
 - **Relates to**: [ADR 0046](0046-listening-ports-are-polled-and-probed-in-the-background.md),
   whose deferred "Unix domain sockets and UDP" this settles for UDP;
   [ADR 0049](0049-forwarded-ports-are-bound-near-their-number-and-held.md),

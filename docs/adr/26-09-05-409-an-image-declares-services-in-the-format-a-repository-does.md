@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
+- **Narrowed by**: [26-11-24-806](26-11-24-806-a-declared-port-may-name-its-transport-and-the-services-api-reports-each-ports.md) — §2's `protocol:` is the declaration's default for the ports that do not name a transport with a `/udp` or `/tcp` suffix.
 - **Relates to**: [ADR 0046](0046-listening-ports-are-polled-and-probed-in-the-background.md),
   whose probe this makes skippable;
   [ADR 0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md),
