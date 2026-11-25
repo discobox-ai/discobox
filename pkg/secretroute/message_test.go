@@ -40,10 +40,14 @@ func BenchmarkParseDocumentArrayHeavy(b *testing.B) {
 
 // parseAllocates is how many bytes one ParseDocument of data allocates, and
 // its error. No test in this package runs in parallel, so the process's
-// allocations between the two reads are the parse's.
+// allocations between the two reads are the parse's. The parse runs once
+// unmeasured after the collection: a collection empties every sync.Pool, and
+// the first error built after it refills fmt's, a slot per P, which on a
+// machine of many cores is more than a refused parse is held to.
 func parseAllocates(data []byte) (uint64, error) {
 	var before, after runtime.MemStats
 	runtime.GC()
+	_, _ = ParseDocument(data)
 	runtime.ReadMemStats(&before)
 	_, err := ParseDocument(data)
 	runtime.ReadMemStats(&after)
