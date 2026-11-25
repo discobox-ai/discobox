@@ -8,7 +8,10 @@
 - **Date**: 2026-11-23; amended 2026-11-24, before it merged, by the
   owner's decision on #1751: the pool's own machine on a disco-vm provider
   has a size of its own (§8), replacing §5's "not sized"
-- Accepted by the owner by merging #1609, 2026-11-25
+- Accepted by the owner by merging #1609, 2026-11-25; amended 2026-11-25,
+  before anything shipped against it, in #1601's implementation: on a
+  provider whose boxes share one pool VM the pool's size is not copied to a
+  box (§3), and an import takes its new pool's default (§2)
 - **Issue**: [#1601](https://github.com/discobox-ai/discobox/issues/1601);
   [#1751](https://github.com/discobox-ai/discobox/issues/1751) (§8)
 - **Relates to**: [0003](0003-promote-pool-to-a-first-class-primitive.md) §1
@@ -96,10 +99,17 @@ decision (Deferred).
 ### 2. The server resolves box-else-pool, per field, and sends the result
 
 At create the server resolves each field on its own: the box's value if set,
-else the pool's, else 0. The resolved size is stored on the box (new columns
+else the pool's default (§3), else 0. The resolved size is stored on the box (new columns
 on `sandboxes`, added by migration; existing rows read as 0) and returned on
 the box's read, so a box shows the size it was made at. A later change to the
 pool's size reaches new boxes only.
+
+An import makes a box as a create asking for no size does: it takes its new
+pool's default. The archive's size was resolved against the pool it left,
+most often as that pool's default, which the box never asked for; held to the
+new pool as an ask, it would refuse moves that worked before and keep the old
+pool's default. A box that had asked for a size loses it on a move, since an
+import has no size of its own to ask.
 
 `PoolSandboxCreateRequest` gains `size {cpuVcpus, memoryBytes}`, omitted when
 both are 0. The agent never looks its pool's size up: it applies what it is
@@ -109,12 +119,18 @@ for the same box (a new root, a recreate) gets the same size.
 ### 3. A pool's CPU and memory are its boxes' default size
 
 On every provider that acts on a box's size (§6), a pool's `cpuVcpus` and
-`memoryBytes` mean the default size of each box in it. That is in addition
-to, not instead of, what they already mean on libkrun, vz and wslc: the pool
-VM is still sized from them (ADR 0003 §1), and each box in it defaults to the
-whole of it. So docker, execvm, digitalocean and the sizing disco-vm drivers
-begin to declare CPU and memory as pool size fields, and `checkPoolSize`
-keeps refusing them everywhere else. `storageBytes` is unchanged.
+`memoryBytes` mean the default size of each box in it, but on libkrun, vz and
+wslc: there they keep what they already mean, the size of the pool VM (ADR
+0003 §1), and each box in it defaults to the whole of it by having no size of
+its own (0, no limit). The pool's size is not copied to such a box: the
+driver may clamp the VM below it (vz caps it at the host's cores), and a pool
+may shrink, and Docker refuses a container a CPU limit past what its daemon
+has, so a box given the pool's size as its own could not be made through no
+ask of its own. (Amended before shipping; it first said the default was
+copied there too.) So docker, execvm, digitalocean and the sizing disco-vm
+drivers begin to declare CPU and memory as pool size fields, and
+`checkPoolSize` keeps refusing them everywhere else. `storageBytes` is
+unchanged.
 
 The CLI's pool flag help, which says "for the pool's VM", says both.
 
@@ -299,10 +315,12 @@ it at once, a person recreates the pool.
   4-vCPU, 8 GiB machine once the vm pin carries §6; before that, it is
   refused saying the provider does not act on a box's size.
 - An archil pool may set a size, and its boxes are made at it.
-- A docker worker box has Docker CPU and memory limits equal to its size or
-  its pool's, and none when both are unset.
-- On libkrun, vz and wslc a pool's size now also limits each box to the whole
-  VM, which changes nothing in practice; a smaller box size limits that box.
+- A box on docker, execvm or digitalocean has Docker CPU and memory limits
+  equal to its size or its pool's, and none when both are unset; on libkrun,
+  vz and wslc, equal to its own size alone.
+- On libkrun, vz and wslc a box with no size has the whole VM, as before; a
+  smaller box size limits that box.
+- An imported box takes its new pool's default size, not its archive's.
 - A machine pool holds one snapshot per size its boxes ask for, each a held
   machine on the provider's bill.
 - An archil pool can be made with a bigger machine for its agent and proxy
