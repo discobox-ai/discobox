@@ -161,8 +161,9 @@ by what it is looking for and is idempotent:
    nothing verified), moving pending `sandboxEgress` reconcile
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and
    gateways together (`renameSandboxEgressReconcile`, ADR 26-10-16-470 §5), the
-   sandbox state split (ADR 0034), denying the open requests of a sandbox that
-   no longer exists (`denyOrphanedSecretRequests`), re-keying every sandbox
+   sandbox state split (ADR 0034), denying the open secret, host trust, API access
+   and adoption requests of a sandbox that is archived, being deleted or gone
+   (`denyOrphanedSandboxRequests`), re-keying every sandbox
    origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4),
    and, last, a `sandbox.updated` event for every sandbox that has none or
    whose latest event differs from the store's projection

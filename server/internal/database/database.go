@@ -219,7 +219,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := backfillSecretValueUpdatedAt(write); err != nil {
 		return err
 	}
-	if err := denyOrphanedSecretRequests(write); err != nil {
+	if err := denyOrphanedSandboxRequests(write); err != nil {
 		return err
 	}
 	if err := retireCredentialJudge(write); err != nil {
@@ -372,20 +372,49 @@ func backfillPoolImageKinds(db *gorm.DB) error {
 		UpdateColumn("image_kind", platform.OCI).Error
 }
 
-// denyOrphanedSecretRequests closes as denied the open requests of sandboxes
-// that no longer exist, as deleting a sandbox now does
-// (store.denySandboxSecretRequestsTx). Before that, every deleted discobox
-// left its asks waiting in the inbox for an agent that was gone. Refresh
-// requests are left open: they are about the secret, not the sandbox. It is a
-// backfill; after the first run this matches nothing.
-func denyOrphanedSecretRequests(db *gorm.DB) error {
+// denyOrphanedSandboxRequests closes as denied by system the open secret, host
+// trust, API access and adoption requests of sandboxes that are archived, being
+// deleted or gone, as archiving or deleting a sandbox now does
+// (store.DenySandboxOpenRequestsTx).
+// Before that, every such discobox left its asks waiting in the inbox for an
+// agent that was gone. Refresh requests are left open: they are about the
+// secret, not the sandbox. It is a backfill; after the first run this matches
+// nothing.
+func denyOrphanedSandboxRequests(db *gorm.DB) error {
 	migrator := db.Migrator()
+	live := db.Model(&model.Sandbox{}).Select("id").
+		Where("desired_state NOT IN ?", []string{model.DesiredStateArchived, model.DesiredStateDeleted})
+	if migrator.HasTable(&model.APIAccessRequest{}) {
+		if err := db.Model(&model.APIAccessRequest{}).
+			Where("status = ? AND requester_sandbox_id NOT IN (?)", model.SecretRequestStatusPending, live).
+			Updates(map[string]any{
+				"status": model.SecretRequestStatusDenied, "decided_at": time.Now().UTC(), "decided_by": model.SecretBindingActorSystem,
+			}).Error; err != nil {
+			return err
+		}
+	}
+	if migrator.HasTable(&model.HostTrustRequest{}) {
+		if err := db.Model(&model.HostTrustRequest{}).
+			Where("status = ? AND sandbox_id NOT IN (?)", model.HostTrustRequestStatusPending, live).
+			Updates(map[string]any{"status": model.HostTrustRequestStatusDenied, "updated_at": time.Now().UTC()}).Error; err != nil {
+			return err
+		}
+	}
+	if migrator.HasTable(&model.AdoptionRequest{}) {
+		if err := db.Model(&model.AdoptionRequest{}).
+			Where("status = ? AND (requester_sandbox_id NOT IN (?) OR child_sandbox_id NOT IN (?))", model.SecretRequestStatusPending, live, live).
+			Updates(map[string]any{
+				"status": model.SecretRequestStatusDenied, "decided_at": time.Now().UTC(), "decided_by": model.SecretBindingActorSystem,
+			}).Error; err != nil {
+			return err
+		}
+	}
 	if !migrator.HasTable(&model.SecretRequest{}) || !migrator.HasColumn(&model.SecretRequest{}, "decided_at") {
 		return nil
 	}
 	query := db.Model(&model.SecretRequest{}).
 		Where("status = ? AND sandbox_id <> '' AND sandbox_id NOT IN (?)",
-			model.SecretRequestStatusPending, db.Model(&model.Sandbox{}).Select("id"))
+			model.SecretRequestStatusPending, live)
 	// A refresh request still in this table, before retireSecretGrants moves
 	// it out, is about its secret, not the sandbox that noticed: it stays open.
 	if migrator.HasColumn(&model.SecretRequest{}, "reason") {
