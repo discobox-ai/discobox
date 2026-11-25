@@ -230,3 +230,11 @@ input and stderr, or with `--from-json`, a missing default stops the run before
 creation and points to the one-box override and project default commands. A
 sandbox creating another can receive a 403 for the project read. Its create
 request leaves default resolution and any missing-default error to the server.
+
+## Disk per box
+
+`ls`'s DISK column, the console's `disk` cell and `admin box resources` all
+read one figure: `runtime.resources.storage.totalBytes`, the pool agent's last
+sweep of what the box alone holds (ADR 26-11-14-896 §1). Shared cache and
+images stay pool figures (ADR 0071 §5). Unmeasured is `-` (`ls`) or `·`
+(console), never `0B`; a stopped box keeps its figure.
