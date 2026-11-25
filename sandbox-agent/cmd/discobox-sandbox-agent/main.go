@@ -121,6 +121,15 @@ func run(name string, args []string) int {
 		if len(args) > 1 && args[1] == "--can-mount-machine" {
 			return 0
 		}
+		// discobox-wire-in-place.service: a machine wired on the running
+		// machine, which apply starts (ADR 26-11-23-458 §2).
+		if len(args) > 1 && args[1] == "--in-place" {
+			if err := boot.WireInPlace(slog.Default()); err != nil {
+				slog.Error("wire sandbox in place", "error", err)
+				return 1
+			}
+			return 0
+		}
 		if err := boot.Wire(slog.Default()); err != nil {
 			slog.Error("wire sandbox", "error", err)
 			return 1

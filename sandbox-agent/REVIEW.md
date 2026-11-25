@@ -656,7 +656,7 @@ user waits on every single start.
   nothing else excludes it, and an export that judges only what is declared
   now carries every tree an older declaration left behind.
 - **An older agent's unrecorded paths are adopted once, before anything
-  moves; and only a boot moves.** An agent from before ADR 26-11-02-023
+  moves; and only a boot or the wiring in place moves.** An agent from before ADR 26-11-02-023
   bound a data volume's cache paths and sources every boot without
   recording a layout. `adoptLegacyLayouts` records each whose volume
   directory is there as bound, and runs only on a volume
@@ -667,13 +667,20 @@ user waits on every single start.
   machine off at every boot. Do not key it on the wired line alone: this
   agent writes that line too, and a path a later pin declares would then be
   bound over the machine's content instead of moved in. A non-empty volume
-  directory is no signal either: a cut-short move leaves one. Only a boot's
-  wiring (`wireMachine`) marks a volume adopted; the agent's start records
-  no layout for a cache path or a source. And `moveIn` runs only at a boot
-  (`wireMachine`): the agent's start (`wireMachineStarted`), where an older
-  pool placed no drop-in, finds the provider's dockerd and containerd
-  running on the paths and moves nothing. Why: both were missed once, in
-  the review of #775.
+  directory is no signal either: a cut-short move leaves one. Only a
+  wiring that moves in (`wireMachine`: a boot's, or `WireInPlace`'s on the
+  running machine, ADR 26-11-23-458) marks a volume adopted; the agent's
+  start records no layout for a cache path or a source. And `moveIn` runs
+  only there: the agent's start (`wireMachineStarted`), where an older pool
+  placed no drop-in, moves nothing and records no mounts. The wiring in
+  place may move under running services only because none runs on a
+  declared path: container-runtime state is no declared volume (ADR
+  26-11-23-993), and `machineVolumes` drops it from a bootstrap that still
+  names it. Do not let a machine's wiring mount
+  `harness.ContainerRuntimeStatePaths`, and do not move in a path that
+  holds one already mounted this start (`wireMachineLacking` leaves it to
+  the next boot): renaming a mount point fails. Why: both were missed once,
+  in the review of #775, and the second and third in the review of #1602.
 - **A test of guest-path code hands it slash paths**
   (`filepath.ToSlash(t.TempDir())`, joined with `path`). `boot` splits
   paths with `path`, which finds no directory in a `filepath.Join` result on

@@ -3,17 +3,21 @@ package boot
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
@@ -50,7 +54,7 @@ func Wire(logger *slog.Logger) error {
 		if runtime.GOOS != "linux" {
 			return nil
 		}
-		return newBooter().provisionMachine(logger, machineManifestPath, true)
+		return newBooter().provisionMachine(logger, machineManifestPath, wiringAtBoot)
 	}
 	// Both volumes and sources come from this one read of the config volume's
 	// copy, before it is bound onto /etc/discobox (ADR 0012 §6).
@@ -94,7 +98,33 @@ func Provision(logger *slog.Logger, path string) error {
 	if dirExists(configMountPath) || runtime.GOOS != "linux" {
 		return nil
 	}
-	return newBooter().provisionMachine(logger, path, false)
+	return newBooter().provisionMachine(logger, path, wiringAtAgentStart)
+}
+
+// WireInPlace is a machine's wiring on the running machine, which
+// discobox-wire-in-place.service runs when `discobox-provision apply` starts
+// it (ADR 26-11-23-458 §2): where this start has no mounts yet -- a first
+// placement, whose machine booted before its bootstrap was there -- it
+// provisions and mounts as a boot's wiring does, moving what the machine has
+// at each path in first; where it has them, it mounts only the paths and
+// source targets the placed bootstrap declares that this start's mounts do
+// not have, or that now come from another directory (wireMachineBoot). The
+// mounts unchanged, it does nothing.
+//
+// It runs in PID 1's mount namespace, as a unit, so its binds are the
+// machine's whatever namespace the pool's exec ran apply in. No service is
+// stopped or restarted around it: since container-runtime state left the
+// declared volumes (ADR 26-11-23-993), Docker and containerd hold no path it
+// mounts. A failure fails the unit, and so apply, and the pool stops the
+// machine; its next boot mounts at boot.
+func WireInPlace(logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if dirExists(configMountPath) || runtime.GOOS != "linux" {
+		return nil
+	}
+	return newBooter().provisionMachine(logger, machineManifestPath, wiringInPlace)
 }
 
 // JoinFeatureGroups wires the features of the box's bundle trees and joins
@@ -156,10 +186,10 @@ func logSkippedGroups(logger *slog.Logger, user string, skipped []string, final 
 	logger.Info("sandbox user not added to groups not present yet; joined once the box's features are fetched", "user", user, "groups", skipped)
 }
 
-// provisionMachine provisions a Linux machine for the bootstrap at path, or,
-// on a disk already provisioned for it, makes this start's mounts. atBoot is
-// Wire's call, from discobox-wire.service before sysinit.target; otherwise it
-// is the agent's start.
+// provisionMachine provisions a Linux machine for the bootstrap at manifest, or,
+// on a disk already provisioned for it, makes this start's mounts. when says
+// which call it is: Wire's, from discobox-wire.service before sysinit.target;
+// WireInPlace's, on the running machine; or the agent's start.
 //
 // Every machine mounts its declared volumes and its sources from
 // /.discobox/data and /.discobox/cache: its driver's volumes where it
@@ -174,13 +204,13 @@ func logSkippedGroups(logger *slog.Logger, user string, skipped []string, final 
 // records (provision.Records) keep whose sandbox this disk was provisioned
 // for, on the disk itself, so a stopped and restarted machine is only mounted
 // again (wireMachineBoot).
-func (b *booter) provisionMachine(logger *slog.Logger, path string, atBoot bool) error {
-	bootstrap, err := loadEffectiveConfig(path)
+func (b *booter) provisionMachine(logger *slog.Logger, manifest string, when machineWiring) error {
+	bootstrap, err := loadEffectiveConfig(manifest)
 	if err != nil {
 		return err
 	}
 	if bootstrap.SandboxID == "" {
-		return fmt.Errorf("bootstrap %s names no sandbox", path)
+		return fmt.Errorf("bootstrap %s names no sandbox", manifest)
 	}
 	records := provision.Records{Dir: recordsDir}
 	if records.Sandbox() != bootstrap.SandboxID && provisionedFor(legacyProvisionedPath) == bootstrap.SandboxID {
@@ -197,42 +227,46 @@ func (b *booter) provisionMachine(logger *slog.Logger, path string, atBoot bool)
 	if err != nil {
 		return err
 	}
-	// At the agent's start the unit did not run at this boot, and the
-	// machine's services are running on the paths: nothing is moved under
-	// them (wireMachineStarted).
+	// At the agent's start no unit ran at this boot, and the machine's
+	// services are running on the paths: nothing is moved under them
+	// (wireMachineStarted).
 	mode := wireMachine
-	if !atBoot {
+	if when == wiringAtAgentStart {
 		mode = wireMachineStarted
 	}
 	if records.Sandbox() == bootstrap.SandboxID {
-		return b.wireMachineBoot(logger, bootstrap, id, mode)
+		return b.wireMachineBoot(logger, bootstrap, id, mode, when == wiringInPlace)
 	}
 	if err := ensureMachineRoots(); err != nil {
 		return err
+	}
+	if mode == wireMachine {
+		b.mounted = machineMounts{}
 	}
 	workingRoot, err := b.provision(logger, id, &bootstrap, mode)
 	if err != nil {
 		return err
 	}
-	if err := markMachineWired(bootstrap.SandboxID, mode, workingRoot); err != nil {
+	if err := markMachineWired(bootstrap.SandboxID, mode, workingRoot, b.mounted); err != nil {
 		return err
 	}
 	if dirExists("/run/systemd/system") {
 		if err := b.reloadUserUnits(logger, id); err != nil {
 			return err
 		}
-		// At the agent's start, long after boot, the session bus's socket has
-		// been listening since then, owned by root, so it is recreated for
-		// the sandbox user; nothing has connected to it yet: every client is a
-		// process the agent starts. The proxy-trust environment the daemons
-		// read is rendered from the bootstrap, so it was skipped at this boot
-		// and is rendered now. At boot, before sysinit.target, both start
-		// after this and need neither, and starting a unit ordered after it
-		// from here would wait on itself. Both units belong to features a box
-		// may not have (the session bus is the desktop's), so each is touched
-		// only where its file is installed: systemctl fails on a unit it
-		// cannot find.
-		if !atBoot {
+		// On the running machine -- in place, or at the agent's start --
+		// long after boot, the session bus's socket has been listening since
+		// then, owned by root, so it is recreated for the sandbox user;
+		// nothing has connected to it yet: every client is a process the
+		// agent starts. The proxy-trust environment the daemons read is
+		// rendered from the bootstrap, so it was skipped at this boot and is
+		// rendered now. At boot, before sysinit.target, both start after this
+		// and need neither, and starting a unit ordered after it from here
+		// would wait on itself. Both units belong to features a box may not
+		// have (the session bus is the desktop's), so each is touched only
+		// where its file is installed: systemctl fails on a unit it cannot
+		// find.
+		if when != wiringAtBoot {
 			if fileExists("/etc/systemd/system/discobox-session-bus.socket") {
 				if err := b.run("systemctl", "try-restart", "discobox-session-bus.socket"); err != nil {
 					return err
@@ -376,6 +410,9 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err != nil {
 		return false, fmt.Errorf("resolve volumes: %w", err)
 	}
+	if mode != wireContainer {
+		volumes = machineVolumes(logger, volumes)
+	}
 	if mode == wireMachine {
 		if err := adoptLegacyLayouts(bootstrap.SandboxID, volumes, bootstrap.Sources, id.uid); err != nil {
 			return false, fmt.Errorf("adopt the data volume's layouts: %w", err)
@@ -454,6 +491,23 @@ const (
 	wireMachineStarted
 )
 
+// machineWiring is which call provisions a machine (provisionMachine).
+type machineWiring int
+
+const (
+	// wiringAtBoot is Wire's, from discobox-wire.service at a boot, before
+	// anything uses the paths.
+	wiringAtBoot machineWiring = iota
+	// wiringInPlace is WireInPlace's, on the running machine, from the unit
+	// `discobox-provision apply` starts (ADR 26-11-23-458 §2). It moves in
+	// as a boot does (wireMachine), and on a start already mounted mounts
+	// only what this start's mounts lack.
+	wiringInPlace
+	// wiringAtAgentStart is the agent's own start, where no unit wired this
+	// start (wireMachineStarted).
+	wiringAtAgentStart
+)
+
 // machineWiredPath marks that a machine's data volume is wired for this start
 // (sandboxconfig.MachineWiredFile): /run is a tmpfs, so every start begins
 // without it, and a second wiring in one start would stack its mounts. A
@@ -492,7 +546,13 @@ var machineDataVolume = func() bool {
 // (sandboxconfig.MachineWorkingRootWired), and only such a line lets the pool
 // give the machine a new root, which would otherwise take a working root still
 // on it (ADR 26-11-14-302 §4).
-func markMachineWired(sandboxID string, mode wireMode, workingRoot bool) error {
+//
+// mounts is what this start mounted, as the mounts were made
+// (booter.mounted), which a wiring in place reads to mount only what they
+// lack (machineMountsPath); nil, from the agent's start, which moves nothing
+// in, records none, and a wiring in place then mounts nothing more this
+// start.
+func markMachineWired(sandboxID string, mode wireMode, workingRoot bool, mounts machineMounts) error {
 	if mode == wireMachine && machineDataVolume() {
 		if err := markAdopted(); err != nil {
 			return err
@@ -503,15 +563,124 @@ func markMachineWired(sandboxID string, mode wireMode, workingRoot bool) error {
 		return err
 	}
 	token := hex.EncodeToString(raw[:])
-	if machineDataVolume() {
-		if err := os.WriteFile(machineDataWiredFile, []byte(sandboxconfig.MachineDataWiredLine(sandboxID, token, workingRoot)+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
-			return err
-		}
+	if err := writeDataWiredLine(sandboxID, token, workingRoot); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(machineWiredPath), 0o755); err != nil {
 		return err
 	}
+	if mounts != nil {
+		if err := mounts.write(); err != nil {
+			return err
+		}
+	}
 	return os.WriteFile(machineWiredPath, []byte(token+"\n"), 0o644) //nolint:gosec // G306: the pool reads it; a token of this start
+}
+
+// writeDataWiredLine writes, where the data root is a data volume, the line
+// on it naming sandboxID and this start's token
+// (sandboxconfig.MachineDataWiredFile).
+func writeDataWiredLine(sandboxID, token string, workingRoot bool) error {
+	if !machineDataVolume() {
+		return nil
+	}
+	return os.WriteFile(machineDataWiredFile, []byte(sandboxconfig.MachineDataWiredLine(sandboxID, token, workingRoot)+"\n"), 0o644) //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
+}
+
+// machineMountsPath is where a machine's wiring records what this start
+// mounted (machineMounts), beside its token in /run, a new tmpfs at every
+// start. A variable so a test does not write the machine's own.
+var machineMountsPath = "/run/discobox/machine-mounts.json"
+
+// machineMounts is what a start mounted from the machine's data and cache
+// roots: each target path -- the working root, a declared volume's path, a
+// source's target -- and the directory on a root it was mounted from. The
+// mount sites record it as they mount (booter.mounted).
+type machineMounts map[string]string
+
+// add records that target was mounted from dir; a nil m records nothing.
+func (m machineMounts) add(target, dir string) {
+	if m != nil {
+		m[path.Clean(target)] = dir
+	}
+}
+
+// machineVolumes is volumes without the container runtimes' state
+// directories (harness.ContainerRuntimeStatePaths), which a machine never
+// mounts: they are no declared volume (ADR 26-11-23-993 §§1, 5), and a box
+// made before that ADR still names them in the bootstrap its pool keeps. On a
+// running machine Docker and containerd run on them, and mounting under them
+// is what ADR 26-11-02-023 §3 rules out; the wiring in place stops no
+// service, on the premise that they hold no declared path (ADR 26-11-23-458).
+func machineVolumes(logger *slog.Logger, volumes []harness.ResolvedVolume) []harness.ResolvedVolume {
+	return slices.DeleteFunc(slices.Clone(volumes), func(v harness.ResolvedVolume) bool {
+		if !slices.Contains(harness.ContainerRuntimeStatePaths, path.Clean(v.Path)) {
+			return false
+		}
+		logger.Info("a container runtime's state is no declared volume; leaving it on the machine's root", "path", v.Path)
+		return true
+	})
+}
+
+// wantedMachineMounts is what a wiring that moves in (wireMachine) would
+// mount for bootstrap, its home already expanded, by the directories the
+// mount sites mount from (workingRootDir, volumeDir, machineSourceDir): the
+// working root where nothing durable backs it (workingRootDurable), every
+// declared volume a machine mounts (machineVolumes), and every source.
+func wantedMachineMounts(volumes []harness.ResolvedVolume, bootstrap sandboxconfig.Config, uid int) machineMounts {
+	mounts := machineMounts{}
+	root := bootstrap.WorkingRoot(sandboxPaths)
+	if !workingRootDurable(root, volumes, bootstrap.Sources) {
+		mounts.add(root, workingRootDir())
+	}
+	for _, v := range volumes {
+		mounts.add(v.Path, volumeDir(v, uid))
+	}
+	for _, s := range bootstrap.Sources {
+		mounts.add(s.Target, machineSourceDir(s.Target))
+	}
+	return mounts
+}
+
+// readMachineMounts is what this start recorded it mounted; not ok where it
+// recorded nothing: no wiring that moves in has run this start.
+func readMachineMounts() (machineMounts, bool, error) {
+	raw, err := os.ReadFile(machineMountsPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var mounts machineMounts
+	if err := json.Unmarshal(raw, &mounts); err != nil {
+		return nil, false, fmt.Errorf("read this start's mounts %s: %w", machineMountsPath, err)
+	}
+	return mounts, true, nil
+}
+
+// write records the mounts, whole, as a rename.
+func (m machineMounts) write() error {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(machineMountsPath), 0o755); err != nil {
+		return err
+	}
+	return fsdurable.WriteFile(machineMountsPath, raw, 0o644)
+}
+
+// lacking is what of want m does not have: a target m never mounted, or one
+// it mounted from another directory.
+func (m machineMounts) lacking(want machineMounts) machineMounts {
+	lack := machineMounts{}
+	for target, dir := range want {
+		if m[target] != dir {
+			lack[target] = dir
+		}
+	}
+	return lack
 }
 
 // machineDataWiredFile is sandboxconfig.MachineDataWiredFile. A variable so a
@@ -546,10 +715,15 @@ func ensureMachineRoots() error {
 // wireMachineBoot makes a machine's mounts from its own data and cache roots
 // again, once per start: its declared volumes and its sources, as the first
 // provisioning of this disk made them. A start that mounted them already
-// (sandboxconfig.MachineWiredFile) is left alone.
-func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Config, id identity, mode wireMode) error {
+// (sandboxconfig.MachineWiredFile) is left alone, unless this is a wiring in
+// place (inPlace): that mounts what the placed bootstrap declares and this
+// start's mounts lack (wireMachineLacking).
+func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Config, id identity, mode wireMode, inPlace bool) error {
 	if fileExists(machineWiredPath) {
-		return nil
+		if !inPlace {
+			return nil
+		}
+		return b.wireMachineLacking(logger, bootstrap, id)
 	}
 	if err := ensureMachineRoots(); err != nil {
 		return err
@@ -559,10 +733,12 @@ func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Co
 	if err != nil {
 		return fmt.Errorf("resolve volumes: %w", err)
 	}
+	volumes = machineVolumes(logger, volumes)
 	if mode == wireMachine {
 		if err := adoptLegacyLayouts(bootstrap.SandboxID, volumes, expanded.Sources, id.uid); err != nil {
 			return fmt.Errorf("adopt the data volume's layouts: %w", err)
 		}
+		b.mounted = machineMounts{}
 	}
 	workingRoot, err := b.wireWorkingRoot(expanded.WorkingRoot(sandboxPaths), volumes, expanded.Sources, id, mode)
 	if err != nil {
@@ -575,5 +751,102 @@ func (b *booter) wireMachineBoot(logger *slog.Logger, bootstrap sandboxconfig.Co
 		return err
 	}
 	logger.Info("mounted a machine's volumes", "volumes", len(volumes), "sources", len(expanded.Sources))
-	return markMachineWired(bootstrap.SandboxID, mode, workingRoot)
+	return markMachineWired(bootstrap.SandboxID, mode, workingRoot, b.mounted)
+}
+
+// wireMachineLacking mounts, on a running machine already mounted this start,
+// the paths and source targets the placed bootstrap declares that this
+// start's mounts lack, or that now come from another directory, moving what
+// the machine has at each in first, as a boot does (ADR 26-11-23-458 §2).
+// The mounts unchanged, it does nothing. A path the bootstrap no longer
+// declares stays bound until the next boot.
+//
+// A lacking path that holds one this start mounted is left to the next boot
+// too: moving it in would rename the inner mount point, which the kernel
+// refuses, and binding over it would hide the inner mount. A boot mounts
+// parents first.
+//
+// A start whose mounts were not recorded -- made at the agent's start, which
+// moves nothing in, or by an agent from before the record -- mounts nothing
+// more: what it mounted is not known, and a second mount of a path would
+// stack on the first. The next boot mounts what the bootstrap declares.
+//
+// The record is written after each mount, as the mount sites record it
+// (booter.mounted), so an apply cut short is finished by the next: the moves
+// are per entry (moveIn), and only what is still lacking is mounted again.
+func (b *booter) wireMachineLacking(logger *slog.Logger, bootstrap sandboxconfig.Config, id identity) error {
+	mounted, ok, err := readMachineMounts()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		logger.Info("this start's mounts were not recorded; what the bootstrap newly declares is mounted at the next boot")
+		return nil
+	}
+	expanded := bootstrap.ExpandHome(sandboxPaths, id.home)
+	volumes, err := loadResolvedVolumes(id, expanded.Volumes)
+	if err != nil {
+		return fmt.Errorf("resolve volumes: %w", err)
+	}
+	volumes = machineVolumes(logger, volumes)
+	lacking := mounted.lacking(wantedMachineMounts(volumes, expanded, id.uid))
+	for target := range lacking {
+		for inner := range mounted {
+			if inner != target && sandboxPaths.Within(target, inner) {
+				logger.Info("a newly declared path holds one mounted this start; it is mounted at the next boot", "path", target, "mounted", inner)
+				delete(lacking, target)
+				break
+			}
+		}
+	}
+	if len(lacking) == 0 {
+		return nil
+	}
+	b.mounted = mounted
+	root := expanded.WorkingRoot(sandboxPaths)
+	if _, ok := lacking[path.Clean(root)]; ok {
+		if _, err := b.wireWorkingRoot(root, volumes, expanded.Sources, id, wireMachine); err != nil {
+			return err
+		}
+		if err := mounted.write(); err != nil {
+			return err
+		}
+		// The working root is durable now: the data volume's line says so,
+		// as a boot's would (ADR 26-11-14-302 §4).
+		token, err := os.ReadFile(machineWiredPath)
+		if err != nil {
+			return err
+		}
+		if err := writeDataWiredLine(bootstrap.SandboxID, strings.TrimSpace(string(token)), true); err != nil {
+			return err
+		}
+	}
+	sortVolumesByDepth(volumes)
+	var nv int
+	for _, v := range volumes {
+		if _, ok := lacking[path.Clean(v.Path)]; !ok {
+			continue
+		}
+		if err := b.wireVolume(v, id, wireMachine); err != nil {
+			return fmt.Errorf("wire volume %s: %w", v.Path, err)
+		}
+		if err := mounted.write(); err != nil {
+			return err
+		}
+		nv++
+	}
+	var sources []sandboxconfig.Source
+	for _, s := range expanded.Sources {
+		if _, ok := lacking[path.Clean(s.Target)]; ok {
+			sources = append(sources, s)
+		}
+	}
+	if err := b.wireMachineSources(sources, id, wireMachine); err != nil {
+		return err
+	}
+	if err := mounted.write(); err != nil {
+		return err
+	}
+	logger.Info("mounted in place what a machine's placed bootstrap newly declares", "volumes", nv, "sources", len(sources))
+	return nil
 }

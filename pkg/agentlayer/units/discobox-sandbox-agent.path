@@ -2,9 +2,9 @@
 # machine with no sandbox in it runs no agent. In a container
 # discobox-wire.service binds sandbox.json onto /etc/discobox before
 # local-fs.target, so this fires at boot. A machine's pool places it through
-# the running guest and restarts the machine before anything starts, so the
-# wiring runs first (ADR 26-11-02-023 §3); this fires at every boot after
-# that, and when a later placement starts it. The agent waits for the file
+# the running guest, and apply wires the machine in place before starting this
+# (ADR 26-11-23-458 §2); it fires at every boot after that, and when a later
+# placement starts it. The agent waits for the file
 # itself as well, so an init with no path units of its own starts it at boot
 # instead (ADR 26-10-09-143 §1).
 [Unit]

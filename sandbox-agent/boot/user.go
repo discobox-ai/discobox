@@ -623,6 +623,10 @@ type booter struct {
 	// bind bind-mounts a declared path or a machine's source from its
 	// volume directory (bindMount).
 	bind func(source, target string) error
+	// mounted is what a machine's wiring that moves in has mounted this
+	// start, which the mount sites add to as they mount; nil records nothing
+	// (a container, or a machine's wiring at the agent's start).
+	mounted machineMounts
 }
 
 // off reports whether provisioning turned feature off, so a boot step that

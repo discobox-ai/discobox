@@ -1,0 +1,26 @@
+# A machine sandbox's wiring on the running machine (ADR 26-11-23-458 §2),
+# which only a machine's pool places and `discobox-provision apply` starts and
+# waits for: a machine boots before its bootstrap is placed, so its first
+# placement mounts its volumes and sources here, not at a boot, and a later
+# placement mounts what its bootstrap newly declares. Mounts unchanged, it
+# does nothing. It runs as a unit so its binds land in PID 1's mount
+# namespace, whatever namespace the pool's exec ran apply in.
+#
+# After discobox-wire.service, so a placement made while the machine still
+# boots does not wire alongside the boot's own wiring; the agent's service is
+# ordered after this, so the agent starts on the mounts. Not enabled: apply
+# starts it, and it does not stay active, so each apply runs it again. A
+# failure fails apply, and the pool stops the machine, whose next boot mounts
+# at boot.
+[Unit]
+Description=Discobox Wire the Sandbox's Volumes on the Running Machine
+Documentation=https://github.com/discobox-ai/discobox
+After=discobox-wire.service
+ConditionPathExists=/etc/discobox/sandbox.json
+RequiresMountsFor=/.discobox/data /.discobox/cache
+
+[Service]
+Type=oneshot
+ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent wire --in-place
+StandardOutput=journal+console
+StandardError=journal+console
