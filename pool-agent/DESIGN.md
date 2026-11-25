@@ -337,6 +337,27 @@ Docker's 64 MiB, which kills Chromium and Electron renderers on the desktop's
 display. It is a cap, not a reservation, so every sandbox gets the same size. A
 container created before this keeps 64 MiB until it is recreated.
 
+### A box's size
+
+A create's `size` is the box's CPU and memory as the control plane resolved
+them ([ADR 26-11-23-445](../docs/adr/26-11-23-445-a-box-may-ask-for-a-cpu-and-memory-size-and-its-pools-size-is-the-default.md));
+the agent applies it as sent and never looks its pool's size up (`size.go`).
+An unset field is the runtime's default: no limit on a container, the
+driver's size for a machine.
+
+- **A container** gets Docker limits in `boxConfig`: `NanoCPUs` from its
+  vCPUs, `Memory` from its memory with `MemorySwap` equal to it, so swap does
+  not double the limit. It is the box's own cgroup, a sibling of the pool's,
+  not a nested slice. `/dev/shm` counts against the memory limit. A snapshot
+  build's container is unlimited: an image carries no limit, so one Docker
+  snapshot serves boxes of every size, and the size is not in its key.
+- **A machine** is made at the size (`createOptions`: vCPUs rounded up to a
+  whole one), and so is its plan's snapshot, whose key carries the size the
+  machine is made at (`snapshotPlan.Size`, nil when unsized, so every key from
+  before sizes stands). The size is recorded in the box's tree (`size.json`)
+  before the machine is made, for a machine made again with no request in
+  hand (`remakeMachine`).
+
 **Pool services are measured, not derived.** The pool container's own cgroup
 covers this agent, buildkitd, the registry, the proxy and the mediator — and
 *not* the sandboxes, which run under a nested container runtime whose cgroups
@@ -1943,7 +1964,9 @@ flowchart LR
   and nothing of the sandbox: the base (a Docker pool's sandbox base image
   ID; a machine pool's driver and the base its configuration names), the
   agent it is placed with and its bundles in order, the features turned off,
-  and the create's `provisionEgress`. Every sandbox of one plan shares one snapshot.
+  and the create's `provisionEgress`, and on a machine pool the size its
+  machine is made at ([A box's size](#a-boxs-size)). Every sandbox of one
+  plan shares one snapshot.
 - **A build is anonymous.** Its proxy identity is its own
   (`layout.SnapshotIDPrefix`), with a client certificate, and an asset record
   of the plan's pins in its own tree, `layout.Root.Snapshot` — never a
@@ -2091,7 +2114,9 @@ provisions from scratch, and nothing below exists. `machinesnapshot.go`.
   next pass. The orphan reaper keeps to `sbx-` names, and the sweep to
   `snap-`.
 - **A create whose snapshot is gone** (`ErrNotFound` from `Create`) makes the
-  machine fresh. A machine made from a snapshot whose agent never answers
+  machine fresh, and so does one the driver refuses to make from it
+  (`ErrUnsupported`: archil copies a VM only at its source's size), at the
+  box's size, though the size in the key means it is not expected. A machine made from a snapshot whose agent never answers
   (`errAgentNeverUp`: its machine stopped first, or the wait ran out) on the
   machine's first start, before it has answered once, drops the snapshot, whose plan then waits as a failed
   build's does, is destroyed, and is made again fresh in the same start

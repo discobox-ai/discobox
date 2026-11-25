@@ -121,9 +121,14 @@ type snapshotPlan struct {
 	Pins    agentlayer.Pins `json:"pins"`
 	// Agent is the agent bundle placed in the build, which the snapshot
 	// holds (ADR 26-10-24-953 §2).
-	Agent     string        `json:"agent"`
-	Off       []string      `json:"off,omitempty"`
-	Egress    egress.Policy `json:"egress"`
+	Agent  string        `json:"agent"`
+	Off    []string      `json:"off,omitempty"`
+	Egress egress.Policy `json:"egress"`
+	// Size is what a machine pool's build is made at, the size of the box
+	// that asked for it, since a machine made from a snapshot keeps the
+	// snapshot's size (ADR 26-11-23-445 §5). Nil is the driver's default, and
+	// always nil on a Docker pool, whose image carries no limit (§4).
+	Size      *MachineSize `json:"size,omitempty"`
 	features  map[string]sandboxconfig.Feature
 	delivered assetcache.Delivery
 }
@@ -137,11 +142,19 @@ type SnapshotPlanName struct {
 	Agent   string          `json:"agent,omitempty"`
 	Bundles agentlayer.Pins `json:"bundles,omitempty"`
 	Off     []string        `json:"off,omitempty"`
+	// Size is the size a machine snapshot was built at; absent is the
+	// driver's default (ADR 26-11-23-445 §5).
+	Size *MachineSize `json:"size,omitempty"`
 }
 
 // name is how the plan is reported.
 func (p snapshotPlan) name() SnapshotPlanName {
-	return SnapshotPlanName{Base: p.Base, Agent: p.Agent, Bundles: slices.Clone(p.Pins), Off: slices.Clone(p.Off)}
+	name := SnapshotPlanName{Base: p.Base, Agent: p.Agent, Bundles: slices.Clone(p.Pins), Off: slices.Clone(p.Off)}
+	if p.Size != nil {
+		size := *p.Size
+		name.Size = &size
+	}
+	return name
 }
 
 // Key is the plan's digest's hex: what its snapshot is found by.

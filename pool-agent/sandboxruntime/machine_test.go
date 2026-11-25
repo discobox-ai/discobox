@@ -1039,7 +1039,7 @@ func TestMachineRuntimeFencesASandboxAtTheEdge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts := r.createOptions("sbx-1"); len(opts.Networks) != 0 || opts.Bare || opts.Egress != fence {
+	if opts := r.createOptions("sbx-1", MachineSize{}); len(opts.Networks) != 0 || opts.Bare || opts.Egress != fence {
 		t.Fatalf("an edge sandbox's create = %+v, want no network, nothing stripped and the pool's fence", opts)
 	}
 	inst, _, err := r.ensureInstance(ctx, "sbx_edge", nil)
@@ -1142,13 +1142,24 @@ type agentDriver struct {
 	// (resumeLost): the provider stops answering just as the pool reads
 	// what the lost resume left.
 	stateHangsAfterLoss atomic.Bool
-	mu                  sync.Mutex
+	// copyRefused has every create from a committed VM refused with
+	// ErrUnsupported, as archil refuses one at a size other than its
+	// source's: a copy keeps its source's size.
+	copyRefused atomic.Bool
+	mu          sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
 	// forcedOff, when set, is a machine whose orderly shutdown times out, so
 	// it is forced off, and loses what forcedOff undoes in its guest: what
 	// was copied in and never reached its disk.
 	forcedOff func(ctx context.Context, guest machine.Machine) error
+}
+
+func (d *agentDriver) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
+	if d.copyRefused.Load() && spec.From != nil {
+		return machine.Instance{}, fmt.Errorf("a VM made from %s has its size: %w", spec.From.Name, machine.ErrUnsupported)
+	}
+	return d.Driver.Create(ctx, spec)
 }
 
 func (d *agentDriver) record(name, event string) {
@@ -2020,7 +2031,7 @@ func TestMachineAsksPoolURLAndNoIngressURL(t *testing.T) {
 		Pool:    machine.URLRequest{Mode: machine.URLOn, Strict: true},
 	}
 	for _, r := range []*MachineSandboxRuntime{{bare: true, network: "pool-0123456789abcdef"}, {}} {
-		if opts := r.createOptions("sbx-1"); opts.URLs != want {
+		if opts := r.createOptions("sbx-1", MachineSize{}); opts.URLs != want {
 			t.Fatalf("create options ask URLs %+v, want ingress off and pool on, both strictly", opts.URLs)
 		}
 	}

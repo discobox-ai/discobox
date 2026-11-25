@@ -818,7 +818,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	// 26-10-16-423 §§7, 10).
 	cfg.Entrypoint = []string{"/sbin/init"}
 	cfg.Cmd = []string{}
-	hostCfg, netCfg := r.boxConfig(mounts)
+	hostCfg, netCfg := r.boxConfig(mounts, requestedSize(req))
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
 	if err != nil {
@@ -931,11 +931,17 @@ func (r *sandboxCore) stageSandbox(ctx context.Context, sandboxID string, req *w
 }
 
 // boxConfig is the host and network config of every box this runtime boots,
-// a sandbox's or a snapshot build's (ADR 26-10-16-423 §8), with mounts: the
-// one place a box's container is described, so a build is never a box of
-// another kind.
-func (r *DockerSandboxRuntime) boxConfig(mounts []mount.Mount) (*container.HostConfig, *network.NetworkingConfig) {
+// a sandbox's or a snapshot build's (ADR 26-10-16-423 §8), with mounts and
+// its size: the one place a box's container is described, so a build is
+// never a box of another kind.
+func (r *DockerSandboxRuntime) boxConfig(mounts []mount.Mount, size boxSize) (*container.HostConfig, *network.NetworkingConfig) {
 	hostCfg := &container.HostConfig{
+		// The box's own cgroup: on the docker provider a sibling of the pool
+		// container on the host daemon, and on a pool VM a container of the
+		// VM's daemon, never a slice nested in the pool's (ADR 26-11-23-445
+		// §4). An unset size sets no limit, so nothing is restricted by
+		// default. The /dev/shm tmpfs counts against a memory limit.
+		Resources:  size.dockerResources(),
 		Mounts:     mounts,
 		Privileged: true,
 		// Docker's 64 MiB /dev/shm is too small for what a sandbox runs:
@@ -950,9 +956,6 @@ func (r *DockerSandboxRuntime) boxConfig(mounts []mount.Mount) (*container.HostC
 		// and carries each query to the pool over mTLS.
 		DNS: []netip.Addr{proxyagent.SandboxDNSAddress},
 	}
-	// No CPU/memory limit is set here: a sandbox container shares its pool
-	// container's cgroup rather than reserving a nested slice of it
-	// (ADR 0029).
 	// Attach the sandbox to the per-pool internal network only: it reaches the
 	// pool proxy (resolved as discobox-pool-proxy via Docker embedded DNS)
 	// and the pool's DNS forwarder, but has no route off-box, so all egress is

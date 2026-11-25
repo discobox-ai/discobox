@@ -4018,6 +4018,41 @@ func (s *OptEgressPolicy) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes float64 as json.
+func (o OptFloat64) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Float64(float64(o.Value))
+}
+
+// Decode decodes float64 from json.
+func (o *OptFloat64) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptFloat64 to nil")
+	}
+	o.Set = true
+	v, err := d.Float64()
+	if err != nil {
+		return err
+	}
+	o.Value = float64(v)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptFloat64) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptFloat64) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes GatewayHeaderModifier as json.
 func (o OptGatewayHeaderModifier) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -6012,6 +6047,39 @@ func (s OptSandboxGitIdentity) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxGitIdentity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxSize as json.
+func (o OptSandboxSize) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxSize from json.
+func (o *OptSandboxSize) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxSize to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxSize) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxSize) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -8885,9 +8953,15 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 			s.SecretEnv.Encode(e)
 		}
 	}
+	{
+		if s.Size.Set {
+			e.FieldStart("size")
+			s.Size.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [17]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [18]string{
 	0:  "pullSources",
 	1:  "$schema",
 	2:  "agent",
@@ -8905,6 +8979,7 @@ var jsonFieldsNameOfPoolSandboxCreateRequest = [17]string{
 	14: "sentinelGrants",
 	15: "sentinelGenerations",
 	16: "secretEnv",
+	17: "size",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -9087,6 +9162,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"secretEnv\"")
+			}
+		case "size":
+			if err := func() error {
+				s.Size.Reset()
+				if err := s.Size.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"size\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -13146,6 +13231,86 @@ func (s *SandboxGitIdentity) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxGitIdentity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxSize) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxSize) encodeFields(e *jx.Encoder) {
+	{
+		if s.CpuVcpus.Set {
+			e.FieldStart("cpuVcpus")
+			s.CpuVcpus.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBytes.Set {
+			e.FieldStart("memoryBytes")
+			s.MemoryBytes.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxSize = [2]string{
+	0: "cpuVcpus",
+	1: "memoryBytes",
+}
+
+// Decode decodes SandboxSize from json.
+func (s *SandboxSize) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxSize to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cpuVcpus":
+			if err := func() error {
+				s.CpuVcpus.Reset()
+				if err := s.CpuVcpus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+			}
+		case "memoryBytes":
+			if err := func() error {
+				s.MemoryBytes.Reset()
+				if err := s.MemoryBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxSize")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxSize) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxSize) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

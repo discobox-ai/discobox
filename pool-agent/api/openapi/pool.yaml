@@ -1159,9 +1159,25 @@ components:
                         type: string
                     nullable: true
                     type: object
+                size:
+                    $ref: '#/components/schemas/SandboxSize'
+                    description: The sandbox's size, resolved by the control plane from the sandbox's own and its pool's (ADR 26-11-23-445 §2), which the pool applies as it is and records in the sandbox's tree, so a machine or container made again for it later gets the same. Absent when it has none, which leaves its box to the runtime's default.
             required:
             - sandboxId
             - config
+            type: object
+        SandboxSize:
+            additionalProperties: false
+            description: A sandbox's CPU and memory. A zero field is unset.
+            properties:
+                cpuVcpus:
+                    description: vCPUs, fractional allowed. A container is limited to it; a machine is made with it rounded up to a whole vCPU.
+                    format: double
+                    type: number
+                memoryBytes:
+                    description: Memory in bytes. A container is limited to it, swap included; a machine is made with it.
+                    format: int64
+                    type: integer
             type: object
         SourceDelivery:
             additionalProperties: false

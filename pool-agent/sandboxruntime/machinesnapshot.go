@@ -184,6 +184,9 @@ func (r *MachineSandboxRuntime) snapshotFor(ctx context.Context, req *workerapim
 		slog.WarnContext(ctx, "plan a snapshot; making the sandbox's machine fresh", "error", err)
 		return "", "", release
 	}
+	// Keyed by the size the box is made at: a machine made from a snapshot
+	// has the snapshot's size (ADR 26-11-23-445 §5).
+	plan.Size = requestedSize(req).machine().planSize()
 	key = plan.Key()
 	name := snapshotMachineName(key)
 	held := r.holdSnapshot(key)
@@ -284,7 +287,11 @@ func (r *MachineSandboxRuntime) buildMachineSnapshot(ctx context.Context, plan s
 	if err != nil {
 		return err
 	}
-	inst, err := r.engine.Create(ctx, r.createOptions(name))
+	var size MachineSize
+	if plan.Size != nil {
+		size = *plan.Size
+	}
+	inst, err := r.engine.Create(ctx, r.createOptions(name, size))
 	if err != nil {
 		// ErrExists too: what holds the name is not this build's to use,
 		// nor to destroy; the sweep finds it unrecorded.

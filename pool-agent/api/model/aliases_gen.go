@@ -52,6 +52,7 @@ type ResolvedHarnessConfig = poolagentapi.ResolvedHarnessConfig
 type SandboxConfig = poolagentapi.SandboxConfig
 type SandboxFeature = poolagentapi.SandboxFeature
 type SandboxGitIdentity = poolagentapi.SandboxGitIdentity
+type SandboxSize = poolagentapi.SandboxSize
 type SandboxSkill = poolagentapi.SandboxSkill
 type SandboxSkillFile = poolagentapi.SandboxSkillFile
 type SandboxSkillsSource = poolagentapi.SandboxSkillsSource

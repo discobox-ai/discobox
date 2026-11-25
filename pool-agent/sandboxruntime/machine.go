@@ -1056,10 +1056,24 @@ func (r *MachineSandboxRuntime) takesRuntimeConfig(_ context.Context, sandboxID 
 
 // ensureInstance is the sandbox's machine, made when it has none: from its
 // plan's snapshot where there is one (snapshotFor), and otherwise fresh from
-// the driver's base, which a nil req always is. It returns the key of the
-// snapshot it was made from, empty for none. A create whose answer was lost
-// made one already, which is found by its name.
+// the driver's base, which a nil req always is. It is made at the size req
+// sends, which is recorded for a machine made again with no request in hand,
+// or else at the size recorded (ADR 26-11-23-445 §§2, 5). It returns the key
+// of the snapshot it was made from, empty for none. A create whose answer was
+// lost made one already, which is found by its name.
 func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (machine.Instance, string, error) {
+	size := requestedSize(req)
+	if req != nil {
+		if err := r.recordBoxSize(sandboxID, size); err != nil {
+			return machine.Instance{}, "", err
+		}
+	} else {
+		recorded, err := r.recordedBoxSize(sandboxID)
+		if err != nil {
+			return machine.Instance{}, "", err
+		}
+		size = recorded
+	}
 	inst, err := r.instance(ctx, sandboxID)
 	if err == nil {
 		return inst, "", r.fenced(inst)
@@ -1071,7 +1085,7 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 	if err != nil {
 		return machine.Instance{}, "", err
 	}
-	opts := r.createOptions(name)
+	opts := r.createOptions(name, size.machine())
 	// Where the driver attaches them, the sandbox's data and its cache are
 	// on volumes of the machine's own, which a new root keeps
 	// (keepsDataOnVolume). The cache is the machine's alone, under a key of
@@ -1089,9 +1103,18 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 	if from != "" {
 		opts.From = from
 		inst, err = r.engine.Create(ctx, opts)
-		if errors.Is(err, engine.ErrNotFound) || errors.Is(err, machine.ErrNotFound) {
+		switch {
+		case errors.Is(err, engine.ErrNotFound) || errors.Is(err, machine.ErrNotFound):
 			// The snapshot went between its lookup and this create.
 			slog.WarnContext(ctx, "a snapshot is gone; making the sandbox's machine fresh", "snapshot", from, "sandboxId", sandboxID)
+			opts.From, snapshot = "", ""
+		case errors.Is(err, machine.ErrUnsupported):
+			// The driver will not copy it as asked: a copy keeps its
+			// source's size on archil, and the snapshot is not at this
+			// box's. Its key holds the size, so this is not expected; a
+			// fresh machine at the asked size keeps the box from failing
+			// on the driver's refusal (ADR 26-11-23-445 §5).
+			slog.WarnContext(ctx, "the driver refuses to make the sandbox's machine from a snapshot; making it fresh", "snapshot", from, "sandboxId", sandboxID, "error", err)
 			opts.From, snapshot = "", ""
 		}
 	}
@@ -1120,9 +1143,10 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 // 26-10-23-551 §4, ADR 26-10-29-481 §4, disco-vm ADR 26-11-14-610). The pool,
 // its peer, reaches it at its pool URL alone; an ingress URL would be an
 // inbound path from outside the pool that the guest's root answers and the
-// pool's fence never sees.
-func (r *MachineSandboxRuntime) createOptions(name string) engine.CreateOptions {
-	opts := engine.CreateOptions{Name: name, Egress: r.egress}
+// pool's fence never sees. It is made at size, each zero field the driver's
+// default (ADR 26-11-23-445 §5).
+func (r *MachineSandboxRuntime) createOptions(name string, size MachineSize) engine.CreateOptions {
+	opts := engine.CreateOptions{Name: name, Egress: r.egress, CPUs: size.CPUs, Memory: size.MemoryBytes}
 	opts.URLs.Ingress = machine.URLRequest{Mode: machine.URLOff, Strict: true}
 	opts.URLs.Pool = machine.URLRequest{Mode: machine.URLOn, Strict: true}
 	opts.Bare = r.bare

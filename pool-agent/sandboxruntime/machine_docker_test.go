@@ -95,7 +95,7 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := r.createOptions(name)
+	opts := r.createOptions(name, MachineSize{})
 	opts.URLs.Ingress = machine.URLRequest{}
 	opts.Data, opts.Cache = &machine.DataVolume{}, &machine.CacheVolume{Key: name}
 	inst, err := e.Create(ctx, opts)
