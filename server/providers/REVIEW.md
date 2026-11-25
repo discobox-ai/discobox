@@ -133,8 +133,13 @@
   agent, then archive and remove after a restart (#1043) each shipped without
   it; check every new call to the agent against it. `Remove` of a sandbox with
   no state is the exception, by the #1095 note above: unanswered there is
-  not-found too. `Archive`'s fallback pool is waited on, so its unanswered
-  archive is `ErrPoolNotReachable` like any other.
+  not-found too. Not so one not answered within the teardown deadline: that
+  agent took the remove and is still there, queued behind work (most likely
+  the create that never finished) that may still complete, and not-found
+  would drop the row while it leaves a box running, secrets in its egress,
+  that nothing deletes. #1095 is about a pool that is gone, not one that is
+  slow. `Archive`'s fallback pool is waited on, so its unanswered archive is
+  `ErrPoolNotReachable` like any other.
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.

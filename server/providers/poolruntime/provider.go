@@ -69,6 +69,17 @@ const (
 	// takes minutes to come back is asked a couple of dozen times rather than
 	// every second.
 	poolAgentResendMaxInterval = 15 * time.Second
+	// defaultPoolAgentTeardownDeadline bounds the server's wait for a pool
+	// agent to answer an archive or a remove (ADR 26-11-24-783 §1). The agent
+	// answers a teardown only once it is done (ADR 0022 §3), after taking the
+	// sandbox's power lock, and a start or stop holding that lock and never
+	// finishing would otherwise keep the sandbox reconcile waiting, and its
+	// slot on this node taken, until the server stops: with a few of those no
+	// new box is created. It is longer than a healthy teardown's answer: a
+	// container's force-remove, a tree's removal, an archive whose working-root
+	// stash fits in it. A stash that does not goes on on the agent past it, and
+	// the retry finds it done.
+	defaultPoolAgentTeardownDeadline = 5 * time.Minute
 )
 
 var (
@@ -76,6 +87,7 @@ var (
 	poolCapacityPollInterval  = defaultPoolCapacityPollInterval
 	poolProvisionStallTimeout = defaultPoolProvisionStallTimeout
 	poolAgentWaitCeiling      = defaultPoolAgentWaitCeiling
+	poolAgentTeardownDeadline = defaultPoolAgentTeardownDeadline
 )
 
 // PoolManager is the control-plane surface a pool provider needs.
@@ -1030,12 +1042,21 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef
 // agent is a VM the server boots again after every restart, and an archive
 // accepted just before a shutdown, retried there, has been seen reset with only
 // "connection reset by peer" to say why (#1043).
+//
+// An archive the agent takes and does not answer within
+// poolAgentTeardownDeadline is the pool not being reachable too, and is asked
+// again (ADR 26-11-24-783).
 func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	client, err := p.agentClientForSandbox(ctx, ref, state)
 	if err != nil {
 		return state, err
 	}
-	archived, err := client.Archive(ctx, ref, state)
+	callCtx, cancel := context.WithTimeoutCause(ctx, poolAgentTeardownDeadline, errPoolTeardownExpired)
+	defer cancel()
+	archived, err := client.Archive(callCtx, ref, state)
+	if teardownExpired(ctx, callCtx, err) {
+		return state, poolTeardownExpiredError("archive", client.poolID, ref.SandboxID)
+	}
 	if poolAgentUnanswered(ctx, err) {
 		return state, poolAgentLostError("archive sandbox on", client.poolID, err)
 	}
@@ -1061,6 +1082,11 @@ func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []
 // with no state: its pool was reached only if it could be at once, and one
 // whose agent then does not answer is the same pool not there, so the answer
 // is not-found as it is when the acquire refuses (#1095).
+//
+// A remove the agent takes and does not answer within
+// poolAgentTeardownDeadline is the pool not being reachable, with or without
+// state, and is retried (ADR 26-11-24-783): an agent that took it is there,
+// and may still finish the work it is queued behind.
 func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	placed := false
 	client, err := p.agentClientFromState(ctx, ref, state)
@@ -1071,7 +1097,17 @@ func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []b
 	if err != nil {
 		return state, err
 	}
-	removed, err := client.Remove(ctx, ref, state)
+	callCtx, cancel := context.WithTimeoutCause(ctx, poolAgentTeardownDeadline, errPoolTeardownExpired)
+	defer cancel()
+	removed, err := client.Remove(callCtx, ref, state)
+	if teardownExpired(ctx, callCtx, err) {
+		// Retried even for a sandbox with no state: unlike an agent that went
+		// away, this one took the remove and is still there, most likely
+		// queued behind the create that never finished. Not-found would drop
+		// the row while that create may still finish and leave a box running,
+		// with its proxy material, that nothing deletes.
+		return state, poolTeardownExpiredError("remove", client.poolID, ref.SandboxID)
+	}
 	if !poolAgentUnanswered(ctx, err) {
 		return removed, err
 	}
@@ -1081,6 +1117,25 @@ func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []b
 		return state, fmt.Errorf("%w: pool %s did not answer: %w", sandbox.ErrNotFound, client.poolID, poolAgentTransportError("remove sandbox from", client.poolID, err))
 	}
 	return state, poolAgentLostError("remove sandbox from", client.poolID, err)
+}
+
+// errPoolTeardownExpired is the cause poolAgentTeardownDeadline ends a
+// teardown call with, which is how its expiry is told from the reconcile's
+// own context ending and from any other timeout.
+var errPoolTeardownExpired = errors.New("pool teardown deadline expired")
+
+// teardownExpired reports whether a teardown call failed because its own
+// deadline ended it, and not because the caller stopped waiting.
+func teardownExpired(ctx, callCtx context.Context, err error) bool {
+	return err != nil && ctx.Err() == nil && errors.Is(context.Cause(callCtx), errPoolTeardownExpired)
+}
+
+// poolTeardownExpiredError is a teardown the pool did not answer in time: the
+// pool not being reachable, which the sandbox reconciler leaves unobserved and
+// retries with backoff rather than settling as a failure (ADR 26-11-24-783 §2).
+func poolTeardownExpiredError(operation, poolID, sandboxID string) error {
+	return fmt.Errorf("%w: pool %s did not answer the %s of sandbox %s within %s",
+		sandbox.ErrPoolNotReachable, poolID, operation, sandboxID, poolAgentTeardownDeadline)
 }
 
 // placedPoolClient reaches the agent of the pool the control plane placed a
