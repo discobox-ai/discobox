@@ -799,6 +799,9 @@ func (d *apiDataSource) Bindings(ctx context.Context, server string, filter tui.
 		params.TargetKind = apiclientgen.NewOptListSecretBindingsTargetKind(apiclientgen.ListSecretBindingsTargetKindSandbox)
 		params.Target = apiclientgen.NewOptString(filter.SandboxID)
 	}
+	if filter.ParentID != "" {
+		params.ParentId = apiclientgen.NewOptString(filter.ParentID)
+	}
 	res, err := d.client.ListSecretBindings(ctx, params)
 	if err != nil {
 		return nil, err

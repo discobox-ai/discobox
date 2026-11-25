@@ -32,12 +32,26 @@ func (m *Model) askCredentialApproval(req CredentialRequest, secrets []Secret, h
 	ctx, ds := m.ctx, m.ds
 	return func() tea.Msg {
 		bindings, err := ds.Bindings(ctx, req.Server, BindingFilter{SandboxID: req.SandboxID})
+		// A variable the box's own binding holds may be rebound, and the
+		// preview counts what was handed on under that binding, on the
+		// boxes it leads: those are read too.
+		if holder, pinned := heldBy(held); err == nil && req.Use != nil && pinned {
+			var children []SecretBinding
+			if children, err = ds.Bindings(ctx, req.Server, BindingFilter{ParentID: holder.BindingID}); err == nil {
+				for _, b := range children {
+					if !slices.ContainsFunc(bindings, func(have SecretBinding) bool { return have.ID == b.ID }) {
+						bindings = append(bindings, b)
+					}
+				}
+			}
+		}
 		return approvalBindingsMsg{wait: wait, bindings: bindings, err: err, done: done}
 	}
 }
 
 func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held []HeldGrant, bindings []SecretBinding, bindingErr error, ttl time.Duration) tea.Cmd {
 	holder, pinned := heldBy(held)
+	rebindable := ownDelivers(held)
 	answers := map[string]requestAnswer{}
 	var credentials []choice
 	ordered := secretsForRequest(secrets, req)
@@ -49,6 +63,12 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		if cannotAnswer(secret, req, holder, readable) != "" {
 			continue
 		}
+		// The box's own addition stacked on a harness config's or project's
+		// binding pins the variable to that secret, and is no binding to
+		// rebind from: the server refuses another secret there.
+		if req.Use != nil && pinned && !rebindable && secret.ID != holder.SecretID {
+			continue
+		}
 		ans := requestAnswer{credential: secret.Name, secret: secret, credentialRoutes: secret.Routes, maxTTL: secret.MaxTTL, held: held, holderID: holder.SecretID}
 		for _, b := range bindings {
 			if b.SecretID == secret.ID && b.TargetKind == BindingSandbox && b.TargetID == req.SandboxID {
@@ -57,7 +77,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		}
 		// Another secret than the one the box's own binding holds the
 		// variable with rebinds it (ADR 26-11-19-927).
-		if req.Use != nil && pinned && secret.ID != holder.SecretID {
+		if req.Use != nil && pinned && rebindable && secret.ID != holder.SecretID {
 			ans.rebind = &rebindPreview{holder: holder, from: heldSecret(secrets, holder)}
 			ans.rebind.read(bindings, req)
 		}

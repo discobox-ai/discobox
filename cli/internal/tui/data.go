@@ -1782,6 +1782,8 @@ type SecretBinding struct {
 type BindingFilter struct {
 	// SandboxID limits the result to bindings on one box.
 	SandboxID string
+	// ParentID limits it to the bindings handed on under one delegation.
+	ParentID string
 }
 
 // NewSecret is a credential typed into the window: from the approval dialog,

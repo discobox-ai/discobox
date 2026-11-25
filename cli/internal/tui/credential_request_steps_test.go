@@ -513,7 +513,8 @@ func rebindSource(t *testing.T, holder SecretBinding) (*Model, *fakeSource) {
 	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_gh2", Name: "team github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
 	holder.SecretID, holder.TargetKind, holder.TargetID, holder.Use, holder.EnvVar = "sec_gh", BindingSandbox, "sbx_one", true, "GH_TOKEN"
 	ds.projectBindings = append(ds.projectBindings, holder,
-		SecretBinding{ID: "sbd_added", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Adds: true, EnvVar: "GH_TOKEN"})
+		SecretBinding{ID: "sbd_added", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, Adds: true, EnvVar: "GH_TOKEN"},
+		SecretBinding{ID: "sbd_child", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_two", Use: true, EnvVar: "GH_TOKEN", ParentID: holder.ID})
 	return m, ds
 }
 
@@ -550,7 +551,7 @@ func TestAnotherSecretRebindsAVariableTheBoxHolds(t *testing.T) {
 	}
 	text := approvalCardText(m)
 	for _, want := range []string{"GH_TOKEN moves from “GitHub token” to “team github”", "sbd_own — loses its use in GH_TOKEN",
-		"the addition sbd_added of “GitHub token” — goes", "keeps its delegation of “GitHub token”", "“team github” may be sent to"} {
+		"the addition sbd_added of “GitHub token” — goes", "keeps its delegation of “GitHub token”, and the 1 binding handed on under it", "“team github” may be sent to"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("card = %q, want %q", text, want)
 		}
@@ -559,6 +560,24 @@ func TestAnotherSecretRebindsAVariableTheBoxHolds(t *testing.T) {
 	grantFor(t, m, time.Hour)
 	if len(ds.approvals) != 1 || ds.approvals[0].Replaces != "sbd_own" || ds.approvals[0].SecretID != "sec_gh2" || ds.approvals[0].UseAs != "replace" {
 		t.Fatalf("approvals = %#v, want team github replacing sbd_own", ds.approvals)
+	}
+}
+
+// A variable a harness config's binding delivers, with the box's own
+// addition stacked on it, holds no binding of the box's to rebind from: no
+// other secret is offered, as the server would refuse it.
+func TestAnInheritedVariableWithAnOwnAdditionOffersNoRebind(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.heldGrants = []HeldGrant{
+		{BindingID: "sbd_config", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingHarnessConfig},
+		{BindingID: "sbd_added", SecretID: "sec_gh", SecretName: "GitHub token", From: BindingSandbox, Adds: true},
+	}
+	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_gh2", Name: "team github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
+	openApproval(t, m, "sec_gh")
+	m.dialog.form.choose("credential", "sec_gh2")
+	if m.dialog.form.chosen("credential") != "sec_gh" {
+		t.Fatal("another credential was offered over an inherited variable with the box's own addition")
 	}
 }
 
