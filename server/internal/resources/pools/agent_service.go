@@ -110,6 +110,7 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 			BodyPlaces:          input.SentinelBodyPlaces.Or(false),
 			WebSocket:           input.SentinelWebSocket.Or(false),
 			SourceDefaultBranch: input.SourceDefaultBranch.Or(false),
+			PoolSyncListAge:     input.PoolSyncListAge.Or(false),
 		}, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 		if err != nil {
 			return err

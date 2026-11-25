@@ -58,6 +58,10 @@ type poolAgentClient struct {
 	// none, since its decoder refuses a field it does not know, and its
 	// sandbox's origin/HEAD is left unset as before.
 	takesDefaultBranch bool
+	// takesListAge is whether it declared it takes a pool-sync's
+	// knownPoolsAgeMs (model.Pool.PoolSyncListAge, #1643): any other is sent
+	// the bare set, which is all its decoder accepts.
+	takesListAge bool
 }
 
 // routeBlocks is which of a route's place blocks a pool's agent declared it
@@ -78,7 +82,7 @@ func routeBlocksOf(pool *model.Pool) routeBlocks {
 // newPoolAgentClient is a client of one pool's agent over lease, speaking
 // what that agent last declared it takes.
 func newPoolAgentClient(pool *model.Pool, issuer poolAgentTokenIssuer, lease *transport.HTTPClientLease) *poolAgentClient {
-	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations, takes: routeBlocksOf(pool), takesDefaultBranch: pool.SourceDefaultBranch}
+	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants, holdsGenerations: pool.SentinelGenerations, takes: routeBlocksOf(pool), takesDefaultBranch: pool.SourceDefaultBranch, takesListAge: pool.PoolSyncListAge}
 }
 
 type poolAgentTokenIssuer interface {
@@ -143,13 +147,24 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 // should have, so it can reap the agent-created footprint of any other pool it
 // observes on a shared daemon. It is a no-op on backends where each pool has its
 // own isolated daemon (the agent simply sees no other pools).
-func (p *poolAgentClient) SyncKnownPools(ctx context.Context, projectID string, knownPoolIDs []string) error {
+//
+// listedAt is when the read of knownPoolIDs began. The set goes with its age,
+// taken here on this process's monotonic clock as the request is made, not
+// with listedAt itself: the agent subtracts the age from its own clock, so
+// skew between the two clocks never moves its "made since the list" cutoff.
+// An agent that has not declared it takes the age is sent the bare set, and
+// reaps as it always did.
+func (p *poolAgentClient) SyncKnownPools(ctx context.Context, projectID string, knownPoolIDs []string, listedAt time.Time) error {
 	client, release, err := p.poolClient(sandbox.SandboxRef{ProjectID: projectID}, poolagentauth.ScopePoolSync)
 	if err != nil {
 		return err
 	}
 	defer release()
-	if err := client.PoolSync(ctx, &poolapimodel.PoolSyncRequest{KnownPoolIds: knownPoolIDs}, poolclient.PoolSyncParams{ProjectId: projectID, PoolId: p.poolID}); err != nil {
+	req := &poolapimodel.PoolSyncRequest{KnownPoolIds: knownPoolIDs}
+	if p.takesListAge {
+		req.KnownPoolsAgeMs = poolclient.NewOptInt64(max(time.Since(listedAt), 0).Milliseconds())
+	}
+	if err := client.PoolSync(ctx, req, poolclient.PoolSyncParams{ProjectId: projectID, PoolId: p.poolID}); err != nil {
 		return mapPoolClientError(err)
 	}
 	return nil

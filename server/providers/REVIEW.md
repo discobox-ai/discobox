@@ -158,6 +158,15 @@
   ADR 26-10-01-876). The agent's `reapUnknownPools` keeps its own data, cache
   and proxy roots because it must never reach identity: a tree added to
   `layout.MountRoots` goes into both.
+- What a pool's agent declares it takes is read again where it is used after
+  `EnsurePool` (`PoolManager.GetPool`, the primary), never off the row the
+  reconcile loaded: that row predates the agent `EnsurePool` just started, and
+  for a new pool declares nothing. Pool-sync gated its list age on the loaded
+  row, so a new pool's first sync, the one likeliest to miss a sibling, went out
+  without it (#1643). The re-read is the latest report, which after an
+  in-place restart may still be the old agent's; only `agentReported`
+  (`resources/pools`) tells the new agent's apart, so a gate that must not
+  misjudge a replaced agent uses that, not the re-read alone.
 - Cite an ADR only for what it decided. A retention or reaping rule justified
   by an ADR that does not say it is a finding (#32 cited ADR 0063 for the
   removal of a pool's identity directory, which that ADR never decided).

@@ -1766,6 +1766,11 @@ components:
                     items:
                         type: string
                     type: array
+                knownPoolsAgeMs:
+                    description: How long before this request was sent, in milliseconds, the control plane began reading knownPoolIds. A pool created after that read is missing from the set through no fault of its own, so the agent spares any container or pool directory made since, judged on its own clock. Omitted, everything the set does not name is reaped.
+                    type: integer
+                    format: int64
+                    minimum: 0
             required:
                 - knownPoolIds
             type: object

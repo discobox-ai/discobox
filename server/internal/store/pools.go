@@ -302,6 +302,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		stored.SentinelBodyPlaces = takes.BodyPlaces
 		stored.SentinelWebSocket = takes.WebSocket
 		stored.SourceDefaultBranch = takes.SourceDefaultBranch
+		stored.PoolSyncListAge = takes.PoolSyncListAge
 		stored.Ready = ready
 		// A pool whose agent does not declare the OS the pool names takes no
 		// sandbox until it does (ADR 26-11-11-963 §1).
@@ -347,6 +348,9 @@ type AgentDeclarations struct {
 	// SourceDefaultBranch: it takes a git source's defaultBranch (#245). It
 	// is read when a sandbox is created, so a change of it resends nothing.
 	SourceDefaultBranch bool
+	// PoolSyncListAge: it takes a pool-sync's knownPoolsAgeMs (#1643). It is
+	// read on each pool-sync, so a change of it resends nothing.
+	PoolSyncListAge bool
 }
 
 // sentinelShapeChanged reports whether the agent now takes its sandboxes'

@@ -174,8 +174,9 @@ Nothing schedules on either limit. It declares too what it takes that an
 older agent's decoder would refuse — the sentinel shapes
 ([Agent Credentials](#agent-credentials)) and a git source's `defaultBranch`
 (`sourceDefaultBranch`, #245), which it forwards into `sandbox.json` for the
-sandbox's `origin/HEAD` — so a control plane sends each only to an agent
-that declared it. The same platform is the runtime's
+sandbox's `origin/HEAD`, and a pool-sync's list age (`poolSyncListAge`,
+`pool-sync` in [Sandbox State Channel](#sandbox-state-channel)) — so a control plane sends each only to an
+agent that declared it. The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
 a sandbox — a source's target, the user's home, the working directory, the
 working root it writes into the manifest — is judged by its `sandboxpath`
@@ -1051,6 +1052,23 @@ subtrees — of any other pool it observes. It is a no-op where each pool has it
 own isolated daemon. A pool deleted through the control plane does not wait for
 it: the engine's `RemovePool` removes that pool's directories itself
 (`layout.PoolTrees`), which is the only removal a project's last pool gets.
+
+The set is read before the agent scans, and the sync's retries can hold it for
+seconds, so a sibling pool whose row commits in between is missing from it
+while already owning containers and directories here. The request carries the
+set's age (`knownPoolsAgeMs`), measured by the control plane as each attempt is
+sent, to an agent that declared `poolSyncListAge` — read again from the primary
+each attempt, and waited for until the agent has reported, so a new pool's first
+sync carries it; the set is read from the primary too, since a replica's would
+be older than the time taken before it. The
+agent subtracts the age from its own clock, so clock skew between the two
+never moves the cutoff, and spares any container (`Created`) or pool directory
+(mtime) made since, less a margin for transit and coarse timestamps
+(`poolSyncListMargin`). The next sync, with a newer set, judges it. A data
+subtree is judged by its mtime only until it is tombstoned (writing the
+tombstone modifies it), and a pool the set names loses any tombstone an earlier
+sync left, so a pool missed again starts its retention afresh. A request with no
+age spares nothing.
 
 The known set is every pool in the project, across provider instances, because
 it is the authority for a reaper that scans project-scoped trees: a set narrower

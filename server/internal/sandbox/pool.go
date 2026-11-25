@@ -25,7 +25,8 @@ type PoolManager interface {
 	// ListPools returns every pool in the project, across provider instances.
 	// pool-sync needs this wider set: a pool agent reaps by scanning
 	// project-scoped host trees, so anything narrower would report another
-	// provider instance's live pools as orphans.
+	// provider instance's live pools as orphans. It reads the primary, so the
+	// set is no older than the time its caller took before the read.
 	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	// SchedulablePoolForSandbox gates placement: the sandbox's pool must be
 	// present, unrevoked, active, ready, and schedulable. It checks no

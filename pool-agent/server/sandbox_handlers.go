@@ -141,7 +141,13 @@ func (s *sandboxService) PoolSync(ctx context.Context, req *workerapimodel.PoolS
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return err
 	}
-	if err := s.runtime.SyncKnownPools(ctx, req.KnownPoolIds); err != nil {
+	// The age is the control plane's own measure, so turning it into a time on
+	// this clock leaves any skew between the two clocks out of it.
+	var listedAt time.Time
+	if age, ok := req.KnownPoolsAgeMs.Get(); ok {
+		listedAt = time.Now().Add(-time.Duration(age) * time.Millisecond)
+	}
+	if err := s.runtime.SyncKnownPools(ctx, req.KnownPoolIds, listedAt); err != nil {
 		return mapRuntimeError(err)
 	}
 	return nil

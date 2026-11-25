@@ -79,8 +79,12 @@ func (s *ControlPlane) ListPoolsForProviderInstance(ctx context.Context, project
 	return s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
 }
 
+// ListPools reads the primary: the set decides what pool-sync reaps, and its
+// read time is the cutoff the agent spares what was made after. A replica's
+// set is older than that time by its lag, so a pool committed in the lag
+// would be missing from a set that claims to postdate it.
 func (s *ControlPlane) ListPools(ctx context.Context, projectID string) ([]model.Pool, error) {
-	return s.store.ListPools(ctx, projectID)
+	return s.store.WithPrimaryRead().ListPools(ctx, projectID)
 }
 
 func (s *ControlPlane) SchedulablePoolForSandbox(ctx context.Context, sb *model.Sandbox) (*model.Pool, error) {
