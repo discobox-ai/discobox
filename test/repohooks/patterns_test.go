@@ -39,7 +39,7 @@ func TestEveryFileHookPatternMatchesATrackedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command("git", "-C", root, "ls-files").Output()
+	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
