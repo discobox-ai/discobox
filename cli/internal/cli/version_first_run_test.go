@@ -3,18 +3,43 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/pkg/serverstage"
 	"github.com/discobox-ai/discobox/pkg/version"
 )
+
+// missingLocalServer is a local endpoint nothing listens on, of the kind this
+// platform's local server uses: a named pipe on Windows, else a unix socket in
+// a short directory, since a socket's path is bounded and a test's temporary
+// directory can be longer than that bound.
+func missingLocalServer(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("npipe:////./pipe/discobox-test-%d-%d", os.Getpid(), time.Now().UnixNano())
+	}
+	return "unix://" + filepath.Join(shortSocketDir(t), "s.sock")
+}
+
+func shortSocketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "dbx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 // versionOnFreshInstall runs `discobox --version` against a local socket
 // nothing listens on, with this state directory, the manifest named by
@@ -28,7 +53,7 @@ func versionOnFreshInstall(t *testing.T, state, manifest, autoLaunch string, arg
 	t.Setenv(ServerManifestEnv, manifest)
 	t.Setenv(releasemanifest.Env, "")
 	t.Setenv(AutoLaunchEnv, autoLaunch)
-	t.Setenv(endpoint.AddressEnv, "unix://"+filepath.Join(t.TempDir(), "server.sock"))
+	t.Setenv(endpoint.AddressEnv, missingLocalServer(t))
 
 	cmd := NewRootCommand()
 	var out bytes.Buffer
@@ -132,17 +157,20 @@ func TestVersionGivesNoStagingHintForARemoteServer(t *testing.T) {
 // Something listening that is not a Discobox server is not "not running": the
 // hint is only for a probe that found nothing there at all.
 func TestVersionGivesNoHintWhenSomethingElseAnswers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the local server listens on a named pipe on Windows")
+	}
 	manifest, _ := servedManifest(t, "v9.8.7")
 	state := t.TempDir()
 	if _, err := serverstage.Stage(context.Background(), manifest, serverstage.Options{Root: filepath.Join(state, "discobox", "server")}); err != nil {
 		t.Fatal(err)
 	}
-	socket := filepath.Join(t.TempDir(), "server.sock")
-	listener, err := net.Listen("unix", socket)
+	socket := filepath.Join(shortSocketDir(t), "s.sock")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("not a discobox server"))
 	})}
 	go func() { _ = server.Serve(listener) }()
