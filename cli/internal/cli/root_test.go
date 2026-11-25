@@ -2306,7 +2306,7 @@ func TestVersionWritesJSONUnderOutputJSON(t *testing.T) {
 // a server that does not answer is null rather than the text's "unavailable",
 // which no script should mistake for a version.
 func TestVersionWritesServerVersionUnderOutputJSON(t *testing.T) {
-	answering := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+	answering := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok","version":"v9.8.7"}`))
 	}))
