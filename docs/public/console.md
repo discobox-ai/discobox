@@ -1,23 +1,25 @@
 # Console guide
 
-Open the console with `discobox console` (`c` is an alias). `discobox
-configure` opens its harnesses screen. `discobox run` and `discobox attach BOX` open a workspace directly.
+Open the console with `discobox console`, or its alias `c`. `discobox
+configure` opens the console on its harnesses screen. `discobox run` and
+`discobox attach BOX` open a box's workspace directly.
 
 ## Create and find a task
 
-The window opens on the first box, or on the prompt when there are none.
-Tab cycles through the prompt, box list and filter. Type a prompt and press
-Enter. The create card asks where to cut the source from; Enter confirms.
-Tab on the card exposes options such as the harness and additional sources.
-Shift-Enter adds a newline; Ctrl-Enter, Alt-Enter and Ctrl-J also do so.
-Alt-E or F2 opens the prompt in your external editor. Shift-Tab changes the
-harness. Ctrl-O opens run options outside a terminal pane.
+The window opens on the first box, or on the prompt when there are no boxes.
+Tab cycles through the prompt, the box list and the filter. Type a prompt and
+press Enter. The create card asks where to cut the source from, and Enter
+confirms. Tab on the card shows more options, such as the harness and extra
+sources. Shift-Enter, Ctrl-Enter, Alt-Enter and Ctrl-J add a newline. Alt-E or
+F2 opens the prompt in your external editor. Shift-Tab changes the harness.
+Ctrl-O opens run options outside a terminal pane.
 
-In the list, use arrows or j/k to move, g/G for first/last, and Page Up/Down
-to move a screen. Tab moves to the filter; Enter opens its choices. Space
-marks a server, source or tag and Enter applies the selection. Multiple tags
-match boxes carrying every selected tag. The filter also determines the
-server and source for a new task. Filters and unfinished prompts are remembered.
+In the list, the arrow keys or j and k move the cursor, g and G jump to the
+first and last box, and Page Up and Page Down move a screen. Tab moves to the
+filter, and Enter opens its choices. Space marks a server, source or tag, and
+Enter applies the selection. With several tags marked, the list shows the
+boxes that carry all of them. The filter also sets the server and source for a
+new task. The console remembers your filters and unfinished prompts.
 
 | List key | Action |
 | --- | --- |
@@ -28,7 +30,7 @@ server and source for a new task. Filters and unfinished prompts are remembered.
 | v / z | Open VS Code / Zed |
 | e / E | Rename / settings |
 | t / T | Stop / start |
-| Z | Pause: freeze the box, its memory kept; start or open it to resume |
+| Z | Pause. Freezes the box and keeps its memory. Start or open it to resume |
 | x or Delete | Archive |
 | U / P | Unarchive / purge |
 | A | Show or hide archived boxes |
@@ -38,28 +40,29 @@ server and source for a new task. Filters and unfinished prompts are remembered.
 | r | Refresh |
 | Esc | Return to the prompt |
 
-The bottom line offers actions available for the current selection. Purge
-asks for confirmation; archive does not. Check for uncommitted work before
-discarding a box. The git column shows branch and commit, with `*` for dirty
-work and an up arrow for clean commits ahead of the starting commit.
+The bottom line lists the actions for the current selection. Purge asks you
+to confirm, and archive does not. Check for uncommitted work before you
+discard a box. The git column shows the branch and commit. A `*` marks
+uncommitted work, and an up arrow marks a clean tree with commits ahead of the
+starting commit.
 
 ## Work in terminals
 
 The workspace shows harness terminals on the left and shells on the right.
-The primary terminal is number 0. Service tabs have separate S1, S2 numbers.
-A second connection joins the same sessions. Switching boxes leaves their
-sessions running. A stopped box in the sidebar requires Enter or a double
-click to start; moving the cursor onto it does not start it.
+The primary terminal is number 0. Service tabs have their own numbers: S1, S2
+and so on. A second connection joins the same sessions. Switching boxes leaves
+their sessions running. To start a stopped box in the sidebar, press Enter or
+double-click it. Moving the cursor onto it does not start it.
 
 The default leader is **Ctrl-A**. Press it, release it, then press the next
 key. `DISCOBOX_LEADER=ctrl+b` changes it, as does
 `discobox console --leader ctrl+b`. A bare letter means Ctrl plus that letter;
-Alt plus a letter is also supported. Ctrl-C cannot be the leader.
+Alt plus a letter also works. Ctrl-C cannot be the leader.
 
 | Leader then key | Action |
 | --- | --- |
 | q | Quit the window, keeping sessions running |
-| d | Detach where a return to the list is available; a direct attach closes |
+| d | Detach to the list, or close the window after a direct attach |
 | a | Return to the primary terminal |
 | c | Start another harness terminal |
 | s | Start another shell |
@@ -72,31 +75,32 @@ Alt plus a letter is also supported. Ctrl-C cannot be the leader.
 | x / U | Archive / unarchive |
 | u / R | Upgrade / repair |
 
-The visible pane border shows its keys. Where the list remains beside the
-workspace, leader h from the leftmost pane returns focus to the list; leader
-Up/Down (or k/j) switches boxes. There is no detach-to-list action beside
-that sidebar: switch boxes or quit the window instead.
+Each pane's border shows its keys. When the list stays beside the
+workspace, leader then h, from the leftmost pane, moves focus to the list.
+Leader then Up or Down, or k or j, switches boxes. With that sidebar showing
+there is no detach-to-list action, so switch boxes or quit the window instead.
 
-Other keys go to the focused terminal, including Ctrl-C. This interrupts
-the program in the pane, not the console. The primary and service tabs cannot
-be ended with leader X. Use a service's stop action to stop it. An exited
-shell leaves its final output readable; arrows, Page Up/Down and g/G scroll,
-and q, Esc or Enter dismisses it. The primary terminal exiting closes the
-workspace screen.
+Other keys go to the focused terminal, including Ctrl-C, which interrupts
+the program in the pane, not the console. Leader then X cannot end the primary
+tab or a service tab. Use a service's stop action to stop it. An exited shell
+leaves its final output on screen. The arrow keys, Page Up, Page Down, g and G
+scroll it, and q, Esc or Enter dismisses it. When the primary terminal exits,
+the workspace screen closes.
 
-An image pasted with Ctrl-V or Alt-V in a harness terminal, or a dragged
-image file, is copied into the box and its path pasted there. This differs
-from ordinary text paste. Some shortcuts depend on your outer terminal
-reporting modified keys; consult its keyboard protocol settings if needed.
+In a harness terminal, Ctrl-V or Alt-V with an image on the clipboard, or
+dragging in an image file, copies the image into the box and pastes its path
+there. With no image on the clipboard, Ctrl-V and Alt-V reach the program as
+typed. Some shortcuts need your outer terminal to report modified keys. If one
+does not work, check that terminal's keyboard protocol settings.
 
 ## Help and recovery
 
-F1 opens help anywhere; `?` does so on lists. Help scrolls. `/` searches it,
-Enter keeps the matches, n/N moves between them, c copies the help, and Esc
-closes it. The in-app help describes additional screens and context-specific
-actions, including credentials, secrets, harnesses and services.
+F1 opens help anywhere, and `?` opens it on lists. Help scrolls. `/` searches
+it, Enter keeps the matches, n and N move between them, c copies the help, and
+Esc closes it. The help in the console covers more screens and the actions
+each one offers, including credentials, secrets, harnesses and services.
 
-Ctrl-L repaints and refreshes; inside a pane it repaints the program too.
-Outside panes, Ctrl-C quits. At an empty prompt, Ctrl-D also quits; `/exit`
-or `/quit` alone in the prompt does the same. Leaving the window keeps
-sessions running. Use the stop action when you want to stop the box.
+Ctrl-L repaints and refreshes, and inside a pane it repaints the program too.
+Outside panes, Ctrl-C quits. At an empty prompt, Ctrl-D also quits, and so does
+`/exit` or `/quit` alone in the prompt. Leaving the window keeps sessions
+running. To stop the box, use the stop action.

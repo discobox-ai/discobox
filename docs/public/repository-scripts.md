@@ -1,26 +1,29 @@
 # Repository startup scripts
 
 On Linux boxes, a repository may provide an executable
-`.discobox/scripts/pre-harness` to run interactively before the selected
-harness. This script runs automatically as the box user with the primary
-terminal's environment, credential bindings, working directory and terminal.
-Read repository code before running a source you do not trust.
+`.discobox/scripts/pre-harness`. Discobox runs it without asking, in the
+primary terminal, before the selected harness starts, so the script can
+interact with you. It runs as the box user, with the primary terminal's
+environment, credential bindings, working directory and terminal. Read the
+repository's code before you run a source you do not trust.
 
 Only the primary source supplies the script. Its path is relative to that
-checkout root, even when commands start in a subdirectory. It must be a regular
-executable with a valid interpreter; symlinks must resolve inside the checkout.
+checkout's root, even when commands start in a subdirectory. It must be a
+regular executable file with a valid interpreter. A symlink must resolve
+inside the checkout.
 
-Exit zero to continue to the selected harness. Any failure, invalid executable,
-or interrupt prevents harness launch and leaves the login shell available to
-repair the script. With the shell harness, success returns to that existing
-shell. The script receives no harness prompt or resume arguments.
+Exit zero to continue to the selected harness. Any failure, an invalid
+executable or an interrupt stops the harness from launching. The login shell
+stays open so you can repair the script. With the shell harness, success
+returns to that login shell. The script receives no harness prompt and no
+resume arguments.
 
-The script runs on each actual primary terminal creation or revival. Attaching
-to a running terminal does not rerun it. Extra shells, tools, services and plain
-commands bypass it, so an auxiliary shell remains available for recovery.
-Repositories that want a once-per-box experience must store their own completion
-state in durable user data outside the checkout. There is no automatic success
-marker or automatic retry.
+The script runs each time the primary terminal is created or revived. Attaching
+to a running terminal does not run it again. Extra shells, tools, services and
+plain commands skip it, so an extra shell stays available for recovery.
+Discobox keeps no success marker and does not retry a failed script on its own.
+A repository that wants the script to run once per box must store its own
+completion state in durable user data outside the checkout.
 
-The script runs inside the Linux box whether your host uses macOS, Linux or
-Windows. Native non-Linux boxes do not run this entry point.
+The script runs inside the Linux box whether your host runs macOS, Linux or
+Windows. Native boxes on other operating systems do not run it.
