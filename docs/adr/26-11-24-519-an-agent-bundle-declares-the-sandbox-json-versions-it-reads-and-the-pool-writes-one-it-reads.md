@@ -1,7 +1,8 @@
 # 26-11-24-519 — An agent bundle declares the sandbox.json versions it reads, and the pool writes one it reads
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+- Accepted by the owner by merging #1654, 2026-11-25
 - **Issue**: #1409
 - **Relates to**: [0012](0012-sandbox-config-is-three-attribute-owned-layers.md)
   (`sandbox.json` and its `apiVersion`),
