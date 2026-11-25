@@ -207,6 +207,16 @@ func (m *Model) toolsResolved(msg toolsMsg) tea.Cmd {
 	_, hadCatalog := m.toolCatalogs[msg.box]
 	m.toolCatalogs[msg.box] = entry
 	box := m.currentBox()
+	if m.boxRef(box) == msg.box {
+		// A tool pane opened before this catalog was known is named by its
+		// id; now it can be named the way the picker names it.
+		for _, p := range m.shells.panes {
+			if p.tool != "" {
+				label := m.toolLabel(p.tool)
+				p.title, p.action = label, Interaction(label)
+			}
+		}
+	}
 	if want := m.toolWanted; want.box == msg.box {
 		m.toolWanted = toolWant{}
 		// A lookup that failed is the answer to the click that was waiting on
@@ -709,10 +719,20 @@ func (m *Model) openToolExec(gen int, exec Exec) tea.Cmd {
 	_, width := m.columns(m.shells.len() + 1)
 	cols, rows := m.paneCells(width)
 	ctx, ds, box := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
-	return func() tea.Msg {
+	open := func() tea.Msg {
 		term, err := ds.OpenExec(ctx, box, exec.ID, cols, rows)
 		return toolTermMsg{gen: gen, id: exec.Tool, exec: exec, term: term, err: err}
 	}
+	// Picked up on attach, the session can arrive before anything has asked
+	// for this discobox's catalog, and the pane is then named by the id the
+	// tool is stored under. The lookup runs beside the open rather than ahead
+	// of it, so a slow catalog never holds the session back; whichever lands
+	// second, the pane ends up named by its label (toolLabel, toolsResolved).
+	// A failed lookup is asked again, as runToolWhenKnown does.
+	if entry, known := m.toolCatalogs[m.boxRef(m.paneBox)]; !known || entry.err != "" {
+		return tea.Batch(m.resolveTools(m.paneBox), open)
+	}
+	return open
 }
 
 // toolOpened starts drawing a connected tool session, or reports why there is
@@ -730,10 +750,7 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 	}
 	m.busy = ""
 	delete(m.toolOpening, msg.id)
-	label := msg.id
-	if t, ok := m.toolByID(msg.id); ok {
-		label = t.Label
-	}
+	label := m.toolLabel(msg.id)
 	if msg.err != nil {
 		return m.report(true, "%s: %v", label, msg.err)
 	}
@@ -771,6 +788,16 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 		fromPane(p.id, p.term.Attach(msg.term)),
 		fromPane(p.id, m.paneEvents(msg.term)),
 	)
+}
+
+// toolLabel is what a tool's pane is called: its label in the current
+// discobox's catalog, else, while that catalog is not known, the id it is
+// stored under.
+func (m *Model) toolLabel(id string) string {
+	if t, ok := m.toolByID(id); ok {
+		return t.Label
+	}
+	return id
 }
 
 // toolPane is the pane running one tool, showing or put away, or nil when that

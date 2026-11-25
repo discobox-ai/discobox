@@ -949,3 +949,72 @@ func TestAGitSummaryClickRetriesAFailedToolLookup(t *testing.T) {
 		}
 	})
 }
+
+// A tool's pane is named by its label however it arrived: picked up off the
+// listing on attach, before the discobox's catalog is known, it is the same
+// "diff" the picker opens, never the id it is stored under.
+func TestAToolPickedUpOnAttachWearsItsLabel(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.execs = []Exec{{
+			ID: "exec_diff", Command: []string{"discobox-review"}, Tool: tools.DiffID,
+			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+		}}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		// The catalog is looked up beside the session rather than ahead of it,
+		// so the two land in either order; the pane is named once both have.
+		d.wait("the running tool and its catalog", func() bool {
+			_, known := m.toolCatalogs[m.boxRef(m.currentBox())]
+			return known && m.toolPane(tools.DiffID) != nil
+		})
+
+		p := m.toolPane(tools.DiffID)
+		if got := p.name(); got != "diff" {
+			t.Errorf("picked-up tool pane name = %q, want %q, the label the picker opens it under", got, "diff")
+		}
+		if p.action != Interaction("diff") {
+			t.Errorf("picked-up tool pane action = %q, want %q", p.action, "diff")
+		}
+	})
+}
+
+// A catalog that could not be read when the tool was picked up leaves its pane
+// named by the id, for want of anything better; the catalog arriving later, as
+// the picker reads it, names the pane by its label.
+func TestAToolPickedUpBeforeItsCatalogTakesItsLabelWhenTheCatalogArrives(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.toolsErr = errors.New("sandbox has no container on this pool: it is being rebuilt")
+		ds.execs = []Exec{{
+			ID: "exec_diff", Command: []string{"discobox-review"}, Tool: tools.DiffID,
+			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+		}}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the running tool and the failed lookup", func() bool {
+			_, known := m.toolCatalogs[m.boxRef(m.currentBox())]
+			return known && m.toolPane(tools.DiffID) != nil
+		})
+		if got := m.toolPane(tools.DiffID).name(); got != tools.DiffID {
+			t.Fatalf("pane name without a catalog = %q, want the id %q", got, tools.DiffID)
+		}
+
+		ds.mu.Lock()
+		ds.toolsErr = nil
+		ds.mu.Unlock()
+		d.key("ctrl+a")
+		d.key(toolsKey)
+		d.wait("the catalog", func() bool {
+			entry, known := m.toolCatalogs[m.boxRef(m.currentBox())]
+			return known && entry.err == ""
+		})
+		p := m.toolPane(tools.DiffID)
+		if got := p.name(); got != "diff" {
+			t.Errorf("pane name once the catalog arrived = %q, want %q", got, "diff")
+		}
+		if p.action != Interaction("diff") {
+			t.Errorf("pane action once the catalog arrived = %q, want %q", p.action, "diff")
+		}
+	})
+}
