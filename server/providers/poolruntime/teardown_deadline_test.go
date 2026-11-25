@@ -67,13 +67,12 @@ func TestPoolProviderTeardownThePoolDoesNotAnswerInTimeIsThePoolNotReachable(t *
 		route    string
 		state    []byte
 		teardown func(*Provider, context.Context, sandbox.SandboxRef, []byte) ([]byte, error)
-		want     error
 	}{
-		"archive": {"/archive", state, (*Provider).Archive, sandbox.ErrPoolNotReachable},
-		"remove":  {"/sandbox-1", state, (*Provider).Remove, sandbox.ErrPoolNotReachable},
+		"archive": {"/archive", state, (*Provider).Archive},
+		"remove":  {"/sandbox-1", state, (*Provider).Remove},
 		// Not not-found, as an agent that went away is (#1095): this one is
 		// there, and the create it is queued behind may still finish.
-		"remove without its state": {"/sandbox-1", nil, (*Provider).Remove, sandbox.ErrPoolNotReachable},
+		"remove without its state": {"/sandbox-1", nil, (*Provider).Remove},
 	} {
 		t.Run(name, func(t *testing.T) {
 			runtimeProvider, abandoned := newHangingRuntimeProvider(t, "project-1", "pool-1", tc.route)
@@ -83,8 +82,8 @@ func TestPoolProviderTeardownThePoolDoesNotAnswerInTimeIsThePoolNotReachable(t *
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_, err := tc.teardown(provider, ctx, ref, tc.state)
-			if !errors.Is(err, tc.want) || (tc.want == sandbox.ErrNotFound) == errors.Is(err, sandbox.ErrPoolNotReachable) {
-				t.Fatalf("%s the pool never answers = %v, want %v", name, err, tc.want)
+			if !errors.Is(err, sandbox.ErrPoolNotReachable) || errors.Is(err, sandbox.ErrNotFound) {
+				t.Fatalf("%s the pool never answers = %v, want the pool not reachable", name, err)
 			}
 			if want := "pool pool-1 did not answer the " + strings.Fields(name)[0]; !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "within 100ms") {
 				t.Fatalf("%s error = %q, want it to say %q", name, err, want)
@@ -100,7 +99,7 @@ func TestPoolProviderTeardownThePoolDoesNotAnswerInTimeIsThePoolNotReachable(t *
 
 // A caller that stops waiting is not the pool failing to answer: the
 // reconcile's own context ending is reported as itself.
-func TestPoolProviderTeardownCancelledByItsCallerIsNotTheDeadline(t *testing.T) {
+func TestPoolProviderTeardownCanceledByItsCallerIsNotTheDeadline(t *testing.T) {
 	runtimeProvider, _ := newHangingRuntimeProvider(t, "project-1", "pool-1", "/archive")
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
@@ -111,7 +110,7 @@ func TestPoolProviderTeardownCancelledByItsCallerIsNotTheDeadline(t *testing.T) 
 	defer cancel()
 	_, err := provider.Archive(ctx, ref, state)
 	if err == nil || strings.Contains(err.Error(), "did not answer the archive") {
-		t.Fatalf("archive cancelled by its caller = %v, want the caller's own end", err)
+		t.Fatalf("archive canceled by its caller = %v, want the caller's own end", err)
 	}
 	if ctx.Err() == nil {
 		t.Fatal("archive returned before its caller's context ended")
