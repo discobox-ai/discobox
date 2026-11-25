@@ -218,7 +218,7 @@ func newServer(t *testing.T, releases []release) *server {
 					_ = conn.Close()
 				}
 			default:
-				out := http.ResponseWriter(w)
+				out := w
 				if s.cuts.Add(-1) >= 0 {
 					if s.cutWrong {
 						body = append(bytes.Repeat([]byte{'x'}, len(body)/2), body[len(body)/2:]...)
@@ -230,7 +230,7 @@ func newServer(t *testing.T, releases []release) *server {
 					_, _ = out.Write(body)
 					return
 				}
-				// Ranges honoured, as both real sources honour them.
+				// Ranges are served, as both real sources serve them.
 				http.ServeContent(out, r, "", time.Time{}, bytes.NewReader(body))
 			}
 		}
@@ -1075,7 +1075,7 @@ func TestInstallersRecoverFromAResumeThatGoesWrong(t *testing.T) {
 // source is tried at once, with no retry and no warning, rather than after
 // five tries of a source that never answered.
 func TestInstallersMoveOnFromASourceTheyCannotReach(t *testing.T) {
-	closed, err := net.Listen("tcp", "127.0.0.1:0")
+	closed, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
