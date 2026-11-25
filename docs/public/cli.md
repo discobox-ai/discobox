@@ -2699,7 +2699,7 @@ Examples:
 | --help, -h | bool | false | help for logs Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
-| --tail | int | 0 | Print the last N lines of each log (default 200) |
+| --tail | int | 200 | Print only the last N lines of each log (0 for the whole log) |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox admin pool unset-default
