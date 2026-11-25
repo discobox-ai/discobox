@@ -1,6 +1,6 @@
 # 26-11-23-445 — A box may ask for a CPU and memory size, and its pool's size is the default
 
-- **Status**: Proposed (would supersede [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md)
+- **Status**: Accepted (supersedes [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md)
   §1 for `cpuVcpus`/`memoryBytes` on sandbox create and §3, and its
   Consequences' "a future need starts from a clean slate"; 0029 §2, no
   capacity gating, and its removal of `storageBytes` and `timeoutSeconds`,
@@ -8,6 +8,7 @@
 - **Date**: 2026-11-23; amended 2026-11-24, before it merged, by the
   owner's decision on #1751: the pool's own machine on a disco-vm provider
   has a size of its own (§8), replacing §5's "not sized"
+- Accepted by the owner by merging #1609, 2026-11-25
 - **Issue**: [#1601](https://github.com/discobox-ai/discobox/issues/1601);
   [#1751](https://github.com/discobox-ai/discobox/issues/1751) (§8)
 - **Relates to**: [0003](0003-promote-pool-to-a-first-class-primitive.md) §1

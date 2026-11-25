@@ -1,6 +1,8 @@
 # 0029 — Sandboxes have no per-sandbox resource requests
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's removal of `cpuVcpus`/`memoryBytes` from sandbox
+  create, §3, and "a future need starts from a clean slate" superseded by
+  [26-11-23-445](26-11-23-445-a-box-may-ask-for-a-cpu-and-memory-size-and-its-pools-size-is-the-default.md))
 - **Date**: 2026-08-08
 - **Supersedes**: [ADR 0003](0003-promote-pool-to-a-first-class-primitive.md)
   §4's "apply per-sandbox limits inside the pool envelope". Everything else in
