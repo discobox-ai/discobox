@@ -1,6 +1,6 @@
 # 0099 — The CLI downloads the server it starts, staged by version and checked by digest
 
-- **Status**: Accepted
+- **Status**: Accepted (§5 amended by [26-11-24-372](26-11-24-372-a-person-exempts-the-windows-server-from-winsock-lsps-once-and-it-runs-from-a-fixed-path.md): on Windows a staged server runs from one fixed directory the verified set is linked into)
 - **Amends**: [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) §5 — the entitlement belongs on `discobox-server`, which is once again the only process that creates a VM. The rule §5 states, that signing is part of the build and never of packaging, is unchanged.
 - **Date**: 2026-09-09
 
