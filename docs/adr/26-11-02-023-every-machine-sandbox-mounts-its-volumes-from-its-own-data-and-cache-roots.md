@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Superseded in part by**: [26-11-23-993](26-11-23-993-container-runtime-state-is-on-the-boxs-root-never-on-a-declared-volume.md) — §2's binding of a machine's `/var/lib/docker` and `/var/lib/containerd` from its data root: they are no longer declared volumes, and stay on the machine's root
+- **Superseded in part by**: [26-11-23-458](26-11-23-458-a-machine-sandbox-is-provisioned-in-place-and-only-docker-and-containerd-restart-around-its-mounts.md) — §3's restart of a machine onto its first placement, and its rejection of mounting on the running machine: a machine is wired in place while it runs, unless its agent cannot
 - **Date**: 2026-11-02; revised 2026-11-07, before it was accepted, onto the
   data-volume mounting `main` gained meanwhile (acf9ff62)
 - **Amends**:
