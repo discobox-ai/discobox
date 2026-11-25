@@ -167,6 +167,13 @@ Global review expectations:
   templates, so one named like a task's variable fills it wherever the task
   leaves it unset: the task action's `TARGET` became `release:image`'s
   Dockerfile stage and failed the release's images job.
+- A Dockerfile's `FROM` that names the target platform
+  (`FROM platform-${TARGETOS}`) uses BuildKit's builtin TARGETOS/TARGETARCH,
+  never one declared in the global scope (`ARG TARGETOS` before the first
+  `FROM`). The older Dockerfile frontend the release's depot builders run takes
+  a bare global declaration as an empty value over the builtin, so the stage
+  name became `platform-` and failed the Main build's images job (#1803). A
+  local `docker buildx` build passes either way; only the release shows it.
 - A client's patience with something the server bounds comes from the
   server's bound plus a margin (`health.PoolUpgradeWait`), never from a
   constant that happens to equal it: with no margin the client times out on
