@@ -103,12 +103,7 @@ func LocalToken(ctx context.Context) string {
 			return token
 		}
 	}
-	login := LoginCommand()
-	out, err := exec.CommandContext(ctx, login[0], login[1:]...).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return loginToken(ctx)
 }
 
 // LoginCommand is the command that prints the token this machine's gh is
@@ -122,9 +117,18 @@ func LoginCommand() []string {
 // checks the token against the network and so fails offline or slowly for a
 // login that is there.
 func LoggedIn(ctx context.Context) bool {
+	return loginToken(ctx) != ""
+}
+
+// loginToken is what LoginCommand prints, trimmed, or "" when it fails.
+func loginToken(ctx context.Context) string {
 	login := LoginCommand()
+	//nolint:gosec // G204: LoginCommand is a constant argv, never input.
 	out, err := exec.CommandContext(ctx, login[0], login[1:]...).Output()
-	return err == nil && strings.TrimSpace(string(out)) != ""
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // Repository is the owner and name a repository's web address names:
