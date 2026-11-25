@@ -233,6 +233,14 @@ func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *ap
 		report.Status, report.Error = pushStatusSkipped, err.Error()
 		return report
 	}
+	// A directory brought in with no repository of its own (-i notes/) was
+	// delivered from a repository built over it for that one run (ADR 0045),
+	// so it has no history to send. Like a remote, it is skipped unless it is
+	// the one asked for by name, which then says why there is nothing to push.
+	if entry.source.NoLocalRepository.Or(false) && !explicit {
+		report.Status, report.Error = pushStatusSkipped, "it was not a Git repository when the discobox was created, so there are no commits to push"
+		return report
+	}
 	hostDir, err := resolveSourceHostDir(sandbox, hostID, entry, dirOverrides)
 	if err != nil {
 		return fail("%v", err)
