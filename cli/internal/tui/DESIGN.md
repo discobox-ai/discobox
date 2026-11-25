@@ -1229,7 +1229,9 @@ held for the life of the window, since a source's delivery, slug and directory
 are fixed at create.
 
 **Nothing is forced, and a refusal is reported once.** The push is
-`discobox push` with no flags, so the lease and the related-history check are
+`discobox push` with no flags for each source it pushes — never a refresh of a
+remote source, which reaches the remote and may need a credential decision (ADR
+26-11-24-142 §2) — so the lease and the related-history check are
 ADR 0058 §6's and the window never overrides them. A source that was refused is
 held at the commit it failed on (`pushHeld`, passed back as `held`) and resolved
 but not re-sent until the branch moves — or until the origin turns out to hold

@@ -23,7 +23,8 @@ import (
 )
 
 // ErrNotPushDelivered reports a source with no checkout on a client's machine
-// to push commits from: a remote, which its discobox fetches from itself.
+// to push commits from: a remote, which `discobox push` refreshes from the
+// remote instead (ADR 26-11-24-142 §2).
 var ErrNotPushDelivered = errors.New("source did not come from a local directory")
 
 // Result is what one source's push did, or would have done. Every field is set
@@ -203,7 +204,7 @@ func CheckPushDelivered(source apimodel.GitSource) error {
 	if delivery, ok := source.Delivery.Get(); ok && delivery == apiclientgen.GitSourceDeliveryPush {
 		return nil
 	}
-	return fmt.Errorf("%w: its source is a remote, which the discobox fetches from itself", ErrNotPushDelivered)
+	return fmt.Errorf("%w: its source is a remote, which a push refreshes from the remote rather than sends commits to", ErrNotPushDelivered)
 }
 
 // PoolRemote is the remote a source's checkout in the discobox reaches its

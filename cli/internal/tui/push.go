@@ -18,7 +18,9 @@ import (
 // bound read-only into it, and is read by nothing else — so it cannot interrupt
 // anything, and the offer would only ever be accepted.
 //
-// The push itself is `discobox push` with no flags, through DataSource. Nothing
+// The push itself is `discobox push` with no flags, through DataSource, for
+// the sources it pushes; a remote source, which that command refreshes, is
+// never refreshed from here (ADR 26-11-24-142 §2). Nothing
 // here re-decides what it sends or what it refuses: the lease, the
 // related-history check and the untouched dirty tree are all ADR 0058 §6, and
 // the window never passes --force.

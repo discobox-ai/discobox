@@ -2266,8 +2266,9 @@ type DataSource interface {
 
 	// PushSources sends this machine's new commits into the origin repositories
 	// the discobox's push-delivered sources fetch from — the transport
-	// `discobox push` performs, with no flags (ADR 0058 §5, ADR 26-09-05-008 §3 on
-	// automatic push). Nothing in the discobox moves: it gains origin/<branch>,
+	// `discobox push` performs, with no flags, for a push-delivered source (ADR
+	// 0058 §5, ADR 26-09-05-008 §3 on automatic push); a remote source, which that
+	// command refreshes, is not refreshed here (ADR 26-11-24-142 §2). Nothing in the discobox moves: it gains origin/<branch>,
 	// and whoever is working in it rebases when they choose.
 	//
 	// held names, per source slug, a commit whose push has already failed.

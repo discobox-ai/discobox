@@ -46,10 +46,28 @@ only one when there is one, otherwise you are asked to pick.
 
 This applies to each source that came from a directory on a machine. Every
 such source of the discobox is pushed; --source narrows to one, named by its
-slug. A source that is a remote URL has no checkout to push from: the discobox
-fetches that remote itself, there is nothing to send, and push says so.
+slug.
 
-For each source, the branch it was created from is pushed by default. --branch pushes a
+A source that is a remote URL has no checkout here to push from. Push
+refreshes it instead: the discobox's pool copy of that remote -- what the
+discobox sees as origin/* -- is brought up to what the remote has now, and
+nothing in the discobox moves. The pool fetches the remote itself first; when
+the remote needs a credential, --git-credentials (or git.credentials in
+client.yaml) decides: lend lends this machine's credential for that one
+fetch, local fetches on this machine and sends what is new, and ask asks, or,
+with nobody to ask, skips the source. Inside the discobox the refresh is
+picked up with:
+
+    git fetch discobox '+refs/remotes/origin/*:refs/remotes/origin/*'
+
+With --branch only that branch of the remote is refreshed, and the remote's
+tags. Without it every branch is, and the ones the remote no longer has are
+dropped. --force has no meaning for a refresh.
+
+A directory brought in that was not a Git repository (-i notes/) has no
+commits to push, and is skipped unless --source names it.
+
+For each source pushed, the branch it was created from is pushed by default. --branch pushes a
 different local branch instead, landing under its own name, which the discobox
 then sees as discobox/<that branch> — useful for offering it a branch to rebase
 onto or cherry-pick from without touching the one it tracks.
@@ -93,9 +111,9 @@ holds.`,
 			return a.runPush(cmd, sandboxArg, sourceSlug, overrides, branch, force)
 		},
 	}
-	cmd.Flags().StringVar(&sourceSlug, "source", "", "Push only the source with this slug, instead of every push-delivered source on the discobox")
+	cmd.Flags().StringVar(&sourceSlug, "source", "", "Push or refresh only the source with this slug, instead of every source on the discobox")
 	cmd.Flags().StringArrayVar(&dirOverrides, "dir", nil, "Local directory to push a source from, as slug=path; required for a source with no known local directory on this machine")
-	cmd.Flags().StringVar(&branch, "branch", "", "Local branch to push, landing under the same name in the discobox's origin; defaults to the branch the source was created from")
+	cmd.Flags().StringVar(&branch, "branch", "", "Local branch to push, landing under the same name in the discobox's origin; defaults to the branch the source was created from. For a remote source, the remote's one branch to refresh")
 	cmd.Flags().BoolVar(&force, "force", false, "Push even if the origin has moved since this machine last pushed, or holds an unrelated history")
 	return cmd
 }
@@ -121,7 +139,24 @@ type pushSourceReport struct {
 	Previous   string `json:"previous,omitempty"`
 	Forced     bool   `json:"forced,omitempty"`
 	DirtyFiles int    `json:"dirtyFiles,omitempty"`
-	Error      string `json:"error,omitempty"`
+	// RemoteURL, RefreshedBy, Unreachable and Updates are a refreshed remote
+	// source's: the remote, who reached it (the pool, the pool with a lent
+	// credential, or this machine), whether the pool could not, and the refs
+	// of the discobox's pool copy of it that moved.
+	RemoteURL   string          `json:"remoteUrl,omitempty"`
+	RefreshedBy string          `json:"refreshedBy,omitempty"`
+	Unreachable bool            `json:"poolUnreachable,omitempty"`
+	Updates     []pushRefUpdate `json:"updates,omitempty"`
+	Error       string          `json:"error,omitempty"`
+}
+
+// pushRefUpdate is one ref a refresh moved, by its name in the discobox's
+// pool copy (refs/remotes/origin/<branch>, refs/tags/<tag>). Old is empty for
+// a ref it created, New for one it dropped.
+type pushRefUpdate struct {
+	Ref string `json:"ref"`
+	Old string `json:"old,omitempty"`
+	New string `json:"new,omitempty"`
 }
 
 const (
@@ -132,6 +167,9 @@ const (
 	// pushStatusDelivered is the source a discobox was still waiting for,
 	// handed over rather than offered to rebase onto.
 	pushStatusDelivered = "delivered"
+	// pushStatusRefreshed is a remote source whose pool copy of the remote
+	// was brought up to the remote (ADR 26-11-24-142 §2).
+	pushStatusRefreshed = "refreshed"
 )
 
 func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, branch string, force bool) error {
@@ -186,18 +224,36 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 		return a.deliverAwaitedSource(ctx, cmd, client, projectID, sandbox, sandboxcreate.PendingSourcePushes(sandbox), host, gitServerURL, dirOverrides, onlySlug, branch, force)
 	}
 
+	// A refresh follows the remote as a forced fetch does, so --force says
+	// nothing to it: refused when it is all that was asked for, ignored
+	// beside sources it does mean something to.
+	if force && onlySlug != "" && len(sources) == 1 && sandboxcreate.IsRemoteSource(sources[0].source) {
+		return fmt.Errorf("source %q is a remote, which push refreshes from the remote rather than pushes to, so there is nothing for --force to force", onlySlug)
+	}
+
 	out := cmd.OutOrStdout()
 	text := a.output != "json"
+	// A refresh may reach the remote and ask a credential question: this
+	// process's own work, which nothing but this process can narrate.
+	status := newStatusLine(cmd.ErrOrStderr(), a.color)
+	defer status.clear()
+	refresh := sandboxcreate.RefreshOptions{Branch: branch, Delivery: credentialDeliveryOptions(cmd, status), Report: func(step sandboxcreate.Step) { status.set(string(step)) }}
 	report := pushReport{SandboxID: sandboxID, SandboxName: sandbox.Config.Name}
 	for _, entry := range sources {
-		source := pushOneSource(ctx, projectID, sandboxID, sandbox, host, gitServerURL, a.token, entry, dirOverrides, branch, force, onlySlug != "")
+		var source pushSourceReport
+		if sandboxcreate.IsRemoteSource(entry.source) {
+			source = refreshOneSource(ctx, client, projectID, sandboxID, gitServerURL, a.token, entry, refresh, onlySlug != "")
+			status.clear()
+		} else {
+			source = pushOneSource(ctx, projectID, sandboxID, sandbox, host, gitServerURL, a.token, entry, dirOverrides, branch, force, onlySlug != "")
+		}
 		report.Sources = append(report.Sources, source)
 		if text {
 			printPushSource(cmd, source)
 		}
 	}
 	if !text {
-		if err := writeJSON(out, report); err != nil {
+		if err := writeTerminalSafeJSON(out, report); err != nil {
 			return err
 		}
 	}
@@ -269,6 +325,31 @@ func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *ap
 		return report
 	}
 	report.Status = pushStatusPushed
+	return report
+}
+
+// refreshOneSource refreshes one remote source's pool copy of its remote
+// and accounts for what it did, never returning an error, as pushOneSource
+// does. A private remote under the ask policy with nobody to ask is skipped,
+// unless it is the one asked for by name.
+func refreshOneSource(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, gitServerURL, token string, entry sourceEntry, options sandboxcreate.RefreshOptions, explicit bool) pushSourceReport {
+	report := pushSourceReport{Slug: entry.slug, Status: pushStatusError, Branch: options.Branch, Remote: "discobox"}
+	if u, ok := entry.source.URL.Get(); ok {
+		report.RemoteURL = u.String()
+	}
+	result, err := sandboxcreate.RefreshSource(ctx, client, gitServerURL, token, projectID, sandboxID, entry.source, options)
+	if errors.Is(err, sandboxcreate.ErrNeedsCredentialPolicy) && !explicit {
+		report.Status, report.Error = pushStatusSkipped, err.Error()
+		return report
+	}
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	report.Status, report.RefreshedBy, report.Unreachable = pushStatusRefreshed, result.By, result.Unreachable
+	for _, update := range result.Updates {
+		report.Updates = append(report.Updates, pushRefUpdate{Ref: update.Ref, Old: update.Old, New: update.New})
+	}
 	return report
 }
 
@@ -345,7 +426,7 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 	}
 	report := pushReport{SandboxID: sandbox.ID, SandboxName: sandbox.Config.Name, Sources: sources}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), report)
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), report)
 	}
 	for _, source := range report.Sources {
 		printPushSource(cmd, source)
@@ -476,33 +557,66 @@ func deliveredRefs(source apimodel.GitSource) (commit, branch string) {
 
 func printPushSource(cmd *cobra.Command, report pushSourceReport) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "%s\n", report.Slug)
+	// Every line is escaped whole as it is written: a source's error holds
+	// what a remote's server or a discobox wrote — git's stderr, a remote's
+	// "remote:" lines — and an escape sequence there would be obeyed by the
+	// terminal rather than shown.
+	line := func(format string, args ...any) {
+		fmt.Fprintln(out, terminalSafe(fmt.Sprintf(format, args...)))
+	}
+	line("%s", report.Slug)
 	switch report.Status {
 	case pushStatusPushed:
-		fmt.Fprintf(out, "  local     %s %s\n", report.HostPath, report.LocalRev)
-		fmt.Fprintf(out, "  origin    %s -> %s\n", shortCommit(report.Previous), shortCommit(report.Commit))
+		line("  local     %s %s", report.HostPath, report.LocalRev)
+		line("  origin    %s -> %s", shortCommit(report.Previous), shortCommit(report.Commit))
 		remote := report.Remote
 		if remote == "" {
 			remote = "origin"
 		}
-		fmt.Fprintf(out, "  in the discobox: git fetch %s && git rebase %s/%s\n", remote, remote, report.Branch)
+		line("  in the discobox: git fetch %s && git rebase %s/%s", remote, remote, report.Branch)
 		if report.Forced {
-			fmt.Fprintf(out, "  forced\n")
+			line("  forced")
 		}
 		if report.DirtyFiles > 0 {
-			fmt.Fprintf(out, "  %d uncommitted change(s) stayed here — only commits are pushed\n", report.DirtyFiles)
+			line("  %d uncommitted change(s) stayed here — only commits are pushed", report.DirtyFiles)
 		}
 	case pushStatusUpToDate:
-		fmt.Fprintf(out, "  up to date: origin already has %s\n", shortCommit(report.Commit))
+		line("  up to date: origin already has %s", shortCommit(report.Commit))
 		if report.DirtyFiles > 0 {
-			fmt.Fprintf(out, "  %d uncommitted change(s) stayed here — only commits are pushed\n", report.DirtyFiles)
+			line("  %d uncommitted change(s) stayed here — only commits are pushed", report.DirtyFiles)
 		}
 	case pushStatusDelivered:
-		fmt.Fprintf(out, "  delivered %s from %s\n", shortCommit(report.Commit), report.HostPath)
-		fmt.Fprintf(out, "  the discobox has its source and is starting\n")
+		line("  delivered %s from %s", shortCommit(report.Commit), report.HostPath)
+		line("  the discobox has its source and is starting")
+	case pushStatusRefreshed:
+		line("  refreshed %s, by %s", report.RemoteURL, report.RefreshedBy)
+		if report.Unreachable {
+			line("  the pool could not reach the remote, so this machine fetched it")
+		}
+		if len(report.Updates) == 0 {
+			line("  already current: the discobox's pool had what the remote has")
+			break
+		}
+		for _, update := range report.Updates {
+			name := strings.TrimPrefix(update.Ref, "refs/remotes/")
+			if tag, ok := strings.CutPrefix(update.Ref, "refs/tags/"); ok {
+				name = "tag " + tag
+			}
+			switch {
+			case update.New == "" && update.Old != "":
+				line("  %-24s dropped (was %s)", name, shortCommit(update.Old))
+			case update.New == "":
+				line("  %-24s dropped", name)
+			case update.Old == "":
+				line("  %-24s new %s", name, shortCommit(update.New))
+			default:
+				line("  %-24s %s -> %s", name, shortCommit(update.Old), shortCommit(update.New))
+			}
+		}
+		line("  in the discobox: %s", sandboxcreate.RefreshCommand)
 	case pushStatusSkipped:
-		fmt.Fprintf(out, "  skipped: %s\n", report.Error)
+		line("  skipped: %s", report.Error)
 	default:
-		fmt.Fprintf(out, "  ERROR: %s\n", report.Error)
+		line("  ERROR: %s", report.Error)
 	}
 }

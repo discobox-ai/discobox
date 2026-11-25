@@ -56,6 +56,8 @@ func newFakePool(t *testing.T) *fakePool {
 	deliverGit(t, "", "init", "--quiet", "--bare", p.cache)
 	deliverGit(t, p.cache, "--git-dir=.", "config", "http.receivepack", "true")
 	deliverGit(t, p.cache, "--git-dir=.", "config", "uploadpack.hideRefs", "refs/namespaces")
+	// A refresh marks its push with a push option, as a pool takes it.
+	deliverGit(t, p.cache, "--git-dir=.", "config", "receive.advertisePushOptions", "true")
 	gitExec := deliverGit(t, "", "--exec-path")
 	backend := func(namespace string) http.Handler {
 		env := []string{"GIT_PROJECT_ROOT=" + p.cache, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}

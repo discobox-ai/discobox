@@ -157,7 +157,10 @@ type pushTargets struct {
 
 // pushSandboxSources sends this machine's new commits into the origin
 // repositories the discobox's push-delivered sources fetch from — the transport
-// `discobox push` performs, with no flags. Nothing in the discobox moves: it
+// `discobox push` performs, with no flags, for those sources. A remote source,
+// which that command refreshes, is skipped: a refresh reaches the remote and
+// may need a credential decision, which nobody is there to make (ADR
+// 26-11-24-142 §2). Nothing in the discobox moves: it
 // gains origin/<branch>, and whoever is working in it rebases when they choose.
 //
 // held names, per source slug, a commit whose push has already failed. Such a

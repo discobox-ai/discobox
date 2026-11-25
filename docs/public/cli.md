@@ -4933,10 +4933,28 @@ only one when there is one, otherwise you are asked to pick.
 
 This applies to each source that came from a directory on a machine. Every
 such source of the discobox is pushed; --source narrows to one, named by its
-slug. A source that is a remote URL has no checkout to push from: the discobox
-fetches that remote itself, there is nothing to send, and push says so.
+slug.
 
-For each source, the branch it was created from is pushed by default. --branch pushes a
+A source that is a remote URL has no checkout here to push from. Push
+refreshes it instead: the discobox's pool copy of that remote -- what the
+discobox sees as origin/* -- is brought up to what the remote has now, and
+nothing in the discobox moves. The pool fetches the remote itself first; when
+the remote needs a credential, --git-credentials (or git.credentials in
+client.yaml) decides: lend lends this machine's credential for that one
+fetch, local fetches on this machine and sends what is new, and ask asks, or,
+with nobody to ask, skips the source. Inside the discobox the refresh is
+picked up with:
+
+    git fetch discobox '+refs/remotes/origin/*:refs/remotes/origin/*'
+
+With --branch only that branch of the remote is refreshed, and the remote's
+tags. Without it every branch is, and the ones the remote no longer has are
+dropped. --force has no meaning for a refresh.
+
+A directory brought in that was not a Git repository (-i notes/) has no
+commits to push, and is skipped unless --source names it.
+
+For each source pushed, the branch it was created from is pushed by default. --branch pushes a
 different local branch instead, landing under its own name, which the discobox
 then sees as discobox/<that branch> — useful for offering it a branch to rebase
 onto or cherry-pick from without touching the one it tracks.
@@ -4974,7 +4992,7 @@ discobox push [DISCOBOX] [flags]
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| --branch | string |  | Local branch to push, landing under the same name in the discobox's origin; defaults to the branch the source was created from |
+| --branch | string |  | Local branch to push, landing under the same name in the discobox's origin; defaults to the branch the source was created from. For a remote source, the remote's one branch to refresh |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --dir | stringArray | [] | Local directory to push a source from, as slug=path; required for a source with no known local directory on this machine |
@@ -4983,7 +5001,7 @@ discobox push [DISCOBOX] [flags]
 | --help, -h | bool | false | help for push Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
-| --source | string |  | Push only the source with this slug, instead of every push-delivered source on the discobox |
+| --source | string |  | Push or refresh only the source with this slug, instead of every source on the discobox |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
 ## discobox release

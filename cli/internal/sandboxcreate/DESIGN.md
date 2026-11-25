@@ -266,6 +266,18 @@ sandbox create requests.
   same `DeliverSource`; only where the repositories come from differs — a create
   has just resolved them, a later delivery finds them again from each source's
   recorded local directory. See the CLI design doc's "Re-delivering Source".
+- `RefreshSource` (`refresh.go`) refreshes a delivered remote source's pool
+  copy of its remote for `discobox push`
+  ([ADR 26-11-24-142](../../../docs/adr/26-11-24-142-a-push-refreshes-a-remote-sources-pool-copy-of-its-remote.md)):
+  the `pull` route anonymously, then the credential policy
+  (`chooseCredentialDelivery`, the create's own), with `fillCredential`
+  shared with the create's lend. Its local form fetches into the same client
+  cache `deliverRemote` uses and pushes, with the `discobox-refresh` push
+  option (`sourcecache.RefreshPushOption`), `refs/remotes/origin/*` and
+  `refs/tags/*`; what moved is git's porcelain report. The branches the remote
+  dropped are found by a `--dry-run --prune` push — a push's own read, which
+  a discobox delivering to one it created may make, where a fetch of the
+  origin it may not — and dropped in a push of their own, first.
 - A non-Git directory is captured in a temporary repository after copy consent.
   Before create, `pending.go` publishes a self-contained bare repository and
   versioned manifest under `<os.UserConfigDir()>/discobox/client/pending-sources`.
