@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -477,4 +478,33 @@ func TestALostResumesStateReadIsBounded(t *testing.T) {
 	}
 	requireStatus(t, r, "sbx_33", StatusRunning, "booted fresh")
 	requireFrozenRecord(t, r, "sbx_33", false, "booted fresh")
+}
+
+// A machine the pool froze whose placement moved while it was frozen (here,
+// its record of it lost) is resumed and placed in place, its agent restarted
+// onto the placement, and not booted (ADR 26-11-23-458 §4). A restarted
+// agent hands over nothing within a boot, so the restarted one is told it
+// resumed, which hands over the wakes due as the thaw would have.
+func TestAFrozenMachineWhosePlacementMovedIsToldItResumed(t *testing.T) {
+	f, inst := freezeFixture(t, nil, "sbx_34")
+	ctx := context.Background()
+	r := f.runtime
+	if err := r.SuspendSandbox(ctx, "sbx_34", nil); err != nil {
+		t.Fatal(err)
+	}
+	requireFrozenRecord(t, r, "sbx_34", true, "frozen")
+	if err := os.Remove(r.placedRecordPath("sbx_34")); err != nil {
+		t.Fatal(err)
+	}
+	f.driver.takeEvents(inst.Name)
+	if err := r.EnsureSandboxRunning(ctx, "sbx_34"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents(inst.Name), []string{"resume", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("what the use did = %v, want %v", got, want)
+	}
+	requireFrozenRecord(t, r, "sbx_34", false, "placed in place")
+	if _, resumes := f.agents.get(t, "sbx_34").autostopCalls(); resumes != 1 {
+		t.Fatalf("the restarted agent was told of %d thaws, want 1", resumes)
+	}
 }

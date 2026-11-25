@@ -189,9 +189,10 @@ func TestMachinePausedByItsProviderStartsAndStops(t *testing.T) {
 }
 
 // A paused machine whose placement moved while it was paused (here, its
-// record of it lost) is resumed, then placed as a running machine is, and
-// restarted onto what it boots on now.
-func TestMachinePausedWithAMovedPlacementIsRestartedOntoIt(t *testing.T) {
+// record of it lost) is resumed, then placed as a running machine is: applied
+// in place, its agent restarted onto what it boots on now, and the machine
+// not restarted (ADR 26-11-23-458).
+func TestMachinePausedWithAMovedPlacementIsPlacedInPlace(t *testing.T) {
 	f := newMachineFixture(t, nil)
 	ctx := context.Background()
 	r := f.runtime
@@ -212,8 +213,8 @@ func TestMachinePausedWithAMovedPlacementIsRestartedOntoIt(t *testing.T) {
 	if err := r.EnsureSandboxRunning(ctx, "sbx_s"); err != nil {
 		t.Fatal(err)
 	}
-	if events := f.driver.takeEvents("sbx-s"); len(events) < 2 || events[0] != "resume" || !slices.Contains(events[1:], "boot") {
-		t.Fatalf("what the use did to the machine = %v, want a resume, then a restart onto its placement", events)
+	if got, want := f.driver.takeEvents("sbx-s"), []string{"resume", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("what the use did to the machine = %v, want %v: a resume, then its placement applied in place", got, want)
 	}
 	if _, ok, err := r.readPlaced("sbx_s"); err != nil || !ok {
 		t.Fatalf("placement record = %v, %v; want it written again", ok, err)

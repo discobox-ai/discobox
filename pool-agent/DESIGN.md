@@ -424,8 +424,8 @@ runtime:
   is learned from an agent before it is sent anything.
 - **A sandbox takes the setting when its box is made again.** A container
   takes it when it is replaced; a machine at its next start, since its place
-  step places its bootstrap again and a moved bootstrap restarts it. Until
-  then it is reached as it was made.
+  step places its bootstrap again and a moved bootstrap restarts its agent.
+  Until then it is reached as it was made.
 - **The keypair** is issued with the rest of the sandbox's material
   (`proxyagent.EnsureSandboxMaterial`, `Agent`) for its private name, kept under
   the pool's certificates by that name and removed with its client
@@ -1144,10 +1144,13 @@ flowchart LR
     newroot -->|no| start["startLocked: engine.Start"]
     upgrade --> start
     start --> place{"place: sandbox.json,\nagentlayer.Archive"}
-    place -->|"placed as before"| apply["discobox-provision apply"]
-    place -->|"never placed in this instance,\nor placed before with something else:\nnothing applied or recorded"| restart["restart the machine"]
+    place -->|"placed as before"| apply["discobox-provision apply:\nnothing to mount"]
+    place -->|"never placed in this instance,\nor placed before with something else"| ask{"placed agent\ncan-mount-in-place?"}
+    ask -->|yes| inplace["apply --restart-agent:\nwire the running machine in place,\nrestart the agent onto it; recorded"]
+    ask -->|"no (an older agent):\nnothing applied or recorded"| restart["restart the machine"]
     restart --> again["place again: nothing applied\n(its agent starts at boot), recorded;\nafter a forced stop, once its agent\nanswers on that layer"]
     apply --> boot["finishBoot: wait at the URL,\ndeliver runtime config"]
+    inplace --> boot
     again --> boot
 ```
 
@@ -1177,33 +1180,46 @@ flowchart LR
   §4). The create fails naming `/lib/systemd/systemd`.
 - **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
   when the pool's record does not say it is there, the units
-  (`agentlayer.MachineUnits`: the agent's, and the drop-in that runs
-  `discobox-wire.service` on a machine) and the pins, then runs
-  `discobox-provision apply` through the provisioner. A machine keeps its
-  disk, and its agent starts at boot from what was placed before, so when what
-  is placed moved — pins, the agent, or the bootstrap — the machine is
-  restarted onto it: a moved pin restarts, never rebuilds (ADR 26-10-24-953 §1).
-  **A placement the machine restarts onto** — the first in an instance (the
-  pool's record names none in it, a new root's included), or one whose
-  agent, pins or bootstrap moved — applies nothing and records nothing: the
-  machine's own services already run on the paths its volumes are mounted
-  onto, which only the unit may mount, at a boot before
-  them ([ADR 26-11-02-023](../docs/adr/26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
-  §3). After the restart the agent starts from its own units, as a
-  container's does, and the placement is made again, applying nothing, and
-  recorded; a pool agent gone in between leaves the old record, so the next
-  start restarts the machine again. A restart whose stop was forced off may
-  have lost the copy made before it, so that placement is recorded only once
-  `finishBoot` has seen the agent answer and its `/healthz` names the layer
-  placed (`agentlayer.Health`, the layer of the file it was started from).
-  Were the new copy lost, an older agent would answer naming its own, and
-  nothing is recorded. An agent too old to name one is taken at its answer
-  only where the instance held no other layer (a first placement, or a move
-  of pins or bootstrap alone), since there a lost copy leaves no agent to
-  answer; on a move from another layer it proves nothing, and nothing is
-  recorded: the running machine's placement
-  is not current, and its next request places the layer again and restarts
-  it onto it. A first placement is one more guest boot in a create.
+  (`agentlayer.MachineUnits`: the agent's, the drop-in that runs
+  `discobox-wire.service` on a machine, and `discobox-wire-in-place.service`)
+  and the pins, then runs `discobox-provision apply` through the
+  provisioner. **A machine is started once and provisioned while it runs**
+  ([ADR 26-11-23-458](../docs/adr/26-11-23-458-a-machine-sandbox-is-provisioned-in-place-and-only-docker-and-containerd-restart-around-its-mounts.md)):
+  apply starts the wiring in place, which mounts the declared volumes and
+  sources on the running machine where this start has none (a first
+  placement) or where the bootstrap declares what this start's mounts lack,
+  and mounts nothing where they are unchanged
+  ([sandbox-agent/DESIGN.md](../sandbox-agent/DESIGN.md)). When what is placed
+  moved — the first placement in an instance (a new root's included), or its
+  agent, pins or bootstrap — apply runs with `--restart-agent`: an agent
+  running on the placement before is restarted onto this one, ending its
+  terminals, as the machine's restart did. No other service is stopped or
+  restarted: since container-runtime state left the declared volumes (ADR
+  26-11-23-993), Docker and containerd hold no path the wiring mounts. A moved
+  pin restarts the agent, never rebuilds (ADR 26-10-24-953 §1). An apply that
+  fails fails the start, which stops the machine and records nothing; the
+  next start boots it, and apply finishes what is still lacking.
+  **An agent too old to wire in place** (§6) is asked first: the pool runs
+  `discobox-provision can-mount-in-place` on the agent it placed, which an
+  agent from before answers with its usage. Its machine is restarted onto
+  the placement, as before: that placement applies nothing and records
+  nothing, since its apply would mount under the services already running on
+  those paths, which only the unit may mount, at a boot before them
+  ([ADR 26-11-02-023](../docs/adr/26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
+  §3). After the restart the agent starts from its own units, and the
+  placement is made again, applying nothing, and recorded; a pool agent gone
+  in between leaves the old record, so the next start restarts the machine
+  again. A restart whose stop was forced off may have lost the copy made
+  before it, so that placement is recorded only once `finishBoot` has seen
+  the agent answer and its `/healthz` names the layer placed
+  (`agentlayer.Health`, the layer of the file it was started from). Were the
+  new copy lost, an older agent would answer naming its own, and nothing is
+  recorded. An agent too old to name one is taken at its answer only where
+  the instance held no other layer (a first placement, or a move of pins or
+  bootstrap alone), since there a lost copy leaves no agent to answer; on a
+  move from another layer it proves nothing, and nothing is recorded: the
+  running machine's placement is not current, and its next request places
+  the layer again and restarts it onto it.
 - **The agent listens where the driver's service says**
   (ADR 26-10-27-345 §2): the instance's TCP address from `Driver.Listen` is written into
   sandbox.json as the agent's listen address, since the driver gives an
@@ -1239,7 +1255,8 @@ flowchart LR
   then delivered its runtime-config document (`deliverAfterResume`), but its
   agent is not told it resumed, since that would set aside a wake that fell
   due across a pause that was no sleep; one whose placement moved while it was
-  paused is placed as a running machine and restarted onto it; one still to
+  paused is placed as a running machine, its agent restarted onto it in
+  place (§6's older agent restarts the machine); one still to
   be given a new root is stopped for it. Stop, archive and delete act on it as
   on a running one, the engine resuming it before its orderly shutdown.
 - **A sleep and a suspend freeze the machine where its driver can**
@@ -1266,7 +1283,11 @@ flowchart LR
     one that holds what it boots on now gets `afterThaw`, shared with the
     Docker runtime (the runtime-config document and `autostop/resumed`), where
     a provider's pause gets its document alone; one whose placement moved is
-    restarted onto it, and its boot hands over the wakes due. A refused thaw
+    placed in place, its agent restarted onto it, and the restarted agent,
+    which hands over nothing within a boot, is told it resumed
+    (`autostop/resumed`) once it answers, which hands over the wakes due (on
+    §6's path the machine is restarted, and its boot hands them over). A
+    refused thaw
     that leaves the machine paused leaves it suspended, its memory kept for a
     later start; one that leaves it stopped (its host restarted, its provider
     expired the pause) boots it fresh in the same start, as a slept machine
