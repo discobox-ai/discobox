@@ -107,3 +107,69 @@ func TestParseDocumentKeepsNoRoomForStringsItDoesNotHold(t *testing.T) {
 		t.Errorf("ParseDocument of a %d-byte run of quotes, refused, allocated %d bytes, want at most %d", len(quotes), got, 4<<10)
 	}
 }
+
+// TestParseDocumentPointers pins every string's pointer, name flag and bytes
+// where pointer steps are shared and reset: siblings after a sibling that held
+// a string, an element holding none between two that do, a member renamed
+// within its object, empty names, containers holding no string, a root string
+// and array, and escaped names.
+func TestParseDocumentPointers(t *testing.T) {
+	type str struct {
+		at, value string
+		name      bool
+		raw       string
+	}
+	for _, tc := range []struct {
+		doc  string
+		want []str
+	}{
+		{
+			doc: `{"a":[{"b":"x"},1,{"c~/d":["y",{}],"e":"z"}],"":{"":""},"f":[[],[["w"]]]}`,
+			want: []str{
+				{"/a", "a", true, `"a"`},
+				{"/a/0/b", "b", true, `"b"`},
+				{"/a/0/b", "x", false, `"x"`},
+				{"/a/2/c~0~1d", "c~/d", true, `"c~/d"`},
+				{"/a/2/c~0~1d/0", "y", false, `"y"`},
+				{"/a/2/e", "e", true, `"e"`},
+				{"/a/2/e", "z", false, `"z"`},
+				{"/", "", true, `""`},
+				{"//", "", true, `""`},
+				{"//", "", false, `""`},
+				{"/f", "f", true, `"f"`},
+				{"/f/1/0/0", "w", false, `"w"`},
+			},
+		},
+		{
+			doc:  ` "sé" `,
+			want: []str{{"", "sé", false, `"sé"`}},
+		},
+		{
+			doc: `[1,{"q":[true,null,"r"]},"p",[{}],{"t\/u":"v"}]`,
+			want: []str{
+				{"/1/q", "q", true, `"q"`},
+				{"/1/q/2", "r", false, `"r"`},
+				{"/2", "p", false, `"p"`},
+				{"/4/t~1u", "t/u", true, `"t\/u"`},
+				{"/4/t~1u", "v", false, `"v"`},
+			},
+		},
+	} {
+		m, err := ParseDocument([]byte(tc.doc))
+		if err != nil {
+			t.Fatalf("ParseDocument(%s): %v", tc.doc, err)
+		}
+		var got []str
+		for _, s := range m.Strings() {
+			got = append(got, str{s.At(), s.Value, s.Name, tc.doc[s.Start:s.End]})
+		}
+		if len(got) != len(tc.want) {
+			t.Fatalf("ParseDocument(%s) strings = %+v, want %+v", tc.doc, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("ParseDocument(%s) string %d = %+v, want %+v", tc.doc, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
