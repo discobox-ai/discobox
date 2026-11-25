@@ -114,8 +114,8 @@ func watchHarnessConfig(ctx context.Context, home string, paths []string, observ
 	}
 }
 
-// captureChange is what the forwarder accumulated since the loop last took it:
-// the relevant paths removed or renamed away, whose descendant watches must be
+// captureChange is what the forwarder accumulated since the loop last took
+// it: the relevant paths renamed away, whose descendant watches must be
 // dropped. A change with no paths still means "refresh and observe".
 type captureChange struct {
 	gone []string
@@ -142,7 +142,13 @@ func forwardCaptureEvents(watcher *fsnotify.Watcher, targets []string, out chan 
 			if !captureEventRelevant(event.Name, targets) {
 				continue
 			}
-			if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+			// Only a directory renamed away needs its descendants' watches
+			// dropped: they follow the moved tree. A removed directory's
+			// watches go with it in every backend, and Remove finds a watch
+			// by what is at the path now (by path in inotify and kqueue, by
+			// the path's current inode on Windows): dropping by path after
+			// the directory was recreated drops the replacement's watches.
+			if event.Has(fsnotify.Rename) {
 				gone = filepath.Clean(event.Name)
 			}
 		case _, ok := <-errors:
