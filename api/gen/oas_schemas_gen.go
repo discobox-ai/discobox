@@ -27809,7 +27809,7 @@ func (s *SandboxMetaTags) init() SandboxMetaTags {
 // way, a crash or a lost container among them. Cleared once it starts again.
 // Ref: #/components/schemas/SandboxPowerDown
 type SandboxPowerDown struct {
-	// Idle: it reported itself idle for its pool's idle timeout. A changing screen,
+	// Why it powered down. idle: it reported itself idle for its pool's idle timeout. A changing screen,
 	// an attached client, or a keepalive lease taken inside it is activity.
 	// sleep: an agent in it asked it to sleep. exit: its primary terminal's shell exited.
 	Reason SandboxPowerDownReason `json:"reason"`
@@ -27837,7 +27837,7 @@ func (s *SandboxPowerDown) SetAt(val time.Time) {
 	s.At = val
 }
 
-// Idle: it reported itself idle for its pool's idle timeout. A changing screen,
+// Why it powered down. idle: it reported itself idle for its pool's idle timeout. A changing screen,
 // an attached client, or a keepalive lease taken inside it is activity.
 // sleep: an agent in it asked it to sleep. exit: its primary terminal's shell exited.
 type SandboxPowerDownReason string
