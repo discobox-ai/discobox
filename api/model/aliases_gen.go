@@ -220,6 +220,7 @@ type SandboxResourceConsumption = apigen.SandboxResourceConsumption
 type SandboxRuntime = apigen.SandboxRuntime
 type SandboxSecretInput = apigen.SandboxSecretInput
 type SandboxService = apigen.SandboxService
+type SandboxServicePort = apigen.SandboxServicePort
 type SandboxServicesResponse = apigen.SandboxServicesResponse
 type SandboxSkill = apigen.SandboxSkill
 type SandboxSkillFile = apigen.SandboxSkillFile

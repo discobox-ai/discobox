@@ -167,8 +167,8 @@ func (m *Manager) List() ([]Service, error) {
 	return out, nil
 }
 
-// declaredProtocol maps what a declaration wrote onto the vocabulary the probe
-// produces. Anything a declaration did not state — which parseFile has already
+// declaredProtocol maps a declared port's stated protocol onto the vocabulary
+// the probe produces. Anything not stated — which parsePorts has already
 // restricted to the empty string — is ProtocolUnknown, the value that queues a
 // probe.
 func declaredProtocol(declared string) ports.Protocol {
@@ -194,10 +194,10 @@ func declaredProtocol(declared string) ports.Protocol {
 // by a run, and the script that published it has usually exited by the time the
 // port matters.
 //
-// A declaration that states a protocol is believed rather than measured, and
-// the port is never connected to (ADR 26-09-05-409, image-declared services). One that
-// states none is probed, as
-// every port was before. That is the whole difference, and it matters most for
+// A port with a stated protocol is believed rather than measured, and is never
+// connected to (ADR 26-09-05-409, image-declared services). Each port carries
+// its own transport and stated protocol (ADR 26-11-24-806). One that states
+// none is probed, as every port was before. That is the whole difference, and it matters most for
 // a socket-activated service, where connecting to the port is what starts it.
 //
 // A declaration that cannot run still contributes its ports. The file says the
@@ -216,18 +216,17 @@ func (m *Manager) Declarations() ([]ports.Declaration, error) {
 	}
 	seen := map[declaredPort]struct{}{}
 	for _, def := range defs {
-		protocol := declaredProtocol(def.Protocol)
 		for _, port := range def.Ports {
-			key := declaredPort{port: port, udp: protocol == ports.ProtocolUDP}
+			key := declaredPort{port: port.Number, udp: port.UDP()}
 			if _, duplicate := seen[key]; duplicate {
 				continue
 			}
 			seen[key] = struct{}{}
 			out = append(out, ports.Declaration{
-				Port:        port,
+				Port:        port.Number,
 				ServiceID:   def.ID,
 				ServiceName: def.Name,
-				Protocol:    protocol,
+				Protocol:    declaredProtocol(port.Protocol),
 			})
 		}
 	}

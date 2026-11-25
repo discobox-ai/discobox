@@ -95,8 +95,8 @@ type Definition struct {
 	// about where the file sits in the directory.
 	FileName string
 	// Ports are the ports this service serves, in the order the file names
-	// them, empty when it names none. They are TCP ports unless Protocol is
-	// udp (ADR 0109 §2).
+	// them, empty when it names none. Each carries its own transport: a
+	// `/udp` or `/tcp` suffix, or Protocol's default (ADR 26-11-24-806).
 	//
 	// A declared port is reported and forwarded whether or not anything is
 	// observably listening on it (ADR 0076). It exists for the ports the
@@ -104,14 +104,11 @@ type Definition struct {
 	// sandbox user owns, so a port published by a nested container or bound by
 	// a socket-activated unit — root's socket either way — is invisible to it
 	// however plainly the service is responsible for it.
-	Ports []int
+	Ports []Port
 	// Protocol is what the declaration says its ports speak, empty when it
-	// says nothing. Stated, it is reported instead of probing the port; that is
-	// the whole point for a socket-activated service, where the probe is the
-	// activation (ADR 26-09-05-409, image-declared services).
-	//
-	// It applies to every port the declaration names: a service serving two
-	// ports that speak different things is two declarations.
+	// says nothing. It is the default for the ports that name no transport
+	// (ADR 26-11-24-806 §2): udp makes them UDP, and http, https or tcp is
+	// stated for every TCP port. Each Port carries what follows from it.
 	Protocol string
 	// Start says who starts this service. Empty means StartCommand.
 	Start StartMode
@@ -125,6 +122,21 @@ type Definition struct {
 	// Problem is why this declaration cannot run, empty when it can.
 	Problem string
 }
+
+// Port is one port a declaration names.
+type Port struct {
+	Number int
+	// Protocol is the port's stated protocol (ADR 26-11-24-806 §2): udp for a
+	// UDP port, the declaration's http, https or tcp for a TCP one, and empty
+	// for a TCP port whose declaration states none, which is probed. Stated, it
+	// is reported instead of probing the port; that is the whole point for a
+	// socket-activated service, where the probe is the activation (ADR
+	// 26-09-05-409). udp is the only value that is not a TCP port.
+	Protocol string
+}
+
+// UDP reports whether this is a UDP port rather than a TCP one.
+func (p Port) UDP() bool { return p.Protocol == "udp" }
 
 // Runnable reports whether this declaration is one the sandbox starts.
 func (d Definition) Runnable() bool {
@@ -223,23 +235,29 @@ func definition(file declared.File) Definition {
 	for _, field := range fields.Strings("features") {
 		def.Features = append(def.Features, strings.FieldsFunc(field, isPortSeparator)...)
 	}
-	ports, err := parsePorts(fields)
+	// A stated protocol replaces the port watcher's probe rather than
+	// confirming it, so an unrecognized value is an error rather than a field
+	// quietly ignored: the difference between them is whether a
+	// socket-activated service gets started by classification. The
+	// declaration's ports still stand, as a refused declaration's do
+	// (Manager.Declarations): read with no default, so an unsuffixed one is a
+	// TCP port that is probed, as it was before suffixes existed.
+	protocol := strings.ToLower(firstField(fields, "protocol"))
+	var protocolProblem string
+	switch protocol {
+	case "", "http", "https", "tcp", "udp":
+		def.Protocol = protocol
+	default:
+		protocolProblem = fmt.Sprintf("front matter: protocol: %q is not http, https, tcp or udp", protocol)
+	}
+	ports, err := parsePorts(fields, def.Protocol)
 	if err != nil {
 		def.Problem = "front matter: " + err.Error()
 		return def
 	}
 	def.Ports = ports
-
-	// A stated protocol replaces the port watcher's probe rather than
-	// confirming it, so an unrecognized value is an error rather than a field
-	// quietly ignored: the difference between them is whether a
-	// socket-activated service gets started by classification.
-	protocol := strings.ToLower(firstField(fields, "protocol"))
-	switch protocol {
-	case "", "http", "https", "tcp", "udp":
-		def.Protocol = protocol
-	default:
-		def.Problem = fmt.Sprintf("front matter: protocol: %q is not http, https, tcp or udp", protocol)
+	if protocolProblem != "" {
+		def.Problem = protocolProblem
 		return def
 	}
 
@@ -282,27 +300,63 @@ func firstField(fields frontmatter.Fields, names ...string) string {
 // thing. `port` is accepted as the singular spelling of the same field, because
 // a file declaring one port will be written that way whatever the docs say.
 //
-// A value that is not a port number is an error rather than a skipped
-// entry: the author meant something specific by it, and a service that runs
-// without the port it declared is the invisible failure this package's listing
-// already refuses elsewhere.
-func parsePorts(fields frontmatter.Fields) ([]int, error) {
-	var out []int
-	seen := map[int]struct{}{}
+// Each port may carry a `/udp` or `/tcp` suffix, case-insensitive, the way
+// `discobox proxy --port` spells it (ADR 26-11-24-806 §1). Without one, a port
+// takes the declaration's protocol as its default: UDP under `protocol: udp`,
+// TCP otherwise. A port is keyed by number and transport, so `53` and `53/tcp`
+// are one port and `53` and `53/udp` are two.
+//
+// A value that is not a port number, or a suffix that is not a transport, is
+// an error rather than a skipped entry: the author meant something specific by
+// it, and a service that runs without the port it declared is the invisible
+// failure this package's listing already refuses elsewhere.
+func parsePorts(fields frontmatter.Fields, protocol string) ([]Port, error) {
+	var out []Port
+	seen := map[Port]struct{}{}
 	for _, field := range fields.Strings("ports", "port") {
 		for _, text := range strings.FieldsFunc(field, isPortSeparator) {
-			port, err := strconv.Atoi(text)
-			if err != nil || port < 1 || port > 65535 {
-				return nil, fmt.Errorf("ports: %q is not a port number (a declaration's ports are all TCP or, with protocol: udp, all UDP)", text)
+			number, suffix, slash := strings.Cut(text, "/")
+			udp := protocol == "udp"
+			switch strings.ToLower(suffix) {
+			case "":
+				if slash {
+					return nil, fmt.Errorf("ports: %q: nothing after the / is not tcp or udp", text)
+				}
+			case "tcp":
+				udp = false
+			case "udp":
+				udp = true
+			default:
+				return nil, fmt.Errorf("ports: %q: %q is not tcp or udp", text, suffix)
 			}
-			if _, duplicate := seen[port]; duplicate {
+			port, err := strconv.Atoi(number)
+			if err != nil || port < 1 || port > 65535 {
+				return nil, fmt.Errorf("ports: %q is not a port number, N/tcp or N/udp", text)
+			}
+			declared := Port{Number: port, Protocol: statedProtocol(protocol, udp)}
+			if _, duplicate := seen[declared]; duplicate {
 				continue
 			}
-			seen[port] = struct{}{}
-			out = append(out, port)
+			seen[declared] = struct{}{}
+			out = append(out, declared)
 		}
 	}
 	return out, nil
+}
+
+// statedProtocol is a port's stated protocol, from its transport and the
+// declaration's protocol (ADR 26-11-24-806 §2): a UDP port's is udp whatever
+// the declaration says, and a TCP port's is the declaration's unless that is
+// udp or nothing, in which case the port is probed.
+func statedProtocol(protocol string, udp bool) string {
+	switch {
+	case udp:
+		return "udp"
+	case protocol == "udp":
+		return ""
+	default:
+		return protocol
+	}
 }
 
 func isPortSeparator(r rune) bool { return r == ',' || unicode.IsSpace(r) }

@@ -29,7 +29,9 @@ func (a *App) newSandboxServiceCommand() *cobra.Command {
 			"A declaration may name the ports it serves (ports: 8080, 5432). Those are forwarded\n" +
 			"whether or not the discobox sees anything listening on them, which is what covers a port\n" +
 			"it cannot discover on its own: one published by a nested container, or bound by a\n" +
-			"socket-activated unit, is root's socket rather than your user's.",
+			"socket-activated unit, is root's socket rather than your user's. A port is TCP\n" +
+			"unless it says 53/udp, or the declaration says protocol: udp; ports: 53, 53/udp\n" +
+			"names both of one number.",
 	}
 	cmd.AddCommand(a.newSandboxServiceListCommand())
 	cmd.AddCommand(a.newSandboxServiceLifecycleCommand("start", "Start declared services"))
@@ -217,10 +219,27 @@ func (a *App) writeSandboxServices(cmd *cobra.Command, services []apimodel.Sandb
 // sandbox can see anything listening there (ADR 0076). It is the one place
 // that answers "why is that port on the list" — and, for a service whose port
 // is not being forwarded, "did the file I edited actually say so".
+//
+// A TCP port is written bare and a UDP one as N/udp, the spelling a person
+// declares or forwards it with (ADR 26-11-24-806 §4). An answer without
+// declaredPorts came from an agent older than them, live or through its
+// posted inventory, which said nothing of its ports' transport; they are
+// written bare, as TCP, which is all such an answer can be read as.
 func sandboxServicePorts(service apimodel.SandboxService) string {
-	text := make([]string, 0, len(service.Ports))
-	for _, port := range service.Ports {
-		text = append(text, fmt.Sprint(port))
+	if len(service.DeclaredPorts) == 0 {
+		text := make([]string, 0, len(service.Ports))
+		for _, port := range service.Ports {
+			text = append(text, fmt.Sprint(port))
+		}
+		return strings.Join(text, ",")
+	}
+	text := make([]string, 0, len(service.DeclaredPorts))
+	for _, port := range service.DeclaredPorts {
+		if port.Protocol.Or("") == "udp" {
+			text = append(text, fmt.Sprintf("%d/udp", port.Port))
+			continue
+		}
+		text = append(text, fmt.Sprint(port.Port))
 	}
 	return strings.Join(text, ",")
 }

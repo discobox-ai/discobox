@@ -454,10 +454,10 @@ Read from the primary source's tree, versioned with it:
   socket is invisible to it and never gets forwarded; `ports` is how it reaches
   the user anyway. Adding `protocol:` reports the port as speaking it instead
   of connecting to find out, which matters when connecting is itself the
-  activation. `protocol: udp` makes the declared ports UDP ones — the way to
-  list a UDP server discovery misses. A declaration's ports are all one
-  transport, so something serving both (DNS on 53/tcp and 53/udp) needs a
-  second file for the UDP side, saying `start: never` so it runs nothing.
+  activation. A port is TCP unless it says otherwise: `53/udp` names a UDP
+  port, the way to list a UDP server discovery misses, and `ports: 53, 53/udp`
+  names both of one number (DNS, or QUIC beside HTTPS). `protocol: udp` makes
+  every port without a suffix UDP, and `/tcp` marks one TCP.
 
   A declaration that only names ports — because something else already serves
   them — is a `.yaml` file, or a script saying `start: never`. Either makes it a

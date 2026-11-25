@@ -126,9 +126,7 @@ func sandboxService(in services.Service) sandboxapi.SandboxService {
 	if in.FileName != "" {
 		out.FileName = sandboxapi.NewOptString(in.FileName)
 	}
-	for _, port := range in.Ports {
-		out.Ports = append(out.Ports, int64(port))
-	}
+	out.Ports, out.DeclaredPorts = sandboxServicePorts(in.Ports)
 	if in.Problem != "" {
 		out.Problem = sandboxapi.NewOptString(in.Problem)
 	}
@@ -151,4 +149,27 @@ func sandboxService(in services.Service) sandboxapi.SandboxService {
 		out.Error = sandboxapi.NewOptString(in.Error)
 	}
 	return out
+}
+
+// sandboxServicePorts is a declaration's ports in both of the shapes the API
+// carries them (ADR 26-11-24-806 §4): declaredPorts, every port with its
+// protocol, and ports, each number once, which is all an older reader knows.
+// Both are always sent, so a reader can tell an older agent's answer by
+// declaredPorts being absent.
+func sandboxServicePorts(in []services.Port) ([]int64, []sandboxapi.SandboxServicePort) {
+	numbers := make([]int64, 0, len(in))
+	declared := make([]sandboxapi.SandboxServicePort, 0, len(in))
+	seen := map[int]struct{}{}
+	for _, port := range in {
+		if _, duplicate := seen[port.Number]; !duplicate {
+			seen[port.Number] = struct{}{}
+			numbers = append(numbers, int64(port.Number))
+		}
+		out := sandboxapi.SandboxServicePort{Port: int64(port.Number)}
+		if port.Protocol != "" {
+			out.Protocol = sandboxapi.NewOptSandboxServicePortProtocol(sandboxapi.SandboxServicePortProtocol(port.Protocol))
+		}
+		declared = append(declared, out)
+	}
+	return numbers, declared
 }
