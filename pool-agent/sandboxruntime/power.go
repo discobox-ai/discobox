@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -35,11 +34,61 @@ import (
 // sandboxes down while it works (see clearcache.go). startLocked must only be
 // reached from inside the gate.
 
-// sandboxLock returns the mutex guarding power operations for one sandbox.
-func (r *sandboxCore) sandboxLock(sandboxID string) *sync.Mutex {
-	actual, _ := r.powerLocks.LoadOrStore(sandboxID, &sync.Mutex{})
-	lock, _ := actual.(*sync.Mutex)
+// sandboxLock returns the lock guarding power operations for one sandbox.
+func (r *sandboxCore) sandboxLock(sandboxID string) *powerLock {
+	actual, _ := r.powerLocks.LoadOrStore(sandboxID, newPowerLock())
+	lock, _ := actual.(*powerLock)
 	return lock
+}
+
+// powerLock is a sandbox's power lock: a mutex whose wait can be abandoned.
+//
+// A teardown (archive, delete) is answered only when it is done (ADR 0022 §3),
+// and the server stops waiting for that answer after a deadline of its own
+// (ADR 26-11-24-783). A teardown queued behind a start that never finishes
+// would otherwise wait on, unasked: every retry the server sent would leave
+// one more waiter, each running when the lock frees, for a request nobody is
+// waiting on. So teardowns take it with LockContext and give up with their
+// request. Every other holder keeps the plain Lock.
+type powerLock struct{ held chan struct{} }
+
+func newPowerLock() *powerLock { return &powerLock{held: make(chan struct{}, 1)} }
+
+// Lock waits for the lock however long it takes.
+func (l *powerLock) Lock() { l.held <- struct{}{} }
+
+// LockContext waits for the lock until ctx ends, and then returns its error
+// without the lock. A ctx already ended never takes it, even a free one.
+func (l *powerLock) LockContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case l.held <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// TryLock takes the lock only if it is free now.
+func (l *powerLock) TryLock() bool {
+	select {
+	case l.held <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// Unlock releases the lock. Releasing a lock nobody holds is a bug, as it is
+// for sync.Mutex.
+func (l *powerLock) Unlock() {
+	select {
+	case <-l.held:
+	default:
+		panic("sandboxruntime: unlock of an unlocked power lock")
+	}
 }
 
 func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {

@@ -2026,7 +2026,9 @@ func (r *DockerSandboxRuntime) reapSandbox(ctx context.Context, sandboxID string
 
 func (r *DockerSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
 	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
+	if err := lock.LockContext(ctx); err != nil {
+		return fmt.Errorf("remove sandbox %s: waiting for its power lock: %w", sandboxID, err)
+	}
 	defer lock.Unlock()
 
 	sb, err := r.GetSandbox(ctx, sandboxID)

@@ -76,7 +76,9 @@ func (r *sandboxCore) hostsSandbox(sandboxID string) bool {
 // not the absence of a container.
 func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID string) error {
 	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
+	if err := lock.LockContext(ctx); err != nil {
+		return fmt.Errorf("archive sandbox %s: waiting for its power lock: %w", sandboxID, err)
+	}
 	defer lock.Unlock()
 
 	root := r.sandboxRoot(sandboxID)
