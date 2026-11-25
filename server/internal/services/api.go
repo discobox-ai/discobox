@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -448,6 +449,13 @@ type PoolService interface {
 	// OpenPoolLogs reads whatever the pool's backend recorded about the machine
 	// running its runtime: a VM's serial console, a Docker daemon's journal.
 	OpenPoolLogs(ctx context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
+	// OpenSnapshotBuildLogs streams the feature logs of the pool's snapshot
+	// build keyed key, through its pool agent (ADR 26-11-23-004 §4).
+	OpenSnapshotBuildLogs(ctx context.Context, projectID, poolID, key string, opts sandbox.SnapshotBuildLogOptions) (io.ReadCloser, error)
+	// DialSnapshotBuildExec opens a command, or a shell, in the box of the
+	// pool's snapshot build keyed key, through its pool agent, as a
+	// connection of execstream frames (ADR 26-11-23-004 §§4-5).
+	DialSnapshotBuildExec(ctx context.Context, projectID, poolID, key string, opts sandbox.ConsoleOptions) (net.Conn, error)
 	// BuildPoolGuestImage rebuilds the guest image the pool's backend boots, on
 	// that pool's own host, and publishes the artifacts where the backend looks
 	// for a local build (ADR 0062 §7).

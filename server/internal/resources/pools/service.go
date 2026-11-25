@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
@@ -798,6 +800,67 @@ func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string,
 		return nil, err
 	}
 	return console, nil
+}
+
+// OpenSnapshotBuildLogs streams a snapshot build's feature logs, through the
+// pool's agent, which holds the build (ADR 26-11-23-004 §4). The server keeps
+// nothing of the build: the key is the pool's, as its report lists it.
+func (s *Service) OpenSnapshotBuildLogs(ctx context.Context, projectID, poolID, key string, opts sandbox.SnapshotBuildLogOptions) (io.ReadCloser, error) {
+	pool, runtime, err := s.snapshotBuildRuntime(ctx, projectID, poolID)
+	if err != nil {
+		return nil, err
+	}
+	logs, err := runtime.OpenSnapshotBuildLogs(ctx, pool, key, opts)
+	return logs, snapshotBuildError(err)
+}
+
+// DialSnapshotBuildExec opens a command, or a shell, in a snapshot build's
+// box, through the pool's agent (ADR 26-11-23-004 §§4-5).
+func (s *Service) DialSnapshotBuildExec(ctx context.Context, projectID, poolID, key string, opts sandbox.ConsoleOptions) (net.Conn, error) {
+	pool, runtime, err := s.snapshotBuildRuntime(ctx, projectID, poolID)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := runtime.DialSnapshotBuildExec(ctx, pool, key, opts)
+	return conn, snapshotBuildError(err)
+}
+
+// snapshotBuildRuntime is the pool and the runtime its builds are reached
+// through.
+func (s *Service) snapshotBuildRuntime(ctx context.Context, projectID, poolID string) (*model.Pool, sandbox.PoolRuntime, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, nil, apperrors.NotFound(err, "pool not found")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+	if err != nil {
+		return nil, nil, apperrors.NotFound(err, "pool provider instance not found")
+	}
+	if s.providers == nil {
+		return nil, nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return nil, nil, apperrors.NewStatusError(http.StatusNotImplemented, fmt.Sprintf("provider %q hosts no pool runtime that builds snapshots", provider.Type))
+	}
+	return pool, runtime, nil
+}
+
+// snapshotBuildError is how a refused read of a build is answered: an agent
+// too old for the routes is a conflict about a pool that is plainly there,
+// not a not-found.
+func snapshotBuildError(err error) error {
+	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		return apperrors.NewStatusError(http.StatusConflict, "the pool's agent is too old to reach its snapshot builds; upgrade the pool")
+	}
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return apperrors.NewStatusError(http.StatusNotFound, strings.TrimPrefix(err.Error(), sandbox.ErrNotFound.Error()+": "))
+	}
+	return err
 }
 
 // BuildPoolGuestImage rebuilds the guest image the pool's backend boots.

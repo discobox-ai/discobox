@@ -38,6 +38,7 @@ func (a *App) newPoolCommand() *cobra.Command {
 	cmd.AddCommand(a.newPoolResourcesCommand())
 	cmd.AddCommand(a.newPoolConsoleCommand())
 	cmd.AddCommand(a.newPoolLogsCommand())
+	cmd.AddCommand(a.newPoolSnapshotCommand())
 	cmd.AddCommand(a.newPoolGuestImageCommand())
 	return cmd
 }

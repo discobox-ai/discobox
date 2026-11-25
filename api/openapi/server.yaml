@@ -1781,10 +1781,52 @@ components:
                     description: When the build began. Absent while it waits for another build to end.
                     format: date-time
                     type: string
+                box:
+                    description: What the build runs in, as the pool's runtime names it - a container's name on a Docker pool, a machine's on a machine pool. Absent until its box is up.
+                    type: string
+                progress:
+                    $ref: '#/components/schemas/PoolSnapshotProgress'
+                    description: The build's latest provisioning status, as it reported it. Absent until it has, and from a pool whose builds report none.
             required:
                 - key
                 - plan
                 - requestedAt
+            type: object
+        PoolSnapshotProgress:
+            additionalProperties: true
+            description: |
+                A snapshot build's provisioning status, as the build reported it: the
+                build's own word, which the pool and the control plane only show and
+                decide nothing from. Every string in it was written by the build's box.
+            properties:
+                state:
+                    description: pending, provisioning, ready or failed.
+                    type: string
+                error:
+                    description: Why provisioning failed or could not start.
+                    type: string
+                features:
+                    additionalProperties:
+                        $ref: '#/components/schemas/PoolSnapshotFeatureProgress'
+                    description: Each feature the build provisions, by name.
+                    type: object
+            required:
+                - state
+            type: object
+        PoolSnapshotFeatureProgress:
+            additionalProperties: true
+            properties:
+                state:
+                    description: pending, provisioning, ready, failed, or off for a feature left off.
+                    type: string
+                step:
+                    description: The step running now.
+                    type: string
+                error:
+                    description: Why the feature failed.
+                    type: string
+            required:
+                - state
             type: object
         PoolSnapshotFailure:
             additionalProperties: true
@@ -1804,6 +1846,9 @@ components:
                 error:
                     description: Why it failed, as the pool composed it, bounded in length. It can end with the build's own output. Absent for a failure recorded before pools kept the reason.
                     type: string
+                progress:
+                    $ref: '#/components/schemas/PoolSnapshotProgress'
+                    description: The last provisioning status the build reported before it failed - which feature failed, and at which step. Absent when it reported none.
             required:
                 - key
                 - failedAt

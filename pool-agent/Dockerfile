@@ -65,6 +65,7 @@ COPY pkg/agentcreds ./pkg/agentcreds
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
 COPY pkg/controlplane ./pkg/controlplane
+COPY pkg/execstream ./pkg/execstream
 COPY pkg/fsdurable ./pkg/fsdurable
 COPY pkg/genfile ./pkg/genfile
 COPY pkg/gitbackend ./pkg/gitbackend
@@ -79,6 +80,7 @@ COPY pkg/platform ./pkg/platform
 COPY pkg/poolassets ./pkg/poolassets
 COPY pkg/poolauth ./pkg/poolauth
 COPY pkg/pooloutbound ./pkg/pooloutbound
+COPY pkg/provisionspec ./pkg/provisionspec
 COPY proxy ./proxy
 COPY pkg/runcca ./pkg/runcca
 COPY pkg/sandboxconfig ./pkg/sandboxconfig

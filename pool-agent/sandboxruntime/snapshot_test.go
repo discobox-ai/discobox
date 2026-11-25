@@ -299,7 +299,7 @@ func buildFixture(t *testing.T, code int, stderr string) (*DockerSandboxRuntime,
 // label; then nothing of it is left (ADR 26-11-03-986 §1).
 func TestASnapshotBuildCommitsTheBoxItProvisioned(t *testing.T) {
 	r, daemon, plan := buildFixture(t, 0, "")
-	if err := r.buildSnapshot(context.Background(), plan); err != nil {
+	if err := r.buildSnapshot(context.Background(), plan, newSnapshotBuild(plan.name(), func() {})); err != nil {
 		t.Fatal(err)
 	}
 	bound := daemon.plan
@@ -359,7 +359,7 @@ func TestASnapshotBuildCommitsTheBoxItProvisioned(t *testing.T) {
 // A build whose provisioning failed commits nothing, and says why.
 func TestAFailedSnapshotBuildCommitsNothing(t *testing.T) {
 	r, daemon, plan := buildFixture(t, 1, `the docker feature failed to provision: exit status 1`)
-	err := r.buildSnapshot(context.Background(), plan)
+	err := r.buildSnapshot(context.Background(), plan, newSnapshotBuild(plan.name(), func() {}))
 	if err == nil || !strings.Contains(err.Error(), "docker feature failed") || !strings.Contains(err.Error(), "status 1") {
 		t.Fatalf("buildSnapshot() = %v, want the provisioning's failure", err)
 	}
@@ -481,7 +481,7 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"})
-	if err := r.recordSnapshotFailure("k", time.Now(), "it failed", nil); err != nil {
+	if err := r.recordSnapshotFailure("k", time.Now(), "it failed", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.clearSnapshots(context.Background()); err != nil {
@@ -506,7 +506,7 @@ func TestAFailedSnapshotBuildRecordsItsReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.requestSnapshot(plan, func(context.Context, snapshotPlan) error {
+	r.requestSnapshot(plan, func(context.Context, snapshotPlan, *snapshotBuild) error {
 		return errors.New("feature go failed: exit status 2")
 	})
 	waitForSnapshotBuilds(t, r)

@@ -1307,6 +1307,15 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 	if slices.Equal(req.Argv, snapshotCommand) {
 		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", m.driver.agents.snapshotScript()}})
 	}
+	if len(req.Argv) > 0 && req.Argv[0] == "tail" {
+		// A fake guest's command runs on the host: the logs a build's
+		// tail reads are under the guest's root.
+		argv := []string{"sh", "-c", `cd "$DISCO_VM_GUEST_ROOT" && exec "$@"`, "sh"}
+		for _, arg := range req.Argv {
+			argv = append(argv, strings.TrimPrefix(arg, "/"))
+		}
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: argv, TTY: req.TTY})
+	}
 	if slices.Equal(req.Argv, provisioner.SystemdCheck) {
 		// A fake guest's command runs on the host, whose systemd is not the
 		// machine's: the base has it unless the test says otherwise.
@@ -1446,6 +1455,8 @@ type fakeMachineAgents struct {
 	// sealedBroken makes an agent never come up in a box made from a
 	// snapshot.
 	snapshotFails, sealedBroken bool
+	// snapshotRun, when set, is the script the snapshot command runs.
+	snapshotRun string
 	// unnamed has every agent name no layer on /healthz, as one older than
 	// agentlayer.Health's layer does.
 	unnamed   bool
@@ -1532,6 +1543,9 @@ func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config, layer s
 func (a *fakeMachineAgents) snapshotScript() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.snapshotRun != "" {
+		return a.snapshotRun
+	}
 	if a.snapshotFails {
 		return `echo "the docker feature failed to provision: exit status 1" >&2; exit 1`
 	}

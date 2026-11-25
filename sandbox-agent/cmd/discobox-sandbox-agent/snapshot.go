@@ -37,7 +37,8 @@ import (
 // cleans the box of what is any one machine's, empties agentlayer.SnapshotDir,
 // and seals the box (agentlayer.SealedFile). Its exit status is the result,
 // and what went wrong is on its stderr. It leaves the box running: the taker
-// stops it and commits it.
+// stops it and commits it. Its stdout is its progress, for the taker
+// (agentlayer.SnapshotProgressLine).
 func runSnapshot(args []string) int {
 	flags := flag.NewFlagSet("discobox-sandbox-agent snapshot", flag.ContinueOnError)
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
@@ -45,6 +46,11 @@ func runSnapshot(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A taker that stops reading the progress on stdout fails its writes,
+	// which the build ignores, rather than killing the build. Notified, not
+	// ignored: an ignored signal stays ignored in every step the build runs,
+	// whose pipelines would then fail where a fresh box's end quietly.
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 	switch entered, err := inInitMountNamespace(ctx, systemdIsInit(), procSelfMountNamespace, procInitMountNamespace); {
 	case err != nil:
 		fmt.Fprintln(os.Stderr, "discobox-sandbox-agent snapshot:", err)
@@ -52,7 +58,7 @@ func runSnapshot(args []string) int {
 	case entered != nil:
 		return runEntered(entered)
 	}
-	if err := takeSnapshot(ctx, os.Stdin); err != nil {
+	if err := takeSnapshot(ctx, os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "discobox-sandbox-agent snapshot:", err)
 		return 1
 	}
@@ -106,7 +112,8 @@ func inInitMountNamespace(ctx context.Context, systemd bool, selfNS, initNS stri
 
 // enterCommand is the snapshot command run again by agent, through nsenter,
 // in PID 1's mount namespace alone. The plan arrives on its standard input,
-// and its standard error, which says what went wrong, is the taker's.
+// and its standard output, the build's progress, and standard error, which
+// says what went wrong, are the taker's.
 func enterCommand(ctx context.Context, nsenter, agent string) *exec.Cmd {
 	//nolint:gosec // G204: nsenter from PATH and the agent's own executable, with fixed arguments.
 	cmd := exec.CommandContext(ctx, nsenter, "--target", "1", "--mount", "--", agent, agentlayer.SnapshotCommand)
@@ -133,8 +140,10 @@ func runEntered(cmd *exec.Cmd) int {
 // snapshotPlanLimit bounds the plan read from standard input.
 const snapshotPlanLimit = 1 << 20
 
-// takeSnapshot provisions the box from the plan on planInput.
-func takeSnapshot(ctx context.Context, planInput io.Reader) error {
+// takeSnapshot provisions the box from the plan on planInput, writing each
+// change of its provisioning status to progress as it goes (ADR 26-11-23-004
+// §1).
+func takeSnapshot(ctx context.Context, planInput io.Reader, progress io.Writer) error {
 	data, err := io.ReadAll(io.LimitReader(planInput, snapshotPlanLimit+1))
 	if err != nil {
 		return fmt.Errorf("read the snapshot plan: %w", err)
@@ -194,6 +203,9 @@ func takeSnapshot(ctx context.Context, planInput io.Reader) error {
 		return err
 	}
 	tracker := provision.NewTracker(provisionspec.StatusPath)
+	reporter := newSnapshotProgressReporter(progress)
+	defer reporter.close()
+	tracker.Observe(reporter.observe)
 	if err := provision.Apply(ctx, slog.Default(), tracker, trees, plan.Features, provision.Options{Snapshot: true}, false); err != nil {
 		return err
 	}
@@ -213,6 +225,59 @@ func takeSnapshot(ctx context.Context, planInput io.Reader) error {
 		return err
 	}
 	return seal()
+}
+
+// snapshotProgressCloseTimeout bounds how long the build waits, at its end,
+// for its last status to reach a taker that has stopped reading.
+const snapshotProgressCloseTimeout = 10 * time.Second
+
+// snapshotProgressReporter writes the build's status to its taker as
+// progress lines, off the tracker's lock: the tracker hands it each change
+// and goes on, and a writer that is behind writes only the latest. A line
+// the taker misses is made good by the next, and a failed write is the
+// build's to ignore, never its failure.
+type snapshotProgressReporter struct {
+	latest chan provisionspec.Status
+	done   chan struct{}
+}
+
+func newSnapshotProgressReporter(progress io.Writer) *snapshotProgressReporter {
+	r := &snapshotProgressReporter{latest: make(chan provisionspec.Status, 1), done: make(chan struct{})}
+	go func() {
+		defer close(r.done)
+		for status := range r.latest {
+			reportSnapshotProgress(progress, status)
+		}
+	}()
+	return r
+}
+
+// observe hands status to the writer, replacing one it has not written yet.
+// The tracker calls it under its lock, one change at a time.
+func (r *snapshotProgressReporter) observe(status provisionspec.Status) {
+	select {
+	case <-r.latest:
+	default:
+	}
+	r.latest <- status
+}
+
+// close writes what is left, waiting at most snapshotProgressCloseTimeout.
+func (r *snapshotProgressReporter) close() {
+	close(r.latest)
+	select {
+	case <-r.done:
+	case <-time.After(snapshotProgressCloseTimeout):
+	}
+}
+
+// reportSnapshotProgress writes status to progress as one progress line.
+func reportSnapshotProgress(progress io.Writer, status provisionspec.Status) {
+	line, err := agentlayer.SnapshotProgressLine(status)
+	if err != nil || len(line) > agentlayer.SnapshotProgressLimit {
+		return
+	}
+	_, _ = progress.Write(line)
 }
 
 // disarmAgentStart removes the link that has systemd watch for a bootstrap

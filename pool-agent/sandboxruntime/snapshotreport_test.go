@@ -93,13 +93,13 @@ func TestASnapshotBuildIsReportedQueuedThenStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	release, running := make(chan struct{}), make(chan struct{})
-	r.requestSnapshot(first, func(context.Context, snapshotPlan) error {
+	r.requestSnapshot(first, func(context.Context, snapshotPlan, *snapshotBuild) error {
 		close(running)
 		<-release
 		return nil
 	})
 	<-running
-	r.requestSnapshot(second, func(context.Context, snapshotPlan) error { return nil })
+	r.requestSnapshot(second, func(context.Context, snapshotPlan, *snapshotBuild) error { return nil })
 	report, err := r.snapshotReport(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,9 @@ func TestAFailedPlanIsReportedWithItsReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.requestSnapshot(plan, func(context.Context, snapshotPlan) error { return errors.New("feature go failed: exit status 2") })
+	r.requestSnapshot(plan, func(context.Context, snapshotPlan, *snapshotBuild) error {
+		return errors.New("feature go failed: exit status 2")
+	})
 	waitForSnapshotBuilds(t, r)
 	now := time.Now().UTC()
 	old := filepath.Join(filepath.Dir(r.snapshotFailurePath(plan.Key())), "kbare")

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
@@ -50,4 +51,32 @@ func TestTheAgentStartUnitHasALinkToDisarm(t *testing.T) {
 		return
 	}
 	t.Fatalf("no unit %s among the agent's units", AgentStartUnit)
+}
+
+// A progress line reads back as the status it was written from, and a line
+// that is not one, or is torn, is refused (ADR 26-11-23-004 §1).
+func TestASnapshotProgressLineReadsBackAndStrayOutputDoesNot(t *testing.T) {
+	status := provisionspec.Status{
+		State: provisionspec.StateProvisioning,
+		Features: map[string]provisionspec.FeatureStatus{
+			"docker": {State: provisionspec.StateProvisioning, Step: "install"},
+			"go":     {State: provisionspec.StateFailed, Error: "download: 404"},
+		},
+	}
+	line, err := SnapshotProgressLine(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(line), "\n") || strings.Count(string(line), "\n") != 1 {
+		t.Fatalf("line = %q, want one line", line)
+	}
+	got, ok := ParseSnapshotProgress(line[:len(line)-1])
+	if !ok || got.State != status.State || got.Features["docker"].Step != "install" || got.Features["go"].Error != "download: 404" {
+		t.Fatalf("ParseSnapshotProgress = %+v, %v", got, ok)
+	}
+	for _, stray := range []string{"", "hello", SnapshotProgressPrefix + "{", SnapshotProgressPrefix + "{}", `{"state":"ready"}`} {
+		if _, ok := ParseSnapshotProgress([]byte(stray)); ok {
+			t.Errorf("ParseSnapshotProgress(%q) read a status", stray)
+		}
+	}
 }

@@ -109,6 +109,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 		registerSandboxCacheRoutes(protected, handler)
 		registerSandboxTreeRoutes(protected, handler)
 		registerAuditRoutes(protected, handler)
+		registerSnapshotBuildRoutes(protected, handler)
 		registerSandboxProxyRoutes(protected, handler)
 		protected.Mount("/", generated)
 	})

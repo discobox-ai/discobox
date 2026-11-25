@@ -121,7 +121,7 @@ func (r *DockerSandboxRuntime) deliveredImage(ctx context.Context, baseID string
 // exec, stops it and commits it as plan's snapshot. Everything it made on the
 // way — the container, the build's tree, its proxy material and policy — is
 // removed whatever the outcome.
-func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotPlan) (err error) {
+func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotPlan, build *snapshotBuild) (err error) {
 	// It starts a container as a create does, so it waits out a cache clear
 	// and holds the next one off (clearcache.go).
 	leave, err := r.starts.enter(ctx)
@@ -170,7 +170,7 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return fmt.Errorf("start the build container: %w", err)
 	}
-	if err := runSnapshotCommand(ctx, provisioner.ContainerGuest{Client: r.client, Container: created.ID, Stdin: true}, agent, plan.Pins, data); err != nil {
+	if err := r.runSnapshotCommand(ctx, build, plan.Key(), name, provisioner.ContainerGuest{Client: r.client, Container: created.ID, Stdin: true}, agent, plan.Pins, data); err != nil {
 		return err
 	}
 	// Stopped in order, so what it wrote is on its filesystem whole.

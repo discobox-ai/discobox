@@ -95,7 +95,9 @@ type snapshotBuilds struct {
 	records sync.Mutex
 }
 
-// snapshotBuild is one build asked for and not yet ended.
+// snapshotBuild is one build asked for and not yet ended. What it says of
+// its box is set while its snapshot command runs (runSnapshotCommand), under
+// snapshotBuilds.mu. A build function is handed its own.
 type snapshotBuild struct {
 	// cancel ends it early: a cache clear does.
 	cancel context.CancelFunc
@@ -103,11 +105,41 @@ type snapshotBuild struct {
 	// requested is when a create asked for it; started, once it holds the
 	// build lock, when it began. A build with no start is queued.
 	requested, started time.Time
+	// box is what it runs in, as its runtime names it, once it has one.
+	box string
+	// guest reaches its box while its snapshot command runs, and is nil
+	// before and after: an admin's logs and exec go through it (ADR
+	// 26-11-23-004 §4). provisioned is set once the command has ended, while
+	// the box is stopped and committed.
+	guest       machine.Guest
+	provisioned bool
+	// ended ends, by end, when its snapshot command does, which ends every
+	// read and exec session in its box.
+	ended context.Context
+	end   context.CancelFunc
+	// progress is the latest status its snapshot command reported (ADR
+	// 26-11-23-004 §1); nil before the first, and from an agent that reports
+	// none.
+	progress *SnapshotProgress
+	// opened is whether an admin has run a command in its box: its result
+	// is then never committed (ADR 26-11-23-004 §5).
+	opened bool
 }
 
 // errSnapshotHeld ends a build that would replace a snapshot a create is
 // still making a box from. It is not the plan's failure.
 var errSnapshotHeld = errors.New("a create is still making a box from the snapshot it would replace")
+
+// errSnapshotOpened ends a build an admin ran a command in: whatever was
+// typed would be in every box of its plan, so it is never committed (ADR
+// 26-11-23-004 §5). It is not the plan's failure.
+var errSnapshotOpened = errors.New("an admin ran a command in the build's box, so its result is not committed")
+
+// newSnapshotBuild is a build of plan asked for now, which cancel ends early.
+func newSnapshotBuild(plan SnapshotPlanName, cancel context.CancelFunc) *snapshotBuild {
+	ended, end := context.WithCancel(context.Background())
+	return &snapshotBuild{cancel: cancel, plan: plan, requested: time.Now().UTC(), ended: ended, end: end}
+}
 
 // snapshotPlan is what a delivered create is provisioned with, as a snapshot
 // is keyed: everything a snapshot of it holds depends on, and nothing of the
@@ -190,7 +222,7 @@ func (r *sandboxCore) newSnapshotPlan(base string, req *workerapimodel.PoolSandb
 
 // requestSnapshot builds plan's snapshot in the background with build,
 // unless one is being built or failed within snapshotRetryAfter.
-func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Context, snapshotPlan) error) {
+func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Context, snapshotPlan, *snapshotBuild) error) {
 	key := plan.Key()
 	b := &r.snapshots
 	b.mu.Lock()
@@ -202,11 +234,12 @@ func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Cont
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), snapshotBuildTimeout)
-	active := &snapshotBuild{cancel: cancel, plan: plan.name(), requested: time.Now().UTC()}
+	active := newSnapshotBuild(plan.name(), cancel)
 	b.active[key] = active
 	b.mu.Unlock()
 	go func() {
 		defer cancel()
+		defer active.end()
 		var started time.Time
 		err := func() error {
 			b.one.Lock()
@@ -216,16 +249,21 @@ func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Cont
 			active.started = started.UTC()
 			b.mu.Unlock()
 			slog.Info("building a snapshot", "snapshot", key)
-			return build(ctx, plan)
+			return build(ctx, plan, active)
 		}()
 		// The failure is recorded before the build stops being one, so a
 		// create in between neither builds it again nor finds it failed.
+		b.mu.Lock()
+		progress := active.progress
+		b.mu.Unlock()
+		failed := false
 		switch {
-		case errors.Is(ctx.Err(), context.Canceled), errors.Is(err, errSnapshotHeld):
-			// Ended by a clear, or by a create holding what it would
-			// replace: the next create asks again.
+		case errors.Is(ctx.Err(), context.Canceled), errors.Is(err, errSnapshotHeld), errors.Is(err, errSnapshotOpened):
+			// Ended by a clear, by a create holding what it would replace,
+			// or by an admin's shell: the next create asks again.
 		case err != nil:
-			if recordErr := r.recordSnapshotFailure(key, time.Now(), err.Error(), &active.plan); recordErr != nil {
+			failed = true
+			if recordErr := r.recordSnapshotFailure(key, time.Now(), err.Error(), &active.plan, progress); recordErr != nil {
 				slog.Warn("record a failed snapshot build", "snapshot", key, "error", recordErr)
 			}
 		default:
@@ -236,8 +274,12 @@ func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Cont
 		b.mu.Lock()
 		delete(b.active, key)
 		b.mu.Unlock()
-		if err != nil {
+		switch {
+		case failed:
 			slog.Warn("build a snapshot; its plan provisions from scratch", "snapshot", key, "error", err, "retryAfter", snapshotRetryAfter)
+			return
+		case err != nil:
+			slog.Info("a snapshot build ended with no snapshot; the plan's next create asks again", "snapshot", key, "reason", err)
 			return
 		}
 		slog.Info("built a snapshot", "snapshot", key, "took", time.Since(started).Round(time.Second))
@@ -297,7 +339,7 @@ func (r *sandboxCore) snapshotBuildsReport() []BuildingSnapshot {
 	defer r.snapshots.mu.Unlock()
 	out := make([]BuildingSnapshot, 0, len(r.snapshots.active))
 	for key, build := range r.snapshots.active {
-		entry := BuildingSnapshot{Key: key, Plan: build.plan, RequestedAt: build.requested}
+		entry := BuildingSnapshot{Key: key, Plan: build.plan, RequestedAt: build.requested, Box: build.box, Progress: build.progress.clone()}
 		if !build.started.IsZero() {
 			started := build.started
 			entry.StartedAt = &started
@@ -359,6 +401,9 @@ type snapshotFailure struct {
 	FailedAt time.Time         `json:"failedAt"`
 	Error    string            `json:"error,omitempty"`
 	Plan     *SnapshotPlanName `json:"plan,omitempty"`
+	// Progress is the last status the build reported before it failed (ADR
+	// 26-11-23-004 §2); absent from a failure recorded before it was kept.
+	Progress *SnapshotProgress `json:"progress,omitempty"`
 }
 
 // readSnapshotFailure reads the failure record at path: the JSON document,
@@ -388,14 +433,15 @@ func (r *sandboxCore) snapshotFailedRecently(key string, now time.Time) bool {
 }
 
 // recordSnapshotFailure records that the build of plan, keyed key, failed at
-// at for reason, which is kept bounded. A nil plan is one the pool no longer
-// knows.
-func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time, reason string, plan *SnapshotPlanName) error {
+// at for reason, which is kept bounded, having last reported progress. A nil
+// plan is one the pool no longer knows; a nil progress, a build that reported
+// none.
+func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time, reason string, plan *SnapshotPlanName, progress *SnapshotProgress) error {
 	path := r.snapshotFailurePath(key)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.Marshal(snapshotFailure{FailedAt: at.UTC(), Error: boundSnapshotError(reason), Plan: plan})
+	data, err := json.Marshal(snapshotFailure{FailedAt: at.UTC(), Error: boundSnapshotError(reason), Plan: plan, Progress: progress})
 	if err != nil {
 		return err
 	}
@@ -437,7 +483,7 @@ func (r *sandboxCore) snapshotFailuresReport(now time.Time) ([]FailedSnapshot, e
 	}
 	out := []FailedSnapshot{}
 	for _, entry := range entries {
-		if fsdurable.IsStaged(entry.Name()) {
+		if fsdurable.IsStaged(entry.Name()) || entry.IsDir() {
 			continue
 		}
 		record, ok := readSnapshotFailure(filepath.Join(dir, entry.Name()))
@@ -450,27 +496,40 @@ func (r *sandboxCore) snapshotFailuresReport(now time.Time) ([]FailedSnapshot, e
 			FailedAt:   record.FailedAt.UTC(),
 			RetryAfter: record.FailedAt.Add(snapshotRetryAfter).UTC(),
 			Error:      record.Error,
+			Progress:   record.Progress,
 		})
 	}
 	slices.SortFunc(out, func(a, b FailedSnapshot) int { return b.FailedAt.Compare(a.FailedAt) })
 	return out, nil
 }
 
+// forgetSnapshotFailure forgets the failure of the plan keyed key, and the
+// logs kept with it.
 func (r *sandboxCore) forgetSnapshotFailure(key string) error {
 	if err := os.Remove(r.snapshotFailurePath(key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return nil
+	return os.RemoveAll(r.snapshotFailureLogsPath(key))
 }
 
 // sweepSnapshotFailures forgets the failures past snapshotRetryAfter, which
-// hold nothing back any longer.
+// hold nothing back any longer, and the logs kept with them. Logs kept for a
+// failure never recorded — a build ended while it copied them — go too,
+// unless a build of their plan is under way and may yet record it.
 func (r *sandboxCore) sweepSnapshotFailures(now time.Time) {
 	dir := filepath.Join(r.root.PoolData(r.projectID, r.poolID), snapshotFailuresName)
 	entries, _ := os.ReadDir(dir)
+	building := r.buildingSnapshots()
 	for _, entry := range entries {
-		if !r.snapshotFailedRecently(entry.Name(), now) {
-			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		name := entry.Name()
+		if key, ok := strings.CutSuffix(name, snapshotFailureLogsSuffix); ok && entry.IsDir() {
+			if _, recorded := readSnapshotFailure(r.snapshotFailurePath(key)); !recorded && !building[key] {
+				_ = os.RemoveAll(filepath.Join(dir, name))
+			}
+			continue
+		}
+		if !r.snapshotFailedRecently(name, now) {
+			_ = r.forgetSnapshotFailure(name)
 		}
 	}
 }
@@ -590,24 +649,75 @@ var snapshotCommand = []string{agentlayer.AgentPath, agentlayer.SnapshotCommand}
 // box and runs the snapshot command there, its plan on standard input — never
 // on the box's disk, since the plan holds the build's client key. Its exit
 // status, and the end of its stderr, are the build's result.
-func runSnapshotCommand(ctx context.Context, guest machine.Guest, agent agentlayer.Agent, pins agentlayer.Pins, plan []byte) error {
+//
+// While it runs, build holds box, the box's name, and guest, which an
+// admin's logs and exec reach it by, and the progress the command reports on
+// its stdout (ADR 26-11-23-004 §§1, 4). Once it ends, no exec starts and
+// every exec session ends. A build an admin ran a command in ends with
+// errSnapshotOpened, whatever the command's outcome, which it says; one that
+// failed otherwise keeps the tail of its feature logs beside its failure
+// (§6).
+func (r *sandboxCore) runSnapshotCommand(ctx context.Context, build *snapshotBuild, key, box string, guest machine.Guest, agent agentlayer.Agent, pins agentlayer.Pins, plan []byte) error {
+	r.attachSnapshotBuild(build, box, guest)
 	reader, writer := io.Pipe()
 	go func() { writer.CloseWithError(agentlayer.Archive(writer, agent, false, pins, agentlayer.Units)) }()
 	defer reader.Close()
+	progress := &snapshotProgressWriter{report: func(status SnapshotProgress) { r.reportSnapshotProgress(build, status) }}
 	result, err := provisioner.Provision(ctx, guest, provisioner.Plan{
 		Dir:     "/",
 		Tree:    reader,
 		Command: machine.ExecRequest{Argv: snapshotCommand},
 		Stdin:   bytes.NewReader(plan),
+		Stdout:  progress,
 	})
+	progress.flush()
 	if exit := (*provisioner.ExitError)(nil); errors.As(err, &exit) {
 		if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
-			return fmt.Errorf("its provisioning failed (status %d): %s", exit.ExitCode, tail)
+			err = fmt.Errorf("its provisioning failed (status %d): %s", exit.ExitCode, tail)
+		} else {
+			err = fmt.Errorf("its provisioning failed with status %d", exit.ExitCode)
 		}
-		return fmt.Errorf("its provisioning failed with status %d", exit.ExitCode)
+	} else if err != nil {
+		err = fmt.Errorf("run the build's provisioning: %w", err)
 	}
-	if err != nil {
-		return fmt.Errorf("run the build's provisioning: %w", err)
+	opened := r.detachSnapshotBuild(build)
+	if opened {
+		// Not a failure, and nothing is kept of it; what the admin saw
+		// happen is said.
+		if err != nil {
+			return fmt.Errorf("%w; %w", errSnapshotOpened, err)
+		}
+		return errSnapshotOpened
 	}
-	return nil
+	// A failure's logs are kept while its box is still up to copy them from.
+	if err != nil && ctx.Err() == nil {
+		if keepErr := r.keepSnapshotLogs(context.WithoutCancel(ctx), key, guest); keepErr != nil {
+			slog.Warn("keep a failed snapshot build's logs", "snapshot", key, "error", keepErr)
+		}
+	}
+	return err
+}
+
+// attachSnapshotBuild records that build runs in box, reached by guest.
+func (r *sandboxCore) attachSnapshotBuild(build *snapshotBuild, box string, guest machine.Guest) {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	build.box, build.guest, build.progress, build.opened, build.provisioned = box, guest, nil, false, false
+}
+
+// detachSnapshotBuild closes build's box to admins, its command having
+// ended, ends their sessions, and reports whether one ran a command in it.
+func (r *sandboxCore) detachSnapshotBuild(build *snapshotBuild) bool {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	build.guest, build.provisioned = nil, true
+	build.end()
+	return build.opened
+}
+
+// reportSnapshotProgress keeps status as build's latest.
+func (r *sandboxCore) reportSnapshotProgress(build *snapshotBuild, status SnapshotProgress) {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	build.progress = &status
 }

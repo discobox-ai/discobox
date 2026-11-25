@@ -93,15 +93,6 @@ Without POOL the project's default pool is used.`,
 // a redirected `discobox admin pool logs > console.txt` captures the log and
 // nothing else.
 func (a *App) streamPoolLogs(ctx context.Context, projectID, poolID string, tail int, follow bool, stdout, stderr io.Writer) error {
-	baseURL, httpClient, err := a.httpClient()
-	if err != nil {
-		return err
-	}
-	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil {
-		return err
-	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/api/projects/" + url.PathEscape(projectID) + "/pools/" + url.PathEscape(poolID) + "/logs"
 	query := url.Values{}
 	if tail > 0 {
 		query.Set("tail", strconv.Itoa(tail))
@@ -109,24 +100,11 @@ func (a *App) streamPoolLogs(ctx context.Context, projectID, poolID string, tail
 	if follow {
 		query.Set("follow", "true")
 	}
-	u.RawQuery = query.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	resp, err := a.openPoolText(ctx, "/api/projects/"+url.PathEscape(projectID)+"/pools/"+url.PathEscape(poolID)+"/logs", query, "read pool host logs")
 	if err != nil {
 		return err
 	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("read pool host logs: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		if message := attachErrorMessage(body); message != "" {
-			return fmt.Errorf("read pool host logs: %s", message)
-		}
-		return fmt.Errorf("read pool host logs: %s", resp.Status)
-	}
 	if source := strings.TrimSpace(resp.Header.Get(poolLogSourceHeader)); source != "" {
 		fmt.Fprintf(stderr, "Pool %s host log: %s\n", poolID, source)
 	}
@@ -139,4 +117,37 @@ func (a *App) streamPoolLogs(ctx context.Context, projectID, poolID string, tail
 		return fmt.Errorf("read pool host logs: %w", err)
 	}
 	return nil
+}
+
+// openPoolText GETs a pool's streamed text route at path, under the server's
+// base URL, and is its 200 response: a refusal is an error naming action and
+// the server's reason.
+func (a *App) openPoolText(ctx context.Context, path string, query url.Values, action string) (*http.Response, error) {
+	baseURL, httpClient, err := a.httpClient()
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if err != nil {
+		return nil, err
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + path
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", action, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		if message := attachErrorMessage(body); message != "" {
+			return nil, fmt.Errorf("%s: %s", action, terminalSafe(message))
+		}
+		return nil, fmt.Errorf("%s: %s", action, resp.Status)
+	}
+	return resp, nil
 }

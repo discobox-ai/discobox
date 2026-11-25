@@ -12,7 +12,7 @@ import (
 )
 
 // LogDir holds each feature's log at boot.
-const LogDir = "/var/log/discobox/provision"
+const LogDir = provisionspec.LogDir
 
 // optedOutReason is why a feature the project turned off is off.
 const optedOutReason = "turned off in " + sandboxconfig.SettingsFile

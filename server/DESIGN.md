@@ -194,6 +194,26 @@ stderr concurrently into serialized frames, forwards stdin EOF for commands,
 and waits for the command's actual exit status. Only interactive detach uses
 a bounded exit wait.
 
+### Pool Snapshot Builds
+
+`/projects/{projectId}/pools/{poolId}/snapshot-builds/{key}/{logs,exec}` are
+hand-wired beside the console, and unlike it forwarded to the pool agent,
+which alone holds a build's box on every runtime
+([ADR 26-11-23-004](../docs/adr/26-11-23-004-a-snapshot-build-reports-its-progress-and-an-admin-reaches-it-through-its-pool.md)
+§4). The server keeps nothing of a build: `key` is the pool's, as
+`Pool.resources.snapshots` lists it.
+
+- `logs` is a streaming GET (`feature`, `tail`, `follow`) the provider
+  forwards with a `snapshot-build:read` token and the server copies through,
+  flushed, closing it when the client leaves.
+- `exec` accepts the client's WebSocket, then dials the pool agent's with a
+  `snapshot-build:exec` token (`DialSnapshotBuildExec`) and copies frame bytes
+  both ways unread. Its query is the console's. A refusal is an error frame.
+- An agent too old for the routes answers the router's text/plain 404, which
+  becomes a 409 about the pool, not a missing build.
+- Authorization is `ProjectAuthorizer`, as the console's. Neither has a
+  legacy `/api` alias.
+
 `get-http-audit` reads one exchange in full from the pool that recorded it; the
 pool is in the path because a record ID is only unique within it.
 

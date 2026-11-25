@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
@@ -83,4 +85,54 @@ func TestEmptyDirKeepsTheDirectory(t *testing.T) {
 	if err := emptyDir(filepath.Join(dir, "gone")); err != nil {
 		t.Errorf("emptyDir of a missing directory: %v", err)
 	}
+}
+
+// The build's progress is written as progress lines the taker reads back
+// (ADR 26-11-23-004 §1).
+func TestTheSnapshotCommandReportsProgressAsLinesTheTakerReads(t *testing.T) {
+	var out bytes.Buffer
+	reportSnapshotProgress(&out, provisionspec.Status{State: provisionspec.StateProvisioning, Features: map[string]provisionspec.FeatureStatus{
+		"docker": {State: provisionspec.StateProvisioning, Step: "install"},
+	}})
+	reportSnapshotProgress(&out, provisionspec.Status{State: provisionspec.StateReady})
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("wrote %q, want two lines", out.String())
+	}
+	first, ok := agentlayer.ParseSnapshotProgress([]byte(lines[0]))
+	if !ok || first.Features["docker"].Step != "install" {
+		t.Fatalf("first line read as %+v, %v", first, ok)
+	}
+	if last, ok := agentlayer.ParseSnapshotProgress([]byte(lines[1])); !ok || last.State != provisionspec.StateReady {
+		t.Fatalf("last line read as %+v, %v", last, ok)
+	}
+}
+
+// The reporter never holds the tracker up: a writer that is behind gets the
+// latest status alone, and the last one reaches the taker at the close.
+func TestTheSnapshotProgressReporterWritesTheLatestOffTheTrackersLock(t *testing.T) {
+	gate := make(chan struct{})
+	w := &gatedWriter{gate: gate}
+	reporter := newSnapshotProgressReporter(w)
+	for _, state := range []provisionspec.State{provisionspec.StatePending, provisionspec.StateProvisioning, provisionspec.StateProvisioning, provisionspec.StateReady} {
+		reporter.observe(provisionspec.Status{State: state}) // never blocks on the writer
+	}
+	close(gate)
+	reporter.close()
+	lines := strings.Split(strings.TrimSuffix(w.buf.String(), "\n"), "\n")
+	last, ok := agentlayer.ParseSnapshotProgress([]byte(lines[len(lines)-1]))
+	if !ok || last.State != provisionspec.StateReady || len(lines) > 2 {
+		t.Fatalf("wrote %q, want at most the first and the latest", w.buf.String())
+	}
+}
+
+// gatedWriter blocks every write until gate closes.
+type gatedWriter struct {
+	gate <-chan struct{}
+	buf  bytes.Buffer
+}
+
+func (w *gatedWriter) Write(p []byte) (int, error) {
+	<-w.gate
+	return w.buf.Write(p)
 }

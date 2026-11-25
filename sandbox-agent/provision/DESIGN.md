@@ -231,7 +231,9 @@ explicit opt-out prevents launch; the default ignores opt-outs. Each feature's
 steps write to
 `/var/log/discobox/provision/<feature>.log`. `Tracker.Changes` moves when the
 document's state, its readiness or a feature's state does, never a step, and
-is what the agent's status wait holds the pool on.
+is what the agent's status wait holds the pool on. `Tracker.Observe` hands
+a copy of the document to one observer after every change, steps included:
+the snapshot command streams it to its taker (ADR 26-11-23-004 §1).
 
 ## Reprovision
 

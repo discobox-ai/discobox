@@ -719,7 +719,7 @@ func (r *MachineSandboxRuntime) remakeFresh(ctx context.Context, sandboxID, key 
 	// snapshot rebuilt at once would likely fail its next sandbox the same.
 	// It is reported as a failed plan, with why (ADR 26-11-17-316 §2).
 	reason := fmt.Sprintf("a sandbox machine made from it did not come up: %v", cause)
-	if err := r.recordSnapshotFailure(key, time.Now(), reason, plan); err != nil {
+	if err := r.recordSnapshotFailure(key, time.Now(), reason, plan, nil); err != nil {
 		slog.WarnContext(ctx, "record a snapshot whose sandbox did not come up", "snapshot", snapshotMachineName(key), "error", err)
 	}
 	if err := r.remakeMachine(ctx, sandboxID); err != nil {

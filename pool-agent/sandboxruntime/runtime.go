@@ -39,6 +39,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/tarsums"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/proxy/gateway"
+	"github.com/discobox-ai/vm/pkg/machine"
 	"github.com/discobox-ai/x/id"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -280,6 +281,14 @@ type Runtime interface {
 	// the plans that failed to build, as its resource report carries them
 	// on every report (ADR 26-11-17-316 §§1-2).
 	Snapshots(ctx context.Context) (*SnapshotReport, error)
+	// SnapshotBuildLogs writes the feature logs of the build keyed key: read
+	// through its box while it runs, or what its failure kept (ADR
+	// 26-11-23-004 §§4, 6).
+	SnapshotBuildLogs(ctx context.Context, key string, req SnapshotLogsRequest, w io.Writer) error
+	// SnapshotBuildExec starts a command in the box of the build keyed key,
+	// which keeps the build from being committed (ADR 26-11-23-004 §5). The
+	// context it returns ends when the build does.
+	SnapshotBuildExec(ctx context.Context, key string, req machine.ExecRequest) (machine.Process, context.Context, error)
 	// ExportTree streams the sandbox's durable tree as a tar archive, and
 	// ImportTree restores one for a sandbox this pool does not hold yet. They
 	// are the two halves of moving a discobox between servers (ADR 0123), and

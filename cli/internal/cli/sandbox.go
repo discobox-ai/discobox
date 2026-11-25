@@ -98,10 +98,18 @@ func (a *App) newSandboxCommand() *cobra.Command {
 }
 
 func (a *App) newSandboxListCommand() *cobra.Command {
+	var snapshotBuilds bool
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List discoboxes",
+		Long: `List the project's discoboxes.
+
+With --snapshot-builds, also list each pool's running snapshot builds: the
+boxes a pool provisions for no discobox, so that a new discobox of the same
+plan starts from one. Each shows its pool, its key, whether it is queued or
+building, the box it runs in and what it is provisioning. Read a build's logs
+with "discobox admin pool snapshot logs".`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -119,10 +127,30 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.writeSandboxes(cmd, body.GetSandboxes(), nil)
+			if !snapshotBuilds || a.quiet {
+				return a.writeSandboxes(cmd, body.GetSandboxes(), nil)
+			}
+			builds, err := a.listSnapshotBuilds(cmd.Context(), client, projectID)
+			if err != nil {
+				return err
+			}
+			if a.output == "json" {
+				sandboxes := sortedByRecency(body.GetSandboxes(), func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
+				return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes, "snapshotBuilds": builds})
+			}
+			if err := a.writeSandboxes(cmd, body.GetSandboxes(), nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout())
+			if len(builds) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No snapshot builds under way.")
+				return nil
+			}
+			return writeSnapshotBuilds(cmd.OutOrStdout(), builds, time.Now())
 		},
 	}
 	a.addQuietFlag(cmd)
+	cmd.Flags().BoolVar(&snapshotBuilds, "snapshot-builds", false, "Also list each pool's running snapshot builds")
 	return cmd
 }
 

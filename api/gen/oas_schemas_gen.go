@@ -13368,6 +13368,98 @@ func (o OptPoolSnapshotPlan) Or(d PoolSnapshotPlan) PoolSnapshotPlan {
 	return d
 }
 
+// NewOptPoolSnapshotProgress returns new OptPoolSnapshotProgress with value set to v.
+func NewOptPoolSnapshotProgress(v PoolSnapshotProgress) OptPoolSnapshotProgress {
+	return OptPoolSnapshotProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSnapshotProgress is optional PoolSnapshotProgress.
+type OptPoolSnapshotProgress struct {
+	Value PoolSnapshotProgress
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSnapshotProgress was set.
+func (o OptPoolSnapshotProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSnapshotProgress) Reset() {
+	var v PoolSnapshotProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSnapshotProgress) SetTo(v PoolSnapshotProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSnapshotProgress) Get() (v PoolSnapshotProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSnapshotProgress) Or(d PoolSnapshotProgress) PoolSnapshotProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolSnapshotProgressFeatures returns new OptPoolSnapshotProgressFeatures with value set to v.
+func NewOptPoolSnapshotProgressFeatures(v PoolSnapshotProgressFeatures) OptPoolSnapshotProgressFeatures {
+	return OptPoolSnapshotProgressFeatures{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSnapshotProgressFeatures is optional PoolSnapshotProgressFeatures.
+type OptPoolSnapshotProgressFeatures struct {
+	Value PoolSnapshotProgressFeatures
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSnapshotProgressFeatures was set.
+func (o OptPoolSnapshotProgressFeatures) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSnapshotProgressFeatures) Reset() {
+	var v PoolSnapshotProgressFeatures
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSnapshotProgressFeatures) SetTo(v PoolSnapshotProgressFeatures) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSnapshotProgressFeatures) Get() (v PoolSnapshotProgressFeatures, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSnapshotProgressFeatures) Or(d PoolSnapshotProgressFeatures) PoolSnapshotProgressFeatures {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolSnapshots returns new OptPoolSnapshots with value set to v.
 func NewOptPoolSnapshots(v PoolSnapshots) OptPoolSnapshots {
 	return OptPoolSnapshots{
@@ -19604,7 +19696,13 @@ type PoolSnapshotBuild struct {
 	// When a new box of the plan, finding no snapshot, asked for it.
 	RequestedAt time.Time `json:"requestedAt"`
 	// When the build began. Absent while it waits for another build to end.
-	StartedAt       OptDateTime `json:"startedAt"`
+	StartedAt OptDateTime `json:"startedAt"`
+	// What the build runs in, as the pool's runtime names it - a container's name on a Docker pool, a
+	// machine's on a machine pool. Absent until its box is up.
+	Box OptString `json:"box"`
+	// The build's latest provisioning status, as it reported it. Absent until it has, and from a pool
+	// whose builds report none.
+	Progress        OptPoolSnapshotProgress `json:"progress"`
 	AdditionalProps PoolSnapshotBuildAdditional
 }
 
@@ -19626,6 +19724,16 @@ func (s *PoolSnapshotBuild) GetRequestedAt() time.Time {
 // GetStartedAt returns the value of StartedAt.
 func (s *PoolSnapshotBuild) GetStartedAt() OptDateTime {
 	return s.StartedAt
+}
+
+// GetBox returns the value of Box.
+func (s *PoolSnapshotBuild) GetBox() OptString {
+	return s.Box
+}
+
+// GetProgress returns the value of Progress.
+func (s *PoolSnapshotBuild) GetProgress() OptPoolSnapshotProgress {
+	return s.Progress
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -19651,6 +19759,16 @@ func (s *PoolSnapshotBuild) SetRequestedAt(val time.Time) {
 // SetStartedAt sets the value of StartedAt.
 func (s *PoolSnapshotBuild) SetStartedAt(val OptDateTime) {
 	s.StartedAt = val
+}
+
+// SetBox sets the value of Box.
+func (s *PoolSnapshotBuild) SetBox(val OptString) {
+	s.Box = val
+}
+
+// SetProgress sets the value of Progress.
+func (s *PoolSnapshotBuild) SetProgress(val OptPoolSnapshotProgress) {
+	s.Progress = val
 }
 
 // SetAdditionalProps sets the value of AdditionalProps.
@@ -19727,7 +19845,10 @@ type PoolSnapshotFailure struct {
 	RetryAfter time.Time `json:"retryAfter"`
 	// Why it failed, as the pool composed it, bounded in length. It can end with the build's own output.
 	// Absent for a failure recorded before pools kept the reason.
-	Error           OptString `json:"error"`
+	Error OptString `json:"error"`
+	// The last provisioning status the build reported before it failed - which feature failed, and at
+	// which step. Absent when it reported none.
+	Progress        OptPoolSnapshotProgress `json:"progress"`
 	AdditionalProps PoolSnapshotFailureAdditional
 }
 
@@ -19754,6 +19875,11 @@ func (s *PoolSnapshotFailure) GetRetryAfter() time.Time {
 // GetError returns the value of Error.
 func (s *PoolSnapshotFailure) GetError() OptString {
 	return s.Error
+}
+
+// GetProgress returns the value of Progress.
+func (s *PoolSnapshotFailure) GetProgress() OptPoolSnapshotProgress {
+	return s.Progress
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -19786,6 +19912,11 @@ func (s *PoolSnapshotFailure) SetError(val OptString) {
 	s.Error = val
 }
 
+// SetProgress sets the value of Progress.
+func (s *PoolSnapshotFailure) SetProgress(val OptPoolSnapshotProgress) {
+	s.Progress = val
+}
+
 // SetAdditionalProps sets the value of AdditionalProps.
 func (s *PoolSnapshotFailure) SetAdditionalProps(val PoolSnapshotFailureAdditional) {
 	s.AdditionalProps = val
@@ -19794,6 +19925,68 @@ func (s *PoolSnapshotFailure) SetAdditionalProps(val PoolSnapshotFailureAddition
 type PoolSnapshotFailureAdditional map[string]jx.Raw
 
 func (s *PoolSnapshotFailureAdditional) init() PoolSnapshotFailureAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/PoolSnapshotFeatureProgress
+type PoolSnapshotFeatureProgress struct {
+	// Pending, provisioning, ready, failed, or off for a feature left off.
+	State string `json:"state"`
+	// The step running now.
+	Step OptString `json:"step"`
+	// Why the feature failed.
+	Error           OptString `json:"error"`
+	AdditionalProps PoolSnapshotFeatureProgressAdditional
+}
+
+// GetState returns the value of State.
+func (s *PoolSnapshotFeatureProgress) GetState() string {
+	return s.State
+}
+
+// GetStep returns the value of Step.
+func (s *PoolSnapshotFeatureProgress) GetStep() OptString {
+	return s.Step
+}
+
+// GetError returns the value of Error.
+func (s *PoolSnapshotFeatureProgress) GetError() OptString {
+	return s.Error
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotFeatureProgress) GetAdditionalProps() PoolSnapshotFeatureProgressAdditional {
+	return s.AdditionalProps
+}
+
+// SetState sets the value of State.
+func (s *PoolSnapshotFeatureProgress) SetState(val string) {
+	s.State = val
+}
+
+// SetStep sets the value of Step.
+func (s *PoolSnapshotFeatureProgress) SetStep(val OptString) {
+	s.Step = val
+}
+
+// SetError sets the value of Error.
+func (s *PoolSnapshotFeatureProgress) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotFeatureProgress) SetAdditionalProps(val PoolSnapshotFeatureProgressAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotFeatureProgressAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotFeatureProgressAdditional) init() PoolSnapshotFeatureProgressAdditional {
 	m := *s
 	if m == nil {
 		m = map[string]jx.Raw{}
@@ -19876,6 +20069,83 @@ func (s *PoolSnapshotPlanAdditional) init() PoolSnapshotPlanAdditional {
 	m := *s
 	if m == nil {
 		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// A snapshot build's provisioning status, as the build reported it: the
+// build's own word, which the pool and the control plane only show and
+// decide nothing from. Every string in it was written by the build's box.
+// Ref: #/components/schemas/PoolSnapshotProgress
+type PoolSnapshotProgress struct {
+	// Pending, provisioning, ready or failed.
+	State string `json:"state"`
+	// Why provisioning failed or could not start.
+	Error OptString `json:"error"`
+	// Each feature the build provisions, by name.
+	Features        OptPoolSnapshotProgressFeatures `json:"features"`
+	AdditionalProps PoolSnapshotProgressAdditional
+}
+
+// GetState returns the value of State.
+func (s *PoolSnapshotProgress) GetState() string {
+	return s.State
+}
+
+// GetError returns the value of Error.
+func (s *PoolSnapshotProgress) GetError() OptString {
+	return s.Error
+}
+
+// GetFeatures returns the value of Features.
+func (s *PoolSnapshotProgress) GetFeatures() OptPoolSnapshotProgressFeatures {
+	return s.Features
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotProgress) GetAdditionalProps() PoolSnapshotProgressAdditional {
+	return s.AdditionalProps
+}
+
+// SetState sets the value of State.
+func (s *PoolSnapshotProgress) SetState(val string) {
+	s.State = val
+}
+
+// SetError sets the value of Error.
+func (s *PoolSnapshotProgress) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetFeatures sets the value of Features.
+func (s *PoolSnapshotProgress) SetFeatures(val OptPoolSnapshotProgressFeatures) {
+	s.Features = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotProgress) SetAdditionalProps(val PoolSnapshotProgressAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotProgressAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotProgressAdditional) init() PoolSnapshotProgressAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Each feature the build provisions, by name.
+type PoolSnapshotProgressFeatures map[string]PoolSnapshotFeatureProgress
+
+func (s *PoolSnapshotProgressFeatures) init() PoolSnapshotProgressFeatures {
+	m := *s
+	if m == nil {
+		m = map[string]PoolSnapshotFeatureProgress{}
 		*s = m
 	}
 	return m

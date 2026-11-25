@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -423,6 +424,14 @@ func (stubPoolProvider) GetHTTPAudit(context.Context, *model.Pool, string, audit
 
 func (stubPoolProvider) ClearCache(context.Context, *model.Pool) ([]string, error) {
 	return nil, nil
+}
+
+func (stubPoolProvider) OpenSnapshotBuildLogs(context.Context, *model.Pool, string, sandbox.SnapshotBuildLogOptions) (io.ReadCloser, error) {
+	return nil, sandbox.ErrNotFound
+}
+
+func (stubPoolProvider) DialSnapshotBuildExec(context.Context, *model.Pool, string, sandbox.ConsoleOptions) (net.Conn, error) {
+	return nil, sandbox.ErrNotFound
 }
 
 func (stubPoolProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.Stream, error) {

@@ -15,6 +15,9 @@ import (
 // step records instead.
 const StatusPath = "/run/discobox/provision.json"
 
+// LogDir holds each feature's log at boot, <feature>.log: its steps' output.
+const LogDir = "/var/log/discobox/provision"
+
 // State is where provisioning, or one feature, stands.
 type State string
 

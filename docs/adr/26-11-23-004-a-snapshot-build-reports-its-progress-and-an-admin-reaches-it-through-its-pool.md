@@ -1,9 +1,10 @@
 # 26-11-23-004 — A snapshot build reports its progress, and an admin reaches it through its pool
 
-- **Status**: Proposed (would extend [26-11-17-316](26-11-17-316-a-pool-reports-its-snapshots-and-each-box-what-it-started-from.md)
-  §2's `building` and `failed` entries, and narrow its §6 "never what a box
+- **Status**: Accepted (extends [26-11-17-316](26-11-17-316-a-pool-reports-its-snapshots-and-each-box-what-it-started-from.md)
+  §2's `building` and `failed` entries, and narrows its §6 "never what a box
   says of itself" for a build's progress alone)
 - **Date**: 2026-11-23
+- Accepted by the owner by merging #1611, 2026-11-24
 - **Issue**: [#1597](https://github.com/discobox-ai/discobox/issues/1597)
 - **Relates to**: [26-11-03-986](26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md),
   the build this makes visible, and its §5 sweep;
