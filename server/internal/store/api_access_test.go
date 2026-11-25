@@ -63,7 +63,9 @@ func TestAPIConsentIsAtomicSingleDecisionAndRetained(t *testing.T) {
 	}
 }
 
-func TestAPIAccessApprovalRechecksSandboxAndDenialWorksAfterPurge(t *testing.T) {
+// A purged sandbox's request is closed by the purge, so a person can neither
+// approve it, which would grant API access to nothing, nor answer it again.
+func TestAPIAccessRequestOfAPurgedSandboxCannotBeAnswered(t *testing.T) {
 	st := adoptionBoxes(t)
 	ctx := context.Background()
 	if err := st.SetSandboxDiscoboxAPI(ctx, "project-1", "a", false); err != nil {
@@ -76,15 +78,38 @@ func TestAPIAccessApprovalRechecksSandboxAndDenialWorksAfterPurge(t *testing.T) 
 	if err := st.DeleteSandbox(ctx, "project-1", "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.DecideAPIAccessRequest(ctx, req.ProjectID, req.ID, "person", true); err == nil {
-		t.Fatal("approved purged sandbox")
+	for _, approve := range []bool{true, false} {
+		if _, err := st.DecideAPIAccessRequest(ctx, req.ProjectID, req.ID, "person", approve); err == nil {
+			t.Fatalf("answered (approve=%v) the request of a purged sandbox", approve)
+		}
 	}
-	pending, err := st.GetAPIAccessRequest(ctx, req.ProjectID, req.ID)
-	if err != nil || pending.Status != model.SecretRequestStatusPending {
-		t.Fatal("failed approval changed request")
+	got, err := st.GetAPIAccessRequest(ctx, req.ProjectID, req.ID)
+	if err != nil || got.Status != model.SecretRequestStatusDenied || got.DecidedBy != model.SecretBindingActorSystem {
+		t.Fatalf("request of a purged sandbox = %#v %v, want denied by system", got, err)
 	}
-	denied, err := st.DecideAPIAccessRequest(ctx, req.ProjectID, req.ID, "person", false)
-	if err != nil || denied.Status != model.SecretRequestStatusDenied {
-		t.Fatalf("denial failed: %#v %v", denied, err)
+}
+
+// Purging a sandbox closes its open API access request as denied, as it does
+// its secret requests (TestDeletingASandboxDeniesItsOpenRequests): the agent
+// that asked is gone, so nothing will read the answer.
+func TestPurgingASandboxDeniesItsOpenAPIAccessRequest(t *testing.T) {
+	st := adoptionBoxes(t)
+	ctx := context.Background()
+	if err := st.SetSandboxDiscoboxAPI(ctx, "project-1", "a", false); err != nil {
+		t.Fatal(err)
+	}
+	req := &model.APIAccessRequest{ProjectID: "project-1", RequesterSandboxID: "a", Justification: "Coordinate workers", Status: model.SecretRequestStatusPending}
+	if err := st.CreateAPIAccessRequest(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteSandbox(ctx, "project-1", "a"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetAPIAccessRequest(ctx, "project-1", req.ID)
+	if err != nil {
+		t.Fatalf("purge lost the request: %v", err)
+	}
+	if got.Status != model.SecretRequestStatusDenied || got.DecidedAt == nil || got.DecidedBy != model.SecretBindingActorSystem {
+		t.Fatalf("API access request of a purged sandbox = %s by %q, want denied by %q", got.Status, got.DecidedBy, model.SecretBindingActorSystem)
 	}
 }

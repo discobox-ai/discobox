@@ -59,6 +59,8 @@ func roleStore(t *testing.T) *store.Store {
 		// A box with passthrough its unrestricted creator does not hold, as a
 		// person may set (ADR 26-10-31-819 §5).
 		{ID: "sbx-unread", Name: "unread", Egress: egress.Policy{Passthrough: []string{"db.corp.example"}}, CreatedBySandboxID: by("sbx-lead")},
+		// Purged once it has asked, below.
+		{ID: "sbx-gone", Name: "gone"},
 	} {
 		sandbox.ProjectID, sandbox.PoolID, sandbox.CreatedByUserID = "proj-1", "pool-1", "user-1"
 		if err := st.CreateSandbox(ctx, sandbox); err != nil {
@@ -80,6 +82,9 @@ func roleStore(t *testing.T) *store.Store {
 		if err := st.CreateSecretRequest(ctx, req); err != nil {
 			t.Fatalf("create secret request %s: %v", req.ID, err)
 		}
+	}
+	if err := st.DeleteSandbox(ctx, "proj-1", "sbx-gone"); err != nil {
+		t.Fatalf("purge sbx-gone: %v", err)
 	}
 	return st
 }

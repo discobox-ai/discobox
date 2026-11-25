@@ -32,6 +32,9 @@ func checkAdoptionTx(tx *gorm.DB, projectID, requesterID, childID string) (*mode
 	if requester == nil {
 		return nil, conflict("requesting sandbox no longer exists in this project")
 	}
+	if requester.DesiredState == model.DesiredStateDeleted || requester.DesiredState == model.DesiredStateArchived {
+		return nil, conflict("an archived or deleting sandbox cannot adopt")
+	}
 	if !requester.DiscoboxAPI {
 		return nil, conflict("requesting sandbox may not call the discobox API")
 	}
@@ -191,4 +194,15 @@ func (s *Store) clearSandboxChildrenTx(tx *gorm.DB, projectID, parentID string) 
 		s.sandboxChanged(child.ID)
 	}
 	return nil
+}
+
+// denySandboxAdoptionRequestsTx closes as denied by system the open adoption
+// requests a sandbox filed or is the child of (DenySandboxOpenRequestsTx).
+func denySandboxAdoptionRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
+	return tx.Model(&model.AdoptionRequest{}).
+		Where("project_id = ? AND (requester_sandbox_id = ? OR child_sandbox_id = ?) AND status = ?",
+			projectID, sandboxID, sandboxID, model.SecretRequestStatusPending).
+		Updates(map[string]any{
+			"status": model.SecretRequestStatusDenied, "decided_at": closedAt(time.Now()), "decided_by": model.SecretBindingActorSystem,
+		}).Error
 }

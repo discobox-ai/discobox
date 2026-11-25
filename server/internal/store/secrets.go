@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/pkg/secretformat"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -607,12 +609,27 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 	})
 }
 
+// A request for a sandbox is filed under the project lock and refused once the
+// sandbox is archived, being deleted or gone, as an API access request is: the
+// archive or delete that closes its open requests (DenySandboxOpenRequestsTx)
+// takes the same lock, so no request is filed after it to wait on an agent
+// that is gone.
 func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretRequest) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	return write.Create(req).Error
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		if req.SandboxID != "" {
+			if err := lockProject(tx, req.ProjectID); err != nil {
+				return err
+			}
+			box, err := firstByID[model.Sandbox](tx.Where("project_id = ?", req.ProjectID), "id", req.SandboxID)
+			if err != nil {
+				return err
+			}
+			if box.DesiredState == model.DesiredStateDeleted || box.DesiredState == model.DesiredStateArchived {
+				return apperrors.NewStatusError(http.StatusConflict, "an archived or deleting sandbox cannot request a credential")
+			}
+		}
+		return tx.Create(req).Error
+	})
 }
 
 // FindPendingAgentCredentialRequests returns the open protocol-originated
@@ -732,9 +749,8 @@ func (s *Store) AnswerOpenRefreshRequests(ctx context.Context, projectID, secret
 	return answerRefreshRequests(write, projectID, secretID, answer)
 }
 
-// denySandboxSecretRequestsTx closes a deleted sandbox's open requests as
-// denied. The agent that asked is gone, so nothing will poll for the answer,
-// and approving one would bind a credential to nothing.
+// denySandboxSecretRequestsTx closes a sandbox's open secret requests as
+// denied by system, each part with it (DenySandboxOpenRequestsTx).
 func denySandboxSecretRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
 	return tx.Model(&model.SecretRequest{}).
 		Where("project_id = ? AND sandbox_id = ? AND status = ?",

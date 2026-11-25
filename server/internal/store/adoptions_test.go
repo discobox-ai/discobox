@@ -129,7 +129,7 @@ func TestCrossingAdoptionApprovalsCannotCreateACycle(t *testing.T) {
 }
 
 func TestAdoptionRechecksLimitsAndPurgeClearsChildren(t *testing.T) {
-	for _, change := range []string{"self", "ancestor", "no-api", "archived", "deleting", "missing", "cross-project", "already-parent"} {
+	for _, change := range []string{"self", "ancestor", "no-api", "archived", "deleting", "requester-archived", "missing", "cross-project", "already-parent"} {
 		t.Run(change, func(t *testing.T) {
 			st := adoptionBoxes(t)
 			ctx := context.Background()
@@ -154,6 +154,12 @@ func TestAdoptionRechecksLimitsAndPurgeClearsChildren(t *testing.T) {
 					child.DesiredState = model.DesiredStateDeleted
 				}
 				if err := st.UpdateSandbox(ctx, child); err != nil {
+					t.Fatal(err)
+				}
+			case "requester-archived":
+				requester, _ := st.GetSandbox(ctx, "project-1", "a")
+				requester.DesiredState = model.DesiredStateArchived
+				if err := st.UpdateSandbox(ctx, requester); err != nil {
 					t.Fatal(err)
 				}
 			case "missing":

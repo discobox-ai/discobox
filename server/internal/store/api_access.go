@@ -13,7 +13,8 @@ import (
 )
 
 // CreateAPIAccessRequest shares the project lock with creation, purge and parent changes.
-// The decision and the setting commit together; requests survive sandbox purge.
+// The decision and the setting commit together; requests survive sandbox purge,
+// closed as denied by system if still open (DenySandboxOpenRequestsTx).
 func (s *Store) CreateAPIAccessRequest(ctx context.Context, req *model.APIAccessRequest) error {
 	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		if err := lockProject(tx, req.ProjectID); err != nil {
@@ -101,4 +102,16 @@ func (s *Store) DecideAPIAccessRequest(ctx context.Context, projectID, requestID
 		return nil
 	})
 	return result, err
+}
+
+// denySandboxAPIAccessRequestsTx closes a sandbox's open API access request as
+// denied by system (DenySandboxOpenRequestsTx). The record stays, as every
+// decided one does.
+func denySandboxAPIAccessRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
+	return tx.Model(&model.APIAccessRequest{}).
+		Where("project_id = ? AND requester_sandbox_id = ? AND status = ?",
+			projectID, sandboxID, model.SecretRequestStatusPending).
+		Updates(map[string]any{
+			"status": model.SecretRequestStatusDenied, "decided_at": closedAt(time.Now()), "decided_by": model.SecretBindingActorSystem,
+		}).Error
 }

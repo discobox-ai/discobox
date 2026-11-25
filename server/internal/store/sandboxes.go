@@ -825,12 +825,43 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxInventory{}).Error; err != nil {
 			return err
 		}
-		if err := denySandboxSecretRequestsTx(tx, projectID, sandbox.ID); err != nil {
+		if err := DenySandboxOpenRequestsTx(tx, projectID, sandbox.ID); err != nil {
 			return err
 		}
 		txStore.sandboxDeleted(sandbox)
 		return tx.Delete(sandbox).Error
 	})
+}
+
+// DenySandboxOpenRequestsTx closes as denied by system every request waiting on
+// a person that a sandbox's archive or delete leaves nothing to read: its
+// secret requests, its host trust asks, its API access request, and the
+// adoption requests it filed or that name it as the child. Either removes its runtime, so the agent that
+// asked is gone, and an archived child cannot be adopted. Refresh requests are
+// about the secret, not the sandbox, and stay open.
+//
+// It locks the project, then the sandbox row, before any request row. The
+// project lock serializes it with filing every kind and with deciding API
+// access and adoption requests, which take it first; a person's secret
+// approval takes no project lock but locks the sandbox before it writes the
+// request, so the sandbox, too, comes before the request here.
+func DenySandboxOpenRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
+	if err := lockProject(tx, projectID); err != nil {
+		return err
+	}
+	if _, err := firstByID[model.Sandbox](tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID), "id", sandboxID); err != nil {
+		return err
+	}
+	if err := denySandboxSecretRequestsTx(tx, projectID, sandboxID); err != nil {
+		return err
+	}
+	if err := denySandboxHostTrustRequestsTx(tx, projectID, sandboxID); err != nil {
+		return err
+	}
+	if err := denySandboxAPIAccessRequestsTx(tx, projectID, sandboxID); err != nil {
+		return err
+	}
+	return denySandboxAdoptionRequestsTx(tx, projectID, sandboxID)
 }
 
 // deleteSandboxSecretsTx removes a sandbox's secret assignments and the anonymous

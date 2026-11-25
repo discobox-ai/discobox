@@ -5,11 +5,23 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
+
+// withAskingSandbox gives a store's project-1 the sandbox sb-1 its requests
+// are filed by: a request is filed only by a sandbox that exists.
+func withAskingSandbox(t *testing.T, s *store.Store) {
+	t.Helper()
+	createTestPool(t, s, "project-1", "pool-1")
+	if err := s.CreateSandbox(context.Background(), &model.Sandbox{ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1"}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+}
 
 func TestListSecretRequestsStatusFilter(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	withAskingSandbox(t, s)
 
 	for _, st := range []string{model.SecretRequestStatusPending, model.SecretRequestStatusPending, model.SecretRequestStatusApproved} {
 		if err := s.CreateSecretRequest(ctx, &model.SecretRequest{
@@ -105,6 +117,7 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 func TestFindPendingAgentCredentialRequestsMatchesTheWholeAsk(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	withAskingSandbox(t, s)
 	a := model.SecretRoute{Hosts: []string{"a.example.com"}}
 	b := model.SecretRoute{Hosts: []string{"b.example.com"}}
 	ask := func(name, env string, use, delegate []model.SecretRoute) *model.SecretRequest {
