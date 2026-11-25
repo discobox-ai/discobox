@@ -1,7 +1,7 @@
 [Unit]
 Description=Discobox Sandbox Agent
 Documentation=https://github.com/discobox-ai/discobox
-After=network-online.target docker.socket nix-daemon.socket
+After=network-online.target docker.socket nix-daemon.socket discobox-wire-in-place.service
 Wants=network-online.target docker.socket nix-daemon.socket
 
 [Service]

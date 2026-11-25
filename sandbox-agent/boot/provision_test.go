@@ -115,7 +115,7 @@ func TestProvisionRunsOncePerSandbox(t *testing.T) {
 		},
 	}
 	useMachineRoots(t, b)
-	if err := b.provisionMachine(slog.Default(), bootstrap, false); err != nil {
+	if err := b.provisionMachine(slog.Default(), bootstrap, wiringAtAgentStart); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if got := records.Sandbox(); got != "sbx_1" {
@@ -140,7 +140,7 @@ func TestProvisionCarriesTheLegacyMarkerIntoTheRecords(t *testing.T) {
 		},
 	}
 	useMachineRoots(t, b)
-	if err := b.provisionMachine(slog.Default(), bootstrap, false); err != nil {
+	if err := b.provisionMachine(slog.Default(), bootstrap, wiringAtAgentStart); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	if got := (provision.Records{Dir: recordsDir}).Sandbox(); got != "sbx_1" {
@@ -238,13 +238,14 @@ func useMachineRoots(t *testing.T, b *booter) *[]string {
 	skipWithoutPOSIXIDs(t)
 	dir := t.TempDir()
 	savedData, savedCache := dataMountPath, cacheMountPath
-	savedWired, savedDataWired, savedVolume := machineWiredPath, machineDataWiredFile, machineDataVolume
+	savedWired, savedDataWired, savedVolume, savedMounts := machineWiredPath, machineDataWiredFile, machineDataVolume, machineMountsPath
 	t.Cleanup(func() {
 		dataMountPath, cacheMountPath = savedData, savedCache
-		machineWiredPath, machineDataWiredFile, machineDataVolume = savedWired, savedDataWired, savedVolume
+		machineWiredPath, machineDataWiredFile, machineDataVolume, machineMountsPath = savedWired, savedDataWired, savedVolume, savedMounts
 	})
 	dataMountPath, cacheMountPath = filepath.Join(dir, "data"), filepath.Join(dir, "cache")
 	machineWiredPath, machineDataWiredFile = filepath.Join(dir, "run", "machine-wired"), filepath.Join(dir, "data-wired")
+	machineMountsPath = filepath.Join(dir, "run", "machine-mounts.json")
 	machineDataVolume = func() bool { return false }
 	binds := &[]string{}
 	b.bind = func(source, target string) error {

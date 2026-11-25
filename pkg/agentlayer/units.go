@@ -37,6 +37,9 @@ func (u Unit) Link() (string, bool) {
 // place.
 const AgentStartUnit = "discobox-sandbox-agent.path"
 
+// AgentServiceUnit is the agent's own service, which AgentStartUnit starts.
+const AgentServiceUnit = "discobox-sandbox-agent.service"
+
 // ProxyBridgeUnit is the sandbox's egress bridge, which also runs its DNS
 // stub.
 const ProxyBridgeUnit = "discobox-proxy-bridge.service"
@@ -57,7 +60,7 @@ var Units = []Unit{
 	{Name: "docker-configuration.conf", Path: "/etc/systemd/system/docker.service.d/discobox-configuration.conf"},
 	{Name: "docker-configuration.conf", Path: "/etc/systemd/system/containerd.service.d/discobox-configuration.conf"},
 	{Name: "discobox-wire.service", Path: "/etc/systemd/system/discobox-wire.service", target: "sysinit.target", required: true},
-	{Name: "discobox-sandbox-agent.service", Path: "/etc/systemd/system/discobox-sandbox-agent.service"},
+	{Name: AgentServiceUnit, Path: "/etc/systemd/system/" + AgentServiceUnit},
 	{Name: "discobox-sandbox-agent.path", Path: "/etc/systemd/system/discobox-sandbox-agent.path", target: "paths.target"},
 	{Name: ProxyBridgeUnit, Path: "/etc/systemd/system/" + ProxyBridgeUnit, target: "multi-user.target"},
 	{Name: "discobox-trust-ca.service", Path: "/etc/systemd/system/discobox-trust-ca.service", target: "sysinit.target"},
@@ -65,13 +68,25 @@ var Units = []Unit{
 	{Name: "journald-console.conf", Path: "/etc/systemd/journald.conf.d/discobox-console.conf"},
 }
 
-// MachineUnits are what a machine sandbox boots with: Units, and the drop-in
+// MachineUnits are what a machine sandbox boots with: Units; the drop-in
 // that runs discobox-wire.service where its pool placed the bootstrap rather
 // than where a container's config volume is, powering the machine off when
-// the wiring fails (ADR 26-11-02-023 §3).
+// the wiring fails (ADR 26-11-02-023 §3); and the unit apply starts to wire
+// the running machine in place (WireInPlaceUnit, ADR 26-11-23-458 §2).
 var MachineUnits = append(slices.Clip(Units),
 	Unit{Name: "discobox-wire-machine.conf", Path: "/etc/systemd/system/discobox-wire.service.d/discobox-machine.conf"},
+	Unit{Name: WireInPlaceUnit, Path: WireInPlacePath},
 )
+
+// WireInPlaceUnit is the unit `discobox-provision apply` starts on a running
+// machine sandbox to mount its volumes and sources in place, rather than
+// have the machine restarted for its boot to mount them (ADR 26-11-23-458
+// §2). Only a machine is placed it.
+const WireInPlaceUnit = "discobox-wire-in-place.service"
+
+// WireInPlacePath is where a machine's pool places WireInPlaceUnit: apply
+// wires in place where it finds it.
+const WireInPlacePath = "/etc/systemd/system/" + WireInPlaceUnit
 
 // LaunchdUnits are the agent's units on a macOS guest: one launch daemon,
 // which launchd loads at boot from where it lies, so nothing links it. It

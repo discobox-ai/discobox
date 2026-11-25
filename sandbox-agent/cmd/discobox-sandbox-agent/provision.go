@@ -37,12 +37,13 @@ import (
 //	discobox-provision retry                     run what failed again, and wait for it
 //	discobox-provision run FEATURE COMMAND ARG... a placeholder: wait, then exec
 //	discobox-provision identity --key PATH       the box's public key, made on demand
-//	discobox-provision apply [--wait]             provision the box its maker placed
+//	discobox-provision apply [--wait] [--restart-agent]  provision the box its maker placed
+//	discobox-provision can-mount-in-place        exits 0: apply wires a running machine in place
 func runProvisionCommand(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	usage := func() int {
-		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision retry\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--wait]")
+		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision retry\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--wait] [--restart-agent]\n       discobox-provision can-mount-in-place")
 		return 2
 	}
 	if len(args) == 0 {
@@ -109,10 +110,20 @@ func runProvisionCommand(args []string) int {
 	case "apply":
 		flags := flag.NewFlagSet("discobox-provision apply", flag.ContinueOnError)
 		wait := flags.Bool("wait", false, "also wait for background provisioning to finish")
+		restartAgent := flags.Bool("restart-agent", false, "restart the agent where it runs, onto what was placed")
 		if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
 			return usage()
 		}
-		return provisionApply(ctx, *wait)
+		return provisionApply(ctx, *wait, *restartAgent)
+	case "can-mount-in-place":
+		// What a machine's pool asks the agent it placed before it applies
+		// (ADR 26-11-23-458 §6): this agent's apply wires a running machine
+		// in place (applyDeliveredBundles). One from before answers its
+		// usage, and the pool restarts the machine onto it instead.
+		if len(args) != 1 {
+			return usage()
+		}
+		return 0
 	}
 	return usage()
 }
@@ -124,7 +135,7 @@ func runProvisionCommand(args []string) int {
 // systemd's directory under /run is there by then, its bus not always. So it
 // waits for the bus first, rather than failing the start on the first
 // systemctl that cannot reach it.
-func provisionApply(ctx context.Context, wait bool) int {
+func provisionApply(ctx context.Context, wait, restartAgent bool) int {
 	if _, err := os.Stat("/run/systemd/system"); err == nil {
 		busCtx, cancel := context.WithTimeout(ctx, systemdReadyTimeout)
 		err = awaitSystemdBus(busCtx)
@@ -140,7 +151,7 @@ func provisionApply(ctx context.Context, wait bool) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	return applyDeliveredBundles(ctx, wait)
+	return applyDeliveredBundles(ctx, wait, restartAgent)
 }
 
 // provisionIdentity prints the public half of the box's identity key at
@@ -239,7 +250,16 @@ func applyPlacedBundles(ctx context.Context) int {
 // there. The agent then provisions the box itself, from its first
 // runtime-config document. A box systemd is not running has nothing to start:
 // it boots on the units it was placed.
-func applyDeliveredBundles(ctx context.Context, wait bool) int {
+//
+// A machine sandbox's pool places the wiring in place
+// (agentlayer.WireInPlaceUnit), which this starts and waits for before the
+// agent: the machine is provisioned while it runs, never restarted for its
+// boot to mount (ADR 26-11-23-458 §2). It mounts nothing where the mounts
+// are unchanged. restartAgent is a placement that moved: an agent running on
+// the one before is stopped before the mounts and started after, on what
+// was placed now (§4). Its path unit goes with it, or it would start the
+// agent again at once. No other service is stopped or restarted.
+func applyDeliveredBundles(ctx context.Context, wait, restartAgent bool) int {
 	requested, _, err := agentlayer.ReadPins(agentlayer.PinsFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -252,18 +272,33 @@ func applyDeliveredBundles(ctx context.Context, wait bool) int {
 		}
 		return 0
 	}
-	for _, command := range [][]string{
-		{"systemctl", "daemon-reload"},
-		{"systemctl", "start", agentlayer.AgentStartUnit},
-	} {
-		runCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	type step struct {
+		argv []string
+		// timeout bounds the step; zero is ctx's own, for the wiring in
+		// place, which moves what a machine has at each path into its
+		// volume, as long as that takes.
+		timeout time.Duration
+	}
+	steps := []step{{argv: []string{"systemctl", "daemon-reload"}, timeout: time.Minute}}
+	if restartAgent {
+		steps = append(steps, step{argv: []string{"systemctl", "stop", agentlayer.AgentStartUnit, agentlayer.AgentServiceUnit}, timeout: time.Minute})
+	}
+	if _, err := os.Stat(wireInPlacePath); err == nil {
+		steps = append(steps, step{argv: []string{"systemctl", "start", agentlayer.WireInPlaceUnit}})
+	}
+	steps = append(steps, step{argv: []string{"systemctl", "start", agentlayer.AgentStartUnit}, timeout: time.Minute})
+	for _, s := range steps {
+		runCtx, cancel := ctx, context.CancelFunc(func() {})
+		if s.timeout > 0 {
+			runCtx, cancel = context.WithTimeout(ctx, s.timeout)
+		}
 		//nolint:gosec // G204: the commands are the fixed list above.
-		cmd := exec.CommandContext(runCtx, command[0], command[1:]...)
+		cmd := exec.CommandContext(runCtx, s.argv[0], s.argv[1:]...)
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 		err := cmd.Run()
 		cancel()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "discobox-provision: %s: %v\n", strings.Join(command, " "), err)
+			fmt.Fprintf(os.Stderr, "discobox-provision: %s: %v\n", strings.Join(s.argv, " "), err)
 			return 1
 		}
 	}
@@ -293,6 +328,10 @@ func applyDeliveredBundles(ctx context.Context, wait bool) int {
 
 	return 0
 }
+
+// wireInPlacePath is agentlayer.WireInPlacePath. A variable so a test does
+// not read the machine's own.
+var wireInPlacePath = agentlayer.WireInPlacePath
 
 func provisionWait(ctx context.Context, features []string) int {
 	status, err := provision.Wait(ctx, provisionspec.StatusPath, features, false, func(status provisionspec.Status, pending []string) {

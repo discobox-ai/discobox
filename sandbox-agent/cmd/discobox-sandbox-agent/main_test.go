@@ -102,3 +102,18 @@ func TestTheAgentSaysItMountsAMachine(t *testing.T) {
 		t.Fatalf("wire --can-mount-machine = %d, want 0", code)
 	}
 }
+
+// A machine's pool asks the agent it placed whether its apply wires the
+// running machine in place, and this one answers at once (ADR 26-11-23-458
+// §6); one from before answers its usage, a failure.
+func TestTheAgentSaysItMountsAMachineInPlace(t *testing.T) {
+	for _, name := range []string{"discobox-sandbox-agent", "discobox-provision"} {
+		args := []string{"can-mount-in-place"}
+		if name == "discobox-sandbox-agent" {
+			args = append([]string{"provision"}, args...)
+		}
+		if code := run(name, args); code != 0 {
+			t.Fatalf("%s %v = %d, want 0", name, args, code)
+		}
+	}
+}

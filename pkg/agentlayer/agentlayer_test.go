@@ -124,11 +124,16 @@ func TestAMachineIsWiredWhereItsBootstrapIsPlaced(t *testing.T) {
 			t.Fatalf("%s: wire unit is not a container's:\n%s", name, wire)
 		}
 		conf, placed := entries[dropIn]
+		inPlace, inPlacePlaced := entries["etc/systemd/system/"+WireInPlaceUnit]
 		if name == "container" {
-			if placed {
-				t.Fatalf("container: placed the machine's drop-in")
+			if placed || inPlacePlaced {
+				t.Fatalf("container: placed the machine's drop-in or its wiring in place")
 			}
 			continue
+		}
+		// Not enabled: apply starts it, each time.
+		if !inPlacePlaced || !strings.Contains(inPlace.body, "ExecStart="+AgentPath+" wire --in-place\n") || strings.Contains(inPlace.body, "[Install]") || strings.Contains(inPlace.body, "RemainAfterExit") {
+			t.Fatalf("machine: wiring in place (placed %v):\n%s", inPlacePlaced, inPlace.body)
 		}
 		// The empty assignment resets the unit's condition rather than adding
 		// to it: a machine has no config volume.
@@ -138,8 +143,8 @@ func TestAMachineIsWiredWhereItsBootstrapIsPlaced(t *testing.T) {
 			}
 		}
 	}
-	if len(MachineUnits) != len(Units)+1 || !slices.Equal(MachineUnits[:len(Units)], Units) {
-		t.Fatal("MachineUnits is not Units and the drop-in")
+	if len(MachineUnits) != len(Units)+2 || !slices.Equal(MachineUnits[:len(Units)], Units) {
+		t.Fatal("MachineUnits is not Units, the drop-in and the wiring in place")
 	}
 }
 

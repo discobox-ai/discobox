@@ -70,7 +70,7 @@ func TestWireMachineBootOncePerStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, git := newFakeGitBooter(nil)
-	if err := b.wireMachineBoot(slog.Default(), sandboxconfig.Config{SandboxID: "sbx_1"}, identity{}, wireMachine); err != nil {
+	if err := b.wireMachineBoot(slog.Default(), sandboxconfig.Config{SandboxID: "sbx_1"}, identity{}, wireMachine, false); err != nil {
 		t.Fatalf("mounted already this start: %v", err)
 	}
 	if len(git.runs) != 0 {
@@ -98,7 +98,7 @@ func TestOnlyADataVolumeIsRecordedAsKeepingTheData(t *testing.T) {
 				dataMountPath = filepath.Join(dir, "data")
 				machineWiredPath = filepath.Join(dir, "run", "machine-wired")
 				machineDataWiredFile = filepath.Join(dir, "data-wired")
-				if err := markMachineWired("sbx_1", wireMachine, workingRoot); err != nil {
+				if err := markMachineWired("sbx_1", wireMachine, workingRoot, nil); err != nil {
 					t.Fatal(err)
 				}
 				token, err := os.ReadFile(machineWiredPath)

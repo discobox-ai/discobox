@@ -135,6 +135,7 @@ func (b *booter) wireWorkingRoot(root string, volumes []harness.ResolvedVolume, 
 	if err := b.bind(dir, root); err != nil {
 		return false, fmt.Errorf("wire working root %s: %w", root, err)
 	}
+	b.mounted.add(root, dir)
 	// Onto the root of the tree now mounted over it, as wireSources does.
 	if err := os.Chown(root, id.uid, id.gid); err != nil {
 		return false, fmt.Errorf("chown working root %s: %w", root, err)

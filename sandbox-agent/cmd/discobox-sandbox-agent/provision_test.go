@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 )
 
@@ -69,8 +71,59 @@ exit 0
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if code := provisionApply(t.Context(), false); code != 0 {
+	if code := provisionApply(t.Context(), false, false); code != 0 {
 		log, _ := os.ReadFile(calls)
 		t.Fatalf("apply exited %d before systemd's bus answered; systemctl was called with:\n%s", code, log)
+	}
+}
+
+// On a machine, apply wires the running machine in place before it starts
+// the agent, and a placement that moved has the agent stopped, path unit and
+// all, before the mounts and started after (ADR 26-11-23-458 §§2, 4). A box
+// placed no wiring in place -- a container -- and a placement that did not
+// move start the agent alone; no other unit is stopped or restarted.
+func TestApplyWiresAMachineInPlaceBeforeItsAgent(t *testing.T) {
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		t.Skip("apply starts nothing where systemd is not running")
+	}
+	for _, tc := range []struct {
+		name         string
+		machine      bool
+		restartAgent bool
+		want         []string
+	}{
+		{name: "a container", want: []string{"daemon-reload", "start discobox-sandbox-agent.path"}},
+		{name: "a machine whose placement did not move", machine: true, want: []string{
+			"daemon-reload", "start discobox-wire-in-place.service", "start discobox-sandbox-agent.path",
+		}},
+		{name: "a machine whose placement moved", machine: true, restartAgent: true, want: []string{
+			"daemon-reload", "stop discobox-sandbox-agent.path discobox-sandbox-agent.service",
+			"start discobox-wire-in-place.service", "start discobox-sandbox-agent.path",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			calls := filepath.Join(dir, "calls")
+			script := "#!/bin/sh\n[ \"$1\" = is-system-running ] && { echo running; exit 0; }\necho \"$*\" >> " + calls + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755); err != nil { //nolint:gosec // G306: a test executable.
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			saved := wireInPlacePath
+			t.Cleanup(func() { wireInPlacePath = saved })
+			wireInPlacePath = filepath.Join(dir, agentlayer.WireInPlaceUnit)
+			if tc.machine {
+				if err := os.WriteFile(wireInPlacePath, nil, 0o644); err != nil { //nolint:gosec // G306: a test file.
+					t.Fatal(err)
+				}
+			}
+			if code := applyDeliveredBundles(t.Context(), false, tc.restartAgent); code != 0 {
+				t.Fatalf("apply exited %d", code)
+			}
+			raw, _ := os.ReadFile(calls)
+			if got := strings.Split(strings.TrimSpace(string(raw)), "\n"); !slices.Equal(got, tc.want) {
+				t.Fatalf("systemctl calls = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

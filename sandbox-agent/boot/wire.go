@@ -127,6 +127,7 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity, mode wireMode
 		if err := overlayMount(v.Path, v.Path, upper, work); err != nil {
 			return err
 		}
+		b.mounted.add(v.Path, dir)
 		return applyOwnership(v.Path, v)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -135,6 +136,7 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity, mode wireMode
 	if err := b.bind(dir, v.Path); err != nil {
 		return err
 	}
+	b.mounted.add(v.Path, dir)
 	return applyOwnership(v.Path, v)
 }
 
@@ -302,6 +304,7 @@ func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity,
 		if err := b.bind(src, s.Target); err != nil {
 			return fmt.Errorf("wire source %s: %w", s.Slug, err)
 		}
+		b.mounted.add(s.Target, src)
 		if err := os.Chown(s.Target, uid, gid); err != nil {
 			return fmt.Errorf("chown source %s: %w", s.Target, err)
 		}
