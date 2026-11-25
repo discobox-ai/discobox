@@ -4,8 +4,6 @@ package config
 
 import (
 	"fmt"
-	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+	"github.com/discobox-ai/discobox/pkg/pprofserve"
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
@@ -105,10 +104,15 @@ type Config struct {
 	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on, from unix:// (npipe:// on Windows), http://<host>:<port> and iroh://. Bare unix://, npipe:// and iroh:// mean this machine's default socket, pipe and iroh identity; an iroh listener logs the discobox:// address clients use. Local IPC is added when none is named, so the CLI can always reach the server. The environment variable takes a comma-separated list." example:"[unix://, iroh://, http://127.0.0.1:18080]"`
 	// PprofListen is where Go's pprof endpoints are served: a loopback
 	// host:port on a listener of its own, which no API transport reaches.
-	// Load turns PprofOff into empty, and empty opens nothing. PprofTokenFile
+	// Load turns pprofserve.Off into empty, and empty opens nothing. PprofTokenFile
 	// is where the server writes the token every request to it must carry.
 	PprofListen    string `yaml:"pprofListen" env:"DISCOBOX_PPROF_LISTEN" doc:"Loopback host:port to serve Go's pprof profiling endpoints on, under /debug/pprof/: CPU, heap, goroutine and execution trace. They get a listener of their own, which no API transport (local IPC, HTTP, iroh, a pool's connection) reaches. The host must be a loopback address or localhost; a wildcard or any other address is refused. Every request must send the token in pprofTokenFile as its basic-auth password, because loopback alone is reachable from a Docker Desktop pool's sandbox, and a profile shows the server's command line and every goroutine's stack, and a long one stalls it. Empty or off opens none, which is the default." example:"127.0.0.1:18060"`
 	PprofTokenFile string `yaml:"pprofTokenFile" env:"DISCOBOX_PPROF_TOKEN_FILE" doc:"Where the server writes the token its pprofListen endpoints require, new on each start, readable only by the server's user, and removed when it stops. Defaults to <stateDir>/pprof.token." example:"/var/lib/discobox/state/pprof.token"`
+	// DefaultPoolProfiling makes the default pool, when the server first seeds
+	// it, with profiling on (ADR 26-11-24-418 §3): the dev loop sets it, so
+	// its pool can be profiled with no step of its own. It changes nothing
+	// once the pool exists.
+	DefaultPoolProfiling bool `yaml:"defaultPoolProfiling" env:"DISCOBOX_DEFAULT_POOL_PROFILING" doc:"Make the default pool, when the server first creates it, with profiling on: its agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's own loopback, which discobox admin pool pprof fetches. It changes nothing once the pool exists; turn a pool's profiling on or off with discobox admin pool update --profiling."`
 	// Name is what this server calls itself, and what a client offers as the
 	// name to register it under (ADR 0116 §2). It identifies nothing: two
 	// servers may share one, and nothing but a client's default choice reads it.
@@ -416,7 +420,7 @@ func Load() (*Config, error) {
 	// than one that opened a socket nobody asked for.
 	cfg.Listen = requireLocalListenEndpoint(cfg.Listen)
 	cfg.PprofListen = strings.TrimSpace(cfg.PprofListen)
-	if strings.EqualFold(cfg.PprofListen, PprofOff) {
+	if strings.EqualFold(cfg.PprofListen, pprofserve.Off) {
 		cfg.PprofListen = ""
 	}
 
@@ -528,7 +532,7 @@ func (c *Config) validate(configured func(string) bool) error {
 			return fmt.Errorf("listen: %w", err)
 		}
 	}
-	if err := validatePprofListen(c.PprofListen); err != nil {
+	if err := pprofserve.Validate("pprofListen", c.PprofListen); err != nil {
 		return err
 	}
 	for _, dir := range []struct{ key, value string }{
@@ -591,42 +595,6 @@ func (c *Config) validate(configured func(string) bool) error {
 // PprofTokenFileName is pprofTokenFile's name in the state directory when
 // nothing configures it.
 const PprofTokenFileName = "pprof.token"
-
-// PprofOff is the pprofListen value that opens no profiling listener. Empty
-// means the same; the word exists for a setting that has a default to turn
-// off, such as the dev loop's, where an empty value reads as unset.
-const PprofOff = "off"
-
-// validatePprofListen accepts an empty address (no listener) or a host:port
-// whose host is a loopback IP or localhost. The profiling endpoints show the
-// server's command line and every goroutine's stack and can stall it for a
-// trace, so they are never offered to anything off this machine: a wildcard, a LAN address and a
-// hostname that may resolve anywhere are all refused.
-func validatePprofListen(addr string) error {
-	if addr == "" {
-		return nil
-	}
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return fmt.Errorf("pprofListen: %q is not host:port: %w", addr, err)
-	}
-	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
-		return fmt.Errorf("pprofListen: %q does not name a port", addr)
-	}
-	if !isLoopbackHost(host) {
-		return fmt.Errorf("pprofListen: %q is not a loopback address: profiling is served only on 127.0.0.1, ::1 or localhost", addr)
-	}
-	return nil
-}
-
-// isLoopbackHost reports whether host is localhost or a loopback IP literal.
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip, err := netip.ParseAddr(host)
-	return err == nil && ip.IsLoopback()
-}
 
 func defaultDatabaseDSN(dataDir string) string {
 	return "sqlite3://" + filepath.Join(dataDir, "discobox.db")

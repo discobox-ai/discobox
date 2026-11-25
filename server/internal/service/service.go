@@ -102,6 +102,9 @@ type Options struct {
 	// for, which a project follows until it sets its own. Zero leaves the
 	// package default (24h) in force.
 	ArchiveRetention time.Duration
+	// DefaultPoolProfiling makes the default pool, when it is first seeded,
+	// with profiling on (ADR 26-11-24-418 §3).
+	DefaultPoolProfiling bool
 	// ServerPeerID is this server's own peer ID, which names it in the address
 	// a sandbox is started with. Empty when the server does not listen on iroh,
 	// where that address would reach nothing; sandboxes then get none.

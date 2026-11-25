@@ -150,6 +150,16 @@ type Bootstrap struct {
 	// plain HTTP rather than TLS its CA issues, the pool's own setting (ADR
 	// 26-10-29-481 §3). The pool tells each sandbox in its bootstrap.
 	DisableAgentEndpointTLS bool `json:"disableAgentEndpointTls,omitempty"`
+	// Profiling has the agent, the proxy and the BuildKit mediator each serve
+	// Go's pprof endpoints on their fixed loopback address, the pool's own
+	// setting (ADR 26-11-24-418 §2). The agent serves its own and tells the
+	// two units theirs through proxy.env. Left out when off, so a pool that
+	// never set it keeps the placement it was made with, and an agent from
+	// before the field still starts. An agent that old refuses a bootstrap
+	// that turns it on (pool-agent/REVIEW.md "Bootstrap fields reach older
+	// agents"): turning profiling on for a pool whose agent bundle is pinned
+	// or overridden to one that old stops the pool until it is turned off.
+	Profiling bool `json:"profiling,omitempty"`
 	// SandboxOS is the operating system the pool's sandboxes run, which the
 	// pool named when it was created and its provider writes here (ADR
 	// 26-11-11-963 §1) unless it is linux. The agent declares it, with its

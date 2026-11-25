@@ -52,6 +52,10 @@ const (
 	// channel the server holds to a pool that does not dial it (ADR
 	// 26-10-30-875 §1).
 	ScopePoolControlPlaneChannel = "pool:control-plane-channel"
+	// ScopePoolPprof authorizes fetching a profile from one of the pool's
+	// processes through the agent's relay (ADR 26-11-24-418 §3). Nothing
+	// else carries it.
+	ScopePoolPprof = "pool:pprof"
 )
 
 type signedTokenClaimsContextKey struct{}

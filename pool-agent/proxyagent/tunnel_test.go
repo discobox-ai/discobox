@@ -52,10 +52,10 @@ func TestConfiguredTunnelURL(t *testing.T) {
 // The proxy unit serves tunnels only for a pool behind an edge, and learns that
 // from its environment file, since systemd starts it with a clean one.
 func TestUnitEnvironmentCarriesTheTunnelURLOnlyWhenSet(t *testing.T) {
-	if content := unitEnvironment("/host", "", testProjectID, testPoolID, ""); strings.Contains(content, EnvTunnelURL) {
+	if content := unitEnvironment("/host", "", testProjectID, testPoolID, "", false); strings.Contains(content, EnvTunnelURL) {
 		t.Fatalf("unit environment names a tunnel for a pool behind none:\n%s", content)
 	}
-	content := unitEnvironment("/host", "", testProjectID, testPoolID, "wss://pool.example.com")
+	content := unitEnvironment("/host", "", testProjectID, testPoolID, "wss://pool.example.com", false)
 	if !strings.Contains(content, EnvTunnelURL+"=wss://pool.example.com\n") {
 		t.Fatalf("unit environment is missing the tunnel URL:\n%s", content)
 	}

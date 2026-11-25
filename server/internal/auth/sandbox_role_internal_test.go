@@ -371,6 +371,7 @@ func TestSandboxRoleReadsItsProjectsPools(t *testing.T) {
 		{"make a pool the default", roleLead, http.MethodPost, "/projects/default/pools/pool-1/default", http.StatusForbidden},
 		{"clear a pool's cache", roleLead, http.MethodPost, "/projects/default/pools/pool-1/clear-cache", http.StatusForbidden},
 		{"read a pool's logs", roleLead, http.MethodGet, "/projects/default/pools/pool-1/logs", http.StatusForbidden},
+		{"profile a pool's process", roleLead, http.MethodGet, "/projects/default/pools/pool-1/pprof/proxy/profile", http.StatusForbidden},
 		{"read the project", roleLead, http.MethodGet, "/projects/default", http.StatusForbidden},
 		{"read pools without the API", Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-persons", ProjectID: "proj-1", UserID: "user-1"}, http.MethodGet, "/projects/default/pools", http.StatusForbidden},
 	})

@@ -119,7 +119,10 @@ body that says profiling is off for the pool. A process that doesn't answer
 gives 502.
 
 The CLI gains `discobox admin pool pprof [POOL] --process agent|proxy|mediator
-[--profile NAME] [--seconds N] [-o FILE]`, which writes the profile to a file.
+[--profile NAME] [--seconds N] [--file FILE]`, which writes the profile to a file.
+*Amended during implementation, before anything shipped:* this said `-o FILE`,
+but `--output`/`-o` is the root flag every command prints its format by, and a
+command's own flag may not shadow it.
 `task dev:pool-pprof` (`POOL`, `PROCESS`, `PROFILE`, `SECONDS`) calls it, then
 opens the file in `go tool pprof`, as `dev:pprof` does for the server. The
 dev loop makes its default pool with `profiling` on.

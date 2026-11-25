@@ -27,6 +27,7 @@ import (
 	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/proxy/gateway"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -436,6 +437,60 @@ func (p *poolAgentClient) OpenHTTPAuditArtifact(ctx context.Context, projectID, 
 		ContentType:   resp.Header.Get("Content-Type"),
 		TruncatedFrom: truncatedFrom,
 	}, nil
+}
+
+// OpenPprof fetches one profile from the pool agent's relay, signed with the
+// scope nothing else carries (ADR 26-11-24-418 §3).
+func (p *poolAgentClient) OpenPprof(ctx context.Context, projectID, process, profile string, seconds int) (*sandbox.PoolProfile, error) {
+	lease, err := p.treeLease(sandbox.SandboxRef{ProjectID: projectID}, poolagentauth.ScopePoolPprof)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("/api/project/%s/pool/%s/pprof/%s/%s",
+		url.PathEscape(projectID), url.PathEscape(p.poolID), url.PathEscape(process), url.PathEscape(profile))
+	if seconds > 0 {
+		path += "?" + url.Values{"seconds": []string{strconv.Itoa(seconds)}}.Encode()
+	}
+	resp, err := p.agentRequest(ctx, http.MethodGet, path, lease, nil)
+	if err != nil {
+		lease.Release()
+		return nil, poolAgentTransportError("profile", p.poolID, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		lease.Release()
+		return nil, pprofStatusError(resp)
+	}
+	// Released with the body, which is read over the lease's transport.
+	return &sandbox.PoolProfile{
+		Body:        &leasedReader{ReadCloser: resp.Body, lease: lease},
+		ContentType: resp.Header.Get("Content-Type"),
+	}, nil
+}
+
+// pprofStatusError is the relay's refusal, or the profiled process's, as the
+// status it answered and what it said. A text/plain 404 is the router's, from
+// an agent too old to have the relay; the relay's own refusals are
+// problem+json.
+func pprofStatusError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxUnexpectedBody))
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if resp.StatusCode == http.StatusNotFound && mediaType != "application/problem+json" {
+		return fmt.Errorf("%w: the pool agent has no profiling relay", sandbox.ErrPoolAgentUnsupported)
+	}
+	message := strings.TrimSpace(string(body))
+	if mediaType == "application/problem+json" {
+		var problem struct {
+			Detail string `json:"detail"`
+		}
+		if json.Unmarshal(body, &problem) == nil && strings.TrimSpace(problem.Detail) != "" {
+			message = strings.TrimSpace(problem.Detail)
+		}
+	}
+	if message == "" {
+		message = http.StatusText(resp.StatusCode)
+	}
+	return apperrors.NewStatusError(resp.StatusCode, message)
 }
 
 // auditArtifactStatusError separates the two 404s this route can answer.

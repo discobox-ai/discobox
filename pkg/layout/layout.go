@@ -155,6 +155,14 @@ func (r Root) PoolIdentityKey(projectID, poolID string) string {
 	return r.join(r.PoolIdentity(projectID, poolID), "agent.key")
 }
 
+// PoolPprofToken is the token one of the pool's processes (agent, proxy,
+// mediator) requires on its profiling listener, written fresh at each start
+// and removed at stop (ADR 26-11-24-418 §1). In PoolIdentity, root's alone and
+// never mounted into a sandbox.
+func (r Root) PoolPprofToken(projectID, poolID, process string) string {
+	return r.join(r.PoolIdentity(projectID, poolID), "pprof-"+process+".token")
+}
+
 // PoolTrees is every directory one pool owns, one in each of the trees
 // MountRoots names: its durable data, its cache and build state, its proxy
 // material, and its identity. Removing them all removes the pool's state on its

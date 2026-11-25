@@ -104,6 +104,10 @@
         "null"
       ]
     },
+    "defaultPoolProfiling": {
+      "description": "Make the default pool, when the server first creates it, with profiling on: its agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's own loopback, which discobox admin pool pprof fetches. It changes nothing once the pool exists; turn a pool's profiling on or off with discobox admin pool update --profiling. Environment: DISCOBOX_DEFAULT_POOL_PROFILING (takes precedence over this file).",
+      "type": "boolean"
+    },
     "defaultSandboxImage": {
       "description": "Retired, and ignored: no discobox runs an image of its own any more. Read with a warning, and refused from the next release; remove it rather than moving it to platformBundle, which names a platform bundle and not an image.",
       "examples": [

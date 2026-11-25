@@ -864,6 +864,14 @@ that declared it takes it on its status report (`sentinelBodyPlaces`,
 `server/providers/poolruntime`'s `poolAgentClient`. `upstreamUrl` went out
 ungated once, and `defaultBranch` nearly did (#245).
 
+An opt-in setting a pool turns on, such as `profiling`, is written only while
+it is on, so a pool that never sets it keeps starting on an older agent. One
+that sets it on a pool pinned to such an agent stops that pool until it is
+turned off; say so where its user reads about the setting (the OpenAPI
+description and the CLI flag's help) as well as in `pool-agent/DESIGN.md`
+"Runtime Observability", since a diagnostic switch taking a pool down is not
+what its user expects.
+
 ## Image reclamation (`imagereap`)
 
 - A stamp's order only ranks the images stamped together. An image that

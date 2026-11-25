@@ -114,7 +114,9 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 			// TLS to its sandboxes' agents unless the pool opts out (ADR
 			// 26-10-29-481 §3).
 			DisableAgentEndpointTLS: input.DisableAgentEndpointTls.Or(false),
-			SandboxOS:               sandboxOS,
+			// Off unless asked for (ADR 26-11-24-418 §2).
+			Profiling: input.Profiling.Or(false),
+			SandboxOS: sandboxOS,
 		},
 	}
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
@@ -210,6 +212,12 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	// box is next made (ADR 26-10-29-481 §3).
 	if value, ok := input.DisableAgentEndpointTls.Get(); ok {
 		pool.DisableAgentEndpointTLS = value
+	}
+	// Placed again too: the agent is told it in its bootstrap, and it and the
+	// proxy restart with it; the mediator takes it at its next start (ADR
+	// 26-11-24-418 §2).
+	if value, ok := input.Profiling.Get(); ok {
+		pool.Profiling = value
 	}
 	egressChanged := false
 	if level, ok := input.Egress.Get(); ok {
@@ -761,6 +769,41 @@ func (s *Service) auditRuntime(ctx context.Context, pool *model.Pool) (sandbox.P
 		return nil, fmt.Errorf("provider %q runs no pool proxy", provider.Type)
 	}
 	return runtime, nil
+}
+
+// OpenPoolPprof fetches one profile from one of a pool's processes through
+// its agent (ADR 26-11-24-418 §3). It keeps nothing and, like the audit reads,
+// never reconciles the pool. A pool with profiling off is refused here as the
+// agent would refuse it, so the answer does not wait on the pool.
+func (s *Service) OpenPoolPprof(ctx context.Context, projectID, poolID, process, profile string, seconds int) (*sandbox.PoolProfile, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "pool not found")
+	}
+	if !pool.Profiling {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, fmt.Sprintf(
+			"profiling is off for pool %s; turn it on with `discobox admin pool update %s --profiling`", poolID, poolID))
+	}
+	if reason := unaskableAuditPool(pool); reason != "" {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be profiled: %s", poolID, reason))
+	}
+	runtime, err := s.auditRuntime(ctx, pool)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be profiled: %s", poolID, err))
+	}
+	profiled, err := runtime.OpenPprof(ctx, pool, process, profile, seconds)
+	var statusErr interface{ StatusCode() int }
+	switch {
+	case errors.Is(err, sandbox.ErrPoolAgentUnsupported):
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf(
+			"pool %s cannot be profiled: its pool agent predates profiling; the pool moves onto the current agent when it is next reconciled, unless its provider pins an older agent bundle", poolID))
+	case errors.As(err, &statusErr):
+		// The agent's refusal, or the profiled process's: its status and words.
+		return nil, err
+	case err != nil:
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be profiled: %s", poolID, err))
+	}
+	return profiled, nil
 }
 
 // OpenPoolConsole attaches to the pool host's administrative console.

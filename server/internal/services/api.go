@@ -441,6 +441,10 @@ type PoolService interface {
 	// their sandboxes, from every pool the filter allows, merged as
 	// ListHTTPAudit merges (ADR 0148).
 	ListDNSAudit(ctx context.Context, projectID string, filter DNSAuditFilter) (*DNSAuditResult, error)
+	// OpenPoolPprof fetches one profile from one of the pool's processes —
+	// agent, proxy or mediator — through the pool's agent, on a pool with
+	// profiling on. The caller closes the profile's body.
+	OpenPoolPprof(ctx context.Context, projectID, poolID, process, profile string, seconds int) (*sandbox.PoolProfile, error)
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.

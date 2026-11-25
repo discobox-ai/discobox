@@ -1225,6 +1225,10 @@ type CreatePoolBody struct {
 	// Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR
 	// 26-10-29-481 §3). Off by default.
 	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
+	// Have the pool's agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's
+	// own loopback, for an admin to fetch through the pool's agent. Off by default. A pool whose
+	// provider pins an agent bundle from before this setting does not start with it on.
+	Profiling OptBool `json:"profiling"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
 	// to the provider's configuration, then the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
@@ -1256,6 +1260,11 @@ func (s *CreatePoolBody) GetSchema() OptURI {
 // GetDisableAgentEndpointTls returns the value of DisableAgentEndpointTls.
 func (s *CreatePoolBody) GetDisableAgentEndpointTls() OptBool {
 	return s.DisableAgentEndpointTls
+}
+
+// GetProfiling returns the value of Profiling.
+func (s *CreatePoolBody) GetProfiling() OptBool {
+	return s.Profiling
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -1301,6 +1310,11 @@ func (s *CreatePoolBody) SetSchema(val OptURI) {
 // SetDisableAgentEndpointTls sets the value of DisableAgentEndpointTls.
 func (s *CreatePoolBody) SetDisableAgentEndpointTls(val OptBool) {
 	s.DisableAgentEndpointTls = val
+}
+
+// SetProfiling sets the value of Profiling.
+func (s *CreatePoolBody) SetProfiling(val OptBool) {
+	s.Profiling = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -17466,6 +17480,9 @@ type Pool struct {
 	// change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container
 	// when it is replaced.
 	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
+	// Whether the pool's agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's
+	// own loopback, which an admin fetches through the pool's agent. Off unless set.
+	Profiling OptBool `json:"profiling"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
 	// to the provider's configuration, then the host.
 	CpuVcpus float64 `json:"cpuVcpus"`
@@ -17580,6 +17597,11 @@ func (s *Pool) GetSchema() OptURI {
 // GetDisableAgentEndpointTls returns the value of DisableAgentEndpointTls.
 func (s *Pool) GetDisableAgentEndpointTls() OptBool {
 	return s.DisableAgentEndpointTls
+}
+
+// GetProfiling returns the value of Profiling.
+func (s *Pool) GetProfiling() OptBool {
+	return s.Profiling
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -17790,6 +17812,11 @@ func (s *Pool) SetSchema(val OptURI) {
 // SetDisableAgentEndpointTls sets the value of DisableAgentEndpointTls.
 func (s *Pool) SetDisableAgentEndpointTls(val OptBool) {
 	s.DisableAgentEndpointTls = val
+}
+
+// SetProfiling sets the value of Profiling.
+func (s *Pool) SetProfiling(val OptBool) {
+	s.Profiling = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -34733,6 +34760,11 @@ type UpdatePoolBody struct {
 	// host is placed again with it; a sandbox takes it when its box is next made - a VM sandbox at its
 	// next start, a container when it is replaced - and is reached as it was made until then.
 	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
+	// Changes whether the pool's agent, proxy and BuildKit mediator serve Go's pprof profiles. The
+	// pool's host is placed again with it, which restarts the agent and the proxy; the BuildKit mediator
+	// is not restarted, so as not to cut off builds, and takes the change when it next starts. A pool
+	// whose provider pins an agent bundle from before this setting does not start with it on.
+	Profiling OptBool `json:"profiling"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
 	// to the provider's configuration, then the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
@@ -34764,6 +34796,11 @@ func (s *UpdatePoolBody) GetSchema() OptURI {
 // GetDisableAgentEndpointTls returns the value of DisableAgentEndpointTls.
 func (s *UpdatePoolBody) GetDisableAgentEndpointTls() OptBool {
 	return s.DisableAgentEndpointTls
+}
+
+// GetProfiling returns the value of Profiling.
+func (s *UpdatePoolBody) GetProfiling() OptBool {
+	return s.Profiling
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -34804,6 +34841,11 @@ func (s *UpdatePoolBody) SetSchema(val OptURI) {
 // SetDisableAgentEndpointTls sets the value of DisableAgentEndpointTls.
 func (s *UpdatePoolBody) SetDisableAgentEndpointTls(val OptBool) {
 	s.DisableAgentEndpointTls = val
+}
+
+// SetProfiling sets the value of Profiling.
+func (s *UpdatePoolBody) SetProfiling(val OptBool) {
+	s.Profiling = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.

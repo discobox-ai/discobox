@@ -102,6 +102,14 @@
 # Environment: DISCOBOX_PPROF_TOKEN_FILE
 #pprofTokenFile:
 
+# Make the default pool, when the server first creates it, with profiling
+# on: its agent, proxy and BuildKit mediator each serve Go's pprof
+# profiles on the pool's own loopback, which discobox admin pool pprof
+# fetches. It changes nothing once the pool exists; turn a pool's
+# profiling on or off with discobox admin pool update --profiling.
+# Environment: DISCOBOX_DEFAULT_POOL_PROFILING
+#defaultPoolProfiling: false
+
 # What this server calls itself: the name a client registering it is
 # offered. Defaults to this machine's hostname.
 # Example: name: build-server

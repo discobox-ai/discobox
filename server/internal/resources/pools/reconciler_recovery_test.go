@@ -413,6 +413,10 @@ func (stubPoolProvider) ListHTTPAudit(context.Context, *model.Pool, sandbox.HTTP
 	return nil, nil
 }
 
+func (stubPoolProvider) OpenPprof(context.Context, *model.Pool, string, string, int) (*sandbox.PoolProfile, error) {
+	return nil, sandbox.ErrNotFound
+}
+
 func (stubPoolProvider) OpenHTTPAuditArtifact(context.Context, *model.Pool, string, auditid.ExchangeID, string) (*sandbox.HTTPAuditArtifact, error) {
 	return nil, sandbox.ErrNotFound
 }

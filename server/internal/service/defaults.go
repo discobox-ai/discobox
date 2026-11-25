@@ -190,6 +190,8 @@ func (s *Service) ensureDefaultPool(ctx context.Context, appStore *store.Store, 
 			// Every built-in provider's sandboxes run linux, and a pool made
 			// now names the OS its agent is held to (ADR 26-11-11-963 §1).
 			SandboxOS: platform.Linux,
+			// The dev loop's pool can be profiled from its first start.
+			Profiling: s.options.DefaultPoolProfiling,
 		},
 	}
 	if s.poolControlPlane != nil {
