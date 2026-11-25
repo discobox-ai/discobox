@@ -322,7 +322,10 @@ func websocketAttach(t *testing.T, shim func(*net.UnixConn, *bufio.Reader)) (ws 
 	}))
 	t.Cleanup(server.Close)
 
-	ws, _, err = websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	ws, response, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +401,7 @@ func TestAttachWebSocketHoldsAnInputBackedUpBehindTheShim(t *testing.T) {
 // keepalive, which ends the attach and closes the shim's end.
 func TestAttachWebSocketEndsAnIdleAttachWhoseClientIsGone(t *testing.T) {
 	shimEOF := make(chan struct{})
-	_, proxyErr := websocketAttach(t, func(conn *net.UnixConn, reader *bufio.Reader) {
+	_, proxyErr := websocketAttach(t, func(_ *net.UnixConn, reader *bufio.Reader) {
 		// A command that is running and quiet; the attach is idle until the
 		// agent hangs up.
 		_, _ = io.Copy(io.Discard, reader)
