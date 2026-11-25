@@ -43,17 +43,7 @@ func (b *credentialBroker) AuditHTTP(ctx context.Context, query agentcreds.Audit
 	out := make([]agentcreds.AuditExchange, 0, len(rows))
 	size := 0
 	for _, row := range rows {
-		exchange := agentcreds.AuditExchange{
-			ID:            row.ID.String(),
-			CreatedAt:     row.CreatedAt,
-			Method:        truncateAuditField(row.Method),
-			URL:           truncateAuditField(row.URL),
-			Host:          truncateAuditField(row.Host),
-			Status:        row.Status,
-			Blocked:       row.Blocked,
-			BlockedReason: truncateAuditField(row.BlockedReason),
-			DurationMS:    row.DurationMillis,
-		}
+		exchange := auditExchange(row)
 		encoded, err := json.Marshal(exchange)
 		if err != nil {
 			return nil, err
@@ -64,6 +54,26 @@ func (b *credentialBroker) AuditHTTP(ctx context.Context, query agentcreds.Audit
 		out = append(out, exchange)
 	}
 	return out, nil
+}
+
+// auditExchange is one row of the proxy's trail as the sandbox reads it.
+func auditExchange(row proxy.AuditHTTPExchange) agentcreds.AuditExchange {
+	return agentcreds.AuditExchange{
+		ID:            row.ID.String(),
+		CreatedAt:     row.CreatedAt,
+		Method:        truncateAuditField(row.Method),
+		URL:           truncateAuditField(row.URL),
+		Host:          truncateAuditField(row.Host),
+		Status:        row.Status,
+		Blocked:       row.Blocked,
+		BlockedReason: truncateAuditField(row.BlockedReason),
+		// Whether this proxy sent the request with a credential swapped in
+		// (#1745). Which secrets it swapped stay out: that a credential went
+		// is the sandbox's to read here, and what the destination's answer
+		// means for it is the rejection reporter's to judge, not this row's.
+		CredentialCarried: !row.Blocked && row.SwappedSecretIDs != "",
+		DurationMS:        row.DurationMillis,
+	}
 }
 
 // truncateAuditField cuts value to auditFieldBytes on a rune boundary, saying

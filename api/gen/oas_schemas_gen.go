@@ -25295,6 +25295,10 @@ type SandboxCredential struct {
 	// stacking on it, with the hosts it may be sent to and when it lapses. A request passes when some
 	// grant allows it. hosts and expiresAt are their union and the latest of them.
 	Grants []SandboxCredentialGrant `json:"grants"`
+	// Each host one of the credential's grants may send it to that is refusing the secret's value, where
+	// renewing it did not help, while something in the project has seen it refused lately. Empty when no
+	// such host is known.
+	Rejections []SandboxCredentialRejection `json:"rejections"`
 }
 
 // GetBindingId returns the value of BindingId.
@@ -25342,6 +25346,11 @@ func (s *SandboxCredential) GetGrants() []SandboxCredentialGrant {
 	return s.Grants
 }
 
+// GetRejections returns the value of Rejections.
+func (s *SandboxCredential) GetRejections() []SandboxCredentialRejection {
+	return s.Rejections
+}
+
 // SetBindingId sets the value of BindingId.
 func (s *SandboxCredential) SetBindingId(val string) {
 	s.BindingId = val
@@ -25385,6 +25394,11 @@ func (s *SandboxCredential) SetSecretId(val string) {
 // SetGrants sets the value of Grants.
 func (s *SandboxCredential) SetGrants(val []SandboxCredentialGrant) {
 	s.Grants = val
+}
+
+// SetRejections sets the value of Rejections.
+func (s *SandboxCredential) SetRejections(val []SandboxCredentialRejection) {
+	s.Rejections = val
 }
 
 // One grant a credential delivered in a variable is held to.
@@ -25574,6 +25588,112 @@ func (s *SandboxCredentialRaw) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxCredentialRawFile:
 		*s = SandboxCredentialRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// One host refusing a credential's value, as the sandbox holding it is told.
+// Ref: #/components/schemas/SandboxCredentialRejection
+type SandboxCredentialRejection struct {
+	// Destination host that refused the credential.
+	Host string `json:"host"`
+	// Why renewing it did not help: unrefreshable (nothing to renew; the stored value is what was
+	// refused), refresh-failed (the renewal was refused), or rejected-after-refresh (the renewed value
+	// was refused too).
+	Reason SandboxCredentialRejectionReason `json:"reason"`
+	// When the host first refused it.
+	FirstSeenAt time.Time `json:"firstSeenAt"`
+	// When the host most recently refused it.
+	LastSeenAt time.Time `json:"lastSeenAt"`
+}
+
+// GetHost returns the value of Host.
+func (s *SandboxCredentialRejection) GetHost() string {
+	return s.Host
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxCredentialRejection) GetReason() SandboxCredentialRejectionReason {
+	return s.Reason
+}
+
+// GetFirstSeenAt returns the value of FirstSeenAt.
+func (s *SandboxCredentialRejection) GetFirstSeenAt() time.Time {
+	return s.FirstSeenAt
+}
+
+// GetLastSeenAt returns the value of LastSeenAt.
+func (s *SandboxCredentialRejection) GetLastSeenAt() time.Time {
+	return s.LastSeenAt
+}
+
+// SetHost sets the value of Host.
+func (s *SandboxCredentialRejection) SetHost(val string) {
+	s.Host = val
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxCredentialRejection) SetReason(val SandboxCredentialRejectionReason) {
+	s.Reason = val
+}
+
+// SetFirstSeenAt sets the value of FirstSeenAt.
+func (s *SandboxCredentialRejection) SetFirstSeenAt(val time.Time) {
+	s.FirstSeenAt = val
+}
+
+// SetLastSeenAt sets the value of LastSeenAt.
+func (s *SandboxCredentialRejection) SetLastSeenAt(val time.Time) {
+	s.LastSeenAt = val
+}
+
+// Why renewing it did not help: unrefreshable (nothing to renew; the stored value is what was
+// refused), refresh-failed (the renewal was refused), or rejected-after-refresh (the renewed value
+// was refused too).
+type SandboxCredentialRejectionReason string
+
+const (
+	SandboxCredentialRejectionReasonUnrefreshable        SandboxCredentialRejectionReason = "unrefreshable"
+	SandboxCredentialRejectionReasonRefreshFailed        SandboxCredentialRejectionReason = "refresh-failed"
+	SandboxCredentialRejectionReasonRejectedAfterRefresh SandboxCredentialRejectionReason = "rejected-after-refresh"
+)
+
+// AllValues returns all SandboxCredentialRejectionReason values.
+func (SandboxCredentialRejectionReason) AllValues() []SandboxCredentialRejectionReason {
+	return []SandboxCredentialRejectionReason{
+		SandboxCredentialRejectionReasonUnrefreshable,
+		SandboxCredentialRejectionReasonRefreshFailed,
+		SandboxCredentialRejectionReasonRejectedAfterRefresh,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRejectionReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRejectionReasonUnrefreshable:
+		return []byte(s), nil
+	case SandboxCredentialRejectionReasonRefreshFailed:
+		return []byte(s), nil
+	case SandboxCredentialRejectionReasonRejectedAfterRefresh:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRejectionReason) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRejectionReason(data) {
+	case SandboxCredentialRejectionReasonUnrefreshable:
+		*s = SandboxCredentialRejectionReasonUnrefreshable
+		return nil
+	case SandboxCredentialRejectionReasonRefreshFailed:
+		*s = SandboxCredentialRejectionReasonRefreshFailed
+		return nil
+	case SandboxCredentialRejectionReasonRejectedAfterRefresh:
+		*s = SandboxCredentialRejectionReasonRejectedAfterRefresh
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

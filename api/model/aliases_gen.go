@@ -179,6 +179,7 @@ type SandboxCreateConfig = apigen.SandboxCreateConfig
 type SandboxCredential = apigen.SandboxCredential
 type SandboxCredentialGrant = apigen.SandboxCredentialGrant
 type SandboxCredentialPolicy = apigen.SandboxCredentialPolicy
+type SandboxCredentialRejection = apigen.SandboxCredentialRejection
 type SandboxCredentialRequestDelegate = apigen.SandboxCredentialRequestDelegate
 type SandboxCredentialRequestPartStatus = apigen.SandboxCredentialRequestPartStatus
 type SandboxCredentialRequestStatus = apigen.SandboxCredentialRequestStatus

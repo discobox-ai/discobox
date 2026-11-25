@@ -38,6 +38,23 @@ func TestAuditShowsWhyARequestWasRefused(t *testing.T) {
 	}
 }
 
+// A 401 answered to a request sent with a delivered credential says so
+// (#1745): the credential was what was refused, not missing.
+func TestAuditSaysA401CarriedACredential(t *testing.T) {
+	serve(t, &fakeService{exchanges: []agentcreds.AuditExchange{
+		{ID: "http_9", CreatedAt: time.Date(2026, 11, 24, 13, 0, 0, 0, time.UTC), Method: "GET", URL: "https://api.github.com/repos", Host: "api.github.com", Status: 200, CredentialCarried: true},
+		{ID: "http_8", CreatedAt: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC), Method: "GET", URL: "https://api.github.com/user", Host: "api.github.com", Status: 401, CredentialCarried: true},
+		{ID: "http_7", CreatedAt: time.Date(2026, 11, 24, 11, 0, 0, 0, time.UTC), Method: "GET", URL: "https://example.com/", Host: "example.com", Status: 401},
+	}})
+	stdout, _, code := capture(t, "", func() int { return Run([]string{"audit"}) })
+	if code != exitOK {
+		t.Fatalf("exit %d", code)
+	}
+	if got := strings.Count(stdout, "sent with a delivered credential"); got != 1 || !strings.Contains(stdout, "401  GET https://api.github.com/user\n    sent with a delivered credential") {
+		t.Fatalf("stdout:\n%s\nwant the note under the 401 that carried a credential, and only there", stdout)
+	}
+}
+
 func TestAuditJSONIsTheProtocolBody(t *testing.T) {
 	serve(t, &fakeService{})
 	stdout, _, code := capture(t, "", func() int { return Run([]string{"audit", "--json", "--allowed"}) })

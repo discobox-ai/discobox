@@ -4273,12 +4273,45 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxCredentialGrant'
                     type: array
+                rejections:
+                    description: Each host one of the credential's grants may send it to that is refusing the secret's value, where renewing it did not help, while something in the project has seen it refused lately. Empty when no such host is known.
+                    items:
+                        $ref: '#/components/schemas/SandboxCredentialRejection'
+                    type: array
             required:
                 - name
                 - envVar
                 - hosts
                 - secretId
                 - bindingId
+            type: object
+        SandboxCredentialRejection:
+            additionalProperties: false
+            description: One host refusing a credential's value, as the sandbox holding it is told.
+            properties:
+                host:
+                    description: Destination host that refused the credential
+                    type: string
+                reason:
+                    description: "Why renewing it did not help: unrefreshable (nothing to renew; the stored value is what was refused), refresh-failed (the renewal was refused), or rejected-after-refresh (the renewed value was refused too)"
+                    enum:
+                        - unrefreshable
+                        - refresh-failed
+                        - rejected-after-refresh
+                    type: string
+                firstSeenAt:
+                    description: When the host first refused it
+                    format: date-time
+                    type: string
+                lastSeenAt:
+                    description: When the host most recently refused it
+                    format: date-time
+                    type: string
+            required:
+                - host
+                - reason
+                - firstSeenAt
+                - lastSeenAt
             type: object
         SandboxCredentialGrant:
             additionalProperties: false

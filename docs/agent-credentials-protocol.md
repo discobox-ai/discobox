@@ -135,6 +135,31 @@ latest of them.
 }
 ```
 
+A credential an upstream is refusing lists each host refusing it, of those
+it may be sent to, in `rejections`, while something has seen it refused
+lately: the `host`, a
+`reason` saying why trying again will not help (`unrefreshable`: nothing to
+renew it by; `refresh-failed`: renewing it was refused;
+`rejected-after-refresh`: the renewed value was refused too; an implementation
+may name another), and `firstRejectedAt` and `lastRejectedAt`. Absent, nothing
+is known to refuse it. Holding a credential is not the same as it working;
+this is how a caller tells the two apart without retrying. A rejection may
+have been seen by another caller holding the same credential, so it is a
+reason to stop retrying once the caller's own requests there are refused too,
+not a verdict on its own.
+
+```json
+{
+  "name": "github",
+  "envVar": "GITHUB_TOKEN",
+  "hosts": ["api.github.com"],
+  "rejections": [
+    { "host": "api.github.com", "reason": "unrefreshable",
+      "firstRejectedAt": "2026-08-12T16:40:00Z", "lastRejectedAt": "2026-08-12T17:58:00Z" }
+  ]
+}
+```
+
 ## `request` — ask for something new
 
 ```
@@ -442,7 +467,11 @@ A value that does not parse is `invalid`. `blocked` means the implementation
 refused the request rather than the destination, and `blockedReason` says why.
 A refusal by the
 destination itself, a 401 for a missing or wrong credential, is an ordinary
-exchange with that status, not a blocked one. An exchange is a summary: no
+exchange with that status, not a blocked one. `credentialCarried` is true when
+the request was sent with a credential the implementation delivered, so a 401
+there was answered to the credential, not to its absence; it is not a verdict
+on the credential, and `list` says which stand refused. An exchange is a
+summary: no
 headers and no bodies, and a value swapped into a URL is recorded as the
 placeholder the caller sent. A service that predates the verb answers 404, which a client reads
 as the verb missing, not as an empty record.

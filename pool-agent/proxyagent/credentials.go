@@ -69,6 +69,18 @@ type credentialDoc struct {
 	// Grants are, for a use, each grant its sentinel is held to (ADR
 	// 26-11-03-329 §3); a control plane from before grants sends none.
 	Grants []credentialGrantDoc `json:"grants,omitempty"`
+	// Rejections are the hosts refusing the credential's value (#1745); a
+	// control plane from before them sends none.
+	Rejections []credentialRejectionDoc `json:"rejections,omitempty"`
+}
+
+// credentialRejectionDoc is one host refusing a credential, as the control
+// plane lists it.
+type credentialRejectionDoc struct {
+	Host        string    `json:"host"`
+	Reason      string    `json:"reason"`
+	FirstSeenAt time.Time `json:"firstSeenAt"`
+	LastSeenAt  time.Time `json:"lastSeenAt"`
 }
 
 // credentialGrantDoc is one grant of a credential as the control plane lists
@@ -296,6 +308,11 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 		}
 		for _, grant := range doc.Grants {
 			credential.Grants = append(credential.Grants, agentcreds.CredentialGrant{Hosts: grant.Hosts, Adds: grant.Adds, ExpiresAt: grant.ExpiresAt})
+		}
+		for _, rejection := range doc.Rejections {
+			credential.Rejections = append(credential.Rejections, agentcreds.CredentialRejection{
+				Host: rejection.Host, Reason: rejection.Reason, FirstRejectedAt: rejection.FirstSeenAt, LastRejectedAt: rejection.LastSeenAt,
+			})
 		}
 		out = append(out, credential)
 	}

@@ -37,13 +37,15 @@ import (
 var yamlEnumAliases = map[string]string{
 	// The pool's sandbox OS is a manifest field, embedded in Pool and named
 	// by the create body.
-	"Pool.sandboxOs":                               "PoolManifest.sandboxOs",
-	"CreatePoolBody.sandboxOs":                     "PoolManifest.sandboxOs",
-	"CreateSecretBody.type":                        "Secret.type",
-	"CreateSandboxSecretBindingBody.raw":           "SecretBinding.raw",
-	"CreateSecretBindingBody.raw":                  "SecretBinding.raw",
-	"SandboxBindingInput.raw":                      "SecretBinding.raw",
-	"SandboxCredential.raw":                        "SecretBinding.raw",
+	"Pool.sandboxOs":                     "PoolManifest.sandboxOs",
+	"CreatePoolBody.sandboxOs":           "PoolManifest.sandboxOs",
+	"CreateSecretBody.type":              "Secret.type",
+	"CreateSandboxSecretBindingBody.raw": "SecretBinding.raw",
+	"CreateSecretBindingBody.raw":        "SecretBinding.raw",
+	"SandboxBindingInput.raw":            "SecretBinding.raw",
+	"SandboxCredential.raw":              "SecretBinding.raw",
+	// A standing rejection as the sandbox holding the credential is told it.
+	"SandboxCredentialRejection.reason":            "SecretRejection.reason",
 	"SecretRequestPartDecision.raw":                "SecretBinding.raw",
 	"SecretRequestPartDecision.as":                 "SecretRequestPart.approvedAs",
 	"SandboxCredentialRequestPartStatus.grantedAs": "SecretRequestPart.approvedAs",

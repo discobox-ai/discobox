@@ -95,18 +95,40 @@ func writeCredential(w io.Writer, credential agentcreds.Credential) {
 	}
 	if len(credential.Grants) < 2 {
 		fmt.Fprintf(w, "%s (%s → %s) %s\n", credential.Name, delivered, strings.Join(credential.Hosts, ", "), expiry(credential.ExpiresAt))
-		return
-	}
-	// Held to several grants (ADR 26-11-03-329 §6): each its own line, so
-	// what goes when an addition lapses, and what stays, is read off it.
-	fmt.Fprintf(w, "%s (%s), under %d grants:\n", credential.Name, delivered, len(credential.Grants))
-	for _, grant := range credential.Grants {
-		what := "  binding"
-		if grant.Adds {
-			what = "  added"
+	} else {
+		// Held to several grants (ADR 26-11-03-329 §6): each its own line, so
+		// what goes when an addition lapses, and what stays, is read off it.
+		fmt.Fprintf(w, "%s (%s), under %d grants:\n", credential.Name, delivered, len(credential.Grants))
+		for _, grant := range credential.Grants {
+			what := "  binding"
+			if grant.Adds {
+				what = "  added"
+			}
+			fmt.Fprintf(w, "%s → %s %s\n", what, strings.Join(grant.Hosts, ", "), expiry(grant.ExpiresAt))
 		}
-		fmt.Fprintf(w, "%s → %s %s\n", what, strings.Join(grant.Hosts, ", "), expiry(grant.ExpiresAt))
 	}
+	for _, rejection := range credential.Rejections {
+		writeRejection(w, rejection)
+	}
+}
+
+// writeRejection is a host refusing the credential, under the credential's
+// line: held is not the same as working, and the agent is the one that would
+// otherwise find out by retrying (#1745). It is advice, not a verdict: the
+// refusal was seen in the project, by whichever discobox sent it there, so it
+// says so, and what to do once the agent's own requests are refused too.
+func writeRejection(w io.Writer, rejection agentcreds.CredentialRejection) {
+	why := rejection.Reason
+	switch rejection.Reason {
+	case agentcreds.RejectionUnrefreshable:
+		why = "nothing to renew it by"
+	case agentcreds.RejectionRefreshFailed:
+		why = "renewing it was refused"
+	case agentcreds.RejectionRejectedAfterRefresh:
+		why = "refused again after renewing"
+	}
+	fmt.Fprintf(w, "  REFUSED by %s (seen in this project, last %s, since %s): %s; if your requests there get 401 too, retrying will not help: a person has to replace it\n",
+		rejection.Host, rejection.LastRejectedAt.UTC().Format(time.RFC3339), rejection.FirstRejectedAt.UTC().Format(time.RFC3339), why)
 }
 
 // expiry says how long a credential lasts, including that it lasts forever:

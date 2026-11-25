@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	apigen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
@@ -34,6 +36,9 @@ type fakeControlPlane struct {
 	listedFor []string
 	// refuse, when set, is the status every call is refused with.
 	refuse int
+	// listBody, when set, is the list's answer as bytes, in place of
+	// credentials.
+	listBody []byte
 }
 
 func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPlaneCredentials, *fakeControlPlane) {
@@ -52,6 +57,10 @@ func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPla
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sandbox-credentials"):
 			fake.listedFor = append(fake.listedFor, r.URL.Query().Get("sandboxId"))
+			if fake.listBody != nil {
+				_, _ = w.Write(fake.listBody)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(listCredentialsDoc{Credentials: fake.credentials})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sandbox-credential-requests"):
 			raw, _ := io.ReadAll(r.Body)
@@ -208,6 +217,36 @@ func TestRequestStatusSaysWhatWasGranted(t *testing.T) {
 	fake.status = credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusDenied, Use: &credentialRequestPartStatusDoc{Status: agentcreds.StatusDenied}}
 	if got, err := b.RequestStatus(context.Background(), "sreq_1"); err != nil || got.Use == nil || got.Use.Credential != nil {
 		t.Fatalf("denied status = %+v (%v), want no credential", got, err)
+	}
+}
+
+// A host refusing a credential reaches the sandbox's list as the control plane
+// says it (#1745), read from the control plane's own response type so the
+// two ends agree on its shape.
+func TestListSaysWhichHostsRefuseACredential(t *testing.T) {
+	first := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	last := time.Date(2026, 11, 24, 11, 0, 0, 0, time.UTC)
+	answer := apimodel.ListSandboxCredentialsResponse{Credentials: []apimodel.SandboxCredential{
+		{Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"}, SecretId: "sec_1", BindingId: "b_1",
+			Rejections: []apimodel.SandboxCredentialRejection{{
+				Host: "api.github.com", Reason: apigen.SandboxCredentialRejectionReasonRejectedAfterRefresh, FirstSeenAt: first, LastSeenAt: last,
+			}}},
+		{Name: "npm", EnvVar: "NPM_TOKEN", Hosts: []string{"registry.npmjs.org"}, SecretId: "sec_2", BindingId: "b_2"},
+	}}
+	body, err := answer.MarshalJSON()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	plane, fake := newFakeControlPlane(t, nil)
+	fake.listBody = body
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane}
+	listed, err := b.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	want := []agentcreds.CredentialRejection{{Host: "api.github.com", Reason: agentcreds.RejectionRejectedAfterRefresh, FirstRejectedAt: first, LastRejectedAt: last}}
+	if len(listed) != 2 || !reflect.DeepEqual(listed[0].Rejections, want) || listed[1].Rejections != nil {
+		t.Fatalf("list = %+v, want github refused at api.github.com and npm not refused", listed)
 	}
 }
 

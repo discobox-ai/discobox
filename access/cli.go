@@ -124,7 +124,9 @@ func usage(w io.Writer) {
       Show the credentials you hold: the variable each is in and the hosts of
       the routes it may be sent on, and the ones you may give the discoboxes
       you create (delegate). A credential you hold is already in its variable for every
-      command you start; use it as you would any token.
+      command you start; use it as you would any token. A host seen refusing
+      a credential, where renewing it did not help, is listed under it
+      (REFUSED by HOST), with when it was last and first refused.
 
   %[1]s env [--json]
       Print every credential variable and what is delivered in it now, as
@@ -263,7 +265,9 @@ func usage(w io.Writer) {
       egress refused, why. Read it when a request fails and the program that
       made it does not say why — the reason says whether to ask for a
       credential (request), ask for a host to be trusted (trust), or send the
-      credential somewhere its routes allow.
+      credential somewhere its routes allow. A 401 to a request sent with a
+      delivered credential says so on the line under it; list says whether
+      that credential stands refused.
 
   %[1]s --debug COMMAND ...
       Before any command, print every call it makes to the credentials

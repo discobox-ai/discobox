@@ -644,6 +644,19 @@ proxy process that reported the rejection: restart the pool agent, or delete the
 discobox that hit the failure, and a credential fixed upstream would otherwise
 keep a band nobody can dismiss.
 
+Two readers see the rows. The project's (`ListSecretRejections`) feeds the
+console and drops a stale row on the read. A sandbox's list of what it holds
+(`ListSandboxCredentials`) carries each standing rejection of a secret it
+holds at a host one of its grants may send it to (`secretroute.HostAllowed`
+over the grant's route lists), with host, reason and when, so `discobox-access
+list` tells the agent a held credential is dead (#1745). That read writes
+nothing and leaves out where the rejection was seen. A row is the secret's,
+reported from any sandbox holding it. So a host outside this sandbox's grants
+would say where another sends the secret, and the row is told as advice for
+when the sandbox's own requests are refused too, never as a verdict: a sandbox
+can draw a 401 on a good credential by sending it where the upstream does not
+read it.
+
 **A report is about the value it names.** A resolve answers with the value's
 generation (`Secret.ValueGeneration`: the secret, and when its value was
 written, which a replacement or a rebind to another secret moves and a

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -55,15 +56,38 @@ func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID 
 		secrets[secretID] = secret
 		return secret
 	}
+	rejections, err := s.standingRejections(ctx, sandbox.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	var out []services.SandboxCredential
 	for _, applied := range effective.Use {
 		if secret := secretOf(applied.Binding.SecretID); secret != nil {
-			out = append(out, sandboxCredential(secret, applied, model.SecretPurposeUse))
+			out = append(out, sandboxCredential(secret, applied, model.SecretPurposeUse, rejections[secret.ID]))
 		}
 	}
 	for _, applied := range effective.Delegate {
 		if secret := secretOf(applied.Binding.SecretID); secret != nil {
-			out = append(out, sandboxCredential(secret, applied, model.SecretPurposeDelegate))
+			out = append(out, sandboxCredential(secret, applied, model.SecretPurposeDelegate, rejections[secret.ID]))
+		}
+	}
+	return out, nil
+}
+
+// standingRejections are a project's rejections that still stand
+// (rejectionStanding), by secret (#1745): a credential an upstream refuses
+// still looks held, and the agent holding it is the one wasting time on it.
+// Read only: a stale row is left for the project's own read to drop, so this
+// list never writes.
+func (s *Service) standingRejections(ctx context.Context, projectID string) (map[string][]model.SecretRejection, error) {
+	rows, err := s.store.ListSecretRejections(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]model.SecretRejection{}
+	for _, row := range rows {
+		if rejectionStanding(row) {
+			out[row.SecretID] = append(out[row.SecretID], row)
 		}
 	}
 	return out, nil
@@ -76,7 +100,12 @@ func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID 
 // addition's (ADR 26-11-03-329 §6), and its hosts and expiry are their union
 // and the latest of them, so a reader from before grants is still told
 // truly where and until when the credential may go.
-func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, purpose string) services.SandboxCredential {
+//
+// Of the secret's standing rejections it carries those at a host one of its
+// grants may send it to. A rejection row is the secret's, reported from any
+// sandbox holding it, so one at a host this sandbox cannot reach would tell it
+// where another sandbox sends the secret, and nothing it could act on.
+func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, purpose string, rejections []model.SecretRejection) services.SandboxCredential {
 	credential := services.SandboxCredential{
 		Name:      secret.Name,
 		SecretID:  secret.ID,
@@ -84,6 +113,20 @@ func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, pur
 		Hosts:     credentialHosts(secret, applied),
 		Purpose:   purpose,
 		ExpiresAt: store.BindingExpiry(&applied.Binding, applied.Parent),
+	}
+	grants := []store.EffectiveBinding{applied}
+	if purpose == model.SecretPurposeUse {
+		grants = append(grants, applied.Additions...)
+	}
+	for _, rejection := range rejections {
+		reachable := slices.ContainsFunc(grants, func(grant store.EffectiveBinding) bool {
+			return secretroute.HostAllowed(store.RouteLists(secret, &grant.Binding, grant.Parent), rejection.Host)
+		})
+		if reachable {
+			credential.Rejections = append(credential.Rejections, services.SandboxCredentialRejection{
+				Host: rejection.Host, Reason: rejection.Reason, FirstSeenAt: rejection.FirstSeenAt, LastSeenAt: rejection.LastSeenAt,
+			})
+		}
 	}
 	if purpose != model.SecretPurposeUse {
 		return credential

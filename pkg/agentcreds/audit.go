@@ -58,7 +58,13 @@ type AuditExchange struct {
 	// the destination, and BlockedReason says why.
 	Blocked       bool   `json:"blocked"`
 	BlockedReason string `json:"blockedReason,omitempty"`
-	DurationMS    int64  `json:"durationMs,omitempty"`
+	// CredentialCarried is true when the implementation sent the request
+	// with a credential it delivered in it: a 401 to one was answered to the
+	// credential, not to its absence. It is not a verdict on the credential:
+	// some 401s are answered to a good one, and list says which credentials
+	// stand refused.
+	CredentialCarried bool  `json:"credentialCarried,omitempty"`
+	DurationMS        int64 `json:"durationMs,omitempty"`
 }
 
 // AuditHTTPResponse is the HTTP audit read's body.

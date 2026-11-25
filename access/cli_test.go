@@ -186,6 +186,41 @@ func TestListSaysWhereEachCredentialIs(t *testing.T) {
 	}
 }
 
+// A credential an upstream refuses says so in the list, with when it was last
+// refused (#1745), in the text and in the JSON.
+func TestListSaysWhichCredentialsAreRefused(t *testing.T) {
+	first := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	last := time.Date(2026, 11, 24, 11, 30, 0, 0, time.UTC)
+	serve(t, &fakeService{credentials: []agentcreds.Credential{
+		{Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"}, Rejections: []agentcreds.CredentialRejection{
+			{Host: "api.github.com", Reason: agentcreds.RejectionUnrefreshable, FirstRejectedAt: first, LastRejectedAt: last},
+		}},
+		{Name: "npm", EnvVar: "NPM_TOKEN", Hosts: []string{"registry.npmjs.org"}},
+	}})
+	stdout, _, code := capture(t, "", func() int { return Run([]string{"list"}) })
+	if code != exitOK {
+		t.Fatalf("exit = %d", code)
+	}
+	want := "github (GITHUB_TOKEN → api.github.com) [never expires]\n" +
+		"  REFUSED by api.github.com (seen in this project, last 2026-11-24T11:30:00Z, since 2026-11-24T10:00:00Z): nothing to renew it by; if your requests there get 401 too, retrying will not help: a person has to replace it\n" +
+		"npm (NPM_TOKEN → registry.npmjs.org) [never expires]\n"
+	if stdout != want {
+		t.Fatalf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+
+	stdout, _, code = capture(t, "", func() int { return Run([]string{"list", "--json"}) })
+	var got agentcreds.ListResponse
+	if code != exitOK || json.Unmarshal([]byte(stdout), &got) != nil {
+		t.Fatalf("exit = %d, stdout %s", code, stdout)
+	}
+	if r := got.Credentials[0].Rejections; len(r) != 1 || r[0].Host != "api.github.com" || !r[0].LastRejectedAt.Equal(last) || got.Credentials[1].Rejections != nil {
+		t.Fatalf("list = %+v, want github refused at api.github.com last at %s and npm not", got, last)
+	}
+	if !strings.Contains(stdout, `"lastRejectedAt":"2026-11-24T11:30:00Z"`) {
+		t.Fatalf("JSON lacks lastRejectedAt: %s", stdout)
+	}
+}
+
 func TestListWithNothingSaysHowToAsk(t *testing.T) {
 	serve(t, &fakeService{})
 	stdout, _, code := capture(t, "", func() int { return Run([]string{"list"}) })

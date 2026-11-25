@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
@@ -94,5 +95,10 @@ func writeExchange(w io.Writer, exchange agentcreds.AuditExchange) {
 	fmt.Fprintln(w)
 	if exchange.BlockedReason != "" {
 		fmt.Fprintf(w, "    reason: %s\n", exchange.BlockedReason)
+	}
+	if exchange.CredentialCarried && exchange.Status == http.StatusUnauthorized {
+		// A 401 to a request that carried a credential is about the
+		// credential, not its absence; whether it stands refused is list's.
+		fmt.Fprintln(w, "    sent with a delivered credential")
 	}
 }

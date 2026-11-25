@@ -98,15 +98,43 @@ const (
 // stacking on it, each with its own hosts and expiry. A request is sent when
 // some grant allows it, so an addition's hosts go when it lapses while the
 // others' stay. Hosts and ExpiresAt are their union and the latest of them.
+//
+// Rejections are the hosts known to be refusing the credential's value, where
+// renewing it did not help: holding a credential is not the same as it
+// working, and a 401 a program swallowed is otherwise found out the slow way.
+// Empty when nothing is known to refuse it, or the service does not say.
 type Credential struct {
-	Name      string            `json:"name"`
-	EnvVar    string            `json:"envVar,omitempty"`
-	Hosts     []string          `json:"hosts,omitempty"`
-	Purpose   string            `json:"purpose,omitempty"`
-	Raw       string            `json:"raw,omitempty"`
-	ExpiresAt *time.Time        `json:"expiresAt,omitempty"`
-	Grants    []CredentialGrant `json:"grants,omitempty"`
+	Name       string                `json:"name"`
+	EnvVar     string                `json:"envVar,omitempty"`
+	Hosts      []string              `json:"hosts,omitempty"`
+	Purpose    string                `json:"purpose,omitempty"`
+	Raw        string                `json:"raw,omitempty"`
+	ExpiresAt  *time.Time            `json:"expiresAt,omitempty"`
+	Grants     []CredentialGrant     `json:"grants,omitempty"`
+	Rejections []CredentialRejection `json:"rejections,omitempty"`
 }
+
+// CredentialRejection is one host refusing a credential's value. Reason says
+// why trying again will not help (RejectionUnrefreshable and its siblings; an
+// implementation may name another), and the times when the host first and most
+// recently refused it.
+type CredentialRejection struct {
+	Host            string    `json:"host"`
+	Reason          string    `json:"reason"`
+	FirstRejectedAt time.Time `json:"firstRejectedAt"`
+	LastRejectedAt  time.Time `json:"lastRejectedAt"`
+}
+
+// Why a credential's rejection needs a person rather than another attempt.
+const (
+	// RejectionUnrefreshable is a value with nothing to renew it by: what was
+	// stored is what was refused.
+	RejectionUnrefreshable = "unrefreshable"
+	// RejectionRefreshFailed is a renewal that was itself refused.
+	RejectionRefreshFailed = "refresh-failed"
+	// RejectionRejectedAfterRefresh is a renewed value refused too.
+	RejectionRejectedAfterRefresh = "rejected-after-refresh"
+)
 
 // CredentialGrant is one grant a credential is held to: where it may be sent
 // under it, and until when. Adds is an addition (ADR 26-11-03-329 §1).
