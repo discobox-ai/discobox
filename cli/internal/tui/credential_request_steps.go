@@ -64,12 +64,16 @@ func (m *Model) commandRan(msg commandRanMsg) tea.Cmd {
 // holding that name could answer the request in its place.
 func takenNameNotice(req CredentialRequest, secrets []Secret, held []HeldGrant, asked, suggested string) string {
 	text := "The project already has a credential named “" + asked + "”, so this one will be named “" + suggested + "” unless you rename it."
-	holder, pinned := heldBy(held)
+	holder, _ := heldBy(held)
 	for _, s := range secrets {
 		if strings.TrimSpace(s.Name) != strings.TrimSpace(asked) {
 			continue
 		}
-		switch cannotAnswer(s, req, holder, pinned, true) {
+		why := cannotAnswer(s, req, holder, true)
+		if why == "" && heldElsewhere(req, held, s.ID) {
+			why = "held"
+		}
+		switch why {
 		case "":
 			return text + " Esc goes back to choose “" + asked + "” instead."
 		case notCovered:

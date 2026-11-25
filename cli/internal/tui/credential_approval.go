@@ -63,10 +63,7 @@ func (m *Model) credentialApproval(req CredentialRequest, secrets []Secret, held
 		if cannotAnswer(secret, req, holder, readable) != "" {
 			continue
 		}
-		// The box's own addition stacked on a harness config's or project's
-		// binding pins the variable to that secret, and is no binding to
-		// rebind from: the server refuses another secret there.
-		if req.Use != nil && pinned && !rebindable && secret.ID != holder.SecretID {
+		if heldElsewhere(req, held, secret.ID) {
 			continue
 		}
 		ans := requestAnswer{credential: secret.Name, secret: secret, credentialRoutes: secret.Routes, maxTTL: secret.MaxTTL, held: held, holderID: holder.SecretID}
