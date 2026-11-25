@@ -5,6 +5,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
 // hostile is text a box can put in a service's declaration, or in the account
@@ -89,5 +90,29 @@ func TestTUIExecServiceNameArrivesTerminalSafe(t *testing.T) {
 	shell := tuiExec(apimodel.SandboxExec{ID: "exec_3"})
 	if shell.ServiceName != "" {
 		t.Errorf("an exec that is no service has service name %q", shell.ServiceName)
+	}
+}
+
+// A tool's name, description and refusal are the box's to write — a
+// repository's declaration, or the catalog listing itself — and the console
+// draws the name as a pane's title and tab, so they reach it escaped the way a
+// service's text does. The id is what the console sends back, and is left alone.
+func TestTUIToolArrivesTerminalSafe(t *testing.T) {
+	t.Parallel()
+	got := tuiTools([]tools.Definition{{ID: "web", Name: hostile, Description: hostile, Problem: hostile}})
+	if len(got) != 1 {
+		t.Fatalf("tools = %d, want 1", len(got))
+	}
+	for field, value := range map[string]string{
+		"label":   got[0].Label,
+		"detail":  got[0].Detail,
+		"problem": got[0].Problem,
+	} {
+		if value != hostileShown {
+			t.Errorf("%s = %q, want %q", field, value, hostileShown)
+		}
+	}
+	if got[0].ID != "web" {
+		t.Errorf("id = %q; it is sent back and must be left as it is", got[0].ID)
 	}
 }
