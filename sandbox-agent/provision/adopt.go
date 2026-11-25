@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -68,7 +67,7 @@ func (r *Runner) usable(ctx context.Context, feature provisionspec.Feature) (str
 	if version == "" {
 		return "", nil, fmt.Errorf("%s printed no version", adopt.Version.Command)
 	}
-	if compareVersions(version, adopt.Version.Minimum) < 0 {
+	if !adopt.Version.Admits(version) {
 		return version, nil, fmt.Errorf("%s is %s, older than %s", adopt.Version.Command, version, adopt.Version.Minimum)
 	}
 	return version, commands, nil
@@ -215,26 +214,4 @@ func writable(path string) error {
 		return err
 	}
 	return nil
-}
-
-// compareVersions compares two dotted versions number by number; a missing
-// number is 0.
-func compareVersions(a, b string) int {
-	as, bs := strings.Split(a, "."), strings.Split(b, ".")
-	for i := range max(len(as), len(bs)) {
-		var x, y int
-		if i < len(as) {
-			x, _ = strconv.Atoi(as[i])
-		}
-		if i < len(bs) {
-			y, _ = strconv.Atoi(bs[i])
-		}
-		if x != y {
-			if x < y {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
 }

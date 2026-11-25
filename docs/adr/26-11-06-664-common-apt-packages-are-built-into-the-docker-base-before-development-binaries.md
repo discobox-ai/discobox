@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-11-06
 Accepted by the owner by merging #755, 2026-11-06
+Amended by: [26-11-19-780](26-11-19-780-the-docker-sandbox-base-ships-node-and-npm.md), which builds Node and npm into the base
 Issue: [#740](https://github.com/discobox-ai/discobox/issues/740)
 
 ## Context

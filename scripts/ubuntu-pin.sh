@@ -139,7 +139,9 @@ check() {
   # first apt-get (a stage built on an earlier one inherits the list). Its apt
   # reads resolute alone: no other release, no snapshot, no apt pin or PPA, no
   # index allowed past its expiry, and no source but the mirror list and the
-  # two third-party repositories, Docker's and GitHub CLI's.
+  # three third-party repositories, Docker's, GitHub CLI's and NodeSource's.
+  # NodeSource's is build-time only: removed in the layer that writes it, so a
+  # box's apt never reads it (ADR 26-11-19-780).
   local dockerfile
   while IFS= read -r dockerfile; do
     local bad
@@ -179,7 +181,7 @@ check() {
       !block && /\/etc\/apt\/mirrors\/|\/etc\/apt\/sources\.list\.d\/ubuntu\.sources/ {
         printf "%s:%d: the mirror list or Ubuntu'"'"'s sources written outside the mirror list setup: %s\n", FILENAME, FNR, $0
       }
-      !block && />+ *\/etc\/apt\/sources\.list/ && !/\/etc\/apt\/sources\.list\.d\/(docker\.sources|github-cli\.list)/ {
+      !block && />+ *\/etc\/apt\/sources\.list/ && !/\/etc\/apt\/sources\.list\.d\/(docker\.sources|github-cli\.list|nodesource\.sources)/ {
         printf "%s:%d: an apt source written outside the mirror list setup: %s\n", FILENAME, FNR, $0
       }
       /[Tt]rusted(: | *=)|allow-insecure|allow-unauthenticated|AllowInsecureRepositories|AllowDowngradeToInsecure|AllowWeakRepositories/ {
@@ -198,9 +200,17 @@ check() {
       /(^|[^A-Za-z])(debian|golang|rust):/ {
         printf "%s:%d: another distribution or a language image: %s\n", FILENAME, FNR, $0
       }
-      /URIs: / && !/URIs: mirror\+file:\/etc\/apt\/mirrors\/ubuntu\.list/ && !/download\.docker\.com/ {
+      /URIs: / && !/URIs: mirror\+file:\/etc\/apt\/mirrors\/ubuntu\.list/ && !/download\.docker\.com/ && !/deb\.nodesource\.com\/node_/ {
         printf "%s:%d: an apt source that is not the mirror list: %s\n", FILENAME, FNR, $0
       }
+      # The NodeSource source is written and removed in one layer: a new
+      # instruction while it is still in place leaves it in the image.
+      /^[A-Z]+[[:space:]]/ && nodesource_open {
+        printf "%s:%d: NodeSource'"'"'s apt source is left in the image: remove it in the layer that writes it\n", FILENAME, nodesource_open
+        nodesource_open = 0
+      }
+      />+ *\/etc\/apt\/sources\.list\.d\/nodesource\.sources/ { nodesource_open = FNR }
+      /rm -f[^&]*\/etc\/apt\/sources\.list\.d\/nodesource\.sources/ { nodesource_open = 0 }
       /^[^#]*(^|[^A-Za-z_])deb (\[|http)/ && !/cli\.github\.com\/packages/ {
         printf "%s:%d: an apt source that is not the mirror list: %s\n", FILENAME, FNR, $0
       }
@@ -210,6 +220,9 @@ check() {
       toupper($1) == "ARG" && $2 ~ /^DOCKER_CE_VERSION=/ { has_ce = 1 }
       toupper($1) == "ARG" && $2 ~ /^CONTAINERD_IO_VERSION=/ { has_containerd = 1 }
       toupper($1) == "ARG" && $2 ~ /^DOCKER_APT_KEY_FINGERPRINT=/ { has_key = 1 }
+      /deb\.nodesource\.com\/node_/ { nodesource = 1 }
+      toupper($1) == "ARG" && $2 ~ /^NODE_VERSION=/ { has_node = 1 }
+      toupper($1) == "ARG" && $2 ~ /^NODESOURCE_APT_KEY_FINGERPRINT=/ { has_node_key = 1 }
       /go\.dev\/dl\// { go = 1 }
       toupper($1) == "ARG" && $2 ~ /^GO_VERSION=/ { has_go = 1 }
       toupper($1) == "ARG" && $2 ~ /^GO_SHA256_AMD64=/ { has_go_amd64 = 1 }
@@ -220,6 +233,8 @@ check() {
       END {
         if (has_image != has_amd64 || has_image != has_arm64) printf "%s: pins the resolute image or a mirror, not all three\n", FILENAME
         if (docker && !(has_ce && has_containerd && has_key)) printf "%s: installs from Docker'"'"'s repository without ARG DOCKER_CE_VERSION, ARG CONTAINERD_IO_VERSION and ARG DOCKER_APT_KEY_FINGERPRINT\n", FILENAME
+        if (nodesource_open) printf "%s:%d: NodeSource'"'"'s apt source is left in the image: remove it in the layer that writes it\n", FILENAME, nodesource_open
+        if (nodesource && !(has_node && has_node_key)) printf "%s: installs from NodeSource'"'"'s repository without ARG NODE_VERSION and ARG NODESOURCE_APT_KEY_FINGERPRINT\n", FILENAME
         if (go && !(has_go && has_go_amd64 && has_go_arm64)) printf "%s: installs Go without ARG GO_VERSION, ARG GO_SHA256_AMD64 and ARG GO_SHA256_ARM64\n", FILENAME
       }
     ' "$dockerfile")

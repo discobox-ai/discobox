@@ -1,8 +1,14 @@
 # 26-11-19-780 — The Docker sandbox base ships Node and npm
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-11-19
+
+Accepted by the owner by merging #1439, 2026-11-20.
+
+**Amends:** [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+§10's and [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md)'s
+exclusion of Node from the Docker sandbox base.
 
 ## Context
 

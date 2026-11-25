@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -592,5 +593,57 @@ func TestOrderKeepsTheBundlesOrder(t *testing.T) {
 	}
 	if got := strings.Join(names, " "); got != "zeta core mid alpha" {
 		t.Fatalf("order = %s", got)
+	}
+}
+
+// The node feature as it ships, its scripts replaced by ones that record what
+// ran: on the Docker sandbox base, whose image carries NodeSource's node and
+// npm in /usr/bin (ADR 26-11-19-780), it adopts them and runs no install; on
+// an image without them it installs as it always has.
+func TestTheNodeFeatureAdoptsTheBaseImagesNodeAndInstallsWhereThereIsNone(t *testing.T) {
+	for name, image := range map[string]bool{"the sandbox base": true, "an image without node": false} {
+		t.Run(name, func(t *testing.T) {
+			b := newBox(t)
+			ran := filepath.Join(t.TempDir(), "ran")
+			b.feature("core", map[string]string{provisionspec.FileName: head + "steps: []\n"})
+			files := map[string]string{}
+			shipped := os.DirFS("../features/node")
+			err := fs.WalkDir(shipped, ".", func(path string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return err
+				}
+				switch {
+				case strings.HasPrefix(d.Name(), "check-"):
+					files[path] = "#!/bin/sh\nexit 1\n"
+				case strings.HasSuffix(d.Name(), ".sh"):
+					files[path] = "#!/bin/sh\necho " + strings.TrimSuffix(d.Name(), ".sh") + " >> " + ran + "\n"
+				default:
+					data, err := fs.ReadFile(shipped, path)
+					files[path] = string(data)
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.feature("node", files)
+			if image {
+				b.executable("usr/bin/node", "#!/bin/sh\necho v25.9.0\n", 0o755)
+				b.executable("usr/bin/npm", "#!/bin/sh\necho 11.6.2\n", 0o755)
+			}
+			b.tracked()
+			got := results(b.mustApply())
+			want, how := "select-node\ninstall-pnpm\n", provisionspec.HowAdopted
+			if !image {
+				want, how = "install-node\n"+want, provisionspec.HowInstalled
+			}
+			if data, _ := os.ReadFile(ran); string(data) != want {
+				t.Errorf("ran %q, want %q (results %v)", data, want, got)
+			}
+			if node := b.status().Features["node"]; node.State != provisionspec.StateReady || node.How != how {
+				t.Errorf("node = %+v, want ready and %s", node, how)
+			}
+		})
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -100,6 +101,25 @@ func (v Version) VersionArgs() []string {
 		return []string{"--version"}
 	}
 	return v.Args
+}
+
+// Admits reports whether version, a dotted version, is at least Minimum,
+// compared number by number with a missing number counted as 0.
+func (v Version) Admits(version string) bool {
+	have, want := strings.Split(version, "."), strings.Split(v.Minimum, ".")
+	for i := range max(len(have), len(want)) {
+		var h, w int
+		if i < len(have) {
+			h, _ = strconv.Atoi(have[i])
+		}
+		if i < len(want) {
+			w, _ = strconv.Atoi(want[i])
+		}
+		if h != w {
+			return h > w
+		}
+	}
+	return true
 }
 
 // Step is one typed step. Exactly one kind is set; Name keys its record, so
