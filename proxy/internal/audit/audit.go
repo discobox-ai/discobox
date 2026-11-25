@@ -294,13 +294,17 @@ type Recorder struct {
 	// its own drop counts, beside the pool totals in dropped and dnsDropped,
 	// so a sandbox-scoped reader is answered with its own (Drops). Entries
 	// go with the client's purge (PurgeClient).
-	clientsMu       sync.Mutex
-	clients         map[string]*clientState
-	done            chan struct{}
-	enqueueMu       sync.RWMutex
-	wg              sync.WaitGroup
-	streamDir       string
-	bodyDir         string
+	clientsMu sync.Mutex
+	clients   map[string]*clientState
+	done      chan struct{}
+	enqueueMu sync.RWMutex
+	wg        sync.WaitGroup
+	streamDir string
+	bodyDir   string
+	// unaudited is the clients the recorder keeps nothing of: no row and no
+	// spool file (ConfigureUnaudited). Set before the proxy serves and only
+	// read after.
+	unaudited       map[string]bool
 	streamQueueSize int
 	streamWg        sync.WaitGroup
 	dropped         atomic.Uint64
@@ -421,9 +425,28 @@ func (r *Recorder) ConfigureBodySpool(dir string) {
 	r.bodyDir = dir
 }
 
+// ConfigureUnaudited sets the clients whose traffic is kept out of the trail
+// altogether. A client ID is the proxy's reading of the certificate the client
+// presented, never anything the request says, so no other client can claim
+// one of these to go unrecorded.
+func (r *Recorder) ConfigureUnaudited(clientIDs []string) {
+	if r == nil {
+		return
+	}
+	r.unaudited = make(map[string]bool, len(clientIDs))
+	for _, id := range clientIDs {
+		r.unaudited[id] = true
+	}
+}
+
+// records reports whether clientID's traffic is kept in the trail.
+func (r *Recorder) records(clientID string) bool {
+	return r != nil && r.enabled && !r.unaudited[clientID]
+}
+
 // BeginUpgradeStream starts asynchronous raw upgraded-stream spooling.
 func (r *Recorder) BeginUpgradeStream(clientID, upgradeType, extensions string) (*StreamRecord, *StreamSession, error) {
-	if r == nil || !r.enabled || r.streamDir == "" {
+	if !r.records(clientID) || r.streamDir == "" {
 		return nil, nil, nil
 	}
 	record, session, err := beginUpgradeStream(r.streamDir, clientID, upgradeType, extensions, r.streamQueueSize, &r.streamWg)
@@ -441,7 +464,7 @@ func (r *Recorder) BeginUpgradeStream(clientID, upgradeType, extensions string) 
 
 // BeginBody starts a raw HTTP body spool file.
 func (r *Recorder) BeginBody(clientID, kind string) (*BodyRecord, *BodySpool, error) {
-	if r == nil || !r.enabled || r.bodyDir == "" {
+	if !r.records(clientID) || r.bodyDir == "" {
 		return nil, nil, nil
 	}
 	record, spool, err := BeginBody(r.bodyDir, clientID, kind)
@@ -490,6 +513,9 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 
 // RecordHTTP queues an HTTP audit event without blocking on SQLite.
 func (r *Recorder) RecordHTTP(event HTTPEvent) {
+	if r != nil && r.unaudited[event.ClientID] {
+		return
+	}
 	if event.EnqueuedAt.IsZero() {
 		event.EnqueuedAt = time.Now().UTC()
 	}
@@ -510,7 +536,7 @@ const (
 // queue is empty, and each sandbox a budget in it. An event over either is
 // dropped and counted.
 func (r *Recorder) RecordDNS(event DNSEvent) {
-	if r == nil || !r.enabled {
+	if !r.records(event.ClientID) {
 		return
 	}
 	if event.EnqueuedAt.IsZero() {
@@ -546,6 +572,9 @@ func (r *Recorder) client(clientID string) *clientState {
 
 // RecordSOCKS queues a SOCKS audit event without blocking on SQLite.
 func (r *Recorder) RecordSOCKS(event SOCKSEvent) {
+	if r != nil && r.unaudited[event.ClientID] {
+		return
+	}
 	if event.EnqueuedAt.IsZero() {
 		event.EnqueuedAt = time.Now().UTC()
 	}

@@ -168,6 +168,13 @@ type RecordingConfig struct {
 	MaxSpoolPercent float64
 	// BodyHeadBytes is what a spool file keeps when the budget truncates it.
 	BodyHeadBytes int64
+	// UnauditedClients are client IDs whose traffic is not recorded at all:
+	// no row and no spool file. A client ID is the identity of the
+	// certificate the proxy issued the client, so no other client can pass
+	// as one of these. A pool lists its own engine here
+	// (pool-agent/proxyagent.EngineClientID): its polls of its driver's
+	// service are the pool's own bookkeeping, not a sandbox's traffic.
+	UnauditedClients []string
 }
 
 // AllowlistConfig is the destination policy (ADR 26-10-01-032 §6): each

@@ -1131,6 +1131,10 @@ pool's proxy (`proxyagent.EngineSentinel`, ADR 26-11-11-080 §9):
   `resolve-driver-key` for that client, never `resolve-sandbox-secret`, and
   reports nothing of it. The answer to every request it swaps into is never
   recorded (`proxy.SecretClient.Exchanges`).
+- **Not audited.** The engine's client is in the proxy's
+  `Recording.UnauditedClients`: its traffic is the pool's own bookkeeping,
+  not a sandbox's, and its constant polling would otherwise fill the audit
+  database.
 
 ```mermaid
 flowchart LR

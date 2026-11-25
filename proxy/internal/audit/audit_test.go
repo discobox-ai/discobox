@@ -524,3 +524,56 @@ func TestOpenDropsTheRetiredUseIDColumn(t *testing.T) {
 		t.Fatalf("got %d rows, want the older row kept beside the new one", len(rows))
 	}
 }
+
+// An unaudited client leaves no row and no spool file, while every other
+// client's traffic is recorded as before.
+func TestRecorderKeepsNothingOfAnUnauditedClient(t *testing.T) {
+	dir := t.TempDir()
+	dsn := filepath.Join(dir, "audit.db")
+	recorder, err := Open(context.Background(), dsn, 8, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder.ConfigureBodySpool(dir)
+	recorder.ConfigureStreamSpool(dir, 8)
+	recorder.ConfigureUnaudited([]string{"pool-engine"})
+
+	if record, spool, err := recorder.BeginBody("pool-engine", BodyKindRequest); err != nil || record != nil || spool != nil {
+		t.Fatalf("BeginBody(pool-engine) = %v, %v, %v; want no spool", record, spool, err)
+	}
+	if record, session, err := recorder.BeginUpgradeStream("pool-engine", "websocket", ""); err != nil || record != nil || session != nil {
+		t.Fatalf("BeginUpgradeStream(pool-engine) = %v, %v, %v; want no spool", record, session, err)
+	}
+	recorder.RecordHTTP(HTTPEvent{ClientID: "pool-engine", Method: http.MethodGet, URL: "https://driver.example/api"})
+	recorder.RecordSOCKS(SOCKSEvent{ClientID: "pool-engine", Destination: "driver.example", Port: 443})
+	recorder.RecordDNS(DNSEvent{ClientID: "pool-engine", Name: "driver.example"})
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", Method: http.MethodGet, URL: "https://api.example.com/v1"})
+	if err := recorder.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pools.Close()
+	for _, model := range []any{&HTTPExchange{}, &SOCKSConnect{}, &DNSQuery{}} {
+		var n int64
+		if err := pools.Read.Model(model).Where("client_id = ?", "pool-engine").Count(&n).Error; err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("%T rows for pool-engine = %d, want none", model, n)
+		}
+	}
+	var n int64
+	if err := pools.Read.Model(&HTTPExchange{}).Where("client_id = ?", "sandbox-1").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("http rows for sandbox-1 = %d, want 1", n)
+	}
+	if got := recorder.Drops(""); got != (Drops{}) {
+		t.Fatalf("Drops(\"\") = %+v, want an unaudited client's traffic not counted as dropped", got)
+	}
+}

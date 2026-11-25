@@ -284,6 +284,10 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	cfg.Cache.Dir = root.ProxyCache(projectID, poolID)
 	cfg.Recording.StreamDir = root.ProxyStreams(projectID, poolID)
 	cfg.Recording.BodyDir = root.ProxyBodies(projectID, poolID)
+	// The engine polls its driver's service for every machine, all the
+	// time: audited, those polls outnumber every sandbox's traffic and keep
+	// the audit database's one writer behind.
+	cfg.Recording.UnauditedClients = []string{EngineClientID}
 	// A sandbox's rows and recordings deliberately outlive the sandbox, so
 	// age and the spool budget below are all that reclaim them.
 	retention, err := ConfiguredAuditRetention()
