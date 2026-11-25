@@ -122,6 +122,17 @@ func (r *rebindPreview) sections(ans requestAnswer) []section {
 		routesSection("“"+ans.credential+"” may be sent to", ans.secret.Routes))
 }
 
+// heldElsewhere is whether the variable req asks for is pinned to another
+// secret than secretID with nothing an approval can rebind: the box's own
+// addition stacked on a harness config's or project's binding, which the
+// server refuses another secret beside (ownDelivers). A variable the box's
+// own binding delivers is rebound instead, and one nothing of the box's own
+// holds is shadowed.
+func heldElsewhere(req CredentialRequest, held []HeldGrant, secretID string) bool {
+	holder, pinned := heldBy(held)
+	return req.Use != nil && pinned && !ownDelivers(held) && secretID != holder.SecretID
+}
+
 // ownDelivers is whether the grant delivering the variable now is one of the
 // box's own bindings, which is what a rebind replaces, as the server resolves
 // it (EffectiveBindings.UseFor): the plain binding when there is one, from
