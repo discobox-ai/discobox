@@ -1,0 +1,40 @@
+we already have a script to setup a boxd pool can you create another one to setup archil? in ./scripts
+
+---
+
+what is the --server arg?
+
+---
+
+when I give the archil env key, where does it get stored?
+
+---
+
+region is require ```request failed: 400 Bad Request: archil: configuration: region is required: The Archil region the driver calls, which keeps its sandboxes and disks: one of aws-eu-west-1, aws-us-east-1, aws-us-west-2. aws-us-east-1 is where a pool made before it was required keeps its VMs.```
+
+---
+
+actually, an API key is tied to a region. can we derive the region from the api key.
+
+---
+
+while a snapshot is building for a discobox is there progress reported anywhere for it?
+
+---
+
+if it's building how can I get logs?
+
+---
+
+can you look at the status of the pool archil locally here?
+
+---
+
+can we put in an issue that snapshot builder sandboxes should be visible from `discobox ls` probably behind a flag. or `discobox admin box ls`. So that we can better troubleshoot them
+
+---
+
+<pasted_content id="2d4b">
+
+Nov 23 18:31:07 debuerreotype discobox-sandbox-agent[87]: 2026/11/23 18:31:07 ERROR sandbox proxy bridge could not reach the pool proxy worker=wss://7302-agratfgjif52zdqw4lmi5bwowq.prod-aws-us-west-2-green.archil.app/tunnel/proxy error="open tunnel to wss://7302-agratfgjif52zdqw4lmi5bwowq.prod-aws-us-west-2-green.archil.app/tunnel/proxy: failed to WebSocket dial: failed to send handshake request: Get \"https://7302-agratfgjif52zdqw4lmi5bwowq.prod-aws-us-west-2-green.archil.app/tunnel/proxy\": dial tcp: lookup 7302-agratfgjif52zdqw4lmi5bwowq.prod-aws-us-west-2-green.archil.app. on 169.254.53.53:53: read udp 192.168.249.2:46660->8.8.8.8:53: i/o timeout\ndial tcp: lookup 7302-agratfgjif52zdqw4lmi5bwowq.prod-aws-us-west-2-green.archil.app. on 169.254.53.53:53: read udp 192.168.249.2:58990->1.1.1.1:53: i/o timeout"
+</pasted_content id="2d4b">
