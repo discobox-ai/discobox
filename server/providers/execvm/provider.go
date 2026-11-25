@@ -123,6 +123,8 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "Exec",
 		Icon:        "terminal",
 		Description: "Delegates each pool VM's lifecycle to an external command, such as a shell script.",
+		// Each box is a container its pool agent limits to its size.
+		SizeFields: dockerworker.SizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <pool-id>`."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},

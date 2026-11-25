@@ -183,8 +183,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
-	if _, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID); err != nil {
+	providerInstance, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+	if err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
+	}
+	cpuVCPUs, memoryBytes, err := s.resolveSandboxSize(providerInstance, pool, config.CpuVcpus.Or(0), config.MemoryBytes.Or(0))
+	if err != nil {
+		return nil, err
 	}
 	harnessConfigID, err := s.resolveHarnessConfigID(ctx, project, config.HarnessConfigId, input.HarnessName)
 	if err != nil {
@@ -353,6 +358,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			Skills:                skills,
 			SkillsSources:         skillsSources,
 			Features:              features,
+			CPUVCPUs:              cpuVCPUs,
+			MemoryBytes:           memoryBytes,
 		},
 		SourceRoot: sourceRoot,
 		Origin:     origin,

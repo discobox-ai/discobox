@@ -1225,11 +1225,18 @@ type CreatePoolBody struct {
 	// Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR
 	// 26-10-29-481 §3). Off by default.
 	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
-	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
-	// to the provider's configuration, then the host.
+	// On a provider that sizes one VM per pool from it, that VM's vCPUs, which every discobox of the
+	// pool shares; on any other provider that acts on a size, the default vCPUs of each discobox, which
+	// a discobox's own cpuVcpus overrides. Only a provider that acts on a size accepts it; zero leaves a
+	// pool VM to the provider's configuration, then the host, and sets no default (a discobox is then
+	// not limited unless it asks for a size). A change to the default reaches discoboxes made after it.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
-	// leaves the size to the provider's configuration, then the host.
+	// On a provider that sizes one VM per pool from it, that VM's memory in bytes, which every discobox
+	// of the pool shares; on any other provider that acts on a size, the default memory of each discobox,
+	//  which a discobox's own memoryBytes overrides. Only a provider that acts on a size accepts it;
+	// zero leaves a pool VM to the provider's configuration, then the host, and sets no default (a
+	// discobox is then not limited unless it asks for a size). A change to the default reaches
+	// discoboxes made after it.
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Pool display name.
 	Name string `json:"name"`
@@ -13384,6 +13391,52 @@ func (o OptPoolSnapshotPlan) Or(d PoolSnapshotPlan) PoolSnapshotPlan {
 	return d
 }
 
+// NewOptPoolSnapshotSize returns new OptPoolSnapshotSize with value set to v.
+func NewOptPoolSnapshotSize(v PoolSnapshotSize) OptPoolSnapshotSize {
+	return OptPoolSnapshotSize{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSnapshotSize is optional PoolSnapshotSize.
+type OptPoolSnapshotSize struct {
+	Value PoolSnapshotSize
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSnapshotSize was set.
+func (o OptPoolSnapshotSize) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSnapshotSize) Reset() {
+	var v PoolSnapshotSize
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSnapshotSize) SetTo(v PoolSnapshotSize) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSnapshotSize) Get() (v PoolSnapshotSize, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSnapshotSize) Or(d PoolSnapshotSize) PoolSnapshotSize {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolSnapshots returns new OptPoolSnapshots with value set to v.
 func NewOptPoolSnapshots(v PoolSnapshots) OptPoolSnapshots {
 	return OptPoolSnapshots{
@@ -17466,8 +17519,11 @@ type Pool struct {
 	// change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container
 	// when it is replaced.
 	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
-	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
-	// to the provider's configuration, then the host.
+	// On a provider that sizes one VM per pool from it, that VM's vCPUs, which every discobox of the
+	// pool shares; on any other provider that acts on a size, the default vCPUs of each discobox, which
+	// a discobox's own cpuVcpus overrides. Only a provider that acts on a size accepts it; zero leaves a
+	// pool VM to the provider's configuration, then the host, and sets no default (a discobox is then
+	// not limited unless it asks for a size). A change to the default reaches discoboxes made after it.
 	CpuVcpus float64 `json:"cpuVcpus"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
@@ -17476,8 +17532,12 @@ type Pool struct {
 	// The kind of image the pool runs: oci, or vm/<driver> for VM images of that driver. Declared by its
 	// agent; empty until the agent first reports.
 	ImageKind OptString `json:"imageKind"`
-	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
-	// leaves the size to the provider's configuration, then the host.
+	// On a provider that sizes one VM per pool from it, that VM's memory in bytes, which every discobox
+	// of the pool shares; on any other provider that acts on a size, the default memory of each discobox,
+	//  which a discobox's own memoryBytes overrides. Only a provider that acts on a size accepts it;
+	// zero leaves a pool VM to the provider's configuration, then the host, and sets no default (a
+	// discobox is then not limited unless it asks for a size). A change to the default reaches
+	// discoboxes made after it.
 	MemoryBytes int64 `json:"memoryBytes"`
 	// Pool display name.
 	Name string `json:"name"`
@@ -19924,7 +19984,11 @@ type PoolSnapshotPlan struct {
 	// The bundles provisioned into it, in order - the platform's, then the harness's.
 	Bundles []PoolSnapshotBundle `json:"bundles"`
 	// The features left off.
-	Off             []string `json:"off"`
+	Off []string `json:"off"`
+	// The size a machine snapshot was built at, which the discoboxes made from it share. Absent is the
+	// provider's default size, and always absent on a Docker pool, whose snapshots serve discoboxes of
+	// every size.
+	Size            OptPoolSnapshotSize `json:"size"`
 	AdditionalProps PoolSnapshotPlanAdditional
 }
 
@@ -19946,6 +20010,11 @@ func (s *PoolSnapshotPlan) GetBundles() []PoolSnapshotBundle {
 // GetOff returns the value of Off.
 func (s *PoolSnapshotPlan) GetOff() []string {
 	return s.Off
+}
+
+// GetSize returns the value of Size.
+func (s *PoolSnapshotPlan) GetSize() OptPoolSnapshotSize {
+	return s.Size
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -19973,6 +20042,11 @@ func (s *PoolSnapshotPlan) SetOff(val []string) {
 	s.Off = val
 }
 
+// SetSize sets the value of Size.
+func (s *PoolSnapshotPlan) SetSize(val OptPoolSnapshotSize) {
+	s.Size = val
+}
+
 // SetAdditionalProps sets the value of AdditionalProps.
 func (s *PoolSnapshotPlan) SetAdditionalProps(val PoolSnapshotPlanAdditional) {
 	s.AdditionalProps = val
@@ -19981,6 +20055,56 @@ func (s *PoolSnapshotPlan) SetAdditionalProps(val PoolSnapshotPlanAdditional) {
 type PoolSnapshotPlanAdditional map[string]jx.Raw
 
 func (s *PoolSnapshotPlanAdditional) init() PoolSnapshotPlanAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/PoolSnapshotSize
+type PoolSnapshotSize struct {
+	// Whole vCPUs; absent is the provider's default.
+	Cpus OptInt64 `json:"cpus"`
+	// Memory in bytes; absent is the provider's default.
+	MemoryBytes     OptInt64 `json:"memoryBytes"`
+	AdditionalProps PoolSnapshotSizeAdditional
+}
+
+// GetCpus returns the value of Cpus.
+func (s *PoolSnapshotSize) GetCpus() OptInt64 {
+	return s.Cpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *PoolSnapshotSize) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolSnapshotSize) GetAdditionalProps() PoolSnapshotSizeAdditional {
+	return s.AdditionalProps
+}
+
+// SetCpus sets the value of Cpus.
+func (s *PoolSnapshotSize) SetCpus(val OptInt64) {
+	s.Cpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *PoolSnapshotSize) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolSnapshotSize) SetAdditionalProps(val PoolSnapshotSizeAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolSnapshotSizeAdditional map[string]jx.Raw
+
+func (s *PoolSnapshotSizeAdditional) init() PoolSnapshotSizeAdditional {
 	m := *s
 	if m == nil {
 		m = map[string]jx.Raw{}
@@ -24645,6 +24769,12 @@ func (s *SandboxCloneProgress) SetBytes(val OptInt64) {
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
+	// The vCPUs the discobox was made with - its own, else its pool's default at its create; 0 is none,
+	// the provider's default.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// The memory in bytes the discobox was made with - its own, else its pool's default at its create; 0
+	// is none, the provider's default.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// Model the harness should use.
@@ -24698,6 +24828,16 @@ type SandboxConfig struct {
 	SourceCodeReferences OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxConfig) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxConfig) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
 }
 
 // GetHarnessConfigId returns the value of HarnessConfigId.
@@ -24803,6 +24943,16 @@ func (s *SandboxConfig) GetSourceCodeReferences() OptSandboxConfigSourceCodeRefe
 // GetUser returns the value of User.
 func (s *SandboxConfig) GetUser() OptSandboxUser {
 	return s.User
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxConfig) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxConfig) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
 }
 
 // SetHarnessConfigId sets the value of HarnessConfigId.
@@ -24950,6 +25100,18 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxCreateConfig
 type SandboxCreateConfig struct {
+	// VCPUs for the discobox, fractional allowed. It overrides its pool's cpuVcpus; absent or 0 takes
+	// the pool's default, or none, the provider's default (no limit on a container; the whole VM on a
+	// provider that sizes one VM per pool). Fixed at create. A provider that does not act on a
+	// discobox's size refuses it, and on a provider that sizes one VM per pool it may not exceed the
+	// pool's cpuVcpus where the pool sets one.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// Memory for the discobox in bytes. It overrides its pool's memoryBytes; absent or 0 takes the
+	// pool's default, or none, the provider's default (no limit on a container; the whole VM on a
+	// provider that sizes one VM per pool). Fixed at create. A provider that does not act on a
+	// discobox's size refuses it, and on a provider that sizes one VM per pool it may not exceed the
+	// pool's memoryBytes where the pool sets one.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// The new discobox's own egress policy level. A discobox creating another may not make one that can
 	// reach anything it cannot.
 	Egress OptEgressPolicy `json:"egress"`
@@ -25008,6 +25170,16 @@ type SandboxCreateConfig struct {
 	Tags OptSandboxCreateConfigTags `json:"tags"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxCreateConfig) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxCreateConfig) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
 }
 
 // GetEgress returns the value of Egress.
@@ -25103,6 +25275,16 @@ func (s *SandboxCreateConfig) GetTags() OptSandboxCreateConfigTags {
 // GetUser returns the value of User.
 func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
 	return s.User
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxCreateConfig) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxCreateConfig) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
 }
 
 // SetEgress sets the value of Egress.
@@ -34733,11 +34915,18 @@ type UpdatePoolBody struct {
 	// host is placed again with it; a sandbox takes it when its box is next made - a VM sandbox at its
 	// next start, a container when it is replaced - and is reached as it was made until then.
 	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
-	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
-	// to the provider's configuration, then the host.
+	// On a provider that sizes one VM per pool from it, that VM's vCPUs, which every discobox of the
+	// pool shares; on any other provider that acts on a size, the default vCPUs of each discobox, which
+	// a discobox's own cpuVcpus overrides. Only a provider that acts on a size accepts it; zero leaves a
+	// pool VM to the provider's configuration, then the host, and sets no default (a discobox is then
+	// not limited unless it asks for a size). A change to the default reaches discoboxes made after it.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
-	// leaves the size to the provider's configuration, then the host.
+	// On a provider that sizes one VM per pool from it, that VM's memory in bytes, which every discobox
+	// of the pool shares; on any other provider that acts on a size, the default memory of each discobox,
+	//  which a discobox's own memoryBytes overrides. Only a provider that acts on a size accepts it;
+	// zero leaves a pool VM to the provider's configuration, then the host, and sets no default (a
+	// discobox is then not limited unless it asks for a size). A change to the default reaches
+	// discoboxes made after it.
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Pool display name.
 	Name OptString `json:"name"`

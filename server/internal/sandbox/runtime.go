@@ -306,7 +306,10 @@ type CreateOptions struct {
 	SkillsSources []model.SkillsSource
 	// Features are the repository's, which the bootstrap carries
 	// (ADR 26-10-16-423 §4).
-	Features              map[string]sandboxconfig.Feature
+	Features map[string]sandboxconfig.Feature
+	// Size is the sandbox's size as its create resolved it (ADR
+	// 26-11-23-445 §2), which the pool applies as it is; zero is none.
+	Size                  Size
 	ResolvedHarnessConfig *ResolvedHarnessConfig
 	AgentServerURL        string
 	OAuthRedirectBase     string
@@ -320,6 +323,15 @@ type CreateOptions struct {
 	// in the box before each start.
 	Delivery Delivery
 }
+
+// Size is a box's CPU and memory. A zero field is unset.
+type Size struct {
+	CPUVCPUs    float64
+	MemoryBytes int64
+}
+
+// IsZero reports a box with no size.
+func (s Size) IsZero() bool { return s.CPUVCPUs <= 0 && s.MemoryBytes <= 0 }
 
 // Delivery is what a box is delivered: the agent bundle its pool places in
 // it, and the bundles it applies, in order. Nothing says which bundle is

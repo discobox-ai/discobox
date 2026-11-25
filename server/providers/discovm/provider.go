@@ -389,6 +389,10 @@ func Definition(name string) sandbox.ProviderDefinition {
 			fields = append(fields, base)
 		}
 	}
+	// No SizeFields: which drivers size a machine is disco-vm's to declare,
+	// next to the code that honors it, and it declares none yet, so a box or
+	// a pool asking for a size here is refused rather than made at the
+	// driver's default (ADR 26-11-23-445 §6).
 	return sandbox.ProviderDefinition{
 		Name:         name,
 		Icon:         "server",

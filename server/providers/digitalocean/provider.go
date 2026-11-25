@@ -159,6 +159,8 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "DigitalOcean",
 		Icon:        "digitalocean",
 		Description: "Runs one Docker-enabled Droplet per pool.",
+		// Each box is a container its pool agent limits to its size.
+		SizeFields: dockerworker.SizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "token", Label: "API Token", Type: sandbox.ProviderConfigFieldSecret, Required: true, Description: "DigitalOcean API token the server manages Droplets with."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},

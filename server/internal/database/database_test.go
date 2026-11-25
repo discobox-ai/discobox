@@ -1889,3 +1889,71 @@ func TestCurrentReadIsTheReadPoolWithoutAReplica(t *testing.T) {
 		}
 	}
 }
+
+// An upgrade gives every sandbox from before sizes none, and never reads a
+// size from the cpu_vcpus and memory_bytes request columns ADR 0029 retired,
+// which a database from before it may still hold: those are dropped, as
+// before, and the size columns are apart from them (ADR 26-11-23-445 §2).
+func TestMigrateGivesSandboxesFromBeforeSizesNone(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	if err := db.Write.Create(&model.User{ID: "user-1"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Create(&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "docker"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Create(&model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: "provider-1"}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Create(&model.Sandbox{ID: "sbx-1", ProjectID: "project-1", CreatedByUserID: "user-1", PoolID: "pool-1", Name: "old"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The schema of a server from before sizes, with ADR 0029's retired
+	// requests still in it.
+	for _, stmt := range []string{
+		"ALTER TABLE sandboxes DROP COLUMN size_cpu_vcpus",
+		"ALTER TABLE sandboxes DROP COLUMN size_memory_bytes",
+		"ALTER TABLE sandboxes ADD COLUMN cpu_vcpus real NOT NULL DEFAULT 0",
+		"ALTER TABLE sandboxes ADD COLUMN memory_bytes integer NOT NULL DEFAULT 0",
+		"UPDATE sandboxes SET cpu_vcpus = 4, memory_bytes = 8589934592",
+	} {
+		if err := db.Write.Exec(stmt).Error; err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+
+	for _, column := range []string{"cpu_vcpus", "memory_bytes"} {
+		if db.Write.Migrator().HasColumn(&model.Sandbox{}, column) {
+			t.Errorf("the retired sandboxes.%s survived the migration", column)
+		}
+	}
+	var sb model.Sandbox
+	if err := db.Write.First(&sb, "id = ?", "sbx-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if sb.CPUVCPUs != 0 || sb.MemoryBytes != 0 {
+		t.Fatalf("sandbox from before sizes = %g vCPUs, %d bytes; want none", sb.CPUVCPUs, sb.MemoryBytes)
+	}
+}

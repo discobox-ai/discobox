@@ -6380,6 +6380,24 @@ func (s *SandboxConfig) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.CpuVcpus.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cpuVcpus",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.SkillsSources {
 			if err := func() error {
@@ -6497,6 +6515,24 @@ func (s *SandboxCreateConfig) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.CpuVcpus.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cpuVcpus",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.Egress.Get(); ok {
 			if err := func() error {

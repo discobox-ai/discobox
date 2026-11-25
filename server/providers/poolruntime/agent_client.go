@@ -923,6 +923,16 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, 
 		out.Bundles = poolclient.NewOptNilBundlePinArray(bundles)
 	}
 	config.Start = poolclient.NewOptBool(opts.Start)
+	if !opts.Size.IsZero() {
+		size := poolapimodel.SandboxSize{}
+		if opts.Size.CPUVCPUs > 0 {
+			size.CpuVcpus = poolclient.NewOptFloat64(opts.Size.CPUVCPUs)
+		}
+		if opts.Size.MemoryBytes > 0 {
+			size.MemoryBytes = poolclient.NewOptInt64(opts.Size.MemoryBytes)
+		}
+		out.Size = poolclient.NewOptSandboxSize(size)
+	}
 	if opts.Env != nil {
 		config.Env = poolclient.NewOptSandboxConfigEnv(poolclient.SandboxConfigEnv(opts.Env))
 	}

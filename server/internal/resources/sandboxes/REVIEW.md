@@ -8,6 +8,19 @@
   26-10-27-880 §9). A change that lets a create pick up more from a harness
   config widens what every `DiscoboxAPI` discobox may hand on; weigh it as such.
 
+## A box's size
+
+- **Never copy a pool VM's size to a box.** Where a provider sizes one VM per
+  pool from the pool's `cpuVcpus`/`memoryBytes` (`BoxesInPoolVM`), the driver
+  may clamp the VM below them (vz caps it at the host's cores), and a pool may
+  shrink. A box given that size as its own is then refused by Docker, which
+  will not limit a container past the CPUs its daemon has, through no ask of
+  the box's (ADR 26-11-23-445 §3). A size checked against the pool's asked
+  size is not checked against the VM.
+- **An import asks for no size.** An archive's size was resolved against the
+  pool it left, most often as that pool's default; treated as the box's ask,
+  it refuses moves that worked before and pins the old pool's default.
+
 ## Values the client hands to host tools
 
 - **A stored path the client hands to a host tool is checked where it is

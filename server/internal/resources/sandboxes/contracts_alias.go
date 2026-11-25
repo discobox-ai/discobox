@@ -17,6 +17,7 @@ type Status = contract.Status
 type AssignedPort = contract.AssignedPort
 type BundlePin = contract.BundlePin
 type Delivery = contract.Delivery
+type Size = contract.Size
 type ResolvedHarnessConfig = contract.ResolvedHarnessConfig
 type ProviderStatus = contract.ProviderStatus
 type ProviderConfigField = contract.ProviderConfigField

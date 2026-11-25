@@ -233,6 +233,8 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "Docker",
 		Icon:        "docker",
 		Description: "Runs each pool as a VM-style Docker container with systemd as PID 1.",
+		// Each box is a container its pool agent limits to its size.
+		SizeFields: dockerworker.SizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},

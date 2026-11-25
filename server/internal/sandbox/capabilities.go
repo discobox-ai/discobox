@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // ProviderConfigFieldSecret is the type of a field that holds a credential.
@@ -39,14 +41,17 @@ type ProviderConfigField struct {
 	Privileged bool `json:"privileged,omitempty"`
 }
 
-// PoolSizeField names one field of a pool's size, spelled as the API
+// SizeField names one size field a provider may act on, spelled as the API
 // spells it so an error can name exactly what the caller set.
-type PoolSizeField string
+type SizeField string
 
 const (
-	PoolSizeCPU     PoolSizeField = "cpuVcpus"
-	PoolSizeMemory  PoolSizeField = "memoryBytes"
-	PoolSizeStorage PoolSizeField = "storageBytes"
+	// SizeCPU and SizeMemory are a box's size, and a pool's as its boxes'
+	// default (ADR 26-11-23-445 §§1, 3).
+	SizeCPU    SizeField = "cpuVcpus"
+	SizeMemory SizeField = "memoryBytes"
+	// SizeStorage is a pool's alone.
+	SizeStorage SizeField = "storageBytes"
 )
 
 // ProviderDefinition describes a registered provider driver.
@@ -56,16 +61,23 @@ type ProviderDefinition struct {
 	Description  string                `json:"description,omitempty"`
 	ConfigFields []ProviderConfigField `json:"configFields,omitempty"`
 
-	// PoolSizeFields lists the pool size fields this provider acts on. A
-	// pool on the provider may set only these; the pool service refuses any
-	// other non-zero field at create and update, so a pool setting never
-	// silently does nothing. Empty means the provider acts on none.
+	// SizeFields lists the size fields this provider acts on: CPU and memory
+	// for a box and as its pool's default (no provider acts on one and not
+	// the other), and the pool-only fields it declares. A box or a pool on
+	// the provider may set only these; the sandbox and pool services refuse
+	// any other non-zero field, so a size is never accepted and then
+	// silently ignored (ADR 26-11-23-445 §6). Empty means the provider acts
+	// on none.
 	//
 	// It is declared by the provider, next to the code that honors it, rather
-	// than decided by the pool service: whether a size means anything depends
-	// on the backend (a per-pool VM can be sized; a shared Docker host cannot),
-	// and a list kept anywhere else goes stale the first time a backend changes.
-	PoolSizeFields []PoolSizeField `json:"poolSizeFields,omitempty"`
+	// than decided by the services: whether a size means anything depends on
+	// the backend, and a list kept anywhere else goes stale the first time a
+	// backend changes.
+	SizeFields []SizeField `json:"sizeFields,omitempty"`
+	// BoxesInPoolVM reports that the provider runs every box of a pool in
+	// one VM sized by the pool's CPU and memory, so no box can be larger
+	// than a size the pool sets (ADR 26-11-23-445 §7).
+	BoxesInPoolVM bool `json:"boxesInPoolVm,omitempty"`
 }
 
 // ProviderStatus describes runtime provider availability.
@@ -112,12 +124,46 @@ func JoinProviderConfig(config json.RawMessage, sealed map[string]json.RawMessag
 	return json.Marshal(fields)
 }
 
-// ActsOnPoolSize reports whether the provider acts on field.
-func (d ProviderDefinition) ActsOnPoolSize(field PoolSizeField) bool {
-	for _, declared := range d.PoolSizeFields {
-		if declared == field {
-			return true
+// ActsOnSize reports whether the provider acts on field.
+func (d ProviderDefinition) ActsOnSize(field SizeField) bool {
+	return slices.Contains(d.SizeFields, field)
+}
+
+// SizeValue is one size field as a request sets it.
+type SizeValue struct {
+	Field SizeField
+	Value float64
+}
+
+// CheckSize refuses values of a box's or a pool's size (of names which) that
+// the provider instance would not act on, so that a size is never accepted
+// and then silently ignored (ADR 26-11-23-445 §6). The error is the caller's
+// to report as a bad request.
+//
+// Zero is always accepted: it is "unset", and clearing a value no provider
+// ever acted on has to stay possible. A negative value is refused on every
+// provider, because no backend reads one and it would do nothing.
+func (d ProviderDefinition) CheckSize(of, instanceName, providerType string, values []SizeValue) error {
+	var refused []string
+	for _, v := range values {
+		if v.Value < 0 {
+			return fmt.Errorf("%s %s must not be negative", of, v.Field)
+		}
+		if v.Value > 0 && !d.ActsOnSize(v.Field) {
+			refused = append(refused, string(v.Field))
 		}
 	}
-	return false
+	if len(refused) == 0 {
+		return nil
+	}
+	accepted := "takes no size settings"
+	if len(d.SizeFields) > 0 {
+		names := make([]string, len(d.SizeFields))
+		for i, field := range d.SizeFields {
+			names[i] = string(field)
+		}
+		accepted = "acts only on " + strings.Join(names, ", ")
+	}
+	return fmt.Errorf("%s %s would have no effect on provider instance %q: the %s provider %s; leave it unset (0)",
+		of, strings.Join(refused, ", "), instanceName, providerType, accepted)
 }

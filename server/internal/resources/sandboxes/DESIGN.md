@@ -981,6 +981,21 @@ one a discobox created (`CreatedBySandboxID`), restricted or not
 - **Not in the manifest.** The manifest's fingerprint rebuilds the container,
   and a policy change must not.
 
+## Box size
+
+A create's `cpuVcpus` and `memoryBytes` are resolved field by field, its own
+else its pool's default, and stored with the box (`size.go`, ADR 26-11-23-445
+§2). On a provider whose boxes share one VM sized from the pool's size, that
+size is the VM's and no box's default: an unset box has the whole VM. An
+import asks for no size, so it takes its new pool's default: the archive's
+size was resolved against the pool it left. The
+stored size is spec: in the fingerprint when set, sent to the pool on every
+create, and returned on the box's read. A pool's later change reaches new
+boxes only. A field the provider does not act on is refused with a 400
+naming it, the provider instance and its type, and on a provider whose boxes
+share one pool VM a field larger than the pool's own (§§6, 7). See
+[Box Size](../../../providers/DESIGN.md#box-size).
+
 ## Display name
 
 `Sandbox.displayName` is what a listing calls a sandbox, computed on the server
