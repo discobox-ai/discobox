@@ -234,10 +234,15 @@ Global review expectations:
   isolated machines only with non-isolated ones, and it is on that network
   alone. A sandbox machine that kept them could reach its pool's machine and
   the provisioning key there (ADR 26-10-23-551 §4).
-- An index row in `docs/adr/README.md` that gains a later ADR's note gets it
-  inside its Status parenthesis, before the `)` that closes `Accepted (`:
-  appending after that `)` leaves the note outside it and a stray `)` at the
-  end, and one change made that mistake on three rows (ADR 26-10-23-551).
+- An ADR's `Status` line that gains a later ADR's note gets it inside its
+  parenthesis, before the `)` that closes `Accepted (`: appending after that
+  `)` leaves the note outside it and a stray `)` at the end, and one change
+  made that mistake on three index rows (ADR 26-10-23-551). The index is now
+  printed from those lines (`go tool task adr:index`), so the mistake shows
+  there.
+- A change that adds an index table, or a list of ADRs, to
+  `docs/adr/README.md` brings back the conflict every open ADR PR hit when
+  another merged. The index is printed from the ADR files instead.
 - Import `pool-agent/vmtest` only from `_test.go` files, in any module.
   `RunFakeGuestIfInvoked` turns the running binary into disco-vm's fake guest
   agent when its first argument is `guest`, and that agent runs whatever exec

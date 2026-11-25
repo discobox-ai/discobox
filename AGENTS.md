@@ -55,7 +55,9 @@
   `discobox-main-build` (a main build's version, and the pruning of main builds
   older than fourteen days),
   `discobox-vm-pins` (the release's refusal of a pool VM guest or kernel pin older
-  than `vm-image/`).
+  than `vm-image/`),
+  `discobox-adr-index` (the ADR index, printed from `docs/adr`'s files, and the
+  check that each ADR has the heading and Status line it reads).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.
 - `.agents/skills` (`.claude/skills` links to it): this repository's own skills
   (`add-harness`, `release`, `verify-recipes`). The shared SDLC skills
@@ -199,6 +201,11 @@ digits, generated rather than taken from a sequence, so concurrent branches
 cannot collide. Never renumber an ADR, and never pick "the next number" — ADRs
 `0001`–`0149` predate the scheme and keep their four-digit numbers, except four
 renumbered to resolve a duplicated number. See `docs/adr/README.md`.
+
+The ADR index is not a file: `go tool task adr:index` prints every ADR's ID,
+title and status from the ADR files (`-- -status proposed` to filter). An ADR's
+PR adds only its own file; never add an index row or list to
+`docs/adr/README.md`, which would make every other open ADR PR conflict.
 
 The process is Nygard-style ADRs plus current-state design docs:
 
