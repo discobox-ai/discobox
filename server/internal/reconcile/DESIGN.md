@@ -106,10 +106,14 @@ per-node concurrency:
 1. Select up to 8 candidate rows, oldest `not_before` first: `not_before <= now`
    and unclaimed **or lease expired**.
 2. Atomically claim one: `UPDATE ... SET claimed_by=me, lease_expires=now+lease
-   WHERE resource_type=? AND resource_id=? AND seq=? AND (claimed_by IS NULL OR lease_expires < ?)`.
-   RowsAffected = 1 wins; 0 means another node got it — try the next.
-3. The runner renews every lease it holds (`UPDATE ... WHERE claimed_by=me`)
-   every third of the lease interval (at least 1s).
+   WHERE resource_type=? AND resource_id=? AND seq=? AND not_before <= now AND (claimed_by IS NULL OR lease_expires < ?)`.
+   RowsAffected = 1 wins; 0 means another node got it, or a settle armed it
+   for the future since the read — try the next.
+3. The runner renews the leases of the rows it is executing, and only those
+   (`UPDATE ... WHERE claimed_by=me AND resource_id IN (in flight)`), every
+   third of the lease interval (at least 1s). A claim whose settle write failed
+   is not renewed: it lapses at its lease and the row is claimed again, and the
+   failed write is logged.
 
 Worker identity is a per-process id (hostname + random suffix). A dead node's
 rows become claimable when their lease expires — no separate stale-job
