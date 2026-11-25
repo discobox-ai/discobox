@@ -1,7 +1,8 @@
 # 26-11-24-418 — A pool serves pprof on its loopback, and an admin fetches it through its agent
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+  Accepted by the owner by merging #1756, 2026-11-25.
 - **Issue**: [#1752](https://github.com/discobox-ai/discobox/issues/1752)
 - **Relates to**: [26-11-18-571](26-11-18-571-a-server-routes-path-says-who-answers-it-and-nothing-is-under-api.md),
   where the admin route goes;
