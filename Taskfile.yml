@@ -234,6 +234,18 @@ tasks:
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
 
 
+  adr:index:
+    desc: "Print the ADR index (ID, title, status) from docs/adr's files; pass a status to filter, e.g. `go tool task adr:index -- -status proposed`"
+    # The index is never a committed file, so ADR pull requests never conflict
+    # on it; see docs/adr/README.md, Index.
+    cmds:
+      - go run ./internal/cmd/discobox-adr-index {{.CLI_ARGS}}
+
+  adr:check:
+    desc: Fail when an ADR in docs/adr has no heading or Status line the index can read
+    cmds:
+      - go run ./internal/cmd/discobox-adr-index -check
+
   brand:tokens:
     desc: Render assets/brand/tokens.css from tokens.json (the design language's tokens; see assets/brand/LANGUAGE.md)
     cmds:
@@ -1214,12 +1226,14 @@ tasks:
     # CI runs this alone on a pull request that changes only docs/, where every
     # other job is skipped (.github/workflows/ci.yml). Any other run gets the
     # same checks from verify (check:mermaid, and docs:check within
-    # generate:verify), from ci:test (discobox-docs' tests read docs/public),
+    # generate:verify), from ci:test (discobox-docs' tests read docs/public,
+    # and discobox-adr-index's tests make adr:check's check on docs/adr),
     # and from ci:check (check:shell lints a script anywhere, docs/ included).
     # A check added elsewhere that reads docs/ belongs here too.
     cmds:
       - task: check:mermaid
       - task: docs:check
+      - task: adr:check
       - cd cli && go test ./internal/cmd/discobox-docs/
       - task: check:shell
 
