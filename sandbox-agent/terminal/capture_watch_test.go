@@ -24,18 +24,27 @@ func TestCaptureNotificationsFollowAtomicWritesAndDirectoryReplacement(t *testin
 			observed <- string(content)
 		}, 20*time.Millisecond, time.Hour)
 	}()
+	// Wall-clock times, in FSNOTIFY_DEBUG's format, so a failure lines up
+	// with the backend's own trace when that is on.
+	now := func() string { return time.Now().Format("15:04:05.000000000") }
 	wait := func(want string) {
 		t.Helper()
 		timeout := time.NewTimer(5 * time.Second)
 		defer timeout.Stop()
+		var seen []string
 		for {
 			select {
 			case got := <-observed:
 				if got == want {
 					return
 				}
+				seen = append(seen, fmt.Sprintf("%q at %s", got, now()))
 			case <-timeout.C:
-				t.Fatalf("no notification captured %q", want)
+				// Say whether the file was there to be captured (a lost
+				// notification) or never landed (the write itself stalled).
+				content, err := os.ReadFile(path)
+				t.Fatalf("no notification captured %q by %s; observed meanwhile: %v; file now: %q (err %v)",
+					want, now(), seen, content, err)
 			}
 		}
 	}
@@ -50,6 +59,7 @@ func TestCaptureNotificationsFollowAtomicWritesAndDirectoryReplacement(t *testin
 		if err := os.Rename(path+".tmp", path); err != nil {
 			t.Fatal(err)
 		}
+		t.Logf("wrote %q at %s", value, now())
 	}
 	wait("")       // Initial observation happens after watches are armed.
 	write("first") // The entire directory tree was initially absent.
@@ -63,6 +73,7 @@ func TestCaptureNotificationsFollowAtomicWritesAndDirectoryReplacement(t *testin
 		if err := os.RemoveAll(filepath.Join(home, "config")); err != nil {
 			t.Fatal(err)
 		}
+		t.Logf("removed config at %s", now())
 		wait("")
 		value := fmt.Sprintf("third-%d", i)
 		write(value)
